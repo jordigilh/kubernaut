@@ -285,6 +285,18 @@ type WorkloadDetails struct {
 	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
+// ClusterContext holds cluster-registration labels used as Rego classification
+// input for the optional `cluster` business dimension (BR-FLEET-003, #1511).
+// Populated from ClusterInfo.Labels via ClusterRegistry.Get(signal.ClusterID);
+// nil when the cluster is unregistered or no ClusterRegistry is configured
+// (non-fleet deployments), never an error condition (graceful degradation).
+type ClusterContext struct {
+	// Labels are the Kubernetes metadata.labels on the MCP Gateway's
+	// cluster-registration CRD (EAIGW Backend / Kuadrant MCPServerRegistration),
+	// set by the fleet operator at cluster-onboarding time.
+	Labels map[string]string `json:"labels,omitempty"`
+}
+
 // KubernetesContext contains lean, classification-focused Kubernetes resource context.
 // Issue #113: Restructured from per-type workload fields to generic WorkloadDetails.
 // Only stores data needed for Rego classification (labels, annotations, ownership).
@@ -298,6 +310,11 @@ type KubernetesContext struct {
 	// consumers know which cluster the enrichment data came from.
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
+	// Cluster holds the fleet cluster-registration labels used as Rego input
+	// for the optional `cluster` classification dimension (BR-FLEET-003, #1511).
+	// nil when fleet mode is disabled or the cluster is unregistered.
+	// +optional
+	Cluster *ClusterContext `json:"cluster,omitempty"`
 	// Namespace context (nil for cluster-scoped resources like Node)
 	Namespace *NamespaceContext `json:"namespace,omitempty"`
 	// Target workload context (kind, name, labels, annotations)

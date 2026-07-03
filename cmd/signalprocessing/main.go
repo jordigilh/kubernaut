@@ -44,23 +44,28 @@ import (
 	// Standard Kubernetes imports
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	// Kubernaut API imports
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
-	"github.com/jordigilh/kubernaut/internal/version"
-	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/internal/controller/signalprocessing"
+	"github.com/jordigilh/kubernaut/internal/version"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/config"
@@ -68,8 +73,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
 	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
-	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 var (
@@ -333,6 +336,42 @@ func main() {
 	}
 
 	// ========================================
+	// BR-FLEET-003 (#1511): CLUSTER REGISTRY (OPTIONAL)
+	// When fleet.mcpGatewayType is configured, SP watches the MCP Gateway's
+	// cluster-registration CRDs (Backend/MCPServerRegistration) directly via
+	// a dynamic K8s client, independent of the MCP protocol client above --
+	// this is used solely to resolve ClusterInfo.Labels for the `cluster`
+	// Rego classification dimension, not for remote resource reads.
+	// ========================================
+	var clusterRegistry fleetregistry.ClusterRegistry
+	if cfg.Fleet.MCPGatewayType != "" {
+		dynClient, dynErr := dynamic.NewForConfig(mgr.GetConfig())
+		if dynErr != nil {
+			setupLog.Error(dynErr, "Failed to create dynamic Kubernetes client for cluster registry, cluster classification disabled")
+		} else {
+			var crErr error
+			clusterRegistry, crErr = fleetregistry.NewClusterRegistry(
+				cfg.Fleet.MCPGatewayType,
+				dynClient,
+				fleetregistry.RegistryConfig{Namespace: cfg.Fleet.Namespace},
+				fleetregistry.NewMetricsWithRegistry(ctrlmetrics.Registry),
+				ctrl.Log.WithName("cluster-registry"),
+			)
+			if crErr != nil {
+				setupLog.Error(crErr, "Failed to create cluster registry, cluster classification disabled",
+					"gatewayType", cfg.Fleet.MCPGatewayType)
+			} else if startErr := clusterRegistry.Start(ctx); startErr != nil {
+				setupLog.Error(startErr, "Failed to start cluster registry, cluster classification disabled")
+				clusterRegistry = nil
+			} else {
+				k8sEnricher.SetClusterRegistry(clusterRegistry)
+				setupLog.Info("Cluster registry started, cluster classification labels enabled",
+					"gatewayType", cfg.Fleet.MCPGatewayType, "namespace", cfg.Fleet.Namespace)
+			}
+		}
+	}
+
+	// ========================================
 	// DD-PERF-001: Atomic Status Updates
 	// Status Manager for reducing K8s API calls by 66-75%
 	// Consolidates multiple status field updates into single atomic operations
@@ -357,8 +396,8 @@ func main() {
 		Metrics:              spMetrics,
 		Recorder:             mgr.GetEventRecorderFor("signalprocessing-controller"),
 		StatusManager:        statusManager,
-		PolicyEvaluator:      policyEvaluator,        // ADR-060: Unified evaluator
-		SignalModeClassifier: signalModeClassifier,   // BR-SP-106: Proactive signal mode (ADR-054)
+		PolicyEvaluator:      policyEvaluator,      // ADR-060: Unified evaluator
+		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Proactive signal mode (ADR-054)
 		K8sEnricher:          k8sEnricher,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")
@@ -424,6 +463,14 @@ func main() {
 			if err := fleetResilientClient.Close(); err != nil {
 				setupLog.Error(err, "Failed to close fleet MCP client gracefully")
 			}
+		}()
+	}
+
+	// BR-FLEET-003 (#1511): Graceful shutdown for cluster registry watcher
+	if clusterRegistry != nil {
+		defer func() {
+			setupLog.Info("Stopping cluster registry watcher")
+			clusterRegistry.Stop()
 		}()
 	}
 

@@ -337,6 +337,11 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 		// Authority: MandatoryLabels.priority enum in data-storage-v1.yaml
 		labels["priority"] = strings.ToUpper(schema.Labels.Priority)
 	}
+	// BR-FLEET-003 (#1511): cluster is optional -- omitted entirely when absent so that
+	// non-fleet deployments produce byte-identical labels JSONB to pre-#1511 behavior.
+	if len(schema.Labels.Cluster) > 0 {
+		labels["cluster"] = schema.Labels.Cluster
+	}
 
 	// #212: Custom labels are NOT merged here -- they go into the custom_labels column
 	// via ExtractCustomLabels

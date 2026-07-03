@@ -2220,6 +2220,23 @@ func (c *Client) sendListAvailableActions(ctx context.Context, params ListAvaila
 		}
 	}
 	{
+		// Encode "cluster" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "cluster",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Cluster.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
 		// Encode "remediation_id" parameter.
 		cfg := uri.QueryParameterEncodingConfig{
 			Name:    "remediation_id",
@@ -2741,6 +2758,23 @@ func (c *Client) sendListWorkflowsByActionType(ctx context.Context, params ListW
 
 		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
 			if val, ok := params.DetectedLabels.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "cluster" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "cluster",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Cluster.Get(); ok {
 				return e.EncodeValue(conv.StringToString(val))
 			}
 			return nil

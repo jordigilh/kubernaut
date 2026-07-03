@@ -281,6 +281,13 @@ type SignalContext struct {
 	// BR-INTERACTIVE-010: When true, KA creates the session in pending state
 	// without launching Investigate(). The session awaits MCP action=start.
 	Interactive bool `json:"interactive,omitempty"`
+
+	// ClusterClassification is the optional cluster business classification
+	// (e.g. "production", "staging-eu") propagated from
+	// AIAnalysis.Spec.AnalysisRequest.SignalContext.Cluster (BR-FLEET-003,
+	// #1511). Empty for non-fleet deployments or unregistered clusters.
+	// Passed as the `cluster` param on the workflow-discovery tool call.
+	ClusterClassification string `json:"cluster_classification,omitempty"`
 }
 
 // ComponentGVK returns the fully-qualified apiVersion/Kind string for workflow

@@ -376,6 +376,18 @@ func appendMandatoryLabelConditions(filters *models.WorkflowDiscoveryFilters, co
 		argIdx++
 	}
 
+	if filters.Cluster != "" {
+		// BR-FLEET-003 (#1511): optional cluster business classification filter.
+		// Mirrors severity/environment exactly: case-insensitive JSONB array
+		// matching via EXISTS/jsonb_array_elements_text/LOWER, with '*' wildcard
+		// fallback. EXISTS naturally evaluates false for workflows with no
+		// `cluster` key at all -- exclusion semantics per BR-FLEET-003 R6.
+		conditions = append(conditions, fmt.Sprintf(
+			"(EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'cluster') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'cluster' ? '*')", argIdx))
+		args = append(args, filters.Cluster)
+		argIdx++
+	}
+
 	return conditions, args, argIdx
 }
 

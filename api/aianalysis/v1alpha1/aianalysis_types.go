@@ -202,6 +202,17 @@ type SignalContextInput struct {
 	// Untrusted content — sanitized by KA prompt builder before reaching the LLM.
 	// +optional
 	SignalAnnotations map[string]string `json:"signalAnnotations,omitempty"`
+
+	// Cluster is the optional cluster business classification (e.g. "production",
+	// "staging-eu") derived by SignalProcessing's Rego policy from fleet
+	// cluster-registration labels (BR-FLEET-003, #1511). Copied from
+	// SignalProcessing.Status.ClusterClassification. Empty when fleet mode is
+	// disabled, the cluster is unregistered, or no Rego `cluster` rule matched --
+	// a normal, non-error outcome (unlike Severity, which is mandatory).
+	// Propagates to Kubernaut Agent's discovery tool-call `cluster` parameter for
+	// DataStorage workflow-discovery filtering.
+	// +optional
+	Cluster string `json:"cluster,omitempty"`
 }
 
 // TargetResource identifies the Kubernetes resource being remediated

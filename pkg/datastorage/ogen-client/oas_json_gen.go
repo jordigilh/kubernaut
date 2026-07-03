@@ -35264,13 +35264,24 @@ func (s *MandatoryLabels) encodeFields(e *jx.Encoder) {
 		e.FieldStart("priority")
 		s.Priority.Encode(e)
 	}
+	{
+		if s.Cluster != nil {
+			e.FieldStart("cluster")
+			e.ArrStart()
+			for _, elem := range s.Cluster {
+				e.Str(elem)
+			}
+			e.ArrEnd()
+		}
+	}
 }
 
-var jsonFieldsNameOfMandatoryLabels = [4]string{
+var jsonFieldsNameOfMandatoryLabels = [5]string{
 	0: "severity",
 	1: "component",
 	2: "environment",
 	3: "priority",
+	4: "cluster",
 }
 
 // Decode decodes MandatoryLabels from json.
@@ -35347,6 +35358,25 @@ func (s *MandatoryLabels) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"priority\"")
+			}
+		case "cluster":
+			if err := func() error {
+				s.Cluster = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Cluster = append(s.Cluster, elem)
+					return nil
+				}); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster\"")
 			}
 		default:
 			return d.Skip()

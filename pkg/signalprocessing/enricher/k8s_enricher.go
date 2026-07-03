@@ -55,6 +55,8 @@ import (
 
 	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/cache"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
@@ -68,8 +70,9 @@ type K8sEnricher struct {
 	cache             *cache.TTLCache
 	metrics           *metrics.Metrics
 	timeout           time.Duration
-	ownerChainBuilder *ownerchain.Builder // BR-SP-100: Full owner chain traversal
-	readerFactory     fleet.ReaderFactory // BR-INTEGRATION-054: nil = local-only mode
+	ownerChainBuilder *ownerchain.Builder     // BR-SP-100: Full owner chain traversal
+	readerFactory     fleet.ReaderFactory     // BR-INTEGRATION-054: nil = local-only mode
+	clusterRegistry   registry.ClusterQuerier // BR-FLEET-003 (#1511): nil = no cluster classification labels
 }
 
 // NewK8sEnricher creates a new K8s context enricher.
@@ -101,6 +104,16 @@ func (e *K8sEnricher) SetReaderFactory(rf fleet.ReaderFactory) {
 	e.readerFactory = rf
 }
 
+// SetClusterRegistry configures a ClusterQuerier used to resolve cluster
+// classification labels for the `cluster` Rego dimension (BR-FLEET-003, #1511).
+// When set and signal.ClusterID is registered, Enrich populates
+// KubernetesContext.Cluster from ClusterInfo.Labels. An unset registry, or a
+// ClusterID with no registration, is not an error -- Cluster stays nil
+// (graceful degradation, SI-10).
+func (e *K8sEnricher) SetClusterRegistry(cr registry.ClusterQuerier) {
+	e.clusterRegistry = cr
+}
+
 // Enrich fetches Kubernetes context based on signal type.
 // BR-SP-001: <2 seconds P95
 //
@@ -126,6 +139,25 @@ func (e *K8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1alph
 	default:
 	}
 
+	result, err := e.enrichByKind(ctx, signal)
+	if err != nil {
+		return nil, err
+	}
+
+	// BR-FLEET-003 (#1511): cluster classification labels are resolved
+	// independently of the workload enrichment path (local or remote) above --
+	// applied uniformly as a post-processing step so every enrichment branch
+	// gets the same graceful-degradation behavior for free.
+	e.populateClusterContext(result, signal)
+
+	return result, nil
+}
+
+// enrichByKind performs the signal-driven Kubernetes context enrichment
+// (local or remote), independent of cluster classification labels.
+// Extracted from Enrich (BR-FLEET-003, #1511) -- pure code motion so the new
+// cluster-label population step applies uniformly to every return path.
+func (e *K8sEnricher) enrichByKind(ctx context.Context, signal *signalprocessingv1alpha1.SignalData) (*signalprocessingv1alpha1.KubernetesContext, error) {
 	if signal.ClusterID != "" && e.readerFactory != nil {
 		return e.enrichRemote(ctx, signal)
 	}
@@ -152,6 +184,25 @@ func (e *K8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1alph
 		// Graceful fallback: namespace only for unknown resource types
 		return e.enrichNamespaceOnly(ctx, signal, result)
 	}
+}
+
+// populateClusterContext resolves cluster classification labels via
+// ClusterRegistry.Get(signal.ClusterID) and sets result.Cluster.
+// BR-FLEET-003 (#1511), SI-10: an unconfigured registry or an unregistered
+// cluster degrades gracefully (Cluster stays nil, no error) rather than
+// failing enrichment -- unlike severity, cluster classification is an
+// optional targeting dimension, not a correctness gate.
+func (e *K8sEnricher) populateClusterContext(result *signalprocessingv1alpha1.KubernetesContext, signal *signalprocessingv1alpha1.SignalData) {
+	if e.clusterRegistry == nil || signal.ClusterID == "" || result == nil {
+		return
+	}
+	info, ok := e.clusterRegistry.Get(signal.ClusterID)
+	if !ok {
+		e.logger.V(1).Info("cluster not registered in fleet, skipping cluster classification labels",
+			"clusterID", signal.ClusterID)
+		return
+	}
+	result.Cluster = &sharedtypes.ClusterContext{Labels: ensureMap(info.Labels)}
 }
 
 // enrichPodSignal fetches Namespace + Pod + Node + OwnerChain.

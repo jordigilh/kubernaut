@@ -1160,6 +1160,11 @@ type IncidentRequest struct {
 	BusinessCategory string `json:"business_category"`
 	// Kubernetes cluster name.
 	ClusterName string `json:"cluster_name"`
+	// Optional cluster business classification (e.g. 'production', 'staging-eu') derived by
+	// SignalProcessing's Rego policy from fleet cluster-registration labels (BR-FLEET-003, #1511).
+	// Distinct from cluster_name (the raw cluster identifier). Empty/absent for non-fleet deployments or
+	// unregistered clusters. Used as a DataStorage workflow-discovery filter dimension.
+	Cluster OptNilString `json:"cluster"`
 	// Duplicate signal.
 	IsDuplicate OptNilBool `json:"is_duplicate"`
 	// Occurrence count.
@@ -1260,6 +1265,11 @@ func (s *IncidentRequest) GetBusinessCategory() string {
 // GetClusterName returns the value of ClusterName.
 func (s *IncidentRequest) GetClusterName() string {
 	return s.ClusterName
+}
+
+// GetCluster returns the value of Cluster.
+func (s *IncidentRequest) GetCluster() OptNilString {
+	return s.Cluster
 }
 
 // GetIsDuplicate returns the value of IsDuplicate.
@@ -1395,6 +1405,11 @@ func (s *IncidentRequest) SetBusinessCategory(val string) {
 // SetClusterName sets the value of ClusterName.
 func (s *IncidentRequest) SetClusterName(val string) {
 	s.ClusterName = val
+}
+
+// SetCluster sets the value of Cluster.
+func (s *IncidentRequest) SetCluster(val OptNilString) {
+	s.Cluster = val
 }
 
 // SetIsDuplicate sets the value of IsDuplicate.

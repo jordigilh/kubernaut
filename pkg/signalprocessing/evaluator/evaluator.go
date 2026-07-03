@@ -45,6 +45,11 @@ const (
 	querySeverity     = "data.signalprocessing.severity"
 	queryPriority     = "data.signalprocessing.priority"
 	queryCustomLabels = "data.signalprocessing.labels"
+	// queryCluster (BR-FLEET-003, #1511): unlike the queries above, policies
+	// are not required to define a `cluster` rule at all -- an undefined
+	// query path is a valid "no classification" outcome, not a compile or
+	// evaluation error.
+	queryCluster = "data.signalprocessing.cluster"
 )
 
 var (
@@ -78,6 +83,7 @@ type Evaluator struct {
 	severityQuery *rego.PreparedEvalQuery
 	priorityQuery *rego.PreparedEvalQuery
 	labelsQuery   *rego.PreparedEvalQuery
+	clusterQuery  *rego.PreparedEvalQuery // BR-FLEET-003 (#1511)
 
 	fileWatcher *hotreload.FileWatcher
 }
@@ -128,6 +134,18 @@ func (e *Evaluator) LoadPolicy(policyContent string) error {
 		return fmt.Errorf("labels query compilation failed: %w", err)
 	}
 
+	// BR-FLEET-003 (#1511): compiles successfully even when the policy
+	// defines no `cluster` rule at all -- it is an external query path over
+	// the module, not a reference within it, so an absent rule simply
+	// evaluates to undefined (zero results) rather than failing to compile.
+	clusterQ, err := rego.New(
+		rego.Query(queryCluster),
+		rego.Module("policy.rego", policyContent),
+	).PrepareForEval(context.Background())
+	if err != nil {
+		return fmt.Errorf("cluster query compilation failed: %w", err)
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.policyModule = policyContent
@@ -135,6 +153,7 @@ func (e *Evaluator) LoadPolicy(policyContent string) error {
 	e.severityQuery = &sevQ
 	e.priorityQuery = &priQ
 	e.labelsQuery = &lblQ
+	e.clusterQuery = &clusterQ
 
 	e.logger.Info("Policy loaded", "policySize", len(policyContent))
 	return nil
@@ -186,6 +205,12 @@ func BuildInput(k8sCtx *sharedtypes.KubernetesContext, signal *signalprocessingv
 	}
 	if k8sCtx != nil && k8sCtx.Workload != nil {
 		input.Workload = *k8sCtx.Workload
+	}
+	if k8sCtx != nil && k8sCtx.Cluster != nil {
+		// BR-FLEET-003 (#1511): zero-value ClusterContext (empty Labels) when
+		// unset, so Rego's input.cluster.labels is always a defined (if
+		// empty) object rather than undefined.
+		input.Cluster = *k8sCtx.Cluster
 	}
 	if signal != nil {
 		input.Signal = SignalInput{
@@ -293,6 +318,53 @@ func (e *Evaluator) EvaluateSeverity(ctx context.Context, input PolicyInput) (*S
 		Severity:   severityValue,
 		Source:     "rego-policy",
 		PolicyHash: e.GetPolicyHash(),
+	}, nil
+}
+
+// EvaluateCluster determines the optional cluster business classification.
+// BR-FLEET-003, Issue #1511: unlike EvaluateSeverity, cluster classification
+// is an optional targeting dimension, not a correctness gate. An undefined
+// result -- no `cluster` rule defined in the policy at all, or a defined
+// rule that simply does not match this input (e.g. empty/unregistered
+// cluster labels) -- is a valid, expected "no classification" outcome and
+// is NOT returned as an error. Errors are reserved for genuine evaluation
+// failures (Rego runtime errors, malformed non-string rule output); callers
+// (evaluateClusterOrSkip) MUST treat those as non-fatal too, per R2.
+func (e *Evaluator) EvaluateCluster(ctx context.Context, input PolicyInput) (*ClusterResult, error) {
+	e.mu.RLock()
+	query := e.clusterQuery
+	e.mu.RUnlock()
+
+	if query == nil {
+		return nil, fmt.Errorf("cluster query not loaded - policy not initialized")
+	}
+
+	timeoutCtx, cancel := context.WithTimeout(ctx, regoEvalTimeout)
+	defer cancel()
+
+	if err := timeoutCtx.Err(); err != nil {
+		return nil, fmt.Errorf("context already done before cluster evaluation: %w", err)
+	}
+
+	results, err := query.Eval(timeoutCtx, rego.EvalInput(input))
+	if err != nil {
+		return nil, fmt.Errorf("rego evaluation failed: %w", err)
+	}
+
+	if len(results) == 0 || len(results[0].Expressions) == 0 {
+		// No matching rule (or no `cluster` rule at all) -- valid "no
+		// classification" outcome, not an error (BR-FLEET-003 R2).
+		return &ClusterResult{}, nil
+	}
+
+	classification, ok := results[0].Expressions[0].Value.(string)
+	if !ok {
+		return nil, fmt.Errorf("cluster policy returned non-string classification: %T", results[0].Expressions[0].Value)
+	}
+
+	return &ClusterResult{
+		Classification: classification,
+		Source:         "rego-policy",
 	}, nil
 }
 

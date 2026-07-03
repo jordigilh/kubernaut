@@ -96,6 +96,11 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		"signalName", signalModeResult.SignalName,
 		"sourceSignalName", signalModeResult.SourceSignalName)
 
+	// 5. Cluster Classification (BR-FLEET-003, #1511) - OPTIONAL, non-fatal on error
+	// Unlike severity, a cluster evaluation error MUST NOT transition to PhaseFailed --
+	// it is an optional targeting dimension, not a correctness gate (R2).
+	clusterClassification := r.evaluateClusterOrSkip(ctx, policyInput, sp, logger)
+
 	// BR-SP-110: Prepare classification condition message (will be set inside atomic update)
 	classificationMessage := buildClassificationMessage(envClass, priorityAssignment, severityResult, signalModeResult)
 
@@ -104,8 +109,33 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		priorityAssignment:    priorityAssignment,
 		severityResult:        severityResult,
 		signalModeResult:      signalModeResult,
+		clusterClassification: clusterClassification,
 		classificationMessage: classificationMessage,
 	}, classifyingStart, logger)
+}
+
+// evaluateClusterOrSkip runs the optional BR-FLEET-003 (#1511) cluster
+// classification. Unlike evaluateSeverityOrFail, ANY failure here (nil
+// PolicyEvaluator, evaluation error, or an empty/no-match result) degrades
+// gracefully to an empty classification -- it never blocks or fails the
+// Classifying phase. This mirrors the K8sEnricher's graceful degradation for
+// unregistered clusters (SI-10): cluster classification is best-effort.
+func (r *SignalProcessingReconciler) evaluateClusterOrSkip(ctx context.Context, policyInput evaluator.PolicyInput, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) string {
+	if r.PolicyEvaluator == nil {
+		return ""
+	}
+
+	result, err := r.PolicyEvaluator.EvaluateCluster(ctx, policyInput)
+	if err != nil {
+		// BR-FLEET-003 R2: non-fatal -- log and continue with no classification.
+		logger.V(1).Info("Cluster classification evaluation failed, continuing without classification",
+			"error", err.Error(), "sp", sp.Name)
+		return ""
+	}
+	if result == nil {
+		return ""
+	}
+	return result.Classification
 }
 
 // logClassificationInput emits Issue #437 diagnostic logging of namespace
@@ -134,6 +164,11 @@ type classificationInputs struct {
 	severityResult        *evaluator.SeverityResult
 	signalModeResult      classifier.SignalModeResult
 	classificationMessage string
+	// clusterClassification is the optional BR-FLEET-003 (#1511) cluster
+	// business classification. Empty when fleet mode is disabled, the
+	// cluster is unregistered, no Rego `cluster` rule matched, or
+	// evaluation failed (non-fatal, unlike severity).
+	clusterClassification string
 }
 
 // finalizeClassification persists the classification outputs (DD-PERF-001
@@ -163,6 +198,8 @@ func (r *SignalProcessingReconciler) finalizeClassification(ctx context.Context,
 		sp.Status.SignalMode = in.signalModeResult.SignalMode
 		sp.Status.SignalName = in.signalModeResult.SignalName
 		sp.Status.SourceSignalName = in.signalModeResult.SourceSignalName
+		// BR-FLEET-003 (#1511): optional cluster business classification.
+		sp.Status.ClusterClassification = in.clusterClassification
 		sp.Status.Phase = signalprocessingv1alpha1.PhaseCategorizing
 		// BR-SP-110: Set condition AFTER refetch to prevent wipe
 		spconditions.SetClassificationComplete(sp, true, "", in.classificationMessage)

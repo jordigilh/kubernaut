@@ -161,6 +161,20 @@ spec:
                 description: Labels contains mandatory matching/filtering criteria
                   for discovery
                 properties:
+                  cluster:
+                    description: |-
+                      Cluster restricts this workflow to signals whose SP-derived
+                      ClusterClassification matches one of these values.
+                      Empty/omitted is valid: in non-fleet deployments (no ClusterClassification
+                      produced) this dimension is never evaluated. In fleet-enabled deployments,
+                      once a concrete classification is supplied by KA, workflows with no
+                      `cluster` entries are excluded unless they explicitly opt in with "*"
+                      (see DD-FLEET-002 Matching Semantics -- this is a query-time exclusion,
+                      not schema-level validation).
+                      BR-FLEET-003, Issue #1511.
+                    items:
+                      type: string
+                    type: array
                   component:
                     description: Component is the Kubernetes resource type(s)
                     items:

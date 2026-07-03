@@ -199,6 +199,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 			By("Waiting for completion")
 			Eventually(func() bool {
 				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
 				if updated != nil {
 					phase := updated.Status.Phase
 					return phase == workflowexecutionv1alpha1.PhaseCompleted ||

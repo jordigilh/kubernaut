@@ -1780,6 +1780,11 @@ type ListAvailableActionsParams struct {
 	CustomLabels OptString `json:",omitempty,omitzero"`
 	// JSON-encoded detected labels (e.g., {"gitOpsManaged":true}).
 	DetectedLabels OptString `json:",omitempty,omitzero"`
+	// Optional cluster business classification (e.g. "production", "staging-eu") derived by
+	// SignalProcessing's Rego policy from fleet cluster-registration labels (BR-FLEET-003, #1511).
+	// Omitted entirely for non-fleet deployments -- no cluster filter is applied in that case (backward
+	// compatible).
+	Cluster OptString `json:",omitempty,omitzero"`
 	// Remediation request ID for audit correlation (BR-AUDIT-021).
 	RemediationID OptString `json:",omitempty,omitzero"`
 	// Pagination offset.
@@ -1833,6 +1838,15 @@ func unpackListAvailableActionsParams(packed middleware.Parameters) (params List
 		}
 		if v, ok := packed[key]; ok {
 			params.DetectedLabels = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "cluster",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Cluster = v.(OptString)
 		}
 	}
 	{
@@ -2105,6 +2119,47 @@ func decodeListAvailableActionsParams(args [0]string, argsEscaped bool, r *http.
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "detected_labels",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: cluster.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "cluster",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotClusterVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotClusterVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Cluster.SetTo(paramsDotClusterVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "cluster",
 			In:   "query",
 			Err:  err,
 		}
@@ -2711,6 +2766,11 @@ type ListWorkflowsByActionTypeParams struct {
 	CustomLabels OptString `json:",omitempty,omitzero"`
 	// JSON-encoded detected labels.
 	DetectedLabels OptString `json:",omitempty,omitzero"`
+	// Optional cluster business classification (e.g. "production", "staging-eu") derived by
+	// SignalProcessing's Rego policy from fleet cluster-registration labels (BR-FLEET-003, #1511).
+	// Omitted entirely for non-fleet deployments -- no cluster filter is applied in that case (backward
+	// compatible).
+	Cluster OptString `json:",omitempty,omitzero"`
 	// Remediation request ID for audit correlation (BR-AUDIT-021).
 	RemediationID OptString `json:",omitempty,omitzero"`
 	// Pagination offset.
@@ -2771,6 +2831,15 @@ func unpackListWorkflowsByActionTypeParams(packed middleware.Parameters) (params
 		}
 		if v, ok := packed[key]; ok {
 			params.DetectedLabels = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "cluster",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Cluster = v.(OptString)
 		}
 	}
 	{
@@ -3088,6 +3157,47 @@ func decodeListWorkflowsByActionTypeParams(args [1]string, argsEscaped bool, r *
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "detected_labels",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: cluster.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "cluster",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotClusterVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotClusterVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Cluster.SetTo(paramsDotClusterVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "cluster",
 			In:   "query",
 			Err:  err,
 		}

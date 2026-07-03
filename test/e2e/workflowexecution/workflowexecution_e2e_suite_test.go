@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
@@ -444,4 +445,27 @@ func getWFEDirect(name, namespace string) (*workflowexecutionv1alpha1.WorkflowEx
 // deleteWFE deletes a WorkflowExecution
 func deleteWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	return k8sClient.Delete(context.Background(), wfe)
+}
+
+// wfeDiagnosticSnapshot renders a one-line summary of a WorkflowExecution's
+// current phase, execution reference, and conditions for use inside Eventually
+// polling closures. Flaky-looking completion timeouts under CI resource
+// contention are otherwise indistinguishable from genuine controller hangs
+// (e.g. a stuck PipelineRun/Job) -- this is captured by Ginkgo's per-spec
+// output on every poll, so a timeout failure's report always shows the last
+// observed state instead of a bare boolean mismatch.
+func wfeDiagnosticSnapshot(wfe *workflowexecutionv1alpha1.WorkflowExecution) string {
+	if wfe == nil {
+		return "WFE not found"
+	}
+	execRef := "<none>"
+	if wfe.Status.ExecutionRef != nil {
+		execRef = wfe.Status.ExecutionRef.Name
+	}
+	conds := make([]string, 0, len(wfe.Status.Conditions))
+	for _, c := range wfe.Status.Conditions {
+		conds = append(conds, fmt.Sprintf("%s=%s(%s)", c.Type, c.Status, c.Reason))
+	}
+	return fmt.Sprintf("phase=%s executionRef=%s failureReason=%q conditions=[%s]",
+		wfe.Status.Phase, execRef, wfe.Status.FailureReason, strings.Join(conds, ", "))
 }

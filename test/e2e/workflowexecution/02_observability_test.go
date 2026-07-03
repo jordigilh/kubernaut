@@ -78,6 +78,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		// Wait for completion (success or failure)
 		Eventually(func() bool {
 			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
 			if updated != nil {
 				phase := updated.Status.Phase
 				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
@@ -213,6 +214,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		// Wait for completion to generate metrics
 		Eventually(func() bool {
 			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
 			if updated != nil {
 				phase := updated.Status.Phase
 				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
@@ -311,6 +313,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		// Wait for completion
 		Eventually(func() bool {
 			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
 			if updated != nil {
 				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted
 			}
@@ -480,6 +483,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		By("Waiting for workflow to complete")
 		Eventually(func() bool {
 			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
 			if updated != nil {
 				phase := updated.Status.Phase
 				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
@@ -893,6 +897,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		// Wait for completion
 		Eventually(func() bool {
 			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
 			if updated != nil {
 				phase := updated.Status.Phase
 				return phase == workflowexecutionv1alpha1.PhaseCompleted ||

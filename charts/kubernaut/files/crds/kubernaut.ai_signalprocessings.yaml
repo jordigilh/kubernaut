@@ -253,6 +253,17 @@ spec:
                     - Bronze
                     type: string
                 type: object
+              clusterClassification:
+                description: |-
+                  ClusterClassification is the optional cluster business classification
+                  (e.g. "production", "staging-eu") derived by Rego from the signal's
+                  fleet cluster-registration labels (KubernetesContext.Cluster.Labels).
+                  BR-FLEET-003, Issue #1511. Empty when fleet mode is disabled, the
+                  cluster is unregistered, or no Rego `cluster` rule matched -- this is
+                  a normal, non-error outcome (unlike Severity, which is mandatory).
+                  Propagates to AIAnalysis.Spec.SignalContext.Cluster for DataStorage
+                  workflow-discovery filtering.
+                type: string
               completionTime:
                 format: date-time
                 type: string
@@ -353,6 +364,21 @@ spec:
               kubernetesContext:
                 description: Enrichment results
                 properties:
+                  cluster:
+                    description: |-
+                      Cluster holds the fleet cluster-registration labels used as Rego input
+                      for the optional `cluster` classification dimension (BR-FLEET-003, #1511).
+                      nil when fleet mode is disabled or the cluster is unregistered.
+                    properties:
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Labels are the Kubernetes metadata.labels on the MCP Gateway's
+                          cluster-registration CRD (EAIGW Backend / Kuadrant MCPServerRegistration),
+                          set by the fleet operator at cluster-onboarding time.
+                        type: object
+                    type: object
                   clusterID:
                     description: |-
                       ClusterID identifies the cluster this context was enriched from.

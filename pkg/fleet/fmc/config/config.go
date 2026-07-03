@@ -24,6 +24,8 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 )
 
 // DefaultConfigPath is the standard Kubernetes ConfigMap mount path for FMC.
@@ -32,24 +34,17 @@ const DefaultConfigPath = "/etc/fleetmetadatacache/config.yaml"
 
 // ServiceConfig is the top-level configuration for the FMC service.
 type ServiceConfig struct {
-	Server     ServerConfig     `yaml:"server"`
-	MCPGateway MCPGatewayConfig `yaml:"mcpGateway"`
-	Valkey     ValkeyConfig     `yaml:"valkey"`
-	Sync       SyncConfig       `yaml:"sync"`
-	OAuth2     OAuth2Config     `yaml:"oauth2"`
+	Server     ServerConfig           `yaml:"server"`
+	MCPGateway fleet.MCPGatewayConfig `yaml:"mcpGateway"`
+	Valkey     ValkeyConfig           `yaml:"valkey"`
+	Sync       SyncConfig             `yaml:"sync"`
+	OAuth2     OAuth2Config           `yaml:"oauth2"`
 }
 
 // ServerConfig contains HTTP server settings.
 type ServerConfig struct {
 	APIAddr     string `yaml:"apiAddr"`
 	MetricsAddr string `yaml:"metricsAddr"`
-}
-
-// MCPGatewayConfig contains MCP Gateway connectivity.
-type MCPGatewayConfig struct {
-	Endpoint    string `yaml:"endpoint"`
-	GatewayType string `yaml:"gatewayType"`
-	Namespace   string `yaml:"namespace"`
 }
 
 // ValkeyConfig contains Valkey cache connectivity.
@@ -83,7 +78,7 @@ func DefaultServiceConfig() *ServiceConfig {
 			APIAddr:     ":8080",
 			MetricsAddr: ":8081",
 		},
-		MCPGateway: MCPGatewayConfig{
+		MCPGateway: fleet.MCPGatewayConfig{
 			GatewayType: "eaigw",
 			Namespace:   "kubernaut-system",
 		},

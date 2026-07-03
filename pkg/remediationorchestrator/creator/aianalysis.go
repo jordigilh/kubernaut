@@ -191,6 +191,10 @@ func (c *AIAnalysisCreator) buildSignalContext(
 		EnrichmentResults: c.buildEnrichmentResults(sp),
 		// #462: Forward alert-author annotations for LLM investigation context
 		SignalAnnotations: rr.Spec.SignalAnnotations,
+		// BR-FLEET-003 (#1511): optional cluster business classification from
+		// SP's Rego policy. Empty for non-fleet deployments/unregistered
+		// clusters -- a normal outcome, not an error.
+		Cluster: sp.Status.ClusterClassification,
 	}
 }
 
