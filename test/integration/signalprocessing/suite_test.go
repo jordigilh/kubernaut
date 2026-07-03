@@ -98,6 +98,14 @@ var (
 	// BR-SP-072: Policy file paths for hot-reload testing
 	labelsPolicyFilePath string     // CustomLabels Rego policy file path
 	policyFileWriteMu    sync.Mutex // Protects policy file writes
+
+	// sharedK8sEnricher is the exact K8sEnricher instance wired into the
+	// running per-process SignalProcessingReconciler (see below). IT-SP-1511-002
+	// (BR-FLEET-003, #1511) injects a ClusterRegistry into this shared instance
+	// via SetClusterRegistry to prove cluster classification flows through the
+	// real reconcile loop, mirroring cmd/signalprocessing/main.go's production
+	// wiring without needing a second controller instance.
+	sharedK8sEnricher *enricher.K8sEnricher
 )
 
 func TestSignalProcessingIntegration(t *testing.T) {
@@ -476,6 +484,7 @@ proactive_signal_mappings:
 		5*time.Second,     // Timeout for K8s API calls
 		5*time.Minute,     // Cache TTL for namespace lookups
 	)
+	sharedK8sEnricher = k8sEnricher // BR-FLEET-003 (#1511): exposed for IT-SP-1511-002
 
 	// Initialize StatusManager (DD-PERF-001: Atomic Status Updates)
 	// SP-CACHE-001: Pass APIReader to bypass cache for fresh refetches

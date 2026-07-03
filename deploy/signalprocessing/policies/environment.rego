@@ -1,3 +1,12 @@
+# DEPRECATED (BR-FLEET-003, #1511, ADR-060): This standalone per-domain policy
+# file predates the unified SignalProcessing Rego policy. New deployments
+# should use charts/kubernaut/examples/signalprocessing-policy.rego, which
+# consolidates environment/severity/priority/labels/cluster classification
+# into a single package evaluated once per reconcile (and is the only policy
+# shape that supports the optional `cluster` dimension). This file is kept
+# for existing deployments that have not yet migrated; it is not maintained
+# with new classification dimensions.
+#
 # Environment Classification Policy
 # Per IMPLEMENTATION_PLAN_V1.22.md Day 4 specification
 #

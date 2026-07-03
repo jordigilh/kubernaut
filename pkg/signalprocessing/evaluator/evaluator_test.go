@@ -84,6 +84,28 @@ default labels := {}
 labels := {"risk-tolerance": ["low"]} if {
     input.namespace.labels["kubernaut.ai/risk-tolerance"] == "low"
 }
+
+# ========== Cluster (BR-FLEET-003, #1511) ==========
+# No default rule -- absence of a matching rule (or the rule simply not
+# firing) must be a valid "no classification" outcome, not an error.
+cluster := input.cluster.labels.environment if {
+    input.cluster.labels.environment != ""
+}
+
+cluster := 12345 if {
+    input.cluster.labels.environment == "trigger-type-error"
+}
+`
+
+// clusterOnlyPolicy has NO cluster rule at all -- exercises the "policy never
+// defines a cluster rule" degradation path (BR-FLEET-003 R2) distinctly from
+// "rule defined but does not match this input".
+const noClusterRulePolicy = `package signalprocessing
+import rego.v1
+default environment := {"environment": "unknown", "source": "default"}
+default severity := "unknown"
+default priority := {"priority": "P3", "policy_name": "default"}
+default labels := {}
 `
 
 var _ = Describe("Unified Evaluator", func() {
@@ -189,6 +211,59 @@ default labels := {}
 			unloaded := evaluator.New("/tmp/nope.rego", zap.New(zap.UseDevMode(true)))
 			_, err := unloaded.EvaluateSeverity(ctx, evaluator.PolicyInput{})
 			Expect(err).To(HaveOccurred())
+		})
+	})
+
+	// UT-SP-1511-001: EvaluateCluster produces classification from cluster
+	// labels; evaluation is non-fatal on error (BR-FLEET-003, #1511, AC-4).
+	Describe("UT-SP-1511-001: EvaluateCluster", func() {
+		BeforeEach(func() {
+			Expect(eval.LoadPolicy(testPolicy)).To(Succeed())
+		})
+
+		It("produces a classification when cluster labels are present and the Rego policy has a matching rule", func() {
+			input := evaluator.PolicyInput{
+				Cluster: types.ClusterContext{Labels: map[string]string{"environment": "production"}},
+			}
+			result, err := eval.EvaluateCluster(ctx, input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+			Expect(result.Classification).To(Equal("production"))
+			Expect(result.Source).To(Equal("rego-policy"))
+		})
+
+		It("returns an empty classification (no error) when cluster labels are empty/nil -- non-fatal per R2", func() {
+			result, err := eval.EvaluateCluster(ctx, evaluator.PolicyInput{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+			Expect(result.Classification).To(BeEmpty())
+		})
+
+		It("returns an empty classification (no error) when the policy defines no cluster rule at all", func() {
+			Expect(eval.LoadPolicy(noClusterRulePolicy)).To(Succeed())
+			input := evaluator.PolicyInput{
+				Cluster: types.ClusterContext{Labels: map[string]string{"environment": "production"}},
+			}
+			result, err := eval.EvaluateCluster(ctx, input)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).ToNot(BeNil())
+			Expect(result.Classification).To(BeEmpty())
+		})
+
+		It("surfaces an error (does not panic) when the Rego cluster rule returns a malformed (non-string) value", func() {
+			input := evaluator.PolicyInput{
+				Cluster: types.ClusterContext{Labels: map[string]string{"environment": "trigger-type-error"}},
+			}
+			result, err := eval.EvaluateCluster(ctx, input)
+			Expect(err).To(HaveOccurred())
+			Expect(result).To(BeNil())
+		})
+
+		It("should fail when policy not loaded", func() {
+			unloaded := evaluator.New("/tmp/nope.rego", zap.New(zap.UseDevMode(true)))
+			_, err := unloaded.EvaluateCluster(ctx, evaluator.PolicyInput{})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not loaded"))
 		})
 	})
 

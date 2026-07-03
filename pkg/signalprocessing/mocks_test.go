@@ -17,6 +17,7 @@ type mockPolicyEvaluator struct {
 	EvaluatePriorityFunc     func(ctx context.Context, input evaluator.PolicyInput) (*signalprocessingv1alpha1.PriorityAssignment, error)
 	EvaluateSeverityFunc     func(ctx context.Context, input evaluator.PolicyInput) (*evaluator.SeverityResult, error)
 	EvaluateCustomLabelsFunc func(ctx context.Context, input evaluator.PolicyInput) (map[string][]string, error)
+	EvaluateClusterFunc      func(ctx context.Context, input evaluator.PolicyInput) (*evaluator.ClusterResult, error)
 	PolicyHash               string
 }
 
@@ -58,6 +59,15 @@ func (m *mockPolicyEvaluator) EvaluateCustomLabels(ctx context.Context, input ev
 		return m.EvaluateCustomLabelsFunc(ctx, input)
 	}
 	return make(map[string][]string), nil
+}
+
+// EvaluateCluster implements controller.PolicyEvaluator (BR-FLEET-003, #1511).
+// Defaults to an empty (non-fleet) classification when no test override is set.
+func (m *mockPolicyEvaluator) EvaluateCluster(ctx context.Context, input evaluator.PolicyInput) (*evaluator.ClusterResult, error) {
+	if m.EvaluateClusterFunc != nil {
+		return m.EvaluateClusterFunc(ctx, input)
+	}
+	return &evaluator.ClusterResult{}, nil
 }
 
 func (m *mockPolicyEvaluator) GetPolicyHash() string {

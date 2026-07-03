@@ -229,6 +229,17 @@ type SignalProcessingStatus struct {
 	// +optional
 	PolicyHash string `json:"policyHash,omitempty"`
 
+	// ClusterClassification is the optional cluster business classification
+	// (e.g. "production", "staging-eu") derived by Rego from the signal's
+	// fleet cluster-registration labels (KubernetesContext.Cluster.Labels).
+	// BR-FLEET-003, Issue #1511. Empty when fleet mode is disabled, the
+	// cluster is unregistered, or no Rego `cluster` rule matched -- this is
+	// a normal, non-error outcome (unlike Severity, which is mandatory).
+	// Propagates to AIAnalysis.Spec.SignalContext.Cluster for DataStorage
+	// workflow-discovery filtering.
+	// +optional
+	ClusterClassification string `json:"clusterClassification,omitempty"`
+
 	// SignalMode indicates whether this is a reactive or proactive signal.
 	// BR-SP-106: Proactive Signal Mode Classification
 	// ADR-054: Proactive Signal Mode Classification and Prompt Strategy
