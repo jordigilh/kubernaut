@@ -117,96 +117,128 @@ func New(provider, endpoint, model, apiKey string, opts ...Option) (*Adapter, er
 func newModel(provider, endpoint, model, apiKey string, o *options) (llms.Model, error) {
 	switch provider {
 	case "openai":
-		oopts := []openai.Option{
-			openai.WithBaseURL(endpoint + "/v1"),
-			openai.WithModel(model),
-			openai.WithToken(apiKey),
-		}
-		if o.httpClient != nil {
-			oopts = append(oopts, openai.WithHTTPClient(o.httpClient))
-		}
-		return openai.New(oopts...)
+		return newOpenAIModel(endpoint, model, apiKey, o)
 	case "ollama":
-		olopts := []ollama.Option{
-			ollama.WithServerURL(endpoint),
-			ollama.WithModel(model),
-		}
-		if o.httpClient != nil {
-			olopts = append(olopts, ollama.WithHTTPClient(o.httpClient))
-		}
-		return ollama.New(olopts...)
+		return newOllamaModel(endpoint, model, apiKey, o)
 	case "azure":
-		if o.azureAPIVersion == "" {
-			return nil, fmt.Errorf("azure provider requires api_version (use WithAzureAPIVersion)")
-		}
-		azopts := []openai.Option{
-			openai.WithAPIType(openai.APITypeAzure),
-			openai.WithBaseURL(endpoint),
-			openai.WithModel(model),
-			openai.WithToken(apiKey),
-			openai.WithAPIVersion(o.azureAPIVersion),
-		}
-		if o.httpClient != nil {
-			azopts = append(azopts, openai.WithHTTPClient(o.httpClient))
-		}
-		return openai.New(azopts...)
+		return newAzureModel(endpoint, model, apiKey, o)
 	case "vertex":
-		if o.vertexProject == "" {
-			return nil, fmt.Errorf("vertex provider requires project (use WithVertexProject)")
-		}
-		vopts := []googleai.Option{
-			googleai.WithCloudProject(o.vertexProject),
-			googleai.WithCloudLocation(o.vertexLocation),
-			googleai.WithDefaultModel(model),
-		}
-		if apiKey != "" {
-			vopts = append(vopts, googleai.WithCredentialsJSON([]byte(apiKey)))
-		}
-		if o.httpClient != nil {
-			vopts = append(vopts, googleai.WithHTTPClient(o.httpClient))
-		}
-		return vertex.New(context.Background(), vopts...)
+		return newVertexModel(endpoint, model, apiKey, o)
 	case "anthropic":
-		aopts := []anthropic.Option{anthropic.WithModel(model), anthropic.WithToken(apiKey)}
-		if endpoint != "" {
-			aopts = append(aopts, anthropic.WithBaseURL(endpoint))
-		}
-		if o.httpClient != nil {
-			aopts = append(aopts, anthropic.WithHTTPClient(o.httpClient))
-		}
-		return anthropic.New(aopts...)
+		return newAnthropicModel(endpoint, model, apiKey, o)
 	case "bedrock":
-		bopts := []bedrock.Option{bedrock.WithModel(model)}
-		awsOpts := []func(*awsconfig.LoadOptions) error{}
-		if o.bedrockRegion != "" {
-			awsOpts = append(awsOpts, awsconfig.WithRegion(o.bedrockRegion))
-		}
-		if o.httpClient != nil {
-			awsOpts = append(awsOpts, awsconfig.WithHTTPClient(o.httpClient))
-		}
-		if len(awsOpts) > 0 {
-			awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsOpts...)
-			if err != nil {
-				return nil, fmt.Errorf("bedrock: loading AWS config: %w", err)
-			}
-			bopts = append(bopts, bedrock.WithClient(bedrockruntime.NewFromConfig(awsCfg)))
-		}
-		return bedrock.New(bopts...)
+		return newBedrockModel(endpoint, model, apiKey, o)
 	case "huggingface":
-		hopts := []huggingface.Option{huggingface.WithToken(apiKey), huggingface.WithModel(model)}
-		if o.httpClient != nil {
-			hopts = append(hopts, huggingface.WithHTTPClient(o.httpClient))
-		}
-		return huggingface.New(hopts...)
+		return newHuggingFaceModel(endpoint, model, apiKey, o)
 	case "mistral":
-		mopts := []mistral.Option{mistral.WithAPIKey(apiKey), mistral.WithModel(model)}
-		if endpoint != "" {
-			mopts = append(mopts, mistral.WithEndpoint(endpoint))
-		}
-		return mistral.New(mopts...)
+		return newMistralModel(endpoint, model, apiKey, o)
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q", provider)
 	}
+}
+
+func newOpenAIModel(endpoint, model, apiKey string, o *options) (llms.Model, error) {
+	oopts := []openai.Option{
+		openai.WithBaseURL(endpoint + "/v1"),
+		openai.WithModel(model),
+		openai.WithToken(apiKey),
+	}
+	if o.httpClient != nil {
+		oopts = append(oopts, openai.WithHTTPClient(o.httpClient))
+	}
+	return openai.New(oopts...)
+}
+
+func newOllamaModel(endpoint, model, _ string, o *options) (llms.Model, error) {
+	olopts := []ollama.Option{
+		ollama.WithServerURL(endpoint),
+		ollama.WithModel(model),
+	}
+	if o.httpClient != nil {
+		olopts = append(olopts, ollama.WithHTTPClient(o.httpClient))
+	}
+	return ollama.New(olopts...)
+}
+
+func newAzureModel(endpoint, model, apiKey string, o *options) (llms.Model, error) {
+	if o.azureAPIVersion == "" {
+		return nil, fmt.Errorf("azure provider requires api_version (use WithAzureAPIVersion)")
+	}
+	azopts := []openai.Option{
+		openai.WithAPIType(openai.APITypeAzure),
+		openai.WithBaseURL(endpoint),
+		openai.WithModel(model),
+		openai.WithToken(apiKey),
+		openai.WithAPIVersion(o.azureAPIVersion),
+	}
+	if o.httpClient != nil {
+		azopts = append(azopts, openai.WithHTTPClient(o.httpClient))
+	}
+	return openai.New(azopts...)
+}
+
+func newVertexModel(_, model, apiKey string, o *options) (llms.Model, error) {
+	if o.vertexProject == "" {
+		return nil, fmt.Errorf("vertex provider requires project (use WithVertexProject)")
+	}
+	vopts := []googleai.Option{
+		googleai.WithCloudProject(o.vertexProject),
+		googleai.WithCloudLocation(o.vertexLocation),
+		googleai.WithDefaultModel(model),
+	}
+	if apiKey != "" {
+		vopts = append(vopts, googleai.WithCredentialsJSON([]byte(apiKey)))
+	}
+	if o.httpClient != nil {
+		vopts = append(vopts, googleai.WithHTTPClient(o.httpClient))
+	}
+	return vertex.New(context.Background(), vopts...)
+}
+
+func newAnthropicModel(endpoint, model, apiKey string, o *options) (llms.Model, error) {
+	aopts := []anthropic.Option{anthropic.WithModel(model), anthropic.WithToken(apiKey)}
+	if endpoint != "" {
+		aopts = append(aopts, anthropic.WithBaseURL(endpoint))
+	}
+	if o.httpClient != nil {
+		aopts = append(aopts, anthropic.WithHTTPClient(o.httpClient))
+	}
+	return anthropic.New(aopts...)
+}
+
+func newBedrockModel(_, model, _ string, o *options) (llms.Model, error) {
+	bopts := []bedrock.Option{bedrock.WithModel(model)}
+	awsOpts := []func(*awsconfig.LoadOptions) error{}
+	if o.bedrockRegion != "" {
+		awsOpts = append(awsOpts, awsconfig.WithRegion(o.bedrockRegion))
+	}
+	if o.httpClient != nil {
+		awsOpts = append(awsOpts, awsconfig.WithHTTPClient(o.httpClient))
+	}
+	if len(awsOpts) > 0 {
+		awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(), awsOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("bedrock: loading AWS config: %w", err)
+		}
+		bopts = append(bopts, bedrock.WithClient(bedrockruntime.NewFromConfig(awsCfg)))
+	}
+	return bedrock.New(bopts...)
+}
+
+func newHuggingFaceModel(_, model, apiKey string, o *options) (llms.Model, error) {
+	hopts := []huggingface.Option{huggingface.WithToken(apiKey), huggingface.WithModel(model)}
+	if o.httpClient != nil {
+		hopts = append(hopts, huggingface.WithHTTPClient(o.httpClient))
+	}
+	return huggingface.New(hopts...)
+}
+
+func newMistralModel(endpoint, model, apiKey string, _ *options) (llms.Model, error) {
+	mopts := []mistral.Option{mistral.WithAPIKey(apiKey), mistral.WithModel(model)}
+	if endpoint != "" {
+		mopts = append(mopts, mistral.WithEndpoint(endpoint))
+	}
+	return mistral.New(mopts...)
 }
 
 // Chat translates a Kubernaut ChatRequest into LangChainGo's MessageContent

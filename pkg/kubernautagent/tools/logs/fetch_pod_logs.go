@@ -54,8 +54,10 @@ func NewFetchPodLogsTool(client kubernetes.Interface) *FetchPodLogsTool {
 	return &FetchPodLogsTool{client: client}
 }
 
-func (t *FetchPodLogsTool) Name() string               { return ToolName }
-func (t *FetchPodLogsTool) Description() string         { return "Fetch pod logs with time-range filtering, regex include/exclude, and previous+current log merge" }
+func (t *FetchPodLogsTool) Name() string { return ToolName }
+func (t *FetchPodLogsTool) Description() string {
+	return "Fetch pod logs with time-range filtering, regex include/exclude, and previous+current log merge"
+}
 func (t *FetchPodLogsTool) Parameters() json.RawMessage { return fetchPodLogsSchema }
 
 func (t *FetchPodLogsTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
@@ -73,59 +75,84 @@ func (t *FetchPodLogsTool) Execute(ctx context.Context, args json.RawMessage) (s
 		return "", fmt.Errorf("getting pod %s/%s: %w", a.Namespace, a.PodName, err)
 	}
 
+	merged := fetchCurrentAndPreviousLogs(ctx, t.client, pod, a)
+	merged = ApplyFilters(merged, a.Filter, a.ExcludeFilter, a.Limit)
+
+	return formatLogsOutput(merged, a), nil
+}
+
+// fetchContainerLogs retrieves logs for every container in containers,
+// prefixing lines with "[container] " when the pod has more than one
+// container. Per-container fetch errors are skipped (best-effort: a pod with
+// one unreachable container should not blank out the others' logs).
+func fetchContainerLogs(ctx context.Context, client kubernetes.Interface, namespace, podName string, containers []corev1.Container, previous bool, startTime string) []string {
+	var allLines []string
+	multiContainer := len(containers) > 1
+	for _, c := range containers {
+		opts := &corev1.PodLogOptions{
+			Container:  c.Name,
+			Previous:   previous,
+			Timestamps: true,
+		}
+		if startTime != "" {
+			if st := parseTime(startTime); st != nil {
+				sinceTime := metav1.NewTime(*st)
+				opts.SinceTime = &sinceTime
+			}
+		}
+
+		raw, fetchErr := client.CoreV1().Pods(namespace).GetLogs(podName, opts).Do(ctx).Raw()
+		if fetchErr != nil {
+			continue
+		}
+
+		for _, line := range strings.Split(string(raw), "\n") {
+			if line == "" {
+				continue
+			}
+			if multiContainer {
+				allLines = append(allLines, fmt.Sprintf("[%s] %s", c.Name, line))
+			} else {
+				allLines = append(allLines, line)
+			}
+		}
+	}
+	return allLines
+}
+
+// fetchCurrentAndPreviousLogs fetches current and previous-container-instance
+// logs concurrently (previous logs require a separate GetLogs call per the
+// K8s API) and merges them with previous logs first, matching the original
+// chronological ordering (previous instance's tail precedes the current
+// instance's log stream).
+func fetchCurrentAndPreviousLogs(ctx context.Context, client kubernetes.Interface, pod *corev1.Pod, a fetchArgs) []string {
 	var wg sync.WaitGroup
 	currentCh := make(chan []string, 1)
 	previousCh := make(chan []string, 1)
 
-	fetchLogs := func(previous bool, ch chan<- []string) {
+	fetch := func(previous bool, ch chan<- []string) {
 		defer wg.Done()
-		var allLines []string
-		for _, c := range pod.Spec.Containers {
-			opts := &corev1.PodLogOptions{
-				Container:  c.Name,
-				Previous:   previous,
-				Timestamps: true,
-			}
-			if a.StartTime != "" {
-				if st := parseTime(a.StartTime); st != nil {
-					sinceTime := metav1.NewTime(*st)
-					opts.SinceTime = &sinceTime
-				}
-			}
-
-			raw, fetchErr := t.client.CoreV1().Pods(a.Namespace).GetLogs(a.PodName, opts).Do(ctx).Raw()
-			if fetchErr != nil {
-				continue
-			}
-
-			multiContainer := len(pod.Spec.Containers) > 1
-			for _, line := range strings.Split(string(raw), "\n") {
-				if line == "" {
-					continue
-				}
-				if multiContainer {
-					allLines = append(allLines, fmt.Sprintf("[%s] %s", c.Name, line))
-				} else {
-					allLines = append(allLines, line)
-				}
-			}
-		}
-		ch <- allLines
+		ch <- fetchContainerLogs(ctx, client, a.Namespace, a.PodName, pod.Spec.Containers, previous, a.StartTime)
 	}
 
 	wg.Add(2)
-	go fetchLogs(false, currentCh)
-	go fetchLogs(true, previousCh)
+	go fetch(false, currentCh)
+	go fetch(true, previousCh)
 	wg.Wait()
 	close(currentCh)
 	close(previousCh)
 
-	var merged []string
-	merged = append(merged, <-previousCh...)
-	merged = append(merged, <-currentCh...)
+	previousLogs := <-previousCh
+	currentLogs := <-currentCh
+	merged := make([]string, 0, len(previousLogs)+len(currentLogs))
+	merged = append(merged, previousLogs...)
+	merged = append(merged, currentLogs...)
+	return merged
+}
 
-	merged = ApplyFilters(merged, a.Filter, a.ExcludeFilter, a.Limit)
-
+// formatLogsOutput renders the merged, filtered log lines with the
+// "--- fetch_pod_logs metadata ---" footer summarizing the request.
+func formatLogsOutput(merged []string, a fetchArgs) string {
 	var sb strings.Builder
 	sb.WriteString(strings.Join(merged, "\n"))
 	sb.WriteString(fmt.Sprintf("\n\n--- fetch_pod_logs metadata ---\npod: %s/%s\nlines: %d\n",
@@ -136,8 +163,7 @@ func (t *FetchPodLogsTool) Execute(ctx context.Context, args json.RawMessage) (s
 	if a.ExcludeFilter != "" {
 		sb.WriteString(fmt.Sprintf("exclude_filter: %s\n", a.ExcludeFilter))
 	}
-
-	return sb.String(), nil
+	return sb.String()
 }
 
 // ApplyFilters applies include/exclude regex filters and a tail limit to log lines.

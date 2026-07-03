@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -53,55 +54,11 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 	}
 
 	if cfg.Integrations.Tools.Prometheus.URL != "" {
-		promCfg := promtools.ClientConfig{
-			URL:       cfg.Integrations.Tools.Prometheus.URL,
-			Timeout:   cfg.Integrations.Tools.Prometheus.Timeout,
-			SizeLimit: cfg.Integrations.Tools.Prometheus.SizeLimit,
-		}
-		if cfg.Integrations.Tools.Prometheus.TLSCaFile != "" {
-			promBase, promTLSErr := sharedtls.NewTLSTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile)
-			if promTLSErr != nil {
-				logger.Error(promTLSErr, "failed to create Prometheus TLS transport", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
-			} else {
-				promCfg.Transport = auth.NewAuthTransport(auth.NewDefaultTokenSource(), promBase)
-				logger.Info("Prometheus client configured with TLS + SA bearer auth", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
-			}
-		}
-		promClient, promErr := promtools.NewClient(promCfg)
-		if promErr != nil {
-			logger.Error(promErr, "failed to create Prometheus client")
-		} else {
-			for _, t := range promtools.NewAllTools(promClient) {
-				reg.Register(t)
-			}
-			logger.Info("registered Prometheus tools", "count", len(promtools.AllToolNames))
-		}
+		registerPrometheusTools(reg, cfg, logger)
 	}
 
 	if cfg.Integrations.Tools.Alertmanager.URL != "" {
-		amCfg := amtools.ClientConfig{
-			URL:       cfg.Integrations.Tools.Alertmanager.URL,
-			Timeout:   cfg.Integrations.Tools.Alertmanager.Timeout,
-			SizeLimit: cfg.Integrations.Tools.Alertmanager.SizeLimit,
-		}
-		if cfg.Integrations.Tools.Alertmanager.TLSCaFile != "" {
-			amBase, amTLSErr := sharedtls.NewTLSTransport(cfg.Integrations.Tools.Alertmanager.TLSCaFile)
-			if amTLSErr != nil {
-				logger.Error(amTLSErr, "failed to create Alertmanager TLS transport", "ca_file", cfg.Integrations.Tools.Alertmanager.TLSCaFile)
-			} else {
-				amCfg.Transport = auth.NewAuthTransport(auth.NewDefaultTokenSource(), amBase)
-				logger.Info("Alertmanager client configured with TLS + SA bearer auth", "ca_file", cfg.Integrations.Tools.Alertmanager.TLSCaFile)
-			}
-		}
-		amClient, amErr := amtools.NewClient(amCfg)
-		if amErr != nil {
-			logger.Error(amErr, "failed to create Alertmanager client")
-		} else {
-			for _, t := range amtools.NewAllTools(amClient) {
-				reg.Register(t)
-			}
-			logger.Info("registered Alertmanager tools", "count", len(amtools.AllToolNames))
-		}
+		registerAlertmanagerTools(reg, cfg, logger)
 	}
 
 	if ds != nil {
@@ -114,6 +71,67 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 
 	logger.Info("tool registry ready", "total_tools", len(reg.All()))
 	return reg
+}
+
+// buildTLSAwareTransport builds an SA-bearer-authenticated http.RoundTripper
+// backed by a custom CA bundle for the given tlsCaFile. Returns nil (fail-open:
+// the caller falls back to the client's default transport) and logs an error
+// when the CA bundle cannot be loaded — integrations tools are best-effort
+// and must not block agent startup.
+func buildTLSAwareTransport(tlsCaFile string, logger logr.Logger, label string) http.RoundTripper {
+	base, err := sharedtls.NewTLSTransport(tlsCaFile)
+	if err != nil {
+		logger.Error(err, "failed to create TLS transport", "integration", label, "ca_file", tlsCaFile)
+		return nil
+	}
+	logger.Info("client configured with TLS + SA bearer auth", "integration", label, "ca_file", tlsCaFile)
+	return auth.NewAuthTransport(auth.NewDefaultTokenSource(), base)
+}
+
+// registerPrometheusTools builds the Prometheus client (with optional custom
+// CA bundle) and registers its 8 tools. Best-effort: logs and skips
+// registration on any construction failure rather than blocking startup.
+func registerPrometheusTools(reg *registry.Registry, cfg *kaconfig.Config, logger logr.Logger) {
+	promCfg := promtools.ClientConfig{
+		URL:       cfg.Integrations.Tools.Prometheus.URL,
+		Timeout:   cfg.Integrations.Tools.Prometheus.Timeout,
+		SizeLimit: cfg.Integrations.Tools.Prometheus.SizeLimit,
+	}
+	if cfg.Integrations.Tools.Prometheus.TLSCaFile != "" {
+		promCfg.Transport = buildTLSAwareTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile, logger, "Prometheus")
+	}
+	promClient, promErr := promtools.NewClient(promCfg)
+	if promErr != nil {
+		logger.Error(promErr, "failed to create Prometheus client")
+		return
+	}
+	for _, t := range promtools.NewAllTools(promClient) {
+		reg.Register(t)
+	}
+	logger.Info("registered Prometheus tools", "count", len(promtools.AllToolNames))
+}
+
+// registerAlertmanagerTools builds the Alertmanager client (with optional
+// custom CA bundle) and registers its tools. Best-effort: logs and skips
+// registration on any construction failure rather than blocking startup.
+func registerAlertmanagerTools(reg *registry.Registry, cfg *kaconfig.Config, logger logr.Logger) {
+	amCfg := amtools.ClientConfig{
+		URL:       cfg.Integrations.Tools.Alertmanager.URL,
+		Timeout:   cfg.Integrations.Tools.Alertmanager.Timeout,
+		SizeLimit: cfg.Integrations.Tools.Alertmanager.SizeLimit,
+	}
+	if cfg.Integrations.Tools.Alertmanager.TLSCaFile != "" {
+		amCfg.Transport = buildTLSAwareTransport(cfg.Integrations.Tools.Alertmanager.TLSCaFile, logger, "Alertmanager")
+	}
+	amClient, amErr := amtools.NewClient(amCfg)
+	if amErr != nil {
+		logger.Error(amErr, "failed to create Alertmanager client")
+		return
+	}
+	for _, t := range amtools.NewAllTools(amClient) {
+		reg.Register(t)
+	}
+	logger.Info("registered Alertmanager tools", "count", len(amtools.AllToolNames))
 }
 
 // resolveAlignmentCheckConfig returns the effective AlignmentCheckConfig.
@@ -310,33 +328,46 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 			continue
 		}
 		wfID := w.WorkflowId.Value.String()
-		meta := parser.WorkflowMeta{
-			ExecutionEngine: w.ExecutionEngine,
-			Version:         w.Version,
-			Component:       append([]string(nil), w.Labels.GetComponent()...),
-		}
-		if w.ExecutionBundle.Set {
-			meta.ExecutionBundle = w.ExecutionBundle.Value
-		}
-		if w.ExecutionBundleDigest.Set {
-			meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
-		}
-		if w.ServiceAccountName.Set {
-			meta.ServiceAccountName = w.ServiceAccountName.Value
-		}
-		if w.Content != "" {
-			parsed, err := schemaParser.Parse(w.Content)
-			if err != nil {
-				f.logger.Error(err, "failed to parse workflow schema Content, parameter validation will strip all LLM params (fail-closed)",
-					"workflow_id", wfID)
-			} else {
-				meta.Parameters = parsed.Parameters
-			}
-		}
-		validator.SetWorkflowMeta(wfID, meta)
+		validator.SetWorkflowMeta(wfID, buildWorkflowMeta(w, schemaParser, f.logger))
 	}
 
 	f.logger.Info("workflow catalog fetched (DD-HAPI-002: per-request validation)",
 		"allowed_workflows", len(ids))
 	return validator, nil
+}
+
+// buildWorkflowMeta translates a single catalog RemediationWorkflow entry
+// into the parser.WorkflowMeta used for parameter/schema validation. Schema
+// parse failures are logged and fail-closed (no Parameters set, stripping
+// all LLM-supplied params for that workflow) rather than aborting the whole
+// catalog fetch.
+func buildWorkflowMeta(w ogenclient.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) parser.WorkflowMeta {
+	meta := parser.WorkflowMeta{
+		ExecutionEngine: w.ExecutionEngine,
+		Version:         w.Version,
+		Component:       append([]string(nil), w.Labels.GetComponent()...),
+	}
+	if w.ExecutionBundle.Set {
+		meta.ExecutionBundle = w.ExecutionBundle.Value
+	}
+	if w.ExecutionBundleDigest.Set {
+		meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
+	}
+	if w.ServiceAccountName.Set {
+		meta.ServiceAccountName = w.ServiceAccountName.Value
+	}
+	if w.Content != "" {
+		parsed, err := schemaParser.Parse(w.Content)
+		if err != nil {
+			wfID := ""
+			if w.WorkflowId.Set {
+				wfID = w.WorkflowId.Value.String()
+			}
+			logger.Error(err, "failed to parse workflow schema Content, parameter validation will strip all LLM params (fail-closed)",
+				"workflow_id", wfID)
+		} else {
+			meta.Parameters = parsed.Parameters
+		}
+	}
+	return meta
 }
