@@ -94,6 +94,32 @@ type BatchSummary struct {
 	Failed       int `json:"failed"`
 }
 
+// BatchSignalOutcome classifies the result of processing one signal within a
+// multi-signal batch (#1036), used to increment the right BatchSummary counter.
+type BatchSignalOutcome int
+
+const (
+	BatchOutcomeFailed BatchSignalOutcome = iota
+	BatchOutcomeRejected
+	BatchOutcomeCreated
+	BatchOutcomeDeduplicated
+)
+
+// record increments the counter matching outcome. Extracted from
+// processMultiSignalBatch's per-signal loop (funlen).
+func (s *BatchSummary) record(outcome BatchSignalOutcome) {
+	switch outcome {
+	case BatchOutcomeFailed:
+		s.Failed++
+	case BatchOutcomeRejected:
+		s.Rejected++
+	case BatchOutcomeCreated:
+		s.Created++
+	case BatchOutcomeDeduplicated:
+		s.Deduplicated++
+	}
+}
+
 // NewDuplicateResponseFromRR creates a ProcessingResponse for duplicate signals using K8s RR data
 // DD-GATEWAY-011: Status-based deduplication (Redis deprecation)
 // BR-GATEWAY-185: All dedup state from K8s status, not Redis

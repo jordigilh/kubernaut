@@ -209,130 +209,18 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 	foundOwner := false
 
 	for i := 0; i < MaxOwnerChainDepth; i++ {
-		gvk, known := r.resolveGVK(currentKind)
-		if !known {
-			logger.V(1).Info("Unknown kind, stopping traversal",
-				"kind", currentKind, "level", i)
+		step := r.traverseOneOwnerLevel(ctx, currentNamespace, currentKind, currentName, foundOwner, i)
+		if step.err != nil {
+			return "", "", step.err
+		}
+		if step.advanced {
+			topKind, topName = step.nextKind, step.nextName
+			foundOwner = true
+			currentKind, currentName = step.nextKind, step.nextName
+		}
+		if step.stop {
 			break
 		}
-
-		// CRD kinds (not in core/apps/batch/autoscaling/policy) have
-		// unpredictable owner chains — stop traversal (#1029 Option C).
-		if r.registry != nil && !r.registry.IsCoreBatchAppsKind(currentKind) {
-			logger.V(1).Info("CRD kind, stopping traversal",
-				"kind", currentKind, "level", i)
-			break
-		}
-
-		obj := &metav1.PartialObjectMetadata{}
-		obj.SetGroupVersionKind(gvk)
-
-		// Use timeout to prevent indefinite blocking on informer sync
-		lookupCtx, cancel := context.WithTimeout(ctx, ownerLookupTimeout)
-		key := client.ObjectKey{Namespace: currentNamespace, Name: currentName}
-		getErr := r.client.Get(lookupCtx, key, obj)
-		cancel()
-
-		// #282: On cache miss, retry with the uncached fallback reader (direct API).
-		if getErr != nil && r.fallbackReader != nil {
-			logger.Info("Cache miss, retrying with direct API reader",
-				"kind", currentKind, "name", currentName, "error", getErr, "level", i)
-			fallbackCtx, fallbackCancel := context.WithTimeout(ctx, ownerLookupTimeout)
-			getErr = r.fallbackReader.Get(fallbackCtx, key, obj)
-			fallbackCancel()
-		}
-
-		if getErr != nil {
-			logger.V(1).Info("Failed to fetch resource metadata",
-				"kind", currentKind, "name", currentName, "error", getErr, "level", i,
-				"foundOwner", foundOwner)
-			if !foundOwner {
-				return "", "", fmt.Errorf("failed to resolve owner for %s/%s: %w", currentKind, currentName, getErr)
-			}
-			break
-		}
-
-		// Find controller owner
-		var controllerRef *metav1.OwnerReference
-		for j := range obj.OwnerReferences {
-			if obj.OwnerReferences[j].Controller != nil && *obj.OwnerReferences[j].Controller {
-				controllerRef = &obj.OwnerReferences[j]
-				break
-			}
-		}
-
-		logger.V(1).Info("Owner chain step",
-			"level", i, "kind", currentKind, "name", currentName,
-			"ownerRefsCount", len(obj.OwnerReferences),
-			"hasControllerRef", controllerRef != nil,
-			"foundOwner", foundOwner,
-			"deletionTimestamp", obj.DeletionTimestamp)
-
-		if controllerRef == nil {
-			// #284: Trust-but-verify with direct API when the informer cache
-			// returns stale metadata without ownerReferences. This race
-			// condition occurs during rollout restarts when the cache entry
-			// for a terminating Pod loses its ownerReferences.
-			if !foundOwner && r.fallbackReader != nil {
-				freshObj := &metav1.PartialObjectMetadata{}
-				freshObj.SetGroupVersionKind(gvk)
-				freshCtx, freshCancel := context.WithTimeout(ctx, ownerLookupTimeout)
-				freshErr := r.fallbackReader.Get(freshCtx, key, freshObj)
-				freshCancel()
-
-				if freshErr != nil {
-					logger.Info("Resource not found via direct API, likely deleted",
-						"kind", currentKind, "name", currentName, "error", freshErr, "level", i)
-					return "", "", fmt.Errorf("failed to resolve owner for %s/%s: not found via direct API: %w",
-						currentKind, currentName, freshErr)
-				}
-
-				logger.V(1).Info("Trust-but-verify: direct API result",
-					"kind", currentKind, "name", currentName,
-					"freshOwnerRefsCount", len(freshObj.OwnerReferences),
-					"freshDeletionTimestamp", freshObj.DeletionTimestamp, "level", i)
-
-				for j := range freshObj.OwnerReferences {
-					if freshObj.OwnerReferences[j].Controller != nil && *freshObj.OwnerReferences[j].Controller {
-						controllerRef = &freshObj.OwnerReferences[j]
-						break
-					}
-				}
-
-				if controllerRef != nil {
-					logger.Info("Stale cache detected: direct API returned ownerReference missing from cache",
-						"kind", currentKind, "name", currentName,
-						"owner", fmt.Sprintf("%s/%s", controllerRef.Kind, controllerRef.Name), "level", i)
-					topKind = controllerRef.Kind
-					topName = controllerRef.Name
-					foundOwner = true
-					currentKind = controllerRef.Kind
-					currentName = controllerRef.Name
-					continue
-				}
-
-				logger.V(1).Info("Verified standalone resource via direct API (no controller owner)",
-					"kind", currentKind, "name", currentName, "level", i)
-			} else {
-				logger.V(1).Info("No controller owner found, chain complete",
-					"kind", currentKind, "name", currentName, "level", i)
-			}
-			break
-		}
-
-		// Move up the chain
-		topKind = controllerRef.Kind
-		topName = controllerRef.Name
-		foundOwner = true
-
-		logger.V(1).Info("Found controller owner",
-			"level", i,
-			"from", fmt.Sprintf("%s/%s", currentKind, currentName),
-			"to", fmt.Sprintf("%s/%s", controllerRef.Kind, controllerRef.Name))
-
-		currentKind = controllerRef.Kind
-		currentName = controllerRef.Name
-		// Namespace stays the same (ownerReferences are namespace-scoped)
 	}
 
 	logger.V(1).Info("Owner resolution complete",
@@ -340,6 +228,199 @@ func (r *K8sOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace, 
 		"resolvedKind", topKind, "resolvedName", topName,
 		"foundOwner", foundOwner)
 	return topKind, topName, nil
+}
+
+// ownerStepResult captures the outcome of a single ResolveTopLevelOwner
+// traversal step (extracted to keep the driving loop's cognitive complexity
+// low — see Go Anti-Pattern Checklist, unnecessary nesting).
+type ownerStepResult struct {
+	stop     bool  // true: caller must break out of the traversal loop
+	advanced bool  // true: nextKind/nextName represent a new, resolved owner
+	nextKind string
+	nextName string
+	err      error // non-nil: caller must abort and propagate this error
+}
+
+// traverseOneOwnerLevel performs one level of owner-chain traversal: resolve
+// the GVK, skip CRD kinds, fetch metadata (with cache-miss fallback), and find
+// (or trust-but-verify) the controller ownerReference. Extracted from
+// ResolveTopLevelOwner's for-loop body.
+func (r *K8sOwnerResolver) traverseOneOwnerLevel(
+	ctx context.Context,
+	currentNamespace, currentKind, currentName string,
+	foundOwner bool,
+	level int,
+) ownerStepResult {
+	logger := r.logger
+
+	gvk, known := r.resolveGVK(currentKind)
+	if !known {
+		logger.V(1).Info("Unknown kind, stopping traversal", "kind", currentKind, "level", level)
+		return ownerStepResult{stop: true}
+	}
+
+	// CRD kinds (not in core/apps/batch/autoscaling/policy) have
+	// unpredictable owner chains — stop traversal (#1029 Option C).
+	if r.registry != nil && !r.registry.IsCoreBatchAppsKind(currentKind) {
+		logger.V(1).Info("CRD kind, stopping traversal", "kind", currentKind, "level", level)
+		return ownerStepResult{stop: true}
+	}
+
+	obj := &metav1.PartialObjectMetadata{}
+	obj.SetGroupVersionKind(gvk)
+	key := client.ObjectKey{Namespace: currentNamespace, Name: currentName}
+
+	getErr := r.getResourceMetadata(ctx, key, obj)
+	if getErr != nil && r.fallbackReader != nil {
+		logger.Info("Cache miss, retrying with direct API reader",
+			"kind", currentKind, "name", currentName, "error", getErr, "level", level)
+		getErr = r.getResourceMetadataFallback(ctx, key, obj)
+	}
+
+	if getErr != nil {
+		logger.V(1).Info("Failed to fetch resource metadata",
+			"kind", currentKind, "name", currentName, "error", getErr, "level", level,
+			"foundOwner", foundOwner)
+		if !foundOwner {
+			return ownerStepResult{err: fmt.Errorf("failed to resolve owner for %s/%s: %w", currentKind, currentName, getErr)}
+		}
+		return ownerStepResult{stop: true}
+	}
+
+	controllerRef := findControllerOwnerRef(obj.OwnerReferences)
+
+	logger.V(1).Info("Owner chain step",
+		"level", level, "kind", currentKind, "name", currentName,
+		"ownerRefsCount", len(obj.OwnerReferences),
+		"hasControllerRef", controllerRef != nil,
+		"foundOwner", foundOwner,
+		"deletionTimestamp", obj.DeletionTimestamp)
+
+	if controllerRef == nil {
+		return r.resolveMissingControllerRef(ctx, gvk, key, currentKind, currentName, foundOwner, level)
+	}
+
+	logger.V(1).Info("Found controller owner",
+		"level", level,
+		"from", fmt.Sprintf("%s/%s", currentKind, currentName),
+		"to", fmt.Sprintf("%s/%s", controllerRef.Kind, controllerRef.Name))
+
+	return ownerStepResult{advanced: true, nextKind: controllerRef.Kind, nextName: controllerRef.Name}
+}
+
+// resolveMissingControllerRef handles the case where the cached lookup found
+// no controller ownerReference: either trust-but-verify via the direct API
+// (#284), or conclude the chain is complete. Extracted from
+// traverseOneOwnerLevel to keep its cognitive complexity low.
+func (r *K8sOwnerResolver) resolveMissingControllerRef(
+	ctx context.Context,
+	gvk schema.GroupVersionKind,
+	key client.ObjectKey,
+	currentKind, currentName string,
+	foundOwner bool,
+	level int,
+) ownerStepResult {
+	if foundOwner || r.fallbackReader == nil {
+		r.logger.V(1).Info("No controller owner found, chain complete",
+			"kind", currentKind, "name", currentName, "level", level)
+		return ownerStepResult{stop: true}
+	}
+
+	// #284: Trust-but-verify with direct API when the informer cache returns
+	// stale metadata without ownerReferences (race during rollout restarts).
+	verifiedRef, verifyErr := r.verifyOwnerViaFallback(ctx, gvk, key, currentKind, currentName, level)
+	if verifyErr != nil {
+		return ownerStepResult{err: verifyErr}
+	}
+	if verifiedRef != nil {
+		return ownerStepResult{advanced: true, nextKind: verifiedRef.Kind, nextName: verifiedRef.Name}
+	}
+	return ownerStepResult{stop: true}
+}
+
+// getResourceMetadata fetches PartialObjectMetadata via the primary (cached)
+// reader, bounded by ownerLookupTimeout to avoid indefinite blocking on
+// informer sync (extracted from ResolveTopLevelOwner for testability).
+func (r *K8sOwnerResolver) getResourceMetadata(ctx context.Context, key client.ObjectKey, obj *metav1.PartialObjectMetadata) error {
+	lookupCtx, cancel := context.WithTimeout(ctx, ownerLookupTimeout)
+	defer cancel()
+	return r.client.Get(lookupCtx, key, obj)
+}
+
+// getResourceMetadataFallback retries a metadata fetch via the uncached
+// fallback reader (direct API). Callers must only invoke this when
+// r.fallbackReader is non-nil (checked by ResolveTopLevelOwner before calling).
+//
+// #282: Eliminates pod-level fingerprint fallback caused by cache sync lag
+// after rollout restarts.
+func (r *K8sOwnerResolver) getResourceMetadataFallback(ctx context.Context, key client.ObjectKey, obj *metav1.PartialObjectMetadata) error {
+	fallbackCtx, cancel := context.WithTimeout(ctx, ownerLookupTimeout)
+	defer cancel()
+	return r.fallbackReader.Get(fallbackCtx, key, obj)
+}
+
+// findControllerOwnerRef returns the ownerReference with controller: true, or
+// nil if none exists. Extracted from ResolveTopLevelOwner (used both for the
+// primary cached lookup and the trust-but-verify fallback lookup).
+func findControllerOwnerRef(refs []metav1.OwnerReference) *metav1.OwnerReference {
+	for j := range refs {
+		if refs[j].Controller != nil && *refs[j].Controller {
+			return &refs[j]
+		}
+	}
+	return nil
+}
+
+// verifyOwnerViaFallback implements the #284 "trust-but-verify" path: when the
+// informer cache returns an object with no controller ownerReference, this
+// re-fetches the object via the uncached direct-API reader before concluding
+// the chain is genuinely standalone. This guards against a race condition
+// during rollout restarts where the cache entry for a terminating Pod loses
+// its ownerReferences before eviction.
+//
+// Returns (ref, nil) when a controller owner was found via the direct API
+// (caller should continue traversal from ref), (nil, nil) when the direct API
+// confirms no controller owner (caller should stop, resource is standalone),
+// or (nil, err) when the resource could not be found via the direct API at
+// all (likely deleted — caller should propagate the error).
+func (r *K8sOwnerResolver) verifyOwnerViaFallback(
+	ctx context.Context,
+	gvk schema.GroupVersionKind,
+	key client.ObjectKey,
+	currentKind, currentName string,
+	level int,
+) (*metav1.OwnerReference, error) {
+	logger := r.logger
+
+	freshObj := &metav1.PartialObjectMetadata{}
+	freshObj.SetGroupVersionKind(gvk)
+	freshCtx, freshCancel := context.WithTimeout(ctx, ownerLookupTimeout)
+	freshErr := r.fallbackReader.Get(freshCtx, key, freshObj)
+	freshCancel()
+
+	if freshErr != nil {
+		logger.Info("Resource not found via direct API, likely deleted",
+			"kind", currentKind, "name", currentName, "error", freshErr, "level", level)
+		return nil, fmt.Errorf("failed to resolve owner for %s/%s: not found via direct API: %w",
+			currentKind, currentName, freshErr)
+	}
+
+	logger.V(1).Info("Trust-but-verify: direct API result",
+		"kind", currentKind, "name", currentName,
+		"freshOwnerRefsCount", len(freshObj.OwnerReferences),
+		"freshDeletionTimestamp", freshObj.DeletionTimestamp, "level", level)
+
+	controllerRef := findControllerOwnerRef(freshObj.OwnerReferences)
+	if controllerRef != nil {
+		logger.Info("Stale cache detected: direct API returned ownerReference missing from cache",
+			"kind", currentKind, "name", currentName,
+			"owner", fmt.Sprintf("%s/%s", controllerRef.Kind, controllerRef.Name), "level", level)
+		return controllerRef, nil
+	}
+
+	logger.V(1).Info("Verified standalone resource via direct API (no controller owner)",
+		"kind", currentKind, "name", currentName, "level", level)
+	return nil, nil
 }
 
 // resolveServiceToWorkload traverses Service → spec.selector → Pods to find a

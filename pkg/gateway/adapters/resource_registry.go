@@ -182,10 +182,12 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 			totalResources += len(list.APIResources)
 		}
 	}
-	labelToKind := make(map[string]string, totalResources)
-	kindToGVR := make(map[string]schema.GroupVersionResource, totalResources)
-	kindToGroup := make(map[string]string, totalResources)
-	kindNamespaced := make(map[string]bool, totalResources)
+	snap := &registrySnapshot{
+		labelToKind:    make(map[string]string, totalResources),
+		kindToGVR:      make(map[string]schema.GroupVersionResource, totalResources),
+		kindToGroup:    make(map[string]string, totalResources),
+		kindNamespaced: make(map[string]bool, totalResources),
+	}
 
 	for _, list := range lists {
 		if list == nil {
@@ -196,49 +198,51 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 			continue
 		}
 		for _, res := range list.APIResources {
-			if res.Kind == "" {
-				continue
-			}
-			// Skip subresources (contain '/')
-			if strings.Contains(res.Name, "/") {
-				continue
-			}
-
-			gvr := schema.GroupVersionResource{
-				Group:    gv.Group,
-				Version:  gv.Version,
-				Resource: res.Name,
-			}
-
-			if _, exists := kindToGVR[res.Kind]; !exists {
-				kindToGVR[res.Kind] = gvr
-				kindToGroup[res.Kind] = gv.Group
-				kindNamespaced[res.Kind] = res.Namespaced
-			}
-
-			singular := res.SingularName
-			if singular == "" {
-				singular = strings.ToLower(res.Kind)
-			}
-			if _, exists := labelToKind[singular]; !exists {
-				labelToKind[singular] = res.Kind
-			}
-
-			lowerKind := strings.ToLower(res.Kind)
-			if lowerKind != singular {
-				if _, exists := labelToKind[lowerKind]; !exists {
-					labelToKind[lowerKind] = res.Kind
-				}
-			}
+			snap.addAPIResource(gv, res)
 		}
 	}
 
-	return &registrySnapshot{
-		labelToKind:    labelToKind,
-		kindToGVR:      kindToGVR,
-		kindToGroup:    kindToGroup,
-		kindNamespaced: kindNamespaced,
-	}, nil
+	return snap, nil
+}
+
+// addAPIResource registers a single discovered APIResource into the
+// snapshot's lookup maps. Extracted from buildSnapshot to keep its cognitive
+// complexity low; skips subresources and resources with no Kind.
+func (snap *registrySnapshot) addAPIResource(gv schema.GroupVersion, res metav1.APIResource) {
+	if res.Kind == "" {
+		return
+	}
+	// Skip subresources (contain '/')
+	if strings.Contains(res.Name, "/") {
+		return
+	}
+
+	gvr := schema.GroupVersionResource{
+		Group:    gv.Group,
+		Version:  gv.Version,
+		Resource: res.Name,
+	}
+
+	if _, exists := snap.kindToGVR[res.Kind]; !exists {
+		snap.kindToGVR[res.Kind] = gvr
+		snap.kindToGroup[res.Kind] = gv.Group
+		snap.kindNamespaced[res.Kind] = res.Namespaced
+	}
+
+	singular := res.SingularName
+	if singular == "" {
+		singular = strings.ToLower(res.Kind)
+	}
+	if _, exists := snap.labelToKind[singular]; !exists {
+		snap.labelToKind[singular] = res.Kind
+	}
+
+	lowerKind := strings.ToLower(res.Kind)
+	if lowerKind != singular {
+		if _, exists := snap.labelToKind[lowerKind]; !exists {
+			snap.labelToKind[lowerKind] = res.Kind
+		}
+	}
 }
 
 // LabelToKind returns the Kubernetes Kind for a given label key by matching

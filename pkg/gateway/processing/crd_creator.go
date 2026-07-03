@@ -33,7 +33,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/k8s"
 	"github.com/jordigilh/kubernaut/pkg/gateway/metrics"
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
 
@@ -112,136 +111,6 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 	}
 }
 
-// ========================================
-// CRD CREATION RETRY WITH SHARED BACKOFF
-// 📋 Shared Utility: pkg/shared/backoff | ✅ Production-Ready | Confidence: 95%
-// 📋 TDD REFACTOR Phase 2: Simplified method with extracted error handlers
-// ========================================
-//
-// createCRDWithRetry implements retry logic with exponential backoff for transient K8s API errors.
-// Uses shared backoff utility for consistent retry behavior across all Kubernaut services.
-//
-// **WHY SHARED BACKOFF?**
-//   - ✅ Anti-thundering herd: ±10% jitter prevents simultaneous retries across Gateway pods
-//   - ✅ Consistent behavior: Matches NT, WE, SP, RO, AA services
-//   - ✅ Industry best practice: Aligns with Kubernetes ecosystem standards
-//   - ✅ Centralized maintenance: Bug fixes and improvements in one place
-//
-// **REFACTORING (Phase 2)**:
-//   - Extracted error handling into dedicated methods
-//   - Reduced method from 160 lines to ~50 lines
-//   - Reduced nesting depth from 5 to 2
-//   - Improved testability and maintainability
-//
-// **Business Requirements**:
-//   - BR-GATEWAY-112: Error Classification (retryable vs non-retryable)
-//   - BR-GATEWAY-113: Exponential Backoff with jitter (shared utility)
-//   - BR-GATEWAY-114: Retry Metrics
-//
-// ========================================
-func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1alpha1.RemediationRequest, signal *types.NormalizedSignal) error {
-	startTime := c.clock.Now()
-
-	for attempt := 0; attempt < c.retryConfig.MaxAttempts; attempt++ {
-		// Attempt CRD creation
-		err := c.k8sClient.CreateRemediationRequest(ctx, rr)
-
-		// Success path
-		if err == nil {
-			c.logSuccessAfterRetry(attempt, startTime, rr)
-			return nil
-		}
-
-		// Handle special cases with dedicated error handlers
-		if k8serrors.IsAlreadyExists(err) {
-			return c.handleAlreadyExistsError(ctx, rr)
-		}
-
-		// Determine if error is retryable
-		if !c.shouldRetryError(err) {
-			errorType := getErrorTypeString(err)
-			c.logger.Error(err, "CRD creation failed with non-retryable error",
-				"name", rr.Name,
-				"namespace", rr.Namespace,
-				"error_type", errorType)
-			return err
-		}
-
-		// BR-GATEWAY-058: Notify observer for each intermediate retry attempt.
-		// The final attempt's audit event is emitted by the caller after this method returns.
-		if attempt < c.retryConfig.MaxAttempts-1 {
-			c.retryObserver.OnRetryAttempt(ctx, signal, attempt, err)
-		}
-
-		// Check if this was the last attempt
-		if attempt == c.retryConfig.MaxAttempts-1 {
-			return c.wrapRetryExhaustedError(err, attempt, startTime, rr)
-		}
-
-		// Wait with exponential backoff before next attempt
-		if backoffErr := c.waitWithBackoff(ctx, attempt, err, rr); backoffErr != nil {
-			return backoffErr // Context cancelled
-		}
-	}
-
-	// Defensive: This should never be reached due to the last attempt check above
-	// If we reach here, it indicates a logic error in the retry loop
-	return fmt.Errorf("retry logic error: loop completed without explicit return (max_attempts=%d)", c.retryConfig.MaxAttempts)
-}
-
-// getErrorTypeString returns a human-readable error type for metrics labels
-// getErrorTypeString classifies errors by parsing error messages and K8s API status codes.
-// GAP-10: Simplified error classification without external dependencies.
-// errorPattern defines a pattern to match against error strings
-type errorPattern struct {
-	patterns  []string // Patterns to match (case-insensitive)
-	errorType string   // Error type to return if matched
-}
-
-// errorPatterns defines the mapping of error patterns to error types
-// Ordered by priority (more specific patterns first)
-var errorPatterns = []errorPattern{
-	// K8s API status errors
-	{patterns: []string{"429", "rate limit", "too many requests"}, errorType: "rate_limited"},
-	{patterns: []string{"503", "service unavailable", "api server overloaded"}, errorType: "service_unavailable"},
-	{patterns: []string{"504", "gateway timeout"}, errorType: "gateway_timeout"},
-	{patterns: []string{"400", "bad request"}, errorType: "bad_request"},
-	{patterns: []string{"403", "forbidden"}, errorType: "forbidden"},
-	{patterns: []string{"422", "unprocessable"}, errorType: "unprocessable_entity"},
-	{patterns: []string{"409", "conflict", "already exists"}, errorType: "conflict"},
-	// Timeout/network errors
-	{patterns: []string{"timeout", "deadline exceeded"}, errorType: "timeout"},
-	{patterns: []string{"connection refused", "connection reset"}, errorType: "network_error"},
-}
-
-// getErrorTypeString classifies an error into a category for metrics/logging
-//
-// This function uses pattern matching to classify errors into categories:
-// - K8s API errors (rate_limited, service_unavailable, etc.)
-// - Network errors (timeout, network_error)
-// - Unknown errors (catch-all)
-//
-// Complexity: Reduced from 23 to <10 using data-driven approach
-func getErrorTypeString(err error) string {
-	if err == nil {
-		return "success"
-	}
-
-	// Convert to lowercase for case-insensitive matching
-	errStr := strings.ToLower(err.Error())
-
-	// Check each error pattern in priority order
-	for _, pattern := range errorPatterns {
-		for _, p := range pattern.patterns {
-			if strings.Contains(errStr, p) {
-				return pattern.errorType
-			}
-		}
-	}
-
-	return "unknown"
-}
-
 // CreateRemediationRequest creates a RemediationRequest CRD from a signal
 //
 // This method:
@@ -302,28 +171,56 @@ func (c *CRDCreator) CreateRemediationRequest(
 		return nil, err
 	}
 
-	// DD-AUDIT-CORRELATION-002: UUID-Based CRD Naming for Unique Occurrences
-	// Generate CRD name from fingerprint (first 12 chars) + UUID suffix (8 chars)
-	// Format: rr-{fingerprint-prefix}-{uuid-suffix}
-	// Example: "rr-pod-crash-f8a3b9c2" (human-readable + globally unique)
-	//
-	// This ensures:
-	// - Each signal occurrence creates a unique CRD (zero collision risk)
-	// - Human-readable correlation IDs for debugging
-	// - Universal standard: All services use rr.Name as correlation_id
-	//
-	// Supersedes: DD-015 (timestamp-based naming)
-	fingerprintPrefix := signal.Fingerprint
+	crdName := generateCRDName(signal.Fingerprint)
+	rr := c.buildRemediationRequestCRD(crdName, signal)
+
+	// Create CRD in Kubernetes with retry logic
+	// BR-GATEWAY-112: Retry logic for transient K8s API errors
+	if err := c.createCRDWithRetry(ctx, rr, signal); err != nil {
+		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
+		// This is normal behavior - Redis TTL is shorter than CRD lifecycle
+		if k8serrors.IsAlreadyExists(err) {
+			return c.recoverExistingCRDOnConflict(ctx, crdName, signal, startTime)
+		}
+		return nil, c.buildCreationFailureError(err, crdName, signal, startTime)
+	}
+
+	// Record success metric
+	// Note: Metric labels changed from (environment, priority) to (sourceType, "created")
+	// since environment/priority classification moved to SP per DD-CATEGORIZATION-001
+	c.metrics.CRDsCreatedTotal.WithLabelValues(signal.Source, "created").Inc()
+
+	// Log creation event
+	c.logger.Info("Created RemediationRequest CRD",
+		"name", crdName,
+		"namespace", c.controllerNamespace,
+		"fingerprint", signal.Fingerprint,
+		"severity", signal.Severity,
+		"signal_name", signal.SignalName)
+
+	return rr, nil
+}
+
+// generateCRDName builds a unique CRD name per DD-AUDIT-CORRELATION-002:
+// rr-{fingerprint-prefix[:12]}-{uuid-suffix[:8]}. The fingerprint prefix gives
+// human-readable correlation for debugging; the UUID suffix guarantees zero
+// collision risk across occurrences of the same signal. Supersedes DD-015
+// (timestamp-based naming). Extracted from CreateRemediationRequest (funlen).
+func generateCRDName(fingerprint string) string {
+	fingerprintPrefix := fingerprint
 	if len(fingerprintPrefix) > 12 {
 		fingerprintPrefix = fingerprintPrefix[:12]
 	}
-	// DD-AUDIT-CORRELATION-002: UUID suffix guarantees zero collision risk
 	shortUUID := uuid.New().String()[:8]
-	crdName := fmt.Sprintf("rr-%s-%s", fingerprintPrefix, shortUUID)
+	return fmt.Sprintf("rr-%s-%s", fingerprintPrefix, shortUUID)
+}
 
-	// Build RemediationRequest CRD
-	// ADR-057: CRD created in controller namespace, not signal namespace
-	rr := &remediationv1alpha1.RemediationRequest{
+// buildRemediationRequestCRD constructs the RemediationRequest object (not
+// yet persisted) from a normalized signal. ADR-057: created in the
+// controller namespace, not the signal's namespace. Extracted from
+// CreateRemediationRequest (funlen).
+func (c *CRDCreator) buildRemediationRequestCRD(crdName string, signal *types.NormalizedSignal) *remediationv1alpha1.RemediationRequest {
+	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
 			Namespace: c.controllerNamespace,
@@ -375,102 +272,101 @@ func (c *CRDCreator) CreateRemediationRequest(
 			// DD-GATEWAY-011: Deduplication lives in Status (initialized by StatusUpdater)
 		},
 	}
+}
 
-	// Create CRD in Kubernetes with retry logic
-	// BR-GATEWAY-112: Retry logic for transient K8s API errors
-	if err := c.createCRDWithRetry(ctx, rr, signal); err != nil {
-		// Check if CRD already exists (e.g., Redis TTL expired but K8s CRD still exists)
-		// This is normal behavior - Redis TTL is shorter than CRD lifecycle
-		if k8serrors.IsAlreadyExists(err) {
-			c.logger.V(1).Info("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)",
-				"name", crdName,
-				"namespace", c.controllerNamespace,
-				"fingerprint", signal.Fingerprint,
-			)
+// recoverExistingCRDOnConflict handles the AlreadyExists race (e.g., Redis TTL
+// expired but the K8s CRD still exists — normal behavior since Redis TTL is
+// shorter than CRD lifecycle): fetch and return the existing CRD instead of
+// treating this as a failure. Retries the fetch up to 3 times with linear
+// backoff (50ms/100ms/200ms) to absorb any residual read-after-write lag.
+// Extracted from CreateRemediationRequest (funlen).
+func (c *CRDCreator) recoverExistingCRDOnConflict(
+	ctx context.Context,
+	crdName string,
+	signal *types.NormalizedSignal,
+	startTime time.Time,
+) (*remediationv1alpha1.RemediationRequest, error) {
+	c.logger.V(1).Info("RemediationRequest CRD already exists (Redis TTL expired, CRD persists)",
+		"name", crdName,
+		"namespace", c.controllerNamespace,
+		"fingerprint", signal.Fingerprint,
+	)
 
-			// Fetch existing CRD and return it (ADR-057: from controller namespace)
-			var existing *remediationv1alpha1.RemediationRequest
-			var fetchErr error
-			maxFetchAttempts := 3
-			for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
-				existing, fetchErr = c.k8sClient.GetRemediationRequest(ctx, c.controllerNamespace, crdName)
-				if fetchErr == nil {
-					break // Successfully fetched
-				}
-
-				if attempt < maxFetchAttempts {
-					// Exponential backoff: 50ms, 100ms, 200ms
-					backoff := time.Duration(50*attempt) * time.Millisecond
-					c.logger.V(1).Info("CRD fetch failed, retrying after backoff",
-						"name", crdName,
-						"attempt", attempt,
-						"backoff_ms", backoff.Milliseconds(),
-						"error", fetchErr)
-					time.Sleep(backoff)
-				}
-			}
-
-			if fetchErr != nil {
-				c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
-				return nil, NewCRDCreationError(CRDCreationErrorParams{
-					Fingerprint: signal.Fingerprint,
-					Namespace:   c.controllerNamespace,
-					CRDName:     crdName,
-					SignalType:  signal.SourceType,
-					SignalName:  signal.SignalName,
-					Attempts:    maxFetchAttempts,
-					StartTime:   startTime,
-					Err:         fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", maxFetchAttempts, fetchErr),
-				})
-			}
-
-			c.logger.Info("Reusing existing RemediationRequest CRD (Redis TTL expired)",
-				"name", crdName,
-				"namespace", c.controllerNamespace,
-				"fingerprint", signal.Fingerprint,
-			)
-
-			return existing, nil
+	var existing *remediationv1alpha1.RemediationRequest
+	var fetchErr error
+	const maxFetchAttempts = 3
+	for attempt := 1; attempt <= maxFetchAttempts; attempt++ {
+		existing, fetchErr = c.k8sClient.GetRemediationRequest(ctx, c.controllerNamespace, crdName)
+		if fetchErr == nil {
+			break // Successfully fetched
 		}
 
-		// Other errors (not already-exists)
-		// Note: Namespace-not-found errors are no longer handled via fallback.
-		// ADR-053 scope validation rejects signals to unmanaged namespaces upstream,
-		// so namespace-not-found during CRD creation is now a genuine error.
-		// See: DD-GATEWAY-007 (DEPRECATED February 2026)
-		c.metrics.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
+		if attempt < maxFetchAttempts {
+			// Exponential backoff: 50ms, 100ms, 200ms
+			backoffDelay := time.Duration(50*attempt) * time.Millisecond
+			c.logger.V(1).Info("CRD fetch failed, retrying after backoff",
+				"name", crdName,
+				"attempt", attempt,
+				"backoff_ms", backoffDelay.Milliseconds(),
+				"error", fetchErr)
+			time.Sleep(backoffDelay)
+		}
+	}
 
-		c.logger.Error(err, "Failed to create RemediationRequest CRD",
-			"name", crdName,
-			"namespace", c.controllerNamespace,
-			"fingerprint", signal.Fingerprint)
-
+	if fetchErr != nil {
+		c.metrics.CRDCreationErrors.WithLabelValues("fetch_existing_failed").Inc()
 		return nil, NewCRDCreationError(CRDCreationErrorParams{
 			Fingerprint: signal.Fingerprint,
 			Namespace:   c.controllerNamespace,
 			CRDName:     crdName,
 			SignalType:  signal.SourceType,
 			SignalName:  signal.SignalName,
-			Attempts:    c.retryConfig.MaxAttempts,
+			Attempts:    maxFetchAttempts,
 			StartTime:   startTime,
-			Err:         err,
+			Err:         fmt.Errorf("CRD exists but failed to fetch after %d attempts: %w", maxFetchAttempts, fetchErr),
 		})
 	}
 
-	// Record success metric
-	// Note: Metric labels changed from (environment, priority) to (sourceType, "created")
-	// since environment/priority classification moved to SP per DD-CATEGORIZATION-001
-	c.metrics.CRDsCreatedTotal.WithLabelValues(signal.Source, "created").Inc()
-
-	// Log creation event
-	c.logger.Info("Created RemediationRequest CRD",
+	c.logger.Info("Reusing existing RemediationRequest CRD (Redis TTL expired)",
 		"name", crdName,
 		"namespace", c.controllerNamespace,
 		"fingerprint", signal.Fingerprint,
-		"severity", signal.Severity,
-		"signal_name", signal.SignalName)
+	)
 
-	return rr, nil
+	return existing, nil
+}
+
+// buildCreationFailureError records metrics/logs and builds the structured
+// error for a genuine (non-AlreadyExists) CRD creation failure.
+//
+// Note: Namespace-not-found errors are no longer handled via fallback.
+// ADR-053 scope validation rejects signals to unmanaged namespaces upstream,
+// so namespace-not-found during CRD creation is now a genuine error.
+// See: DD-GATEWAY-007 (DEPRECATED February 2026)
+// Extracted from CreateRemediationRequest (funlen).
+func (c *CRDCreator) buildCreationFailureError(
+	err error,
+	crdName string,
+	signal *types.NormalizedSignal,
+	startTime time.Time,
+) error {
+	c.metrics.CRDCreationErrors.WithLabelValues("k8s_api_error").Inc()
+
+	c.logger.Error(err, "Failed to create RemediationRequest CRD",
+		"name", crdName,
+		"namespace", c.controllerNamespace,
+		"fingerprint", signal.Fingerprint)
+
+	return NewCRDCreationError(CRDCreationErrorParams{
+		Fingerprint: signal.Fingerprint,
+		Namespace:   c.controllerNamespace,
+		CRDName:     crdName,
+		SignalType:  signal.SourceType,
+		SignalName:  signal.SignalName,
+		Attempts:    c.retryConfig.MaxAttempts,
+		StartTime:   startTime,
+		Err:         err,
+	})
 }
 
 // getFiringTime returns the firing time for a signal, with fallback to ReceivedTime
@@ -589,196 +485,7 @@ func (c *CRDCreator) truncateAnnotationValues(annotations map[string]string) map
 	return sharedK8s.TruncateMapValues(annotations, sharedK8s.MaxAnnotationValueLength)
 }
 
-// ========================================
-// TDD REFACTOR Phase 2: Extracted Error Handling Methods
-// 📋 Refactoring: Extract Method pattern | Reduces cyclomatic complexity
-// Authority: 00-core-development-methodology.mdc
-// ========================================
-//
-// These methods were extracted from createCRDWithRetry() to improve:
-// - **Readability**: Each method has single responsibility
-// - **Testability**: Error scenarios can be tested in isolation
-// - **Maintainability**: Changes to error handling logic isolated to specific methods
-// - **Cognitive Complexity**: Reduced nesting depth from 5 to 2
-//
-// **Refactoring Metrics**:
-// - Before: 160 lines in one method with deep nesting
-// - After: ~40 lines main method + 4 extracted methods (~25 lines each)
-// - Cyclomatic complexity: Reduced from 23 to <10
-// ========================================
-
-// handleAlreadyExistsError treats AlreadyExists as idempotent success.
-//
-// **Business Requirement**: BR-GATEWAY-CIRCUIT-BREAKER-FIX
-// **Business Outcome**: Prevent circuit breaker from opening on parallel requests
-//
-// **Scenario**: Multiple signals with same fingerprint arrive simultaneously,
-// creating race condition where 2nd request gets AlreadyExists error.
-// This is NOT a failure - it's idempotent success.
-//
-// **Behavior**:
-//   - Logs idempotent success
-//   - Optionally fetches existing CRD to verify fingerprint matches
-//   - Logs warning if fingerprints differ (potential hash collision)
-//   - Returns nil (success) in all cases
-//
-// **Parameters**:
-//   - ctx: Context for cancellation
-//   - rr: RemediationRequest being created
-//
-// **Returns**:
-//   - error: Always nil (idempotent success)
-func (c *CRDCreator) handleAlreadyExistsError(ctx context.Context, rr *remediationv1alpha1.RemediationRequest) error {
-	c.logger.Info("CRD already exists (idempotent success)",
-		"name", rr.Name,
-		"namespace", rr.Namespace,
-		"fingerprint", rr.Spec.SignalFingerprint)
-
-	// Optionally fetch the existing CRD to verify fingerprint matches
-	existing, getErr := c.k8sClient.GetRemediationRequest(ctx, rr.Namespace, rr.Name)
-	if getErr != nil {
-		c.logger.Error(getErr, "Failed to fetch existing CRD after AlreadyExists error",
-			"name", rr.Name,
-			"namespace", rr.Namespace)
-		// Still return success - the CRD exists, which is our goal
-		return nil
-	}
-
-	// Log for debugging: verify fingerprints match
-	if existing.Spec.SignalFingerprint != rr.Spec.SignalFingerprint {
-		c.logger.Info("Warning: Existing CRD has different fingerprint (hash collision?)",
-			"name", rr.Name,
-			"namespace", rr.Namespace,
-			"expected_fingerprint", rr.Spec.SignalFingerprint,
-			"actual_fingerprint", existing.Spec.SignalFingerprint)
-	}
-
-	// Return success - CRD exists (idempotent operation)
-	return nil
-}
-
-// shouldRetryError determines if an error is transient and retryable.
-//
-// **Business Requirement**: BR-GATEWAY-112 (Error Classification)
-//
-// **Retryable Errors** (transient infrastructure issues):
-//   - rate_limited: K8s API server throttling (429)
-//   - service_unavailable: K8s API server overloaded (503)
-//   - gateway_timeout: K8s API server timeout (504)
-//   - timeout: Network timeout
-//   - network_error: Connection refused/reset
-//
-// **Non-Retryable Errors** (permanent failures):
-//   - bad_request: Validation errors (400)
-//   - forbidden: RBAC/permission errors (403)
-//   - conflict: Resource version conflicts (409)
-//   - unprocessable_entity: Schema validation errors (422)
-//
-// **Parameters**:
-//   - err: Error from K8s API call
-//
-// **Returns**:
-//   - bool: true if error is retryable, false otherwise
-func (c *CRDCreator) shouldRetryError(err error) bool {
-	errorType := getErrorTypeString(err)
-	return errorType == "rate_limited" ||
-		errorType == "service_unavailable" ||
-		errorType == "gateway_timeout" ||
-		errorType == "timeout" ||
-		errorType == "network_error"
-}
-
-// logSuccessAfterRetry logs successful CRD creation after retry.
-// Only logs if attempt > 0 (not first attempt).
-func (c *CRDCreator) logSuccessAfterRetry(attempt int, startTime time.Time, rr *remediationv1alpha1.RemediationRequest) {
-	if attempt > 0 {
-		c.logger.Info("CRD creation succeeded after retry",
-			"attempt", attempt+1,
-			"total_duration", time.Since(startTime),
-			"name", rr.Name,
-			"namespace", rr.Namespace)
-	}
-}
-
-// wrapRetryExhaustedError wraps error with comprehensive retry context.
-//
-// **Business Requirement**: GAP-10 (Enhanced Error Wrapping)
-//
-// **Wraps Error With**:
-//   - Attempt number
-//   - Max attempts configuration
-//   - Original error
-//   - Error type classification
-//   - Retryable flag
-//
-// **Parameters**:
-//   - err: Original error
-//   - attempt: Current attempt number (0-indexed)
-//   - startTime: Retry loop start time
-//   - rr: RemediationRequest being created
-//
-// **Returns**:
-//   - error: RetryError with full context
-func (c *CRDCreator) wrapRetryExhaustedError(err error, attempt int, startTime time.Time, rr *remediationv1alpha1.RemediationRequest) error {
-	c.logger.Error(err, "CRD creation failed after max retries",
-		"max_attempts", c.retryConfig.MaxAttempts,
-		"total_duration", time.Since(startTime),
-		"name", rr.Name,
-		"namespace", rr.Namespace)
-
-	errorType := getErrorTypeString(err)
-	return &RetryError{
-		Attempt:     attempt + 1,
-		MaxAttempts: c.retryConfig.MaxAttempts,
-		OriginalErr: err,
-		ErrorType:   errorType,
-		IsRetryable: c.shouldRetryError(err),
-	}
-}
-
-// waitWithBackoff sleeps with exponential backoff and jitter.
-//
-// **Business Requirement**: BR-GATEWAY-113 (Exponential Backoff)
-//
-// **Behavior**:
-//   - Calculates backoff using shared utility
-//   - Adds ±10% jitter to prevent thundering herd
-//   - Context-aware for graceful shutdown
-//   - Logs retry attempt with backoff duration
-//
-// **Parameters**:
-//   - ctx: Context for cancellation
-//   - attempt: Current attempt number (0-indexed)
-//   - err: Error that triggered retry
-//   - rr: RemediationRequest being created
-//
-// **Returns**:
-//   - error: ctx.Err() if context cancelled, nil otherwise
-func (c *CRDCreator) waitWithBackoff(ctx context.Context, attempt int, err error, rr *remediationv1alpha1.RemediationRequest) error {
-	// Calculate backoff using shared utility (with ±10% jitter for anti-thundering herd)
-	backoffConfig := backoff.Config{
-		BasePeriod:    c.retryConfig.InitialBackoff,
-		MaxPeriod:     c.retryConfig.MaxBackoff,
-		Multiplier:    2.0, // Standard exponential (doubles each retry)
-		JitterPercent: 10,  // ±10% variance (prevents thundering herd)
-	}
-	backoffDuration := backoffConfig.Calculate(int32(attempt + 1))
-
-	// Log retry attempt
-	c.logger.Info("CRD creation failed, retrying with shared backoff...",
-		"warning", true,
-		"attempt", attempt+1,
-		"max_attempts", c.retryConfig.MaxAttempts,
-		"backoff", backoffDuration,
-		"error", err,
-		"name", rr.Name,
-		"namespace", rr.Namespace)
-
-	// Sleep with backoff (context-aware for graceful shutdown)
-	select {
-	case <-time.After(backoffDuration):
-		return nil // Continue to next attempt
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
+// Note: createCRDWithRetry and its error-classification/retry-handler methods
+// (handleAlreadyExistsError, shouldRetryError, logSuccessAfterRetry,
+// wrapRetryExhaustedError, waitWithBackoff, getErrorTypeString) live in
+// crd_creator_retry.go (Wave 6 GREEN: file-size remediation).

@@ -99,8 +99,12 @@ func NewPhaseBasedDeduplicationChecker(k8sClient client.Reader, cooldownPeriod t
 // - bool: true if should deduplicate (in-progress RR exists)
 // - *RemediationRequest: existing in-progress RR (nil if none)
 // - error: K8s API errors
-func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, namespace, fingerprint string) (bool, *remediationv1alpha1.RemediationRequest, error) {
-	// List RRs matching the fingerprint via field selector (BR-GATEWAY-185 v1.1)
+// listRemediationRequestsByFingerprint lists RemediationRequests matching the
+// given fingerprint via the field selector (BR-GATEWAY-185 v1.1), falling
+// back to an in-memory filter over all namespace RRs when the field selector
+// is unsupported (e.g., test clients without the field index configured).
+// Extracted from ShouldDeduplicate to keep its cognitive complexity low.
+func (c *PhaseBasedDeduplicationChecker) listRemediationRequestsByFingerprint(ctx context.Context, namespace, fingerprint string) ([]remediationv1alpha1.RemediationRequest, error) {
 	// NO truncation - uses full 64-char SHA256 fingerprint
 	rrList := &remediationv1alpha1.RemediationRequestList{}
 
@@ -108,26 +112,34 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 		client.InNamespace(namespace),
 		client.MatchingFields{"spec.signalFingerprint": fingerprint},
 	)
+	if err == nil {
+		return rrList.Items, nil
+	}
 
-	// FALLBACK: If field selector not supported (e.g., in tests without field index),
-	// list all RRs in namespace and filter in-memory
-	// This is less efficient but ensures tests work without cached client setup
-	if err != nil && (strings.Contains(err.Error(), "field label not supported") || strings.Contains(err.Error(), "field selector")) {
-		// Fall back to listing all RRs and filtering in-memory
-		if err := c.client.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
-			return false, nil, fmt.Errorf("deduplication check failed: %w", err)
-		}
+	// FALLBACK: If field selector not supported, list all RRs in namespace
+	// and filter in-memory. Less efficient but ensures tests work without
+	// cached client field-index setup.
+	if !strings.Contains(err.Error(), "field label not supported") && !strings.Contains(err.Error(), "field selector") {
+		return nil, fmt.Errorf("deduplication check failed: %w", err)
+	}
 
-		// Filter by fingerprint in-memory
-		filteredItems := []remediationv1alpha1.RemediationRequest{}
-		for i := range rrList.Items {
-			if rrList.Items[i].Spec.SignalFingerprint == fingerprint {
-				filteredItems = append(filteredItems, rrList.Items[i])
-			}
+	if err := c.client.List(ctx, rrList, client.InNamespace(namespace)); err != nil {
+		return nil, fmt.Errorf("deduplication check failed: %w", err)
+	}
+
+	filteredItems := make([]remediationv1alpha1.RemediationRequest, 0, len(rrList.Items))
+	for i := range rrList.Items {
+		if rrList.Items[i].Spec.SignalFingerprint == fingerprint {
+			filteredItems = append(filteredItems, rrList.Items[i])
 		}
-		rrList.Items = filteredItems
-	} else if err != nil {
-		return false, nil, fmt.Errorf("deduplication check failed: %w", err)
+	}
+	return filteredItems, nil
+}
+
+func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, namespace, fingerprint string) (bool, *remediationv1alpha1.RemediationRequest, error) {
+	items, err := c.listRemediationRequestsByFingerprint(ctx, namespace, fingerprint)
+	if err != nil {
+		return false, nil, err
 	}
 
 	// Check each RR: non-terminal phases (including Verifying) always deduplicate.
@@ -137,8 +149,8 @@ func (c *PhaseBasedDeduplicationChecker) ShouldDeduplicate(ctx context.Context, 
 	// because human intervention is required — automatic retry adds noise.
 	var mostRecentBackoffRR *remediationv1alpha1.RemediationRequest
 
-	for i := range rrList.Items {
-		rr := &rrList.Items[i]
+	for i := range items {
+		rr := &items[i]
 
 		if !IsTerminalPhase(rr.Status.OverallPhase) {
 			return true, rr, nil

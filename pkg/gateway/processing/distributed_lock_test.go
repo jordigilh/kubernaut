@@ -18,6 +18,7 @@ package processing_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -26,8 +27,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 )
@@ -240,6 +243,169 @@ var _ = Describe("DistributedLockManager", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(*lease.Spec.HolderIdentity).To(Equal(holderID),
 					"Lease holder should be updated to our pod after takeover")
+			})
+		})
+
+		Context("when Get fails with a non-NotFound API error", func() {
+			It("should propagate the error instead of treating it as a missing lease", func() {
+				// BR-GATEWAY-190: Wave 6 RED-phase characterization test.
+				// Branch-check discovered this K8s API error path (line 133) had 0%
+				// UT+IT coverage. Distinguishing "lease truly absent" (NotFound, create
+				// path) from "API unavailable" (any other error) is safety-critical:
+				// silently treating an API outage as "no lease" would let two pods
+				// both believe they hold the lock.
+				errClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+							return apierrors.NewServiceUnavailable("etcd unavailable")
+						},
+					}).
+					Build()
+				erroringManager := processing.NewDistributedLockManager(errClient, namespace, holderID)
+
+				acquired, err := erroringManager.AcquireLock(ctx, fingerprint)
+
+				Expect(err).To(HaveOccurred(),
+					"BR-GATEWAY-190: API errors must propagate, not be swallowed as 'lease absent'")
+				Expect(err.Error()).To(ContainSubstring("failed to check for existing lease"))
+				Expect(acquired).To(BeFalse(),
+					"Lock must not be reported as acquired when the existence check failed")
+			})
+		})
+
+		Context("when Create races with another pod (AlreadyExists)", func() {
+			It("should treat the race as contention, not an error", func() {
+				// BR-GATEWAY-190 / ADR-052: Two Gateway pods may both observe "lease
+				// absent" and race to Create it. The loser must see AlreadyExists and
+				// report ordinary contention (acquired=false, err=nil) so its retry
+				// loop backs off and re-checks, rather than surfacing a false failure.
+				raceClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							return apierrors.NewAlreadyExists(schema.GroupResource{Resource: "leases"}, "gw-lock-race")
+						},
+					}).
+					Build()
+				racingManager := processing.NewDistributedLockManager(raceClient, namespace, holderID)
+
+				acquired, err := racingManager.AcquireLock(ctx, fingerprint)
+
+				Expect(err).NotTo(HaveOccurred(),
+					"BR-GATEWAY-190: Create-race (AlreadyExists) is contention, not a hard error")
+				Expect(acquired).To(BeFalse(),
+					"Losing the create race means the lock was not acquired")
+			})
+		})
+
+		Context("when Update races with another pod during expired-lease takeover (Conflict)", func() {
+			It("should treat the takeover race as contention, not an error", func() {
+				// BR-GATEWAY-190 / ADR-052: Two pods may both observe the same expired
+				// lease and race to take it over. The loser's Update must fail with
+				// Conflict; this must resolve to ordinary contention (acquired=false,
+				// err=nil), not a propagated error that would abort the caller's flow.
+				conflictClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+							return apierrors.NewConflict(schema.GroupResource{Resource: "leases"}, "gw-lock-race", errors.New("resource version mismatch"))
+						},
+					}).
+					Build()
+
+				leaseName := "gw-lock-" + fingerprint[:16]
+				leaseDuration := int32(30)
+				expiredTime := metav1.NewMicroTime(time.Now().Add(-35 * time.Second))
+				otherPodID := "gateway-pod-crashed"
+				lease := &coordinationv1.Lease{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      leaseName,
+						Namespace: namespace,
+					},
+					Spec: coordinationv1.LeaseSpec{
+						HolderIdentity:       &otherPodID,
+						LeaseDurationSeconds: &leaseDuration,
+						RenewTime:            &expiredTime,
+					},
+				}
+				Expect(conflictClient.Create(ctx, lease)).To(Succeed())
+
+				conflictManager := processing.NewDistributedLockManager(conflictClient, namespace, holderID)
+
+				acquired, err := conflictManager.AcquireLock(ctx, fingerprint)
+
+				Expect(err).NotTo(HaveOccurred(),
+					"BR-GATEWAY-190: Takeover-race (Conflict) is contention, not a hard error")
+				Expect(acquired).To(BeFalse(),
+					"Losing the takeover race means the lock was not acquired")
+			})
+		})
+
+		Context("when Create fails with a non-AlreadyExists API error", func() {
+			It("should propagate the error", func() {
+				// BR-GATEWAY-190: Distinguish a genuine API failure (e.g. quota,
+				// permission denied) from ordinary create-race contention. A hard
+				// failure must surface as an error, not be silently swallowed as
+				// "lock not acquired".
+				errClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+							return apierrors.NewForbidden(schema.GroupResource{Resource: "leases"}, "gw-lock", errors.New("quota exceeded"))
+						},
+					}).
+					Build()
+				erroringManager := processing.NewDistributedLockManager(errClient, namespace, holderID)
+
+				acquired, err := erroringManager.AcquireLock(ctx, fingerprint)
+
+				Expect(err).To(HaveOccurred(),
+					"BR-GATEWAY-190: Non-race Create failures must propagate as errors")
+				Expect(err.Error()).To(ContainSubstring("failed to create lease"))
+				Expect(acquired).To(BeFalse())
+			})
+		})
+
+		Context("when Update fails with a non-Conflict API error during takeover", func() {
+			It("should propagate the error", func() {
+				// BR-GATEWAY-190: Distinguish a genuine API failure during expired-lease
+				// takeover from ordinary update-race contention. A hard failure must
+				// surface as an error so the caller's retry/backoff logic can react.
+				errClient := fake.NewClientBuilder().
+					WithScheme(scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+							return apierrors.NewForbidden(schema.GroupResource{Resource: "leases"}, "gw-lock", errors.New("quota exceeded"))
+						},
+					}).
+					Build()
+
+				leaseName := "gw-lock-" + fingerprint[:16]
+				leaseDuration := int32(30)
+				expiredTime := metav1.NewMicroTime(time.Now().Add(-35 * time.Second))
+				otherPodID := "gateway-pod-crashed"
+				lease := &coordinationv1.Lease{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      leaseName,
+						Namespace: namespace,
+					},
+					Spec: coordinationv1.LeaseSpec{
+						HolderIdentity:       &otherPodID,
+						LeaseDurationSeconds: &leaseDuration,
+						RenewTime:            &expiredTime,
+					},
+				}
+				Expect(errClient.Create(ctx, lease)).To(Succeed())
+
+				erroringManager := processing.NewDistributedLockManager(errClient, namespace, holderID)
+
+				acquired, err := erroringManager.AcquireLock(ctx, fingerprint)
+
+				Expect(err).To(HaveOccurred(),
+					"BR-GATEWAY-190: Non-race Update failures during takeover must propagate as errors")
+				Expect(err.Error()).To(ContainSubstring("failed to take over expired lease"))
+				Expect(acquired).To(BeFalse())
 			})
 		})
 

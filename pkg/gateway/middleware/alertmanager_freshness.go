@@ -65,14 +65,7 @@ type alertManagerTimestamps struct {
 func AlertManagerFreshnessValidator(tolerance time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Skip validation for non-write methods (health, metrics endpoints)
-			if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			// Skip validation for health and metrics endpoints
-			if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
+			if isOperationalRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -81,70 +74,103 @@ func AlertManagerFreshnessValidator(tolerance time.Duration) func(http.Handler) 
 			// If X-Timestamp header is present, use strict TimestampValidator logic.
 			// This path is used by direct API clients (E2E tests, external integrations).
 			if r.Header.Get(timestampHeader) != "" {
-				timestamp, err := extractTimestamp(r)
-				if err != nil {
-					respondTimestampError(w, err.Error())
-					return
-				}
-				if err := validateTimestampWindow(timestamp, tolerance); err != nil {
-					respondTimestampError(w, err.Error())
-					return
-				}
-				next.ServeHTTP(w, r)
+				validateHeaderBasedFreshness(w, r, next, tolerance)
 				return
 			}
 
 			// --- Strategy 2: Body-based (AlertManager compat) ---
 			// AlertManager does not set custom HTTP headers. Extract freshness
 			// from alerts[].startsAt in the webhook body.
-			// Issue #673 C-ADV-1: Cap body read to prevent unbounded memory allocation.
-			bodyReader := http.MaxBytesReader(nil, r.Body, MaxRequestBodySize)
-			bodyBytes, err := io.ReadAll(bodyReader)
-			if err != nil {
-				var maxBytesErr *http.MaxBytesError
-				if errors.As(err, &maxBytesErr) {
-					respondPayloadTooLarge(w)
-					return
-				}
-				respondFreshnessError(w, "failed to read request body")
-				return
-			}
-			// Always rewind body for downstream handlers
-			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
-
-			var ts alertManagerTimestamps
-			if err := json.Unmarshal(bodyBytes, &ts); err != nil {
-				// Can't parse JSON – let downstream handler deal with it
-				next.ServeHTTP(w, r)
-				return
-			}
-
-			// Find the most recent startsAt across all alerts
-			var mostRecent time.Time
-			for _, alert := range ts.Alerts {
-				if !alert.StartsAt.IsZero() && alert.StartsAt.After(mostRecent) {
-					mostRecent = alert.StartsAt
-				}
-			}
-
-			if mostRecent.IsZero() {
-				respondFreshnessError(w, "alert payload missing startsAt timestamp")
-				return
-			}
-
-			// Reject far-future timestamps (clock skew attack)
-			// Allow small clock skew tolerance (2 minutes) for legitimate time differences.
-			if mostRecent.After(time.Now().Add(clockSkewTolerance)) {
-				respondFreshnessError(w, "alert startsAt in future: possible clock skew attack")
-				return
-			}
-
-			// NOTE: We intentionally do NOT reject old startsAt values here.
-			// AlertManager re-notifies long-running alerts with the original startsAt,
-			// so enforcing a strict age window would reject legitimate webhooks.
-			// Gateway deduplication (fingerprint-based) prevents duplicate CRD creation.
-
-			next.ServeHTTP(w, r)
+			validateAlertManagerBodyFreshness(w, r, next)
 		})
 	}
+}
+
+// isOperationalRequest reports whether the request is a read-only or
+// operational (health/metrics) request exempt from freshness validation.
+// Extracted from AlertManagerFreshnessValidator / EventFreshnessValidator.
+func isOperationalRequest(r *http.Request) bool {
+	if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
+		return true
+	}
+	switch r.URL.Path {
+	case "/health", "/ready", "/healthz", "/metrics":
+		return true
+	default:
+		return false
+	}
+}
+
+// validateHeaderBasedFreshness implements Strategy 1 (X-Timestamp header,
+// strict TimestampValidator logic). Always terminates the request (either by
+// writing an error response or by invoking next).
+func validateHeaderBasedFreshness(w http.ResponseWriter, r *http.Request, next http.Handler, tolerance time.Duration) {
+	timestamp, err := extractTimestamp(r)
+	if err != nil {
+		respondTimestampError(w, err.Error())
+		return
+	}
+	if err := validateTimestampWindow(timestamp, tolerance); err != nil {
+		respondTimestampError(w, err.Error())
+		return
+	}
+	next.ServeHTTP(w, r)
+}
+
+// validateAlertManagerBodyFreshness implements Strategy 2 (body-based
+// startsAt extraction) for AlertManager webhooks that cannot set custom
+// headers. Always terminates the request.
+func validateAlertManagerBodyFreshness(w http.ResponseWriter, r *http.Request, next http.Handler) {
+	// Issue #673 C-ADV-1: Cap body read to prevent unbounded memory allocation.
+	bodyReader := http.MaxBytesReader(nil, r.Body, MaxRequestBodySize)
+	bodyBytes, err := io.ReadAll(bodyReader)
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			respondPayloadTooLarge(w)
+			return
+		}
+		respondFreshnessError(w, "failed to read request body")
+		return
+	}
+	// Always rewind body for downstream handlers
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+
+	var ts alertManagerTimestamps
+	if err := json.Unmarshal(bodyBytes, &ts); err != nil {
+		// Can't parse JSON – let downstream handler deal with it
+		next.ServeHTTP(w, r)
+		return
+	}
+
+	mostRecent := mostRecentAlertStartsAt(ts)
+	if mostRecent.IsZero() {
+		respondFreshnessError(w, "alert payload missing startsAt timestamp")
+		return
+	}
+
+	// Reject far-future timestamps (clock skew attack)
+	// Allow small clock skew tolerance (2 minutes) for legitimate time differences.
+	if mostRecent.After(time.Now().Add(clockSkewTolerance)) {
+		respondFreshnessError(w, "alert startsAt in future: possible clock skew attack")
+		return
+	}
+
+	// NOTE: We intentionally do NOT reject old startsAt values here.
+	// AlertManager re-notifies long-running alerts with the original startsAt,
+	// so enforcing a strict age window would reject legitimate webhooks.
+	// Gateway deduplication (fingerprint-based) prevents duplicate CRD creation.
+	next.ServeHTTP(w, r)
+}
+
+// mostRecentAlertStartsAt returns the most recent non-zero startsAt across
+// all alerts in the payload (zero Time if none present).
+func mostRecentAlertStartsAt(ts alertManagerTimestamps) time.Time {
+	var mostRecent time.Time
+	for _, alert := range ts.Alerts {
+		if !alert.StartsAt.IsZero() && alert.StartsAt.After(mostRecent) {
+			mostRecent = alert.StartsAt
+		}
+	}
+	return mostRecent
 }

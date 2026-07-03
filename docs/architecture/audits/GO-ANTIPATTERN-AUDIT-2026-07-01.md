@@ -629,6 +629,57 @@ Following the coverage gate in §7l-4, the 11 functions deferred in §7l-1 were 
 
 ---
 
+## 7m. Phase 6 Wave 6, sub-wave 6d: Gateway Complexity + File-Size Burndown — ✅ RESOLVED
+
+Executed as sub-wave 1/8 of the approved Wave 6 Burndown Plan. Full RED→GREEN→REFACTOR TDD cycle against all 10 named offenders (8 `gocyclo`/`gocognit` outliers + `ProcessSignal`'s untested distributed-lock wiring + the untested freshness-middleware orchestration layer) and the 2 named oversized files.
+
+### 7m-1. RED phase: branch-level coverage gate
+
+Ran the merged UT+IT coverage profile through a custom block-by-block branch-check (not name-grep) against all 8 named `gocyclo -over 15`/`gocognit -over 20` offenders plus 2 additional business-critical wiring surfaces flagged during preflight. 76 uncovered branches were found across 9 functions; triaged into three tiers rather than writing exhaustive tests for every mechanical guard clause:
+
+- **High-value wiring gaps (dedicated characterization tests added)**: `ProcessSignal`'s distributed-lock retry loop (BR-GATEWAY-190, ADR-052 Addendum 001) had an algorithm-level UT for its backoff math (`server_lock_retry_test.go`) but **zero** coverage of the actual production wiring — contention, dedup-recheck, and bounded-timeout paths were never exercised end-to-end. New `pkg/gateway/signal_ingestion_lock_wiring_test.go` (3 IT specs: `IT-GW-190-001` dedup-recheck-resolves-contention, uncontended-acquire-and-release, bounded-timeout-exceeded) closes this gap using a real (fake-client-backed) `DistributedLockManager` with two competing lock managers simulating multi-replica contention. Similarly, `AlertManagerFreshnessValidator`/`EventFreshnessValidator` (BR-GATEWAY-074/075, replay prevention) had zero dedicated test files despite their security-critical role; new `pkg/gateway/middleware/freshness_orchestration_test.go` covers bypass conditions, header-vs-body strategy selection, malformed/expired/future timestamps, oversized-body rejection, and body-rewind semantics for both middlewares.
+- **K8s API error/race-condition paths**: `pkg/gateway/processing/distributed_lock_test.go` gained 5 new contexts using `controller-runtime/pkg/client/interceptor.Funcs` to inject `Get` non-NotFound errors, `Create`/`Update` races (`AlreadyExists`/`Conflict`), and generic API failures during `AcquireLock`'s create-or-takeover test-and-set — each asserting the error propagates rather than being silently treated as "lease absent" (which would let two pods both believe they hold the lock).
+- **Mechanical/defensive guard clauses**: the remaining ~55 gaps (config validation branches, low-risk error-logging paths) were left uncovered by design — the existing whole-function coverage on those paths was judged sufficient to safety-net the Extract-Method refactor, consistent with the calibration approach used in prior waves.
+
+All new tests are characterization tests: written to pass immediately against existing (pre-refactor) behavior, per AGENTS.md's TDD-for-refactoring definition of RED.
+
+### 7m-2. GREEN phase: decomposition of all 10 named offenders
+
+| Function | File | Cyclomatic/Cognitive before → after | Technique |
+|---|---|---|---|
+| `AlertManagerFreshnessValidator` | `pkg/gateway/middleware/alertmanager_freshness.go` | 19/43 → low | Extracted `isOperationalRequest`, `validateHeaderBasedFreshness`, `validateAlertManagerBodyFreshness`, `mostRecentAlertStartsAt` |
+| `buildSnapshot` | `pkg/gateway/adapters/resource_registry.go` | 16/34 → low | Extracted `addAPIResource` |
+| `ProcessSignal` | `pkg/gateway/signal_ingestion.go` | 17/31 → low | Extracted `acquireDistributedLockWithRetry`; sibling `processMultiSignalBatch` (83 lines) extracted `processOneSignalInBatch` |
+| `EventFreshnessValidator` | `pkg/gateway/middleware/event_freshness.go` | -/27 → low | Extracted `validateEventBodyFreshness`, `mostRelevantEventTimestamp`, `validateEventFreshnessWindow` |
+| `ShouldDeduplicate` | `pkg/gateway/processing/phase_checker.go` | 16/24 → low | Extracted `listRemediationRequestsByFingerprint` (field-selector fallback) |
+| `ParseBatch` | `pkg/gateway/adapters/prometheus_adapter.go` | -/24 → low | Extracted `parseOneAlertInBatch` → further split into `extractAlertResource`/`resolveAlertFingerprint`; sibling `Parse` extracted `resolveAlertForParse` |
+| `createServerWithClients` | `pkg/gateway/server_constructors.go` | 16/22 → low | Extracted `buildLockManager`, `buildAuditStore`, `buildScopeChecker`, `buildCorePipelineComponents`, `serverAssemblyInputs`/`assembleServer`, `wireHTTPAndAncillaryServers`; sibling `NewServerWithMetrics`/`NewServerForTesting` extracted `buildGatewayScheme`, `buildGatewayCache`, `buildGatewayClients`, `buildGatewayAuth`, `wireTestHTTPAndAncillaryServers` |
+| `AcquireLock` | `pkg/gateway/processing/distributed_lock.go` | -/21 → low | Extracted `createNewLease`, `isLeaseExpired`, `takeOverExpiredLease` |
+| `config.Validate` (`ServerConfig`/`RetrySettings`) | `pkg/gateway/config/config.go` | 17/- → low | Extracted `validateAddrAndConcurrency`, `validateTimeouts`, `validateMaxAttempts`, `validateBackoffBounds` |
+| `NewMetricsWithRegistry` (funlen-only) | `pkg/gateway/metrics/metrics.go` | funlen>60 → resolved | Extracted `resolveGatherer`, `registerIngestionAndCRDMetrics`, `registerResilienceAndScopeMetrics` |
+
+The ~9 remaining funlen-only functions listed in the plan (`main`, `registerAdapters`, `wireHotReload`, `CreateRemediationRequest`) were resolved as part of the same pass — `CreateRemediationRequest` (137 lines) extracted `generateCRDName`, `buildRemediationRequestCRD`, `recoverExistingCRDOnConflict`, `buildCreationFailureError`.
+
+**File splits** (both named oversized files, now under the 700-line convention threshold):
+
+- `pkg/gateway/processing/crd_creator.go` (811 lines post-decomposition) → `crd_creator.go` (491 lines: constructors, `CreateRemediationRequest` + CRD-field builders) + new `crd_creator_retry.go` (362 lines: `createCRDWithRetry` and its full error-classification/retry-handler call graph — `handleAlreadyExistsError`, `shouldRetryError`, `logSuccessAfterRetry`, `wrapRetryExhaustedError`, `waitWithBackoff`, `getErrorTypeString`/`errorPattern`).
+- `pkg/gateway/signal_ingestion.go` (776 lines post-decomposition) → `signal_ingestion.go` (518 lines: HTTP-layer adapter registration/handler wiring) + new `signal_ingestion_process.go` (297 lines: `ProcessSignal`'s core business pipeline — `acquireDistributedLockWithRetry`, `handleDuplicateSignal`, `createRemediationRequestCRD`).
+
+No new exported types/components were introduced by either split — both new files are pure code relocation with `package`-private helpers, satisfying Checkpoint C by construction.
+
+### 7m-3. REFACTOR phase: exit gate
+
+- `go build ./pkg/gateway/...`: clean.
+- `gocyclo -over 15 pkg/gateway/` / `gocognit -over 20 pkg/gateway/`: **empty** — all 10 named offenders confirmed off both lists.
+- `golangci-lint run --timeout=5m ./pkg/gateway/...`: **0 issues** (full default linter set, including `funlen`/`nestif`/`revive`).
+- `go test ./pkg/gateway/... -race -count=1`: all 8 packages green (`gateway`, `adapters`, `config`, `metrics`, `middleware`, `processing`, `types`), zero regressions.
+- `make test-integration-gateway`: 3 suites, all specs green (12/12 in the `processing` IT suite exercising the new lock-wiring and freshness-orchestration characterization tests), composite coverage 51.8%.
+- `gofmt -l`/`go vet ./pkg/gateway/...`: clean on both new and modified files.
+
+Sub-wave 6d is complete. Remaining Wave 6 sub-waves (6f DataStorage, 6e-i/ii/iii RO/WE/SP residuals, 6b Notification, 6c AIAnalysis, 6a EffectivenessMonitor) are tracked in the Wave 6 Burndown Plan and proceed independently, each with its own RED→GREEN→REFACTOR checkpoint.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -671,7 +722,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 6 (Wave 3) | DataStorage: audit-reconstruction coverage gate + 12 named complexity offenders + 19 lower-priority (16-22) offenders + 5 oversized files split into 20 (see §7k) | Medium-High | 4-5 days | ✅ Done (see §7k) |
 | 6 (Wave 4) | KubernautAgent remainder: 5 characterization tests + ~20 named complexity offenders across investigator/tools/parser/enrichment/alignment/session/config + 8 oversized files split into 27 (see §7l) | Medium-High | 4-5 days | ✅ Done (see §7l) |
 | 6 (Wave 5) | KubernautAgent's 11 deferred offenders (§7l-1): coverage-before-refactor gate (11 characterization tests, `runLLMLoop`→100% UT, `buildMCPHandler` 9.1%→92%) + Extract-Method decomposition of all 11 (see §7l-4, §7l-5) | Medium-High | ~3 days | ✅ Done (see §7l-5) |
-| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🔲 Not started — tracked in the "Phase 6+ Complexity and File-Size Burndown" plan, each wave requires its own preflight + confidence gate |
+| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); 7/8 sub-waves remaining, tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 

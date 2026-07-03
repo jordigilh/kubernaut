@@ -35,6 +35,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -114,6 +115,9 @@ func newTestK8sClient(namespace string) client.Client {
 	scheme := runtime.NewScheme()
 	Expect(remediationv1alpha1.AddToScheme(scheme)).To(Succeed())
 	Expect(corev1.AddToScheme(scheme)).To(Succeed())
+	// BR-GATEWAY-190: Lease scheme registration needed by DistributedLockManager
+	// (Wave 6 RED-phase wiring tests exercise the real lock manager against this client).
+	Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: namespace},

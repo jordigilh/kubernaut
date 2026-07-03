@@ -116,106 +116,116 @@ func NewMetrics() *Metrics {
 func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 	factory := promauto.With(registry)
 
-	// Store registry as Gatherer for /metrics endpoint exposure
-	var gatherer prometheus.Gatherer
-	if reg, ok := registry.(prometheus.Gatherer); ok {
-		gatherer = reg
-	} else {
-		gatherer = prometheus.DefaultGatherer
-	}
-
-	m := &Metrics{
-		// Store registry for /metrics endpoint
-		registry: gatherer,
-
-		// Signal Ingestion Metrics (BR-GATEWAY-066: Prometheus metrics endpoint)
-		AlertsReceivedTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameSignalsReceivedTotal, // DD-005 V3.0: Pattern B,
-				Help: "Total signals received by source type and severity (Prometheus alerts, K8s events, etc.)",
-			},
-			[]string{"source_type", "severity"},
-		),
-		AlertsDeduplicatedTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameSignalsDeduplicatedTotal, // DD-005 V3.0: Pattern B,
-				Help: "Total signals deduplicated (duplicate fingerprint detected)",
-			},
-			[]string{"signal_name"},
-		),
-
-		// CRD Creation Metrics (BR-GATEWAY-068: CRD creation metrics)
-		CRDsCreatedTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameCRDsCreatedTotal, // DD-005 V3.0: Pattern B,
-				Help: "Total RemediationRequest CRDs created by source type and creation status",
-			},
-			[]string{"source_type", "status"},
-		),
-		CRDCreationErrors: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameCRDCreationErrorsTotal, // DD-005 V3.0: Pattern B,
-				Help: "Total CRD creation errors by error type",
-			},
-			[]string{"error_type"},
-		),
-
-		// Performance Metrics (BR-GATEWAY-067: HTTP metrics, BR-GATEWAY-079: Performance metrics)
-		HTTPRequestDuration: factory.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameHTTPRequestDuration, // DD-005 V3.0: Pattern B,
-				Help:    "HTTP request duration in seconds (includes full pipeline)",
-				Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s for P50/P95/P99 SLO
-			},
-			[]string{"endpoint", "method", "status"},
-		),
-
-		// Circuit Breaker Metrics (Resilience - Option B)
-		CircuitBreakerState: factory.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: MetricNameCircuitBreakerState,
-				Help: "Circuit breaker state (0=closed, 1=half-open, 2=open)",
-			},
-			[]string{"name"},
-		),
-
-		// Scope Filtering Metrics (BR-SCOPE-002)
-		SignalsRejectedTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameSignalsRejectedTotal,
-				Help: "Total signals rejected by scope filtering by rejection reason",
-			},
-			[]string{"reason"},
-		),
-
-		// Owner Resolution Metrics (#1029)
-		OwnerResolutionTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameOwnerResolutionTotal,
-				Help: "Total owner resolution attempts by resource kind and outcome",
-			},
-			[]string{"kind", "outcome"},
-		),
-
-		// Batch Parse Drop Metrics (#1032)
-		SignalsParseDroppedTotal: factory.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameSignalsParseDroppedTotal,
-				Help: "Total alerts dropped during batch parsing by reason",
-			},
-			[]string{"reason"},
-		),
-
-		// Discovery Refresh Metrics (#1029)
-		DiscoveryRefreshErrorsTotal: factory.NewCounter(
-			prometheus.CounterOpts{
-				Name: MetricNameDiscoveryRefreshErrorsTotal,
-				Help: "Total API discovery refresh failures",
-			},
-		),
-	}
-
+	m := &Metrics{registry: resolveGatherer(registry)}
+	registerIngestionAndCRDMetrics(m, factory)
+	registerResilienceAndScopeMetrics(m, factory)
 	return m
+}
+
+// resolveGatherer returns the registry as a Gatherer (for /metrics endpoint
+// exposure) when possible, falling back to the process-wide default.
+// Extracted from NewMetricsWithRegistry (funlen).
+func resolveGatherer(registry prometheus.Registerer) prometheus.Gatherer {
+	if reg, ok := registry.(prometheus.Gatherer); ok {
+		return reg
+	}
+	return prometheus.DefaultGatherer
+}
+
+// registerIngestionAndCRDMetrics registers the signal-ingestion, CRD-creation,
+// and HTTP performance metric families. Extracted from NewMetricsWithRegistry
+// (funlen).
+func registerIngestionAndCRDMetrics(m *Metrics, factory promauto.Factory) {
+	// Signal Ingestion Metrics (BR-GATEWAY-066: Prometheus metrics endpoint)
+	m.AlertsReceivedTotal = factory.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameSignalsReceivedTotal, // DD-005 V3.0: Pattern B,
+			Help: "Total signals received by source type and severity (Prometheus alerts, K8s events, etc.)",
+		},
+		[]string{"source_type", "severity"},
+	)
+	m.AlertsDeduplicatedTotal = factory.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameSignalsDeduplicatedTotal, // DD-005 V3.0: Pattern B,
+			Help: "Total signals deduplicated (duplicate fingerprint detected)",
+		},
+		[]string{"signal_name"},
+	)
+
+	// CRD Creation Metrics (BR-GATEWAY-068: CRD creation metrics)
+	m.CRDsCreatedTotal = factory.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameCRDsCreatedTotal, // DD-005 V3.0: Pattern B,
+			Help: "Total RemediationRequest CRDs created by source type and creation status",
+		},
+		[]string{"source_type", "status"},
+	)
+	m.CRDCreationErrors = factory.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameCRDCreationErrorsTotal, // DD-005 V3.0: Pattern B,
+			Help: "Total CRD creation errors by error type",
+		},
+		[]string{"error_type"},
+	)
+
+	// Performance Metrics (BR-GATEWAY-067: HTTP metrics, BR-GATEWAY-079: Performance metrics)
+	m.HTTPRequestDuration = factory.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameHTTPRequestDuration, // DD-005 V3.0: Pattern B,
+			Help:    "HTTP request duration in seconds (includes full pipeline)",
+			Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // 1ms to ~1s for P50/P95/P99 SLO
+		},
+		[]string{"endpoint", "method", "status"},
+	)
+}
+
+// registerResilienceAndScopeMetrics registers the circuit-breaker, scope
+// filtering, owner resolution, batch parse drop, and discovery refresh metric
+// families. Extracted from NewMetricsWithRegistry (funlen).
+func registerResilienceAndScopeMetrics(m *Metrics, factory promauto.Factory) {
+	// Circuit Breaker Metrics (Resilience - Option B)
+	m.CircuitBreakerState = factory.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: MetricNameCircuitBreakerState,
+			Help: "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+		},
+		[]string{"name"},
+	)
+
+	// Scope Filtering Metrics (BR-SCOPE-002)
+	m.SignalsRejectedTotal = factory.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameSignalsRejectedTotal,
+			Help: "Total signals rejected by scope filtering by rejection reason",
+		},
+		[]string{"reason"},
+	)
+
+	// Owner Resolution Metrics (#1029)
+	m.OwnerResolutionTotal = factory.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameOwnerResolutionTotal,
+			Help: "Total owner resolution attempts by resource kind and outcome",
+		},
+		[]string{"kind", "outcome"},
+	)
+
+	// Batch Parse Drop Metrics (#1032)
+	m.SignalsParseDroppedTotal = factory.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameSignalsParseDroppedTotal,
+			Help: "Total alerts dropped during batch parsing by reason",
+		},
+		[]string{"reason"},
+	)
+
+	// Discovery Refresh Metrics (#1029)
+	m.DiscoveryRefreshErrorsTotal = factory.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricNameDiscoveryRefreshErrorsTotal,
+			Help: "Total API discovery refresh failures",
+		},
+	)
 }
 
 // Registry returns the Prometheus Gatherer for this metrics instance

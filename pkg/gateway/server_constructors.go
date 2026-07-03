@@ -41,6 +41,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes" // BR-GATEWAY-036/037: K8s clientset for TokenReview/SAR
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -185,67 +186,29 @@ func NewServerForTesting(deps ServerTestDeps) (*Server, error) {
 
 	// Create server first (crdCreator set below after observer wiring)
 	// DD-STATUS-001: Use ctrlClient as apiReader for readiness/dedup (test env uses direct API, no cache)
-	server := &Server{
-		config:              cfg,
-		adapterRegistry:     adapterRegistry,
-		statusUpdater:       statusUpdater,
-		phaseChecker:        phaseChecker,
-		k8sClient:           k8sClient,
-		ctrlClient:          ctrlClient,
-		apiReader:           ctrlClient,   // Test env: ctrlClient is uncached, works for readiness List
-		lockManager:         lockManager,  // BR-GATEWAY-190: Multi-replica deduplication safety
-		auditStore:          auditStore,   // Injected for testing
-		scopeChecker:        scopeChecker, // BR-SCOPE-002: nil = no scope filtering
-		controllerNamespace: controllerNS, // Issue #195: Used by ShouldDeduplicate
-		authMiddleware:      newAuthMiddleware(authenticator, authorizer, controllerNS, logger),
-		metricsInstance:     metricsInstance,
-		logger:              logger,
-	}
-
-	// Issue #852: Mark cache as ready in test constructor. Real production startup
-	// calls MarkCacheReady() after WaitForCacheSync; tests bypass cache startup.
-	server.cacheReady.Store(true)
+	server := assembleServer(serverAssemblyInputs{
+		cfg:             cfg,
+		logger:          logger,
+		metricsInstance: metricsInstance,
+		adapterRegistry: adapterRegistry,
+		statusUpdater:   statusUpdater,
+		phaseChecker:    phaseChecker,
+		lockManager:     lockManager, // BR-GATEWAY-190: Multi-replica deduplication safety
+		k8sClient:       k8sClient,
+		ctrlClient:      ctrlClient,
+		apiReader:       ctrlClient,   // Test env: ctrlClient is uncached, works for readiness List
+		auditStore:      auditStore,   // Injected for testing
+		scopeChecker:    scopeChecker, // BR-SCOPE-002: nil = no scope filtering
+		controllerNS:    controllerNS,
+		authenticator:   authenticator,
+		authorizer:      authorizer,
+	})
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
 	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server}, controllerNS)
 
-	// Setup HTTP server with routes
-	router := server.setupRoutes()
-	server.router = router
-	handler := server.wrapWithMiddleware(router)
-
-	server.httpServer = &http.Server{
-		Addr:              cfg.Server.ListenAddr,
-		Handler:           handler,
-		ReadTimeout:       cfg.Server.ReadTimeout,
-		WriteTimeout:      cfg.Server.WriteTimeout,
-		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
-	}
-
-	// Issue #753: Dedicated health and metrics servers for testing
-	server.healthServer = sharedhealth.NewHealthServer(
-		cfg.Server.HealthAddr,
-		server.LivenessHandler(),
-		server.ReadinessHandler(),
-		!cfg.Server.DisableProfiling,
-	)
-
-	metricsMux := http.NewServeMux()
-	var metricsHandler http.Handler
-	if metricsInstance.Registry() != nil {
-		metricsHandler = promhttp.HandlerFor(metricsInstance.Registry(), promhttp.HandlerOpts{})
-	} else {
-		metricsHandler = promhttp.Handler()
-	}
-	metricsMux.Handle("/metrics", metricsHandler)
-	server.metricsServer = &http.Server{
-		Addr:              cfg.Server.MetricsAddr,
-		Handler:           metricsMux,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-	}
+	server.wireTestHTTPAndAncillaryServers(cfg, metricsInstance)
 
 	if cfg.Server.TLS.Enabled() {
 		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
@@ -262,6 +225,147 @@ func NewServerForTesting(deps ServerTestDeps) (*Server, error) {
 	return server, nil
 }
 
+// buildGatewayScheme creates the runtime.Scheme with the RemediationRequest
+// CRD plus the core/apps/batch/coordination K8s types Gateway needs for
+// owner-chain resolution and distributed locking. Extracted from
+// NewServerWithMetrics (funlen).
+func buildGatewayScheme() *k8sruntime.Scheme {
+	scheme := k8sruntime.NewScheme()
+	_ = remediationv1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)         // Add core types (Namespace, Pod, etc.)
+	_ = appsv1.AddToScheme(scheme)         // #270: Apps types (Deployment, ReplicaSet, StatefulSet, DaemonSet)
+	_ = batchv1.AddToScheme(scheme)        // #270: Batch types (Job, CronJob)
+	_ = coordinationv1.AddToScheme(scheme) // BR-GATEWAY-190: Add Lease type for distributed locking
+	return scheme
+}
+
+// buildGatewayCache creates the controller-runtime cache with a
+// spec.signalFingerprint field index (BR-GATEWAY-185 v1.1), eagerly starts
+// the scope/owner-resolution informers (Issue #54 SOC2 gap fix), and blocks
+// until the cache syncs (30s timeout). Extracted from NewServerWithMetrics
+// (funlen).
+//
+// Eager informer start rationale: without this, informers for scope-check and
+// owner-resolution kinds (Deployment, Namespace, Pod, etc.) are created LAZILY
+// on first use. pkg/shared/scope/manager.go's Get() call blocks until that
+// informer syncs, bounded by a defensive 5s timeout — under CI/production
+// load the first-ever List+Watch establishment can exceed 5s, causing the
+// timeout to fire and a correctly-labeled resource to be misclassified as
+// unmanaged (BR-SCOPE-001) until the informer catches up. Eagerly starting
+// these informers here, covered by this function's own 30s WaitForCacheSync,
+// ensures the readiness probe does not report ready until scope checks are
+// reliable.
+//
+// ConfigMap and Secret are intentionally excluded: RBAC for these two kinds is
+// not consistently granted cluster-wide (the Helm chart grants ConfigMap only
+// namespace-scoped, and Secret access was deliberately removed entirely —
+// Issue #673 H-3, "gateway has no business need for secret access"). Eagerly
+// starting their informers would make WaitForCacheSync hang wherever that
+// narrower RBAC applies, crash-looping Gateway. They keep lazy-informer behavior.
+//
+// The returned cancel func is the cache's lifecycle handle: callers MUST call
+// it on any subsequent error, and store it for later shutdown on success.
+func buildGatewayCache(
+	kubeConfig *rest.Config,
+	scheme *k8sruntime.Scheme,
+	controllerNS string,
+	logger logr.Logger,
+) (cache.Cache, context.CancelFunc, error) {
+	// #270: Build ByObject map with metadata-only informers for owner chain resolution
+	// OwnerResolver and ScopeManager need cached lookups for Pods, ReplicaSets, Deployments, etc.
+	byObject := adapters.OwnerChainCacheObjects()
+	byObject[&remediationv1alpha1.RemediationRequest{}] = cache.ByObject{
+		Namespaces: map[string]cache.Config{
+			controllerNS: {}, // ADR-057: restrict RR to controller namespace
+		},
+	}
+
+	k8sCache, err := cache.New(kubeConfig, cache.Options{
+		Scheme:   scheme,
+		ByObject: byObject,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create Kubernetes cache: %w", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// Add field index for spec.signalFingerprint (BR-GATEWAY-185 v1.1):
+	// enables O(1) lookup by fingerprint without label truncation.
+	if err := k8sCache.IndexField(ctx, &remediationv1alpha1.RemediationRequest{},
+		"spec.signalFingerprint",
+		func(obj client.Object) []string {
+			rr := obj.(*remediationv1alpha1.RemediationRequest)
+			return []string{rr.Spec.SignalFingerprint}
+		}); err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to create fingerprint field index: %w", err)
+	}
+
+	for obj := range byObject {
+		if kind := obj.GetObjectKind().GroupVersionKind().Kind; kind == "ConfigMap" || kind == "Secret" {
+			continue
+		}
+		if _, err := k8sCache.GetInformer(ctx, obj); err != nil {
+			cancel()
+			return nil, nil, fmt.Errorf("failed to start informer for %T: %w", obj, err)
+		}
+	}
+
+	go func() {
+		if err := k8sCache.Start(ctx); err != nil {
+			logger.Error(err, "BR-GATEWAY-185: Cache stopped unexpectedly")
+		}
+	}()
+
+	syncCtx, syncCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer syncCancel()
+	if !k8sCache.WaitForCacheSync(syncCtx) {
+		cancel()
+		return nil, nil, fmt.Errorf("failed to sync Kubernetes cache (timeout)")
+	}
+	logger.Info("BR-GATEWAY-185: Kubernetes cache synced with spec.signalFingerprint index")
+
+	return k8sCache, cancel, nil
+}
+
+// buildGatewayClients creates the cached controller-runtime client (reads
+// through cache, writes to API) and the uncached apiReader (DD-STATUS-001:
+// fresh reads immediately after CRD creation, bypassing cache sync delay —
+// adopted from RemediationOrchestrator's mgr.GetAPIReader() pattern).
+// Extracted from NewServerWithMetrics (funlen).
+func buildGatewayClients(kubeConfig *rest.Config, scheme *k8sruntime.Scheme, k8sCache cache.Cache) (ctrlClient, apiReader client.Client, err error) {
+	ctrlClient, err = client.New(kubeConfig, client.Options{
+		Scheme: scheme,
+		Cache: &client.CacheOptions{
+			Reader: k8sCache,
+		},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
+	}
+
+	apiReader, err = client.New(kubeConfig, client.Options{
+		Scheme: scheme,
+		// NO Cache option = direct API server reads (no cache)
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create uncached API reader: %w", err)
+	}
+
+	return ctrlClient, apiReader, nil
+}
+
+// buildGatewayAuth creates the K8s TokenReview/SAR-backed authenticator and
+// authorizer (BR-GATEWAY-036/037). Extracted from NewServerWithMetrics (funlen).
+func buildGatewayAuth(kubeConfig *rest.Config) (auth.Authenticator, auth.Authorizer, error) {
+	k8sClientset, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create Kubernetes clientset for auth: %w", err)
+	}
+	return auth.NewK8sAuthenticator(k8sClientset), auth.NewK8sAuthorizer(k8sClientset), nil
+}
+
 func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsInstance *metrics.Metrics) (*Server, error) {
 	// DD-GATEWAY-012: Redis REMOVED - Gateway is now Redis-free, K8s-native service
 
@@ -276,14 +380,7 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 		return nil, fmt.Errorf("failed to get Kubernetes config: %w", err)
 	}
 
-	// Create scheme with RemediationRequest CRD + core K8s types
-	// This is required for controller-runtime to work with custom CRDs
-	scheme := k8sruntime.NewScheme()
-	_ = remediationv1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)         // Add core types (Namespace, Pod, etc.)
-	_ = appsv1.AddToScheme(scheme)         // #270: Apps types (Deployment, ReplicaSet, StatefulSet, DaemonSet)
-	_ = batchv1.AddToScheme(scheme)        // #270: Batch types (Job, CronJob)
-	_ = coordinationv1.AddToScheme(scheme) // BR-GATEWAY-190: Add Lease type for distributed locking
+	scheme := buildGatewayScheme()
 
 	// ADR-057: Discover controller namespace for CRD watch restriction
 	controllerNS, err := scope.GetControllerNamespace()
@@ -291,125 +388,28 @@ func NewServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger, metricsI
 		return nil, fmt.Errorf("failed to determine controller namespace: %w", err)
 	}
 
-	// ========================================
-	// BR-GATEWAY-185 v1.1: Create cached client with field index
-	// Use spec.signalFingerprint (immutable, 64-char SHA256) instead of truncated labels
-	// ========================================
-
-	// #270: Build ByObject map with metadata-only informers for owner chain resolution
-	// OwnerResolver and ScopeManager need cached lookups for Pods, ReplicaSets, Deployments, etc.
-	byObject := adapters.OwnerChainCacheObjects()
-	byObject[&remediationv1alpha1.RemediationRequest{}] = cache.ByObject{
-		Namespaces: map[string]cache.Config{
-			controllerNS: {},
-		},
-	}
-
-	// Create cache for efficient queries (ADR-057: restrict RR to controller namespace)
-	k8sCache, err := cache.New(kubeConfig, cache.Options{
-		Scheme:   scheme,
-		ByObject: byObject,
-	})
+	// BR-GATEWAY-185 v1.1: Cached client with spec.signalFingerprint field index
+	// (immutable, 64-char SHA256) instead of truncated labels.
+	k8sCache, cancel, err := buildGatewayCache(kubeConfig, scheme, controllerNS, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Kubernetes cache: %w", err)
+		return nil, err
 	}
 
-	// Add field index for spec.signalFingerprint (BR-GATEWAY-185 v1.1)
-	// This enables O(1) lookup by fingerprint without label truncation
-	ctx, cancel := context.WithCancel(context.Background())
-	if err := k8sCache.IndexField(ctx, &remediationv1alpha1.RemediationRequest{},
-		"spec.signalFingerprint",
-		func(obj client.Object) []string {
-			rr := obj.(*remediationv1alpha1.RemediationRequest)
-			return []string{rr.Spec.SignalFingerprint}
-		}); err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to create fingerprint field index: %w", err)
-	}
-
-	// Issue #54 SOC2 gap fix: eagerly start informers for scope/owner-resolution kinds
-	// (Deployment, Namespace, Pod, etc. — see adapters.OwnerChainCacheObjects) so the
-	// WaitForCacheSync call below also gates readiness on them.
-	//
-	// Without this, these informers are created LAZILY on the first scope-check or
-	// owner-resolution request after Gateway (re)starts. pkg/shared/scope/manager.go's
-	// Get() call blocks until that informer's cache is synced, bounded by a defensive
-	// scopeLookupTimeout (5s) to avoid hanging forever when RBAC is missing. Under CI/
-	// production load the FIRST-ever List+Watch establishment for a kind can exceed 5s,
-	// so the defensive timeout fires, checkResourceLabel/checkNamespaceLabel silently
-	// fall through as "not found", and a correctly-labeled resource gets misclassified
-	// as unmanaged (BR-SCOPE-001) until the informer catches up. Eagerly starting these
-	// informers here — and covering them with the existing 30s WaitForCacheSync —
-	// ensures the readiness probe does not report ready until scope checks are reliable.
-	//
-	// ConfigMap and Secret are intentionally excluded: RBAC for these two kinds is not
-	// consistently granted cluster-wide across deployment manifests (the Helm chart
-	// grants ConfigMap only namespace-scoped via a separate Role, and Secret access was
-	// deliberately removed entirely — Issue #673 H-3, "gateway has no business need for
-	// secret access"). Eagerly starting their informers would make WaitForCacheSync hang
-	// until timeout wherever that narrower RBAC applies, crash-looping Gateway. They keep
-	// their pre-existing lazy-informer behavior.
-	for obj := range byObject {
-		if kind := obj.GetObjectKind().GroupVersionKind().Kind; kind == "ConfigMap" || kind == "Secret" {
-			continue
-		}
-		if _, err := k8sCache.GetInformer(ctx, obj); err != nil {
-			cancel()
-			return nil, fmt.Errorf("failed to start informer for %T: %w", obj, err)
-		}
-	}
-
-	// Start cache in background
-	go func() {
-		if err := k8sCache.Start(ctx); err != nil {
-			logger.Error(err, "BR-GATEWAY-185: Cache stopped unexpectedly")
-		}
-	}()
-
-	// Wait for cache sync (timeout after 30s)
-	syncCtx, syncCancel := context.WithTimeout(ctx, 30*time.Second)
-	defer syncCancel()
-	if !k8sCache.WaitForCacheSync(syncCtx) {
-		cancel()
-		return nil, fmt.Errorf("failed to sync Kubernetes cache (timeout)")
-	}
-	logger.Info("BR-GATEWAY-185: Kubernetes cache synced with spec.signalFingerprint index")
-
-	// Create client backed by cache (reads go through cache, writes go to API)
-	ctrlClient, err := client.New(kubeConfig, client.Options{
-		Scheme: scheme,
-		Cache: &client.CacheOptions{
-			Reader: k8sCache,
-		},
-	})
+	ctrlClient, apiReader, err := buildGatewayClients(kubeConfig, scheme, k8sCache)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to create controller-runtime client: %w", err)
-	}
-
-	// DD-STATUS-001: Create UNCACHED client for fresh API reads (adopted from RO pattern)
-	// This is critical for reading CRDs immediately after creation (bypasses cache sync delays)
-	// RO uses mgr.GetAPIReader() which returns an uncached client - we replicate that here
-	apiReader, err := client.New(kubeConfig, client.Options{
-		Scheme: scheme,
-		// NO Cache option = direct API server reads (no cache)
-	})
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to create uncached API reader: %w", err)
+		return nil, err
 	}
 
 	// k8s client wrapper (for CRD operations)
 	k8sClient := k8s.NewClient(ctrlClient)
 
-	// BR-GATEWAY-036/037: Create K8s clientset for TokenReview/SAR auth
-	k8sClientset, err := kubernetes.NewForConfig(kubeConfig)
+	// BR-GATEWAY-036/037: Auth (TokenReview/SAR)
+	authenticator, authorizer, err := buildGatewayAuth(kubeConfig)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("failed to create Kubernetes clientset for auth: %w", err)
+		return nil, err
 	}
-	authenticator := auth.NewK8sAuthenticator(k8sClientset)
-	authorizer := auth.NewK8sAuthorizer(k8sClientset)
 
 	// DD-STATUS-001: Pass separate cached client and uncached apiReader
 	// ctrlClient: Cached reads/writes for normal operations
@@ -451,6 +451,169 @@ type serverClients struct {
 // DD-AUDIT-003: Audit store initialization for P0 service compliance
 // DD-STATUS-001: apiReader parameter added for cache-bypassed status refetch (adopted from RO)
 // BR-GATEWAY-190: apiReader is client.Client (not just client.Reader) for distributed locking Create/Update/Delete operations
+// buildLockManager initializes the distributed lock manager for multi-replica
+// safety (BR-GATEWAY-190), or returns nil (with a loud warning) when POD_NAME
+// is not set, since locking requires a stable per-pod identity. Extracted
+// from createServerWithClients to keep its cognitive complexity low.
+func buildLockManager(apiReader client.Client, logger logr.Logger) *processing.DistributedLockManager {
+	podName := os.Getenv("POD_NAME")
+	if podName == "" {
+		logger.Error(nil, "WARNING: POD_NAME not set — distributed locking disabled. "+
+			"Multi-replica deployments WILL create duplicate RemediationRequests. "+
+			"Set POD_NAME via Kubernetes downward API in production.")
+		return nil
+	}
+
+	namespace := os.Getenv("POD_NAMESPACE")
+	if namespace == "" {
+		namespace = "kubernaut-system"
+	}
+	return processing.NewDistributedLockManager(apiReader, namespace, podName)
+}
+
+// buildAuditStore initializes the audit store for P0 service compliance.
+// DD-AUDIT-003 / ADR-032 §1.5/§3: Gateway MUST crash on init failure or when
+// Data Storage is unconfigured — audit is mandatory, not best-effort, for a
+// P0 (business-critical) service. Extracted from createServerWithClients to
+// keep its cognitive complexity low.
+func buildAuditStore(cfg *config.ServerConfig, logger logr.Logger) (audit.AuditStore, error) {
+	if cfg.DataStorage.URL == "" {
+		return nil, fmt.Errorf("FATAL: Data Storage URL not configured - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service)")
+	}
+
+	// DD-API-001: Use OpenAPI generated client (not direct HTTP)
+	// DD-AUTH-005 DI: cfg.DataStorage.Transport overrides the default SA token transport
+	// (used by integration tests to inject authenticated transports)
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(cfg.DataStorage.URL, cfg.DataStorage.Timeout, cfg.DataStorage.Transport)
+	if err != nil {
+		return nil, fmt.Errorf("FATAL: failed to create Data Storage client - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
+	}
+
+	// ADR-030: Use buffer config from YAML ConfigMap
+	auditConfig := audit.Config{
+		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
+		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
+		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
+		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
+	}
+
+	auditStore, err := audit.NewBufferedStore(dsClient, auditConfig, "gateway", logger)
+	if err != nil {
+		return nil, fmt.Errorf("FATAL: failed to create audit store - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
+	}
+	logger.Info("DD-AUDIT-003: Audit store initialized for P0 compliance (ADR-032 §1.5)",
+		"data_storage_url", cfg.DataStorage.URL,
+		"buffer_size", auditConfig.BufferSize)
+	return auditStore, nil
+}
+
+// buildScopeChecker initializes label-based resource opt-in filtering
+// (BR-SCOPE-002), federated across fleet members when enabled (ADR-068).
+// Uses ctrlClient (informer-backed) because namespace labels are stable and
+// tolerate informer sync delay, unlike phaseChecker/lockManager which need
+// apiReader for immediate consistency. Extracted from createServerWithClients
+// to keep its cognitive complexity low.
+func buildScopeChecker(ctrlClient client.Client, cfg *config.ServerConfig, logger logr.Logger) (scope.ScopeChecker, error) {
+	scopeMgr := scope.NewManager(ctrlClient)
+
+	scopeCheckerInstance, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger)
+	if err != nil {
+		return nil, fmt.Errorf("fleet scope checker: %w", err)
+	}
+	if cfg.Fleet.Enabled && cfg.Fleet.EffectiveEndpoint() != "" {
+		logger.Info("ADR-068: Federated scope checker enabled",
+			"backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
+	}
+	return scopeCheckerInstance, nil
+}
+
+// buildCorePipelineComponents constructs the adapter registry, circuit
+// breaker-wrapped K8s client, status updater, and phase-based deduplication
+// checker. Extracted from createServerWithClients to keep its line count low.
+//
+// DD-GATEWAY-016 / BR-GATEWAY-093: Circuit Breaker Integration.
+// Circuit breaker protects Gateway from K8s API cascading failures:
+//   - ClientWithCircuitBreaker wraps k8sClient with fail-fast protection
+//   - CRDCreator uses k8s.ClientInterface (supports both Client and ClientWithCircuitBreaker)
+//   - Circuit breaker metrics: gateway_circuit_breaker_state
+//   - States: Closed(0)=normal, Open(2)=fail-fast (<10ms, gobreaker.ErrOpenState), Half-Open(1)=testing recovery
+//   - Config: 50% failure threshold over 10 requests, 30s open timeout, 3 half-open test requests
+//
+// DD-GATEWAY-011: Status-based deduplication — all state lives in K8s RR
+// status (Redis fully deprecated). Both statusUpdater and phaseChecker use
+// apiReader (cache-bypassed) to eliminate race conditions where concurrent
+// requests must see each other's CRD creations immediately (GW-DEDUP-002 fix).
+func buildCorePipelineComponents(
+	cfg *config.ServerConfig,
+	logger logr.Logger,
+	ctrlClient client.Client,
+	apiReader client.Client,
+	k8sClient *k8s.Client,
+	metricsInstance *metrics.Metrics,
+) (*adapters.AdapterRegistry, *k8s.ClientWithCircuitBreaker, *processing.StatusUpdater, *processing.PhaseBasedDeduplicationChecker) {
+	adapterRegistry := adapters.NewAdapterRegistry(logger)
+	cbClient := k8s.NewClientWithCircuitBreaker(k8sClient, metricsInstance)
+	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
+	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader, cfg.Processing.Deduplication.CooldownPeriod)
+	return adapterRegistry, cbClient, statusUpdater, phaseChecker
+}
+
+// serverAssemblyInputs bundles the already-constructed dependencies needed to
+// assemble a *Server, avoiding an 8+ parameter function signature (Go
+// Anti-Pattern Checklist). Extracted from createServerWithClients (funlen).
+type serverAssemblyInputs struct {
+	cfg             *config.ServerConfig
+	logger          logr.Logger
+	metricsInstance *metrics.Metrics
+	adapterRegistry *adapters.AdapterRegistry
+	statusUpdater   *processing.StatusUpdater
+	phaseChecker    *processing.PhaseBasedDeduplicationChecker
+	lockManager     *processing.DistributedLockManager
+	k8sClient       *k8s.Client
+	ctrlClient      client.Client
+	apiReader       client.Client
+	auditStore      audit.AuditStore
+	scopeChecker    scope.ScopeChecker
+	controllerNS    string
+	authenticator   auth.Authenticator
+	authorizer      auth.Authorizer
+}
+
+// assembleServer builds the *Server struct from its already-constructed
+// dependencies and marks the cache ready. Extracted from
+// createServerWithClients (funlen).
+func assembleServer(in serverAssemblyInputs) *Server {
+	authMW := newAuthMiddleware(in.authenticator, in.authorizer, in.controllerNS, in.logger)
+	if authMW != nil {
+		in.logger.Info("BR-GATEWAY-036/037: Auth middleware enabled",
+			"namespace", in.controllerNS,
+			"resource", "services/gateway-service",
+			"verb", "create")
+	}
+
+	server := &Server{
+		config:              in.cfg,
+		adapterRegistry:     in.adapterRegistry,
+		statusUpdater:       in.statusUpdater,
+		phaseChecker:        in.phaseChecker,
+		lockManager:         in.lockManager,
+		k8sClient:           in.k8sClient,
+		ctrlClient:          in.ctrlClient,
+		apiReader:           in.apiReader, // ADR-057: Used for readiness K8s check (bypasses cache)
+		auditStore:          in.auditStore,
+		scopeChecker:        in.scopeChecker, // BR-SCOPE-002 + ADR-065: Label-based scope filtering (federated when fleet enabled)
+		controllerNamespace: in.controllerNS, // Issue #195: Used by ShouldDeduplicate
+		authMiddleware:      authMW,
+		metricsInstance:     in.metricsInstance,
+		logger:              in.logger,
+	}
+
+	// Issue #852: Mark cache as ready. createServerWithClients is only reached after
+	// WaitForCacheSync succeeds (production) or with direct K8s client (tests).
+	server.cacheReady.Store(true)
+	return server
+}
+
 func createServerWithClients(deps serverClients) (*Server, error) {
 	cfg, logger, metricsInstance, ctrlClient, apiReader, k8sClient, authenticator, authorizer :=
 		deps.Config, deps.Logger, deps.MetricsInstance, deps.CtrlClient, deps.APIReader, deps.K8sClient, deps.Authenticator, deps.Authorizer
@@ -467,160 +630,65 @@ func createServerWithClients(deps serverClients) (*Server, error) {
 		return nil, fmt.Errorf("failed to determine controller namespace: %w", err)
 	}
 
-	// Initialize processing pipeline components
-	adapterRegistry := adapters.NewAdapterRegistry(logger)
+	// Initialize processing pipeline components (BR-GATEWAY-093/DD-GATEWAY-016
+	// circuit breaker, DD-GATEWAY-011 status-based deduplication)
+	adapterRegistry, cbClient, statusUpdater, phaseChecker := buildCorePipelineComponents(cfg, logger, ctrlClient, apiReader, k8sClient, metricsInstance)
 
-	// DD-GATEWAY-016 / BR-GATEWAY-093: Circuit Breaker Integration (TDD GREEN COMPLETE)
-	// ========================================
-	// Circuit breaker protects Gateway from K8s API cascading failures
-	//
-	// Implementation:
-	//   - ClientWithCircuitBreaker wraps k8sClient with fail-fast protection
-	//   - CRDCreator uses k8s.ClientInterface (supports both Client and ClientWithCircuitBreaker)
-	//   - Circuit breaker metrics: gateway_circuit_breaker_state
-	//
-	// Behavior:
-	//   - Closed (0): Normal operation, all requests pass through
-	//   - Open (2): K8s API degraded, requests fail-fast (<10ms) with gobreaker.ErrOpenState
-	//   - Half-Open (1): Testing recovery, limited requests allowed
-	//
-	// Configuration:
-	//   - Threshold: 50% failure rate over 10 requests
-	//   - Timeout: 30s (transitions to half-open after 30s in open state)
-	//   - Max Requests: 3 (half-open state test requests)
-	//
-	// Business Requirements:
-	//   - BR-GATEWAY-093-A: Fail-fast when K8s API unavailable
-	//   - BR-GATEWAY-093-B: Prevent cascade failures during K8s API overload
-	//   - BR-GATEWAY-093-C: Observable metrics for SRE response
-	//
-	// Design Decision: DD-GATEWAY-016 (K8s API Circuit Breaker Implementation)
-	// ========================================
-	cbClient := k8s.NewClientWithCircuitBreaker(k8sClient, metricsInstance)
+	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety.
+	// Uses apiReader (non-cached client) for immediate consistency — cached client
+	// has 5-50ms sync delay → race condition → duplicate locks.
+	lockManager := buildLockManager(apiReader, logger)
 
-	// DD-GATEWAY-011: Status-based deduplication
-	// All state in K8s RR status - Redis fully deprecated
-	// DD-STATUS-001: Pass apiReader for cache-bypassed status refetch (adopted from RO pattern)
-	statusUpdater := processing.NewStatusUpdater(ctrlClient, apiReader)
-	// DD-GATEWAY-011: Use apiReader for deduplication to eliminate race conditions (cache-bypassed reads)
-	// This ensures concurrent requests see each other's CRD creations immediately (GW-DEDUP-002 fix)
-	phaseChecker := processing.NewPhaseBasedDeduplicationChecker(apiReader, cfg.Processing.Deduplication.CooldownPeriod)
-
-	// BR-GATEWAY-190: Initialize distributed lock manager for multi-replica safety
-	// Uses K8s Lease resources for distributed locking (no external dependencies)
-	//
-	// CRITICAL: Uses apiReader (non-cached client) for immediate consistency
-	// WHY: Cached client has 5-50ms sync delay → race condition → duplicate locks
-	// IMPACT: 3-24 API req/sec (production load) - acceptable per impact analysis
-	var lockManager *processing.DistributedLockManager
-	podName := os.Getenv("POD_NAME")
-	namespace := os.Getenv("POD_NAMESPACE")
-	if namespace == "" {
-		namespace = "kubernaut-system"
-	}
-	if podName != "" {
-		lockManager = processing.NewDistributedLockManager(apiReader, namespace, podName)
-	} else {
-		logger.Error(nil, "WARNING: POD_NAME not set — distributed locking disabled. "+
-			"Multi-replica deployments WILL create duplicate RemediationRequests. "+
-			"Set POD_NAME via Kubernetes downward API in production.")
-	}
-
-	// DD-AUDIT-003: Initialize audit store for P0 service compliance
-	// Gateway MUST emit audit events per DD-AUDIT-003: Service Audit Trace Requirements
-	// ADR-032 §1.5: "Every alert/signal processed (SignalProcessing, Gateway)"
-	// ADR-032 §3: Gateway is P0 (Business-Critical) - MUST crash if audit unavailable
-	var auditStore audit.AuditStore
-	if cfg.DataStorage.URL != "" {
-		// DD-API-001: Use OpenAPI generated client (not direct HTTP)
-		// DD-AUTH-005 DI: cfg.DataStorage.Transport overrides the default SA token transport
-		// (used by integration tests to inject authenticated transports)
-		dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(cfg.DataStorage.URL, cfg.DataStorage.Timeout, cfg.DataStorage.Transport)
-		if err != nil {
-			// ADR-032 §2: No fallback/recovery allowed - crash on init failure
-			return nil, fmt.Errorf("FATAL: failed to create Data Storage client - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
-		}
-		// ADR-030: Use buffer config from YAML ConfigMap
-		auditConfig := audit.Config{
-			BufferSize:    cfg.DataStorage.Buffer.BufferSize,
-			BatchSize:     cfg.DataStorage.Buffer.BatchSize,
-			FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
-			MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
-		}
-
-		auditStore, err = audit.NewBufferedStore(dsClient, auditConfig, "gateway", logger)
-		if err != nil {
-			// ADR-032 §2: No fallback/recovery allowed - crash on init failure
-			return nil, fmt.Errorf("FATAL: failed to create audit store - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
-		}
-		logger.Info("DD-AUDIT-003: Audit store initialized for P0 compliance (ADR-032 §1.5)",
-			"data_storage_url", cfg.DataStorage.URL,
-			"buffer_size", auditConfig.BufferSize)
-	} else {
-		// ADR-032 §1.5: Data Storage URL is MANDATORY for P0 services (Gateway processes alerts/signals)
-		// ADR-032 §3: Gateway is P0 (Business-Critical) - MUST crash if audit unavailable
-		return nil, fmt.Errorf("FATAL: Data Storage URL not configured - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service)")
-	}
-
-	// BR-SCOPE-002: Initialize scope manager for label-based resource opt-in filtering.
-	// Uses ctrlClient (informer-backed) because namespace labels are stable — they are set
-	// well before alerts arrive and don't change mid-flight. This avoids hitting the API
-	// server with 1-2 Get calls per incoming alert under production load.
-	// Unlike phaseChecker/lockManager (which need apiReader for immediate consistency to
-	// prevent duplicate CRDs and lock races), scope checking tolerates informer sync delay.
-	scopeMgr := scope.NewManager(ctrlClient)
-
-	// ADR-068: Federated scope checking via fleet.NewScopeChecker factory.
-	scopeCheckerInstance, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger)
+	// DD-AUDIT-003 / ADR-032 §1.5/§3: Audit store is MANDATORY for Gateway (P0 service).
+	auditStore, err := buildAuditStore(cfg, logger)
 	if err != nil {
-		return nil, fmt.Errorf("fleet scope checker: %w", err)
-	}
-	if cfg.Fleet.Enabled && cfg.Fleet.EffectiveEndpoint() != "" {
-		logger.Info("ADR-068: Federated scope checker enabled",
-			"backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
+		return nil, err
 	}
 
-	authMW := newAuthMiddleware(authenticator, authorizer, controllerNS, logger)
-	if authMW != nil {
-		logger.Info("BR-GATEWAY-036/037: Auth middleware enabled",
-			"namespace", controllerNS,
-			"resource", "services/gateway-service",
-			"verb", "create")
+	// BR-SCOPE-002 / ADR-068: Label-based resource opt-in filtering, federated when fleet enabled.
+	scopeCheckerInstance, err := buildScopeChecker(ctrlClient, cfg, logger)
+	if err != nil {
+		return nil, err
 	}
 
-	// Create server first (crdCreator set below after observer wiring)
-	server := &Server{
-		config:              cfg,
-		adapterRegistry:     adapterRegistry,
-		statusUpdater:       statusUpdater,
-		phaseChecker:        phaseChecker,
-		lockManager:         lockManager,
-		k8sClient:           k8sClient,
-		ctrlClient:          ctrlClient,
-		apiReader:           apiReader, // ADR-057: Used for readiness K8s check (bypasses cache)
-		auditStore:          auditStore,
-		scopeChecker:        scopeCheckerInstance, // BR-SCOPE-002 + ADR-065: Label-based scope filtering (federated when fleet enabled)
-		controllerNamespace: controllerNS,         // Issue #195: Used by ShouldDeduplicate
-		authMiddleware:      authMW,
-		metricsInstance:     metricsInstance,
-		logger:              logger,
-	}
-
-	// Issue #852: Mark cache as ready. createServerWithClients is only reached after
-	// WaitForCacheSync succeeds (production) or with direct K8s client (tests).
-	server.cacheReady.Store(true)
+	server := assembleServer(serverAssemblyInputs{
+		cfg:             cfg,
+		logger:          logger,
+		metricsInstance: metricsInstance,
+		adapterRegistry: adapterRegistry,
+		statusUpdater:   statusUpdater,
+		phaseChecker:    phaseChecker,
+		lockManager:     lockManager,
+		k8sClient:       k8sClient,
+		ctrlClient:      ctrlClient,
+		apiReader:       apiReader,
+		auditStore:      auditStore,
+		scopeChecker:    scopeCheckerInstance,
+		controllerNS:    controllerNS,
+		authenticator:   authenticator,
+		authorizer:      authorizer,
+	})
 
 	// Create CRD creator with retry observer wired to server audit emission
 	// BR-GATEWAY-058: retryAuditObserver emits gateway.crd.failed per retry attempt
 	server.crdCreator = processing.NewCRDCreator(cbClient, logger, metricsInstance, &cfg.Processing.Retry, &retryAuditObserver{server: server}, controllerNS)
 
-	// 6. Setup HTTP server with routes
+	server.wireHTTPAndAncillaryServers(cfg, metricsInstance)
+
+	if err := server.configureTLS(cfg); err != nil {
+		return nil, err
+	}
+
+	return server, nil
+}
+
+// wireHTTPAndAncillaryServers sets up the router, middleware chain, and main
+// HTTP server, plus the dedicated health/metrics servers. Extracted from
+// createServerWithClients (funlen).
+func (server *Server) wireHTTPAndAncillaryServers(cfg *config.ServerConfig, metricsInstance *metrics.Metrics) {
 	router := server.setupRoutes()
+	server.router = router // Store router reference for adapter registration
 
-	// 7. Store router reference for adapter registration
-	server.router = router
-
-	// 8. Wrap with additional middleware
 	// BUSINESS OUTCOME: Enable operators to trace requests across Gateway components
 	// TDD GREEN: Minimal implementation to make BR-109 tests pass
 	handler := server.wrapWithMiddleware(router)
@@ -634,7 +702,34 @@ func createServerWithClients(deps serverClients) (*Server, error) {
 		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
 	}
 
-	// Issue #753: Dedicated health probe server (plain HTTP, never TLS)
+	server.attachHealthAndMetricsServers(cfg, metricsInstance)
+}
+
+// wireTestHTTPAndAncillaryServers is wireHTTPAndAncillaryServers's test-only
+// counterpart for NewServerForTesting. Extracted from NewServerForTesting
+// (funlen). Deliberately omits IdleTimeout (matching this constructor's
+// pre-existing httpServer construction) since test callers never rely on it.
+func (server *Server) wireTestHTTPAndAncillaryServers(cfg *config.ServerConfig, metricsInstance *metrics.Metrics) {
+	router := server.setupRoutes()
+	server.router = router
+	handler := server.wrapWithMiddleware(router)
+
+	server.httpServer = &http.Server{
+		Addr:              cfg.Server.ListenAddr,
+		Handler:           handler,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		ReadHeaderTimeout: 5 * time.Second, // Issue #673 L-2: Slowloris mitigation (gosec G112)
+	}
+
+	server.attachHealthAndMetricsServers(cfg, metricsInstance)
+}
+
+// attachHealthAndMetricsServers wires up the dedicated health-probe and
+// Prometheus metrics HTTP servers (Issue #753: both plain HTTP, never TLS,
+// so probes/scrapes never depend on cert rotation). Extracted from
+// createServerWithClients (funlen).
+func (server *Server) attachHealthAndMetricsServers(cfg *config.ServerConfig, metricsInstance *metrics.Metrics) {
 	server.healthServer = sharedhealth.NewHealthServer(
 		cfg.Server.HealthAddr,
 		server.LivenessHandler(),
@@ -642,7 +737,6 @@ func createServerWithClients(deps serverClients) (*Server, error) {
 		!cfg.Server.DisableProfiling,
 	)
 
-	// Issue #753: Dedicated metrics server (plain HTTP, never TLS)
 	metricsMux := http.NewServeMux()
 	var metricsHandler http.Handler
 	if metricsInstance.Registry() != nil {
@@ -658,18 +752,24 @@ func createServerWithClients(deps serverClients) (*Server, error) {
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 	}
+}
 
-	if cfg.Server.TLS.Enabled() {
-		isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
-		if tlsErr != nil {
-			return nil, fmt.Errorf("failed to configure TLS: %w", tlsErr)
-		}
-		if isTLS {
-			server.certReloader = reloader
-			server.tlsCertDir = cfg.Server.TLS.CertDir
-			server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
-		}
+// configureTLS enables TLS on the main HTTP server when configured,
+// wiring up certificate hot-reload. Extracted from createServerWithClients
+// (funlen).
+func (server *Server) configureTLS(cfg *config.ServerConfig) error {
+	if !cfg.Server.TLS.Enabled() {
+		return nil
 	}
 
-	return server, nil
+	isTLS, reloader, tlsErr := sharedtls.ConfigureConditionalTLS(server.httpServer, cfg.Server.TLS.CertDir)
+	if tlsErr != nil {
+		return fmt.Errorf("failed to configure TLS: %w", tlsErr)
+	}
+	if isTLS {
+		server.certReloader = reloader
+		server.tlsCertDir = cfg.Server.TLS.CertDir
+		server.logger.Info("TLS configured for Gateway server", "certDir", cfg.Server.TLS.CertDir)
+	}
+	return nil
 }
