@@ -59,95 +59,14 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 	// DD-WORKFLOW-002 v3.0: Mark previous versions as not latest
 	// This ensures only one version per workflow_name has is_latest_version=true
 	if workflow.IsLatestVersion {
-		updateQuery := `
-			UPDATE remediation_workflow_catalog
-			SET is_latest_version = false, updated_at = NOW()
-			WHERE workflow_name = $1 AND is_latest_version = true
-		`
-		var result sql.Result
-		result, err = tx.ExecContext(ctx, updateQuery, workflow.WorkflowName)
-		if err != nil {
-			r.logger.Error(err, "failed to update previous versions",
-				"workflow_name", workflow.WorkflowName,
-				"version", workflow.Version)
-			return fmt.Errorf("failed to update previous versions: %w", err)
-		}
-		rowsAffected, _ := result.RowsAffected()
-		if rowsAffected > 0 {
-			r.logger.Info("marked previous versions as not latest",
-				"workflow_name", workflow.WorkflowName,
-				"versions_updated", rowsAffected)
+		if err = r.markPreviousVersionsNotLatest(ctx, tx, workflow); err != nil {
+			return err
 		}
 	}
 
 	// Issue #548: When WorkflowID is pre-set (deterministic UUID from content hash),
 	// include it in the INSERT. Otherwise fall back to DB-generated UUID for safety.
-	var insertQuery string
-	var args []interface{}
-
-	if workflow.WorkflowID != "" {
-		insertQuery = `
-			INSERT INTO remediation_workflow_catalog (
-				workflow_id,
-				workflow_name, version, schema_version, name, description, owner, maintainer,
-				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
-				execution_bundle, execution_bundle_digest, engine_config,
-				labels, custom_labels, detected_labels, status,
-				is_latest_version, previous_version, version_notes, change_summary,
-				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
-				created_by, action_type, service_account_name
-			) VALUES (
-				$1, $2, $3, $4, $5, $6, $7, $8,
-				$9, $10, $11, $12, $13, $14,
-				$15, $16, $17,
-				$18, $19, $20, $21,
-				$22, $23, $24, $25,
-				$26, $27, $28, $29,
-				$30, $31, $32
-			)
-			RETURNING workflow_id
-		`
-		args = []interface{}{
-			workflow.WorkflowID,
-			workflow.WorkflowName, workflow.Version, workflow.SchemaVersion, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
-			workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.SchemaImage, workflow.SchemaDigest,
-			workflow.ExecutionBundle, workflow.ExecutionBundleDigest, workflow.EngineConfig,
-			workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status,
-			workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
-			workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
-			workflow.CreatedBy, workflow.ActionType, workflow.ServiceAccountName,
-		}
-	} else {
-		insertQuery = `
-			INSERT INTO remediation_workflow_catalog (
-				workflow_name, version, schema_version, name, description, owner, maintainer,
-				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
-				execution_bundle, execution_bundle_digest, engine_config,
-				labels, custom_labels, detected_labels, status,
-				is_latest_version, previous_version, version_notes, change_summary,
-				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
-				created_by, action_type, service_account_name
-			) VALUES (
-				$1, $2, $3, $4, $5, $6, $7,
-				$8, $9, $10, $11, $12, $13,
-				$14, $15, $16,
-				$17, $18, $19, $20,
-				$21, $22, $23, $24,
-				$25, $26, $27, $28,
-				$29, $30, $31
-			)
-			RETURNING workflow_id
-		`
-		args = []interface{}{
-			workflow.WorkflowName, workflow.Version, workflow.SchemaVersion, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
-			workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.SchemaImage, workflow.SchemaDigest,
-			workflow.ExecutionBundle, workflow.ExecutionBundleDigest, workflow.EngineConfig,
-			workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status,
-			workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
-			workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
-			workflow.CreatedBy, workflow.ActionType, workflow.ServiceAccountName,
-		}
-	}
+	insertQuery, args := buildCreateInsert(workflow)
 
 	var confirmedID string
 	err = tx.QueryRowContext(ctx, insertQuery, args...).Scan(&confirmedID)
@@ -175,6 +94,101 @@ func (r *Repository) Create(ctx context.Context, workflow *models.RemediationWor
 		"is_latest_version", workflow.IsLatestVersion)
 
 	return nil
+}
+
+// markPreviousVersionsNotLatest clears is_latest_version on any prior row for
+// workflow.WorkflowName within tx. Extracted from Create (Wave 6 6f GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func (r *Repository) markPreviousVersionsNotLatest(ctx context.Context, tx *sqlx.Tx, workflow *models.RemediationWorkflow) error {
+	updateQuery := `
+		UPDATE remediation_workflow_catalog
+		SET is_latest_version = false, updated_at = NOW()
+		WHERE workflow_name = $1 AND is_latest_version = true
+	`
+	result, err := tx.ExecContext(ctx, updateQuery, workflow.WorkflowName)
+	if err != nil {
+		r.logger.Error(err, "failed to update previous versions",
+			"workflow_name", workflow.WorkflowName,
+			"version", workflow.Version)
+		return fmt.Errorf("failed to update previous versions: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected > 0 {
+		r.logger.Info("marked previous versions as not latest",
+			"workflow_name", workflow.WorkflowName,
+			"versions_updated", rowsAffected)
+	}
+	return nil
+}
+
+// buildCreateInsert builds the INSERT statement and positional args for Create.
+// Extracted from Create (Wave 6 6f GREEN: funlen remediation) — pure code motion,
+// no behavior change. Two shapes: with a pre-set WorkflowID (Issue #548,
+// deterministic UUID from content hash) vs. DB-generated UUID.
+func buildCreateInsert(workflow *models.RemediationWorkflow) (string, []interface{}) {
+	if workflow.WorkflowID != "" {
+		insertQuery := `
+			INSERT INTO remediation_workflow_catalog (
+				workflow_id,
+				workflow_name, version, schema_version, name, description, owner, maintainer,
+				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
+				execution_bundle, execution_bundle_digest, engine_config,
+				labels, custom_labels, detected_labels, status,
+				is_latest_version, previous_version, version_notes, change_summary,
+				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
+				created_by, action_type, service_account_name
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7, $8,
+				$9, $10, $11, $12, $13, $14,
+				$15, $16, $17,
+				$18, $19, $20, $21,
+				$22, $23, $24, $25,
+				$26, $27, $28, $29,
+				$30, $31, $32
+			)
+			RETURNING workflow_id
+		`
+		args := append([]interface{}{workflow.WorkflowID}, createInsertCommonArgs(workflow)...)
+		return insertQuery, args
+	}
+
+	insertQuery := `
+		INSERT INTO remediation_workflow_catalog (
+			workflow_name, version, schema_version, name, description, owner, maintainer,
+			content, content_hash, parameters, execution_engine, schema_image, schema_digest,
+			execution_bundle, execution_bundle_digest, engine_config,
+			labels, custom_labels, detected_labels, status,
+			is_latest_version, previous_version, version_notes, change_summary,
+			approved_by, approved_at, expected_success_rate, expected_duration_seconds,
+			created_by, action_type, service_account_name
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7,
+			$8, $9, $10, $11, $12, $13,
+			$14, $15, $16,
+			$17, $18, $19, $20,
+			$21, $22, $23, $24,
+			$25, $26, $27, $28,
+			$29, $30, $31
+		)
+		RETURNING workflow_id
+	`
+	return insertQuery, createInsertCommonArgs(workflow)
+}
+
+// createInsertCommonArgs returns the 31 positional args shared by both
+// buildCreateInsert branches (with/without a leading pre-set WorkflowID).
+// Extracted from buildCreateInsert (Wave 6 6f GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func createInsertCommonArgs(workflow *models.RemediationWorkflow) []interface{} {
+	return []interface{}{
+		workflow.WorkflowName, workflow.Version, workflow.SchemaVersion, workflow.Name, workflow.Description, workflow.Owner, workflow.Maintainer,
+		workflow.Content, workflow.ContentHash, workflow.Parameters, workflow.ExecutionEngine, workflow.SchemaImage, workflow.SchemaDigest,
+		workflow.ExecutionBundle, workflow.ExecutionBundleDigest, workflow.EngineConfig,
+		workflow.Labels, workflow.CustomLabels, workflow.DetectedLabels, workflow.Status,
+		workflow.IsLatestVersion, workflow.PreviousVersion, workflow.VersionNotes, workflow.ChangeSummary,
+		workflow.ApprovedBy, workflow.ApprovedAt, workflow.ExpectedSuccessRate, workflow.ExpectedDurationSeconds,
+		workflow.CreatedBy, workflow.ActionType, workflow.ServiceAccountName,
+	}
 }
 
 // SupersedeAndCreate atomically marks the old workflow as Superseded and inserts
@@ -272,80 +286,12 @@ func demoteExistingLatestVersion(ctx context.Context, tx *sqlx.Tx, workflowName 
 }
 
 // buildSupersedeInsert builds the INSERT INTO remediation_workflow_catalog
-// statement and its positional args for newWorkflow, using the
-// workflow_id-included variant when newWorkflow.WorkflowID is pre-populated
-// (deterministic UUID) and the DB-generated variant otherwise. Extracted from
-// SupersedeAndCreate (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 3) — pure code
-// motion, no behavior change.
+// statement and its positional args for newWorkflow. Identical column/arg
+// shape to Create's INSERT, so this delegates to buildCreateInsert (Wave 6 6f
+// GREEN: deduped the two byte-for-byte-identical query builders instead of
+// just shrinking each independently) — pure code motion, no behavior change.
 func buildSupersedeInsert(newWorkflow *models.RemediationWorkflow) (string, []interface{}) {
-	var insertQuery string
-	var args []interface{}
-
-	if newWorkflow.WorkflowID != "" {
-		insertQuery = `
-			INSERT INTO remediation_workflow_catalog (
-				workflow_id,
-				workflow_name, version, schema_version, name, description, owner, maintainer,
-				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
-				execution_bundle, execution_bundle_digest, engine_config,
-				labels, custom_labels, detected_labels, status,
-				is_latest_version, previous_version, version_notes, change_summary,
-				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
-				created_by, action_type, service_account_name
-			) VALUES (
-				$1, $2, $3, $4, $5, $6, $7, $8,
-				$9, $10, $11, $12, $13, $14,
-				$15, $16, $17,
-				$18, $19, $20, $21,
-				$22, $23, $24, $25,
-				$26, $27, $28, $29,
-				$30, $31, $32
-			)
-			RETURNING workflow_id
-		`
-		args = []interface{}{
-			newWorkflow.WorkflowID,
-			newWorkflow.WorkflowName, newWorkflow.Version, newWorkflow.SchemaVersion, newWorkflow.Name, newWorkflow.Description, newWorkflow.Owner, newWorkflow.Maintainer,
-			newWorkflow.Content, newWorkflow.ContentHash, newWorkflow.Parameters, newWorkflow.ExecutionEngine, newWorkflow.SchemaImage, newWorkflow.SchemaDigest,
-			newWorkflow.ExecutionBundle, newWorkflow.ExecutionBundleDigest, newWorkflow.EngineConfig,
-			newWorkflow.Labels, newWorkflow.CustomLabels, newWorkflow.DetectedLabels, newWorkflow.Status,
-			newWorkflow.IsLatestVersion, newWorkflow.PreviousVersion, newWorkflow.VersionNotes, newWorkflow.ChangeSummary,
-			newWorkflow.ApprovedBy, newWorkflow.ApprovedAt, newWorkflow.ExpectedSuccessRate, newWorkflow.ExpectedDurationSeconds,
-			newWorkflow.CreatedBy, newWorkflow.ActionType, newWorkflow.ServiceAccountName,
-		}
-	} else {
-		insertQuery = `
-			INSERT INTO remediation_workflow_catalog (
-				workflow_name, version, schema_version, name, description, owner, maintainer,
-				content, content_hash, parameters, execution_engine, schema_image, schema_digest,
-				execution_bundle, execution_bundle_digest, engine_config,
-				labels, custom_labels, detected_labels, status,
-				is_latest_version, previous_version, version_notes, change_summary,
-				approved_by, approved_at, expected_success_rate, expected_duration_seconds,
-				created_by, action_type, service_account_name
-			) VALUES (
-				$1, $2, $3, $4, $5, $6, $7,
-				$8, $9, $10, $11, $12, $13,
-				$14, $15, $16,
-				$17, $18, $19, $20,
-				$21, $22, $23, $24,
-				$25, $26, $27, $28,
-				$29, $30, $31
-			)
-			RETURNING workflow_id
-		`
-		args = []interface{}{
-			newWorkflow.WorkflowName, newWorkflow.Version, newWorkflow.SchemaVersion, newWorkflow.Name, newWorkflow.Description, newWorkflow.Owner, newWorkflow.Maintainer,
-			newWorkflow.Content, newWorkflow.ContentHash, newWorkflow.Parameters, newWorkflow.ExecutionEngine, newWorkflow.SchemaImage, newWorkflow.SchemaDigest,
-			newWorkflow.ExecutionBundle, newWorkflow.ExecutionBundleDigest, newWorkflow.EngineConfig,
-			newWorkflow.Labels, newWorkflow.CustomLabels, newWorkflow.DetectedLabels, newWorkflow.Status,
-			newWorkflow.IsLatestVersion, newWorkflow.PreviousVersion, newWorkflow.VersionNotes, newWorkflow.ChangeSummary,
-			newWorkflow.ApprovedBy, newWorkflow.ApprovedAt, newWorkflow.ExpectedSuccessRate, newWorkflow.ExpectedDurationSeconds,
-			newWorkflow.CreatedBy, newWorkflow.ActionType, newWorkflow.ServiceAccountName,
-		}
-	}
-
-	return insertQuery, args
+	return buildCreateInsert(newWorkflow)
 }
 
 // insertOrReactivateWorkflow runs insertQuery within tx, using a SAVEPOINT to
@@ -566,48 +512,7 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 		From("remediation_workflow_catalog")
 
 	// Apply filters if provided
-	if filters != nil {
-		// Metadata filters (exact match on workflow columns)
-		// Authority: DD-API-001 (OpenAPI client mandatory - workflow_name filter added Jan 2026)
-		if filters.WorkflowName != "" {
-			builder.Where("workflow_name = ?", filters.WorkflowName)
-		}
-
-		// Label filters (JSONB queries)
-		// Issue #522: Wildcard parity with discovery path (buildContextFilterSQL).
-		// Stored labels may use "*" to match any query value; the SQL must include
-		// wildcard fallback conditions identical to the discovery path.
-		if filters.Severity != "" {
-			// DD-WORKFLOW-001 v2.8: severity supports "*" wildcard (like environment/priority)
-			builder.WhereRaw(fmt.Sprintf("(labels->'severity' ? $%d OR labels->'severity' ? '*')", builder.CurrentArgIndex()), filters.Severity)
-		}
-		if filters.Component != "" {
-			// DD-WORKFLOW-016 v2.1: Case-insensitive + wildcard "*"
-			// Issue #790: component is now a JSONB array (like severity/environment).
-			// Guard with jsonb_typeof to handle legacy scalar values that would crash
-			// jsonb_array_elements_text (ERROR: cannot extract elements from a scalar).
-			idx := builder.CurrentArgIndex()
-			builder.WhereRaw(fmt.Sprintf(`(CASE WHEN jsonb_typeof(labels->'component') = 'array'
-				THEN EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'component') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'component' ? '*'
-				ELSE LOWER(labels->>'component') = LOWER($%d) OR labels->>'component' = '*'
-			END)`, idx, idx), filters.Component)
-		}
-		// DD-WORKFLOW-001 v2.5: environment is JSONB array, use ? operator; supports "*" wildcard per OpenAPI spec
-		if filters.Environment != "" {
-			builder.WhereRaw(fmt.Sprintf("(labels->'environment' ? $%d OR labels->'environment' ? '*')", builder.CurrentArgIndex()), filters.Environment)
-		}
-		if filters.Priority != "" {
-			// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values + wildcard
-			idx := builder.CurrentArgIndex()
-			builder.WhereRaw(fmt.Sprintf(`(CASE WHEN jsonb_typeof(labels->'priority') = 'array'
-				THEN labels->'priority' ? $%d OR labels->'priority' ? '*'
-				ELSE labels->>'priority' = $%d OR labels->>'priority' = '*'
-			END)`, idx, idx), filters.Priority)
-		}
-		if len(filters.Status) > 0 {
-			builder.WhereRaw(fmt.Sprintf("status = ANY($%d)", builder.CurrentArgIndex()), filters.Status)
-		}
-	}
+	applyListFilters(builder, filters)
 
 	// Get total count first (without pagination)
 	countQuery, countArgs := builder.BuildCount()
@@ -634,6 +539,57 @@ func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFil
 	}
 
 	return workflows, totalCount, nil
+}
+
+// applyListFilters applies List's optional metadata/label filters to builder.
+// Extracted from List (Wave 6 6f GREEN: nestif remediation) — pure code
+// motion, no behavior change; each filter remains an independent guard clause
+// rather than nested inside a shared `if filters != nil` block.
+func applyListFilters(builder *sqlbuilder.Builder, filters *models.WorkflowSearchFilters) {
+	if filters == nil {
+		return
+	}
+
+	// Metadata filters (exact match on workflow columns)
+	// Authority: DD-API-001 (OpenAPI client mandatory - workflow_name filter added Jan 2026)
+	if filters.WorkflowName != "" {
+		builder.Where("workflow_name = ?", filters.WorkflowName)
+	}
+
+	// Label filters (JSONB queries)
+	// Issue #522: Wildcard parity with discovery path (buildContextFilterSQL).
+	// Stored labels may use "*" to match any query value; the SQL must include
+	// wildcard fallback conditions identical to the discovery path.
+	if filters.Severity != "" {
+		// DD-WORKFLOW-001 v2.8: severity supports "*" wildcard (like environment/priority)
+		builder.WhereRaw(fmt.Sprintf("(labels->'severity' ? $%d OR labels->'severity' ? '*')", builder.CurrentArgIndex()), filters.Severity)
+	}
+	if filters.Component != "" {
+		// DD-WORKFLOW-016 v2.1: Case-insensitive + wildcard "*"
+		// Issue #790: component is now a JSONB array (like severity/environment).
+		// Guard with jsonb_typeof to handle legacy scalar values that would crash
+		// jsonb_array_elements_text (ERROR: cannot extract elements from a scalar).
+		idx := builder.CurrentArgIndex()
+		builder.WhereRaw(fmt.Sprintf(`(CASE WHEN jsonb_typeof(labels->'component') = 'array'
+			THEN EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'component') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'component' ? '*'
+			ELSE LOWER(labels->>'component') = LOWER($%d) OR labels->>'component' = '*'
+		END)`, idx, idx), filters.Component)
+	}
+	// DD-WORKFLOW-001 v2.5: environment is JSONB array, use ? operator; supports "*" wildcard per OpenAPI spec
+	if filters.Environment != "" {
+		builder.WhereRaw(fmt.Sprintf("(labels->'environment' ? $%d OR labels->'environment' ? '*')", builder.CurrentArgIndex()), filters.Environment)
+	}
+	if filters.Priority != "" {
+		// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values + wildcard
+		idx := builder.CurrentArgIndex()
+		builder.WhereRaw(fmt.Sprintf(`(CASE WHEN jsonb_typeof(labels->'priority') = 'array'
+			THEN labels->'priority' ? $%d OR labels->'priority' ? '*'
+			ELSE labels->>'priority' = $%d OR labels->>'priority' = '*'
+		END)`, idx, idx), filters.Priority)
+	}
+	if len(filters.Status) > 0 {
+		builder.WhereRaw(fmt.Sprintf("status = ANY($%d)", builder.CurrentArgIndex()), filters.Status)
+	}
 }
 
 // ========================================

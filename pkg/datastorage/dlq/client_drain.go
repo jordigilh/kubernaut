@@ -96,26 +96,10 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo Notifica
 		"timeout", timeoutInfo,
 		"dd", "DD-008-drain-start")
 
-	// Process notification DLQ stream
-	notificationStats, err := c.drainStream(ctx, "notifications", c.notificationWriter(notificationRepo))
-	if err != nil {
-		stats.Errors = append(stats.Errors, fmt.Errorf("notification drain error: %w", err))
-	}
-	stats.NotificationsProcessed = notificationStats
-
-	// Check if we still have time for events
-	select {
-	case <-ctx.Done():
-		stats.TimedOut = true
-		stats.Duration = time.Since(startTime)
-		c.logger.Info("DLQ drain timed out after processing notifications",
-			"notifications_processed", stats.NotificationsProcessed,
-			"duration", stats.Duration,
-			"errors", len(stats.Errors),
-			"dd", "DD-008-drain-timeout")
+	// Process notification DLQ stream; returns early (timed-out result) if the
+	// context expired before events could be attempted.
+	if timedOut := c.drainNotificationsWithDeadlineCheck(ctx, notificationRepo, stats, startTime); timedOut {
 		return stats, stats.JoinErrors()
-	default:
-		// Continue to events
 	}
 
 	// Process events DLQ stream
@@ -147,6 +131,34 @@ func (c *Client) DrainWithTimeout(ctx context.Context, notificationRepo Notifica
 
 	// DF-H1: Return joined errors so shutdown can surface drain failures
 	return stats, stats.JoinErrors()
+}
+
+// drainNotificationsWithDeadlineCheck drains the notification DLQ stream into
+// stats, then checks whether ctx has already expired. Returns true if the
+// caller should return immediately (deadline exceeded before events could be
+// attempted) — mirroring the original inline `select`/return-early shape.
+// Extracted from DrainWithTimeout (Wave 6 6f GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func (c *Client) drainNotificationsWithDeadlineCheck(ctx context.Context, notificationRepo NotificationCreator, stats *DrainStats, startTime time.Time) bool {
+	notificationStats, err := c.drainStream(ctx, "notifications", c.notificationWriter(notificationRepo))
+	if err != nil {
+		stats.Errors = append(stats.Errors, fmt.Errorf("notification drain error: %w", err))
+	}
+	stats.NotificationsProcessed = notificationStats
+
+	select {
+	case <-ctx.Done():
+		stats.TimedOut = true
+		stats.Duration = time.Since(startTime)
+		c.logger.Info("DLQ drain timed out after processing notifications",
+			"notifications_processed", stats.NotificationsProcessed,
+			"duration", stats.Duration,
+			"errors", len(stats.Errors),
+			"dd", "DD-008-drain-timeout")
+		return true
+	default:
+		return false
+	}
 }
 
 // drainBatchSize limits the number of messages read per XRangeN call during
