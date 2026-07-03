@@ -1,6 +1,14 @@
 server:
   port: 8443
-  maxSSEConnections: 5
+  # 50 (was 5): trackSSEConnection wraps every /a2a/invoke, /mcp, and
+  # /a2a/status request (not just SSE-Accept ones), so with a cap this low
+  # ANY concurrent A2A/MCP call from another parallel Ginkgo E2E process
+  # transiently consumes a slot -- causing TC-E2E-SSE-CAP-01 to intermittently
+  # see 503s on connections that should have been within cap. 50 gives a
+  # generous margin above realistic concurrent E2E traffic while keeping the
+  # cap meaningfully enforced. Keep test/e2e/apifrontend/streaming_test.go's
+  # AF_E2E_MAX_SSE fallback in sync with this value.
+  maxSSEConnections: 50
   tls:
     certDir: /etc/apifrontend/tls
     required: true

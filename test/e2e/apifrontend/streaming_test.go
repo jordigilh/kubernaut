@@ -178,21 +178,39 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 	})
 
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		// Wait for all SSE slots to drain. Prior tests (STREAM-01/02/03) open
-		// SSE or MCP connections whose server-side handlers may run until the
-		// LLM investigation completes or the connection timeout fires (~120s).
-		// Use 300s to accommodate CI variability and slow handler teardown.
-		Eventually(func() float64 {
-			return counterValue(scrapeMetrics(), "af_sse_active_connections")
-		}, 300*time.Second, 3*time.Second).Should(BeZero(),
-			"all SSE slots must be released before cap enforcement test")
-
-		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "5")
-		maxSSE := 5
+		// trackSSEConnection (router.go) tracks EVERY /a2a/invoke, /mcp, and
+		// /a2a/status request -- not just ones with Accept: text/event-stream
+		// -- for the full handler duration. Since apifrontend E2E tests run
+		// with --procs > 1 (true parallel Ginkgo OS processes sharing the
+		// same deployed apifrontend + ConnectionTracker), any concurrently
+		// running spec in ANY other process can transiently hold a slot.
+		// Assuming a zero baseline (as this test previously did) makes it
+		// flaky under CI load. Instead, sample the current baseline and fill
+		// only the remaining headroom, requiring a generous minimum margin
+		// so legitimate concurrent E2E traffic can't plausibly collide with
+		// this test's own fill loop. The deterministic cap-enforcement LOGIC
+		// itself is proven race-free at the unit tier (UT-AF-STREAM04-001/002
+		// in pkg/apifrontend/streaming/tracker_test.go) and the router-wiring
+		// of the 503 response is proven at the integration tier
+		// (IT-AF-SSE-CAP-001 in test/integration/apifrontend/router_http_test.go)
+		// against an isolated tracker -- this E2E test is a smoke-level
+		// confirmation against the real deployed cap, not the sole proof.
+		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "50")
+		maxSSE := 50
 		var parsed int
 		if n, _ := fmt.Sscanf(strings.TrimSpace(maxStr), "%d", &parsed); n == 1 && parsed > 0 {
 			maxSSE = parsed
 		}
+
+		const minHeadroom = 20
+		var baseline int
+		Eventually(func() int {
+			baseline = int(counterValue(scrapeMetrics(), "af_sse_active_connections"))
+			return maxSSE - baseline
+		}, 300*time.Second, 3*time.Second).Should(BeNumerically(">=", minHeadroom),
+			"need enough SSE headroom for a deterministic cap-enforcement window despite legitimate concurrent E2E traffic")
+
+		slotsToFill := maxSSE - baseline
 
 		type slotResult struct {
 			idx    int
@@ -200,14 +218,14 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 			err    error
 		}
 		var mu sync.Mutex
-		cancels := make([]context.CancelFunc, maxSSE)
+		cancels := make([]context.CancelFunc, slotsToFill)
 		ready := make(chan slotResult, 1)
 		var wg sync.WaitGroup
 
 		// Establish SSE connections sequentially to avoid a race where all
 		// goroutines hit the server simultaneously and some are rejected
 		// before prior connections are fully registered in the semaphore.
-		for i := 0; i < maxSSE; i++ {
+		for i := 0; i < slotsToFill; i++ {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
