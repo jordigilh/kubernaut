@@ -397,6 +397,56 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 				"BR-WORKFLOW-008: message should be enriched with the specific missing dependency from the Pod event")
 		})
 
+		// UT-WE-054-JOB-020 reproduces a real-cluster gap found via E2E-WE-006-002
+		// (issue #1481 PR CI): Kubernetes' job-controller deletes a Job's active
+		// Pods as soon as ActiveDeadlineSeconds is exceeded, which normally
+		// happens before the next reconcile calls GetStatus. UT-WE-054-JOB-018
+		// only exercised the case where the Pod object is still present, which
+		// masked this gap. Only the Event (with its own TTL, independent of the
+		// Pod's lifetime) reliably survives long enough to be observed.
+		It("UT-WE-054-JOB-020 [BR-WORKFLOW-008]: should enrich Failed message from a Pod event even after the Pod itself has been deleted", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/dep-missing-pod-gone")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Failed: 1,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobFailed,
+							Status:  corev1.ConditionTrue,
+							Reason:  "DeadlineExceeded",
+							Message: "Job was active longer than specified deadline",
+						},
+					},
+				},
+			}
+			// No Pod object created here: the job-controller has already
+			// deleted it by the time GetStatus observes the Failed condition.
+			evt := &corev1.Event{
+				ObjectMeta: metav1.ObjectMeta{Name: "evt-failedmount-pod-gone", Namespace: namespace},
+				InvolvedObject: corev1.ObjectReference{
+					Kind:      "Pod",
+					Name:      jobName + "-x7k2m",
+					Namespace: namespace,
+				},
+				Reason:  "FailedMount",
+				Message: `MountVolume.SetUp failed for volume "secret-e2e-dep-secret" : secret "e2e-dep-secret" not found`,
+				Type:    corev1.EventTypeWarning,
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, evt).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-dep-missing-pod-gone", "default/deployment/dep-missing-pod-gone", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			Expect(result.Message).To(ContainSubstring(`secret "e2e-dep-secret" not found`),
+				"BR-WORKFLOW-008: enrichment must not depend on the Pod object still existing")
+		})
+
 		It("UT-WE-054-JOB-019 [BR-WORKFLOW-008]: should fall back to the generic Job condition message when no matching Pod event exists", func() {
 			jobName := executor.ExecutionResourceName("default/deployment/no-events")
 			job := &batchv1.Job{

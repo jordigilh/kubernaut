@@ -170,30 +170,33 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 	}, nil
 }
 
-// enrichFailureMessage inspects the failed Job's Pods for a FailedMount or
-// CreateContainerConfigError Event and, if found, returns its message in
-// place of the generic Job condition message (BR-WORKFLOW-008). Since
-// dependency existence is no longer pre-flight validated (#1481), this is
-// the only place the specific missing Secret/ConfigMap name surfaces.
-// Returns "" (caller keeps the original message) if no Pods, no matching
-// Event, or a list error is encountered — this is best-effort enrichment,
-// never a hard failure of status reporting.
+// jobPodNameSuffixLength is the length of the random suffix Kubernetes
+// appends to a GenerateName-created Pod's name (k8s.io/apiserver's
+// names.SimpleNameGenerator), e.g. "<job-name>-x7k2m". Used to attribute an
+// Event to this Job's Pod(s) by name prefix without requiring the Pod object
+// to still exist (see enrichFailureMessage).
+const jobPodNameSuffixLength = 5
+
+// enrichFailureMessage inspects Events involving the failed Job's Pod(s) for
+// a FailedMount or CreateContainerConfigError reason and, if found, returns
+// its message in place of the generic Job condition message
+// (BR-WORKFLOW-008). Since dependency existence is no longer pre-flight
+// validated (#1481), this is the only place the specific missing
+// Secret/ConfigMap name surfaces.
+//
+// Deliberately does NOT list the Job's Pods first: Kubernetes' job-controller
+// deletes a Job's active Pods as soon as ActiveDeadlineSeconds is exceeded —
+// before the next reconcile typically observes the JobFailed condition — so
+// by the time this runs the Pod is usually already gone and only its Events
+// (independent TTL, ~1h default) remain. Instead, Events are attributed to
+// this Job by matching the Pod-name-prefix convention ("<job-name>-<5-char
+// suffix>") that both the real job-controller and buildJob's Pod template use.
+//
+// Returns "" (caller keeps the original message) if no matching Event or a
+// list error is encountered — this is best-effort enrichment, never a hard
+// failure of status reporting.
 func (j *JobExecutor) enrichFailureMessage(ctx context.Context, c ExecutorClient, job *batchv1.Job) string {
 	logger := log.FromContext(ctx).WithValues("job", job.Name, "namespace", job.Namespace)
-
-	var pods corev1.PodList
-	if err := c.List(ctx, &pods, client.InNamespace(job.Namespace), client.MatchingLabels{"job-name": job.Name}); err != nil {
-		logger.V(1).Info("failed to list pods for job failure enrichment", "error", err)
-		return ""
-	}
-	if len(pods.Items) == 0 {
-		return ""
-	}
-
-	podNames := make(map[string]bool, len(pods.Items))
-	for _, pod := range pods.Items {
-		podNames[pod.Name] = true
-	}
 
 	var events corev1.EventList
 	if err := c.List(ctx, &events, client.InNamespace(job.Namespace)); err != nil {
@@ -201,8 +204,9 @@ func (j *JobExecutor) enrichFailureMessage(ctx context.Context, c ExecutorClient
 		return ""
 	}
 
+	podNamePrefix := job.Name + "-"
 	for _, evt := range events.Items {
-		if evt.InvolvedObject.Kind != "Pod" || !podNames[evt.InvolvedObject.Name] {
+		if evt.InvolvedObject.Kind != "Pod" || !isJobPodName(evt.InvolvedObject.Name, podNamePrefix) {
 			continue
 		}
 		if podMountFailureReasons[evt.Reason] {
@@ -210,6 +214,13 @@ func (j *JobExecutor) enrichFailureMessage(ctx context.Context, c ExecutorClient
 		}
 	}
 	return ""
+}
+
+// isJobPodName reports whether podName was generated for a Pod owned by the
+// Job whose name produces the given "<job-name>-" prefix.
+func isJobPodName(podName, jobNamePrefix string) bool {
+	return len(podName) == len(jobNamePrefix)+jobPodNameSuffixLength &&
+		podName[:len(jobNamePrefix)] == jobNamePrefix
 }
 
 // activeDeadlineSecondsFor resolves the Job's ActiveDeadlineSeconds
