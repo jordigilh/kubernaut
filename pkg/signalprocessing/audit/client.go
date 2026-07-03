@@ -56,11 +56,11 @@ const (
 
 // Event action constants (L-3 SOC2 Fix: compile-time safety for event action strings)
 const (
-	ActionProcessed      = "processed"
+	ActionProcessed       = "processed"
 	ActionPhaseTransition = "phase_transition"
-	ActionClassification = "classification"
-	ActionEnrichment     = "enrichment"
-	ActionError          = "error"
+	ActionClassification  = "classification"
+	ActionEnrichment      = "enrichment"
+	ActionError           = "error"
 )
 
 // AuditClient handles audit event storage using pkg/audit shared library.
@@ -84,8 +84,65 @@ func NewAuditClient(store audit.AuditStore, log logr.Logger) *AuditClient {
 // BR-SP-090: Primary audit event for SignalProcessing
 // ADR-038: Fire-and-forget pattern
 func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing) {
+	// Authority: RO always creates SP with RemediationRequestRef (pkg/remediationorchestrator/creator/signalprocessing.go:91-97)
+	// Production architecture: SignalProcessing CRs MUST have parent RemediationRequest
+	// Graceful degradation: skip audit if no RemediationRequestRef (test edge cases)
+	if sp.Spec.RemediationRequestRef.Name == "" {
+		c.log.V(1).Info("Skipping signal processed audit - no RemediationRequestRef")
+		return
+	}
+
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	payload := buildSignalProcessedPayload(sp)
+
+	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeSignalProcessed)
+	audit.SetEventCategory(event, CategorySignalProcessing)
+	audit.SetEventAction(event, ActionProcessed)
+	audit.SetEventOutcome(event, signalProcessedOutcome(sp))
+	audit.SetActor(event, "service", "signalprocessing-controller")
+	audit.SetResource(event, "SignalProcessing", sp.Name)
+	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
+	audit.SetNamespace(event, sp.Namespace)
+	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
+	if sp.Spec.Signal.ClusterID != "" {
+		audit.SetClusterName(event, sp.Spec.Signal.ClusterID)
+	}
+
+	// Set structured payload using union constructor (OGEN-MIGRATION)
+	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData(payload)
+
+	// Fire-and-forget (per ADR-038)
+	if err := c.store.StoreAudit(ctx, event); err != nil {
+		c.log.Error(err, "Failed to write audit event",
+			"event_type", event.EventType,
+			"correlation_id", event.CorrelationID,
+		)
+		// Don't fail reconciliation on audit failure (graceful degradation)
+	}
+}
+
+// signalProcessedOutcome maps the SP's terminal phase to the audit outcome
+// enum for the signal.processed event. Extracted from RecordSignalProcessed
+// (Wave 6 6e-iii GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func signalProcessedOutcome(sp *signalprocessingv1alpha1.SignalProcessing) api.AuditEventRequestEventOutcome {
+	if sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
+		return audit.OutcomeFailure
+	}
+	return audit.OutcomeSuccess
+}
+
+// buildSignalProcessedPayload builds the SignalProcessingAuditPayload for
+// the signal.processed event (BR-SP-090): severity (DD-SEVERITY-001
+// normalized), signal mode/source name (BR-SP-106, SOC2 CC7.4), environment/
+// priority/business classification, K8s context indicators, and any
+// terminal error. Extracted from RecordSignalProcessed (Wave 6 6e-iii
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func buildSignalProcessedPayload(sp *signalprocessingv1alpha1.SignalProcessing) api.SignalProcessingAuditPayload {
 	payload := api.SignalProcessingAuditPayload{
 		EventType: EventTypeSignalProcessed, // Required for discriminator
 		Phase:     toSignalProcessingAuditPayloadPhase(string(sp.Status.Phase)),
@@ -149,49 +206,7 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 		payload.Error.SetTo(sp.Status.Error)
 	}
 
-	// Determine outcome
-	var apiOutcome api.AuditEventRequestEventOutcome
-	if sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
-		apiOutcome = audit.OutcomeFailure
-	} else {
-		apiOutcome = audit.OutcomeSuccess
-	}
-
-	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
-	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
-	audit.SetEventType(event, EventTypeSignalProcessed)
-	audit.SetEventCategory(event, CategorySignalProcessing)
-	audit.SetEventAction(event, ActionProcessed)
-	audit.SetEventOutcome(event, apiOutcome)
-	audit.SetActor(event, "service", "signalprocessing-controller")
-	audit.SetResource(event, "SignalProcessing", sp.Name)
-
-	// Authority: RO always creates SP with RemediationRequestRef (pkg/remediationorchestrator/creator/signalprocessing.go:91-97)
-	// Production architecture: SignalProcessing CRs MUST have parent RemediationRequest
-	// Graceful degradation: skip audit if no RemediationRequestRef (test edge cases)
-	if sp.Spec.RemediationRequestRef.Name == "" {
-		c.log.V(1).Info("Skipping signal processed audit - no RemediationRequestRef")
-		return
-	}
-	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
-	audit.SetNamespace(event, sp.Namespace)
-	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	if sp.Spec.Signal.ClusterID != "" {
-		audit.SetClusterName(event, sp.Spec.Signal.ClusterID)
-	}
-
-	// Set structured payload using union constructor (OGEN-MIGRATION)
-	event.EventData = api.NewAuditEventRequestEventDataSignalprocessingSignalProcessedAuditEventRequestEventData(payload)
-
-	// Fire-and-forget (per ADR-038)
-	if err := c.store.StoreAudit(ctx, event); err != nil {
-		c.log.Error(err, "Failed to write audit event",
-			"event_type", event.EventType,
-			"correlation_id", event.CorrelationID,
-		)
-		// Don't fail reconciliation on audit failure (graceful degradation)
-	}
+	return payload
 }
 
 // RecordPhaseTransition records a phase transition event.
@@ -236,13 +251,14 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 	}
 }
 
-// RecordClassificationDecision records classification decision event.
-// BR-SP-090: Logs environment, priority, and business classification decisions
-// DD-SEVERITY-001: Includes external and normalized severity for audit trail
-// durationMs: Classification duration in milliseconds (for performance metrics)
-func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, durationMs int) {
-	// Use structured audit payload (eliminates map[string]interface{})
-	// Per DD-AUDIT-004: Zero unstructured data in audit events
+// buildClassificationDecisionPayload builds the SignalProcessingAuditPayload
+// for the classification.decision event (BR-SP-090): duration, external and
+// normalized severity with rego-policy determination source
+// (DD-SEVERITY-001), policy hash, signal mode/source name (BR-SP-106, SOC2
+// CC7.4), and the environment/priority/business classification results.
+// Extracted from RecordClassificationDecision (Wave 6 6e-iii GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func buildClassificationDecisionPayload(sp *signalprocessingv1alpha1.SignalProcessing, durationMs int) api.SignalProcessingAuditPayload {
 	payload := api.SignalProcessingAuditPayload{
 		EventType: EventTypeClassificationDecision, // Required for discriminator
 		Signal:    sp.Spec.Signal.Name,
@@ -308,6 +324,24 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 		}
 	}
 
+	return payload
+}
+
+// RecordClassificationDecision records classification decision event.
+// BR-SP-090: Logs environment, priority, and business classification decisions
+// DD-SEVERITY-001: Includes external and normalized severity for audit trail
+// durationMs: Classification duration in milliseconds (for performance metrics)
+func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, durationMs int) {
+	// Use structured audit payload (eliminates map[string]interface{})
+	// Per DD-AUDIT-004: Zero unstructured data in audit events
+	// Graceful degradation: skip audit if no RemediationRequestRef (test edge cases)
+	if sp.Spec.RemediationRequestRef.Name == "" {
+		c.log.V(1).Info("Skipping classification audit - no RemediationRequestRef")
+		return
+	}
+
+	payload := buildClassificationDecisionPayload(sp, durationMs)
+
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	event.Version = "1.0"
@@ -318,12 +352,6 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 	audit.SetActor(event, "service", "signalprocessing-controller")
 	audit.SetResource(event, "SignalProcessing", sp.Name)
 	audit.SetDuration(event, durationMs)
-
-	// Graceful degradation: skip audit if no RemediationRequestRef (test edge cases)
-	if sp.Spec.RemediationRequestRef.Name == "" {
-		c.log.V(1).Info("Skipping classification audit - no RemediationRequestRef")
-		return
-	}
 	audit.SetCorrelationID(event, sp.Spec.RemediationRequestRef.Name)
 	audit.SetNamespace(event, sp.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)

@@ -549,23 +549,48 @@ func (e *K8sEnricher) enrichRemote(ctx context.Context, signal *signalprocessing
 		return result, nil
 	}
 
-	// Fetch namespace metadata from remote cluster
-	if signal.TargetResource.Namespace != "" {
-		nsMeta := &metav1.PartialObjectMetadata{}
-		nsMeta.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Namespace"})
-		if nsErr := reader.Get(ctx, types.NamespacedName{Name: signal.TargetResource.Namespace}, nsMeta); nsErr != nil {
-			e.logger.V(1).Info("Remote namespace fetch failed, continuing without namespace context",
-				"namespace", signal.TargetResource.Namespace, "clusterID", signal.ClusterID, "error", nsErr)
-		} else {
-			result.Namespace = &signalprocessingv1alpha1.NamespaceContext{
-				Name:        nsMeta.Name,
-				Labels:      ensureMap(nsMeta.Labels),
-				Annotations: ensureMap(nsMeta.Annotations),
-			}
-		}
+	e.fetchRemoteNamespaceContext(ctx, reader, signal, result)
+
+	if !e.fetchRemoteWorkloadContext(ctx, reader, signal, result) {
+		return result, nil
 	}
 
-	// Fetch workload metadata from remote cluster
+	e.buildRemoteOwnerChain(ctx, reader, signal, result)
+
+	return result, nil
+}
+
+// fetchRemoteNamespaceContext populates result.Namespace from the remote
+// cluster's Namespace metadata, when the signal carries a target namespace.
+// A fetch failure degrades gracefully (namespace context stays nil) rather
+// than failing enrichment outright. Extracted from enrichRemote (Wave 6
+// 6e-iii GREEN: funlen remediation) — pure code motion, no behavior change.
+func (e *K8sEnricher) fetchRemoteNamespaceContext(ctx context.Context, reader client.Reader, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) {
+	if signal.TargetResource.Namespace == "" {
+		return
+	}
+	nsMeta := &metav1.PartialObjectMetadata{}
+	nsMeta.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "Namespace"})
+	if nsErr := reader.Get(ctx, types.NamespacedName{Name: signal.TargetResource.Namespace}, nsMeta); nsErr != nil {
+		e.logger.V(1).Info("Remote namespace fetch failed, continuing without namespace context",
+			"namespace", signal.TargetResource.Namespace, "clusterID", signal.ClusterID, "error", nsErr)
+		return
+	}
+	result.Namespace = &signalprocessingv1alpha1.NamespaceContext{
+		Name:        nsMeta.Name,
+		Labels:      ensureMap(nsMeta.Labels),
+		Annotations: ensureMap(nsMeta.Annotations),
+	}
+}
+
+// fetchRemoteWorkloadContext populates result.Workload from the remote
+// cluster's target-resource metadata. Unlike the namespace fetch, a missing
+// workload is not degraded silently: it flips result.DegradedMode and
+// records the remote_not_found enrichment error, since the workload is the
+// primary enrichment target. Returns false when the caller must return
+// immediately (workload not found). Extracted from enrichRemote (Wave 6
+// 6e-iii GREEN: funlen remediation) — pure code motion, no behavior change.
+func (e *K8sEnricher) fetchRemoteWorkloadContext(ctx context.Context, reader client.Reader, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) bool {
 	workloadMeta := &metav1.PartialObjectMetadata{}
 	workloadMeta.SetGroupVersionKind(kindToGVK(signal.TargetResource.Kind))
 	key := types.NamespacedName{
@@ -578,7 +603,7 @@ func (e *K8sEnricher) enrichRemote(ctx context.Context, signal *signalprocessing
 			"clusterID", signal.ClusterID, "error", wErr)
 		result.DegradedMode = true
 		e.metrics.RecordEnrichmentError("remote_not_found")
-		return result, nil
+		return false
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
 		Kind:        signal.TargetResource.Kind,
@@ -586,20 +611,26 @@ func (e *K8sEnricher) enrichRemote(ctx context.Context, signal *signalprocessing
 		Labels:      ensureMap(workloadMeta.Labels),
 		Annotations: ensureMap(workloadMeta.Annotations),
 	}
+	return true
+}
 
-	// Build owner chain on remote cluster
-	if signal.TargetResource.Kind == "Pod" {
-		remoteBuilder := ownerchain.NewBuilder(reader, e.logger)
-		chain, chainErr := remoteBuilder.Build(ctx, signal.TargetResource.Namespace,
-			signal.TargetResource.Kind, signal.TargetResource.Name)
-		if chainErr != nil {
-			e.logger.V(1).Info("Remote owner chain build failed", "error", chainErr)
-		} else {
-			result.OwnerChain = chain
-		}
+// buildRemoteOwnerChain builds the owner chain on the remote cluster for
+// Pod-kind targets only (owner references are only meaningful for Pods in
+// this enrichment flow). A build failure degrades gracefully (owner chain
+// stays nil). Extracted from enrichRemote (Wave 6 6e-iii GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (e *K8sEnricher) buildRemoteOwnerChain(ctx context.Context, reader client.Reader, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) {
+	if signal.TargetResource.Kind != "Pod" {
+		return
 	}
-
-	return result, nil
+	remoteBuilder := ownerchain.NewBuilder(reader, e.logger)
+	chain, chainErr := remoteBuilder.Build(ctx, signal.TargetResource.Namespace,
+		signal.TargetResource.Kind, signal.TargetResource.Name)
+	if chainErr != nil {
+		e.logger.V(1).Info("Remote owner chain build failed", "error", chainErr)
+		return
+	}
+	result.OwnerChain = chain
 }
 
 // kindToGVK maps common workload kinds to their GroupVersionKind.
@@ -623,4 +654,3 @@ func kindToGVK(kind string) schema.GroupVersionKind {
 		return schema.GroupVersionKind{Version: "v1", Kind: kind}
 	}
 }
-

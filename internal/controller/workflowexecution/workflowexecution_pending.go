@@ -361,43 +361,61 @@ func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context
 
 	createResult, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if createErr != nil {
-		if apierrors.IsAlreadyExists(createErr) {
-			// DD-WE-003 Layer 2: Execution-time collision handling
-			if wfe.Status.ExecutionEngine == "tekton" {
-				result, handleErr := r.HandleAlreadyExists(ctx, wfe, resourceName, createErr)
-				return &weexecutor.CreateResult{}, result, handleErr, true
-			}
-			// Issue #374 / DD-WE-003: Pre-execution cleanup of completed Jobs.
-			// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
-			// and retry creation. If still running, the lock is valid -- fail the WFE.
-			if wfe.Status.ExecutionEngine == "job" {
-				retryResult, handled, requeueForGC, originalWFE := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
-				if handled {
-					createResult = retryResult
-					createErr = nil
-				} else if requeueForGC {
-					logger.Info("Requeuing for Job GC completion (Issue #383)", "resource", resourceName)
-					return &weexecutor.CreateResult{}, ctrl.Result{RequeueAfter: 500 * time.Millisecond}, nil, true
-				} else if originalWFE != "" {
-					// Issue #190: Valid lock owned by another WFE — classify as Deduplicated.
-					markErr := r.MarkFailedAsDeduplicated(ctx, wfe, originalWFE)
-					return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
-				}
-			}
-			if createErr != nil {
-				markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-					fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
-				return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
-			}
-		} else {
+		if !apierrors.IsAlreadyExists(createErr) {
 			logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Status.ExecutionEngine)
 			markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
 				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Status.ExecutionEngine, createErr))
 			return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
 		}
+
+		// DD-WE-003 Layer 2: Execution-time collision handling
+		result, res, err, shouldReturn := r.handleCreateAlreadyExists(ctx, wfe, resourceName, createOpts, exec, createErr, logger)
+		if shouldReturn {
+			return result, res, err, true
+		}
+		createResult = result
 	}
 
 	return createResult, ctrl.Result{}, nil, false
+}
+
+// handleCreateAlreadyExists resolves a DD-WE-003 Layer 2 execution-time
+// collision (the execution resource already exists): Tekton delegates to
+// HandleAlreadyExists, Job attempts terminal-state cleanup + retry via
+// handleJobAlreadyExists (Issue #374/#383/#190), and any other outcome
+// (including non-tekton/non-job engines) fails the WFE with a
+// resource-locked message. shouldReturn is true when the caller must
+// immediately return (result, res, err); when false, createResult replaces
+// the caller's create result (Job retry succeeded) and processing continues.
+// Extracted from createPendingExecutionResource (Wave 6 6e-ii GREEN: nestif
+// remediation) — pure code motion, no behavior change.
+func (r *WorkflowExecutionReconciler) handleCreateAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, createOpts weexecutor.CreateOptions, exec weexecutor.Executor, createErr error, logger logr.Logger) (*weexecutor.CreateResult, ctrl.Result, error, bool) {
+	if wfe.Status.ExecutionEngine == "tekton" {
+		result, handleErr := r.HandleAlreadyExists(ctx, wfe, resourceName, createErr)
+		return &weexecutor.CreateResult{}, result, handleErr, true
+	}
+
+	// Issue #374 / DD-WE-003: Pre-execution cleanup of completed Jobs.
+	// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
+	// and retry creation. If still running, the lock is valid -- fail the WFE.
+	if wfe.Status.ExecutionEngine == "job" {
+		retryResult, handled, requeueForGC, originalWFE := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
+		switch {
+		case handled:
+			return retryResult, ctrl.Result{}, nil, false
+		case requeueForGC:
+			logger.Info("Requeuing for Job GC completion (Issue #383)", "resource", resourceName)
+			return &weexecutor.CreateResult{}, ctrl.Result{RequeueAfter: 500 * time.Millisecond}, nil, true
+		case originalWFE != "":
+			// Issue #190: Valid lock owned by another WFE — classify as Deduplicated.
+			markErr := r.MarkFailedAsDeduplicated(ctx, wfe, originalWFE)
+			return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
+		}
+	}
+
+	markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
+		fmt.Sprintf("Execution resource %s already exists (target resource locked)", resourceName))
+	return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
 }
 
 // finalizePendingToRunning persists the created execution resource's

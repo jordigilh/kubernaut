@@ -58,15 +58,7 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 	classifyingStart := time.Now()
 
 	signal := &sp.Spec.Signal
-
-	// Issue #437: Diagnostic logging — capture namespace labels for classification debugging.
-	if k8sCtx != nil && k8sCtx.Namespace != nil {
-		logger.V(1).Info("Classification input",
-			"namespace", k8sCtx.Namespace.Name,
-			"labels", k8sCtx.Namespace.Labels,
-			"degradedMode", k8sCtx.DegradedMode,
-			"sp", sp.Name)
-	}
+	logClassificationInput(k8sCtx, sp, logger)
 
 	// ADR-060: Build unified policy input once, reuse across all evaluations
 	policyInput := evaluator.BuildInput(k8sCtx, signal)
@@ -114,6 +106,21 @@ func (r *SignalProcessingReconciler) reconcileClassifying(ctx context.Context, s
 		signalModeResult:      signalModeResult,
 		classificationMessage: classificationMessage,
 	}, classifyingStart, logger)
+}
+
+// logClassificationInput emits Issue #437 diagnostic logging of namespace
+// labels used as classification input, when a namespace context is
+// available. Extracted from reconcileClassifying (Wave 6 6e-iii GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func logClassificationInput(k8sCtx *signalprocessingv1alpha1.KubernetesContext, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) {
+	if k8sCtx == nil || k8sCtx.Namespace == nil {
+		return
+	}
+	logger.V(1).Info("Classification input",
+		"namespace", k8sCtx.Namespace.Name,
+		"labels", k8sCtx.Namespace.Labels,
+		"degradedMode", k8sCtx.DegradedMode,
+		"sp", sp.Name)
 }
 
 // classificationInputs bundles the classification outputs computed by

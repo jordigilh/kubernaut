@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -101,21 +102,7 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	// ========================================
 
 	// Calculate duration for use in atomic update
-	now := metav1.Now()
-	var completionTime *metav1.Time
-	if pr != nil && pr.Status.CompletionTime != nil {
-		completionTime = pr.Status.CompletionTime
-	} else {
-		completionTime = &now
-	}
-
-	var durationVal *metav1.Duration
-	var durationSeconds float64
-	if wfe.Status.StartTime != nil && completionTime != nil {
-		d := completionTime.Sub(wfe.Status.StartTime.Time).Round(time.Second)
-		durationVal = &metav1.Duration{Duration: d}
-		durationSeconds = d.Seconds()
-	}
+	completionTime, durationVal, durationSeconds := completionTimeAndDuration(wfe, pr)
 
 	// ========================================
 	// DD-PERF-001: ATOMIC STATUS UPDATE
@@ -124,43 +111,7 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	// AFTER: 1 atomic API call (50% reduction)
 	// ========================================
 	if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
-		// Set phase (P0: Phase State Machine)
-		if err := r.PhaseManager.TransitionTo(wfe, wephase.Completed); err != nil {
-			return fmt.Errorf("failed to transition to Completed: %w", err)
-		}
-
-		// Set completion time
-		wfe.Status.CompletionTime = completionTime
-
-		// Set duration
-		wfe.Status.Duration = durationVal
-
-		// Issue #118 Gap 4: persist ExecutionStatus inside callback (survives refetch)
-		if len(summary) > 0 && summary[0] != nil {
-			wfe.Status.ExecutionStatus = summary[0]
-		}
-
-		// BR-WE-006: Set TektonPipelineComplete condition
-		weconditions.SetExecutionComplete(wfe, true,
-			weconditions.ReasonExecutionSucceeded,
-			fmt.Sprintf("All tasks completed successfully in %s", wfe.Status.Duration))
-
-		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
-		weconditions.SetReady(wfe, true, weconditions.ReasonReady, "Workflow execution completed")
-
-		// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
-		if err := r.AuditManager.RecordWorkflowCompleted(ctx, wfe); err != nil {
-			logger.V(1).Info("Failed to record workflow.completed audit event", "error", err)
-			weconditions.SetAuditRecorded(wfe, false,
-				weconditions.ReasonAuditFailed,
-				fmt.Sprintf("Failed to record audit event: %v", err))
-		} else {
-			weconditions.SetAuditRecorded(wfe, true,
-				weconditions.ReasonAuditSucceeded,
-				"Audit event workflow.completed recorded to DataStorage")
-		}
-
-		return nil
+		return r.applyCompletedTransition(ctx, wfe, completionTime, durationVal, summary, logger)
 	}); err != nil {
 		logger.Error(err, "Failed to atomically update status to Completed")
 		return ctrl.Result{}, err
@@ -194,6 +145,71 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	return ctrl.Result{RequeueAfter: cooldown}, nil
 }
 
+// completionTimeAndDuration resolves the completion timestamp (preferring
+// the PipelineRun's own CompletionTime when available, per v3.2) and the
+// resulting execution duration relative to wfe.Status.StartTime. Extracted
+// from MarkCompleted (Wave 6 6e-ii GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func completionTimeAndDuration(wfe *workflowexecutionv1alpha1.WorkflowExecution, pr *tektonv1.PipelineRun) (*metav1.Time, *metav1.Duration, float64) {
+	now := metav1.Now()
+	completionTime := &now
+	if pr != nil && pr.Status.CompletionTime != nil {
+		completionTime = pr.Status.CompletionTime
+	}
+
+	var durationVal *metav1.Duration
+	var durationSeconds float64
+	if wfe.Status.StartTime != nil {
+		d := completionTime.Sub(wfe.Status.StartTime.Time).Round(time.Second)
+		durationVal = &metav1.Duration{Duration: d}
+		durationSeconds = d.Seconds()
+	}
+	return completionTime, durationVal, durationSeconds
+}
+
+// applyCompletedTransition is the AtomicStatusUpdate callback body for
+// MarkCompleted: transitions the phase to Completed (P0: Phase State
+// Machine), persists completion time/duration/ExecutionStatus, sets the
+// TektonPipelineComplete/Ready conditions (BR-WE-006, Issue #79 Phase 7b),
+// and records the workflow.completed audit event (BR-WE-005, ADR-032).
+// Extracted from MarkCompleted (Wave 6 6e-ii GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func (r *WorkflowExecutionReconciler) applyCompletedTransition(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, completionTime *metav1.Time, durationVal *metav1.Duration, summary []*workflowexecutionv1alpha1.ExecutionStatusSummary, logger logr.Logger) error {
+	if err := r.PhaseManager.TransitionTo(wfe, wephase.Completed); err != nil {
+		return fmt.Errorf("failed to transition to Completed: %w", err)
+	}
+
+	wfe.Status.CompletionTime = completionTime
+	wfe.Status.Duration = durationVal
+
+	// Issue #118 Gap 4: persist ExecutionStatus inside callback (survives refetch)
+	if len(summary) > 0 && summary[0] != nil {
+		wfe.Status.ExecutionStatus = summary[0]
+	}
+
+	// BR-WE-006: Set TektonPipelineComplete condition
+	weconditions.SetExecutionComplete(wfe, true,
+		weconditions.ReasonExecutionSucceeded,
+		fmt.Sprintf("All tasks completed successfully in %s", wfe.Status.Duration))
+
+	// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+	weconditions.SetReady(wfe, true, weconditions.ReasonReady, "Workflow execution completed")
+
+	// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
+	if err := r.AuditManager.RecordWorkflowCompleted(ctx, wfe); err != nil {
+		logger.V(1).Info("Failed to record workflow.completed audit event", "error", err)
+		weconditions.SetAuditRecorded(wfe, false,
+			weconditions.ReasonAuditFailed,
+			fmt.Sprintf("Failed to record audit event: %v", err))
+	} else {
+		weconditions.SetAuditRecorded(wfe, true,
+			weconditions.ReasonAuditSucceeded,
+			"Audit event workflow.completed recorded to DataStorage")
+	}
+
+	return nil
+}
+
 // MarkFailed transitions WFE to Failed phase with FailureDetails
 // Extracts failure information from PipelineRun (v3.2)
 // Day 6 Extension (BR-WE-012): Handles exponential backoff for pre-execution failures
@@ -211,6 +227,73 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 		durationSeconds = d.Seconds()
 	}
 
+	failureDetails, failureReason, failureMessage := r.resolveMarkFailedDetails(ctx, wfe, pr, summary)
+
+	// ========================================
+	// DD-RO-002 Phase 3: Routing Logic Removed (Dec 19, 2025)
+	// WE is now a pure executor - no routing decisions
+	// RO tracks ConsecutiveFailureCount and NextAllowedExecution in RR.Status
+	// RO makes ALL routing decisions BEFORE creating WFE
+	// ========================================
+	logger.V(1).Info("Workflow execution failed - routing handled by RO",
+		"wasExecutionFailure", failureDetails != nil && failureDetails.WasExecutionFailure)
+
+	// ========================================
+	// DD-PERF-001: ATOMIC STATUS UPDATE
+	// Consolidates phase transition + conditions into single API call
+	// ========================================
+	failedTransition := failedStatusTransition{
+		completionTime: &now,
+		durationVal:    durationVal,
+		failureDetails: failureDetails,
+		failureReason:  failureReason,
+		failureMessage: failureMessage,
+		summary:        summary,
+	}
+	if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
+		return r.applyFailedStatusTransition(ctx, wfe, failedTransition, logger)
+	}); err != nil {
+		logger.Error(err, "Failed to atomically update status to Failed")
+		return ctrl.Result{}, err
+	}
+
+	// Day 7: Record metrics (BR-WE-008)
+	// DD-METRICS-001: Use injected metrics instead of global function
+	if r.Metrics != nil {
+		r.Metrics.RecordWorkflowFailure(durationSeconds)
+	}
+
+	// V1.0: Consecutive failures gauge removed - RO handles routing (DD-RO-002)
+
+	// Emit event
+	reason := "Unknown"
+	if wfe.Status.FailureDetails != nil {
+		reason = wfe.Status.FailureDetails.Reason
+	}
+	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
+		fmt.Sprintf("Workflow %s failed: %s", wfe.Spec.WorkflowRef.WorkflowID, reason))
+
+	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Failed
+	r.emitPhaseTransition(wfe, "Running", "Failed")
+
+	// Issue #375: Schedule requeue so ReconcileTerminal runs after cooldown to
+	// delete the execution resource (Job/PipelineRun) and release the target lock.
+	cooldown := r.CooldownPeriod
+	if cooldown == 0 {
+		cooldown = DefaultCooldownPeriod
+	}
+	return ctrl.Result{RequeueAfter: cooldown}, nil
+}
+
+// resolveMarkFailedDetails extracts and finalizes the FailureDetails for a
+// MarkFailed call (Day 7 TaskRun-specific fields, Day 6 Extension
+// WasExecutionFailure), overriding with the executor's summary for
+// non-Tekton engines per BR-WE-015 (ExtractFailureDetails defaults to
+// "Unknown" when pr is nil), generates the natural-language summary, and
+// maps the WE failure reason onto the ExecutionComplete condition's
+// reason/message. Extracted from MarkFailed (Wave 6 6e-ii GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (r *WorkflowExecutionReconciler) resolveMarkFailedDetails(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, pr *tektonv1.PipelineRun, summary []*workflowexecutionv1alpha1.ExecutionStatusSummary) (*workflowexecutionv1alpha1.FailureDetails, string, string) {
 	// Extract failure details (Day 7: includes TaskRun-specific fields, Day 6 Extension: WasExecutionFailure)
 	failureDetails := r.ExtractFailureDetails(ctx, pr, wfe.Status.StartTime)
 
@@ -252,92 +335,64 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 		}
 	}
 
-	// ========================================
-	// DD-RO-002 Phase 3: Routing Logic Removed (Dec 19, 2025)
-	// WE is now a pure executor - no routing decisions
-	// RO tracks ConsecutiveFailureCount and NextAllowedExecution in RR.Status
-	// RO makes ALL routing decisions BEFORE creating WFE
-	// ========================================
-	logger.V(1).Info("Workflow execution failed - routing handled by RO",
-		"wasExecutionFailure", failureDetails != nil && failureDetails.WasExecutionFailure)
+	return failureDetails, failureReason, failureMessage
+}
 
-	// ========================================
-	// DD-PERF-001: ATOMIC STATUS UPDATE
-	// Consolidates phase transition + conditions into single API call
-	// ========================================
-	if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
-		// Set phase (P0: Phase State Machine)
-		if err := r.PhaseManager.TransitionTo(wfe, wephase.Failed); err != nil {
-			return fmt.Errorf("failed to transition to Failed: %w", err)
-		}
+// failedStatusTransition groups the fields needed by applyFailedStatusTransition
+// to keep the method's argument count within the project's argument-limit
+// (revive) rule. Introduced during Wave 6 6e-ii GREEN decomposition of
+// MarkFailed.
+type failedStatusTransition struct {
+	completionTime *metav1.Time
+	durationVal    *metav1.Duration
+	failureDetails *workflowexecutionv1alpha1.FailureDetails
+	failureReason  string
+	failureMessage string
+	summary        []*workflowexecutionv1alpha1.ExecutionStatusSummary
+}
 
-		// Set completion time
-		wfe.Status.CompletionTime = &now
-
-		// Set duration
-		wfe.Status.Duration = durationVal
-
-		// Set failure details
-		wfe.Status.FailureDetails = failureDetails
-
-		// Issue #118 Gap 4: persist ExecutionStatus inside callback (survives refetch)
-		if len(summary) > 0 && summary[0] != nil {
-			wfe.Status.ExecutionStatus = summary[0]
-		}
-
-		// BR-WE-006: Set TektonPipelineComplete condition to False
-		weconditions.SetExecutionComplete(wfe, false,
-			failureReason,
-			failureMessage)
-
-		// Issue #79 Phase 7b: Set Ready condition on terminal transitions
-		weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
-
-		// Day 8: Record audit event for workflow failure (BR-WE-005, ADR-032)
-		// Uses Audit Manager (P3: Audit Manager pattern)
-		if err := r.AuditManager.RecordWorkflowFailed(ctx, wfe); err != nil {
-			logger.V(1).Info("Failed to record workflow.failed audit event", "error", err)
-			weconditions.SetAuditRecorded(wfe, false,
-				weconditions.ReasonAuditFailed,
-				fmt.Sprintf("Failed to record audit event: %v", err))
-		} else {
-			weconditions.SetAuditRecorded(wfe, true,
-				weconditions.ReasonAuditSucceeded,
-				"Audit event workflow.failed recorded to DataStorage")
-		}
-
-		return nil
-	}); err != nil {
-		logger.Error(err, "Failed to atomically update status to Failed")
-		return ctrl.Result{}, err
+// applyFailedStatusTransition is the AtomicStatusUpdate callback body for
+// MarkFailed: transitions the phase to Failed (P0: Phase State Machine),
+// persists completion time/duration/FailureDetails/ExecutionStatus, sets the
+// TektonPipelineComplete/Ready conditions (BR-WE-006, Issue #79 Phase 7b),
+// and records the workflow.failed audit event (BR-WE-005, ADR-032, P3:
+// Audit Manager pattern). Extracted from MarkFailed (Wave 6 6e-ii GREEN:
+// funlen/gocyclo/gocognit remediation) — pure code motion, no behavior
+// change.
+func (r *WorkflowExecutionReconciler) applyFailedStatusTransition(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, t failedStatusTransition, logger logr.Logger) error {
+	if err := r.PhaseManager.TransitionTo(wfe, wephase.Failed); err != nil {
+		return fmt.Errorf("failed to transition to Failed: %w", err)
 	}
 
-	// Day 7: Record metrics (BR-WE-008)
-	// DD-METRICS-001: Use injected metrics instead of global function
-	if r.Metrics != nil {
-		r.Metrics.RecordWorkflowFailure(durationSeconds)
+	wfe.Status.CompletionTime = t.completionTime
+	wfe.Status.Duration = t.durationVal
+	wfe.Status.FailureDetails = t.failureDetails
+
+	// Issue #118 Gap 4: persist ExecutionStatus inside callback (survives refetch)
+	if len(t.summary) > 0 && t.summary[0] != nil {
+		wfe.Status.ExecutionStatus = t.summary[0]
 	}
 
-	// V1.0: Consecutive failures gauge removed - RO handles routing (DD-RO-002)
+	// BR-WE-006: Set TektonPipelineComplete condition to False
+	weconditions.SetExecutionComplete(wfe, false, t.failureReason, t.failureMessage)
 
-	// Emit event
-	reason := "Unknown"
-	if wfe.Status.FailureDetails != nil {
-		reason = wfe.Status.FailureDetails.Reason
+	// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+	weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
+
+	// Day 8: Record audit event for workflow failure (BR-WE-005, ADR-032)
+	// Uses Audit Manager (P3: Audit Manager pattern)
+	if err := r.AuditManager.RecordWorkflowFailed(ctx, wfe); err != nil {
+		logger.V(1).Info("Failed to record workflow.failed audit event", "error", err)
+		weconditions.SetAuditRecorded(wfe, false,
+			weconditions.ReasonAuditFailed,
+			fmt.Sprintf("Failed to record audit event: %v", err))
+	} else {
+		weconditions.SetAuditRecorded(wfe, true,
+			weconditions.ReasonAuditSucceeded,
+			"Audit event workflow.failed recorded to DataStorage")
 	}
-	r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowFailed,
-		fmt.Sprintf("Workflow %s failed: %s", wfe.Spec.WorkflowRef.WorkflowID, reason))
 
-	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Running → Failed
-	r.emitPhaseTransition(wfe, "Running", "Failed")
-
-	// Issue #375: Schedule requeue so ReconcileTerminal runs after cooldown to
-	// delete the execution resource (Job/PipelineRun) and release the target lock.
-	cooldown := r.CooldownPeriod
-	if cooldown == 0 {
-		cooldown = DefaultCooldownPeriod
-	}
-	return ctrl.Result{RequeueAfter: cooldown}, nil
+	return nil
 }
 
 // ========================================

@@ -220,52 +220,91 @@ func (r *WorkflowExecutionReconciler) extractExitCode(tr *tektonv1.TaskRun) *int
 	return nil
 }
 
+// tektonFailureReasonRule pairs a reason/message predicate with the
+// FailureReason it maps to. Rules are evaluated in order, so more specific
+// patterns (OOMKilled, timeout, RBAC, ...) MUST precede the generic
+// TaskFailed catch-all — otherwise "task failed due to oom" would match
+// TaskFailed instead of OOMKilled.
+type tektonFailureReasonRule struct {
+	matches func(reasonLower, messageLower string) bool
+	reason  string
+}
+
+// tektonFailureReasonRules is the ordered pattern table used by
+// mapTektonReasonToFailureReason. Table-driven per AGENTS.md Go Anti-Pattern
+// Checklist (unnecessary nesting) — extracted from mapTektonReasonToFailureReason
+// (Wave 6 6e-ii GREEN: gocyclo remediation) — pure code motion, no behavior change.
+var tektonFailureReasonRules = []tektonFailureReasonRule{
+	{
+		// OOMKilled - check before TaskFailed to avoid false matches
+		matches: func(_, messageLower string) bool {
+			return strings.Contains(messageLower, "oomkilled") || strings.Contains(messageLower, "oom")
+		},
+		reason: workflowexecutionv1alpha1.FailureReasonOOMKilled,
+	},
+	{
+		// Timeout/Deadline - check before TaskFailed
+		matches: func(reasonLower, messageLower string) bool {
+			return strings.Contains(reasonLower, "timeout") || strings.Contains(messageLower, "timeout") ||
+				strings.Contains(messageLower, "deadline")
+		},
+		reason: workflowexecutionv1alpha1.FailureReasonDeadlineExceeded,
+	},
+	{
+		// RBAC/Permission errors - check before TaskFailed
+		matches: func(_, messageLower string) bool {
+			return strings.Contains(messageLower, "forbidden") || strings.Contains(messageLower, "rbac") ||
+				strings.Contains(messageLower, "permission denied")
+		},
+		reason: workflowexecutionv1alpha1.FailureReasonForbidden,
+	},
+	{
+		// Resource exhaustion - check before TaskFailed
+		matches: func(_, messageLower string) bool {
+			return strings.Contains(messageLower, "quota") || strings.Contains(messageLower, "resource exhausted")
+		},
+		reason: workflowexecutionv1alpha1.FailureReasonResourceExhausted,
+	},
+	{
+		// Image pull failures - check before TaskFailed
+		matches: func(_, messageLower string) bool {
+			return strings.Contains(messageLower, "imagepullbackoff") || strings.Contains(messageLower, "image pull")
+		},
+		reason: workflowexecutionv1alpha1.FailureReasonImagePullBackOff,
+	},
+	{
+		// Configuration errors - check before TaskFailed
+		matches: func(_, messageLower string) bool {
+			return strings.Contains(messageLower, "invalid") || strings.Contains(messageLower, "configuration")
+		},
+		reason: workflowexecutionv1alpha1.FailureReasonConfigurationError,
+	},
+	{
+		// Task failure - only if message explicitly mentions task failure.
+		// Note: Don't match on reason "TaskRunFailed" alone, as it's too generic;
+		// "TaskRunFailed" with no specific message indicators should fall
+		// through to Unknown.
+		matches: func(reasonLower, messageLower string) bool {
+			return strings.Contains(reasonLower, "taskfailed") ||
+				(strings.Contains(messageLower, "task") && strings.Contains(messageLower, "failed"))
+		},
+		reason: workflowexecutionv1alpha1.FailureReasonTaskFailed,
+	},
+}
+
 // mapTektonReasonToFailureReason converts Tekton/K8s reasons to our FailureReason enum
 func (r *WorkflowExecutionReconciler) mapTektonReasonToFailureReason(reason, message string) string {
 	messageLower := strings.ToLower(message)
 	reasonLower := strings.ToLower(reason)
 
-	switch {
-	// IMPORTANT: Check specific failure types BEFORE generic TaskFailed
-	// Otherwise "task failed due to oom" would match TaskFailed instead of OOMKilled
-
-	// OOMKilled - check before TaskFailed to avoid false matches
-	case strings.Contains(messageLower, "oomkilled") || strings.Contains(messageLower, "oom"):
-		return workflowexecutionv1alpha1.FailureReasonOOMKilled
-
-	// Timeout/Deadline - check before TaskFailed
-	case strings.Contains(reasonLower, "timeout") || strings.Contains(messageLower, "timeout") ||
-		strings.Contains(messageLower, "deadline"):
-		return workflowexecutionv1alpha1.FailureReasonDeadlineExceeded
-
-	// RBAC/Permission errors - check before TaskFailed
-	case strings.Contains(messageLower, "forbidden") || strings.Contains(messageLower, "rbac") ||
-		strings.Contains(messageLower, "permission denied"):
-		return workflowexecutionv1alpha1.FailureReasonForbidden
-
-	// Resource exhaustion - check before TaskFailed
-	case strings.Contains(messageLower, "quota") || strings.Contains(messageLower, "resource exhausted"):
-		return workflowexecutionv1alpha1.FailureReasonResourceExhausted
-
-	// Image pull failures - check before TaskFailed
-	case strings.Contains(messageLower, "imagepullbackoff") || strings.Contains(messageLower, "image pull"):
-		return workflowexecutionv1alpha1.FailureReasonImagePullBackOff
-
-	// Configuration errors - check before TaskFailed
-	case strings.Contains(messageLower, "invalid") || strings.Contains(messageLower, "configuration"):
-		return workflowexecutionv1alpha1.FailureReasonConfigurationError
-
-	// Task failure - only if message explicitly mentions task failure
-	// Note: Don't match on reason "TaskRunFailed" alone, as it's too generic
-	// "TaskRunFailed" with no specific message indicators should fall through to Unknown
-	case strings.Contains(reasonLower, "taskfailed") ||
-		(strings.Contains(messageLower, "task") && strings.Contains(messageLower, "failed")):
-		return workflowexecutionv1alpha1.FailureReasonTaskFailed
+	for _, rule := range tektonFailureReasonRules {
+		if rule.matches(reasonLower, messageLower) {
+			return rule.reason
+		}
+	}
 
 	// Unknown - no patterns matched (includes generic "TaskRunFailed" without specific message)
-	default:
-		return workflowexecutionv1alpha1.FailureReasonUnknown
-	}
+	return workflowexecutionv1alpha1.FailureReasonUnknown
 }
 
 // GenerateNaturalLanguageSummary creates a human/LLM-readable failure description

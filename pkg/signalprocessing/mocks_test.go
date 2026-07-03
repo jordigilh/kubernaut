@@ -95,29 +95,31 @@ func (m *mockK8sEnricher) Enrich(ctx context.Context, signal *signalprocessingv1
 	}
 
 	// If client provided, enrich with real K8s data from fake client
-	if m.Client != nil {
-		if signal.TargetResource.Namespace != "" {
-			ns := &corev1.Namespace{}
-			nsKey := client.ObjectKey{Name: signal.TargetResource.Namespace}
-			if err := m.Client.Get(ctx, nsKey, ns); err == nil {
-				k8sCtx.Namespace.Labels = ns.Labels
-				k8sCtx.Namespace.Annotations = ns.Annotations
-			}
-		}
+	if m.Client == nil {
+		return k8sCtx, nil
+	}
 
-		// Enrich Pod details
-		if signal.TargetResource.Kind == "Pod" {
-			pod := &corev1.Pod{}
-			podKey := client.ObjectKey{
-				Name:      signal.TargetResource.Name,
-				Namespace: signal.TargetResource.Namespace,
-			}
-			if err := m.Client.Get(ctx, podKey, pod); err == nil {
-				k8sCtx.Workload = &signalprocessingv1alpha1.WorkloadDetails{
-					Kind:   "Pod",
-					Name:   pod.Name,
-					Labels: pod.Labels,
-				}
+	if signal.TargetResource.Namespace != "" {
+		ns := &corev1.Namespace{}
+		nsKey := client.ObjectKey{Name: signal.TargetResource.Namespace}
+		if err := m.Client.Get(ctx, nsKey, ns); err == nil {
+			k8sCtx.Namespace.Labels = ns.Labels
+			k8sCtx.Namespace.Annotations = ns.Annotations
+		}
+	}
+
+	// Enrich Pod details
+	if signal.TargetResource.Kind == "Pod" {
+		pod := &corev1.Pod{}
+		podKey := client.ObjectKey{
+			Name:      signal.TargetResource.Name,
+			Namespace: signal.TargetResource.Namespace,
+		}
+		if err := m.Client.Get(ctx, podKey, pod); err == nil {
+			k8sCtx.Workload = &signalprocessingv1alpha1.WorkloadDetails{
+				Kind:   "Pod",
+				Name:   pod.Name,
+				Labels: pod.Labels,
 			}
 		}
 	}

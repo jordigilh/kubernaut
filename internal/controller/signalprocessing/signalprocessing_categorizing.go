@@ -74,22 +74,7 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	bizClass := r.classifyBusiness(k8sCtx, envClass, logger)
 
 	// BR-SP-110: Prepare condition messages (will be set inside atomic update)
-	categorizationMessage := fmt.Sprintf("Categorized: businessUnit=%s, criticality=%s, sla=%s",
-		bizClass.BusinessUnit, bizClass.Criticality, bizClass.SLARequirement)
-
-	var duration float64
-	if sp.Status.StartTime != nil {
-		duration = time.Since(sp.Status.StartTime.Time).Seconds()
-	}
-	var priorityStr, envStr string
-	if priorityAssignment != nil {
-		priorityStr = string(priorityAssignment.Priority)
-	}
-	if envClass != nil {
-		envStr = string(envClass.Environment)
-	}
-	processingMessage := fmt.Sprintf("Signal processed successfully in %.2fs: %s %s alert ready for remediation",
-		duration, priorityStr, envStr)
+	categorizationMessage, processingMessage := categorizingCompletionMessages(sp, bizClass, envClass, priorityAssignment)
 
 	// ========================================
 	// DD-PERF-001: ATOMIC STATUS UPDATE
@@ -116,6 +101,46 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 		return ctrl.Result{}, updateErr
 	}
 
+	if result, err := r.finalizeCategorizingCompletion(ctx, sp, oldPhase, processingMessage, categorizingStart); err != nil {
+		return result, err
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// categorizingCompletionMessages builds the BR-SP-110 condition messages
+// used inside the atomic status update for the Categorizing phase.
+// Extracted from reconcileCategorizing (Wave 6 6e-iii GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func categorizingCompletionMessages(sp *signalprocessingv1alpha1.SignalProcessing, bizClass *signalprocessingv1alpha1.BusinessClassification, envClass *signalprocessingv1alpha1.EnvironmentClassification, priorityAssignment *signalprocessingv1alpha1.PriorityAssignment) (string, string) {
+	categorizationMessage := fmt.Sprintf("Categorized: businessUnit=%s, criticality=%s, sla=%s",
+		bizClass.BusinessUnit, bizClass.Criticality, bizClass.SLARequirement)
+
+	var duration float64
+	if sp.Status.StartTime != nil {
+		duration = time.Since(sp.Status.StartTime.Time).Seconds()
+	}
+	var priorityStr, envStr string
+	if priorityAssignment != nil {
+		priorityStr = string(priorityAssignment.Priority)
+	}
+	if envClass != nil {
+		envStr = string(envClass.Environment)
+	}
+	processingMessage := fmt.Sprintf("Signal processed successfully in %.2fs: %s %s alert ready for remediation",
+		duration, priorityStr, envStr)
+
+	return categorizationMessage, processingMessage
+}
+
+// finalizeCategorizingCompletion records the phase-transition and
+// completion audit events (BR-SP-090, ADR-032 mandatory audit), emits the
+// PhaseTransition/SignalProcessed K8s events (DD-EVENT-001 v1.1), and tracks
+// per-phase and overall processing metrics (DD-005). On audit failure,
+// returns a non-nil error result so the caller aborts before reaching the
+// success path. Extracted from reconcileCategorizing (Wave 6 6e-iii GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func (r *SignalProcessingReconciler) finalizeCategorizingCompletion(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, oldPhase signalprocessingv1alpha1.SignalProcessingPhase, processingMessage string, categorizingStart time.Time) (ctrl.Result, error) {
 	// Record phase transition audit event (BR-SP-090)
 	// ADR-032: Audit is MANDATORY - return error if not configured
 	if err := r.recordPhaseTransitionAudit(ctx, sp, string(oldPhase), string(signalprocessingv1alpha1.PhaseCompleted)); err != nil {

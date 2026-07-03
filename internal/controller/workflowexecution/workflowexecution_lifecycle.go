@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -77,41 +78,8 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	// Step 2: Map execution result to WFE phase
 	// ExecutionStatus is passed into Mark* methods to survive AtomicStatusUpdate refetch
 	// ========================================
-	switch result.Phase {
-	case workflowexecutionv1alpha1.PhaseCompleted:
-		logger.Info("Execution succeeded", "engine", wfe.Status.ExecutionEngine)
-		if wfe.Status.ExecutionEngine == "tekton" {
-			var pr tektonv1.PipelineRun
-			if err := r.Get(ctx, client.ObjectKey{
-				Name:      wfe.Status.ExecutionRef.Name,
-				Namespace: r.ExecutionNamespace,
-			}, &pr); err != nil {
-				return r.MarkCompleted(ctx, wfe, nil, result.Summary)
-			}
-			return r.MarkCompleted(ctx, wfe, &pr, result.Summary)
-		}
-		return r.MarkCompleted(ctx, wfe, nil, result.Summary)
-
-	case workflowexecutionv1alpha1.PhaseFailed:
-		logger.Info("Execution failed", "engine", wfe.Status.ExecutionEngine, "reason", result.Reason)
-		if wfe.Status.ExecutionEngine == "tekton" {
-			var pr tektonv1.PipelineRun
-			if err := r.Get(ctx, client.ObjectKey{
-				Name:      wfe.Status.ExecutionRef.Name,
-				Namespace: r.ExecutionNamespace,
-			}, &pr); err != nil {
-				return r.MarkFailed(ctx, wfe, nil, result.Summary)
-			}
-			return r.MarkFailed(ctx, wfe, &pr, result.Summary)
-		}
-		return r.MarkFailed(ctx, wfe, nil, result.Summary)
-
-	default:
-		// Still running - update conditions and requeue
-		logger.V(1).Info("Execution still running", "reason", result.Reason, "engine", wfe.Status.ExecutionEngine)
-		weconditions.SetExecutionRunning(wfe, true,
-			weconditions.ReasonExecutionStarted,
-			fmt.Sprintf("Execution running (%s: %s)", wfe.Status.ExecutionEngine, result.Reason))
+	if res, err, handled := r.handleRunningExecutionResult(ctx, wfe, result, logger); handled {
+		return res, err
 	}
 
 	// ========================================
@@ -122,6 +90,57 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	}
 
 	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
+// handleRunningExecutionResult maps a Running-phase executor result to the
+// WFE's terminal Mark* transition (BR-WE-014): Completed/Failed results are
+// dispatched to MarkCompleted/MarkFailed (with a best-effort Tekton
+// PipelineRun fetch for annotation purposes), while any other phase is left
+// unhandled (handled=false) so the caller continues the still-running path.
+// Extracted from reconcileRunning (Wave 6 6e-ii GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func (r *WorkflowExecutionReconciler) handleRunningExecutionResult(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, result *weexecutor.ExecutionResult, logger logr.Logger) (ctrl.Result, error, bool) {
+	switch result.Phase {
+	case workflowexecutionv1alpha1.PhaseCompleted:
+		logger.Info("Execution succeeded", "engine", wfe.Status.ExecutionEngine)
+		pr := r.fetchTektonPipelineRunForMark(ctx, wfe)
+		res, err := r.MarkCompleted(ctx, wfe, pr, result.Summary)
+		return res, err, true
+
+	case workflowexecutionv1alpha1.PhaseFailed:
+		logger.Info("Execution failed", "engine", wfe.Status.ExecutionEngine, "reason", result.Reason)
+		pr := r.fetchTektonPipelineRunForMark(ctx, wfe)
+		res, err := r.MarkFailed(ctx, wfe, pr, result.Summary)
+		return res, err, true
+
+	default:
+		// Still running - update conditions and requeue
+		logger.V(1).Info("Execution still running", "reason", result.Reason, "engine", wfe.Status.ExecutionEngine)
+		weconditions.SetExecutionRunning(wfe, true,
+			weconditions.ReasonExecutionStarted,
+			fmt.Sprintf("Execution running (%s: %s)", wfe.Status.ExecutionEngine, result.Reason))
+		return ctrl.Result{}, nil, false
+	}
+}
+
+// fetchTektonPipelineRunForMark best-effort fetches the Tekton PipelineRun
+// backing wfe (when the execution engine is tekton) for inclusion in the
+// terminal Mark* audit/status payload; returns nil when the engine isn't
+// tekton or the fetch fails (Mark* methods gracefully handle a nil
+// PipelineRun). Extracted from reconcileRunning (Wave 6 6e-ii GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (r *WorkflowExecutionReconciler) fetchTektonPipelineRunForMark(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) *tektonv1.PipelineRun {
+	if wfe.Status.ExecutionEngine != "tekton" {
+		return nil
+	}
+	var pr tektonv1.PipelineRun
+	if err := r.Get(ctx, client.ObjectKey{
+		Name:      wfe.Status.ExecutionRef.Name,
+		Namespace: r.ExecutionNamespace,
+	}, &pr); err != nil {
+		return nil
+	}
+	return &pr
 }
 
 // ========================================
@@ -167,47 +186,8 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 
 	// Cooldown expired - delete execution resource to release lock
 	// DD-WE-003: Use deterministic name for atomic locking
-	if r.ExecutorRegistry != nil {
-		exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
-		if execErr != nil {
-			logger.Error(execErr, "Unknown engine during cooldown cleanup, skipping",
-				"engine", wfe.Status.ExecutionEngine)
-		}
-		if exec != nil {
-			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
-				logger.Error(err, "Failed to cleanup execution resource after cooldown",
-					"engine", exec.Engine())
-				// DD-EVENT-001 v1.1: Emit CleanupFailed event (P4: Error Path)
-				r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonCleanupFailed,
-					fmt.Sprintf("Cleanup failed after cooldown: %v", err))
-				return ctrl.Result{}, err
-			}
-			logger.Info("Lock released after cooldown",
-				"targetResource", wfe.Spec.TargetResource,
-				"engine", exec.Engine(),
-				"cooldownPeriod", cooldown,
-			)
-		}
-	} else {
-		// Fallback: inline Tekton cleanup when ExecutorRegistry is not configured
-		prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
-		var existing tektonv1.PipelineRun
-		if err := r.Get(ctx, client.ObjectKey{Name: prName, Namespace: r.ExecutionNamespace}, &existing); err != nil {
-			if !apierrors.IsNotFound(err) {
-				logger.Error(err, "Failed to get PipelineRun for ownership check")
-				return ctrl.Result{}, err
-			}
-			// Already gone -- nothing to clean up
-		} else if existing.Labels["kubernaut.ai/workflow-execution"] == wfe.Name {
-			if err := r.Delete(ctx, &existing); err != nil && !apierrors.IsNotFound(err) {
-				logger.Error(err, "Failed to delete PipelineRun after cooldown")
-				return ctrl.Result{}, err
-			}
-		}
-		logger.Info("Lock released after cooldown",
-			"targetResource", wfe.Spec.TargetResource,
-			"cooldownPeriod", cooldown,
-		)
+	if err := r.releaseExecutionLock(ctx, wfe, cooldown, logger); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Emit LockReleased event
@@ -215,6 +195,75 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 		fmt.Sprintf("Lock released for %s after cooldown", wfe.Spec.TargetResource))
 
 	return ctrl.Result{}, nil
+}
+
+// releaseExecutionLock deletes the execution resource to release the
+// DD-WE-003 deterministic-name lock once cooldown has expired, dispatching
+// to the ExecutorRegistry when configured, or falling back to inline Tekton
+// PipelineRun cleanup otherwise. Extracted from ReconcileTerminal (Wave 6
+// 6e-ii GREEN: funlen/nestif remediation) — pure code motion, no behavior
+// change.
+func (r *WorkflowExecutionReconciler) releaseExecutionLock(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, cooldown time.Duration, logger logr.Logger) error {
+	if r.ExecutorRegistry == nil {
+		return r.releaseExecutionLockFallback(ctx, wfe, cooldown, logger)
+	}
+	return r.releaseExecutionLockViaExecutor(ctx, wfe, cooldown, logger)
+}
+
+// releaseExecutionLockViaExecutor dispatches lock release through the
+// ExecutorRegistry (BR-WE-014). Extracted from ReconcileTerminal (Wave 6
+// 6e-ii GREEN: funlen/nestif remediation) — pure code motion, no behavior
+// change.
+func (r *WorkflowExecutionReconciler) releaseExecutionLockViaExecutor(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, cooldown time.Duration, logger logr.Logger) error {
+	exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
+	if execErr != nil {
+		logger.Error(execErr, "Unknown engine during cooldown cleanup, skipping",
+			"engine", wfe.Status.ExecutionEngine)
+		return nil
+	}
+	if exec == nil {
+		return nil
+	}
+
+	if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
+		logger.Error(err, "Failed to cleanup execution resource after cooldown",
+			"engine", exec.Engine())
+		// DD-EVENT-001 v1.1: Emit CleanupFailed event (P4: Error Path)
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonCleanupFailed,
+			fmt.Sprintf("Cleanup failed after cooldown: %v", err))
+		return err
+	}
+	logger.Info("Lock released after cooldown",
+		"targetResource", wfe.Spec.TargetResource,
+		"engine", exec.Engine(),
+		"cooldownPeriod", cooldown,
+	)
+	return nil
+}
+
+// releaseExecutionLockFallback performs inline Tekton PipelineRun cleanup
+// when the ExecutorRegistry is not configured. Extracted from
+// ReconcileTerminal (Wave 6 6e-ii GREEN: funlen/nestif remediation) — pure
+// code motion, no behavior change.
+func (r *WorkflowExecutionReconciler) releaseExecutionLockFallback(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, cooldown time.Duration, logger logr.Logger) error {
+	prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
+	var existing tektonv1.PipelineRun
+	err := r.Get(ctx, client.ObjectKey{Name: prName, Namespace: r.ExecutionNamespace}, &existing)
+	if err != nil && !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to get PipelineRun for ownership check")
+		return err
+	}
+	if err == nil && existing.Labels["kubernaut.ai/workflow-execution"] == wfe.Name {
+		if delErr := r.Delete(ctx, &existing); delErr != nil && !apierrors.IsNotFound(delErr) {
+			logger.Error(delErr, "Failed to delete PipelineRun after cooldown")
+			return delErr
+		}
+	}
+	logger.Info("Lock released after cooldown",
+		"targetResource", wfe.Spec.TargetResource,
+		"cooldownPeriod", cooldown,
+	)
+	return nil
 }
 
 // ========================================
@@ -318,44 +367,8 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	// Cleanup: Delete execution resource via executor dispatch (BR-WE-014, DD-WE-003)
 	// This ensures cleanup even if ExecutionRef was never set
 	// ========================================
-	if r.ExecutorRegistry != nil {
-		exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
-		if execErr != nil {
-			logger.Error(execErr, "Unknown engine during finalization cleanup, skipping executor cleanup",
-				"engine", wfe.Status.ExecutionEngine)
-		}
-		if exec != nil {
-			logger.Info("Cleaning up execution resource",
-				"engine", exec.Engine(),
-				"namespace", r.ExecutionNamespace,
-			)
-			if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
-				logger.Error(err, "Failed to cleanup execution resource during finalization",
-					"engine", exec.Engine())
-				// DD-EVENT-001 v1.1: Emit CleanupFailed event (P4: Error Path)
-				r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonCleanupFailed,
-					fmt.Sprintf("Cleanup failed during finalization: %v", err))
-				return ctrl.Result{}, err
-			}
-			logger.Info("Finalizer: cleaned up execution resource", "engine", exec.Engine())
-		}
-	} else {
-		// Fallback: inline Tekton cleanup when ExecutorRegistry is not configured
-		prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
-		pr := &tektonv1.PipelineRun{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      prName,
-				Namespace: r.ExecutionNamespace,
-			},
-		}
-		if err := r.Delete(ctx, pr); err != nil {
-			if !apierrors.IsNotFound(err) {
-				logger.Error(err, "Failed to delete PipelineRun during finalization")
-				return ctrl.Result{}, err
-			}
-		} else {
-			logger.Info("Finalizer: deleted associated PipelineRun", "pipelineRun", prName)
-		}
+	if err := r.cleanupExecutionResourceForDelete(ctx, wfe, logger); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// ========================================
@@ -376,4 +389,71 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 
 	logger.Info("WorkflowExecution cleanup complete")
 	return ctrl.Result{}, nil
+}
+
+// cleanupExecutionResourceForDelete deletes the execution resource during
+// finalization (BR-WE-014, DD-WE-003), ensuring cleanup even if ExecutionRef
+// was never set, dispatching to the ExecutorRegistry when configured, or
+// falling back to inline Tekton PipelineRun deletion otherwise. Extracted
+// from ReconcileDelete (Wave 6 6e-ii GREEN: funlen/nestif remediation) —
+// pure code motion, no behavior change.
+func (r *WorkflowExecutionReconciler) cleanupExecutionResourceForDelete(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) error {
+	if r.ExecutorRegistry == nil {
+		return r.cleanupExecutionResourceForDeleteFallback(ctx, wfe, logger)
+	}
+	return r.cleanupExecutionResourceForDeleteViaExecutor(ctx, wfe, logger)
+}
+
+// cleanupExecutionResourceForDeleteViaExecutor dispatches finalization
+// cleanup through the ExecutorRegistry. Extracted from ReconcileDelete
+// (Wave 6 6e-ii GREEN: funlen/nestif remediation) — pure code motion, no
+// behavior change.
+func (r *WorkflowExecutionReconciler) cleanupExecutionResourceForDeleteViaExecutor(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) error {
+	exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
+	if execErr != nil {
+		logger.Error(execErr, "Unknown engine during finalization cleanup, skipping executor cleanup",
+			"engine", wfe.Status.ExecutionEngine)
+		return nil
+	}
+	if exec == nil {
+		return nil
+	}
+
+	logger.Info("Cleaning up execution resource",
+		"engine", exec.Engine(),
+		"namespace", r.ExecutionNamespace,
+	)
+	if err := exec.Cleanup(ctx, wfe, r.ExecutionNamespace); err != nil {
+		logger.Error(err, "Failed to cleanup execution resource during finalization",
+			"engine", exec.Engine())
+		// DD-EVENT-001 v1.1: Emit CleanupFailed event (P4: Error Path)
+		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonCleanupFailed,
+			fmt.Sprintf("Cleanup failed during finalization: %v", err))
+		return err
+	}
+	logger.Info("Finalizer: cleaned up execution resource", "engine", exec.Engine())
+	return nil
+}
+
+// cleanupExecutionResourceForDeleteFallback performs inline Tekton
+// PipelineRun cleanup when the ExecutorRegistry is not configured. Extracted
+// from ReconcileDelete (Wave 6 6e-ii GREEN: funlen/nestif remediation) —
+// pure code motion, no behavior change.
+func (r *WorkflowExecutionReconciler) cleanupExecutionResourceForDeleteFallback(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) error {
+	prName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
+	pr := &tektonv1.PipelineRun{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      prName,
+			Namespace: r.ExecutionNamespace,
+		},
+	}
+	if err := r.Delete(ctx, pr); err != nil {
+		if !apierrors.IsNotFound(err) {
+			logger.Error(err, "Failed to delete PipelineRun during finalization")
+			return err
+		}
+		return nil
+	}
+	logger.Info("Finalizer: deleted associated PipelineRun", "pipelineRun", prName)
+	return nil
 }

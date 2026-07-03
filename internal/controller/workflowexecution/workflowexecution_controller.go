@@ -309,24 +309,8 @@ func (r *WorkflowExecutionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 // SetupWithManager sets up the controller with the Manager
 // ========================================
 func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Create index on targetResource for O(1) lock check (DD-WE-003)
-	// NOTE: This index may already exist if RO controller was set up first.
-	// Both controllers need this index for routing/locking, so if it exists, we're good.
-	if err := mgr.GetFieldIndexer().IndexField(
-		context.Background(),
-		&workflowexecutionv1alpha1.WorkflowExecution{},
-		"spec.targetResource",
-		func(obj client.Object) []string {
-			wfe := obj.(*workflowexecutionv1alpha1.WorkflowExecution)
-			return []string{wfe.Spec.TargetResource}
-		},
-	); err != nil {
-		// Ignore "indexer conflict" error - if RO controller created this index first, we're good
-		// Both controllers need this index anyway (WE for locking, RO for routing)
-		if !k8serrors.IsIndexerConflict(err) {
-			return fmt.Errorf("failed to create field index on spec.targetResource: %w", err)
-		}
-		// Index already exists - safe to continue
+	if err := registerTargetResourceIndex(mgr); err != nil {
+		return err
 	}
 
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
@@ -345,49 +329,14 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		schema.GroupKind{Group: "tekton.dev", Kind: "PipelineRun"}, "v1",
 	)
 	if tektonDiscoveryErr == nil {
-		ctrlBuilder = ctrlBuilder.
-			// Watch PipelineRuns in execution namespace (cross-namespace via label)
-			// Only watch PipelineRuns with our label to avoid unnecessary reconciles
-			// Watch for status updates (not just metadata changes)
-			Watches(
-				&tektonv1.PipelineRun{},
-				handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
-				builder.WithPredicates(predicate.Funcs{
-					CreateFunc: func(e event.CreateEvent) bool {
-						labels := e.Object.GetLabels()
-						if labels == nil {
-							return false
-						}
-						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-						return hasLabel
-					},
-					UpdateFunc: func(e event.UpdateEvent) bool {
-						// Watch for status updates on labeled PipelineRuns
-						labels := e.ObjectNew.GetLabels()
-						if labels == nil {
-							return false
-						}
-						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-						return hasLabel
-					},
-					DeleteFunc: func(e event.DeleteEvent) bool {
-						labels := e.Object.GetLabels()
-						if labels == nil {
-							return false
-						}
-						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-						return hasLabel
-					},
-					GenericFunc: func(e event.GenericEvent) bool {
-						labels := e.Object.GetLabels()
-						if labels == nil {
-							return false
-						}
-						_, hasLabel := labels["kubernaut.ai/workflow-execution"]
-						return hasLabel
-					},
-				}),
-			)
+		// Watch PipelineRuns in execution namespace (cross-namespace via label)
+		// Only watch PipelineRuns with our label to avoid unnecessary reconciles
+		// Watch for status updates (not just metadata changes)
+		ctrlBuilder = ctrlBuilder.Watches(
+			&tektonv1.PipelineRun{},
+			handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
+			builder.WithPredicates(workflowExecutionLabelPredicate()),
+		)
 	}
 
 	// BR-WE-014: Watch Jobs for immediate completion detection.
@@ -395,31 +344,91 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// causing slow completion detection and flaky integration tests.
 	// Jobs use the same labeling convention as PipelineRuns, so the
 	// same mapper function (FindWFEForOwnedResource) works for both.
-	ctrlBuilder = ctrlBuilder.
-		Watches(
-			&batchv1.Job{},
-			handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
-			builder.WithPredicates(predicate.Funcs{
-				CreateFunc: func(e event.CreateEvent) bool {
-					_, hasLabel := e.Object.GetLabels()["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				UpdateFunc: func(e event.UpdateEvent) bool {
-					_, hasLabel := e.ObjectNew.GetLabels()["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				DeleteFunc: func(e event.DeleteEvent) bool {
-					_, hasLabel := e.Object.GetLabels()["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-				GenericFunc: func(e event.GenericEvent) bool {
-					_, hasLabel := e.Object.GetLabels()["kubernaut.ai/workflow-execution"]
-					return hasLabel
-				},
-			}),
-		)
+	ctrlBuilder = ctrlBuilder.Watches(
+		&batchv1.Job{},
+		handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
+		builder.WithPredicates(jobLabelPredicate()),
+	)
 
 	return ctrlBuilder.Complete(r)
+}
+
+// registerTargetResourceIndex creates the index on spec.targetResource used
+// for O(1) lock checks (DD-WE-003). Extracted from SetupWithManager (Wave 6
+// 6e-ii GREEN: funlen remediation) — pure code motion, no behavior change.
+func registerTargetResourceIndex(mgr ctrl.Manager) error {
+	// NOTE: This index may already exist if RO controller was set up first.
+	// Both controllers need this index for routing/locking, so if it exists, we're good.
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&workflowexecutionv1alpha1.WorkflowExecution{},
+		"spec.targetResource",
+		func(obj client.Object) []string {
+			wfe := obj.(*workflowexecutionv1alpha1.WorkflowExecution)
+			return []string{wfe.Spec.TargetResource}
+		},
+	); err != nil {
+		// Ignore "indexer conflict" error - if RO controller created this index first, we're good
+		// Both controllers need this index anyway (WE for locking, RO for routing)
+		if !k8serrors.IsIndexerConflict(err) {
+			return fmt.Errorf("failed to create field index on spec.targetResource: %w", err)
+		}
+		// Index already exists - safe to continue
+	}
+	return nil
+}
+
+// hasWorkflowExecutionLabel reports whether the given labels carry the
+// kubernaut.ai/workflow-execution marker used by owned PipelineRuns/Jobs.
+func hasWorkflowExecutionLabel(labels map[string]string) bool {
+	if labels == nil {
+		return false
+	}
+	_, hasLabel := labels["kubernaut.ai/workflow-execution"]
+	return hasLabel
+}
+
+// workflowExecutionLabelPredicate builds the predicate used to filter
+// PipelineRun watch events down to those owned by a WorkflowExecution.
+// Extracted from SetupWithManager (Wave 6 6e-ii GREEN: funlen remediation)
+// — pure code motion, no behavior change.
+func workflowExecutionLabelPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return hasWorkflowExecutionLabel(e.Object.GetLabels())
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			// Watch for status updates on labeled PipelineRuns
+			return hasWorkflowExecutionLabel(e.ObjectNew.GetLabels())
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return hasWorkflowExecutionLabel(e.Object.GetLabels())
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return hasWorkflowExecutionLabel(e.Object.GetLabels())
+		},
+	}
+}
+
+// jobLabelPredicate builds the predicate used to filter Job watch events
+// down to those owned by a WorkflowExecution. Extracted from
+// SetupWithManager (Wave 6 6e-ii GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func jobLabelPredicate() predicate.Funcs {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return hasWorkflowExecutionLabel(e.Object.GetLabels())
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return hasWorkflowExecutionLabel(e.ObjectNew.GetLabels())
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return hasWorkflowExecutionLabel(e.Object.GetLabels())
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return hasWorkflowExecutionLabel(e.Object.GetLabels())
+		},
+	}
 }
 
 // ========================================
