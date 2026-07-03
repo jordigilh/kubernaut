@@ -866,6 +866,40 @@ Sub-wave 6c is complete. The remaining Wave 6 sub-wave (6a EffectivenessMonitor)
 
 ---
 
+## 7s. Phase 6 Wave 6, sub-wave 6a: EffectivenessMonitor Complexity Burndown — ✅ RESOLVED
+
+Executed as sub-wave 8/8 (final sub-wave) of the approved Wave 6 Burndown Plan, closing the `funlen`/`nestif` offenders in `cmd/effectivenessmonitor`, `internal/controller/effectivenessmonitor`, and `pkg/effectivenessmonitor` after Wave 2.
+
+### 7s-1. RED phase: baseline + coverage gate
+
+`golangci-lint run --enable-only=funlen,nestif,gocyclo,gocognit,revive ./pkg/effectivenessmonitor/... ./internal/controller/effectivenessmonitor/... ./cmd/effectivenessmonitor/...` found 8 offenders (5 `funlen`, 3 `nestif`). Coverage baseline (`go test ./pkg/effectivenessmonitor/... -coverpkg=./pkg/effectivenessmonitor/...,./internal/controller/effectivenessmonitor/... -cover`) confirmed 73.5% aggregated coverage: `pkg/effectivenessmonitor`'s 43 test files are external test packages (`package effectivenessmonitor_test`) that import and exercise the `audit`, `health`, `startup`, and other subpackages directly (each of which has no dedicated `_test.go` of its own), and the reconciler package is additionally proven by `test/integration/effectivenessmonitor` (114 specs across the main and fleet suites). On this basis, all offenders were decomposed via pure code motion (extract-method / data-driven refactor) without new characterization tests.
+
+### 7s-2. GREEN phase: decomposition of all offenders
+
+| File | Function(s) | Technique |
+|---|---|---|
+| `cmd/effectivenessmonitor/main.go` | `main` (`funlen` 69→52 stmts, then 62 lines) | Extracted `loadConfigAndNamespace`, `initCoreDependencies`, `initExternalDependencies`, `wireController`, `runManagerUntilShutdown` (one helper per setup/teardown phase); trimmed 2 decorative comment banners |
+| `internal/controller/effectivenessmonitor/assess_components.go` | `assessMetrics` (`funlen` 42 stmts) | Extracted `buildMetricQuerySpecs`, `populateMetricsAssessResult` |
+| `internal/controller/effectivenessmonitor/target_resources.go` | `getTargetFunctionalState` (`funlen` 61 lines) | Extracted `resolveTargetGVK`, `scopedNamespaceForGVK` |
+| `internal/controller/effectivenessmonitor/reconcile_components.go` | `runAlertCheck` (`nestif` complexity 12) | Extracted `evaluateAlertCheckResult`, `handleAlertDecaySuspected`, `handleAlertNotDecaying` (guard-clause flattening + one helper per decay/resolved branch) |
+| `pkg/effectivenessmonitor/audit/manager.go` | `RecordAssessmentCompleted` (`funlen` 73 lines) | Extracted `buildAssessmentCompletedPayload` (all 5 ADR-EM-001 Batch 3 enrichment fields) |
+| `pkg/effectivenessmonitor/health/health.go` | `Score` (`funlen` 46 stmts) | Split into `scoreDegradedOrAbsentTarget` (not-applicable/not-found/0-replicas/CrashLoop/not-ready/partial cases) + `scoreReadyTarget` (OOMKilled/restarts/fully-healthy cases), converting the sequential guard-clause chain's first half into a `switch` |
+| `pkg/effectivenessmonitor/startup/readiness.go` | `CheckExternalServices` (`nestif` ×2) | Extracted `checkPrometheusReadiness`, `checkAlertManagerReadiness` (one helper per external service, each returning `(reachable bool, err error)`) |
+
+All changes are pure code motion (extract-method / helper-function-per-case); no behavior change.
+
+### 7s-3. REFACTOR phase: exit gate
+
+- `go build ./...` (repo-wide): clean.
+- `golangci-lint run --timeout=5m --enable-only=funlen,nestif,gocyclo,gocognit,revive ./pkg/effectivenessmonitor/... ./internal/controller/effectivenessmonitor/... ./cmd/effectivenessmonitor/...`: **0 issues**.
+- `go test ./pkg/effectivenessmonitor/... -coverpkg=./pkg/effectivenessmonitor/...,./internal/controller/effectivenessmonitor/... -cover`: all specs green, 73.6% coverage (baseline 73.5%, no regression).
+- `make test-integration-effectivenessmonitor`: **114/114 specs passed** (111 main suite + 3 fleet suite), 73.7% composite coverage, zero regressions.
+- `gofmt -l` clean on every touched file.
+
+Sub-wave 6a is complete. **All 8 Wave 6 sub-waves are now done** (6d Gateway, 6f DataStorage, 6e-i RemediationOrchestrator, 6e-ii/6e-iii WorkflowExecution/SignalProcessing, 6b Notification, 6c AIAnalysis, 6a EffectivenessMonitor) — Wave 6 as a whole now requires only its final repo-wide exit-criteria verification.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -908,7 +942,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 6 (Wave 3) | DataStorage: audit-reconstruction coverage gate + 12 named complexity offenders + 19 lower-priority (16-22) offenders + 5 oversized files split into 20 (see §7k) | Medium-High | 4-5 days | ✅ Done (see §7k) |
 | 6 (Wave 4) | KubernautAgent remainder: 5 characterization tests + ~20 named complexity offenders across investigator/tools/parser/enrichment/alignment/session/config + 8 oversized files split into 27 (see §7l) | Medium-High | 4-5 days | ✅ Done (see §7l) |
 | 6 (Wave 5) | KubernautAgent's 11 deferred offenders (§7l-1): coverage-before-refactor gate (11 characterization tests, `runLLMLoop`→100% UT, `buildMCPHandler` 9.1%→92%) + Extract-Method decomposition of all 11 (see §7l-4, §7l-5) | Medium-High | ~3 days | ✅ Done (see §7l-5) |
-| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); sub-wave 6f (DataStorage) ✅ Done (see §7n); sub-wave 6e-i (RemediationOrchestrator) ✅ Done (see §7o); sub-waves 6e-ii/6e-iii (WorkflowExecution/SignalProcessing) ✅ Done (see §7p); sub-wave 6b (Notification) ✅ Done (see §7q); sub-wave 6c (AIAnalysis) ✅ Done (see §7r); 1/8 sub-waves remaining (6a EffectivenessMonitor), tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
+| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | ✅ Done — sub-wave 6d (Gateway) ✅ (see §7m); sub-wave 6f (DataStorage) ✅ (see §7n); sub-wave 6e-i (RemediationOrchestrator) ✅ (see §7o); sub-waves 6e-ii/6e-iii (WorkflowExecution/SignalProcessing) ✅ (see §7p); sub-wave 6b (Notification) ✅ (see §7q); sub-wave 6c (AIAnalysis) ✅ (see §7r); sub-wave 6a (EffectivenessMonitor) ✅ (see §7s) — all 8/8 sub-waves complete |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 

@@ -20,11 +20,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -143,12 +145,7 @@ func (r *Reconciler) getTargetFunctionalState(ctx context.Context, reader client
 		return fallback, fallback, ""
 	}
 
-	gvk, err := k8sutil.ResolveGVKWithAPIVersion(r.restMapper, target.Kind, target.APIVersion) // #1040
-	if err != nil && target.APIVersion != "" {
-		logger.Info("apiVersion-based GVK resolution failed, falling back to kind-only resolution",
-			"kind", target.Kind, "apiVersion", target.APIVersion, "error", err)
-		gvk, err = k8sutil.ResolveGVKForKind(r.restMapper, target.Kind)
-	}
+	gvk, err := r.resolveTargetGVK(logger, target)
 	if err != nil {
 		logger.Error(err, "Failed to resolve GVK for target resource kind",
 			"kind", target.Kind, "apiVersion", target.APIVersion)
@@ -158,16 +155,7 @@ func (r *Reconciler) getTargetFunctionalState(ctx context.Context, reader client
 	obj := &unstructured.Unstructured{}
 	obj.SetGroupVersionKind(gvk)
 
-	ns := target.Namespace
-	if ns != "" {
-		if mapping, mapErr := r.restMapper.RESTMapping(gvk.GroupKind(), gvk.Version); mapErr == nil {
-			if mapping.Scope.Name() != meta.RESTScopeNameNamespace {
-				logger.Info("stripping namespace for cluster-scoped resource",
-					"kind", target.Kind, "stripped_namespace", ns)
-				ns = ""
-			}
-		}
-	}
+	ns := r.scopedNamespaceForGVK(logger, gvk, target)
 
 	key := client.ObjectKey{
 		Namespace: ns,
@@ -193,6 +181,40 @@ func (r *Reconciler) getTargetFunctionalState(ctx context.Context, reader client
 		"kind", target.Kind,
 		"name", target.Name)
 	return obj.Object, spec, ""
+}
+
+// resolveTargetGVK resolves the target resource's GroupVersionKind,
+// preferring the apiVersion-aware resolution (#1040) and falling back to
+// kind-only resolution when that fails and an apiVersion was supplied.
+// Extracted from getTargetFunctionalState (Wave 6 6a GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (r *Reconciler) resolveTargetGVK(logger logr.Logger, target eav1.TargetResource) (schema.GroupVersionKind, error) {
+	gvk, err := k8sutil.ResolveGVKWithAPIVersion(r.restMapper, target.Kind, target.APIVersion)
+	if err != nil && target.APIVersion != "" {
+		logger.Info("apiVersion-based GVK resolution failed, falling back to kind-only resolution",
+			"kind", target.Kind, "apiVersion", target.APIVersion, "error", err)
+		gvk, err = k8sutil.ResolveGVKForKind(r.restMapper, target.Kind)
+	}
+	return gvk, err
+}
+
+// scopedNamespaceForGVK returns target.Namespace, or "" when gvk resolves to
+// a cluster-scoped RESTMapping (namespace must not be set on the object key
+// for cluster-scoped resources). Extracted from getTargetFunctionalState
+// (Wave 6 6a GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (r *Reconciler) scopedNamespaceForGVK(logger logr.Logger, gvk schema.GroupVersionKind, target eav1.TargetResource) string {
+	ns := target.Namespace
+	if ns == "" {
+		return ns
+	}
+	mapping, mapErr := r.restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if mapErr != nil || mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+		return ns
+	}
+	logger.Info("stripping namespace for cluster-scoped resource",
+		"kind", target.Kind, "stripped_namespace", ns)
+	return ""
 }
 
 // queryPreRemediationHash queries DataStorage for the pre-remediation spec hash

@@ -69,10 +69,8 @@ func init() {
 }
 
 func main() {
-	// ========================================
-	// ADR-030: Configuration via YAML file
-	// Single --config flag; all functional config in YAML ConfigMap
-	// ========================================
+	// ADR-030: Configuration via YAML file. Single --config flag; all
+	// functional config lives in the YAML ConfigMap.
 	var configPath string
 	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
 
@@ -88,155 +86,39 @@ func main() {
 		"buildDate", version.BuildDate,
 	)
 
-	// ========================================
-	// CONFIGURATION LOADING (ADR-030)
-	// ========================================
-	cfg, err := loadEffectivenessMonitorConfig(configPath, atomicLevel)
+	// CONFIGURATION LOADING (ADR-030) + ADR-057 namespace discovery
+	cfg, controllerNS, err := loadConfigAndNamespace(configPath, atomicLevel, setupLog)
 	if err != nil {
 		setupLog.Error(err, "Failed to load configuration -- aborting startup",
 			"configPath", configPath)
 		os.Exit(1)
 	}
-	if configPath != "" {
-		setupLog.Info("Configuration loaded successfully", "configPath", configPath)
-	} else {
-		setupLog.Info("No config file specified, using defaults")
-	}
-	setupLog.Info("Log level configured from config file", "level", cfg.Logging.Level)
 
-	// ADR-057: Discover controller namespace for CRD watch restriction
-	controllerNS, err := scope.GetControllerNamespace()
+	// Manager, audit store, and metrics (DD-AUDIT-003, DD-API-001, DD-METRICS-001).
+	// Issue #331: Prometheus/AlertManager readiness is best-effort checked after
+	// client init below; failures are logged as warnings, not fatal.
+	mgr, auditStore, emMetrics, err := initCoreDependencies(cfg, controllerNS, setupLog)
 	if err != nil {
-		setupLog.Error(err, "unable to determine controller namespace")
+		setupLog.Error(err, "Failed to initialize core dependencies")
 		os.Exit(1)
 	}
-
-	// ========================================
-	// EXTERNAL DEPENDENCY READINESS (Issue #331)
-	// Prometheus/AlertManager are optional enrichment sources, not startup
-	// dependencies. Connectivity is best-effort checked after client init;
-	// failures are logged as warnings, not fatal (see startup.CheckExternalServices).
-	// ========================================
-
-	mgr, err := buildManager(cfg, controllerNS)
-	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	// ========================================
-	// AUDIT STORE INITIALIZATION (DD-AUDIT-003, DD-API-001)
-	// ========================================
-	auditStore, err := buildAuditStore(cfg)
-	if err != nil {
-		setupLog.Error(err, "Failed to create audit store")
-		os.Exit(1)
-	}
-	setupLog.Info("Audit store initialized",
-		"dataStorageURL", cfg.DataStorage.URL,
-		"bufferSize", cfg.DataStorage.Buffer.BufferSize,
-		"batchSize", cfg.DataStorage.Buffer.BatchSize,
-		"flushInterval", cfg.DataStorage.Buffer.FlushInterval,
-	)
-
-	// ========================================
-	// DD-METRICS-001: Initialize Metrics
-	// ========================================
-	setupLog.Info("Initializing effectivenessmonitor metrics (DD-METRICS-001)")
-	emMetrics := emmetrics.NewMetrics()
-	setupLog.Info("EffectivenessMonitor metrics initialized and registered")
-
-	// Log configuration
-	setupLog.Info("EffectivenessMonitor controller configuration",
-		"metricsAddr", cfg.Controller.MetricsAddr,
-		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
-		"stabilizationWindow", cfg.Assessment.StabilizationWindow,
-		"validityWindow", cfg.Assessment.ValidityWindow,
-		"prometheusEnabled", cfg.External.PrometheusEnabled,
-		"alertManagerEnabled", cfg.External.AlertManagerEnabled,
-		"dataStorageURL", cfg.DataStorage.URL,
-	)
 
 	// Issue #484: Create signal context early so the CA file watcher
 	// can respect graceful shutdown from the start.
 	ctx := ctrl.SetupSignalHandler()
 
-	// ========================================
-	// EXTERNAL CLIENT INITIALIZATION (BR-EM-002, BR-EM-003, Issue #452, #484)
-	// ========================================
-	externalHTTPClient, stopCAWatcher, err := buildExternalHTTPClient(ctx, cfg, setupLog)
+	// EXTERNAL CLIENT INITIALIZATION + best-effort readiness check
+	// (BR-EM-002, BR-EM-003, Issue #452, #484, Issue #331)
+	promClient, amClient, stopCAWatcher, err := initExternalDependencies(ctx, cfg, setupLog)
 	if err != nil {
-		setupLog.Error(err, "Failed to initialize external HTTP client")
+		setupLog.Error(err, "Failed to initialize external dependencies")
 		os.Exit(1)
 	}
 	defer stopCAWatcher()
 
-	promClient, amClient := buildExternalClients(cfg, externalHTTPClient, setupLog)
-
-	// Best-effort readiness check (Issue #331): Prometheus and AlertManager are
-	// optional enrichment sources, not startup dependencies. Connectivity is
-	// verified when enabled and configured; failures are logged as warnings.
-	startupCtx, startupCancel := context.WithTimeout(context.Background(), cfg.External.ConnectionTimeout+5*time.Second)
-	defer startupCancel()
-
-	readiness := startup.CheckExternalServices(startupCtx, setupLog, startup.ExternalServicesConfig{
-		PrometheusEnabled:   cfg.External.PrometheusEnabled,
-		PrometheusURL:       cfg.External.PrometheusURL,
-		AlertManagerEnabled: cfg.External.AlertManagerEnabled,
-		AlertManagerURL:     cfg.External.AlertManagerURL,
-	}, promClient, amClient)
-	if readiness.Error != nil {
-		setupLog.Error(readiness.Error, "External service configuration error")
-		os.Exit(1)
-	}
-
-	// ========================================
-	// AUDIT MANAGER INITIALIZATION (DD-AUDIT-003, Pattern 2)
-	// ========================================
-	auditManager := emaudit.NewManager(auditStore, ctrl.Log.WithName("em-audit"))
-	setupLog.Info("EM audit manager initialized (DD-AUDIT-003, Pattern 2)")
-
-	// ========================================
-	// DS QUERIER INITIALIZATION (DD-EM-002, DD-API-001: ogen OpenAPI client)
-	// ========================================
-	dsQuerier, err := emclient.NewOgenDataStorageQuerier(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
-	if err != nil {
-		setupLog.Error(err, "Failed to create DataStorage querier",
-			"url", cfg.DataStorage.URL,
-			"timeout", cfg.DataStorage.Timeout)
-		os.Exit(1)
-	}
-	setupLog.Info("DataStorage querier initialized (DD-API-001: ogen, DD-AUTH-005: SA auth)",
-		"url", cfg.DataStorage.URL)
-
-	// ========================================
-	// CONTROLLER SETUP
-	// ========================================
-	emReconciler := controller.NewReconciler(
-		controller.ReconcilerDeps{
-			Client:             mgr.GetClient(),
-			APIReader:          mgr.GetAPIReader(),
-			Scheme:             mgr.GetScheme(),
-			Recorder:           mgr.GetEventRecorderFor("effectivenessmonitor-controller"),
-			Metrics:            emMetrics,
-			PrometheusClient:   promClient,
-			AlertManagerClient: amClient,
-			AuditManager:       auditManager,
-			DSQuerier:          dsQuerier,
-		},
-		func() controller.ReconcilerConfig {
-			c := controller.DefaultReconcilerConfig()
-			c.ValidityWindow = cfg.Assessment.ValidityWindow
-			c.PrometheusEnabled = cfg.External.PrometheusEnabled
-			c.AlertManagerEnabled = cfg.External.AlertManagerEnabled
-			c.PrometheusLookback = cfg.External.PrometheusLookback
-			c.RequeueAssessmentInProgress = cfg.External.ScrapeInterval
-			return c
-		}(),
-	)
-	emReconciler.SetRESTMapper(mgr.GetRESTMapper())
-	if err = emReconciler.SetupWithManager(mgr, cfg.Assessment.MaxConcurrentReconciles); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "EffectivenessMonitor")
+	// AUDIT MANAGER + DS QUERIER + CONTROLLER SETUP
+	if err := wireController(mgr, cfg, emMetrics, promClient, amClient, auditStore, setupLog); err != nil {
+		setupLog.Error(err, "unable to wire controller")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
@@ -251,22 +133,28 @@ func main() {
 	stopHotReload := wireHotReload(ctx, cfg, configPath, atomicLevel, setupLog)
 	defer stopHotReload()
 
-	setupLog.Info("starting manager")
-
-	if err := mgr.Start(ctx); err != nil {
+	if err := runManagerUntilShutdown(ctx, mgr, auditStore, setupLog); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
 
-	// ========================================
-	// Graceful Shutdown: Flush Audit Events (DD-007)
-	// ========================================
-	setupLog.Info("Shutting down effectiveness monitor, flushing remaining audit events")
-	if err := auditStore.Close(); err != nil {
-		setupLog.Error(err, "Failed to close audit store gracefully")
-		os.Exit(1)
+// runManagerUntilShutdown starts mgr and blocks until ctx is cancelled, then
+// flushes the audit store (DD-007 graceful shutdown). Extracted from main
+// (Wave 6 6a GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func runManagerUntilShutdown(ctx context.Context, mgr ctrl.Manager, auditStore audit.AuditStore, logger logr.Logger) error {
+	logger.Info("starting manager")
+	if err := mgr.Start(ctx); err != nil {
+		return fmt.Errorf("problem running manager: %w", err)
 	}
-	setupLog.Info("Audit store closed successfully, all events flushed")
+
+	logger.Info("Shutting down effectiveness monitor, flushing remaining audit events")
+	if err := auditStore.Close(); err != nil {
+		return fmt.Errorf("failed to close audit store gracefully: %w", err)
+	}
+	logger.Info("Audit store closed successfully, all events flushed")
+	return nil
 }
 
 // loadEffectivenessMonitorConfig loads the controller configuration from
@@ -285,6 +173,67 @@ func loadEffectivenessMonitorConfig(configPath string, atomicLevel zaplog.Atomic
 		return nil, fmt.Errorf("configuration validation failed: %w", err)
 	}
 	return cfg, nil
+}
+
+// loadConfigAndNamespace loads the controller configuration (ADR-030) and
+// discovers the controller namespace for CRD watch restriction (ADR-057).
+// Extracted from main (Wave 6 6a GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func loadConfigAndNamespace(configPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger) (*config.Config, string, error) {
+	cfg, err := loadEffectivenessMonitorConfig(configPath, atomicLevel)
+	if err != nil {
+		return nil, "", err
+	}
+	if configPath != "" {
+		logger.Info("Configuration loaded successfully", "configPath", configPath)
+	} else {
+		logger.Info("No config file specified, using defaults")
+	}
+	logger.Info("Log level configured from config file", "level", cfg.Logging.Level)
+
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		return nil, "", fmt.Errorf("unable to determine controller namespace: %w", err)
+	}
+	return cfg, controllerNS, nil
+}
+
+// initCoreDependencies builds the controller-runtime manager (ADR-057
+// namespace-restricted cache), the DD-AUDIT-003/DD-API-001 buffered audit
+// store, and the DD-METRICS-001 metrics registry. Extracted from main
+// (Wave 6 6a GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func initCoreDependencies(cfg *config.Config, controllerNS string, logger logr.Logger) (ctrl.Manager, audit.AuditStore, *emmetrics.Metrics, error) {
+	mgr, err := buildManager(cfg, controllerNS)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("unable to start manager: %w", err)
+	}
+
+	auditStore, err := buildAuditStore(cfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create audit store: %w", err)
+	}
+	logger.Info("Audit store initialized",
+		"dataStorageURL", cfg.DataStorage.URL,
+		"bufferSize", cfg.DataStorage.Buffer.BufferSize,
+		"batchSize", cfg.DataStorage.Buffer.BatchSize,
+		"flushInterval", cfg.DataStorage.Buffer.FlushInterval,
+	)
+
+	emMetrics := emmetrics.NewMetrics()
+	logger.Info("EffectivenessMonitor metrics initialized and registered (DD-METRICS-001)")
+
+	logger.Info("EffectivenessMonitor controller configuration",
+		"metricsAddr", cfg.Controller.MetricsAddr,
+		"healthProbeAddr", cfg.Controller.HealthProbeAddr,
+		"stabilizationWindow", cfg.Assessment.StabilizationWindow,
+		"validityWindow", cfg.Assessment.ValidityWindow,
+		"prometheusEnabled", cfg.External.PrometheusEnabled,
+		"alertManagerEnabled", cfg.External.AlertManagerEnabled,
+		"dataStorageURL", cfg.DataStorage.URL,
+	)
+
+	return mgr, auditStore, emMetrics, nil
 }
 
 // buildManager constructs the controller-runtime manager, restricting the
@@ -338,6 +287,80 @@ func buildAuditStore(cfg *config.Config) (audit.AuditStore, error) {
 		return nil, fmt.Errorf("failed to create buffered audit store: %w", err)
 	}
 	return auditStore, nil
+}
+
+// initExternalDependencies builds the external HTTP client, the optional
+// Prometheus/AlertManager clients, and performs the best-effort readiness
+// check (Issue #331: these are optional enrichment sources, not startup
+// dependencies — failures are logged as warnings inside CheckExternalServices,
+// not fatal). Extracted from main (Wave 6 6a GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func initExternalDependencies(ctx context.Context, cfg *config.Config, logger logr.Logger) (emclient.PrometheusQuerier, emclient.AlertManagerClient, func(), error) {
+	externalHTTPClient, stopCAWatcher, err := buildExternalHTTPClient(ctx, cfg, logger)
+	if err != nil {
+		return nil, nil, func() {}, fmt.Errorf("failed to initialize external HTTP client: %w", err)
+	}
+
+	promClient, amClient := buildExternalClients(cfg, externalHTTPClient, logger)
+
+	startupCtx, startupCancel := context.WithTimeout(context.Background(), cfg.External.ConnectionTimeout+5*time.Second)
+	defer startupCancel()
+
+	readiness := startup.CheckExternalServices(startupCtx, logger, startup.ExternalServicesConfig{
+		PrometheusEnabled:   cfg.External.PrometheusEnabled,
+		PrometheusURL:       cfg.External.PrometheusURL,
+		AlertManagerEnabled: cfg.External.AlertManagerEnabled,
+		AlertManagerURL:     cfg.External.AlertManagerURL,
+	}, promClient, amClient)
+	if readiness.Error != nil {
+		return nil, nil, stopCAWatcher, fmt.Errorf("external service configuration error: %w", readiness.Error)
+	}
+
+	return promClient, amClient, stopCAWatcher, nil
+}
+
+// wireController initializes the DD-AUDIT-003 audit manager and DD-EM-002
+// DataStorage querier, constructs the EffectivenessMonitor reconciler, and
+// registers it with mgr. Extracted from main (Wave 6 6a GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func wireController(mgr ctrl.Manager, cfg *config.Config, emMetrics *emmetrics.Metrics, promClient emclient.PrometheusQuerier, amClient emclient.AlertManagerClient, auditStore audit.AuditStore, logger logr.Logger) error {
+	auditManager := emaudit.NewManager(auditStore, ctrl.Log.WithName("em-audit"))
+	logger.Info("EM audit manager initialized (DD-AUDIT-003, Pattern 2)")
+
+	dsQuerier, err := emclient.NewOgenDataStorageQuerier(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
+	if err != nil {
+		return fmt.Errorf("failed to create DataStorage querier (url=%s): %w", cfg.DataStorage.URL, err)
+	}
+	logger.Info("DataStorage querier initialized (DD-API-001: ogen, DD-AUTH-005: SA auth)",
+		"url", cfg.DataStorage.URL)
+
+	emReconciler := controller.NewReconciler(
+		controller.ReconcilerDeps{
+			Client:             mgr.GetClient(),
+			APIReader:          mgr.GetAPIReader(),
+			Scheme:             mgr.GetScheme(),
+			Recorder:           mgr.GetEventRecorderFor("effectivenessmonitor-controller"),
+			Metrics:            emMetrics,
+			PrometheusClient:   promClient,
+			AlertManagerClient: amClient,
+			AuditManager:       auditManager,
+			DSQuerier:          dsQuerier,
+		},
+		func() controller.ReconcilerConfig {
+			c := controller.DefaultReconcilerConfig()
+			c.ValidityWindow = cfg.Assessment.ValidityWindow
+			c.PrometheusEnabled = cfg.External.PrometheusEnabled
+			c.AlertManagerEnabled = cfg.External.AlertManagerEnabled
+			c.PrometheusLookback = cfg.External.PrometheusLookback
+			c.RequeueAssessmentInProgress = cfg.External.ScrapeInterval
+			return c
+		}(),
+	)
+	emReconciler.SetRESTMapper(mgr.GetRESTMapper())
+	if err := emReconciler.SetupWithManager(mgr, cfg.Assessment.MaxConcurrentReconciles); err != nil {
+		return fmt.Errorf("unable to create controller %q: %w", "EffectivenessMonitor", err)
+	}
+	return nil
 }
 
 // waitForCAFile polls for caFile to exist and contain non-empty content,
