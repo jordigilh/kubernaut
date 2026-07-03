@@ -17,12 +17,19 @@ limitations under the License.
 package registry_test
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
@@ -148,6 +155,57 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 		info, err := registry.ExtractClusterInfo(u)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(info.MCPEndpoint).To(Equal("http://localhost:8080/mcp"))
+	})
+})
+
+var _ = Describe("EAIGWRegistry.Start (BR-INTEGRATION-065)", func() {
+	// UT-FLEET-003-006: guards against the data race between Start()'s read
+	// of w.clusters (for the "started and synced" log line) and the
+	// mutex-protected write in onAdd(). client-go's WaitForCacheSync only
+	// guarantees the reflector's initial List has populated the informer's
+	// internal store; it does NOT guarantee that the sharedProcessor has
+	// finished dispatching AddFunc for every pre-existing object (handler
+	// dispatch runs on separate processorListener goroutines -- see
+	// k8s.io/client-go/tools/cache/shared_informer.go). Exercising Start()
+	// with pre-existing Backends under `go test -race` is the regression
+	// guard for that race (caught in CI: PR #1539 post-merge run).
+	It("UT-FLEET-003-006: Start() succeeds and does not race when pre-existing Backends are synced", func() {
+		scheme := runtime.NewScheme()
+		fakeClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
+			map[schema.GroupVersionResource]string{
+				registry.BackendGVR: "BackendList",
+			},
+		)
+
+		for i := 0; i < 20; i++ {
+			backend := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "gateway.envoyproxy.io/v1alpha1",
+					"kind":       "Backend",
+					"metadata": map[string]interface{}{
+						"name":      fmt.Sprintf("cluster-%d", i),
+						"namespace": "kubernaut-system",
+						"labels": map[string]interface{}{
+							"kubernaut.ai/managed": "true",
+						},
+					},
+					"status": map[string]interface{}{
+						"endpoint": fmt.Sprintf("https://mcp.example.com/cluster-%d/mcp", i),
+					},
+				},
+			}
+			_, err := fakeClient.Resource(registry.BackendGVR).Namespace("kubernaut-system").Create(
+				context.Background(), backend, metav1.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		reg := registry.NewEAIGWRegistry(fakeClient, registry.EAIGWRegistryConfig{}, nil, logr.Discard())
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		Expect(reg.Start(ctx)).To(Succeed())
+		reg.Stop()
 	})
 })
 
