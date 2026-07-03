@@ -794,6 +794,43 @@ Sub-waves 6e-ii and 6e-iii are complete. Remaining Wave 6 sub-waves (6b Notifica
 
 ---
 
+## 7q. Phase 6 Wave 6, sub-wave 6b: Notification Complexity Burndown — ✅ RESOLVED
+
+Executed as sub-wave 6/8 of the approved Wave 6 Burndown Plan, closing the `funlen`/`nestif`/`gocognit`/`revive argument-limit` offenders in `internal/controller/notification` and `pkg/notification` after Wave 2.
+
+### 7q-1. RED phase: baseline + coverage gate
+
+`golangci-lint run --enable-only=funlen,nestif,gocyclo,gocognit,revive ./internal/controller/notification/... ./pkg/notification/...` found 14 offenders (9 `funlen`, 2 `gocognit`, 3 `nestif`). Coverage baseline (`go test ./pkg/notification/... ./internal/controller/notification/... -cover`) confirmed every offending function is exercised: `internal/controller/notification` and the `pkg/notification/*` sub-packages have dedicated unit-test files (`pkg/notification/status_test.go`, `routing_*_test.go`, `markdown_to_mrkdwn_test.go` in the parent `pkg/notification` package, plus `pkg/notification/delivery/*_test.go`), and the full controller reconcile loop is additionally proven by `test/integration/notification` (146 specs). On this basis, all offenders were decomposed via pure code motion (extract-method / struct-splitting) without new characterization tests.
+
+### 7q-2. GREEN phase: decomposition of all offenders
+
+| File | Function(s) | Technique |
+|---|---|---|
+| `internal/controller/notification/notificationrequest_controller.go` | `Reconcile` (`funlen` 57 stmts), `determinePhaseTransition` (`funlen` 41 stmts), `transitionToFailed` (`funlen` 81) | Extracted `checkRetryBackoff`, `refreshAndGuardBeforeDelivery`, `fetchAndCheckDuplicateReconcile`; `recoverPendingRaceCondition`, `buildPhaseTransitionDecision`; split `transitionToFailed` into `transitionToFailedPermanent`/`transitionToFailedTemporary` |
+| `pkg/notification/delivery/file.go` | `Deliver` (`funlen` 84) | Extracted `marshalNotificationForFile`, `atomicWriteNotificationFile` |
+| `pkg/notification/delivery/log.go` | `Deliver` (`funlen` 84) | Extracted `buildLogEntry` |
+| `pkg/notification/delivery/orchestrator.go` | `DeliverToChannels` (`funlen` 60 stmts, `nestif`), `RecordDeliveryAttempt` (`funlen` 93, `nestif`) | Extracted `deliverToOneChannel` (dispatching to `runPreDeliveryCheck`/`deliverAndRecordAttempt`, which further dispatch to `recordFailedDeliveryOutcome`/`recordSuccessfulDeliveryOutcome`); `isDuplicateDeliveryAttempt`, `applyFailedAttemptOutcome`, `applySuccessfulAttemptOutcome` |
+| `pkg/notification/formatting/markdown_to_mrkdwn.go` | `MarkdownToMrkdwn` (`funlen` 69) | Extracted `protectCodeBlocks`, `escapeHTMLEntities`, `convertImagesAndLinks`, `convertEmphasisAndHeaders`, `restoreCodeBlocksAndCleanup` (one helper per conversion phase) |
+| `pkg/notification/phase/transition.go` | `DetermineTransition` (`funlen` 111) | Extracted `countSuccessfulDeliveries`, `allChannelsExhaustedRetries`, `allChannelsHavePermanentErrors`, `maxAttemptCountForFailedChannels`, `buildExhaustedTransition`, `buildRetryingTransition` (one helper per transition case) |
+| `pkg/notification/routing/config.go` | `FindReceivers` (`gocognit` 36, `nestif` complexity 11) | Extracted `matchedChildReceivers` (per-child sub-route-fanout-vs-own-receiver resolution + `Continue` semantics) |
+| `pkg/notification/status/manager.go` | `AtomicStatusUpdate` (`gocognit` 44) | Extracted `applyPhaseTransition`, `mergeNewDeliveryAttempts`/`isDuplicateStatusAttempt`, `recalculateDeliveryCounters` |
+
+A mid-GREEN `revive argument-limit` violation surfaced on the extracted `recordFailedDeliveryOutcome` helper (8 params); resolved by deriving `channel` from the already-populated `attempt.Channel` field instead of passing it as a separate parameter.
+
+All changes are pure code motion (extract-method / helper-function-per-case); no behavior change.
+
+### 7q-3. REFACTOR phase: exit gate
+
+- `go build ./...` (repo-wide): clean.
+- `golangci-lint run --timeout=5m --enable-only=funlen,nestif,gocyclo,gocognit,revive ./internal/controller/notification/... ./pkg/notification/...`: **0 issues**.
+- `go test ./pkg/notification/... ./internal/controller/notification/...`: all specs green, zero regressions.
+- `make test-integration-notification`: **146/146 specs passed**, 64.2% coverage, zero regressions.
+- `gofmt -l` clean on every touched file.
+
+Sub-wave 6b is complete. Remaining Wave 6 sub-waves (6c AIAnalysis, 6a EffectivenessMonitor) proceed independently.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -836,7 +873,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 6 (Wave 3) | DataStorage: audit-reconstruction coverage gate + 12 named complexity offenders + 19 lower-priority (16-22) offenders + 5 oversized files split into 20 (see §7k) | Medium-High | 4-5 days | ✅ Done (see §7k) |
 | 6 (Wave 4) | KubernautAgent remainder: 5 characterization tests + ~20 named complexity offenders across investigator/tools/parser/enrichment/alignment/session/config + 8 oversized files split into 27 (see §7l) | Medium-High | 4-5 days | ✅ Done (see §7l) |
 | 6 (Wave 5) | KubernautAgent's 11 deferred offenders (§7l-1): coverage-before-refactor gate (11 characterization tests, `runLLMLoop`→100% UT, `buildMCPHandler` 9.1%→92%) + Extract-Method decomposition of all 11 (see §7l-4, §7l-5) | Medium-High | ~3 days | ✅ Done (see §7l-5) |
-| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); sub-wave 6f (DataStorage) ✅ Done (see §7n); sub-wave 6e-i (RemediationOrchestrator) ✅ Done (see §7o); sub-waves 6e-ii/6e-iii (WorkflowExecution/SignalProcessing) ✅ Done (see §7p); 3/8 sub-waves remaining (6b Notification, 6c AIAnalysis, 6a EffectivenessMonitor), tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
+| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); sub-wave 6f (DataStorage) ✅ Done (see §7n); sub-wave 6e-i (RemediationOrchestrator) ✅ Done (see §7o); sub-waves 6e-ii/6e-iii (WorkflowExecution/SignalProcessing) ✅ Done (see §7p); sub-wave 6b (Notification) ✅ Done (see §7q); 2/8 sub-waves remaining (6c AIAnalysis, 6a EffectivenessMonitor), tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 

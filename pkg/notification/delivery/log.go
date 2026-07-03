@@ -96,6 +96,44 @@ func (s *LogDeliveryService) Deliver(ctx context.Context, notification *notifica
 	}
 
 	// TDD REFACTOR: Build enriched structured log entry
+	logEntry := buildLogEntry(notification)
+
+	// NT-1: Use format from config (json or text)
+	var output string
+	switch s.format {
+	case "text":
+		output = fmt.Sprintf("[%s] %s/%s %s: %s",
+			time.Now().Format(time.RFC3339),
+			notification.Namespace,
+			notification.Name,
+			notification.Spec.Subject,
+			notification.Spec.Body)
+	default:
+		// Default to JSON (json, or any unrecognized format)
+		jsonBytes, err := json.Marshal(logEntry)
+		if err != nil {
+			log.Error(err, "Failed to marshal notification to JSON for log delivery",
+				"notification", notification.Name,
+				"namespace", notification.Namespace)
+			return fmt.Errorf("failed to marshal notification to JSON: %w", err)
+		}
+		output = string(jsonBytes)
+	}
+
+	// Output as structured log (JSON Lines or plain text)
+	// This goes to stdout and can be captured by log aggregation systems
+	log.Info(output)
+
+	return nil
+}
+
+// buildLogEntry builds the enriched structured log entry map for a
+// notification: core identity, content, flattened context/extensions
+// metadata, K8s labels/annotations, status observability fields, and action
+// links for correlation with external systems. Extracted from Deliver
+// (Wave 6 6b GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func buildLogEntry(notification *notificationv1alpha1.NotificationRequest) map[string]interface{} {
 	logEntry := map[string]interface{}{
 		// Core notification identity
 		"timestamp":              time.Now().Format(time.RFC3339),
@@ -157,32 +195,5 @@ func (s *LogDeliveryService) Deliver(ctx context.Context, notification *notifica
 		logEntry["action_links"] = links
 	}
 
-	// NT-1: Use format from config (json or text)
-	var output string
-	switch s.format {
-	case "text":
-		output = fmt.Sprintf("[%s] %s/%s %s: %s",
-			time.Now().Format(time.RFC3339),
-			notification.Namespace,
-			notification.Name,
-			notification.Spec.Subject,
-			notification.Spec.Body)
-	default:
-		// Default to JSON (json, or any unrecognized format)
-		jsonBytes, err := json.Marshal(logEntry)
-		if err != nil {
-			log.Error(err, "Failed to marshal notification to JSON for log delivery",
-				"notification", notification.Name,
-				"namespace", notification.Namespace)
-			return fmt.Errorf("failed to marshal notification to JSON: %w", err)
-		}
-		output = string(jsonBytes)
-	}
-
-	// Output as structured log (JSON Lines or plain text)
-	// This goes to stdout and can be captured by log aggregation systems
-	log.Info(output)
-
-	return nil
+	return logEntry
 }
-

@@ -141,12 +141,7 @@ func DetermineTransition(
 	// Count successful deliveries from BOTH status and current delivery loop attempts.
 	// Status.SuccessfulDeliveries reflects persisted state; result.DeliveryAttempts
 	// contains NEW attempts from the current loop that haven't been persisted yet.
-	totalSuccessful := notification.Status.SuccessfulDeliveries
-	for _, attempt := range result.DeliveryAttempts {
-		if attempt.Status == notificationv1.DeliveryAttemptStatusSuccess {
-			totalSuccessful++
-		}
-	}
+	totalSuccessful := countSuccessfulDeliveries(notification, result)
 
 	// Case 1: All channels delivered successfully → Sent (terminal)
 	if totalSuccessful == totalChannels {
@@ -159,84 +154,13 @@ func DetermineTransition(
 	}
 
 	// Check if all channels have exhausted their retries (or succeeded/permanent-errored)
-	allChannelsExhausted := true
-	for _, channel := range channels {
-		state := channelStates[string(channel)]
-		if !state.AlreadySucceeded && !state.HasPermanentError && state.AttemptCount < maxAttempts {
-			allChannelsExhausted = false
-			break
-		}
-	}
-
-	if allChannelsExhausted {
-		// NT-BUG-003: Check for partial success before marking as Failed
-		if totalSuccessful > 0 && totalSuccessful < totalChannels {
-			// Case 2: Partial success, all retries exhausted → PartiallySent (terminal)
-			return &TransitionDecision{
-				NextPhase:  PartiallySent,
-				Reason:     string(notificationv1.StatusReasonPartialDeliverySuccess),
-				Message:    fmt.Sprintf("Delivered to %d/%d channel(s), others failed", totalSuccessful, totalChannels),
-				IsTerminal: true,
-			}
-		}
-
-		// Determine failure reason: permanent errors vs retry exhaustion
-		allPermanentErrors := true
-		for _, channel := range channels {
-			state := channelStates[string(channel)]
-			if !state.HasPermanentError {
-				allPermanentErrors = false
-				break
-			}
-		}
-
-		reason := "MaxRetriesExhausted"
-		if allPermanentErrors {
-			reason = string(notificationv1.StatusReasonAllDeliveriesFailed)
-		}
-
-		// Case 3: All retries exhausted with no successes → Failed (terminal, permanent)
-		return &TransitionDecision{
-			NextPhase:          Failed,
-			Reason:             reason,
-			Message:            "All delivery attempts failed or exhausted retries",
-			IsTerminal:         true,
-			IsPermanentFailure: true,
-		}
+	if allChannelsExhaustedRetries(channels, channelStates, maxAttempts) {
+		return buildExhaustedTransition(totalSuccessful, totalChannels, channels, channelStates)
 	}
 
 	// Not all channels exhausted — check for failures with retries remaining
 	if result.FailureCount > 0 {
-		// Calculate max attempt count for failed channels (for backoff calculation)
-		maxFailedAttempts := 0
-		for _, channel := range channels {
-			state := channelStates[string(channel)]
-			if !state.AlreadySucceeded && state.AttemptCount > maxFailedAttempts {
-				maxFailedAttempts = state.AttemptCount
-			}
-		}
-
-		if totalSuccessful > 0 {
-			// Case 4: NT-BUG-005/006: Partial success with retries remaining → Retrying
-			return &TransitionDecision{
-				NextPhase: Retrying,
-				Reason:    string(notificationv1.StatusReasonPartialFailureRetrying),
-				Message: fmt.Sprintf("Delivered to %d/%d channel(s), retrying failed channels",
-					totalSuccessful, totalChannels),
-				ShouldRequeue:         true,
-				MaxFailedAttemptCount: maxFailedAttempts,
-			}
-		}
-
-		// Case 5: All channels failed, retries remain → stay in current phase, requeue
-		return &TransitionDecision{
-			NextPhase:             notification.Status.Phase,
-			Reason:                string(notificationv1.StatusReasonAllDeliveriesFailed),
-			Message:               "Delivery failed, will retry with backoff",
-			ShouldRequeue:         true,
-			PhaseUnchanged:        true,
-			MaxFailedAttemptCount: maxFailedAttempts,
-		}
+		return buildRetryingTransition(notification, channels, channelStates, totalSuccessful, totalChannels)
 	}
 
 	// Case 6: No failures (partial success with no failures — shouldn't normally reach here)
@@ -244,5 +168,127 @@ func DetermineTransition(
 		NextPhase:      notification.Status.Phase,
 		ShouldRequeue:  true,
 		PhaseUnchanged: true,
+	}
+}
+
+// countSuccessfulDeliveries counts successful deliveries from BOTH persisted
+// status and the current delivery loop's new attempts (which haven't been
+// persisted yet). Extracted from DetermineTransition (Wave 6 6b GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func countSuccessfulDeliveries(notification *notificationv1.NotificationRequest, result *DeliveryResult) int {
+	total := notification.Status.SuccessfulDeliveries
+	for _, attempt := range result.DeliveryAttempts {
+		if attempt.Status == notificationv1.DeliveryAttemptStatusSuccess {
+			total++
+		}
+	}
+	return total
+}
+
+// allChannelsExhaustedRetries reports whether every channel has either
+// already succeeded, hit a permanent error, or exhausted its retry budget —
+// i.e. no channel can make further progress. Extracted from
+// DetermineTransition (Wave 6 6b GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func allChannelsExhaustedRetries(channels []notificationv1.Channel, channelStates map[string]ChannelState, maxAttempts int) bool {
+	for _, channel := range channels {
+		state := channelStates[string(channel)]
+		if !state.AlreadySucceeded && !state.HasPermanentError && state.AttemptCount < maxAttempts {
+			return false
+		}
+	}
+	return true
+}
+
+// allChannelsHavePermanentErrors reports whether every channel's failure is
+// non-retryable (used to distinguish "MaxRetriesExhausted" from
+// "AllDeliveriesFailed" as the terminal failure reason). Extracted from
+// DetermineTransition (Wave 6 6b GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func allChannelsHavePermanentErrors(channels []notificationv1.Channel, channelStates map[string]ChannelState) bool {
+	for _, channel := range channels {
+		if !channelStates[string(channel)].HasPermanentError {
+			return false
+		}
+	}
+	return true
+}
+
+// maxAttemptCountForFailedChannels returns the highest attempt count among
+// channels that have not yet succeeded, used for exponential backoff
+// calculation by the caller. Extracted from DetermineTransition (Wave 6 6b
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func maxAttemptCountForFailedChannels(channels []notificationv1.Channel, channelStates map[string]ChannelState) int {
+	maxAttempts := 0
+	for _, channel := range channels {
+		state := channelStates[string(channel)]
+		if !state.AlreadySucceeded && state.AttemptCount > maxAttempts {
+			maxAttempts = state.AttemptCount
+		}
+	}
+	return maxAttempts
+}
+
+// buildExhaustedTransition builds the TransitionDecision for the case where
+// every channel has exhausted its retry budget: NT-BUG-003 partial success
+// (PartiallySent) or complete failure (Failed), classifying the failure
+// reason as permanent-error vs retry-exhaustion. Extracted from
+// DetermineTransition (Wave 6 6b GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func buildExhaustedTransition(totalSuccessful, totalChannels int, channels []notificationv1.Channel, channelStates map[string]ChannelState) *TransitionDecision {
+	// NT-BUG-003: Check for partial success before marking as Failed
+	if totalSuccessful > 0 && totalSuccessful < totalChannels {
+		// Case 2: Partial success, all retries exhausted → PartiallySent (terminal)
+		return &TransitionDecision{
+			NextPhase:  PartiallySent,
+			Reason:     string(notificationv1.StatusReasonPartialDeliverySuccess),
+			Message:    fmt.Sprintf("Delivered to %d/%d channel(s), others failed", totalSuccessful, totalChannels),
+			IsTerminal: true,
+		}
+	}
+
+	reason := "MaxRetriesExhausted"
+	if allChannelsHavePermanentErrors(channels, channelStates) {
+		reason = string(notificationv1.StatusReasonAllDeliveriesFailed)
+	}
+
+	// Case 3: All retries exhausted with no successes → Failed (terminal, permanent)
+	return &TransitionDecision{
+		NextPhase:          Failed,
+		Reason:             reason,
+		Message:            "All delivery attempts failed or exhausted retries",
+		IsTerminal:         true,
+		IsPermanentFailure: true,
+	}
+}
+
+// buildRetryingTransition builds the TransitionDecision for the case where
+// at least one channel failed but retries remain: NT-BUG-005/006 partial
+// success while retrying, or all channels failed with retries remaining.
+// Extracted from DetermineTransition (Wave 6 6b GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func buildRetryingTransition(notification *notificationv1.NotificationRequest, channels []notificationv1.Channel, channelStates map[string]ChannelState, totalSuccessful, totalChannels int) *TransitionDecision {
+	maxFailedAttempts := maxAttemptCountForFailedChannels(channels, channelStates)
+
+	if totalSuccessful > 0 {
+		// Case 4: NT-BUG-005/006: Partial success with retries remaining → Retrying
+		return &TransitionDecision{
+			NextPhase: Retrying,
+			Reason:    string(notificationv1.StatusReasonPartialFailureRetrying),
+			Message: fmt.Sprintf("Delivered to %d/%d channel(s), retrying failed channels",
+				totalSuccessful, totalChannels),
+			ShouldRequeue:         true,
+			MaxFailedAttemptCount: maxFailedAttempts,
+		}
+	}
+
+	// Case 5: All channels failed, retries remain → stay in current phase, requeue
+	return &TransitionDecision{
+		NextPhase:             notification.Status.Phase,
+		Reason:                string(notificationv1.StatusReasonAllDeliveriesFailed),
+		Message:               "Delivery failed, will retry with backoff",
+		ShouldRequeue:         true,
+		PhaseUnchanged:        true,
+		MaxFailedAttemptCount: maxFailedAttempts,
 	}
 }

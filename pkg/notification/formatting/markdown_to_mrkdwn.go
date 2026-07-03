@@ -75,68 +75,99 @@ func MarkdownToMrkdwn(input string) string {
 
 	// Phase 1: Extract and protect code blocks and inline code from conversion.
 	// We replace them with placeholders, do all conversions, then restore them.
-	var codeBlocks []string
-	result := input
-
-	// Protect fenced code blocks (```...```) first
-	result = fencedCodeRe.ReplaceAllStringFunc(result, func(match string) string {
-		idx := len(codeBlocks)
-		codeBlocks = append(codeBlocks, match)
-		return fmt.Sprintf("\x00CODEBLOCK%d\x00", idx)
-	})
-
-	// Protect inline code (`...`)
-	result = inlineCodeRe.ReplaceAllStringFunc(result, func(match string) string {
-		idx := len(codeBlocks)
-		codeBlocks = append(codeBlocks, match)
-		return fmt.Sprintf("\x00CODEBLOCK%d\x00", idx)
-	})
+	result, codeBlocks := protectCodeBlocks(input)
 
 	// Phase 2: Escape HTML entities in plain text (&, <, >).
-	// Must happen BEFORE link conversion so that link angle brackets aren't escaped.
-	// Note: > at start of line is blockquote syntax in both Markdown and Slack mrkdwn,
-	// so we preserve it. We only escape > that appears mid-line.
-	result = strings.ReplaceAll(result, "&", "&amp;")
+	result = escapeHTMLEntities(result)
+
+	// Phase 3-4: Convert images and links to Slack's <url|text> syntax.
+	result = convertImagesAndLinks(result)
+
+	// Phase 5-7: Convert bold, strikethrough, and headers to mrkdwn equivalents.
+	result = convertEmphasisAndHeaders(result)
+
+	// Phase 8-10: Restore protected code blocks and clean up formatting artifacts.
+	result = restoreCodeBlocksAndCleanup(result, codeBlocks)
+
+	return result
+}
+
+// protectCodeBlocks extracts fenced and inline code blocks from the input,
+// replacing each with a unique placeholder so that later conversion phases
+// don't rewrite code content. Returns the placeholder-substituted text and
+// the extracted blocks (indexed by placeholder number) for later restoration.
+// Extracted from MarkdownToMrkdwn (Wave 6 6b GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func protectCodeBlocks(input string) (string, []string) {
+	var codeBlocks []string
+	protect := func(match string) string {
+		idx := len(codeBlocks)
+		codeBlocks = append(codeBlocks, match)
+		return fmt.Sprintf("\x00CODEBLOCK%d\x00", idx)
+	}
+
+	result := fencedCodeRe.ReplaceAllStringFunc(input, protect)
+	result = inlineCodeRe.ReplaceAllStringFunc(result, protect)
+	return result, codeBlocks
+}
+
+// escapeHTMLEntities escapes &, <, and > in plain text per Slack requirements.
+// Must run BEFORE link conversion so that link angle brackets aren't escaped.
+// Note: > at start of line is blockquote syntax in both Markdown and Slack
+// mrkdwn, so it's temporarily protected and restored — only > appearing
+// mid-line is escaped. Extracted from MarkdownToMrkdwn (Wave 6 6b GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func escapeHTMLEntities(input string) string {
+	result := strings.ReplaceAll(input, "&", "&amp;")
 	result = strings.ReplaceAll(result, "<", "&lt;")
 
-	// Escape > only when NOT at the start of a line (preserve blockquotes)
 	result = blockquoteRe.ReplaceAllString(result, "\x00BLOCKQUOTE\x00")
 	result = strings.ReplaceAll(result, ">", "&gt;")
 	result = strings.ReplaceAll(result, "\x00BLOCKQUOTE\x00", ">")
+	return result
+}
 
-	// Phase 3: Convert images ![alt](url) → <url|alt>
-	// Must be before link conversion to avoid ![alt](url) matching [alt](url)
-	result = imageRe.ReplaceAllStringFunc(result, func(match string) string {
-		submatches := imageRe.FindStringSubmatch(match)
-		if len(submatches) < 3 {
-			return match
+// convertImagesAndLinks converts Markdown images (![alt](url)) and links
+// ([text](url)) into Slack's <url|text> syntax. Images are converted first
+// to avoid ![alt](url) matching the link pattern. Extracted from
+// MarkdownToMrkdwn (Wave 6 6b GREEN: funlen remediation) — pure code motion,
+// no behavior change.
+func convertImagesAndLinks(input string) string {
+	toSlackLink := func(re *regexp.Regexp) func(string) string {
+		return func(match string) string {
+			submatches := re.FindStringSubmatch(match)
+			if len(submatches) < 3 {
+				return match
+			}
+			return fmt.Sprintf("<%s|%s>", submatches[2], submatches[1])
 		}
-		return fmt.Sprintf("<%s|%s>", submatches[2], submatches[1])
-	})
+	}
 
-	// Phase 4: Convert links [text](url) → <url|text>
-	result = linkRe.ReplaceAllStringFunc(result, func(match string) string {
-		submatches := linkRe.FindStringSubmatch(match)
-		if len(submatches) < 3 {
-			return match
-		}
-		return fmt.Sprintf("<%s|%s>", submatches[2], submatches[1])
-	})
+	result := imageRe.ReplaceAllStringFunc(input, toSlackLink(imageRe))
+	result = linkRe.ReplaceAllStringFunc(result, toSlackLink(linkRe))
+	return result
+}
 
-	// Phase 5: Convert bold **text** → *text* (must be before single *)
-	result = boldDoubleStarRe.ReplaceAllString(result, "*$1*")
-
-	// Convert bold __text__ → *text*
+// convertEmphasisAndHeaders converts bold (**text**/__text__), strikethrough
+// (~~text~~), and headers (# Header) into their mrkdwn equivalents. Extracted
+// from MarkdownToMrkdwn (Wave 6 6b GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func convertEmphasisAndHeaders(input string) string {
+	result := boldDoubleStarRe.ReplaceAllString(input, "*$1*")
 	result = boldDoubleUnderRe.ReplaceAllString(result, "*$1*")
-
-	// Phase 6: Convert strikethrough ~~text~~ → ~text~
 	result = strikeRe.ReplaceAllString(result, "~$1~")
-
-	// Phase 7: Convert headers (# Header → *Header*)
 	result = headerRe.ReplaceAllString(result, "*$1*")
+	return result
+}
 
-	// Phase 8: Restore protected code blocks with Slack-compatible post-processing (Issue #588).
-	// Strip language tags (Slack mrkdwn doesn't support them) and remove empty blocks.
+// restoreCodeBlocksAndCleanup restores the placeholders created by
+// protectCodeBlocks with Slack-compatible post-processed code (language tags
+// stripped, empty blocks removed — Issue #588), fixes any unbalanced triple
+// backtick left after restoration, and collapses blank lines left behind by
+// removed empty code blocks. Extracted from MarkdownToMrkdwn (Wave 6 6b
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func restoreCodeBlocksAndCleanup(input string, codeBlocks []string) string {
+	result := input
 	for i, block := range codeBlocks {
 		placeholder := fmt.Sprintf("\x00CODEBLOCK%d\x00", i)
 		cleaned := fencedLangTagRe.ReplaceAllString(block, "```")
@@ -144,9 +175,9 @@ func MarkdownToMrkdwn(input string) string {
 		result = strings.Replace(result, placeholder, cleaned, 1)
 	}
 
-	// Phase 9: Handle unbalanced triple backticks remaining after code block restoration.
-	// Count ``` occurrences — if odd, there's an unpaired fence. Escape only the last
-	// (orphan) occurrence to avoid corrupting valid fenced blocks.
+	// Handle unbalanced triple backticks remaining after code block restoration.
+	// Count ``` occurrences — if odd, there's an unpaired fence. Escape only the
+	// last (orphan) occurrence to avoid corrupting valid fenced blocks.
 	if strings.Count(result, "```")%2 != 0 {
 		lastIdx := strings.LastIndex(result, "```")
 		if lastIdx >= 0 {
@@ -154,7 +185,6 @@ func MarkdownToMrkdwn(input string) string {
 		}
 	}
 
-	// Phase 10: Clean up blank lines left by removed empty code blocks.
 	for strings.Contains(result, "\n\n\n") {
 		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
 	}

@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/go-logr/logr"
+
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/yaml"
@@ -154,33 +156,63 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 		"format", format)
 
 	// TDD REFACTOR: Marshal notification to specified format (pretty-printed for readability)
-	var data []byte
-	var err error
-
-	switch format {
-	case "json":
-		data, err = json.MarshalIndent(notification, "", "  ")
-		if err != nil {
-			log.Error(err, "Failed to marshal notification to JSON",
-				"notification", notification.Name,
-				"namespace", notification.Namespace)
-			return fmt.Errorf("failed to marshal notification to JSON: %w", err)
-		}
-	case "yaml":
-		// TDD REFACTOR: YAML support added
-		data, err = yaml.Marshal(notification)
-		if err != nil {
-			log.Error(err, "Failed to marshal notification to YAML",
-				"notification", notification.Name,
-				"namespace", notification.Namespace)
-			return fmt.Errorf("failed to marshal notification to YAML: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported file format: %s (supported: json, yaml)", format)
+	data, err := marshalNotificationForFile(notification, format, log)
+	if err != nil {
+		return err
 	}
 
 	// TDD REFACTOR: Atomic file write (write to temp, then rename)
 	// This prevents partial writes if the process crashes during write
+	if err := atomicWriteNotificationFile(filePath, data, notification, log); err != nil {
+		return err
+	}
+
+	log.Info("Notification delivered successfully to file",
+		"notification", notification.Name,
+		"namespace", notification.Namespace,
+		"filePath", filePath,
+		"filesize", len(data),
+		"format", format)
+
+	return nil
+}
+
+// marshalNotificationForFile marshals the notification to the requested
+// file format (pretty-printed JSON or YAML). Extracted from Deliver (Wave 6
+// 6b GREEN: funlen remediation) — pure code motion, no behavior change.
+func marshalNotificationForFile(notification *notificationv1alpha1.NotificationRequest, format string, log logr.Logger) ([]byte, error) {
+	switch format {
+	case "json":
+		data, err := json.MarshalIndent(notification, "", "  ")
+		if err != nil {
+			log.Error(err, "Failed to marshal notification to JSON",
+				"notification", notification.Name,
+				"namespace", notification.Namespace)
+			return nil, fmt.Errorf("failed to marshal notification to JSON: %w", err)
+		}
+		return data, nil
+	case "yaml":
+		// TDD REFACTOR: YAML support added
+		data, err := yaml.Marshal(notification)
+		if err != nil {
+			log.Error(err, "Failed to marshal notification to YAML",
+				"notification", notification.Name,
+				"namespace", notification.Namespace)
+			return nil, fmt.Errorf("failed to marshal notification to YAML: %w", err)
+		}
+		return data, nil
+	default:
+		return nil, fmt.Errorf("unsupported file format: %s (supported: json, yaml)", format)
+	}
+}
+
+// atomicWriteNotificationFile writes data to a temp file and atomically
+// renames it to filePath, preventing partial writes if the process crashes
+// mid-write. Filesystem errors (permission denied, disk full, etc.) are
+// wrapped as retryable per NT-BUG-006, since they may resolve on their own.
+// Extracted from Deliver (Wave 6 6b GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func atomicWriteNotificationFile(filePath string, data []byte, notification *notificationv1alpha1.NotificationRequest, log logr.Logger) error {
 	tempFile := filePath + ".tmp"
 
 	// Write to temporary file first
@@ -210,15 +242,9 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 		return NewRetryableError(fmt.Errorf("failed to rename temporary file: %w", err))
 	}
 
-	log.Info("Notification delivered successfully to file",
-		"notification", notification.Name,
-		"namespace", notification.Namespace,
-		"filePath", filePath,
-		"filesize", len(data),
-		"format", format)
-
 	return nil
 }
+
 // generateFilenameWithFormat creates a unique filename for the notification with specified format.
 //
 // Format: notification-{name}-{timestamp}.{format}
