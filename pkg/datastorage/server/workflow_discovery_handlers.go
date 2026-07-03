@@ -241,6 +241,10 @@ func ParseDiscoveryFilters(r *http.Request) (*models.WorkflowDiscoveryFilters, e
 		Environment:   r.URL.Query().Get("environment"),
 		Priority:      r.URL.Query().Get("priority"),
 		RemediationID: r.URL.Query().Get("remediation_id"),
+		// BR-FLEET-003 (#1511): optional cluster business classification filter.
+		// Empty when absent (non-fleet deployments) -- no cluster condition is
+		// added to the SQL in that case (backward compatible, R6.1).
+		Cluster: r.URL.Query().Get("cluster"),
 	}
 
 	// Parse optional JSON-encoded custom_labels

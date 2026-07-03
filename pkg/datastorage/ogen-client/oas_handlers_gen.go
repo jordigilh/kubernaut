@@ -2562,6 +2562,10 @@ func (s *Server) handleListAvailableActionsRequest(args [0]string, argsEscaped b
 					In:   "query",
 				}: params.DetectedLabels,
 				{
+					Name: "cluster",
+					In:   "query",
+				}: params.Cluster,
+				{
 					Name: "remediation_id",
 					In:   "query",
 				}: params.RemediationID,
@@ -3085,6 +3089,10 @@ func (s *Server) handleListWorkflowsByActionTypeRequest(args [1]string, argsEsca
 					Name: "detected_labels",
 					In:   "query",
 				}: params.DetectedLabels,
+				{
+					Name: "cluster",
+					In:   "query",
+				}: params.Cluster,
 				{
 					Name: "remediation_id",
 					In:   "query",

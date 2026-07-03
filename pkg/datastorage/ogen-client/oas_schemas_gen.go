@@ -20321,6 +20321,11 @@ type MandatoryLabels struct {
 	Environment []MandatoryLabelsEnvironmentItem `json:"environment"`
 	// Business priority level (P0, P1, P2, P3, * for any).
 	Priority MandatoryLabelsPriority `json:"priority"`
+	// BR-FLEET-003 (#1511): Cluster classification(s) this workflow is eligible for, as produced by
+	// Signal Processing's Rego policy from fleet cluster-registration labels. Optional — absent in
+	// non-fleet (single-cluster) deployments, where it is never evaluated. '*' matches any
+	// classification once fleet mode supplies a concrete filter value.
+	Cluster []string `json:"cluster"`
 }
 
 // GetSeverity returns the value of Severity.
@@ -20343,6 +20348,11 @@ func (s *MandatoryLabels) GetPriority() MandatoryLabelsPriority {
 	return s.Priority
 }
 
+// GetCluster returns the value of Cluster.
+func (s *MandatoryLabels) GetCluster() []string {
+	return s.Cluster
+}
+
 // SetSeverity sets the value of Severity.
 func (s *MandatoryLabels) SetSeverity(val []MandatoryLabelsSeverityItem) {
 	s.Severity = val
@@ -20361,6 +20371,11 @@ func (s *MandatoryLabels) SetEnvironment(val []MandatoryLabelsEnvironmentItem) {
 // SetPriority sets the value of Priority.
 func (s *MandatoryLabels) SetPriority(val MandatoryLabelsPriority) {
 	s.Priority = val
+}
+
+// SetCluster sets the value of Cluster.
+func (s *MandatoryLabels) SetCluster(val []string) {
+	s.Cluster = val
 }
 
 type MandatoryLabelsEnvironmentItem string

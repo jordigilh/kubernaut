@@ -474,6 +474,68 @@ func TestBuildContextFilterSQL_Issue595_PriorityScalarBranchPreserved(t *testing
 }
 
 // ========================================
+// UNIT TESTS: Issue #1511 — Cluster Classification Filter Dimension
+// ========================================
+// Authority: BR-FLEET-003, DD-FLEET-002, docs/tests/1511/TEST_PLAN.md
+//
+// These tests validate that buildContextFilterSQL/appendMandatoryLabelConditions
+// treats `cluster` as a fifth mandatory-label JSONB dimension, mirroring the
+// severity/environment case-insensitive array + wildcard pattern exactly.
+// ========================================
+
+var _ = Describe("Cluster Classification Filter Dimension (BR-FLEET-003, #1511)", func() {
+
+	Describe("UT-DS-1511-004: SQL builder emits cluster JSONB condition when filter present (AC-4)", func() {
+		It("produces a fragment matching the severity/environment shape", func() {
+			filters := &models.WorkflowDiscoveryFilters{Cluster: "production"}
+
+			sql, args := buildContextFilterSQL(filters)
+
+			Expect(sql).To(ContainSubstring("jsonb_array_elements_text(labels->'cluster')"))
+			Expect(sql).To(ContainSubstring("LOWER(elem) = LOWER("))
+			Expect(sql).To(ContainSubstring("labels->'cluster' ? '*'"))
+			Expect(args).To(ConsistOf("production"))
+		})
+	})
+
+	Describe("UT-DS-1511-005: exclusion semantics -- EXISTS-based condition, no unconditional catch-all (AC-4, SC-7)", func() {
+		It("wraps the match in EXISTS so a workflow with no cluster key naturally evaluates false", func() {
+			filters := &models.WorkflowDiscoveryFilters{Cluster: "production"}
+
+			sql, _ := buildContextFilterSQL(filters)
+
+			Expect(sql).To(ContainSubstring("EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'cluster')"))
+			// Structural guard: behavior for absent keys must come ONLY from the
+			// EXISTS/wildcard pair, never from an unconditional fallback such as
+			// "labels->'cluster' IS NULL", which would defeat exclusion semantics.
+			Expect(sql).NotTo(ContainSubstring("labels->'cluster' IS NULL"))
+		})
+	})
+
+	Describe("UT-DS-1511-006: wildcard cluster:[\"*\"] matches any concrete filter value (AC-4)", func() {
+		It("includes the wildcard fallback clause alongside the concrete match", func() {
+			filters := &models.WorkflowDiscoveryFilters{Cluster: "staging-eu"}
+
+			sql, args := buildContextFilterSQL(filters)
+
+			Expect(sql).To(ContainSubstring("labels->'cluster' ? '*'"))
+			Expect(args).To(ConsistOf("staging-eu"))
+		})
+	})
+
+	Describe("UT-DS-1511-007: no cluster filter supplied -> condition omitted entirely (SC-7, backward compat)", func() {
+		It("adds no cluster clause and no arg when Cluster is empty", func() {
+			filters := &models.WorkflowDiscoveryFilters{Severity: "critical"}
+
+			sql, args := buildContextFilterSQL(filters)
+
+			Expect(sql).NotTo(ContainSubstring("cluster"))
+			Expect(args).To(ConsistOf("critical"))
+		})
+	})
+})
+
+// ========================================
 // CNV DetectedLabels Filter Tests — #1378
 // ========================================
 
