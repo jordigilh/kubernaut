@@ -220,10 +220,11 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 //+kubebuilder:rbac:groups=tekton.dev,resources=pipelineruns,verbs=get;list;watch;create;delete
 //+kubebuilder:rbac:groups=tekton.dev,resources=taskruns,verbs=get;list;watch
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;get;list
-// BR-WORKFLOW-008 (Issue #1481): inspect a failed Job's Pods to enrich the
-// WFE failure message from FailedMount/CreateContainerConfigError Events.
-//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch
+// BR-WORKFLOW-008 (Issue #1481): "watch" is required even though the
+// reconciler only calls List() -- the manager's cached client establishes
+// an Informer for any type it reads, and that Informer needs list+watch to
+// sync, regardless of which verb application code exercises directly.
+//+kubebuilder:rbac:groups="",resources=events,verbs=create;patch;get;list;watch
 
 // Reconcile handles WorkflowExecution reconciliation
 // Phase-based reconciliation per implementation plan
