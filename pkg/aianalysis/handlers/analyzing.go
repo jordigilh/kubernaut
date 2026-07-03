@@ -103,29 +103,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 
 	// BR-AI-018: Validate workflow exists (captured by InvestigatingHandler)
 	if analysis.Status.SelectedWorkflow == nil {
-		h.log.Error(nil, "No workflow selected - investigation may have failed", "name", analysis.Name)
-		analysis.Status.Phase = aianalysis.PhaseFailed
-		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
-		analysis.Status.Message = "No workflow selected - investigation may have failed"
-		analysis.Status.Reason = aianalysisv1.ReasonNoWorkflowSelected
-
-		// BR-HAPI-197: Track failure metrics
-		h.metrics.RecordFailure("NoWorkflowSelected", "InvestigationFailed") // P2.3: Use convenience method
-
-		// DD-AUDIT-003: Record analysis failure audit event
-		failureErr := fmt.Errorf("no workflow selected from investigation")
-		if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
-			h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
-		}
-
-		// Set WorkflowResolved=False and ApprovalRequired=False before AnalysisComplete
-		aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "No workflow selected from investigation")
-		aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow to approve")
-		// Set AnalysisComplete=False condition
-		aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
-
-		// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
-		// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)
+		h.handleNoWorkflowSelected(ctx, analysis)
 		return ctrl.Result{}, nil
 	}
 
@@ -133,47 +111,9 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	input := h.buildPolicyInput(analysis)
 
 	// Evaluate Rego policy - track duration for audit
-	regoStartTime := metav1.Now()
-	result, err := h.evaluator.Evaluate(ctx, input)
-	regoDuration := metav1.Now().Sub(regoStartTime.Time).Milliseconds()
-
-	// Ensure minimum duration of 1ms for audit trail (evaluation time may round to 0)
-	if regoDuration == 0 {
-		regoDuration = 1
-	}
-
-	if err != nil {
-		// This shouldn't happen - evaluator should handle errors gracefully
-		// But if it does, use safe defaults
-		h.log.Error(err, "Rego evaluation returned error, using safe default")
-
-		// Record Rego evaluation failure metric
-		h.metrics.RecordRegoEvaluation("error", true)
-
-		// DD-AUDIT-003: Record Rego evaluation audit event
-		h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
-
-		analysis.Status.Phase = aianalysis.PhaseFailed
-		analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
-		analysis.Status.Message = "Rego evaluation failed unexpectedly"
-		analysis.Status.Reason = aianalysisv1.ReasonRegoEvaluationError
-
-	// BR-HAPI-197: Track failure metrics
-	h.metrics.RecordFailure("RegoEvaluationError", "PolicyEvaluationFailed") // P2.3: Use convenience method
-
-	// DD-AUDIT-003: Record analysis failure audit event
-	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
-		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
-	}
-
-	// Set WorkflowResolved=False and ApprovalRequired=False before AnalysisComplete
-	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "Rego evaluation failed, cannot resolve workflow")
-	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "Rego evaluation failed, approval status unknown")
-	// Set AnalysisComplete=False condition
-	aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
-
-		// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
-		// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)
+	result, regoDuration, evalErr := h.evaluateRegoPolicy(ctx, input)
+	if evalErr != nil {
+		h.handleRegoEvaluationError(ctx, analysis, evalErr, regoDuration)
 		return ctrl.Result{}, nil
 	}
 
@@ -198,48 +138,7 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		"reason", result.Reason,
 	)
 
-	// ========================================
-	// IDEMPOTENCY CHECK: Only record approval decision once
-	// ========================================
-	// Check if ApprovalRequired condition is already set to prevent duplicate audit events
-	// This can happen when controller reconciles multiple times in Analyzing phase
-	// (e.g., status update triggers immediate re-reconcile before ObservedGeneration is updated)
-	approvalCondition := aianalysis.GetCondition(analysis, aianalysis.ConditionApprovalRequired)
-	alreadyRecorded := approvalCondition != nil && approvalCondition.Status != ""
-
-	// BR-AI-019: Populate ApprovalContext if approval is required
-	if result.ApprovalRequired {
-		h.populateApprovalContext(analysis, result)
-		// Set ApprovalRequired condition
-		aianalysis.SetApprovalRequired(analysis, true, aianalysis.ReasonPolicyRequiresApproval, result.Reason)
-
-		// Record approval decision metric and audit event ONLY if not already recorded
-		if !alreadyRecorded {
-			environment := getEnvironment(analysis)
-			h.metrics.RecordApprovalDecision(aianalysis.OutcomeRequiresApproval, environment)
-
-			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
-			h.auditClient.RecordApprovalDecision(ctx, analysis, aianalysis.OutcomeRequiresApproval, result.Reason)
-			h.log.V(1).Info("Approval decision recorded", "decision", aianalysis.OutcomeRequiresApproval)
-		} else {
-			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", aianalysis.OutcomeRequiresApproval)
-		}
-	} else {
-		// Set ApprovalRequired=False condition (auto-approved)
-		aianalysis.SetApprovalRequired(analysis, false, "AutoApproved", "Policy evaluation does not require manual approval")
-
-		// Record approval decision metric and audit event ONLY if not already recorded
-		if !alreadyRecorded {
-			environment := getEnvironment(analysis)
-			h.metrics.RecordApprovalDecision(aianalysis.OutcomeAutoApproved, environment)
-
-			// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
-			h.auditClient.RecordApprovalDecision(ctx, analysis, aianalysis.OutcomeAutoApproved, "Policy evaluation does not require manual approval")
-			h.log.V(1).Info("Approval decision recorded", "decision", aianalysis.OutcomeAutoApproved)
-		} else {
-			h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", aianalysis.OutcomeAutoApproved)
-		}
-	}
+	h.recordApprovalDecision(ctx, analysis, result)
 
 	// Set WorkflowResolved condition (we already validated workflow exists above)
 	aianalysis.SetWorkflowResolved(analysis, true, aianalysis.ReasonWorkflowSelected,
@@ -249,7 +148,146 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	// Set AnalysisComplete condition
 	aianalysis.SetAnalysisComplete(analysis, true, "Rego policy evaluation completed successfully")
 
-	// Transition directly to Completed (per reconciliation-phases.md v2.0)
+	h.completeAnalyzingPhase(ctx, analysis, oldPhase, result)
+
+	return ctrl.Result{}, nil // Final phase - no requeue
+}
+
+// handleNoWorkflowSelected fails the analysis when InvestigatingHandler did
+// not capture a selected workflow (BR-AI-018). Records failure metrics,
+// the mandatory analysis-failed audit event, and the WorkflowResolved /
+// ApprovalRequired / AnalysisComplete conditions for the failure path.
+// Extracted from Handle (Wave 6 6c GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (h *AnalyzingHandler) handleNoWorkflowSelected(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
+	h.log.Error(nil, "No workflow selected - investigation may have failed", "name", analysis.Name)
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.Message = "No workflow selected - investigation may have failed"
+	analysis.Status.Reason = aianalysisv1.ReasonNoWorkflowSelected
+
+	// BR-HAPI-197: Track failure metrics
+	h.metrics.RecordFailure("NoWorkflowSelected", "InvestigationFailed") // P2.3: Use convenience method
+
+	// DD-AUDIT-003: Record analysis failure audit event
+	failureErr := fmt.Errorf("no workflow selected from investigation")
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
+		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
+	// Set WorkflowResolved=False and ApprovalRequired=False before AnalysisComplete
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "No workflow selected from investigation")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow to approve")
+	// Set AnalysisComplete=False condition
+	aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected from investigation")
+
+	// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
+	// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)
+}
+
+// evaluateRegoPolicy runs the Rego evaluator against input and returns the
+// result plus the evaluation duration (minimum 1ms so audit trails never
+// show a zero duration). Extracted from Handle (Wave 6 6c GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (h *AnalyzingHandler) evaluateRegoPolicy(ctx context.Context, input *rego.PolicyInput) (*rego.PolicyResult, int64, error) {
+	regoStartTime := metav1.Now()
+	result, err := h.evaluator.Evaluate(ctx, input)
+	regoDuration := metav1.Now().Sub(regoStartTime.Time).Milliseconds()
+
+	// Ensure minimum duration of 1ms for audit trail (evaluation time may round to 0)
+	if regoDuration == 0 {
+		regoDuration = 1
+	}
+	return result, regoDuration, err
+}
+
+// handleRegoEvaluationError fails the analysis when the Rego evaluator
+// itself returns an error (shouldn't normally happen — the evaluator should
+// handle errors gracefully — but this is the safe-default fallback).
+// Extracted from Handle (Wave 6 6c GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (h *AnalyzingHandler) handleRegoEvaluationError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error, regoDuration int64) {
+	// This shouldn't happen - evaluator should handle errors gracefully
+	// But if it does, use safe defaults
+	h.log.Error(err, "Rego evaluation returned error, using safe default")
+
+	// Record Rego evaluation failure metric
+	h.metrics.RecordRegoEvaluation("error", true)
+
+	// DD-AUDIT-003: Record Rego evaluation audit event
+	h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
+
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.Message = "Rego evaluation failed unexpectedly"
+	analysis.Status.Reason = aianalysisv1.ReasonRegoEvaluationError
+
+	// BR-HAPI-197: Track failure metrics
+	h.metrics.RecordFailure("RegoEvaluationError", "PolicyEvaluationFailed") // P2.3: Use convenience method
+
+	// DD-AUDIT-003: Record analysis failure audit event
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
+	// Set WorkflowResolved=False and ApprovalRequired=False before AnalysisComplete
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "Rego evaluation failed, cannot resolve workflow")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "Rego evaluation failed, approval status unknown")
+	// Set AnalysisComplete=False condition
+	aianalysis.SetAnalysisComplete(analysis, false, "Rego policy evaluation failed: "+err.Error())
+
+	// AA-BUG-008: Phase transition recorded by CONTROLLER ONLY (phase_handlers.go:215)
+	// Handler changes phase but does NOT record transition (follows InvestigatingHandler pattern)
+}
+
+// recordApprovalDecision sets the ApprovalRequired condition (and, if
+// required, the ApprovalContext) based on the Rego result, then records the
+// approval-decision metric and audit event exactly once (idempotency guarded
+// by the pre-existing ApprovalRequired condition, since the controller may
+// reconcile multiple times in the Analyzing phase before ObservedGeneration
+// is updated). Extracted from Handle (Wave 6 6c GREEN: funlen remediation) —
+// pure code motion, no behavior change.
+func (h *AnalyzingHandler) recordApprovalDecision(ctx context.Context, analysis *aianalysisv1.AIAnalysis, result *rego.PolicyResult) {
+	// Check if ApprovalRequired condition is already set to prevent duplicate audit events
+	// This can happen when controller reconciles multiple times in Analyzing phase
+	// (e.g., status update triggers immediate re-reconcile before ObservedGeneration is updated)
+	approvalCondition := aianalysis.GetCondition(analysis, aianalysis.ConditionApprovalRequired)
+	alreadyRecorded := approvalCondition != nil && approvalCondition.Status != ""
+
+	outcome := aianalysis.OutcomeAutoApproved
+	reason := "Policy evaluation does not require manual approval"
+
+	// BR-AI-019: Populate ApprovalContext if approval is required
+	if result.ApprovalRequired {
+		h.populateApprovalContext(analysis, result)
+		aianalysis.SetApprovalRequired(analysis, true, aianalysis.ReasonPolicyRequiresApproval, result.Reason)
+		outcome = aianalysis.OutcomeRequiresApproval
+		reason = result.Reason
+	} else {
+		// Set ApprovalRequired=False condition (auto-approved)
+		aianalysis.SetApprovalRequired(analysis, false, "AutoApproved", reason)
+	}
+
+	if alreadyRecorded {
+		h.log.V(1).Info("Approval decision already recorded, skipping duplicate", "decision", outcome)
+		return
+	}
+
+	environment := getEnvironment(analysis)
+	h.metrics.RecordApprovalDecision(outcome, environment)
+
+	// DD-AUDIT-003: Record approval decision audit event (idempotent - only once)
+	h.auditClient.RecordApprovalDecision(ctx, analysis, outcome, reason)
+	h.log.V(1).Info("Approval decision recorded", "decision", outcome)
+}
+
+// completeAnalyzingPhase transitions analysis to Completed (per
+// reconciliation-phases.md v2.0: no Recommending phase) and records the
+// mandatory analysis-completed audit event exactly once, on the transition
+// (AA-BUG-006/008: the handler changes phase but the phase-transition audit
+// itself is recorded by the controller only). Extracted from Handle (Wave 6
+// 6c GREEN: funlen remediation) — pure code motion, no behavior change.
+func (h *AnalyzingHandler) completeAnalyzingPhase(ctx context.Context, analysis *aianalysisv1.AIAnalysis, oldPhase string, result *rego.PolicyResult) {
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseCompleted
 	analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
@@ -273,8 +311,6 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 		"name", analysis.Name,
 		"approvalRequired", result.ApprovalRequired,
 	)
-
-	return ctrl.Result{}, nil // Final phase - no requeue
 }
 
 // populateApprovalContext populates the ApprovalContext for approval notifications.
@@ -306,7 +342,7 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 		ctx.RecommendedActions = []aianalysisv1.RecommendedAction{
 			{
 				WorkflowId: analysis.Status.SelectedWorkflow.WorkflowID,
-				Rationale: analysis.Status.SelectedWorkflow.Rationale,
+				Rationale:  analysis.Status.SelectedWorkflow.Rationale,
 			},
 		}
 	}
@@ -399,33 +435,55 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 	input.ConfidenceThreshold = h.confidenceThreshold
 
 	// Populate BusinessClassification from EnrichmentResults (BR-SP-002, BR-SP-080, BR-SP-081)
-	if bc := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults.BusinessClassification; bc != nil {
-		input.BusinessClassification = make(map[string]string)
-		if bc.BusinessUnit != "" {
-			input.BusinessClassification["business_unit"] = bc.BusinessUnit
-		}
-		if bc.ServiceOwner != "" {
-			input.BusinessClassification["service_owner"] = bc.ServiceOwner
-		}
-		if bc.Criticality != "" {
-			input.BusinessClassification["criticality"] = string(bc.Criticality)
-		}
-		if bc.SLARequirement != "" {
-			input.BusinessClassification["sla_requirement"] = string(bc.SLARequirement)
-		}
-	}
+	input.BusinessClassification = buildBusinessClassification(er.BusinessClassification)
 
 	// #774: Populate identity from InteractiveSession status (user-driven flows).
 	// Nil for autonomous (alert-driven) flows; Rego policies handle absence
 	// with `default require_approval := true`.
-	if iss := analysis.Status.InteractiveSession; iss != nil && iss.ActingUser != "" {
-		input.Identity = &rego.IdentityInput{
-			User:   iss.ActingUser,
-			Groups: iss.ActingUserGroups,
-		}
-	}
+	input.Identity = buildIdentityInput(analysis.Status.InteractiveSession)
 
 	return input
+}
+
+// buildBusinessClassification converts EnrichmentResults.BusinessClassification
+// into the string-map form expected by the Rego policy input (BR-SP-002,
+// BR-SP-080, BR-SP-081). Returns nil when bc is nil. Extracted from
+// buildPolicyInput (Wave 6 6c GREEN: funlen remediation) — pure code motion,
+// no behavior change.
+func buildBusinessClassification(bc *aianalysisv1.BusinessClassification) map[string]string {
+	if bc == nil {
+		return nil
+	}
+	classification := make(map[string]string)
+	if bc.BusinessUnit != "" {
+		classification["business_unit"] = bc.BusinessUnit
+	}
+	if bc.ServiceOwner != "" {
+		classification["service_owner"] = bc.ServiceOwner
+	}
+	if bc.Criticality != "" {
+		classification["criticality"] = string(bc.Criticality)
+	}
+	if bc.SLARequirement != "" {
+		classification["sla_requirement"] = string(bc.SLARequirement)
+	}
+	return classification
+}
+
+// buildIdentityInput populates the Rego IdentityInput from an
+// InteractiveSession's acting-user fields (#774). Returns nil for autonomous
+// (alert-driven) flows — Rego policies handle absence with
+// `default require_approval := true`. Extracted from buildPolicyInput
+// (Wave 6 6c GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func buildIdentityInput(iss *aianalysisv1.InteractiveSessionInfo) *rego.IdentityInput {
+	if iss == nil || iss.ActingUser == "" {
+		return nil
+	}
+	return &rego.IdentityInput{
+		User:   iss.ActingUser,
+		Groups: iss.ActingUserGroups,
+	}
 }
 
 // formatConfidence formats a confidence score as a percentage string.

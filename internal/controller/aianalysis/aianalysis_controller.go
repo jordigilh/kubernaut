@@ -152,14 +152,8 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// 3. ADD FINALIZER IF NOT PRESENT
-	if !controllerutil.ContainsFinalizer(analysis, FinalizerName) {
-		controllerutil.AddFinalizer(analysis, FinalizerName)
-		if err := r.Update(ctx, analysis); err != nil {
-			log.Error(err, "Failed to add finalizer")
-			return ctrl.Result{}, err
-		}
-		// Requeue after short delay after adding finalizer
-		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+	if requeueResult, added, err := r.ensureFinalizer(ctx, analysis, log); added {
+		return requeueResult, err
 	}
 
 	// ========================================
@@ -174,9 +168,50 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Capture current phase for metrics
 	currentPhase := analysis.Status.Phase
 	if currentPhase == "" {
-		// Initialize phase to Pending on first reconciliation
-		// DD-CONTROLLER-001: ObservedGeneration NOT set here - only after processing phase
-		analysis.Status.Phase = PhasePending
+		return r.initializePendingPhase(ctx, analysis, log)
+	}
+
+	// 4. PHASE STATE MACHINE
+	// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
+	// NOTE: Recommending phase REMOVED in v1.8 - workflow data captured in Investigating phase
+	// DD-AUDIT-003: Phase transition audits now emitted INSIDE phase handlers
+	// (avoids race condition where status update triggers immediate reconcile before audit)
+	result, err := r.dispatchPhase(ctx, analysis, currentPhase, log)
+
+	// BR-AI-017: Record metrics and audit events after phase processing
+	// AA-BUG-005: This must run for ALL phases including terminal states (Completed/Failed)
+	// to record the analysis.completed audit event via RecordAnalysisComplete
+	r.recordPhaseMetrics(ctx, currentPhase, analysis, err)
+
+	return result, err
+}
+
+// ensureFinalizer adds FinalizerName to analysis if not already present,
+// persisting the update. The third return value reports whether the
+// finalizer was just added (and this reconcile should therefore return
+// immediately via the returned Result/error). Extracted from Reconcile
+// (Wave 6 6c GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (r *AIAnalysisReconciler) ensureFinalizer(ctx context.Context, analysis *aianalysisv1.AIAnalysis, log logr.Logger) (ctrl.Result, bool, error) {
+	if controllerutil.ContainsFinalizer(analysis, FinalizerName) {
+		return ctrl.Result{}, false, nil
+	}
+	controllerutil.AddFinalizer(analysis, FinalizerName)
+	if err := r.Update(ctx, analysis); err != nil {
+		log.Error(err, "Failed to add finalizer")
+		return ctrl.Result{}, true, err
+	}
+	// Requeue after short delay after adding finalizer
+	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, true, nil
+}
+
+// initializePendingPhase sets analysis to Pending on first reconciliation and
+// persists it, requeuing shortly after so the Pending phase gets processed.
+// DD-CONTROLLER-001: ObservedGeneration is NOT set here - only after
+// processing phase. Extracted from Reconcile (Wave 6 6c GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (r *AIAnalysisReconciler) initializePendingPhase(ctx context.Context, analysis *aianalysisv1.AIAnalysis, log logr.Logger) (ctrl.Result, error) {
+	analysis.Status.Phase = PhasePending
 	analysis.Status.Message = "AIAnalysis created"
 	if err := r.Status().Update(ctx, analysis); err != nil {
 		log.Error(err, "Failed to initialize phase to Pending")
@@ -187,21 +222,17 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 }
 
-	// 4. PHASE STATE MACHINE
-	// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed/Failed
-	// NOTE: Recommending phase REMOVED in v1.8 - workflow data captured in Investigating phase
-	var result ctrl.Result
-	var err error
-
-	// DD-AUDIT-003: Phase transition audits now emitted INSIDE phase handlers
-	// (avoids race condition where status update triggers immediate reconcile before audit)
+// dispatchPhase executes the phase-specific reconcile logic for currentPhase.
+// Extracted from Reconcile (Wave 6 6c GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (r *AIAnalysisReconciler) dispatchPhase(ctx context.Context, analysis *aianalysisv1.AIAnalysis, currentPhase string, log logr.Logger) (ctrl.Result, error) {
 	switch currentPhase {
 	case PhasePending:
-		result, err = r.reconcilePending(ctx, analysis)
+		return r.reconcilePending(ctx, analysis)
 	case PhaseInvestigating:
-		result, err = r.reconcileInvestigating(ctx, analysis)
+		return r.reconcileInvestigating(ctx, analysis)
 	case PhaseAnalyzing:
-		result, err = r.reconcileAnalyzing(ctx, analysis)
+		return r.reconcileAnalyzing(ctx, analysis)
 	case PhaseCompleted, PhaseFailed:
 		// Terminal states - no action needed
 		log.Info("AIAnalysis in terminal state", "phase", currentPhase)
@@ -210,23 +241,14 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			r.cascadeCancelToIS(ctx, analysis)
 		}
 		// AA-BUG-005: Must call recordPhaseMetrics for terminal states to record analysis.completed event
-		result = ctrl.Result{}
-		err = nil
+		return ctrl.Result{}, nil
 	default:
 		log.Error(nil, "Unknown phase - failing AIAnalysis to prevent stall", "phase", currentPhase)
 		analysis.Status.Phase = PhaseFailed
 		analysis.Status.Reason = "UnknownPhase"
 		analysis.Status.Message = fmt.Sprintf("Unrecognized phase %q; failing to prevent stall", currentPhase)
-		result = ctrl.Result{}
-		err = nil
+		return ctrl.Result{}, nil
 	}
-
-	// BR-AI-017: Record metrics and audit events after phase processing
-	// AA-BUG-005: This must run for ALL phases including terminal states (Completed/Failed)
-	// to record the analysis.completed audit event via RecordAnalysisComplete
-	r.recordPhaseMetrics(ctx, currentPhase, analysis, err)
-
-	return result, err
 }
 
 // recordPhaseMetrics records metrics and audit events after phase processing

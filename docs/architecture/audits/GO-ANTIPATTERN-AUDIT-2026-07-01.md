@@ -831,6 +831,41 @@ Sub-wave 6b is complete. Remaining Wave 6 sub-waves (6c AIAnalysis, 6a Effective
 
 ---
 
+## 7r. Phase 6 Wave 6, sub-wave 6c: AIAnalysis Complexity Burndown — ✅ RESOLVED
+
+Executed as sub-wave 7/8 of the approved Wave 6 Burndown Plan, closing the `funlen`/`nestif`/`gocognit` offenders in `internal/controller/aianalysis` and `pkg/aianalysis` after Wave 2.
+
+### 7r-1. RED phase: baseline + coverage gate
+
+`golangci-lint run --enable-only=funlen,nestif,gocyclo,gocognit,revive ./pkg/aianalysis/... ./internal/controller/aianalysis/...` found 18 offenders (13 `funlen`, 1 `gocognit`, 4 `nestif`). Coverage baseline (`go test ./pkg/aianalysis/... -cover`) confirmed 95.3% coverage of `pkg/aianalysis` (the parent package's Ginkgo suite exercises the real code in every subpackage — `audit`, `handlers`, `phase`, `rego`, `status`, `metrics` — by importing and constructing them directly, even though those subpackages have no dedicated `_test.go` files of their own), and `internal/controller/aianalysis` is additionally proven by `test/integration/aianalysis` (79 specs). On this basis, all offenders were decomposed via pure code motion (extract-method / struct-splitting) without new characterization tests.
+
+### 7r-2. GREEN phase: decomposition of all offenders
+
+| File | Function(s) | Technique |
+|---|---|---|
+| `internal/controller/aianalysis/aianalysis_controller.go` | `Reconcile` (`funlen`) | Extracted `ensureFinalizer`, `initializePendingPhase`, `dispatchPhase` |
+| `internal/controller/aianalysis/phase_handlers.go` | `reconcileInvestigating` (`funlen`) | Extracted `runInvestigatingHandler`, `handleInvestigatingUpdateError`, `finalizeInvestigatingTransition` (using an `investigatingUpdateOutcome` struct to carry mutable state across the atomic-update closure) |
+| `pkg/aianalysis/audit/audit.go` | `RecordAnalysisComplete`, `RecordAnalysisFailed` (`funlen` ×2) | Extracted `buildAnalysisCompletePayload`; `classifyAnalysisFailureError`, `buildAnalysisFailedPayload` |
+| `pkg/aianalysis/handlers/analyzing.go` | `Handle` (`funlen`, `nestif`), `buildPolicyInput` (`funlen`) | Extracted `handleNoWorkflowSelected`, `evaluateRegoPolicy`, `handleRegoEvaluationError`, `recordApprovalDecision`, `completeAnalyzingPhase`; `buildBusinessClassification`, `buildIdentityInput` |
+| `pkg/aianalysis/handlers/error_classifier.go` | `ClassifyError`, `classifyHTTPError` (`funlen` ×2) | Extracted `classifyContextError`, `classifyNetworkError`; `prefixedErrorClassification` (data-driven HTTP-error-family dispatch) |
+| `pkg/aianalysis/handlers/investigating.go` | `handleError`, `handleSessionSubmit` (`funlen` ×2), `handleSessionPollCancelled` (`nestif`) | Extracted `retryTransientError`, `failMaxRetriesExceeded`, `failPermanentError`; `applyInteractiveDetection`, `updateKASessionStatus`, `notifyInteractiveSessionActive`, `finalizeSessionSubmit`; `handleCancellationTakeover` |
+| `pkg/aianalysis/handlers/response_processor.go` | `ProcessIncidentResponse` (`gocognit` 38, `nestif` ×2), `handleWorkflowResolutionFailureFromIncident` (`funlen`), `handleLowConfidenceFailure` (`funlen`, `nestif`) | Extracted `checkAlternateOutcomes`, `finalizeSuccessfulInvestigation` (→ `storeSelectedWorkflow`, `storeAlternativeWorkflows`); `applyWorkflowResolutionFailureState`, `recordValidationAttemptsHistory`, `preservePartialSelectedWorkflow`; `preserveLowConfidenceWorkflow` + reuse of the already-extracted `storeAlternativeWorkflows` |
+| `pkg/aianalysis/rego/evaluator.go` | `Evaluate` (`funlen` 103) | Extracted `resolveCompiledQuery` (cached-vs-legacy-fallback policy resolution), `buildRegoInputMap`, `extractPolicyResult` (one helper per evaluation phase) |
+
+All changes are pure code motion (extract-method / helper-function-per-case); no behavior change. Two type-signature fixes were needed mid-GREEN: `dispatchPhase`'s `currentPhase` parameter (CRD status is `string`, not the `aianalysisv1.AIAnalysisPhase` type first assumed), and `buildIdentityInput`'s `iss` parameter (`*aianalysisv1.InteractiveSessionInfo`, not `*aianalysisv1.InteractiveSessionStatus`); `ensureFinalizer`'s return signature was also corrected to the idiomatic Go `(ctrl.Result, bool, error)` order (error last).
+
+### 7r-3. REFACTOR phase: exit gate
+
+- `go build ./...` (repo-wide): clean.
+- `golangci-lint run --timeout=5m --enable-only=funlen,nestif,gocyclo,gocognit,revive ./pkg/aianalysis/... ./internal/controller/aianalysis/...`: **0 issues**.
+- `go test ./pkg/aianalysis/... ./internal/controller/aianalysis/...`: all specs green, zero regressions; `pkg/aianalysis` coverage unchanged at 95.3%.
+- `make test-integration-aianalysis`: **79/79 specs passed**, 64.6% coverage, zero regressions.
+- `gofmt -l` clean on every touched file.
+
+Sub-wave 6c is complete. The remaining Wave 6 sub-wave (6a EffectivenessMonitor) proceeds independently.
+
+---
+
 ## 8. Variable Shadowing — 120 found, mostly low-risk
 
 114/120 are `err` shadowing (`if err := f(); err != nil` repeated in the same scope — the single most common and least dangerous shadow pattern in Go, which is exactly why `govet -shadow` isn't part of default `go vet`). 1 `ctx` shadow, 1 `result`, 1 `username`, 1 `ok`, 1 `isString`. **No goroutine-closure-captures-loop-variable pattern was found** (the genuinely dangerous shadow bug) — none of the 120 hits are in a `for ... go func()` or `for ... defer func()` body.
@@ -873,7 +908,7 @@ Per AGENTS.md, REFACTOR-phase cleanup must not introduce new types/components, m
 | 6 (Wave 3) | DataStorage: audit-reconstruction coverage gate + 12 named complexity offenders + 19 lower-priority (16-22) offenders + 5 oversized files split into 20 (see §7k) | Medium-High | 4-5 days | ✅ Done (see §7k) |
 | 6 (Wave 4) | KubernautAgent remainder: 5 characterization tests + ~20 named complexity offenders across investigator/tools/parser/enrichment/alignment/session/config + 8 oversized files split into 27 (see §7l) | Medium-High | 4-5 days | ✅ Done (see §7l) |
 | 6 (Wave 5) | KubernautAgent's 11 deferred offenders (§7l-1): coverage-before-refactor gate (11 characterization tests, `runLLMLoop`→100% UT, `buildMCPHandler` 9.1%→92%) + Extract-Method decomposition of all 11 (see §7l-4, §7l-5) | Medium-High | ~3 days | ✅ Done (see §7l-5) |
-| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); sub-wave 6f (DataStorage) ✅ Done (see §7n); sub-wave 6e-i (RemediationOrchestrator) ✅ Done (see §7o); sub-waves 6e-ii/6e-iii (WorkflowExecution/SignalProcessing) ✅ Done (see §7p); sub-wave 6b (Notification) ✅ Done (see §7q); 2/8 sub-waves remaining (6c AIAnalysis, 6a EffectivenessMonitor), tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
+| 6 (Wave 6) | Notification/AIAnalysis/EffectivenessMonitor/Gateway batch, final sweep — remaining complexity (~118 functions, including RO/WE residuals noted in §7j-3) + oversized files (~26, including the `crud.go` residual noted in §7k-4) burndown | Medium-High (per-wave) | ~10-14 days remaining | 🟡 In progress — sub-wave 6d (Gateway) ✅ Done (see §7m); sub-wave 6f (DataStorage) ✅ Done (see §7n); sub-wave 6e-i (RemediationOrchestrator) ✅ Done (see §7o); sub-waves 6e-ii/6e-iii (WorkflowExecution/SignalProcessing) ✅ Done (see §7p); sub-wave 6b (Notification) ✅ Done (see §7q); sub-wave 6c (AIAnalysis) ✅ Done (see §7r); 1/8 sub-waves remaining (6a EffectivenessMonitor), tracked in the Wave 6 Burndown Plan, each requiring its own RED→GREEN→REFACTOR checkpoint |
 
 **Not recommended for action**: DTO/data-model "god structs" (category 4a), `context.Context` struct fields (both documented), `any`/`interface{}` usage (spot-checked — the ~849 raw hits are overwhelmingly idiomatic JSON-decoding, `sync.Map`/`singleflight` third-party API signatures, and generic-JSON-passthrough code; no material violations found beyond one worth a look: `BuildTriagePrompt(input TriageInput, rules interface{})` in `pkg/apifrontend/severity/types.go:113`).
 

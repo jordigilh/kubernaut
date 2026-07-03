@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,6 +29,7 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	aaconditions "github.com/jordigilh/kubernaut/pkg/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
@@ -95,95 +97,128 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 	log.Info("Processing Investigating phase")
 
 	invHandler := r.InvestigatingHandler.Load()
-	if invHandler != nil {
-		// AA-BUG-007: Use optimistic locking with idempotency check
-
-		var phaseBefore string
-		var result ctrl.Result
-		var handlerErr error
-		var handlerExecuted bool
-
-		// ========================================
-		// DD-PERF-001: ATOMIC STATUS UPDATE with AA-BUG-007 fix
-		// ========================================
-		// Status writes (PollCount, LastPolled) are allowed here. The informer
-		// predicate (aiAnalysisUpdatePredicate) filters out poll-tracking-only
-		// updates, so they don't trigger re-reconciles. Only phase changes and
-		// session creation pass the predicate filter.
-		if err := r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() error {
-			// Capture phase after ATOMIC refetch
-			phaseBefore = analysis.Status.Phase
-
-			// AA-BUG-009: Enhanced idempotency - skip handler if phase already changed OR already executed
-			if phaseBefore != PhaseInvestigating {
-				log.Info("AA-HAPI-001: Phase already changed, skipping handler",
-					"expected", PhaseInvestigating, "actual", phaseBefore,
-					"observedGeneration", analysis.Status.ObservedGeneration)
-				handlerExecuted = false
-				return nil
-			}
-
-			if analysis.Status.InvestigationTime > 0 {
-				hasActiveSession := analysis.Status.KASession != nil && analysis.Status.KASession.ID != ""
-				if !hasActiveSession {
-					log.Info("AA-HAPI-001: Handler already executed, skipping duplicate call",
-						"investigationTime", analysis.Status.InvestigationTime,
-						"phase", phaseBefore)
-					handlerExecuted = false
-					return nil
-				}
-				log.Info("AA-H4: Active KA session detected, allowing recovery poll despite InvestigationTime > 0",
-					"sessionID", analysis.Status.KASession.ID,
-					"investigationTime", analysis.Status.InvestigationTime)
-			}
-
-			// Execute handler ONLY if phase check passed AND not already executed
-			result, handlerErr = invHandler.Handle(ctx, analysis)
-			handlerExecuted = true
-			if handlerErr != nil {
-				return handlerErr
-			}
-
-			// Issue #79 Phase 7b: Set Ready condition on terminal transitions
-			if analysis.Status.Phase == PhaseFailed {
-				aaconditions.SetReady(analysis, false, aaconditions.ReasonNotReady, "Analysis failed: "+analysis.Status.Message)
-			}
-
-			return nil
-		}); err != nil {
-			if apierrors.IsInvalid(err) {
-				log.Error(err, "CRD schema rejected status update — fail-close, will not retry",
-					"name", analysis.Name)
-				r.Recorder.Event(analysis, corev1.EventTypeWarning, "SchemaValidationFailed",
-					fmt.Sprintf("Status update permanently rejected by CRD schema: %v", err))
-				return ctrl.Result{}, nil
-			}
-			log.Error(err, "Failed to atomically update status after Investigating phase")
-			return ctrl.Result{}, err
-		}
-
-		// Only requeue if handler actually executed and changed phase
-		if handlerExecuted && analysis.Status.Phase != phaseBefore {
-			log.Info("Phase changed, requeuing", "from", phaseBefore, "to", analysis.Status.Phase)
-
-			// DD-AUDIT-003: Record phase transition AFTER status committed (AA-BUG-001 fix)
-			// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
-			r.AuditClient.RecordPhaseTransition(ctx, analysis, phaseBefore, analysis.Status.Phase)
-
-			// DD-EVENT-001 v1.1: Emit K8s events based on the new phase
-			r.emitInvestigatingPhaseEvents(analysis, phaseBefore)
-
-			// Requeue quickly after phase transition
-			return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
-		}
-		return result, nil
+	if invHandler == nil {
+		// Issue #1116: Fail loudly — a nil handler means the controller was
+		// misconfigured. SetupWithManager should have caught this, but defense
+		// in depth prevents silent data loss.
+		log.Error(nil, "InvestigatingHandler is nil — investigation phase cannot execute (BR-AI-023)")
+		return ctrl.Result{}, fmt.Errorf("investigatingHandler is nil: cannot execute investigating phase")
 	}
 
-	// Issue #1116: Fail loudly — a nil handler means the controller was
-	// misconfigured. SetupWithManager should have caught this, but defense
-	// in depth prevents silent data loss.
-	log.Error(nil, "InvestigatingHandler is nil — investigation phase cannot execute (BR-AI-023)")
-	return ctrl.Result{}, fmt.Errorf("investigatingHandler is nil: cannot execute investigating phase")
+	// AA-BUG-007: Use optimistic locking with idempotency check
+	// ========================================
+	// DD-PERF-001: ATOMIC STATUS UPDATE with AA-BUG-007 fix
+	// ========================================
+	// Status writes (PollCount, LastPolled) are allowed here. The informer
+	// predicate (aiAnalysisUpdatePredicate) filters out poll-tracking-only
+	// updates, so they don't trigger re-reconciles. Only phase changes and
+	// session creation pass the predicate filter.
+	outcome := &investigatingUpdateOutcome{}
+	if err := r.StatusManager.AtomicStatusUpdate(ctx, analysis, func() error {
+		return r.runInvestigatingHandler(ctx, analysis, invHandler, outcome, log)
+	}); err != nil {
+		return r.handleInvestigatingUpdateError(err, analysis, log)
+	}
+
+	return r.finalizeInvestigatingTransition(ctx, analysis, outcome, log)
+}
+
+// investigatingUpdateOutcome captures the results of executing the
+// InvestigatingHandler inside the AtomicStatusUpdate closure, so the caller
+// can decide on requeue/audit/event behavior after the status write commits.
+type investigatingUpdateOutcome struct {
+	phaseBefore     string
+	result          ctrl.Result
+	handlerErr      error
+	handlerExecuted bool
+}
+
+// runInvestigatingHandler is the AtomicStatusUpdate closure body for
+// reconcileInvestigating: AA-BUG-009 idempotency checks (phase already
+// changed / handler already executed, with AA-H4 recovery-poll exception for
+// an active KA session), then executing the handler and setting the Ready
+// condition on failure (Issue #79 Phase 7b). Extracted from
+// reconcileInvestigating (Wave 6 6c GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (r *AIAnalysisReconciler) runInvestigatingHandler(ctx context.Context, analysis *aianalysisv1.AIAnalysis, invHandler *handlers.InvestigatingHandler, outcome *investigatingUpdateOutcome, log logr.Logger) error {
+	// Capture phase after ATOMIC refetch
+	outcome.phaseBefore = analysis.Status.Phase
+
+	// AA-BUG-009: Enhanced idempotency - skip handler if phase already changed OR already executed
+	if outcome.phaseBefore != PhaseInvestigating {
+		log.Info("AA-HAPI-001: Phase already changed, skipping handler",
+			"expected", PhaseInvestigating, "actual", outcome.phaseBefore,
+			"observedGeneration", analysis.Status.ObservedGeneration)
+		outcome.handlerExecuted = false
+		return nil
+	}
+
+	if analysis.Status.InvestigationTime > 0 {
+		hasActiveSession := analysis.Status.KASession != nil && analysis.Status.KASession.ID != ""
+		if !hasActiveSession {
+			log.Info("AA-HAPI-001: Handler already executed, skipping duplicate call",
+				"investigationTime", analysis.Status.InvestigationTime,
+				"phase", outcome.phaseBefore)
+			outcome.handlerExecuted = false
+			return nil
+		}
+		log.Info("AA-H4: Active KA session detected, allowing recovery poll despite InvestigationTime > 0",
+			"sessionID", analysis.Status.KASession.ID,
+			"investigationTime", analysis.Status.InvestigationTime)
+	}
+
+	// Execute handler ONLY if phase check passed AND not already executed
+	outcome.result, outcome.handlerErr = invHandler.Handle(ctx, analysis)
+	outcome.handlerExecuted = true
+	if outcome.handlerErr != nil {
+		return outcome.handlerErr
+	}
+
+	// Issue #79 Phase 7b: Set Ready condition on terminal transitions
+	if analysis.Status.Phase == PhaseFailed {
+		aaconditions.SetReady(analysis, false, aaconditions.ReasonNotReady, "Analysis failed: "+analysis.Status.Message)
+	}
+
+	return nil
+}
+
+// handleInvestigatingUpdateError classifies the AtomicStatusUpdate error:
+// CRD-schema-rejected updates fail closed without a retry, everything else
+// is a standard reconcile error. Extracted from reconcileInvestigating
+// (Wave 6 6c GREEN: funlen remediation) — pure code motion, no behavior
+// change.
+func (r *AIAnalysisReconciler) handleInvestigatingUpdateError(err error, analysis *aianalysisv1.AIAnalysis, log logr.Logger) (ctrl.Result, error) {
+	if apierrors.IsInvalid(err) {
+		log.Error(err, "CRD schema rejected status update — fail-close, will not retry",
+			"name", analysis.Name)
+		r.Recorder.Event(analysis, corev1.EventTypeWarning, "SchemaValidationFailed",
+			fmt.Sprintf("Status update permanently rejected by CRD schema: %v", err))
+		return ctrl.Result{}, nil
+	}
+	log.Error(err, "Failed to atomically update status after Investigating phase")
+	return ctrl.Result{}, err
+}
+
+// finalizeInvestigatingTransition requeues and emits the phase-transition
+// audit/event pair when the handler actually executed and changed phase;
+// otherwise it returns the handler's own result unchanged. Extracted from
+// reconcileInvestigating (Wave 6 6c GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func (r *AIAnalysisReconciler) finalizeInvestigatingTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome *investigatingUpdateOutcome, log logr.Logger) (ctrl.Result, error) {
+	if outcome.handlerExecuted && analysis.Status.Phase != outcome.phaseBefore {
+		log.Info("Phase changed, requeuing", "from", outcome.phaseBefore, "to", analysis.Status.Phase)
+
+		// DD-AUDIT-003: Record phase transition AFTER status committed (AA-BUG-001 fix)
+		// BR-AI-090: AuditClient is P0, guaranteed non-nil (controller exits if init fails)
+		r.AuditClient.RecordPhaseTransition(ctx, analysis, outcome.phaseBefore, analysis.Status.Phase)
+
+		// DD-EVENT-001 v1.1: Emit K8s events based on the new phase
+		r.emitInvestigatingPhaseEvents(analysis, outcome.phaseBefore)
+
+		// Requeue quickly after phase transition
+		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
+	}
+	return outcome.result, nil
 }
 
 // reconcileAnalyzing handles AIAnalysis in Analyzing phase.

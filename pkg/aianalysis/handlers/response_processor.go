@@ -35,9 +35,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -98,6 +98,30 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		return p.handleWorkflowResolutionFailureFromIncident(ctx, analysis, resp)
 	}
 
+	if result, err, handled := p.checkAlternateOutcomes(ctx, analysis, resp, hasSelectedWorkflow); handled {
+		return result, err
+	}
+
+	// BR-HAPI-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
+	// KA returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
+	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-HAPI-198
+
+	if hasSelectedWorkflow && resp.Confidence < confidenceThreshold {
+		return p.handleLowConfidenceFailure(ctx, analysis, resp)
+	}
+
+	return p.finalizeSuccessfulInvestigation(analysis, resp, hasSelectedWorkflow)
+}
+
+// checkAlternateOutcomes evaluates the BR-HAPI-200.6 Outcome A (problem
+// resolved), #388/#607 Outcome D (not actionable), and BR-AI-050/#29
+// (no-workflow terminal failure) branches of ProcessIncidentResponse, in
+// that precedence order. The returned bool reports whether one of these
+// outcomes matched and the caller should return (result, err) immediately;
+// handled=false means the caller should continue to the confidence-threshold
+// and success paths. Extracted from ProcessIncidentResponse (Wave 6 6c
+// GREEN: gocognit remediation) — pure code motion, no behavior change.
+func (p *ResponseProcessor) checkAlternateOutcomes(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse, hasSelectedWorkflow bool) (ctrl.Result, error, bool) {
 	// BR-HAPI-200.6 Outcome A: Problem confidently resolved, no workflow needed
 	// Detection per BR-HAPI-200.6: needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
 	// Defense-in-depth (Layer 2): also verify no warning signals that indicate an active
@@ -114,7 +138,8 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// This matches Python KA's precedence where actionable=false is evaluated first.
 	isResolved := hasProblemResolvedSignal(resp.Warnings)
 	if !hasSelectedWorkflow && resp.Confidence >= 0.7 && !hasNoWorkflowWarningSignal(resp.Warnings) && !hasNotActionableSignal(resp.Warnings) && (isResolved || !hasSubstantiveRCA(resp.RootCauseAnalysis)) {
-		return p.handleProblemResolvedFromIncident(ctx, analysis, resp)
+		result, err := p.handleProblemResolvedFromIncident(ctx, analysis, resp)
+		return result, err, true
 	}
 
 	// #388 + #607 Outcome D: Alert not actionable — benign condition, no remediation warranted.
@@ -125,25 +150,29 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	isNotActionable := hasNotActionableSignal(resp.Warnings)
 	isActionablePtr := GetOptNilBoolValue(resp.IsActionable)
 	if !hasSelectedWorkflow && isNotActionable && isActionablePtr != nil && !*isActionablePtr {
-		return p.handleNotActionableFromIncident(ctx, analysis, resp)
+		result, err := p.handleNotActionableFromIncident(ctx, analysis, resp)
+		return result, err, true
 	}
 
 	// BR-AI-050 + Issue #29: No workflow found (terminal failure requiring human review)
 	// Reached when: (a) confidence < 0.7 with no workflow, OR
 	// (b) confidence >= 0.7 but warning signals indicate an active problem (defense-in-depth)
 	if !hasSelectedWorkflow {
-		return p.handleNoWorkflowTerminalFailure(ctx, analysis, resp)
+		result, err := p.handleNoWorkflowTerminalFailure(ctx, analysis, resp)
+		return result, err, true
 	}
 
-	// BR-HAPI-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
-	// KA returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
-	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-HAPI-198
+	return ctrl.Result{}, nil, false
+}
 
-	if hasSelectedWorkflow && resp.Confidence < confidenceThreshold {
-		return p.handleLowConfidenceFailure(ctx, analysis, resp)
-	}
-
-	// All checks passed - store KA response metadata and continue processing
+// finalizeSuccessfulInvestigation stores the KA response metadata (warnings,
+// investigation ID, PostRCAContext, RCA, selected/alternative workflows) and
+// transitions analysis to the Analyzing phase. Reached only when KA did not
+// require human review and either selected a workflow above the confidence
+// threshold or requires no workflow. Extracted from ProcessIncidentResponse
+// (Wave 6 6c GREEN: gocognit remediation) — pure code motion, no behavior
+// change.
+func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse, hasSelectedWorkflow bool) (ctrl.Result, error) {
 	analysis.Status.Warnings = resp.Warnings
 	analysis.Status.InvestigationID = resp.IncidentID
 
@@ -163,51 +192,11 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 
 	// Store selected workflow (DD-CONTRACT-002)
 	if hasSelectedWorkflow {
-		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
-		if swMap != nil {
-			sw := &aianalysisv1.SelectedWorkflow{
-				WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
-				ActionType:            GetStringFromMap(swMap, "action_type"),
-				Version:               GetStringFromMap(swMap, "version"),
-				ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
-				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-				Confidence:            GetFloat64FromMap(swMap, "confidence"),
-				Rationale:             GetStringFromMap(swMap, "rationale"),
-				ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
-			}
-			// Map parameters if present (map[string]string)
-			if paramsRaw, ok := swMap["parameters"]; ok {
-				if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
-					sw.Parameters = convertMapToStringMap(paramsMapIface)
-				}
-			}
-			// BR-WE-016: Extract engine_config as raw JSON for pass-through
-			if ecRaw, ok := swMap["engine_config"]; ok && ecRaw != nil {
-				if ecBytes, err := json.Marshal(ecRaw); err == nil {
-					sw.EngineConfig = &apiextensionsv1.JSON{Raw: ecBytes}
-				}
-			}
-			analysis.Status.SelectedWorkflow = sw
-		}
+		storeSelectedWorkflow(analysis, resp)
 	}
 
 	// Store alternative workflows (INFORMATIONAL ONLY - NOT for execution)
-	if len(resp.AlternativeWorkflows) > 0 {
-		alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
-		for _, alt := range resp.AlternativeWorkflows {
-			executionBundle := ""
-			if alt.ExecutionBundle.Set && !alt.ExecutionBundle.Null {
-				executionBundle = alt.ExecutionBundle.Value
-			}
-			alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
-				WorkflowID:      alt.WorkflowID,
-				ExecutionBundle:  executionBundle,
-				Confidence:      alt.Confidence,
-				Rationale:       alt.Rationale,
-			})
-		}
-		analysis.Status.AlternativeWorkflows = alternatives
-	}
+	storeAlternativeWorkflows(analysis, resp)
 
 	// BR-HAPI-197: No human review needed for successful workflow selection
 	analysis.Status.NeedsHumanReview = false
@@ -224,6 +213,66 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// NOT recorded here to avoid duplicates - handler records after status is committed
 
 	return ctrl.Result{Requeue: true}, nil
+}
+
+// storeSelectedWorkflow populates analysis.Status.SelectedWorkflow from the
+// KA response's selected_workflow map (DD-CONTRACT-002), including optional
+// parameters and BR-WE-016 raw engine_config pass-through. No-op if the map
+// can't be extracted. Extracted from ProcessIncidentResponse (Wave 6 6c
+// GREEN: gocognit/nestif remediation) — pure code motion, no behavior
+// change.
+func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) {
+	swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
+	if swMap == nil {
+		return
+	}
+	sw := &aianalysisv1.SelectedWorkflow{
+		WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
+		ActionType:            GetStringFromMap(swMap, "action_type"),
+		Version:               GetStringFromMap(swMap, "version"),
+		ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
+		ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
+		Confidence:            GetFloat64FromMap(swMap, "confidence"),
+		Rationale:             GetStringFromMap(swMap, "rationale"),
+		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+	}
+	// Map parameters if present (map[string]string)
+	if paramsRaw, ok := swMap["parameters"]; ok {
+		if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
+			sw.Parameters = convertMapToStringMap(paramsMapIface)
+		}
+	}
+	// BR-WE-016: Extract engine_config as raw JSON for pass-through
+	if ecRaw, ok := swMap["engine_config"]; ok && ecRaw != nil {
+		if ecBytes, err := json.Marshal(ecRaw); err == nil {
+			sw.EngineConfig = &apiextensionsv1.JSON{Raw: ecBytes}
+		}
+	}
+	analysis.Status.SelectedWorkflow = sw
+}
+
+// storeAlternativeWorkflows populates analysis.Status.AlternativeWorkflows
+// from the KA response (informational only — not for execution). No-op if
+// the response has none. Extracted from ProcessIncidentResponse (Wave 6 6c
+// GREEN: gocognit remediation) — pure code motion, no behavior change.
+func storeAlternativeWorkflows(analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) {
+	if len(resp.AlternativeWorkflows) == 0 {
+		return
+	}
+	alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
+	for _, alt := range resp.AlternativeWorkflows {
+		executionBundle := ""
+		if alt.ExecutionBundle.Set && !alt.ExecutionBundle.Null {
+			executionBundle = alt.ExecutionBundle.Value
+		}
+		alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
+			WorkflowID:      alt.WorkflowID,
+			ExecutionBundle: executionBundle,
+			Confidence:      alt.Confidence,
+			Rationale:       alt.Rationale,
+		})
+	}
+	analysis.Status.AlternativeWorkflows = alternatives
 }
 
 // mapAlignmentVerdict maps the alignment verdict from the ogen IncidentResponse
@@ -322,6 +371,41 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 		"hasPartialWorkflow", hasSelectedWorkflow,
 	)
 
+	p.applyWorkflowResolutionFailureState(ctx, analysis, resp, humanReviewReason)
+
+	// Handle ValidationAttemptsHistory from generated types. Issue #588:
+	// Message contains only validation attempt errors. Warnings are stored
+	// separately in Status.Warnings to prevent duplication when
+	// buildManualReviewBody renders both Details and Warnings sections.
+	messageParts := recordValidationAttemptsHistory(analysis, resp.ValidationAttemptsHistory)
+	analysis.Status.Message = strings.Join(messageParts, "; ")
+	analysis.Status.Warnings = resp.Warnings
+
+	// Preserve partial response if available
+	if hasSelectedWorkflow {
+		preservePartialSelectedWorkflow(analysis, resp)
+	}
+
+	// Preserve RCA if available - Issue #97: uses centralized helper with remediationTarget
+	if len(resp.RootCauseAnalysis) > 0 {
+		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
+			analysis.Status.RootCauseAnalysis = rca
+		}
+	}
+
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
+	aianalysis.SetAnalysisComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
+	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "Workflow resolution failed, requires human review")
+	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No resolved workflow, approval not applicable")
+	return ctrl.Result{}, nil // Terminal - no requeue
+}
+
+// applyWorkflowResolutionFailureState sets the CRD status fields, records
+// failure metrics, emits the audit event, and maps the SubReason for a
+// workflow-resolution failure. Extracted from
+// handleWorkflowResolutionFailureFromIncident (Wave 6 6c GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func (p *ResponseProcessor) applyWorkflowResolutionFailureState(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse, humanReviewReason string) {
 	// Set structured failure with timestamp
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
@@ -359,67 +443,59 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	} else {
 		analysis.Status.SubReason = mapWarningsToSubReason(resp.Warnings)
 	}
+}
 
-	// Handle ValidationAttemptsHistory from generated types
+// recordValidationAttemptsHistory converts the KA response's generated
+// ValidationAttemptsHistory entries into CRD ValidationAttempt records,
+// appending them to analysis.Status.ValidationAttemptsHistory, and returns
+// an operator-friendly message fragment per attempt that had errors.
+// Extracted from handleWorkflowResolutionFailureFromIncident (Wave 6 6c
+// GREEN: funlen remediation) — pure code motion, no behavior change.
+func recordValidationAttemptsHistory(analysis *aianalysisv1.AIAnalysis, genAttempts []agentclient.ValidationAttempt) []string {
 	var messageParts []string
-	if len(resp.ValidationAttemptsHistory) > 0 {
-		for _, genAttempt := range resp.ValidationAttemptsHistory {
-			attempt := aianalysisv1.ValidationAttempt{
-				Attempt: genAttempt.Attempt,
-				IsValid: genAttempt.IsValid,
-				Errors:  genAttempt.Errors,
-			}
-			if genAttempt.WorkflowID.Set {
-				attempt.WorkflowID = genAttempt.WorkflowID.Value
-			}
-			// Parse timestamp string to metav1.Time
-			if parsedTime, err := time.Parse(time.RFC3339, genAttempt.Timestamp); err == nil {
-				attempt.Timestamp = metav1.NewTime(parsedTime)
-			} else {
-				// Fallback to current time if parsing fails
-				attempt.Timestamp = metav1.Now()
-			}
-			analysis.Status.ValidationAttemptsHistory = append(analysis.Status.ValidationAttemptsHistory, attempt)
+	for _, genAttempt := range genAttempts {
+		attempt := aianalysisv1.ValidationAttempt{
+			Attempt: genAttempt.Attempt,
+			IsValid: genAttempt.IsValid,
+			Errors:  genAttempt.Errors,
+		}
+		if genAttempt.WorkflowID.Set {
+			attempt.WorkflowID = genAttempt.WorkflowID.Value
+		}
+		// Parse timestamp string to metav1.Time
+		if parsedTime, err := time.Parse(time.RFC3339, genAttempt.Timestamp); err == nil {
+			attempt.Timestamp = metav1.NewTime(parsedTime)
+		} else {
+			// Fallback to current time if parsing fails
+			attempt.Timestamp = metav1.Now()
+		}
+		analysis.Status.ValidationAttemptsHistory = append(analysis.Status.ValidationAttemptsHistory, attempt)
 
-			// Build operator-friendly message from validation attempts
-			if len(genAttempt.Errors) > 0 {
-				messageParts = append(messageParts, fmt.Sprintf("Attempt %d: %s", genAttempt.Attempt, strings.Join(genAttempt.Errors, ", ")))
-			}
+		// Build operator-friendly message from validation attempts
+		if len(genAttempt.Errors) > 0 {
+			messageParts = append(messageParts, fmt.Sprintf("Attempt %d: %s", genAttempt.Attempt, strings.Join(genAttempt.Errors, ", ")))
 		}
 	}
+	return messageParts
+}
 
-	// Issue #588: Message contains only validation attempt errors.
-	// Warnings are stored separately in Status.Warnings to prevent duplication
-	// when buildManualReviewBody renders both Details and Warnings sections.
-	analysis.Status.Message = strings.Join(messageParts, "; ")
-	analysis.Status.Warnings = resp.Warnings
-
-	// Preserve partial response if available
-	if hasSelectedWorkflow {
-		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
-		if swMap != nil {
-			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:         GetStringFromMap(swMap, "workflow_id"),
-				ExecutionBundle:    GetStringFromMap(swMap, "execution_bundle"),
-				Confidence:         GetFloat64FromMap(swMap, "confidence"),
-				Rationale:          GetStringFromMap(swMap, "rationale"),
-				ExecutionEngine:    GetStringFromMap(swMap, "execution_engine"),
-			}
-		}
+// preservePartialSelectedWorkflow stores the KA response's partial
+// selected_workflow (when present) on a failed-resolution analysis, so
+// operators retain visibility into what KA was considering. Extracted from
+// handleWorkflowResolutionFailureFromIncident (Wave 6 6c GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) {
+	swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
+	if swMap == nil {
+		return
 	}
-
-	// Preserve RCA if available - Issue #97: uses centralized helper with remediationTarget
-	if len(resp.RootCauseAnalysis) > 0 {
-		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
-			analysis.Status.RootCauseAnalysis = rca
-		}
+	analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
+		ExecutionBundle: GetStringFromMap(swMap, "execution_bundle"),
+		Confidence:      GetFloat64FromMap(swMap, "confidence"),
+		Rationale:       GetStringFromMap(swMap, "rationale"),
+		ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
 	}
-
-	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
-	aianalysis.SetAnalysisComplete(analysis, false, fmt.Sprintf("workflow resolution failed: %s", humanReviewReason))
-	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, "Workflow resolution failed, requires human review")
-	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No resolved workflow, approval not applicable")
-	return ctrl.Result{}, nil // Terminal - no requeue
 }
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
@@ -668,24 +744,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 
 	// Store workflow info for human review (partial information for operator context)
 	if resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null {
-		swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
-		if swMap != nil {
-			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
-				Version:               GetStringFromMap(swMap, "version"),
-				ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
-				ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-				Confidence:            GetFloat64FromMap(swMap, "confidence"),
-				Rationale:             GetStringFromMap(swMap, "rationale"),
-				ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
-			}
-			// Map parameters if present
-			if paramsRaw, ok := swMap["parameters"]; ok {
-				if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
-					analysis.Status.SelectedWorkflow.Parameters = convertMapToStringMap(paramsMapIface)
-				}
-			}
-		}
+		preserveLowConfidenceWorkflow(analysis, resp)
 	}
 
 	// Store RCA if available (for human review context) - Issue #97: centralized helper
@@ -696,22 +755,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	}
 
 	// Store alternative workflows if available (for human review context)
-	if len(resp.AlternativeWorkflows) > 0 {
-		alternatives := make([]aianalysisv1.AlternativeWorkflow, 0, len(resp.AlternativeWorkflows))
-		for _, alt := range resp.AlternativeWorkflows {
-			executionBundle := ""
-			if alt.ExecutionBundle.Set && !alt.ExecutionBundle.Null {
-				executionBundle = alt.ExecutionBundle.Value
-			}
-			alternatives = append(alternatives, aianalysisv1.AlternativeWorkflow{
-				WorkflowID:      alt.WorkflowID,
-				ExecutionBundle:  executionBundle,
-				Confidence:      alt.Confidence,
-				Rationale:       alt.Rationale,
-			})
-		}
-		analysis.Status.AlternativeWorkflows = alternatives
-	}
+	storeAlternativeWorkflows(analysis, resp)
 
 	// BR-AI-050: Emit audit event for low confidence failure
 	failureErr := fmt.Errorf("low confidence: %.2f below threshold %.2f", resp.Confidence, confidenceThreshold)
@@ -728,6 +772,33 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonWorkflowResolutionFailed, fmt.Sprintf("Workflow confidence %.2f below threshold", resp.Confidence))
 	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "Workflow not approved due to low confidence")
 	return ctrl.Result{}, nil // Terminal - no requeue
+}
+
+// preserveLowConfidenceWorkflow stores the KA response's selected_workflow
+// (partial information, for operator/human-review context) on a
+// low-confidence-failed analysis. Extracted from handleLowConfidenceFailure
+// (Wave 6 6c GREEN: funlen/nestif remediation) — pure code motion, no
+// behavior change.
+func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) {
+	swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
+	if swMap == nil {
+		return
+	}
+	analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
+		Version:               GetStringFromMap(swMap, "version"),
+		ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
+		ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
+		Confidence:            GetFloat64FromMap(swMap, "confidence"),
+		Rationale:             GetStringFromMap(swMap, "rationale"),
+		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+	}
+	// Map parameters if present
+	if paramsRaw, ok := swMap["parameters"]; ok {
+		if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
+			analysis.Status.SelectedWorkflow.Parameters = convertMapToStringMap(paramsMapIface)
+		}
+	}
 }
 
 // setTotalAnalysisTime calculates and sets TotalAnalysisTime from StartedAt.

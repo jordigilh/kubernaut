@@ -38,10 +38,10 @@ const (
 	EventTypeAnalysisCompleted = "aianalysis.analysis.completed"
 	EventTypeAnalysisFailed    = "aianalysis.analysis.failed"
 	EventTypePhaseTransition   = "aianalysis.phase.transition"
-	EventTypeAIAgentCall      = "aianalysis.aiagent.call"
-	EventTypeApprovalDecision = "aianalysis.approval.decision"
-	EventTypeRegoEvaluation   = "aianalysis.rego.evaluation"
-	EventTypeError            = "aianalysis.error.occurred"
+	EventTypeAIAgentCall       = "aianalysis.aiagent.call"
+	EventTypeApprovalDecision  = "aianalysis.approval.decision"
+	EventTypeRegoEvaluation    = "aianalysis.rego.evaluation"
+	EventTypeError             = "aianalysis.error.occurred"
 
 	// Session audit event types (BR-AA-HAPI-064)
 	EventTypeAIAgentSubmit      = "aianalysis.aiagent.submit"
@@ -102,7 +102,47 @@ func getCorrelationID(analysis *aianalysisv1.AIAnalysis) string {
 //
 // Uses OpenAPI-generated types (DD-AUDIT-004 V2.0) - eliminates duplicate type definitions.
 func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {
-	// Build structured payload using OpenAPI-generated type
+	payload := buildAnalysisCompletePayload(analysis)
+
+	// Determine outcome
+	var apiOutcome ogenclient.AuditEventRequestEventOutcome
+	if analysis.Status.Phase == "Failed" {
+		apiOutcome = audit.OutcomeFailure
+	} else {
+		apiOutcome = audit.OutcomeSuccess
+	}
+
+	// Build audit event (DD-AUDIT-002 V2.2: Direct struct assignment)
+	event := audit.NewAuditEventRequest()
+	event.Version = "1.0"
+	audit.SetEventType(event, EventTypeAnalysisCompleted)
+	audit.SetEventCategory(event, EventCategoryAIAnalysis)
+	audit.SetEventAction(event, EventActionAnalysisComplete) // Fixed: Must match test contract
+	audit.SetEventOutcome(event, apiOutcome)
+	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
+	audit.SetResource(event, "AIAnalysis", analysis.Name)
+	// DD-AUDIT-CORRELATION-001: Use parent RemediationRequest name as correlation ID
+	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
+	audit.SetCorrelationID(event, getCorrelationID(analysis))
+	audit.SetNamespace(event, analysis.Namespace)
+	// Use ogen union constructor (OGEN-MIGRATION)
+	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(*payload)
+
+	// Fire-and-forget (per Risk #4 / DD-AUDIT-002)
+	if err := c.store.StoreAudit(ctx, event); err != nil {
+		c.log.Error(err, "Failed to write audit event",
+			"event_type", event.EventType,
+			"correlation_id", event.CorrelationID,
+		)
+		// Don't fail reconciliation on audit failure (graceful degradation)
+	}
+}
+
+// buildAnalysisCompletePayload builds the AIAnalysisAuditPayload for
+// RecordAnalysisComplete, including the DD-AUDIT-005 provider response
+// summary. Extracted from RecordAnalysisComplete (Wave 6 6c GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func buildAnalysisCompletePayload(analysis *aianalysisv1.AIAnalysis) *ogenclient.AIAnalysisAuditPayload {
 	// Single source of truth: api/openapi/data-storage-v1.yaml
 	payload := &ogenclient.AIAnalysisAuditPayload{
 		EventType:        EventTypeAnalysisCompleted,
@@ -146,38 +186,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 		payload.ProviderResponseSummary.SetTo(summary)
 	}
 
-	// Determine outcome
-	var apiOutcome ogenclient.AuditEventRequestEventOutcome
-	if analysis.Status.Phase == "Failed" {
-		apiOutcome = audit.OutcomeFailure
-	} else {
-		apiOutcome = audit.OutcomeSuccess
-	}
-
-	// Build audit event (DD-AUDIT-002 V2.2: Direct struct assignment)
-	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
-	audit.SetEventType(event, EventTypeAnalysisCompleted)
-	audit.SetEventCategory(event, EventCategoryAIAnalysis)
-	audit.SetEventAction(event, EventActionAnalysisComplete) // Fixed: Must match test contract
-	audit.SetEventOutcome(event, apiOutcome)
-	audit.SetActor(event, ActorTypeService, ActorIDAIAnalysisController)
-	audit.SetResource(event, "AIAnalysis", analysis.Name)
-	// DD-AUDIT-CORRELATION-001: Use parent RemediationRequest name as correlation ID
-	// This maintains consistency with SignalProcessing, WorkflowExecution, and other services
-	audit.SetCorrelationID(event, getCorrelationID(analysis))
-	audit.SetNamespace(event, analysis.Namespace)
-	// Use ogen union constructor (OGEN-MIGRATION)
-	event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(*payload)
-
-	// Fire-and-forget (per Risk #4 / DD-AUDIT-002)
-	if err := c.store.StoreAudit(ctx, event); err != nil {
-		c.log.Error(err, "Failed to write audit event",
-			"event_type", event.EventType,
-			"correlation_id", event.CorrelationID,
-		)
-		// Don't fail reconciliation on audit failure (graceful degradation)
-	}
+	return payload
 }
 
 // RecordPhaseTransition records a phase transition event
@@ -558,49 +567,7 @@ func (c *AuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis *ai
 // - event_outcome: "failure"
 // - event_data.error_details: Standardized ErrorDetails structure
 func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) error {
-	// Imports needed at top of file
-	// sharedaudit "github.com/jordigilh/kubernaut/pkg/shared/audit"
-
-	// Determine error details based on error type
-	var errorDetails *sharedaudit.ErrorDetails
-
-	// Check if it's a Holmes API/upstream error (common case)
-	errMsg := ""
-	if err != nil {
-		errMsg = err.Error()
-	}
-
-	if err != nil && (strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded")) {
-		errorDetails = sharedaudit.NewErrorDetails(
-			"aianalysis",
-			"ERR_UPSTREAM_TIMEOUT",
-			errMsg,
-			true, // Timeout is transient
-		)
-	} else if err != nil && strings.Contains(errMsg, "invalid response") {
-		errorDetails = sharedaudit.NewErrorDetails(
-			"aianalysis",
-			"ERR_UPSTREAM_INVALID_RESPONSE",
-			errMsg,
-			false, // Invalid response may not be retryable
-		)
-	} else if err != nil {
-		// Generic upstream error
-		errorDetails = sharedaudit.NewErrorDetails(
-			"aianalysis",
-			"ERR_UPSTREAM_FAILURE",
-			errMsg,
-			true, // Assume upstream errors are transient
-		)
-	} else {
-		// No error provided (shouldn't happen, but handle gracefully)
-		errorDetails = sharedaudit.NewErrorDetails(
-			"aianalysis",
-			"ERR_INTERNAL_UNKNOWN",
-			"Analysis failed with unknown error",
-			false,
-		)
-	}
+	errorDetails := classifyAnalysisFailureError(err)
 
 	// Build audit event per DD-AUDIT-002 V2.0: OpenAPI types
 	event := audit.NewAuditEventRequest()
@@ -615,6 +582,53 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 	audit.SetCorrelationID(event, getCorrelationID(analysis))
 	audit.SetNamespace(event, analysis.Namespace)
 
+	payload := buildAnalysisFailedPayload(analysis, errorDetails)
+
+	// Use ogen union constructor (OGEN-MIGRATION)
+	// Determine which constructor based on phase
+	if analysis.Status.Phase == "Failed" {
+		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData(payload)
+	} else {
+		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(payload)
+	}
+
+	// Store audit event
+	return c.store.StoreAudit(ctx, event)
+}
+
+// classifyAnalysisFailureError classifies err into a standardized
+// sharedaudit.ErrorDetails (Gap #7: SOC2-compliant error_details), covering
+// upstream timeouts, invalid responses, generic upstream failures, and the
+// no-error edge case. Extracted from RecordAnalysisFailed (Wave 6 6c GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func classifyAnalysisFailureError(err error) *sharedaudit.ErrorDetails {
+	if err == nil {
+		// No error provided (shouldn't happen, but handle gracefully)
+		return sharedaudit.NewErrorDetails(
+			"aianalysis",
+			"ERR_INTERNAL_UNKNOWN",
+			"Analysis failed with unknown error",
+			false,
+		)
+	}
+
+	errMsg := err.Error()
+	switch {
+	case strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "context deadline exceeded"):
+		return sharedaudit.NewErrorDetails("aianalysis", "ERR_UPSTREAM_TIMEOUT", errMsg, true) // Timeout is transient
+	case strings.Contains(errMsg, "invalid response"):
+		return sharedaudit.NewErrorDetails("aianalysis", "ERR_UPSTREAM_INVALID_RESPONSE", errMsg, false) // Invalid response may not be retryable
+	default:
+		return sharedaudit.NewErrorDetails("aianalysis", "ERR_UPSTREAM_FAILURE", errMsg, true) // Assume upstream errors are transient
+	}
+}
+
+// buildAnalysisFailedPayload builds the AIAnalysisAuditPayload for
+// RecordAnalysisFailed, including the DD-AUDIT-005 provider response summary
+// (always NeedsHumanReview=true for failures). Extracted from
+// RecordAnalysisFailed (Wave 6 6c GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func buildAnalysisFailedPayload(analysis *aianalysisv1.AIAnalysis, errorDetails *sharedaudit.ErrorDetails) ogenclient.AIAnalysisAuditPayload {
 	// Use structured audit payload (eliminates map[string]interface{})
 	// Per DD-AUDIT-004: Zero unstructured data in audit events
 	payload := ogenclient.AIAnalysisAuditPayload{
@@ -658,16 +672,8 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 		}
 		payload.ProviderResponseSummary.SetTo(summary)
 	}
-	// Use ogen union constructor (OGEN-MIGRATION)
-	// Determine which constructor based on phase
-	if analysis.Status.Phase == "Failed" {
-		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData(payload)
-	} else {
-		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(payload)
-	}
 
-	// Store audit event
-	return c.store.StoreAudit(ctx, event)
+	return payload
 }
 
 // ========================================
