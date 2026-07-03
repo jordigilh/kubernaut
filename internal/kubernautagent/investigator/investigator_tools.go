@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
@@ -60,6 +61,38 @@ func truncatePreview(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen]
+}
+
+// retryAuditParams groups the per-attempt fields for emitRetryAudit. Kept as
+// a config struct (rather than individual parameters) per the Go
+// Anti-Pattern Checklist's 8+-parameter rule.
+type retryAuditParams struct {
+	correlationID string
+	modelName     string
+	messages      []llm.Message
+	attempt       int
+	maxAttempts   int
+	phase         katypes.Phase
+	retryReason   string
+}
+
+// emitRetryAudit records a best-effort audit event for one parse-level retry
+// attempt (workflow-submit or RCA-submit). Shared by retryWorkflowSubmit and
+// retryRCASubmit so the AU-3 field set (model, prompt length/preview, retry
+// attempt/max, phase, retry reason) stays byte-identical between both call
+// sites.
+func (inv *Investigator) emitRetryAudit(ctx context.Context, p retryAuditParams) {
+	retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, p.correlationID)
+	retryEvent.EventAction = audit.ActionLLMRequest
+	retryEvent.EventOutcome = audit.OutcomeSuccess
+	retryEvent.Data["model"] = p.modelName
+	retryEvent.Data["prompt_length"] = totalPromptLength(p.messages)
+	retryEvent.Data["prompt_preview"] = lastUserMessage(p.messages, 500)
+	retryEvent.Data["retry_attempt"] = p.attempt
+	retryEvent.Data["retry_max"] = p.maxAttempts
+	retryEvent.Data["phase"] = string(p.phase)
+	retryEvent.Data["retry_reason"] = p.retryReason
+	audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
 }
 
 func toolNames(defs []llm.ToolDefinition) []string {

@@ -226,19 +226,8 @@ func llmRuntimeReloadCallback(
 		}
 
 		merged := mergeLLMConfig(staticCfg.AI.LLM, rt)
+		resolveAPIKeyForReload(&merged, staticCfg.AI.LLM.Provider, logger)
 
-		if merged.APIKey == "" {
-			if merged.APIKeyFile != "" {
-				if err := merged.ResolveAPIKey(); err != nil {
-					logger.Info("llm_runtime_reload: apiKeyFile resolution failed, falling back to credentials dir",
-						"error", err, "apiKeyFile", merged.APIKeyFile)
-				}
-			}
-			if merged.APIKey == "" {
-				const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
-				merged.APIKey = credentials.ResolveCredentialsFile(staticCfg.AI.LLM.Provider, credDir, logger)
-			}
-		}
 		newClient, err := buildLLMClientFromConfig(context.Background(), merged)
 		if err != nil {
 			return fmt.Errorf("reload: building LLM client: %w", err)
@@ -264,6 +253,25 @@ func llmRuntimeReloadCallback(
 			reloadPhaseClients(staticCfg, rt, phaseResolver, logger)
 		}
 		return nil
+	}
+}
+
+// resolveAPIKeyForReload fills in merged.APIKey when the runtime reload
+// payload did not carry one directly, falling back first to apiKeyFile and
+// then to the Helm-mounted credentials directory. Mutates merged in place.
+func resolveAPIKeyForReload(merged *types.LLMConfig, provider string, logger logr.Logger) {
+	if merged.APIKey != "" {
+		return
+	}
+	if merged.APIKeyFile != "" {
+		if err := merged.ResolveAPIKey(); err != nil {
+			logger.Info("llm_runtime_reload: apiKeyFile resolution failed, falling back to credentials dir",
+				"error", err, "apiKeyFile", merged.APIKeyFile)
+		}
+	}
+	if merged.APIKey == "" {
+		const credDir = "/etc/kubernaut-agent/credentials" // pre-commit:allow-sensitive (mount path)
+		merged.APIKey = credentials.ResolveCredentialsFile(provider, credDir, logger)
 	}
 }
 

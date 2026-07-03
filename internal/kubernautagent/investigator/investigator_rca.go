@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -171,17 +170,15 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			llm.Message{Role: "user", Content: correctionMsg},
 		)
 
-		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-		retryEvent.EventAction = audit.ActionLLMRequest
-		retryEvent.EventOutcome = audit.OutcomeSuccess
-		retryEvent.Data["model"] = modelName
-		retryEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
-		retryEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
-		retryEvent.Data["retry_attempt"] = attempt + 1
-		retryEvent.Data["retry_max"] = maxRCAParseRetries
-		retryEvent.Data["phase"] = string(katypes.PhaseRCA)
-		retryEvent.Data["retry_reason"] = "rca_parse_correction"
-		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
+		inv.emitRetryAudit(ctx, retryAuditParams{
+			correlationID: correlationID,
+			modelName:     modelName,
+			messages:      retryMessages,
+			attempt:       attempt + 1,
+			maxAttempts:   maxRCAParseRetries,
+			phase:         katypes.PhaseRCA,
+			retryReason:   "rca_parse_correction",
+		})
 
 		resp, err := inv.chatOrStream(ctx, client, llm.ChatRequest{
 			Messages: retryMessages,
@@ -202,31 +199,44 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			"retry_attempt": attempt + 1,
 		})
 
-		for _, tc := range resp.ToolCalls {
-			if tc.Name == SubmitResultToolName {
-				result, parseErr := inv.resultParser.Parse(tc.Arguments)
-				if parseErr != nil {
-					inv.logger.Error(parseErr, "RCA retry parse still failed",
-						"correlation_id", correlationID)
-					retryMessages = append(retryMessages, resp.Message)
-					continue
-				}
-				inv.logger.Info("RCA retry succeeded",
-					"correlation_id", correlationID)
-				return result
-			}
-		}
-
-		if resp.Message.Content != "" {
-			result, parseErr := inv.resultParser.Parse(resp.Message.Content)
-			if parseErr == nil {
-				inv.logger.Info("RCA retry succeeded from message content",
-					"correlation_id", correlationID)
-				return result
-			}
+		if result, ok := inv.tryParseRCASubmitToolCall(resp, correlationID); ok {
+			return result
 		}
 
 		retryMessages = append(retryMessages, resp.Message)
 	}
 	return nil
+}
+
+// tryParseRCASubmitToolCall attempts to extract a valid InvestigationResult
+// from a single retryRCASubmit LLM response: first by scanning tool calls for
+// SubmitResultToolName, then — if none parsed — by parsing the raw message
+// content as a fallback (some models emit the RCA JSON as plain text instead
+// of calling the tool). Returns ok=false when neither path yielded a result.
+func (inv *Investigator) tryParseRCASubmitToolCall(resp llm.ChatResponse, correlationID string) (result *katypes.InvestigationResult, ok bool) {
+	for _, tc := range resp.ToolCalls {
+		if tc.Name != SubmitResultToolName {
+			continue
+		}
+		parsed, parseErr := inv.resultParser.Parse(tc.Arguments)
+		if parseErr != nil {
+			inv.logger.Error(parseErr, "RCA retry parse still failed",
+				"correlation_id", correlationID)
+			continue
+		}
+		inv.logger.Info("RCA retry succeeded",
+			"correlation_id", correlationID)
+		return parsed, true
+	}
+
+	if resp.Message.Content != "" {
+		parsed, parseErr := inv.resultParser.Parse(resp.Message.Content)
+		if parseErr == nil {
+			inv.logger.Info("RCA retry succeeded from message content",
+				"correlation_id", correlationID)
+			return parsed, true
+		}
+	}
+
+	return nil, false
 }

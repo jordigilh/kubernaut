@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -310,17 +309,15 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			llm.Message{Role: "user", Content: correctionTemplate},
 		)
 
-		retryEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-		retryEvent.EventAction = audit.ActionLLMRequest
-		retryEvent.EventOutcome = audit.OutcomeSuccess
-		retryEvent.Data["model"] = modelName
-		retryEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
-		retryEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
-		retryEvent.Data["retry_attempt"] = attempt + 1
-		retryEvent.Data["retry_max"] = maxParseRetries
-		retryEvent.Data["phase"] = string(katypes.PhaseWorkflowDiscovery)
-		retryEvent.Data["retry_reason"] = "parse_level_correction"
-		audit.StoreBestEffort(ctx, inv.auditStore, retryEvent, inv.auditLog())
+		inv.emitRetryAudit(ctx, retryAuditParams{
+			correlationID: correlationID,
+			modelName:     modelName,
+			messages:      retryMessages,
+			attempt:       attempt + 1,
+			maxAttempts:   maxParseRetries,
+			phase:         katypes.PhaseWorkflowDiscovery,
+			retryReason:   "parse_level_correction",
+		})
 
 		resp, err := inv.chatOrStream(ctx, client, llm.ChatRequest{
 			Messages: retryMessages,
@@ -343,32 +340,50 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 
 		if len(resp.ToolCalls) > 0 {
 			for _, tc := range resp.ToolCalls {
-				switch tc.Name {
-				case SubmitResultNoWorkflowToolName:
-					inv.logger.Info("retry succeeded: submit_result_no_workflow",
-						"correlation_id", correlationID)
-					return &katypes.InvestigationResult{
-						RCASummary:        rcaSummary,
-						HumanReviewNeeded: true,
-						HumanReviewReason: "no_matching_workflows",
-						Reason:            "LLM used submit_result_no_workflow after retry",
-					}
-				case SubmitResultWithWorkflowToolName:
-					inv.logger.Info("retry succeeded: submit_result_with_workflow",
-						"correlation_id", correlationID)
-					result, parseErr := inv.resultParser.Parse(tc.Arguments)
-					if parseErr != nil {
-						inv.logger.Error(parseErr, "retry submit_result_with_workflow parse failed",
-							"correlation_id", correlationID)
-						retryMessages = append(retryMessages, resp.Message)
-						continue
-					}
-					return result
+				result, matched := inv.classifyWorkflowSubmitToolCall(tc, rcaSummary, correlationID)
+				if !matched {
+					continue
 				}
+				if result == nil {
+					retryMessages = append(retryMessages, resp.Message)
+					continue
+				}
+				return result
 			}
 		}
 
 		retryMessages = append(retryMessages, resp.Message)
 	}
 	return nil
+}
+
+// classifyWorkflowSubmitToolCall inspects a single tool call from a
+// retryWorkflowSubmit LLM response for one of the two submit-tool names.
+// Returns matched=true when tc.Name recognized a submit tool; result is nil
+// in that case only when SubmitResultWithWorkflowToolName's arguments failed
+// to parse, signaling the caller to append resp.Message and keep retrying.
+// Returns matched=false when tc.Name did not match either submit tool.
+func (inv *Investigator) classifyWorkflowSubmitToolCall(tc llm.ToolCall, rcaSummary, correlationID string) (result *katypes.InvestigationResult, matched bool) {
+	switch tc.Name {
+	case SubmitResultNoWorkflowToolName:
+		inv.logger.Info("retry succeeded: submit_result_no_workflow",
+			"correlation_id", correlationID)
+		return &katypes.InvestigationResult{
+			RCASummary:        rcaSummary,
+			HumanReviewNeeded: true,
+			HumanReviewReason: "no_matching_workflows",
+			Reason:            "LLM used submit_result_no_workflow after retry",
+		}, true
+	case SubmitResultWithWorkflowToolName:
+		inv.logger.Info("retry succeeded: submit_result_with_workflow",
+			"correlation_id", correlationID)
+		parsed, parseErr := inv.resultParser.Parse(tc.Arguments)
+		if parseErr != nil {
+			inv.logger.Error(parseErr, "retry submit_result_with_workflow parse failed",
+				"correlation_id", correlationID)
+			return nil, true
+		}
+		return parsed, true
+	}
+	return nil, false
 }
