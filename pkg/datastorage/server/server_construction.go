@@ -29,6 +29,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/cert"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	dsmetrics "github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
@@ -319,6 +320,115 @@ func buildIPRateLimiter(appCfg *config.Config, logger logr.Logger, cleanups *sta
 	return ipLimiter
 }
 
+// initSignerAndOpenAPIValidator loads the audit-export signing certificate
+// (SOC2 Day 9.1 / BR-AUDIT-007) and initializes the OpenAPI request validator
+// at startup, fail-hard (#1048 Phase 4 / BR-STORAGE-034): an invalid embedded
+// spec MUST NOT allow the service to start, since that would silently accept
+// malformed input. Extracted from NewServer (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func initSignerAndOpenAPIValidator(deps ServerDeps, auditDeps *auditWriteDeps, logger logr.Logger) (*cert.Signer, *dsmiddleware.OpenAPIValidator, error) {
+	// SOC2 Day 9.1: Load signing certificate for audit exports
+	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
+	signerCertDir := deps.AppConfig.Server.GetSignerCertDir()
+	logger.V(1).Info("Loading signing certificate...", "cert_dir", signerCertDir)
+	signer, err := loadSigningCertificate(logger, signerCertDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to load signing certificate: %w", err) // cleanups run via defer
+	}
+	logger.Info("Signing certificate loaded successfully",
+		"algorithm", signer.GetAlgorithm(),
+		"fingerprint", signer.GetCertificateFingerprint())
+
+	// #1048 Phase 4 / BR-STORAGE-034: Initialize OpenAPI validator at startup (fail-hard).
+	// If the embedded spec is invalid the service MUST NOT start — running without
+	// request validation silently accepts malformed input.
+	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
+		logger.WithName("openapi-validator"),
+		auditDeps.metrics.ValidationFailures,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize OpenAPI validator: %w", err) // cleanups run via defer
+	}
+	logger.Info("OpenAPI validator initialized at startup (fail-hard)")
+
+	return signer, openapiValidator, nil
+}
+
+// buildServerBackgroundWorkers constructs the server's background workers:
+// the DD-009 DLQ retry worker, the #1048 Phase 5 / AU-11 retention purge
+// worker, and the optional GAP-09 (Issue #1505) / SC-5 per-IP rate limiter.
+// Extracted from NewServer (Wave 6 6f GREEN: funlen remediation) — pure code
+// motion, no behavior change.
+func buildServerBackgroundWorkers(db *sql.DB, appCfg *config.Config, auditDeps *auditWriteDeps, logger logr.Logger, cleanups *startupCleanups) (*DLQRetryWorker, *retention.Worker, *dsmiddleware.IPLimiter) {
+	// DD-009 V1.0: Create DLQ retry worker (goroutine inside server)
+	// #1048 DF-1: Pass notification repo so notification DLQ messages are persisted
+	dlqWorkerConfig := DefaultDLQRetryWorkerConfig()
+	dlqWorkerConfig.ConsumerName = fmt.Sprintf("worker-%d", os.Getpid())
+	dlqRetryWorker := NewDLQRetryWorker(auditDeps.dlqClient, auditDeps.auditEventsRepo, auditDeps.repo, dlqWorkerConfig, logger, auditDeps.metrics.DLQValidationFailures)
+
+	retentionWorker := retention.NewWorker(db, retention.Config{
+		Enabled:              appCfg.Retention.Enabled,
+		Interval:             appCfg.Retention.GetInterval(),
+		BatchSize:            appCfg.Retention.GetBatchSize(),
+		DefaultDays:          appCfg.Retention.GetDefaultDays(),
+		PartitionDropEnabled: appCfg.Retention.PartitionDropEnabled,
+	}, logger)
+
+	// GAP-09 (Issue #1505) / SC-5: Optional per-IP rate limiter, disabled by default.
+	ipLimiter := buildIPRateLimiter(appCfg, logger, cleanups)
+
+	return dlqRetryWorker, retentionWorker, ipLimiter
+}
+
+// assembleServer builds the Server struct from its constructed dependencies.
+// DS-FLAKY-003 FIX: handler is assigned directly on httpServer here (not
+// deferred to Start()) so graceful shutdown works in both Start() and
+// httptest scenarios. Extracted from NewServer (Wave 6 6f GREEN: funlen
+// remediation) — pure code motion, no behavior change.
+func assembleServer(
+	deps ServerDeps,
+	db *sql.DB,
+	handler *Handler,
+	auditDeps *auditWriteDeps,
+	signer *cert.Signer,
+	openapiValidator *dsmiddleware.OpenAPIValidator,
+	dlqRetryWorker *DLQRetryWorker,
+	retentionWorker *retention.Worker,
+	ipLimiter *dsmiddleware.IPLimiter,
+) *Server {
+	appCfg := deps.AppConfig
+	serverCfg := deps.ServerConfig
+	return &Server{
+		handler: handler,
+		db:      db,
+		logger:  deps.Logger,
+		httpServer: &http.Server{
+			Addr:         fmt.Sprintf(":%d", serverCfg.Port),
+			ReadTimeout:  serverCfg.ReadTimeout,
+			WriteTimeout: serverCfg.WriteTimeout,
+			IdleTimeout:  120 * time.Second,
+		},
+		repository:               auditDeps.repo,
+		dlqClient:                auditDeps.dlqClient,
+		validator:                auditDeps.validator,
+		auditEventsRepo:          auditDeps.auditEventsRepo,
+		auditStore:               auditDeps.auditStore,
+		metrics:                  auditDeps.metrics,
+		signer:                   signer,
+		dlqRetryWorker:           dlqRetryWorker,                                  // DD-009 V1.0: DLQ retry worker
+		retentionWorker:          retentionWorker,                                 // #1048 Phase 5 / AU-11: retention purge
+		authenticator:            deps.Authenticator,                              // DD-AUTH-014: Injected at runtime
+		authorizer:               deps.Authorizer,                                 // DD-AUTH-014: Injected at runtime
+		authNamespace:            deps.AuthNamespace,                              // DD-AUTH-014: Dynamic namespace for SAR checks
+		maxBatchSize:             defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
+		endpointPropagationDelay: appCfg.Server.GetEndpointPropagationDelay(),
+		openapiValidator:         openapiValidator,
+		corsAllowedOrigins:       appCfg.Server.GetCORSAllowedOrigins(),
+		maxBodySize:              appCfg.Server.GetMaxBodySize(),
+		ipLimiter:                ipLimiter, // GAP-09 (Issue #1505): nil when disabled
+	}
+}
+
 // NewServer creates a new Data Storage HTTP server.
 // BR-STORAGE-021: REST API Gateway for database access
 // BR-STORAGE-001 to BR-STORAGE-020: Audit write API
@@ -362,79 +472,14 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	catalogDeps := buildWorkflowCatalogDependencies(db, logger)
 	handler := buildRESTHandler(deps, db, logger, auditDeps, catalogDeps)
 
-	// SOC2 Day 9.1: Load signing certificate for audit exports
-	// BR-AUDIT-007: Digital signatures for tamper-evident audit exports
-	signerCertDir := deps.AppConfig.Server.GetSignerCertDir()
-	logger.V(1).Info("Loading signing certificate...", "cert_dir", signerCertDir)
-	signer, err := loadSigningCertificate(logger, signerCertDir)
+	signer, openapiValidator, err := initSignerAndOpenAPIValidator(deps, auditDeps, logger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load signing certificate: %w", err) // cleanups run via defer
+		return nil, err
 	}
-	logger.Info("Signing certificate loaded successfully",
-		"algorithm", signer.GetAlgorithm(),
-		"fingerprint", signer.GetCertificateFingerprint())
 
-	// #1048 Phase 4 / BR-STORAGE-034: Initialize OpenAPI validator at startup (fail-hard).
-	// If the embedded spec is invalid the service MUST NOT start — running without
-	// request validation silently accepts malformed input.
-	openapiValidator, err := dsmiddleware.NewOpenAPIValidator(
-		logger.WithName("openapi-validator"),
-		auditDeps.metrics.ValidationFailures,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize OpenAPI validator: %w", err) // cleanups run via defer
-	}
-	logger.Info("OpenAPI validator initialized at startup (fail-hard)")
+	dlqRetryWorker, retentionWorker, ipLimiter := buildServerBackgroundWorkers(db, appCfg, auditDeps, logger, cleanups)
 
-	// DD-009 V1.0: Create DLQ retry worker (goroutine inside server)
-	// #1048 DF-1: Pass notification repo so notification DLQ messages are persisted
-	dlqWorkerConfig := DefaultDLQRetryWorkerConfig()
-	dlqWorkerConfig.ConsumerName = fmt.Sprintf("worker-%d", os.Getpid())
-	dlqRetryWorker := NewDLQRetryWorker(auditDeps.dlqClient, auditDeps.auditEventsRepo, auditDeps.repo, dlqWorkerConfig, logger, auditDeps.metrics.DLQValidationFailures)
-
-	retentionWorker := retention.NewWorker(db, retention.Config{
-		Enabled:              appCfg.Retention.Enabled,
-		Interval:             appCfg.Retention.GetInterval(),
-		BatchSize:            appCfg.Retention.GetBatchSize(),
-		DefaultDays:          appCfg.Retention.GetDefaultDays(),
-		PartitionDropEnabled: appCfg.Retention.PartitionDropEnabled,
-	}, logger)
-
-	// GAP-09 (Issue #1505) / SC-5: Optional per-IP rate limiter, disabled by default.
-	ipLimiter := buildIPRateLimiter(appCfg, logger, cleanups)
-
-	// DS-FLAKY-003 FIX: Create server with handler assigned to httpServer
-	// This allows graceful shutdown to work in both Start() and httptest scenarios
-	// Previously, handler was only assigned in Start(), causing Shutdown() to hang in tests
-	srv := &Server{
-		handler: handler,
-		db:      db,
-		logger:  logger,
-		httpServer: &http.Server{
-			Addr:         fmt.Sprintf(":%d", serverCfg.Port),
-			ReadTimeout:  serverCfg.ReadTimeout,
-			WriteTimeout: serverCfg.WriteTimeout,
-			IdleTimeout:  120 * time.Second,
-		},
-		repository:               auditDeps.repo,
-		dlqClient:                auditDeps.dlqClient,
-		validator:                auditDeps.validator,
-		auditEventsRepo:          auditDeps.auditEventsRepo,
-		auditStore:               auditDeps.auditStore,
-		metrics:                  auditDeps.metrics,
-		signer:                   signer,
-		dlqRetryWorker:           dlqRetryWorker,                                  // DD-009 V1.0: DLQ retry worker
-		retentionWorker:          retentionWorker,                                 // #1048 Phase 5 / AU-11: retention purge
-		authenticator:            deps.Authenticator,                              // DD-AUTH-014: Injected at runtime
-		authorizer:               deps.Authorizer,                                 // DD-AUTH-014: Injected at runtime
-		authNamespace:            deps.AuthNamespace,                              // DD-AUTH-014: Dynamic namespace for SAR checks
-		maxBatchSize:             defaultMaxBatchSize(appCfg.Server.MaxBatchSize), // Issue #667 / BR-STORAGE-043
-		endpointPropagationDelay: appCfg.Server.GetEndpointPropagationDelay(),
-		openapiValidator:         openapiValidator,
-		corsAllowedOrigins:       appCfg.Server.GetCORSAllowedOrigins(),
-		maxBodySize:              appCfg.Server.GetMaxBodySize(),
-		ipLimiter:                ipLimiter, // GAP-09 (Issue #1505): nil when disabled
-	}
+	srv := assembleServer(deps, db, handler, auditDeps, signer, openapiValidator, dlqRetryWorker, retentionWorker, ipLimiter)
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
 	srv.httpServer.Handler = srv.Handler()
