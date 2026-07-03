@@ -677,6 +677,15 @@ data:
         team != ""
         not input.namespace.labels["kubernaut.ai/tier"]
     }
+
+    # ========== Cluster Classification (BR-FLEET-003, #1511) ==========
+    # Optional: classifies the fleet cluster (via input.cluster.labels, sourced
+    # from the MCP Gateway's cluster-registration CRD) into a business value
+    # consumed downstream by DataStorage workflow discovery. No default rule --
+    # an undefined result is "no classification" (non-fleet/unregistered clusters).
+    cluster := input.cluster.labels.environment if {
+        input.cluster.labels.environment != ""
+    }
 ---
 apiVersion: v1
 kind: ConfigMap

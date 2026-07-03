@@ -97,6 +97,17 @@ spec:
                         maxLength: 63
                         minLength: 1
                         type: string
+                      cluster:
+                        description: |-
+                          Cluster is the optional cluster business classification (e.g. "production",
+                          "staging-eu") derived by SignalProcessing's Rego policy from fleet
+                          cluster-registration labels (BR-FLEET-003, #1511). Copied from
+                          SignalProcessing.Status.ClusterClassification. Empty when fleet mode is
+                          disabled, the cluster is unregistered, or no Rego `cluster` rule matched --
+                          a normal, non-error outcome (unlike Severity, which is mandatory).
+                          Propagates to Kubernaut Agent's discovery tool-call `cluster` parameter for
+                          DataStorage workflow-discovery filtering.
+                        type: string
                       enrichmentResults:
                         description: |-
                           Complete enrichment results from SignalProcessing
@@ -136,6 +147,21 @@ spec:
                             description: 'Kubernetes resource context (classification-focused:
                               namespace, workload labels, owner chain)'
                             properties:
+                              cluster:
+                                description: |-
+                                  Cluster holds the fleet cluster-registration labels used as Rego input
+                                  for the optional `cluster` classification dimension (BR-FLEET-003, #1511).
+                                  nil when fleet mode is disabled or the cluster is unregistered.
+                                properties:
+                                  labels:
+                                    additionalProperties:
+                                      type: string
+                                    description: |-
+                                      Labels are the Kubernetes metadata.labels on the MCP Gateway's
+                                      cluster-registration CRD (EAIGW Backend / Kuadrant MCPServerRegistration),
+                                      set by the fleet operator at cluster-onboarding time.
+                                    type: object
+                                type: object
                               clusterID:
                                 description: |-
                                   ClusterID identifies the cluster this context was enriched from.

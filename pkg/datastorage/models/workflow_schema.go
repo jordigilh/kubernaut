@@ -163,6 +163,14 @@ type WorkflowSchemaLabels struct {
 	// Values: "P0", "P1", "P2", "P3", "*" (wildcard for all)
 	// Note: ExtractLabels normalizes to uppercase per OpenAPI enum [P0, P1, P2, P3, "*"]
 	Priority string `yaml:"priority" json:"priority" validate:"required"`
+
+	// Cluster is the cluster classification(s) this workflow is eligible for (OPTIONAL)
+	// Values: operator-defined by SP Rego policy (e.g. "production", "staging-eu"), "*" (wildcard)
+	// Source: SignalProcessing.Status.ClusterClassification, propagated via RO/AA/KA
+	// BR-FLEET-003, Issue #1511, DD-FLEET-002: unlike severity/environment/component/priority,
+	// this field is optional at the schema level -- non-fleet deployments never set it, and
+	// it is never evaluated unless fleet mode supplies a concrete filter value.
+	Cluster []string `yaml:"cluster,omitempty" json:"cluster,omitempty" validate:"omitempty"`
 }
 
 // WorkflowDependencies declares infrastructure resources (Secrets, ConfigMaps)

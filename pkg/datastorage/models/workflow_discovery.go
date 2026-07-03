@@ -113,6 +113,15 @@ type WorkflowDiscoveryFilters struct {
 	Environment string `json:"environment"`
 	Priority    string `json:"priority"`
 
+	// Cluster is the optional cluster business classification filter dimension
+	// (e.g. "production", "staging-eu") derived by SignalProcessing's Rego
+	// policy from fleet cluster-registration labels (BR-FLEET-003, #1511).
+	// Unlike Severity/Component/Environment/Priority, this is NOT included in
+	// HasContextFilters() below: it is an optional fleet-scoping dimension,
+	// not a mandatory context filter, and its absence must not affect the
+	// security gate that HasContextFilters() guards.
+	Cluster string `json:"cluster,omitempty"`
+
 	// Optional context filters
 	CustomLabels   map[string][]string `json:"customLabels,omitempty"`
 	DetectedLabels *DetectedLabels     `json:"detectedLabels,omitempty"`

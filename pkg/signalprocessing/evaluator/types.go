@@ -48,6 +48,10 @@ type PolicyInput struct {
 	Namespace sharedtypes.NamespaceContext `json:"namespace"`
 	Signal    SignalInput                  `json:"signal"`
 	Workload  sharedtypes.WorkloadDetails  `json:"workload"`
+	// Cluster carries fleet cluster-registration labels for the optional
+	// `cluster` classification dimension (BR-FLEET-003, #1511). Zero-value
+	// (empty Labels) for non-fleet deployments or unregistered clusters.
+	Cluster sharedtypes.ClusterContext `json:"cluster"`
 }
 
 // SignalInput contains signal-specific fields for Rego evaluation.
@@ -64,4 +68,13 @@ type SeverityResult struct {
 	Severity   string
 	Source     string
 	PolicyHash string
+}
+
+// ClusterResult contains the optional cluster business classification.
+// BR-FLEET-003, Issue #1511: unlike SeverityResult, an empty Classification
+// is a valid, expected outcome (no matching Rego rule, no cluster rule
+// defined, or unregistered/non-fleet cluster) -- not an error condition.
+type ClusterResult struct {
+	Classification string
+	Source         string
 }

@@ -39,5 +39,10 @@ type PolicyEvaluator interface {
 	EvaluatePriority(ctx context.Context, input evaluator.PolicyInput) (*signalprocessingv1alpha1.PriorityAssignment, error)
 	EvaluateSeverity(ctx context.Context, input evaluator.PolicyInput) (*evaluator.SeverityResult, error)
 	EvaluateCustomLabels(ctx context.Context, input evaluator.PolicyInput) (map[string][]string, error)
+	// EvaluateCluster determines the optional cluster business classification
+	// (BR-FLEET-003, #1511). Unlike EvaluateSeverity, callers MUST treat a
+	// returned error as non-fatal -- cluster classification is an optional
+	// targeting dimension, not a correctness gate.
+	EvaluateCluster(ctx context.Context, input evaluator.PolicyInput) (*evaluator.ClusterResult, error)
 	GetPolicyHash() string
 }

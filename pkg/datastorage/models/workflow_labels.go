@@ -61,6 +61,14 @@ type MandatoryLabels struct {
 	// Values: "P0", "P1", "P2", "P3", "*" (wildcard)
 	// Source: Derived from severity + environment (Signal Processing via Rego)
 	Priority string `json:"priority" validate:"required"`
+
+	// Cluster is the cluster classification(s) this workflow is eligible for (OPTIONAL)
+	// Values: operator-defined by SP Rego policy (e.g. "production", "staging-eu"), "*" (wildcard)
+	// Source: SignalProcessing.Status.ClusterClassification (Rego-derived), via RO/AA/KA
+	// BR-FLEET-003, Issue #1511, DD-FLEET-002: optional, unlike its sibling dimensions --
+	// non-fleet deployments never populate it and it is never evaluated unless fleet mode
+	// supplies a concrete filter value.
+	Cluster []string `json:"cluster,omitempty" validate:"omitempty"`
 }
 
 // CustomLabels represents customer-defined labels via Rego policies (DD-WORKFLOW-001 v1.5)

@@ -2677,6 +2677,12 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 		e.Str(s.ClusterName)
 	}
 	{
+		if s.Cluster.Set {
+			e.FieldStart("cluster")
+			s.Cluster.Encode(e)
+		}
+	}
+	{
 		if s.IsDuplicate.Set {
 			e.FieldStart("is_duplicate")
 			s.IsDuplicate.Encode(e)
@@ -2750,7 +2756,7 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentRequest = [27]string{
+var jsonFieldsNameOfIncidentRequest = [28]string{
 	0:  "incident_id",
 	1:  "remediation_id",
 	2:  "signal_name",
@@ -2766,18 +2772,19 @@ var jsonFieldsNameOfIncidentRequest = [27]string{
 	12: "risk_tolerance",
 	13: "business_category",
 	14: "cluster_name",
-	15: "is_duplicate",
-	16: "occurrence_count",
-	17: "deduplication_window_minutes",
-	18: "firing_time",
-	19: "received_time",
-	20: "first_seen",
-	21: "last_seen",
-	22: "signal_labels",
-	23: "signal_annotations",
-	24: "enrichment_results",
-	25: "signal_mode",
-	26: "interactive",
+	15: "cluster",
+	16: "is_duplicate",
+	17: "occurrence_count",
+	18: "deduplication_window_minutes",
+	19: "firing_time",
+	20: "received_time",
+	21: "first_seen",
+	22: "last_seen",
+	23: "signal_labels",
+	24: "signal_annotations",
+	25: "enrichment_results",
+	26: "signal_mode",
+	27: "interactive",
 }
 
 // Decode decodes IncidentRequest from json.
@@ -2965,6 +2972,16 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"cluster_name\"")
+			}
+		case "cluster":
+			if err := func() error {
+				s.Cluster.Reset()
+				if err := s.Cluster.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cluster\"")
 			}
 		case "is_duplicate":
 			if err := func() error {

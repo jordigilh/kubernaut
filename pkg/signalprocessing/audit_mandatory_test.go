@@ -72,6 +72,9 @@ func (s *stubPolicyEvaluator) EvaluateSeverity(_ context.Context, _ evaluator.Po
 func (s *stubPolicyEvaluator) EvaluateCustomLabels(_ context.Context, _ evaluator.PolicyInput) (map[string][]string, error) {
 	return nil, nil
 }
+func (s *stubPolicyEvaluator) EvaluateCluster(_ context.Context, _ evaluator.PolicyInput) (*evaluator.ClusterResult, error) {
+	return &evaluator.ClusterResult{}, nil
+}
 func (s *stubPolicyEvaluator) GetPolicyHash() string { return "stub" }
 
 var _ = Describe("BR-SP-090/ADR-032: Audit Client Mandatory Enforcement", func() {

@@ -170,6 +170,16 @@ paths:
           schema:
             type: string
           description: "JSON-encoded detected labels (e.g., {\"gitOpsManaged\":true})"
+        - name: cluster
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            Optional cluster business classification (e.g. "production", "staging-eu")
+            derived by SignalProcessing's Rego policy from fleet cluster-registration
+            labels (BR-FLEET-003, #1511). Omitted entirely for non-fleet deployments --
+            no cluster filter is applied in that case (backward compatible).
         - name: remediation_id
           in: query
           required: false
@@ -285,6 +295,16 @@ paths:
           schema:
             type: string
           description: "JSON-encoded detected labels"
+        - name: cluster
+          in: query
+          required: false
+          schema:
+            type: string
+          description: >-
+            Optional cluster business classification (e.g. "production", "staging-eu")
+            derived by SignalProcessing's Rego policy from fleet cluster-registration
+            labels (BR-FLEET-003, #1511). Omitted entirely for non-fleet deployments --
+            no cluster filter is applied in that case (backward compatible).
         - name: remediation_id
           in: query
           required: false
@@ -3295,6 +3315,12 @@ components:
           description: "Business priority level (P0, P1, P2, P3, * for any)"
           enum: [P0, P1, P2, P3, "*"]
           example: "P0"
+        cluster:
+          type: array
+          items:
+            type: string
+          description: "BR-FLEET-003 (#1511): Cluster classification(s) this workflow is eligible for, as produced by Signal Processing's Rego policy from fleet cluster-registration labels. Optional — absent in non-fleet (single-cluster) deployments, where it is never evaluated. '*' matches any classification once fleet mode supplies a concrete filter value."
+          example: ["production"]
 
     CustomLabels:
       type: object

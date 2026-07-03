@@ -635,10 +635,16 @@ func handoffOrCloseSession(ctx context.Context, cfg *InvestigateConfig, rrID, us
 // NonBlockingBridgeTTL instead, so it survives past the handler call.
 func startNonBlockingBridge(ctx context.Context, events <-chan ka.InvestigationEvent, cleanup func()) {
 	bridgeCtx, bridgeCancel := context.WithTimeout(context.WithoutCancel(ctx), NonBlockingBridgeTTL)
+	// Snapshot the inactivity timeout synchronously, before spawning the
+	// goroutine. Reading the package-level BridgeInactivityTimeout directly
+	// inside the goroutine closure would defer the read until the goroutine
+	// is actually scheduled, which can race with a concurrent write to the
+	// same var (e.g. from a test overriding it for a different case).
+	inactivityTimeout := BridgeInactivityTimeout
 	go func() {
 		defer bridgeCancel()
 		defer cleanup()
-		BridgeEventsToA2A(bridgeCtx, events, BridgeInactivityTimeout)
+		BridgeEventsToA2A(bridgeCtx, events, inactivityTimeout)
 	}()
 }
 

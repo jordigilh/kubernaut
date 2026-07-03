@@ -399,7 +399,107 @@ data:
 	}
 	_, _ = fmt.Fprintln(writer, "    ✅ RemediationOrchestrator restarted with fleet scope checking enabled")
 
+	// ── Phase 5c: Enable cluster classification in SignalProcessing (BR-FLEET-003, #1511) ──
+	// Deliberately done here (Phase 5c), not during the base fullpipeline SP
+	// deployment: SP's ClusterRegistry.Start() watches the
+	// MCPServerRegistration CRD directly via a dynamic client, which only
+	// exists on the API server once this function's Phase 3 (deployed by
+	// DeployFleetCoreInfra above) has installed the Kuadrant CRDs. Enabling
+	// fleet mode before that would block SP's informer cache sync at
+	// startup for every other (non-fleet) fullpipeline-based E2E suite that
+	// shares deployFullPipelineSPController.
+	_, _ = fmt.Fprintln(writer, "\n  🔧 Phase 5c: Patching SignalProcessing config with cluster classification...")
+	if err := patchSignalProcessingConfigForFleet(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("signalprocessing-config fleet patch failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "    ✅ SignalProcessing restarted with cluster classification enabled")
+
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E infrastructure deployed (~388 MB)")
+	return nil
+}
+
+// patchSignalProcessingConfigForFleet grants the signalprocessing-controller
+// ServiceAccount RBAC on Kuadrant's MCPServerRegistration CRD and enables
+// SP's ClusterRegistry (fleet.mcpGatewayType) so the `cluster` Rego
+// classification dimension (BR-FLEET-003, #1511) is populated from
+// input.cluster.labels. Mirrors patchRemediationOrchestratorConfigForFleet's
+// read-append-patch-restart pattern; see the Phase 5c call site for why this
+// must run after the Kuadrant CRDs are already installed.
+func patchSignalProcessingConfigForFleet(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	rbacManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: signalprocessing-fleet-cluster-registry
+  labels:
+    app: signalprocessing-controller
+    component: fleet
+rules:
+- apiGroups: ["mcp.kuadrant.io"]
+  resources: ["mcpserverregistrations"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: signalprocessing-fleet-cluster-registry
+  labels:
+    app: signalprocessing-controller
+    component: fleet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: signalprocessing-fleet-cluster-registry
+subjects:
+- kind: ServiceAccount
+  name: signalprocessing-controller
+  namespace: ` + namespace + `
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, rbacManifest); err != nil {
+		return fmt.Errorf("signalprocessing-fleet-cluster-registry RBAC creation failed: %w", err)
+	}
+
+	getCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"get", "configmap", "signalprocessing-config", "-n", namespace,
+		"-o", "jsonpath={.data.config\\.yaml}")
+	currentConfig, err := getCmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to read existing signalprocessing-config: %w", err)
+	}
+
+	fleetBlock := fmt.Sprintf(`
+fleet:
+  mcpGatewayType: kuadrant
+  namespace: "%s"
+`, namespace)
+	patchedConfig := string(currentConfig) + fleetBlock
+
+	patchPayload, err := json.Marshal(map[string]interface{}{
+		"data": map[string]string{
+			"config.yaml": patchedConfig,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal signalprocessing-config patch: %w", err)
+	}
+
+	patchCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"patch", "configmap", "signalprocessing-config", "-n", namespace,
+		"--type", "merge", "-p", string(patchPayload))
+	patchCmd.Stdout = writer
+	patchCmd.Stderr = writer
+	if err := patchCmd.Run(); err != nil {
+		return fmt.Errorf("failed to patch signalprocessing-config: %w", err)
+	}
+
+	_, _ = fmt.Fprintln(writer, "    Restarting SignalProcessing to pick up cluster classification config...")
+	if err := runKubectl(ctx, kubeconfigPath, writer,
+		"rollout", "restart", "deployment/signalprocessing-controller", "-n", namespace); err != nil {
+		return fmt.Errorf("signalprocessing-controller restart failed: %w", err)
+	}
+	if err := waitForDeployment(ctx, "signalprocessing-controller", namespace, kubeconfigPath, 180*time.Second, writer); err != nil {
+		return fmt.Errorf("signalprocessing-controller rollout after fleet config patch failed: %w", err)
+	}
 	return nil
 }
 
@@ -1282,6 +1382,9 @@ metadata:
   namespace: %[1]s
   labels:
     kubernaut.ai/managed: "true"
+    # BR-FLEET-003 (#1511): fleet onboarding label consumed by SP's Rego
+    # cluster rule (input.cluster.labels.environment) via ClusterRegistry.
+    environment: "production"
 spec:
   prefix: "loopback_cluster_"
 %[3]s  targetRef:

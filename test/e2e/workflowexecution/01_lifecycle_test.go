@@ -71,6 +71,7 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 		// Should complete (success or failure - depends on pipeline)
 		Eventually(func() bool {
 			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
 			if updated != nil {
 				phase := updated.Status.Phase
 				return phase == workflowexecutionv1alpha1.PhaseCompleted ||

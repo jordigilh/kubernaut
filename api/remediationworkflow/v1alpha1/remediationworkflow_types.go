@@ -113,6 +113,18 @@ type RemediationWorkflowLabels struct {
 	// Priority is the business priority level
 	// +kubebuilder:validation:Required
 	Priority string `json:"priority"`
+
+	// Cluster restricts this workflow to signals whose SP-derived
+	// ClusterClassification matches one of these values.
+	// Empty/omitted is valid: in non-fleet deployments (no ClusterClassification
+	// produced) this dimension is never evaluated. In fleet-enabled deployments,
+	// once a concrete classification is supplied by KA, workflows with no
+	// `cluster` entries are excluded unless they explicitly opt in with "*"
+	// (see DD-FLEET-002 Matching Semantics -- this is a query-time exclusion,
+	// not schema-level validation).
+	// BR-FLEET-003, Issue #1511.
+	// +optional
+	Cluster []string `json:"cluster,omitempty"`
 }
 
 // RemediationWorkflowExecution contains execution engine configuration

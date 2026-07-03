@@ -176,6 +176,55 @@ var _ = Describe("OCI Schema Extractor (DD-WORKFLOW-017)", func() {
 			Expect(desc).To(HaveKey("whenToUse"))
 		})
 
+		It("UT-DS-1511-001: Cluster label remains optional — absent Cluster does not fail validation (BR-FLEET-003 R7)", func() {
+			crd := baseOCITestCRD()
+			crd.Metadata.Name = "test-no-cluster"
+			// Deliberately leave Cluster unset — mandatory fields (severity/environment/
+			// component) remain populated by baseOCITestCRD().
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred(),
+				"absent Cluster must not fail validation — it is +optional, unlike severity/environment/component")
+			Expect(parsedSchema.Labels.Cluster).To(BeEmpty())
+		})
+
+		It("UT-DS-1511-002: ExtractLabels includes cluster label when present (BR-FLEET-003, #1511)", func() {
+			crd := baseOCITestCRD()
+			crd.Metadata.Name = "test-cluster-label"
+			crd.Spec.Labels.Cluster = []string{"production", "staging"}
+			yamlContent := testutil.MarshalWorkflowCRD(crd)
+
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedSchema.Labels.Cluster).To(Equal([]string{"production", "staging"}),
+				"cluster labels must survive YAML parsing")
+
+			labelsJSON, err := parser.ExtractLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			var labels map[string]interface{}
+			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
+			Expect(labels["cluster"]).To(Equal([]interface{}{"production", "staging"}),
+				"cluster labels must be extracted into the labels JSONB payload")
+		})
+
+		It("UT-DS-1511-002b: ExtractLabels omits cluster key when absent (BR-FLEET-003, backward compat)", func() {
+			yamlContent := testutil.MarshalWorkflowCRD(baseOCITestCRD())
+			parsedSchema, err := parser.ParseAndValidate(yamlContent)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedSchema.Labels.Cluster).To(BeEmpty(),
+				"cluster is optional; non-fleet workflows never set it")
+
+			labelsJSON, err := parser.ExtractLabels(parsedSchema)
+			Expect(err).ToNot(HaveOccurred())
+
+			var labels map[string]interface{}
+			Expect(json.Unmarshal(labelsJSON, &labels)).To(Succeed())
+			Expect(labels).ToNot(HaveKey("cluster"),
+				"cluster key must be omitted entirely when not set (non-fleet deployments unaffected)")
+		})
+
 		It("UT-DS-212-001: ExtractLabels must NOT include custom labels (#212)", func() {
 			crd := baseOCITestCRD()
 			crd.Metadata.Name = "test-custom"

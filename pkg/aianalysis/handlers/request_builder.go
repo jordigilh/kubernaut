@@ -105,6 +105,15 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		req.SignalAnnotations.SetTo(agentclient.IncidentRequestSignalAnnotations(spec.SignalAnnotations))
 	}
 
+	// BR-FLEET-003 (#1511): forward the optional cluster business classification.
+	// Distinct from ClusterName above (the raw cluster identifier) -- omitted
+	// entirely (not even an empty string) for non-fleet deployments/unregistered
+	// clusters so KA's discovery tool call sends no `cluster` filter, per the
+	// mandatory-field matching semantics in DD-FLEET-002.
+	if spec.Cluster != "" {
+		req.Cluster.SetTo(spec.Cluster)
+	}
+
 	return req
 }
 

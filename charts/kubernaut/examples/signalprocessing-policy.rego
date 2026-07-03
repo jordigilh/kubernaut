@@ -22,6 +22,7 @@
 #   input.workload.name          string
 #   input.workload.labels        map[string]string
 #   input.workload.annotations   map[string]string
+#   input.cluster.labels         map[string]string  # BR-FLEET-003 (#1511), fleet deployments only
 
 package signalprocessing
 
@@ -114,4 +115,24 @@ labels := result if {
         {"team": [team]},
         {"tier": [tier]} if { tier != "" } else {}
     )
+}
+
+# ========== Cluster Classification (BR-FLEET-003, #1511) ==========
+# Returns: string -- the cluster's business classification (e.g. "production").
+# OPTIONAL: only meaningful for fleet (multi-cluster) deployments. `input.cluster.labels`
+# is populated from the MCP Gateway's cluster-registration CRD (EAIGW `Backend` /
+# Kuadrant `MCPServerRegistration`) labels, set by the fleet operator at cluster
+# onboarding time -- NOT from this cluster's own namespace/workload labels.
+#
+# No `default cluster := ...` rule is defined here on purpose: an undefined result
+# (no matching rule, or `input.cluster.labels` absent/empty in non-fleet deployments)
+# is evaluated as "no classification" by the SP controller -- a normal, non-error
+# outcome, unlike `severity` which is mandatory. Add a `default` only if you want a
+# fallback classification for unregistered/unlabeled clusters instead.
+#
+# Example: classify by the fleet onboarding label `environment` set on the
+# cluster's Backend/MCPServerRegistration CR (see the Fleet Onboarding Prerequisite
+# in BR-FLEET-003 for how to apply it).
+cluster := input.cluster.labels.environment if {
+    input.cluster.labels.environment != ""
 }
