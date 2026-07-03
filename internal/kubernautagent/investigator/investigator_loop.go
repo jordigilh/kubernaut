@@ -42,68 +42,40 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 	for turn := 0; turn < inv.maxTurns; turn++ {
 		if ctx.Err() != nil {
 			emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
-			return &CancelledResult{
-				Messages: messages,
-				Turn:     turn,
-				Phase:    string(phase),
-				Tokens:   tokens,
-			}, nil
+			return buildCancelledResult(messages, turn, string(phase), tokens), nil
 		}
 
-		reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-		reqEvent.EventAction = audit.ActionLLMRequest
-		reqEvent.EventOutcome = audit.OutcomeSuccess
-		reqEvent.Data["model"] = modelName
-		reqEvent.Data["prompt_length"] = totalPromptLength(messages)
-		reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
-		reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
-		reqEvent.Data["messages"] = messagesToAuditFormat(messages)
-		audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.auditLog())
+		inv.emitLLMRequestAudit(ctx, correlationID, modelName, messages, toolDefs)
 
 		chatReq := llm.ChatRequest{
 			Messages: messages,
 			Tools:    toolDefs,
 			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
 		}
-		resp, err := inv.chatOrStream(ctx, client, chatReq, turn, string(phase), modelName, runtimeParams)
+		resp, cancelled, err := inv.callLLMTurn(ctx, llmTurnCallParams{
+			client:        client,
+			chatReq:       chatReq,
+			messages:      messages,
+			turn:          turn,
+			phase:         string(phase),
+			correlationID: correlationID,
+			modelName:     modelName,
+			runtimeParams: runtimeParams,
+			tokens:        tokens,
+			loopStart:     loopStart,
+		})
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
-				return &CancelledResult{
-					Messages: messages,
-					Turn:     turn,
-					Phase:    string(phase),
-					Tokens:   tokens,
-				}, nil
-			}
-			failEvent := audit.NewEvent(audit.EventTypeResponseFailed, correlationID)
-			failEvent.EventAction = audit.ActionResponseFailed
-			failEvent.EventOutcome = audit.OutcomeFailure
-			failEvent.Data["error_message"] = err.Error()
-			failEvent.Data["phase"] = string(phase)
-			failEvent.Data["duration_seconds"] = time.Since(loopStart).Seconds()
-			audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.auditLog())
-			return nil, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
+			return nil, err
+		}
+		if cancelled != nil {
+			return cancelled, nil
 		}
 
 		if tokens != nil {
 			tokens.Add(resp.Usage)
 		}
 
-		respEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
-		respEvent.EventAction = audit.ActionLLMResponse
-		respEvent.EventOutcome = audit.OutcomeSuccess
-		respEvent.Data["prompt_tokens"] = resp.Usage.PromptTokens
-		respEvent.Data["completion_tokens"] = resp.Usage.CompletionTokens
-		respEvent.Data["total_tokens"] = resp.Usage.TotalTokens
-		respEvent.Data["has_analysis"] = resp.Message.Content != ""
-		respEvent.Data["analysis_length"] = len(resp.Message.Content)
-		respEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
-		respEvent.Data["analysis_full"] = resp.Message.Content
-		respEvent.Data["analysis_content"] = resp.Message.Content
-		respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
-		respEvent.Data["finish_reason"] = resp.FinishReason
-		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.auditLog())
+		inv.emitLLMResponseAudit(ctx, correlationID, resp)
 
 		emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
 			"content_preview": truncatePreview(resp.Message.Content, 200),
@@ -111,59 +83,12 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		})
 
 		if len(resp.ToolCalls) > 0 {
-			for _, tc := range resp.ToolCalls {
-				if sr := sentinelResult(tc); sr != nil {
-					inv.logger.Info("sentinel detected",
-						"tool", tc.Name,
-						"phase", string(phase),
-						"correlation_id", correlationID)
-					return sr, nil
-				}
+			newMessages, sentinel, budgetExhausted := inv.processToolCalls(ctx, messages, resp, turn, string(phase), correlationID)
+			messages = newMessages
+			if sentinel != nil {
+				return sentinel, nil
 			}
-
-			assistantMsg := resp.Message
-			assistantMsg.ToolCalls = resp.ToolCalls
-			messages = append(messages, assistantMsg)
-
-			toolResults := make([]string, len(resp.ToolCalls))
-			var g errgroup.Group
-			for i, tc := range resp.ToolCalls {
-				emitToSink(ctx, session.EventTypeToolCallStart, turn, string(phase), map[string]interface{}{
-					"tool_name":  tc.Name,
-					"tool_index": i,
-				})
-				g.Go(func() error {
-					toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
-					return nil
-				})
-			}
-			_ = g.Wait()
-
-			for i, tc := range resp.ToolCalls {
-				emitToSink(ctx, session.EventTypeToolResult, turn, string(phase), map[string]interface{}{
-					"tool_name":      tc.Name,
-					"tool_index":     i,
-					"result_preview": truncatePreview(toolResults[i], 200),
-				})
-
-				tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
-				tcEvent.EventAction = audit.ActionToolExecution
-				tcEvent.EventOutcome = audit.OutcomeSuccess
-				tcEvent.Data["tool_call_index"] = i
-				tcEvent.Data["tool_name"] = tc.Name
-				tcEvent.Data["tool_arguments"] = tc.Arguments
-				tcEvent.Data["tool_result"] = toolResults[i]
-				tcEvent.Data["tool_result_preview"] = truncatePreview(toolResults[i], 500)
-				audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.auditLog())
-
-				messages = append(messages, llm.Message{
-					Role:       "tool",
-					Content:    toolResults[i],
-					ToolCallID: tc.ID,
-					ToolName:   tc.Name,
-				})
-			}
-			if inv.pipeline.AnomalyDetector.TotalExceeded() {
+			if budgetExhausted {
 				return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
 			}
 			continue
@@ -177,22 +102,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 				"escalated_max_tokens", maxTokens,
 				"correlation_id", correlationID)
 
-			truncEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
-			truncEvent.EventAction = "truncation_detected"
-			truncEvent.EventOutcome = audit.OutcomeFailure
-			truncEvent.Data["has_analysis"] = resp.Message.Content != ""
-			truncEvent.Data["analysis_length"] = len(resp.Message.Content)
-			truncEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
-			truncEvent.Data["finish_reason"] = resp.FinishReason
-			truncEvent.Data["escalated_max_tokens"] = maxTokens
-			truncEvent.Data["truncated_content_length"] = len(resp.Message.Content)
-			audit.StoreBestEffort(ctx, inv.auditStore, truncEvent, inv.auditLog())
-
-			messages = append(messages, resp.Message)
-			messages = append(messages, llm.Message{
-				Role:    "user",
-				Content: "Your previous response was truncated (output token limit reached). Please provide your complete response. Use the submit_result tool to deliver your structured result.",
-			})
+			messages = append(messages, inv.buildTruncationRetryMessages(ctx, resp, correlationID, maxTokens)...)
 			continue
 		}
 
@@ -200,6 +110,183 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 	}
 
 	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
+}
+
+// buildCancelledResult constructs the CancelledResult snapshot returned from
+// every context-cancellation exit point in runLLMLoop, deduplicating the two
+// identical struct literals that previously existed (pre-timeout check and
+// post-LLM-call-error check).
+func buildCancelledResult(messages []llm.Message, turn int, phase string, tokens *TokenAccumulator) *CancelledResult {
+	return &CancelledResult{
+		Messages: messages,
+		Turn:     turn,
+		Phase:    phase,
+		Tokens:   tokens,
+	}
+}
+
+// llmTurnCallParams groups the per-turn values needed by callLLMTurn. Kept as
+// a config struct (rather than individual parameters) per the Go
+// Anti-Pattern Checklist's 8+-parameter rule.
+type llmTurnCallParams struct {
+	client        llm.Client
+	chatReq       llm.ChatRequest
+	messages      []llm.Message
+	turn          int
+	phase         string
+	correlationID string
+	modelName     string
+	runtimeParams llm.RuntimeParams
+	tokens        *TokenAccumulator
+	loopStart     time.Time
+}
+
+// callLLMTurn invokes the LLM for one loop turn and classifies the outcome:
+// a context-cancellation error becomes a CancelledResult snapshot (cancelled
+// non-nil, err nil); any other error is recorded via a ResponseFailed audit
+// event and returned wrapped (err non-nil); success returns the response
+// with both cancelled and err nil.
+func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (llm.ChatResponse, LoopResult, error) {
+	resp, err := inv.chatOrStream(ctx, p.client, p.chatReq, p.turn, p.phase, p.modelName, p.runtimeParams)
+	if err == nil {
+		return resp, nil, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		emitToSink(ctx, session.EventTypeCancelled, p.turn, p.phase, nil)
+		return llm.ChatResponse{}, buildCancelledResult(p.messages, p.turn, p.phase, p.tokens), nil
+	}
+	failEvent := audit.NewEvent(audit.EventTypeResponseFailed, p.correlationID)
+	failEvent.EventAction = audit.ActionResponseFailed
+	failEvent.EventOutcome = audit.OutcomeFailure
+	failEvent.Data["error_message"] = err.Error()
+	failEvent.Data["phase"] = p.phase
+	failEvent.Data["duration_seconds"] = time.Since(p.loopStart).Seconds()
+	audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.auditLog())
+	return llm.ChatResponse{}, nil, fmt.Errorf("%s LLM call turn %d: %w", p.phase, p.turn, err)
+}
+
+// emitLLMRequestAudit records the per-turn LLM request audit event (AU-3:
+// model, prompt length/preview, enabled toolsets, full message history).
+func (inv *Investigator) emitLLMRequestAudit(ctx context.Context, correlationID, modelName string, messages []llm.Message, toolDefs []llm.ToolDefinition) {
+	reqEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	reqEvent.EventAction = audit.ActionLLMRequest
+	reqEvent.EventOutcome = audit.OutcomeSuccess
+	reqEvent.Data["model"] = modelName
+	reqEvent.Data["prompt_length"] = totalPromptLength(messages)
+	reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
+	reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
+	reqEvent.Data["messages"] = messagesToAuditFormat(messages)
+	audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.auditLog())
+}
+
+// emitLLMResponseAudit records the per-turn LLM response audit event (AU-3:
+// token usage, analysis content/preview, tool-call count, finish reason).
+func (inv *Investigator) emitLLMResponseAudit(ctx context.Context, correlationID string, resp llm.ChatResponse) {
+	respEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
+	respEvent.EventAction = audit.ActionLLMResponse
+	respEvent.EventOutcome = audit.OutcomeSuccess
+	respEvent.Data["prompt_tokens"] = resp.Usage.PromptTokens
+	respEvent.Data["completion_tokens"] = resp.Usage.CompletionTokens
+	respEvent.Data["total_tokens"] = resp.Usage.TotalTokens
+	respEvent.Data["has_analysis"] = resp.Message.Content != ""
+	respEvent.Data["analysis_length"] = len(resp.Message.Content)
+	respEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
+	respEvent.Data["analysis_full"] = resp.Message.Content
+	respEvent.Data["analysis_content"] = resp.Message.Content
+	respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
+	respEvent.Data["finish_reason"] = resp.FinishReason
+	audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.auditLog())
+}
+
+// processToolCalls handles one turn's tool-call batch: sentinel detection
+// (submit_result and friends short-circuit the loop), parallel tool
+// execution via errgroup, per-tool-call audit emission, and appending the
+// assistant + tool-result messages. Returns the updated message history, a
+// non-nil sentinel LoopResult when the LLM called a sentinel tool (the
+// caller must return it immediately), and whether the anomaly detector's
+// total tool-call budget is now exhausted.
+func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Message, resp llm.ChatResponse, turn int, phase string, correlationID string) (newMessages []llm.Message, sentinel LoopResult, budgetExhausted bool) {
+	for _, tc := range resp.ToolCalls {
+		if sr := sentinelResult(tc); sr != nil {
+			inv.logger.Info("sentinel detected",
+				"tool", tc.Name,
+				"phase", phase,
+				"correlation_id", correlationID)
+			return messages, sr, false
+		}
+	}
+
+	assistantMsg := resp.Message
+	assistantMsg.ToolCalls = resp.ToolCalls
+	messages = append(messages, assistantMsg)
+
+	toolResults := make([]string, len(resp.ToolCalls))
+	var g errgroup.Group
+	for i, tc := range resp.ToolCalls {
+		emitToSink(ctx, session.EventTypeToolCallStart, turn, phase, map[string]interface{}{
+			"tool_name":  tc.Name,
+			"tool_index": i,
+		})
+		g.Go(func() error {
+			toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
+			return nil
+		})
+	}
+	_ = g.Wait()
+
+	for i, tc := range resp.ToolCalls {
+		emitToSink(ctx, session.EventTypeToolResult, turn, phase, map[string]interface{}{
+			"tool_name":      tc.Name,
+			"tool_index":     i,
+			"result_preview": truncatePreview(toolResults[i], 200),
+		})
+
+		tcEvent := audit.NewEvent(audit.EventTypeLLMToolCall, correlationID)
+		tcEvent.EventAction = audit.ActionToolExecution
+		tcEvent.EventOutcome = audit.OutcomeSuccess
+		tcEvent.Data["tool_call_index"] = i
+		tcEvent.Data["tool_name"] = tc.Name
+		tcEvent.Data["tool_arguments"] = tc.Arguments
+		tcEvent.Data["tool_result"] = toolResults[i]
+		tcEvent.Data["tool_result_preview"] = truncatePreview(toolResults[i], 500)
+		audit.StoreBestEffort(ctx, inv.auditStore, tcEvent, inv.auditLog())
+
+		messages = append(messages, llm.Message{
+			Role:       "tool",
+			Content:    toolResults[i],
+			ToolCallID: tc.ID,
+			ToolName:   tc.Name,
+		})
+	}
+
+	budgetExhausted = inv.pipeline.AnomalyDetector.TotalExceeded()
+	return messages, nil, budgetExhausted
+}
+
+// buildTruncationRetryMessages emits the truncation-detected audit event and
+// returns the two messages (the truncated assistant reply plus a correction
+// prompt) that runLLMLoop must append before retrying with an escalated
+// MaxTokens. truncationRetried/maxTokens mutation stays loop-local state in
+// the caller — this helper is a pure audit-emit + message-builder.
+func (inv *Investigator) buildTruncationRetryMessages(ctx context.Context, resp llm.ChatResponse, correlationID string, escalatedMaxTokens int) []llm.Message {
+	truncEvent := audit.NewEvent(audit.EventTypeLLMResponse, correlationID)
+	truncEvent.EventAction = "truncation_detected"
+	truncEvent.EventOutcome = audit.OutcomeFailure
+	truncEvent.Data["has_analysis"] = resp.Message.Content != ""
+	truncEvent.Data["analysis_length"] = len(resp.Message.Content)
+	truncEvent.Data["analysis_preview"] = truncatePreview(resp.Message.Content, 500)
+	truncEvent.Data["finish_reason"] = resp.FinishReason
+	truncEvent.Data["escalated_max_tokens"] = escalatedMaxTokens
+	truncEvent.Data["truncated_content_length"] = len(resp.Message.Content)
+	audit.StoreBestEffort(ctx, inv.auditStore, truncEvent, inv.auditLog())
+
+	return []llm.Message{
+		resp.Message,
+		{
+			Role:    "user",
+			Content: "Your previous response was truncated (output token limit reached). Please provide your complete response. Use the submit_result tool to deliver your structured result.",
+		},
+	}
 }
 
 // chatOrStream dispatches to either streaming or non-streaming chat
