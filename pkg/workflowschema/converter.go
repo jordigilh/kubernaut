@@ -50,6 +50,7 @@ func SpecToSchema(workflowName string, spec rwv1alpha1.RemediationWorkflowSpec) 
 			Environment: spec.Labels.Environment,
 			Component:   spec.Labels.Component,
 			Priority:    spec.Labels.Priority,
+			Cluster:     spec.Labels.Cluster,
 		},
 		CustomLabels: spec.CustomLabels,
 	}
@@ -122,6 +123,7 @@ func SchemaToSpec(schema *models.WorkflowSchema) (*rwv1alpha1.RemediationWorkflo
 			Environment: schema.Labels.Environment,
 			Component:   schema.Labels.Component,
 			Priority:    schema.Labels.Priority,
+			Cluster:     schema.Labels.Cluster,
 		},
 		CustomLabels: schema.CustomLabels,
 	}
