@@ -51,6 +51,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -199,7 +200,7 @@ func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Co
 
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
 	// ADR-030: Timeouts from YAML config (not CLI flags)
-	roReconciler, stopConfigWatcher, err := buildReconciler(ctx, reconcilerParams{
+	roReconciler, fleetResilientClient, stopConfigWatcher, err := buildReconciler(ctx, reconcilerParams{
 		cfg:           cfg,
 		mgr:           mgr,
 		auditStore:    auditStore,
@@ -212,6 +213,12 @@ func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Co
 		setupLog.Error(err, "Failed to build RemediationOrchestrator reconciler")
 		os.Exit(1)
 	}
+
+	// #1553 / ADR-068 / BR-INTEGRATION-065: fail closed on Fleet dependency
+	// unreachability via readyz (pod-wide), instead of the previous
+	// fail-open behavior of only logging an error.
+	stopConfigWatcher = setupFleetReadinessCheck(
+		ctx, mgr, routingEngine, fleetResilientClient, cfg, stopConfigWatcher, setupLog)
 
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
@@ -455,11 +462,12 @@ type reconcilerParams struct {
 // mapper, async propagation, cluster identity, distributed lock manager,
 // fleet config, retention, dry-run, and — when a config file is provided
 // (DD-INFRA-001) — the reconciler's own hot-reload file watcher). Returns a
-// stop function for the config watcher (a no-op if none was started); the
-// caller must defer it. Extracted from main()
-// (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion, no behavior
-// change.
-func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger) (*controller.Reconciler, func(), error) {
+// stop function for the config watcher (a no-op if none was started, the
+// caller must defer it) and the Fleet resilient client (nil if Fleet isn't
+// configured) so the caller can wire the #1553 readiness gate and close the
+// client on shutdown. Extracted from main() (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Wave 0a) — pure code motion, no behavior change.
+func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger) (*controller.Reconciler, *mcpclient.ResilientClient, func(), error) {
 	noop := func() {}
 	cfg, mgr := p.cfg, p.mgr
 
@@ -484,7 +492,7 @@ func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger
 	// Issue #643 v2: Wire DS-backed workflow display resolver.
 	dsWorkflowAdapter, err := routing.NewDSWorkflowAdapterFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
-		return nil, noop, fmt.Errorf("failed to create datastorage workflow adapter (url=%s): %w",
+		return nil, nil, noop, fmt.Errorf("failed to create datastorage workflow adapter (url=%s): %w",
 			cfg.DataStorage.URL, err)
 	}
 	roReconciler.SetWorkflowResolver(dsWorkflowAdapter)
@@ -497,7 +505,7 @@ func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger
 	// buildRoutingEngine above — this is the MCPGatewayEndpoint capability.
 	readerFactory, fleetResilientClient, err := buildFleetReaderFactory(ctx, mgr.GetClient(), cfg, logger)
 	if err != nil {
-		return nil, noop, fmt.Errorf("fleet reader wiring: %w", err)
+		return nil, fleetResilientClient, noop, fmt.Errorf("fleet reader wiring: %w", err)
 	}
 	if readerFactory != nil {
 		roReconciler.SetReaderFactory(readerFactory)
@@ -525,18 +533,102 @@ func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger
 	// #835, DD-INFRA-001: Start config file watcher for hot-reload.
 	// Only enabled when a config file is explicitly provided (not defaults).
 	stop := startReconcilerConfigWatcher(roReconciler, p.configPath, noop, logger)
+
+	return roReconciler, fleetResilientClient, stop, nil
+}
+
+// fleetReadinessProbeInterval controls how often the Fleet readiness gate
+// re-probes its dependencies once started (mirrors cmd/gateway/main.go).
+const fleetReadinessProbeInterval = 15 * time.Second
+
+// wireFleetReadinessGate builds and starts the Fleet dependency readiness
+// gate (#1553, ADR-068, BR-INTEGRATION-065): once Fleet is enabled, RO's
+// pod-wide readyz must fail closed when the MCP Gateway or the
+// Backend/Endpoint scope-check backend becomes unreachable, instead of the
+// previous fail-open behavior of only logging an error. Returns nil when
+// Fleet is disabled or no probers could be constructed. The caller
+// registers the returned Gate's Check method via mgr.AddReadyzCheck and
+// must Stop() it on shutdown.
+func wireFleetReadinessGate(
+	ctx context.Context,
+	routingEngine *routing.RoutingEngine,
+	fleetResilientClient *mcpclient.ResilientClient,
+	cfg *config.Config,
+	logger logr.Logger,
+) *readiness.Gate {
+	if !cfg.Fleet.Enabled {
+		return nil
+	}
+
+	var probers []readiness.Prober
 	if fleetResilientClient != nil {
-		innerStop := stop
-		stop = func() {
-			innerStop()
-			logger.Info("Closing fleet MCP Gateway connection")
-			if closeErr := fleetResilientClient.Close(); closeErr != nil {
-				logger.Error(closeErr, "failed to close fleet MCP client gracefully")
-			}
+		probers = append(probers, &readiness.MCPClientProber{Client: fleetResilientClient})
+	}
+	if fed, ok := routingEngine.ScopeChecker().(*fleet.FederatedScopeChecker); ok {
+		if pinger, ok := fed.Remote().(readiness.Pinger); ok {
+			probers = append(probers, &readiness.ScopeCheckerProber{Pinger: pinger})
 		}
 	}
 
-	return roReconciler, stop, nil
+	if len(probers) == 0 {
+		logger.Info("Fleet is enabled but no readiness probers could be constructed " +
+			"(no MCP Gateway client and no federated scope-checker backend); readiness gate skipped")
+		return nil
+	}
+
+	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), probers...)
+	gate.Start(ctx)
+	logger.Info("Fleet readiness gate started", "prober_count", len(probers), "ready", gate.Ready())
+	return gate
+}
+
+// setupFleetReadinessCheck wires the #1553 Fleet readiness gate into mgr's
+// readyz surface and composes its cleanup into stop. Extracted from
+// setupRemediationOrchestratorControllers to keep it under the funlen gate
+// (Issue #1532).
+func setupFleetReadinessCheck(
+	ctx context.Context,
+	mgr ctrl.Manager,
+	routingEngine *routing.RoutingEngine,
+	fleetResilientClient *mcpclient.ResilientClient,
+	cfg *config.Config,
+	stop func(),
+	logger logr.Logger,
+) func() {
+	fleetGate := wireFleetReadinessGate(ctx, routingEngine, fleetResilientClient, cfg, logger)
+	if fleetGate != nil {
+		if err := mgr.AddReadyzCheck("fleet", fleetGate.Check); err != nil {
+			logger.Error(err, "unable to register fleet readiness check")
+			os.Exit(1)
+		}
+	}
+	return wrapStopWithFleetCleanup(stop, fleetGate, fleetResilientClient, logger)
+}
+
+// wrapStopWithFleetCleanup composes stop with closing the Fleet resilient
+// client and stopping the readiness gate (#1553), both of which are no-ops
+// when Fleet isn't enabled (nil arguments).
+func wrapStopWithFleetCleanup(
+	stop func(),
+	fleetGate *readiness.Gate,
+	fleetResilientClient *mcpclient.ResilientClient,
+	logger logr.Logger,
+) func() {
+	if fleetGate == nil && fleetResilientClient == nil {
+		return stop
+	}
+	return func() {
+		stop()
+		if fleetGate != nil {
+			fleetGate.Stop()
+		}
+		if fleetResilientClient != nil {
+			logger.Info("Closing fleet MCP Gateway connection")
+			if err := fleetResilientClient.Close(); err != nil {
+				logger.Error(err, "failed to close fleet MCP client gracefully")
+			}
+		}
+	}
 }
 
 // wireClusterIdentity discovers the local cluster identity (Issue #615) for
@@ -638,9 +730,15 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, cfg
 	resilienceCfg := mcpclient.DefaultResilienceConfig()
 	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
 	if err != nil {
-		logger.Error(err, "Fleet MCP Gateway connection failed, remote pre-remediation hash reads disabled",
+		// #1553: keep (don't discard) the disconnected client — the fleet
+		// readiness gate attaches an MCPClientProber to it so the periodic
+		// probe keeps retrying and the "fleet" readyz check correctly
+		// reports NotReady until reconnect, instead of the client being
+		// silently lost with no path back to healthy short of a restart.
+		logger.Error(err, "Fleet MCP Gateway connection failed at startup; readiness will report NotReady "+
+			"and keep retrying in the background; remote pre-remediation hash reads disabled until reconnect",
 			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
-		return nil, nil, nil
+		return nil, mcpFleetClient, nil
 	}
 
 	logger.Info("Fleet MCP Gateway connected, remote pre-remediation hash reads enabled",

@@ -26,6 +26,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -64,6 +65,7 @@ type coreServices struct {
 	ds                   *dsClients
 	reg                  *registry.Registry
 	fleetClient          *fleetclient.ResilientClient
+	fleetGate            *readiness.Gate
 	enricher             *enrichment.Enricher
 	sanitizer            *sanitization.Pipeline
 	anomalyDetector      *investigator.AnomalyDetector
@@ -111,6 +113,10 @@ func buildCoreServices(
 	if len(fleetToolNames) > 0 {
 		investigator.AppendFleetToolsToRCA(phaseTools, fleetToolNames)
 	}
+	// #1553 / ADR-068 decision #11 / BR-INTEGRATION-054: fail closed on Fleet
+	// dependency unreachability via readyz (pod-wide), instead of the
+	// previous fail-open behavior of only logging an error.
+	fleetGate := wireFleetReadinessGate(context.Background(), fleetClient, logger)
 	enricher := buildEnricher(cfg, ds, infra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
 	anomalyDetector := buildAnomalyDetector(cfg, logger)
@@ -131,7 +137,7 @@ func buildCoreServices(
 	return &coreServices{
 		auditStore: auditStore, auditCleanup: auditCleanup, infra: infra,
 		interactiveReadiness: interactiveReadiness, eventEmitter: eventEmitter,
-		ds: ds, reg: reg, fleetClient: fleetClient, enricher: enricher,
+		ds: ds, reg: reg, fleetClient: fleetClient, fleetGate: fleetGate, enricher: enricher,
 		sanitizer: sanitizer, anomalyDetector: anomalyDetector, summarizer: sum,
 		catalogFetcher: catalogFetcher, effectiveLLM: effectiveLLM, effectiveReg: effectiveReg,
 		alignEvaluator: alignEvaluator, alignCfg: alignCfg,

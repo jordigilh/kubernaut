@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -117,6 +118,49 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 	}
 
 	return gqlResp.Data.SearchResult[0].Count > 0, nil
+}
+
+// Ping checks connectivity to the ACM Search GraphQL API by issuing the
+// same SearchQuery used by IsManagedResource with an empty filter set.
+// Unlike IsManagedResource, Ping does NOT swallow errors: the readiness
+// gate (pkg/fleet/readiness.ScopeCheckerProber) needs the real
+// transport/status/GraphQL error to correctly flip /readyz to NotReady
+// when ACM Search is unreachable.
+func (c *Client) Ping(ctx context.Context) error {
+	reqBody := graphQLRequest{
+		Query:     SearchQuery,
+		Variables: map[string]interface{}{"input": []searchInput{{}}},
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("build ACM Search ping request body: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+graphQLPath, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build ACM Search ping request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("ACM Search unreachable: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("ACM Search returned status %d", resp.StatusCode)
+	}
+
+	var gqlResp graphQLResponse
+	if err := json.NewDecoder(resp.Body).Decode(&gqlResp); err != nil {
+		return fmt.Errorf("decode ACM Search ping response: %w", err)
+	}
+	if len(gqlResp.Errors) > 0 {
+		return fmt.Errorf("ACM Search returned GraphQL errors: %s", gqlResp.Errors[0].Message)
+	}
+	return nil
 }
 
 func buildFilters(r scope.ResourceIdentity) []searchFilter {

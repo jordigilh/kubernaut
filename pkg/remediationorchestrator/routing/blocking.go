@@ -177,6 +177,15 @@ type Config struct {
 // DD-STATUS-001: Accepts apiReader for cache-bypassed routing queries.
 // BR-SCOPE-010: scopeChecker is mandatory (panics on nil, same pattern as RetryObserver).
 // Issue #214: Optional dsClient for ineffective chain detection (nil = skip chain check).
+// ScopeChecker returns the scope.ScopeChecker the engine was constructed
+// with. Exposed so production wiring code (cmd/remediationorchestrator/
+// main.go) can reach the federated remote backend for Fleet readiness
+// probing (#1553) without duplicating scope-checker construction, mirroring
+// gateway.Server.ScopeChecker().
+func (re *RoutingEngine) ScopeChecker() scope.ScopeChecker {
+	return re.scopeChecker
+}
+
 func NewRoutingEngine(client client.Client, apiReader client.Reader, namespace string, config Config, scopeChecker scope.ScopeChecker, dsClient ...RemediationHistoryQuerier) *RoutingEngine {
 	if scopeChecker == nil {
 		panic("scopeChecker must not be nil — use mocks.AlwaysManagedScopeChecker{} in tests")

@@ -178,7 +178,7 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 	apiHandler := fmc.NewHandler(scopeClient, deps.clusterRegistry, logger)
 	apiMux := http.NewServeMux()
 	apiHandler.RegisterRoutes(apiMux)
-	apiMux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+	apiMux.HandleFunc(fmc.HealthzPath, func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})

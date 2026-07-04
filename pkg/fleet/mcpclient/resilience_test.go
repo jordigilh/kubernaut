@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -188,6 +189,57 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 			_, err := client.Get(backend.URL)
 			Expect(err).To(HaveOccurred(),
 				"Request should timeout due to slow token endpoint")
+		})
+	})
+
+	Context("UT-FLEET-RES-007 [readiness gate Wave 0]: Concurrent Reconnect() calls deduplicate", func() {
+		It("collapses overlapping Reconnect() calls into a single MCP handshake instead of racing (prevents leaked connections when a periodic readiness prober and the lazy reconnect-on-error path call Reconnect concurrently)", func() {
+			var handshakeCount atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handshakeCount.Add(1)
+				// Widen the overlap window so all concurrent Reconnect() callers
+				// below arrive before any single handshake completes.
+				time.Sleep(300 * time.Millisecond)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"test","version":"1.0"}}}`))
+			}))
+			defer server.Close()
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.InitialInterval = 50 * time.Millisecond
+			cfg.MaxInterval = 100 * time.Millisecond
+			cfg.MaxElapsedTime = 5 * time.Second
+
+			ctx := context.Background()
+			rc, err := mcpclient.NewResilient(ctx, server.URL+"/mcp", cfg, logger)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rc.Ready()).To(BeTrue())
+
+			handshakeCount.Store(0)
+
+			const concurrency = 8
+			var wg sync.WaitGroup
+			errs := make([]error, concurrency)
+			for i := 0; i < concurrency; i++ {
+				idx := i
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					defer GinkgoRecover()
+					errs[idx] = rc.Reconnect(ctx)
+				}()
+			}
+			wg.Wait()
+
+			for _, e := range errs {
+				Expect(e).ToNot(HaveOccurred())
+			}
+			Expect(rc.Ready()).To(BeTrue())
+			Expect(handshakeCount.Load()).To(BeNumerically("<=", 4),
+				"singleflight should collapse %d overlapping Reconnect() calls into at most 2 MCP "+
+					"handshakes (2 HTTP round trips each: initialize + notifications/initialized) "+
+					"(observed %d requests) -- a higher count means callers are racing instead of deduplicating",
+				concurrency, handshakeCount.Load())
 		})
 	})
 

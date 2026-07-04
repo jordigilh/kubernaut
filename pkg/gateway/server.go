@@ -38,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth" // BR-GATEWAY-036/037: Shared auth middleware
 	// ADR-052 Addendum 001: Exponential backoff with jitter
 	// Issue #753: Dedicated health server
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"      // #1553: fail-closed Fleet readiness gate
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"     // Issue #756: FileWatcher for cert rotation
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #493/#678: Conditional TLS
 
@@ -140,6 +141,11 @@ type Server struct {
 	crdCreator    *processing.CRDCreator
 	lockManager   *processing.DistributedLockManager // BR-GATEWAY-190: K8s Lease-based distributed locking
 	scopeChecker  scope.ScopeChecker                 // BR-SCOPE-002 + ADR-068: nil = no scope filtering (backward compat)
+	// fleetReadinessGate reflects Fleet dependency (MCP Gateway / scope-check
+	// backend) reachability (#1553, ADR-068, BR-INTEGRATION-065). nil when
+	// Fleet is disabled, in which case readinessHandler skips the check
+	// entirely (fleet was never part of the readiness contract before).
+	fleetReadinessGate *readiness.Gate
 
 	// ADR-057: Controller namespace where all CRDs are created and queried
 	controllerNamespace string
@@ -198,6 +204,22 @@ func (s *Server) LivenessHandler() http.HandlerFunc {
 // dedicated health server (Issue #753: port 8081, /readyz).
 func (s *Server) ReadinessHandler() http.HandlerFunc {
 	return s.readinessHandler
+}
+
+// ScopeChecker returns the server's scope.ScopeChecker (nil if scope
+// filtering is disabled). Exposed so production wiring code (cmd/gateway/
+// main.go) can reach the federated remote backend for readiness probing
+// without duplicating scope-checker construction (#1553).
+func (s *Server) ScopeChecker() scope.ScopeChecker {
+	return s.scopeChecker
+}
+
+// SetFleetReadinessGate wires the Fleet dependency readiness gate (#1553).
+// Production code (cmd/gateway/main.go) calls this once at startup, after
+// starting the gate, when Fleet is enabled. Must be called before the HTTP
+// server starts accepting readiness probes.
+func (s *Server) SetFleetReadinessGate(gate *readiness.Gate) {
+	s.fleetReadinessGate = gate
 }
 
 // MarkCacheReady signals that the informer cache has completed initial sync.
@@ -604,6 +626,18 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 		s.writeReadinessUnavailable(w, r, "Kubernetes API not reachable",
 			"Kubernetes API is not reachable")
 		return
+	}
+
+	// #1553 / ADR-068 / BR-INTEGRATION-065: when Fleet is enabled, an
+	// unreachable MCP Gateway or scope-check backend fails the whole pod's
+	// readiness (not just the fleet-specific code path), so Kubernetes
+	// removes it from Service endpoints until the dependency recovers.
+	if s.fleetReadinessGate != nil {
+		if err := s.fleetReadinessGate.Check(r); err != nil {
+			s.writeReadinessUnavailable(w, r, "fleet dependency unreachable: "+err.Error(),
+				"Fleet dependency unreachable: "+err.Error())
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

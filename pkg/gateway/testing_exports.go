@@ -23,6 +23,8 @@ package gateway
 import (
 	"github.com/go-logr/logr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 )
 
 // SetCacheReadyForTesting allows tests to control the cache-ready state.
@@ -34,6 +36,12 @@ func (s *Server) SetCacheReadyForTesting(ready bool) {
 // SetShuttingDownForTesting allows tests to control the shutdown state.
 func (s *Server) SetShuttingDownForTesting(shuttingDown bool) {
 	s.isShuttingDown.Store(shuttingDown)
+}
+
+// SetFleetReadinessGateForTesting allows tests to inject a fleet readiness
+// gate. Production code must use SetFleetReadinessGate instead (#1553).
+func (s *Server) SetFleetReadinessGateForTesting(gate *readiness.Gate) {
+	s.fleetReadinessGate = gate
 }
 
 // NewMinimalServerForReadinessTest creates a lightweight Server suitable for

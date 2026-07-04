@@ -49,6 +49,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -213,7 +214,12 @@ func main() {
 	// MCP Gateway is configured, create an mcpClientFactory that can route
 	// executor operations to remote clusters. Otherwise, use
 	// localClientFactory (pre-fleet behavior).
-	clientFactory, fleetResilientClient := buildClientFactory(ctx, cfg, mgr, setupLog)
+	clientFactory, fleetResilientClient := buildClientFactory(ctx, cfg, mgr.GetClient(), setupLog)
+
+	// #1553 / ADR-068 / BR-FLEET-054: fail closed on Fleet dependency
+	// unreachability via readyz (pod-wide), instead of the previous
+	// fail-open behavior of only logging an error.
+	fleetGate := wireFleetReadinessGate(ctx, fleetResilientClient, setupLog)
 
 	// BR-WE-014: Executor Registry (Strategy Pattern). Issue #868: engines
 	// are registered based on availability (job always, tekton via CRD
@@ -255,7 +261,7 @@ func main() {
 	}
 	//+kubebuilder:scaffold:builder
 
-	if err := registerHealthChecks(mgr, executorRegistry); err != nil {
+	if err := registerHealthChecks(mgr, executorRegistry, fleetGate); err != nil {
 		setupLog.Error(err, "unable to set up health checks")
 		os.Exit(1)
 	}
@@ -267,6 +273,10 @@ func main() {
 	// DD-AUDIT-002 + BR-FLEET-054: flush audit events and close the fleet
 	// MCP client on any exit path (including os.Exit via mgr.Start failure).
 	defer wireShutdownHooks(auditStore, fleetResilientClient, setupLog)()
+	// #1553: stop the Fleet readiness gate's probe loop on shutdown.
+	if fleetGate != nil {
+		defer fleetGate.Stop()
+	}
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
@@ -405,11 +415,16 @@ func wireTLS(ctx context.Context, cfg *weconfig.Config, logger logr.Logger) func
 // attempts to connect to the Fleet MCP Gateway and returns an MCP-routed
 // factory; on connection failure (or when Fleet is unconfigured), it falls
 // back to a local factory. The returned *fleetclient.ResilientClient is nil
-// unless a Fleet connection was established, and callers should Close() it
-// on shutdown.
-func buildClientFactory(ctx context.Context, cfg *weconfig.Config, mgr ctrl.Manager, logger logr.Logger) (weexecutor.ClientFactory, *fleetclient.ResilientClient) {
+// unless Fleet is configured; #1553: on a connection failure it is still
+// returned (not discarded) so wireFleetReadinessGate can attach an
+// MCPClientProber that keeps retrying via the periodic probe — this is
+// what allows /readyz to recover once Fleet comes back, instead of
+// requiring a pod restart (mirrors GW/RO/EM/SP's identical change).
+// Callers should Close() a non-nil client on shutdown. localClient is
+// pre-built by the caller (independently testable with a fake).
+func buildClientFactory(ctx context.Context, cfg *weconfig.Config, localClient client.Client, logger logr.Logger) (weexecutor.ClientFactory, *fleetclient.ResilientClient) {
 	if cfg.Fleet.Endpoint == "" {
-		return weexecutor.NewLocalClientFactory(mgr.GetClient()), nil
+		return weexecutor.NewLocalClientFactory(localClient), nil
 	}
 
 	logger.Info("Fleet MCP Gateway configured, connecting for remote execution...",
@@ -445,14 +460,15 @@ func buildClientFactory(ctx context.Context, cfg *weconfig.Config, mgr ctrl.Mana
 		ctrl.Log.WithName("fleet-client"), fleetOpts...,
 	)
 	if fleetErr != nil {
-		logger.Error(fleetErr, "Fleet MCP Gateway connection failed, remote execution disabled",
+		logger.Error(fleetErr, "Fleet MCP Gateway connection failed at startup; readiness will report "+
+			"NotReady and keep retrying in the background; remote execution disabled until reconnect",
 			"endpoint", cfg.Fleet.Endpoint)
-		return weexecutor.NewLocalClientFactory(mgr.GetClient()), nil
+		return weexecutor.NewLocalClientFactory(localClient), fleetResilientClient
 	}
 
 	logger.Info("Fleet MCP Gateway connected, remote execution enabled",
 		"endpoint", cfg.Fleet.Endpoint)
-	return weexecutor.NewMCPClientFactory(mgr.GetClient(), fleetResilientClient.Session()), fleetResilientClient
+	return weexecutor.NewMCPClientFactory(localClient, fleetResilientClient.Session()), fleetResilientClient
 }
 
 // buildExecutorRegistry wires up the BR-WE-014 executor registry (Strategy
@@ -533,8 +549,9 @@ func registerAnsibleExecutor(cfg *weconfig.Config, mgr ctrl.Manager, controllerN
 // Issue #868 "engines" readyz sub-check, which reports execution engine
 // availability (the job engine is always registered, so this passes in
 // normal operation but provides a clear signal if the registry is
-// misconfigured).
-func registerHealthChecks(mgr ctrl.Manager, executorRegistry *weexecutor.Registry) error {
+// misconfigured), and the #1553 Fleet readiness gate (a nil fleetGate is a
+// no-op — Fleet unconfigured).
+func registerHealthChecks(mgr ctrl.Manager, executorRegistry *weexecutor.Registry, fleetGate *readiness.Gate) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check: %w", err)
 	}
@@ -549,7 +566,40 @@ func registerHealthChecks(mgr ctrl.Manager, executorRegistry *weexecutor.Registr
 	})); err != nil {
 		return fmt.Errorf("unable to set up engines readyz check: %w", err)
 	}
+	if fleetGate != nil {
+		if err := mgr.AddReadyzCheck("fleet", fleetGate.Check); err != nil {
+			return fmt.Errorf("unable to set up fleet readiness check: %w", err)
+		}
+	}
 	return nil
+}
+
+// fleetReadinessProbeInterval controls how often the Fleet readiness gate
+// re-probes its dependencies once started (mirrors cmd/gateway/main.go,
+// cmd/remediationorchestrator/main.go, cmd/effectivenessmonitor/main.go,
+// cmd/signalprocessing/main.go).
+const fleetReadinessProbeInterval = 15 * time.Second
+
+// wireFleetReadinessGate builds and starts the Fleet dependency readiness
+// gate (#1553, ADR-068, BR-FLEET-054): once Fleet is enabled, WE's
+// pod-wide readyz must fail closed when the MCP Gateway becomes
+// unreachable, instead of the previous fail-open behavior of only logging
+// an error. WE has no scope-checker dependency (unlike GW/RO), so its
+// gate only ever carries an MCPClientProber. Returns nil when
+// fleetResilientClient is nil (buildClientFactory only returns a non-nil
+// client when Fleet.Endpoint is configured). The caller registers the
+// returned Gate's Check method via mgr.AddReadyzCheck and must Stop() it
+// on shutdown.
+func wireFleetReadinessGate(ctx context.Context, fleetResilientClient *fleetclient.ResilientClient, logger logr.Logger) *readiness.Gate {
+	if fleetResilientClient == nil {
+		return nil
+	}
+
+	prober := &readiness.MCPClientProber{Client: fleetResilientClient}
+	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), prober)
+	gate.Start(ctx)
+	logger.Info("Fleet readiness gate started", "ready", gate.Ready())
+	return gate
 }
 
 // wireShutdownHooks returns a single cleanup function that flushes the

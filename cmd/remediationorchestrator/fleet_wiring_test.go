@@ -114,9 +114,18 @@ func TestBuildFleetReaderFactory_Enabled_WiresReaderFactory(t *testing.T) {
 
 // TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully
 // pins the fail-open contract for an unreachable Fleet MCP Gateway endpoint
-// (mirrors GW's/EM's equivalent tests): a connectivity failure must never
-// error out of buildFleetReaderFactory — RO degrades to hub-only mode
-// instead of blocking startup.
+// at the ReaderFactory/error level (mirrors GW's/EM's equivalent tests): a
+// connectivity failure must never error out of buildFleetReaderFactory — RO
+// degrades to hub-only mode instead of blocking startup.
+//
+// #1553 [readiness gate Wave 3]: unlike the pre-#1553 contract, the
+// resilient client is now kept (not discarded) on an initial connection
+// failure — wireFleetReadinessGate attaches an MCPClientProber to it so the
+// periodic readiness probe keeps retrying and RO's "fleet" readyz check
+// correctly reports NotReady (and later recovers) instead of the client
+// being silently lost with no path back to healthy short of a pod restart.
+// Mirrors the identical change made to GW's wireFleetOwnerResolution in
+// Wave 2 (cmd/gateway/main.go).
 func TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully(t *testing.T) {
 	t.Parallel()
 
@@ -130,13 +139,20 @@ func TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully(t
 	defer cancel()
 
 	rf, fc, err := buildFleetReaderFactory(ctx, localClient, cfg, logr.Discard())
+	if fc != nil {
+		t.Cleanup(func() { _ = fc.Close() })
+	}
 	if err != nil {
 		t.Fatalf("unexpected error for an unreachable Fleet MCP Gateway endpoint: %v", err)
 	}
 	if rf != nil {
 		t.Error("IT-RO-054-001: fleet.ReaderFactory must remain nil when the Fleet MCP Gateway is unreachable")
 	}
-	if fc != nil {
-		t.Error("IT-RO-054-001: *mcpclient.ResilientClient must remain nil when the Fleet MCP Gateway is unreachable")
+	if fc == nil {
+		t.Fatal("IT-RO-1553-001: *mcpclient.ResilientClient must be kept (not discarded) when the Fleet " +
+			"MCP Gateway is unreachable so the readiness gate's periodic probe can keep retrying it (#1553)")
+	}
+	if fc.Ready() {
+		t.Error("IT-RO-1553-001: the kept client must not report Ready() when its initial connection failed")
 	}
 }
