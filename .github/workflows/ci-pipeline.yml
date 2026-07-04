@@ -208,7 +208,7 @@ jobs:
           cache: true
 
       - name: Install go-licenses
-        run: go install github.com/google/go-licenses@latest
+        run: go install github.com/google/go-licenses@v1.6.0
 
       - name: Check licenses
         run: |
@@ -829,7 +829,7 @@ jobs:
           sudo apt-get install -y podman
       - name: Setup envtest (K8s test binaries)
         run: |
-          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@f9589b9f2b9dddf8532b432bb8315f2820ab9971 # release-0.23
           echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
       - name: Run ${{ matrix.service }} integration tests
         run: |
@@ -1054,9 +1054,9 @@ jobs:
           kind version
       - name: Install Helm (fleet/fleetmetadatacache-kuadrant/fleetmetadatacache-eaigw E2E deploy Istio/Kuadrant/Envoy AI Gateway via helm)
         if: matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-kuadrant' || matrix.service == 'fleetmetadatacache-eaigw'
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm version
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+        with:
+          version: latest
       - name: Install Tekton CLI (tkn)
         run: |
           TKN_VERSION="0.40.0"
@@ -1242,9 +1242,9 @@ jobs:
           echo "PASS: Chart CRDs match generated CRDs"
 
       - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm version
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+        with:
+          version: latest
 
       - name: values.schema.json validation
         run: |
