@@ -1444,29 +1444,43 @@ func BuildComponentBullets(ea *eav1.EffectivenessAssessment) string {
 		return ""
 	}
 
-	var bullets []string
 	c := ea.Status.Components
-
-	if c.HealthAssessed && c.HealthScore != nil && *c.HealthScore < 1.0 {
-		bullets = append(bullets, "- Pod health: not recovered")
-	}
-	if c.AlertAssessed && c.AlertScore != nil && *c.AlertScore < 1.0 {
-		bullets = append(bullets, "- Related alerts: still firing")
-	}
-	if c.HashComputed && c.PostRemediationSpecHash != "" && c.CurrentSpecHash != "" &&
-		c.PostRemediationSpecHash != c.CurrentSpecHash {
-		bullets = append(bullets, "- Resource integrity: spec modified externally after remediation")
-	}
-	if c.MetricsAssessed && c.MetricsScore != nil && *c.MetricsScore < 1.0 {
-		switch {
-		case *c.MetricsScore >= 0.5:
-			bullets = append(bullets, fmt.Sprintf("- Metrics: partial improvement (score: %.2f)", *c.MetricsScore))
-		case *c.MetricsScore > 0.0:
-			bullets = append(bullets, fmt.Sprintf("- Metrics: minimal improvement (score: %.2f)", *c.MetricsScore))
-		default:
-			bullets = append(bullets, "- Metrics: no improvement detected")
-		}
+	var bullets []string
+	bullets = appendIfBullet(bullets, c.HealthAssessed && c.HealthScore != nil && *c.HealthScore < 1.0,
+		"- Pod health: not recovered")
+	bullets = appendIfBullet(bullets, c.AlertAssessed && c.AlertScore != nil && *c.AlertScore < 1.0,
+		"- Related alerts: still firing")
+	bullets = appendIfBullet(bullets, c.HashComputed && c.PostRemediationSpecHash != "" && c.CurrentSpecHash != "" &&
+		c.PostRemediationSpecHash != c.CurrentSpecHash,
+		"- Resource integrity: spec modified externally after remediation")
+	if metricsBullet := metricsImprovementBullet(c); metricsBullet != "" {
+		bullets = append(bullets, metricsBullet)
 	}
 
 	return strings.Join(bullets, "\n")
+}
+
+// appendIfBullet appends bullet to bullets when cond is true, otherwise
+// returns bullets unchanged.
+func appendIfBullet(bullets []string, cond bool, bullet string) []string {
+	if cond {
+		return append(bullets, bullet)
+	}
+	return bullets
+}
+
+// metricsImprovementBullet describes the metrics component's improvement
+// tier, or "" when metrics were not assessed or fully improved.
+func metricsImprovementBullet(c eav1.EAComponents) string {
+	if !c.MetricsAssessed || c.MetricsScore == nil || *c.MetricsScore >= 1.0 {
+		return ""
+	}
+	switch {
+	case *c.MetricsScore >= 0.5:
+		return fmt.Sprintf("- Metrics: partial improvement (score: %.2f)", *c.MetricsScore)
+	case *c.MetricsScore > 0.0:
+		return fmt.Sprintf("- Metrics: minimal improvement (score: %.2f)", *c.MetricsScore)
+	default:
+		return "- Metrics: no improvement detected"
+	}
 }

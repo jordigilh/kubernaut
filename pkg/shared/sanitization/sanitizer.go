@@ -141,43 +141,9 @@ func redactPatternSimple(content, pattern string) string {
 
 	idx := strings.Index(lowerOutput, pattern)
 	for idx != -1 {
-		// Find the value after the pattern
-		valueStart := idx + len(pattern)
-
-		// Skip whitespace
-		for valueStart < len(output) && (output[valueStart] == ' ' || output[valueStart] == '\t') {
-			valueStart++
-		}
-
-		if valueStart >= len(output) {
+		valueStart, valueEnd, ok := findRedactableValueBounds(output, idx+len(pattern))
+		if !ok {
 			break
-		}
-
-		// Find end of value
-		valueEnd := valueStart
-		inQuotes := false
-		quoteChar := byte(0)
-
-		if output[valueStart] == '"' || output[valueStart] == '\'' {
-			inQuotes = true
-			quoteChar = output[valueStart]
-			valueStart++
-			valueEnd = valueStart
-		}
-
-		for valueEnd < len(output) {
-			ch := output[valueEnd]
-			if inQuotes {
-				if ch == quoteChar {
-					break
-				}
-			} else {
-				if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' ||
-					ch == ',' || ch == '"' || ch == '\'' || ch == '}' || ch == ']' {
-					break
-				}
-			}
-			valueEnd++
 		}
 
 		if valueEnd > valueStart {
@@ -185,20 +151,91 @@ func redactPatternSimple(content, pattern string) string {
 			lowerOutput = strings.ToLower(output)
 		}
 
-		// Search for next occurrence
-		searchStart := idx + len(pattern) + len(RedactedPlaceholder)
-		if searchStart >= len(lowerOutput) {
+		nextIdx, ok := nextPatternIndex(lowerOutput, idx+len(pattern)+len(RedactedPlaceholder), pattern)
+		if !ok {
 			break
 		}
-
-		remainingIdx := strings.Index(lowerOutput[searchStart:], pattern)
-		if remainingIdx == -1 {
-			break
-		}
-		idx = searchStart + remainingIdx
+		idx = nextIdx
 	}
 
 	return output
+}
+
+// findRedactableValueBounds locates the [start, end) byte range of the value
+// immediately following a matched pattern, skipping leading whitespace and
+// respecting an optional surrounding quote. ok is false when the pattern was
+// at the end of the string with no value to redact.
+func findRedactableValueBounds(output string, searchFrom int) (start, end int, ok bool) {
+	valueStart := skipLeadingWhitespace(output, searchFrom)
+	if valueStart >= len(output) {
+		return 0, 0, false
+	}
+
+	valueStart, quoteChar, inQuotes := consumeOpeningQuote(output, valueStart)
+	valueEnd := scanValueEnd(output, valueStart, quoteChar, inQuotes)
+
+	return valueStart, valueEnd, true
+}
+
+// skipLeadingWhitespace advances past spaces/tabs starting at from.
+func skipLeadingWhitespace(output string, from int) int {
+	i := from
+	for i < len(output) && (output[i] == ' ' || output[i] == '\t') {
+		i++
+	}
+	return i
+}
+
+// consumeOpeningQuote advances past a leading quote character, if present,
+// reporting the quote byte and whether the value is quoted.
+func consumeOpeningQuote(output string, at int) (newAt int, quoteChar byte, inQuotes bool) {
+	if output[at] == '"' || output[at] == '\'' {
+		return at + 1, output[at], true
+	}
+	return at, 0, false
+}
+
+// scanValueEnd finds the end of the value starting at valueStart: either the
+// matching closing quote (quoted values) or the first delimiter/whitespace
+// character (unquoted values).
+func scanValueEnd(output string, valueStart int, quoteChar byte, inQuotes bool) int {
+	valueEnd := valueStart
+	for valueEnd < len(output) {
+		ch := output[valueEnd]
+		if inQuotes {
+			if ch == quoteChar {
+				break
+			}
+		} else if isValueDelimiter(ch) {
+			break
+		}
+		valueEnd++
+	}
+	return valueEnd
+}
+
+// isValueDelimiter reports whether ch terminates an unquoted redactable value.
+func isValueDelimiter(ch byte) bool {
+	switch ch {
+	case ' ', '\t', '\n', '\r', ',', '"', '\'', '}', ']':
+		return true
+	default:
+		return false
+	}
+}
+
+// nextPatternIndex finds the next occurrence of pattern in lowerOutput at or
+// after searchStart, returning ok=false when the search window is exhausted
+// or no further occurrence exists.
+func nextPatternIndex(lowerOutput string, searchStart int, pattern string) (int, bool) {
+	if searchStart >= len(lowerOutput) {
+		return 0, false
+	}
+	remainingIdx := strings.Index(lowerOutput[searchStart:], pattern)
+	if remainingIdx == -1 {
+		return 0, false
+	}
+	return searchStart + remainingIdx, true
 }
 
 // SanitizeForLog is a convenience function for quick sanitization.

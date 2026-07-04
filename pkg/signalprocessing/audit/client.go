@@ -266,6 +266,29 @@ func buildClassificationDecisionPayload(sp *signalprocessingv1alpha1.SignalProce
 	}
 	payload.DurationMs.SetTo(durationMs)
 
+	applySeverityFields(&payload, sp)
+
+	// Add policy hash for audit trail and policy version tracking
+	if sp.Status.PolicyHash != "" {
+		payload.PolicyHash.SetTo(sp.Status.PolicyHash)
+	}
+
+	// BR-SP-106: Signal mode and original signal type for audit trail (SOC2 CC7.4)
+	if sp.Status.SignalMode != "" {
+		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.SignalMode))
+	}
+	if sp.Status.SourceSignalName != "" {
+		payload.SourceSignalName.SetTo(sp.Status.SourceSignalName)
+	}
+
+	applyClassificationResultFields(&payload, sp)
+
+	return payload
+}
+
+// applySeverityFields sets the external/normalized/main severity fields and
+// the rego-policy determination source (DD-SEVERITY-001).
+func applySeverityFields(payload *api.SignalProcessingAuditPayload, sp *signalprocessingv1alpha1.SignalProcessing) {
 	// DD-SEVERITY-001: Use normalized severity (sp.Status.Severity) for the main Severity field
 	// to ensure it always matches the required enum ["critical", "warning", "info"]
 	if sp.Status.Severity != "" {
@@ -283,22 +306,12 @@ func buildClassificationDecisionPayload(sp *signalprocessingv1alpha1.SignalProce
 		// Always set determination_source to "rego-policy" when normalized severity exists
 		payload.DeterminationSource.SetTo(api.SignalProcessingAuditPayloadDeterminationSourceRegoPolicy)
 	}
+}
 
-	// Add policy hash for audit trail and policy version tracking
-	if sp.Status.PolicyHash != "" {
-		payload.PolicyHash.SetTo(sp.Status.PolicyHash)
-	}
-
-	// BR-SP-106: Signal mode and original signal type for audit trail (SOC2 CC7.4)
-	if sp.Status.SignalMode != "" {
-		payload.SignalMode.SetTo(toSignalProcessingAuditPayloadSignalMode(sp.Status.SignalMode))
-	}
-	if sp.Status.SourceSignalName != "" {
-		payload.SourceSignalName.SetTo(sp.Status.SourceSignalName)
-	}
-
-	// Add all classification results
-	// Note: Confidence fields removed per DD-SP-001 V1.1
+// applyClassificationResultFields sets the environment, priority, and
+// business classification results (Note: Confidence fields removed per
+// DD-SP-001 V1.1).
+func applyClassificationResultFields(payload *api.SignalProcessingAuditPayload, sp *signalprocessingv1alpha1.SignalProcessing) {
 	if sp.Status.EnvironmentClassification != nil {
 		if env := toSignalProcessingAuditPayloadEnvironment(string(sp.Status.EnvironmentClassification.Environment)); env != "" {
 			payload.Environment.SetTo(env)
@@ -323,8 +336,6 @@ func buildClassificationDecisionPayload(sp *signalprocessingv1alpha1.SignalProce
 			payload.SLARequirement.SetTo(string(sp.Status.BusinessClassification.SLARequirement))
 		}
 	}
-
-	return payload
 }
 
 // RecordClassificationDecision records classification decision event.

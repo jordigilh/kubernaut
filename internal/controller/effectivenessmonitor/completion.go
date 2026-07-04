@@ -181,43 +181,55 @@ func (r *Reconciler) emitCompletionMetricsAndEvents(ctx context.Context, ea *eav
 func (r *Reconciler) determineAssessmentReason(ea *eav1.EffectivenessAssessment) string {
 	components := &ea.Status.Components
 
-	allAssessed := components.HealthAssessed && components.HashComputed &&
-		(components.AlertAssessed || !r.Config.AlertManagerEnabled) &&
-		(components.MetricsAssessed || !r.Config.PrometheusEnabled)
+	if r.allComponentsAssessed(components) {
+		return eav1.AssessmentReasonFull
+	}
 
 	anyAssessed := components.HealthAssessed || components.HashComputed ||
 		components.AlertAssessed || components.MetricsAssessed
-
-	if allAssessed {
-		return eav1.AssessmentReasonFull
-	}
 
 	validityExpired := ea.Status.ValidityDeadline != nil &&
 		r.validityChecker.TimeUntilExpired(ea.Status.ValidityDeadline.Time) == 0
 
 	if validityExpired {
-		// Issue #369, BR-EM-012: Distinguish alert_decay_timeout from generic partial.
-		if components.AlertDecayRetries > 0 && !components.AlertAssessed {
-			return eav1.AssessmentReasonAlertDecayTimeout
-		}
-
-		// ADR-EM-001, Batch 3: Distinguish metrics_timed_out from generic partial.
-		if r.Config.PrometheusEnabled && !components.MetricsAssessed &&
-			components.HealthAssessed && components.HashComputed &&
-			(components.AlertAssessed || !r.Config.AlertManagerEnabled) {
-			return eav1.AssessmentReasonMetricsTimedOut
-		}
-
-		if anyAssessed {
-			return eav1.AssessmentReasonPartial
-		}
-		return eav1.AssessmentReasonExpired
+		return r.expiredAssessmentReason(components, anyAssessed)
 	}
 
 	if anyAssessed {
 		return eav1.AssessmentReasonPartial
 	}
 
+	return eav1.AssessmentReasonExpired
+}
+
+// allComponentsAssessed reports whether every component enabled for this
+// assessment (health, hash, and alert/metrics when their external services
+// are enabled) has completed.
+func (r *Reconciler) allComponentsAssessed(components *eav1.EAComponents) bool {
+	return components.HealthAssessed && components.HashComputed &&
+		(components.AlertAssessed || !r.Config.AlertManagerEnabled) &&
+		(components.MetricsAssessed || !r.Config.PrometheusEnabled)
+}
+
+// expiredAssessmentReason computes the reason once the validity deadline has
+// passed, distinguishing the specific timeout causes (alert decay, metrics)
+// from the generic partial/expired outcomes.
+func (r *Reconciler) expiredAssessmentReason(components *eav1.EAComponents, anyAssessed bool) string {
+	// Issue #369, BR-EM-012: Distinguish alert_decay_timeout from generic partial.
+	if components.AlertDecayRetries > 0 && !components.AlertAssessed {
+		return eav1.AssessmentReasonAlertDecayTimeout
+	}
+
+	// ADR-EM-001, Batch 3: Distinguish metrics_timed_out from generic partial.
+	if r.Config.PrometheusEnabled && !components.MetricsAssessed &&
+		components.HealthAssessed && components.HashComputed &&
+		(components.AlertAssessed || !r.Config.AlertManagerEnabled) {
+		return eav1.AssessmentReasonMetricsTimedOut
+	}
+
+	if anyAssessed {
+		return eav1.AssessmentReasonPartial
+	}
 	return eav1.AssessmentReasonExpired
 }
 

@@ -29,6 +29,7 @@ import (
 	"os"
 	"time"
 
+	zaplog "go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -42,20 +43,20 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
-	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
-	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/internal/version"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	aistatus "github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 var (
@@ -69,20 +70,11 @@ func init() {
 	utilruntime.Must(isv1alpha1.AddToScheme(scheme))
 }
 
-func main() {
-	// ========================================
-	// ADR-030: Configuration via YAML file
-	// Single -config flag; all functional config in YAML ConfigMap
-	// ========================================
-	var configPath string
-	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
-
-	flag.Parse()
-
-	// Issue #875: Bootstrap logger at INFO for config loading
-	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
-
+// loadAIAnalysisConfig loads and validates the AIAnalysis config (ADR-030),
+// applies the config-driven log level (Issue #875), and discovers the
+// controller namespace for CRD watch restriction (ADR-057). Exits the
+// process on any failure, matching main()'s original fail-fast behavior.
+func loadAIAnalysisConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*config.Config, string) {
 	setupLog.Info("Starting AI Analysis Controller",
 		"version", version.Version,
 		"gitCommit", version.GitCommit,
@@ -121,6 +113,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	return cfg, controllerNS
+}
+
+// buildAIAnalysisManager constructs the controller manager with the
+// namespace-restricted AIAnalysis/InvestigationSession caches and
+// metrics/health-probe/leader election settings from cfg, then registers
+// the BR-INTERACTIVE-010 field indexes used for IS<->AA lookups by RR name.
+// Exits the process on any failure, matching main()'s original fail-fast
+// behavior.
+func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manager {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
@@ -181,10 +183,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ========================================
-	// BR-AI-007: Wire Kubernaut Agent client for Investigating phase
-	// DD-HAPI-003: Using generated OpenAPI client for type safety and contract compliance
-	// ========================================
+	return mgr
+}
+
+// aiAnalysisClients bundles the external clients wired at startup for the
+// Investigating (BR-AI-007) and Analyzing (BR-AI-012) phase handlers, plus
+// the P0 audit store/client (DD-AUDIT-003).
+type aiAnalysisClients struct {
+	agentClient   *agentclient.KubernautAgentClient
+	regoEvaluator *rego.Evaluator
+	auditStore    sharedaudit.AuditStore
+	auditClient   *audit.AuditClient
+}
+
+// wireAIAnalysisClients constructs the Kubernaut Agent client (BR-AI-007,
+// DD-HAPI-003), the Rego evaluator with startup policy validation (BR-AI-012,
+// DD-AIANALYSIS-001/002, ADR-050), and the buffered audit store/client
+// (DD-AUDIT-003, ADR-030). Exits the process on any failure, matching
+// main()'s original fail-fast behavior. Rego hot-reloader and audit store
+// cleanup remain the caller's responsibility during graceful shutdown.
+func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisClients {
 	// BR-AA-HAPI-064: HTTP client timeout for session submit/poll/result calls.
 	setupLog.Info("Creating Kubernaut Agent client",
 		"url", cfg.Agent.URL,
@@ -199,19 +217,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ========================================
-	// BR-AI-012: Wire Rego evaluator for Analyzing phase
-	// DD-AIANALYSIS-001: Rego policy loading
-	// ADR-050: Configuration Validation Strategy (fail-fast at startup)
-	// DD-AIANALYSIS-002: Rego Policy Startup Validation
-	// ========================================
+	// DD-AIANALYSIS-001: Rego policy loading; ADR-050: fail-fast startup validation.
 	setupLog.Info("Creating Rego evaluator", "policyPath", cfg.Rego.PolicyPath)
 	regoEvaluator := rego.NewEvaluator(rego.Config{
 		PolicyPath: cfg.Rego.PolicyPath,
 	}, ctrl.Log.WithName("rego"))
 
-	// ADR-050: Startup validation - fails fast on invalid policy
-	ctx := context.Background()
 	if err := regoEvaluator.StartHotReload(ctx); err != nil {
 		setupLog.Error(err, "failed to load approval policy")
 		os.Exit(1)
@@ -219,14 +230,9 @@ func main() {
 	setupLog.Info("approval policy loaded successfully",
 		"policyHash", regoEvaluator.GetPolicyHash())
 
-	// Note: Rego hot-reloader cleanup is handled explicitly in graceful shutdown section
-	// See cleanup after mgr.Start() returns
+	// Note: Rego hot-reloader cleanup is handled explicitly in graceful shutdown section.
 
-	// ========================================
-	// DD-AUDIT-003: Wire audit client for P0 audit traces
-	// DD-API-001: Use OpenAPI generated client (MANDATORY)
-	// ADR-030: DataStorage URL and buffer config from YAML config
-	// ========================================
+	// DD-AUDIT-003 / DD-API-001: OpenAPI generated Data Storage client (MANDATORY).
 	setupLog.Info("Creating audit client",
 		"dataStorageURL", cfg.DataStorage.URL,
 		"dataStorageTimeout", cfg.DataStorage.Timeout)
@@ -261,39 +267,42 @@ func main() {
 		"batchSize", auditConfig.BatchSize,
 		"flushInterval", auditConfig.FlushInterval)
 
-	// ========================================
-	// DD-METRICS-001: Initialize Metrics
-	// Per V1.0 Service Maturity Requirements - P0 Blocker
-	// Metrics wired to controller via dependency injection
-	// ========================================
+	return &aiAnalysisClients{
+		agentClient:   agentClient,
+		regoEvaluator: regoEvaluator,
+		auditStore:    auditStore,
+		auditClient:   auditClient,
+	}
+}
+
+// setupAIAnalysisReconciler creates the metrics collector (DD-METRICS-001),
+// the Investigating/Analyzing phase handlers (BR-AI-007, BR-AI-012), the
+// atomic status manager (DD-PERF-001, AA-HAPI-001), and wires the
+// AIAnalysisReconciler into mgr. Also registers the healthz/readyz checks,
+// including the cache-sync-aware readyz check that prevents premature
+// reconciliation before controller watches are established. Exits the
+// process on any failure, matching main()'s original fail-fast behavior.
+func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerNS string, clients *aiAnalysisClients) *metrics.Metrics {
+	// DD-METRICS-001: Per V1.0 Service Maturity Requirements - P0 Blocker.
 	setupLog.Info("Initializing AIAnalysis metrics (DD-METRICS-001)")
 	aianalysisMetrics := metrics.NewMetrics()
 	setupLog.Info("AIAnalysis metrics initialized and registered")
 
-	// ========================================
-	// Create phase handlers (BR-AI-007, BR-AI-012)
-	// DD-METRICS-001: Pass metrics to handlers
-	// DD-AUDIT-003: Pass audit client to handlers
-	// ========================================
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
 	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
 	isChecker := handlers.NewK8sInvestigationSessionChecker(mgr.GetAPIReader(), controllerNS)
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(mgr.GetClient(), controllerNS)
-	investigatingHandler := handlers.NewInvestigatingHandler(agentClient, controllerLog, aianalysisMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder),                              // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode(),                                        // BR-AA-HAPI-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval),   // BR-AA-HAPI-064.8: From config
-		handlers.WithInvestigationSessionChecker(isChecker),               // BR-INTERACTIVE-010: IS CRD awareness
-		handlers.WithISPhaseUpdater(isPhaseUpdater))                       // BR-INTERACTIVE-010: Set IS Active after submit
-	analyzingHandler := handlers.NewAnalyzingHandler(regoEvaluator, controllerLog, aianalysisMetrics, auditClient).
+	investigatingHandler := handlers.NewInvestigatingHandler(clients.agentClient, controllerLog, aianalysisMetrics, clients.auditClient,
+		handlers.WithRecorder(eventRecorder),                            // DD-EVENT-001: Session lifecycle events
+		handlers.WithSessionMode(),                                      // BR-AA-HAPI-064: Async submit/poll/result flow
+		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-HAPI-064.8: From config
+		handlers.WithInvestigationSessionChecker(isChecker),             // BR-INTERACTIVE-010: IS CRD awareness
+		handlers.WithISPhaseUpdater(isPhaseUpdater))                     // BR-INTERACTIVE-010: Set IS Active after submit
+	analyzingHandler := handlers.NewAnalyzingHandler(clients.regoEvaluator, controllerLog, aianalysisMetrics, clients.auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 
-	// ========================================
-	// DD-PERF-001: Atomic Status Updates
-	// Status Manager for reducing K8s API calls by 50-75%
-	// Consolidates multiple status field updates into single atomic operations
-	// AA-HAPI-001: Pass APIReader to bypass cache for fresh refetches
-	// ========================================
+	// DD-PERF-001: Atomic status updates reduce K8s API calls by 50-75%.
+	// AA-HAPI-001: Pass APIReader to bypass cache for fresh refetches.
 	statusManager := aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-HAPI-001)")
 
@@ -302,14 +311,14 @@ func main() {
 		Scheme:           mgr.GetScheme(),
 		Recorder:         eventRecorder,
 		Log:              controllerLog,
-		Metrics:          aianalysisMetrics, // DD-METRICS-001: Injected metrics (P0)
-		StatusManager:    statusManager,     // DD-PERF-001: Atomic status updates
-		AnalyzingHandler: analyzingHandler,  // BR-AI-012: Rego policy evaluation
-		AuditClient:      auditClient,       // DD-AUDIT-003: P0 audit traces
-		ISPhaseUpdater:   isPhaseUpdater,    // #1421: Cascade cancel to IS in terminal branch
+		Metrics:          aianalysisMetrics,   // DD-METRICS-001: Injected metrics (P0)
+		StatusManager:    statusManager,       // DD-PERF-001: Atomic status updates
+		AnalyzingHandler: analyzingHandler,    // BR-AI-012: Rego policy evaluation
+		AuditClient:      clients.auditClient, // DD-AUDIT-003: P0 audit traces
+		ISPhaseUpdater:   isPhaseUpdater,      // #1421: Cascade cancel to IS in terminal branch
 	}
 	aaReconciler.InvestigatingHandler.Store(investigatingHandler) // BR-AI-007: KA integration
-	if err = aaReconciler.SetupWithManager(mgr); err != nil {
+	if err := aaReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AIAnalysis")
 		os.Exit(1)
 	}
@@ -337,27 +346,34 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Issue #756: Extract signal context for CA file watcher lifecycle
-	ctx = ctrl.SetupSignalHandler()
+	return aianalysisMetrics
+}
 
-	// Issue #748: Load OCP TLS security profile from config before any TLS setup
+// configureAIAnalysisTLSAndHotReload applies the OCP TLS security profile
+// from config (Issue #748), starts the CA file watcher for client-side TLS
+// hot-reload (Issue #756), and starts the log-level hot-reload watcher
+// (Issue #875). Exits the process if the CA watcher fails to start,
+// matching main()'s original fail-fast behavior. Returns a cleanup function
+// that stops any watchers that were successfully started; callers should
+// defer the returned function.
+func configureAIAnalysisTLSAndHotReload(ctx context.Context, cfg *config.Config, configPath string, atomicLevel zaplog.AtomicLevel) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
 		setupLog.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	var cleanups []func()
+
 	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
 	}
 	if caWatcher != nil {
-		defer caWatcher.Stop()
+		cleanups = append(cleanups, caWatcher.Stop)
 	}
 
-	// Issue #875: Log level hot-reload via FileWatcher
 	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
 		configPath,
 		func(newContent string) error {
@@ -373,14 +389,50 @@ func main() {
 	)
 	if logWatchErr != nil {
 		setupLog.Error(logWatchErr, "Failed to create log level file watcher")
+	} else if err := logLevelWatcher.Start(ctx); err != nil {
+		setupLog.Info("Log level file watcher failed to start", "error", err)
 	} else {
-		if err := logLevelWatcher.Start(ctx); err != nil {
-			setupLog.Info("Log level file watcher failed to start", "error", err)
-		} else {
-			setupLog.Info("Log level hot-reload watcher started", "path", configPath)
-			defer logLevelWatcher.Stop()
+		setupLog.Info("Log level hot-reload watcher started", "path", configPath)
+		cleanups = append(cleanups, logLevelWatcher.Stop)
+	}
+
+	return func() {
+		for _, c := range cleanups {
+			c()
 		}
 	}
+}
+
+func main() {
+	// ========================================
+	// ADR-030: Configuration via YAML file
+	// Single -config flag; all functional config in YAML ConfigMap
+	// ========================================
+	var configPath string
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
+
+	flag.Parse()
+
+	// Issue #875: Bootstrap logger at INFO for config loading
+	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
+
+	cfg, controllerNS := loadAIAnalysisConfig(configPath, atomicLevel)
+	mgr := buildAIAnalysisManager(cfg, controllerNS)
+
+	// ADR-050: Startup validation happens inside wireAIAnalysisClients and fails fast.
+	ctx := context.Background()
+	clients := wireAIAnalysisClients(ctx, cfg)
+	regoEvaluator := clients.regoEvaluator
+	auditStore := clients.auditStore
+
+	setupAIAnalysisReconciler(mgr, cfg, controllerNS, clients)
+
+	// Issue #756: Extract signal context for CA file watcher lifecycle
+	ctx = ctrl.SetupSignalHandler()
+
+	cleanupHotReload := configureAIAnalysisTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
+	defer cleanupHotReload()
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {

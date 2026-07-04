@@ -89,31 +89,18 @@ func run() int {
 		SARChecker: sarChecker, Auditor: auditor, UserLimiter: userLimiter, Logger: logger,
 	})
 
-	mcpHandler, depsReady, err := buildMCPHandler(hDeps)
+	mcpHandler, depsReady, agentCardHandler, a2aHandler, stopConfigWatcher, err := buildMCPAndAgentHandlers(ctx, cfg, hDeps, auditor, logger)
 	if err != nil {
-		logger.Error(err, "failed to create MCP handler")
 		return 1
 	}
+	defer stopConfigWatcher()
 
-	// CM-02: Wire config file watcher for drift detection + audit trail.
-	defer startConfigWatcher(ctx, cfg, auditor, logger)()
-
-	agentCardHandler, a2aHandler, err := buildCardAndA2AHandler(ctx, cfg, hDeps, auditor)
-	if err != nil {
-		logger.Error(err, "failed to create agent card/A2A handler")
-		return 1
-	}
-
-	// F-001: Wire JWT auth middleware (fall back to noop only when auth is unconfigured).
-	authMiddleware, authReady := buildAuthMiddleware(cfg, metricsReg, auditor, logger)
-	preAuthMW, postAuthMW := buildRateLimitMiddlewares(metricsReg, auditor, ipLimiter, userLimiter)
-
-	rs, draining, stopTLSWatchers, err := startRouterAndServers(ctx, startRouterParams{
-		HDeps: hDeps, MCPHandler: mcpHandler, DepsReady: depsReady,
+	rs, draining, stopTLSWatchers, err := buildAndStartRouter(ctx, buildAndStartRouterParams{
+		Cfg: cfg, HDeps: hDeps, MCPHandler: mcpHandler, DepsReady: depsReady,
 		AgentCardHandler: agentCardHandler, A2AHandler: a2aHandler,
-		AuthMiddleware: authMiddleware, AuthReady: authReady,
-		PreAuthMW: preAuthMW, PostAuthMW: postAuthMW,
-	}, cfg, logger)
+		MetricsReg: metricsReg, Auditor: auditor,
+		IPLimiter: ipLimiter, UserLimiter: userLimiter, Logger: logger,
+	})
 	if err != nil {
 		// startRouterAndServers already logged the specific failure.
 		return 1
@@ -128,6 +115,37 @@ func run() int {
 		IPLimiter: ipLimiter, UserLimiter: userLimiter, Logger: logger,
 	})
 	return 0
+}
+
+// buildAndStartRouterParams bundles the inputs needed to wire the auth/rate-limit
+// middlewares and build+start the router and its HTTP servers.
+type buildAndStartRouterParams struct {
+	Cfg              *config.Config
+	HDeps            *handlerDeps
+	MCPHandler       http.Handler
+	DepsReady        func() bool
+	AgentCardHandler http.Handler
+	A2AHandler       http.Handler
+	MetricsReg       *metrics.Registry
+	Auditor          audit.Emitter
+	IPLimiter        *ratelimit.IPLimiter
+	UserLimiter      *ratelimit.UserLimiter
+	Logger           logr.Logger
+}
+
+// buildAndStartRouter wires the JWT auth middleware (F-001, fall back to noop
+// only when auth is unconfigured) and rate-limit middlewares, then builds and
+// starts the router and its HTTP servers.
+func buildAndStartRouter(ctx context.Context, p buildAndStartRouterParams) (*routerAndServers, *atomic.Bool, func(), error) {
+	authMiddleware, authReady := buildAuthMiddleware(p.Cfg, p.MetricsReg, p.Auditor, p.Logger)
+	preAuthMW, postAuthMW := buildRateLimitMiddlewares(p.MetricsReg, p.Auditor, p.IPLimiter, p.UserLimiter)
+
+	return startRouterAndServers(ctx, startRouterParams{
+		HDeps: p.HDeps, MCPHandler: p.MCPHandler, DepsReady: p.DepsReady,
+		AgentCardHandler: p.AgentCardHandler, A2AHandler: p.A2AHandler,
+		AuthMiddleware: authMiddleware, AuthReady: authReady,
+		PreAuthMW: preAuthMW, PostAuthMW: postAuthMW,
+	}, p.Cfg, p.Logger)
 }
 
 // startRouterParams bundles the handler/middleware inputs needed to build
@@ -251,6 +269,28 @@ func buildHandlerDeps(p buildHandlerDepsParams) *handlerDeps {
 		UserLimiter:       p.UserLimiter,
 		ActiveCtxRegistry: launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout),
 	}
+}
+
+// buildMCPAndAgentHandlers wires the MCP handler, the config file watcher
+// (CM-02: drift detection + audit trail), and the agent-card/A2A handlers.
+// On error, the caller should return without deferring stopConfigWatcher.
+func buildMCPAndAgentHandlers(ctx context.Context, cfg *config.Config, hDeps *handlerDeps, auditor audit.Emitter, logger logr.Logger) (mcpHandler http.Handler, depsReady func() bool, agentCardHandler, a2aHandler http.Handler, stopConfigWatcher func(), err error) {
+	mcpHandler, depsReady, err = buildMCPHandler(hDeps)
+	if err != nil {
+		logger.Error(err, "failed to create MCP handler")
+		return nil, nil, nil, nil, nil, err
+	}
+
+	stopConfigWatcher = startConfigWatcher(ctx, cfg, auditor, logger)
+
+	agentCardHandler, a2aHandler, err = buildCardAndA2AHandler(ctx, cfg, hDeps, auditor)
+	if err != nil {
+		logger.Error(err, "failed to create agent card/A2A handler")
+		stopConfigWatcher()
+		return nil, nil, nil, nil, nil, err
+	}
+
+	return mcpHandler, depsReady, agentCardHandler, a2aHandler, stopConfigWatcher, nil
 }
 
 // buildCardAndA2AHandler wires the audited agent-card handler and the A2A

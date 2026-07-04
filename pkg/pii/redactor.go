@@ -209,34 +209,43 @@ func (r *Redactor) RedactMapByFieldNames(data map[string]interface{}, fieldNames
 
 	for key, value := range data {
 		if fieldsToRedact[key] {
-			// Redact this field
-			if str, ok := value.(string); ok {
-				result[key] = r.RedactString(str)
-			} else {
-				result[key] = r.RedactJSON(value)
-			}
+			result[key] = r.redactFieldValue(value)
 		} else {
-			// Keep as-is (but recursively handle nested maps/arrays)
-			switch v := value.(type) {
-			case map[string]interface{}:
-				result[key] = r.RedactMapByFieldNames(v, fieldNames)
-			case []interface{}:
-				array := make([]interface{}, len(v))
-				for i, elem := range v {
-					if elemMap, ok := elem.(map[string]interface{}); ok {
-						array[i] = r.RedactMapByFieldNames(elemMap, fieldNames)
-					} else {
-						array[i] = elem
-					}
-				}
-				result[key] = array
-			default:
-				result[key] = value
-			}
+			result[key] = r.passThroughValue(value, fieldNames)
 		}
 	}
 
 	return result
+}
+
+// redactFieldValue redacts a single value flagged as a PII field name,
+// applying string redaction directly or JSON redaction for structured values.
+func (r *Redactor) redactFieldValue(value interface{}) interface{} {
+	if str, ok := value.(string); ok {
+		return r.RedactString(str)
+	}
+	return r.RedactJSON(value)
+}
+
+// passThroughValue keeps a non-flagged value as-is, recursing into nested
+// maps/arrays so any flagged fields at deeper levels are still redacted.
+func (r *Redactor) passThroughValue(value interface{}, fieldNames []string) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return r.RedactMapByFieldNames(v, fieldNames)
+	case []interface{}:
+		array := make([]interface{}, len(v))
+		for i, elem := range v {
+			if elemMap, ok := elem.(map[string]interface{}); ok {
+				array[i] = r.RedactMapByFieldNames(elemMap, fieldNames)
+			} else {
+				array[i] = elem
+			}
+		}
+		return array
+	default:
+		return value
+	}
 }
 
 

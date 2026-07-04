@@ -33,12 +33,14 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	zaplog "go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
 	// Standard Kubernetes imports
@@ -86,29 +88,17 @@ func init() {
 	utilruntime.Must(remediationv1alpha1.AddToScheme(scheme))
 }
 
-func main() {
-	// ========================================
-	// ADR-030: Configuration via YAML file
-	// Single --config flag; all functional config in YAML ConfigMap
-	// ========================================
-	var configFile string
-	flag.StringVar(&configFile, "config", config.DefaultConfigPath, "Path to configuration file")
-
-	flag.Parse()
-
-	// Issue #875: Bootstrap logger at INFO for config loading
-	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
-
+// loadSignalProcessingConfig loads the YAML config (ADR-030), applies the
+// config-driven log level (Issue #875), validates it, and discovers the
+// controller namespace for CRD watch restriction (ADR-057). Exits the
+// process on any failure, matching main()'s original fail-fast behavior.
+func loadSignalProcessingConfig(configFile string, atomicLevel zaplog.AtomicLevel) (*config.Config, string) {
 	setupLog.Info("Starting SignalProcessing Controller",
 		"version", version.Version,
 		"gitCommit", version.GitCommit,
 		"buildDate", version.BuildDate,
 	)
 
-	// ========================================
-	// CONFIGURATION LOADING (ADR-030)
-	// ========================================
 	cfg, err := config.LoadFromFile(configFile)
 	if err != nil {
 		setupLog.Error(err, "Failed to load configuration -- aborting startup",
@@ -117,7 +107,6 @@ func main() {
 	}
 	setupLog.Info("Configuration loaded successfully", "configPath", configFile)
 
-	// Issue #875: Apply config-driven log level
 	atomicLevel.SetLevel(cfg.Logging.ZapLevel())
 	setupLog.Info("Log level configured from config file", "level", cfg.Logging.Level)
 
@@ -126,7 +115,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ADR-057: Discover controller namespace for CRD watch restriction
 	controllerNS, err := scope.GetControllerNamespace()
 	if err != nil {
 		setupLog.Error(err, "unable to determine controller namespace")
@@ -140,8 +128,14 @@ func main() {
 		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
-	// Setup controller manager
-	// ADR-030: Controller settings from YAML config (not hardcoded defaults)
+	return cfg, controllerNS
+}
+
+// buildSignalProcessingManager creates the controller manager with the
+// namespace-restricted SignalProcessing cache and metrics/health-probe/
+// leader election settings from cfg (ADR-030). Exits the process on any
+// failure, matching main()'s original fail-fast behavior.
+func buildSignalProcessingManager(cfg *config.Config, controllerNS string) ctrl.Manager {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
@@ -164,23 +158,22 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+	return mgr
+}
 
-	// ========================================
-	// AUDIT CLIENT SETUP (MANDATORY per ADR-032)
-	// ========================================
-	// ADR-032: Audit is MANDATORY - controller will crash if not configured
-	// ADR-038: Fire-and-forget pattern via BufferedStore
-	// ADR-030: DataStorage URL from YAML config (not env var)
+// wireSignalProcessingAudit creates the mandatory buffered audit store
+// (ADR-032, ADR-038, ADR-030) and the service-specific audit client
+// (BR-SP-090). Exits the process on any failure, matching main()'s original
+// fail-fast behavior, since audit is mandatory per ADR-032.
+func wireSignalProcessingAudit(cfg *config.Config) (sharedaudit.AuditStore, *spaudit.AuditClient) {
 	setupLog.Info("configuring audit client", "dataStorageURL", cfg.DataStorage.URL)
 
-	// DD-API-001: Use OpenAPI client adapter (type-safe, contract-validated)
 	dsClient, err := sharedaudit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
 		setupLog.Error(err, "FATAL: failed to create Data Storage client")
 		os.Exit(1)
 	}
 
-	// ADR-030: Audit buffer config from YAML (not RecommendedConfig)
 	auditConfig := sharedaudit.Config{
 		BufferSize:    cfg.DataStorage.Buffer.BufferSize,
 		BatchSize:     cfg.DataStorage.Buffer.BatchSize,
@@ -206,22 +199,18 @@ func main() {
 		"flushInterval", auditConfig.FlushInterval,
 	)
 
-	// Create service-specific audit client (BR-SP-090)
 	auditClient := spaudit.NewAuditClient(auditStore, ctrl.Log.WithName("audit"))
 	setupLog.Info("audit client configured successfully")
 
-	// ========================================
-	// ADR-060: UNIFIED REGO EVALUATOR SETUP
-	// ========================================
-	// Replaces 5 separate classifiers (environment, priority, severity, business, customlabels)
-	// with a single evaluator backed by one policy.rego file.
-	//
-	// Issue #419: Policy path is now constructed from cfg.Classifier instead of hardcoded.
-	// The Helm chart mounts the ConfigMap at /etc/signalprocessing/policies/, and the
-	// regoConfigMapKey determines the filename within that mount.
+	return auditStore, auditClient
+}
 
-	ctx := ctrl.SetupSignalHandler()
-
+// wireSignalProcessingPolicyEvaluator starts the unified Rego evaluator
+// (ADR-060), which replaces five separate classifiers with a single
+// evaluator backed by one policy.rego file mounted from the ConfigMap
+// (Issue #419). Exits the process on failure since the unified policy is
+// mandatory, matching main()'s original fail-fast behavior.
+func wireSignalProcessingPolicyEvaluator(ctx context.Context, cfg *config.Config) *evaluator.Evaluator {
 	policyPath := filepath.Join("/etc/signalprocessing/policies", cfg.Classifier.RegoConfigMapKey)
 	policyEvaluator := evaluator.New(
 		policyPath,
@@ -235,16 +224,17 @@ func main() {
 			"hint", "Ensure the policy ConfigMap is mounted at /etc/signalprocessing/policies/")
 		os.Exit(1)
 	}
-	defer policyEvaluator.Stop()
 	setupLog.Info("Unified policy evaluator started",
 		"policyPath", policyPath,
 		"policyHash", policyEvaluator.GetPolicyHash())
 
-	// ========================================
-	// SIGNAL MODE CLASSIFIER (OPTIONAL)
-	// ========================================
-	// BR-SP-106: Proactive Signal Mode Classification
-	// ADR-054: Uses YAML config (not Rego) -- simple key-value lookup
+	return policyEvaluator
+}
+
+// buildSignalModeClassifier loads the optional proactive signal mode
+// mapping config (BR-SP-106, ADR-054). Missing config is non-fatal: all
+// signals default to reactive mode.
+func buildSignalModeClassifier() *classifier.SignalModeClassifier {
 	signalModeClassifier := classifier.NewSignalModeClassifier(
 		ctrl.Log.WithName("classifier.signalmode"),
 	)
@@ -262,17 +252,134 @@ func main() {
 			"configPath", signalModeConfigPath)
 	}
 
-	// ========================================
-	// ENRICHMENT COMPONENTS SETUP
-	// ========================================
-	// BR-SP-001: Kubernetes context enrichment
-	// BR-SP-001: Metrics for observability (DD-005)
-	// Per AIAnalysis pattern: Use global ctrlmetrics.Registry for production
+	return signalModeClassifier
+}
+
+// buildFleetOAuth2Options constructs the hot-reloadable OAuth2 transport
+// option for the Fleet MCP client when cfg.Fleet.OAuth2.Enabled, deriving
+// the credentials mount path from CredentialsSecretRef when set.
+func buildFleetOAuth2Options(cfg *config.Config) []fleetclient.Option {
+	if !cfg.Fleet.OAuth2.Enabled {
+		return nil
+	}
+
+	basePath := "/etc/signalprocessing/fleet-oauth2"
+	if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+		basePath = "/etc/signalprocessing/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+	}
+	reloadCfg := fleetclient.ReloadableOAuth2Config{
+		TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+		ClientIDPath:     basePath + "/client-id",
+		ClientSecretPath: basePath + "/client-secret",
+		Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
+		TokenTimeout:     10 * time.Second,
+	}
+	setupLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
+		"tokenURL", cfg.Fleet.OAuth2.TokenURL,
+		"secretPath", basePath)
+
+	return []fleetclient.Option{
+		fleetclient.WithReloadableOAuth2Transport(reloadCfg, ctrl.Log.WithName("fleet-oauth2")),
+	}
+}
+
+// wireFleetMCPClient connects to the optional Fleet MCP Gateway
+// (BR-INTEGRATION-054) when cfg.Fleet.Endpoint is configured, and wires its
+// reader factory into k8sEnricher for remote cluster enrichment. Returns
+// nil when fleet is not configured or the connection fails; both are
+// non-fatal because enrichment falls back to local-cluster-only mode.
+func wireFleetMCPClient(ctx context.Context, cfg *config.Config, mgr ctrl.Manager, k8sEnricher *enricher.K8sEnricher) *fleetclient.ResilientClient {
+	if cfg.Fleet.Endpoint == "" {
+		return nil
+	}
+
+	setupLog.Info("Fleet MCP Gateway configured, connecting...",
+		"endpoint", cfg.Fleet.Endpoint,
+		"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
+
+	fleetOpts := buildFleetOAuth2Options(cfg)
+	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	fleetResilientClient, fleetErr := fleetclient.NewResilient(
+		ctx, cfg.Fleet.Endpoint, resilienceCfg,
+		ctrl.Log.WithName("fleet-client"), fleetOpts...,
+	)
+	if fleetErr != nil {
+		setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed, remote enrichment disabled",
+			"endpoint", cfg.Fleet.Endpoint)
+		return nil
+	}
+
+	readerFactory := fleetclient.NewMCPReaderFactory(mgr.GetClient(), fleetResilientClient.Session())
+	k8sEnricher.SetReaderFactory(readerFactory)
+	setupLog.Info("Fleet MCP Gateway connected, remote enrichment enabled",
+		"endpoint", cfg.Fleet.Endpoint)
+
+	return fleetResilientClient
+}
+
+// wireClusterRegistry watches the MCP Gateway's cluster-registration CRDs
+// (Backend/MCPServerRegistration) directly via a dynamic K8s client when
+// cfg.Fleet.MCPGatewayType is configured (BR-FLEET-003 / #1511),
+// independent of the MCP protocol client, wiring resolved
+// ClusterInfo.Labels into k8sEnricher for the `cluster` Rego classification
+// dimension. Returns nil when fleet cluster registry is not configured or
+// setup fails; both are non-fatal because cluster classification is simply
+// disabled.
+func wireClusterRegistry(ctx context.Context, cfg *config.Config, mgr ctrl.Manager, k8sEnricher *enricher.K8sEnricher) fleetregistry.ClusterRegistry {
+	if cfg.Fleet.MCPGatewayType == "" {
+		return nil
+	}
+
+	dynClient, dynErr := dynamic.NewForConfig(mgr.GetConfig())
+	if dynErr != nil {
+		setupLog.Error(dynErr, "Failed to create dynamic Kubernetes client for cluster registry, cluster classification disabled")
+		return nil
+	}
+
+	clusterRegistry, crErr := fleetregistry.NewClusterRegistry(
+		cfg.Fleet.MCPGatewayType,
+		dynClient,
+		fleetregistry.RegistryConfig{Namespace: cfg.Fleet.Namespace},
+		fleetregistry.NewMetricsWithRegistry(ctrlmetrics.Registry),
+		ctrl.Log.WithName("cluster-registry"),
+	)
+	if crErr != nil {
+		setupLog.Error(crErr, "Failed to create cluster registry, cluster classification disabled",
+			"gatewayType", cfg.Fleet.MCPGatewayType)
+		return nil
+	}
+
+	if startErr := clusterRegistry.Start(ctx); startErr != nil {
+		setupLog.Error(startErr, "Failed to start cluster registry, cluster classification disabled")
+		return nil
+	}
+
+	k8sEnricher.SetClusterRegistry(clusterRegistry)
+	setupLog.Info("Cluster registry started, cluster classification labels enabled",
+		"gatewayType", cfg.Fleet.MCPGatewayType, "namespace", cfg.Fleet.Namespace)
+
+	return clusterRegistry
+}
+
+// signalProcessingEnrichment bundles the metrics, K8s enricher, and
+// optional Fleet MCP client / cluster registry wired for BR-SP-001
+// enrichment, BR-INTEGRATION-054 remote enrichment, and BR-FLEET-003
+// cluster classification.
+type signalProcessingEnrichment struct {
+	metrics         *spmetrics.Metrics
+	k8sEnricher     *enricher.K8sEnricher
+	fleetClient     *fleetclient.ResilientClient
+	clusterRegistry fleetregistry.ClusterRegistry
+}
+
+// wireSignalProcessingEnrichment sets up the K8s context enricher
+// (BR-SP-001) and its optional remote-cluster dependencies: the Fleet MCP
+// Gateway client (BR-INTEGRATION-054) and the cluster registry
+// (BR-FLEET-003 / #1511).
+func wireSignalProcessingEnrichment(ctx context.Context, cfg *config.Config, mgr ctrl.Manager) *signalProcessingEnrichment {
 	spMetrics := spmetrics.NewMetrics() // Uses ctrlmetrics.Registry (global)
 	setupLog.Info("signalprocessing metrics configured")
 
-	// BR-SP-001: K8s context enricher with caching, timeout, metrics, degraded mode
-	// ADR-030: Enrichment timeout and cache TTL from YAML config (not hardcoded)
 	k8sEnricher := enricher.NewK8sEnricher(
 		mgr.GetClient(),
 		mgr.GetAPIReader(),
@@ -285,126 +392,50 @@ func main() {
 		"enrichmentTimeout", cfg.Enrichment.Timeout,
 		"cacheTTL", cfg.Enrichment.CacheTTL)
 
-	// ========================================
-	// BR-INTEGRATION-054: FLEET MCP GATEWAY (OPTIONAL)
-	// When fleet.endpoint is configured, SP connects to the MCP Gateway
-	// for remote cluster enrichment via ReaderFactory.
-	// ========================================
-	var fleetResilientClient *fleetclient.ResilientClient
-	if cfg.Fleet.Endpoint != "" {
-		setupLog.Info("Fleet MCP Gateway configured, connecting...",
-			"endpoint", cfg.Fleet.Endpoint,
-			"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
+	fleetResilientClient := wireFleetMCPClient(ctx, cfg, mgr, k8sEnricher)
+	clusterRegistry := wireClusterRegistry(ctx, cfg, mgr, k8sEnricher)
 
-		fleetLog := ctrl.Log.WithName("fleet-oauth2")
-		fleetOpts := []fleetclient.Option{}
-		if cfg.Fleet.OAuth2.Enabled {
-			basePath := "/etc/signalprocessing/fleet-oauth2"
-			if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
-				basePath = "/etc/signalprocessing/" + cfg.Fleet.OAuth2.CredentialsSecretRef
-			}
-			reloadCfg := fleetclient.ReloadableOAuth2Config{
-				TokenURL:         cfg.Fleet.OAuth2.TokenURL,
-				ClientIDPath:     basePath + "/client-id",
-				ClientSecretPath: basePath + "/client-secret",
-				Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
-				TokenTimeout:     10 * time.Second,
-			}
-			fleetOpts = append(fleetOpts,
-				fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
-			)
-			setupLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
-				"tokenURL", cfg.Fleet.OAuth2.TokenURL,
-				"secretPath", basePath)
-		}
-
-		resilienceCfg := fleetclient.DefaultResilienceConfig()
-		var fleetErr error
-		fleetResilientClient, fleetErr = fleetclient.NewResilient(
-			ctx, cfg.Fleet.Endpoint, resilienceCfg,
-			ctrl.Log.WithName("fleet-client"), fleetOpts...,
-		)
-		if fleetErr != nil {
-			setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed, remote enrichment disabled",
-				"endpoint", cfg.Fleet.Endpoint)
-		} else {
-			readerFactory := fleetclient.NewMCPReaderFactory(mgr.GetClient(), fleetResilientClient.Session())
-			k8sEnricher.SetReaderFactory(readerFactory)
-			setupLog.Info("Fleet MCP Gateway connected, remote enrichment enabled",
-				"endpoint", cfg.Fleet.Endpoint)
-		}
+	return &signalProcessingEnrichment{
+		metrics:         spMetrics,
+		k8sEnricher:     k8sEnricher,
+		fleetClient:     fleetResilientClient,
+		clusterRegistry: clusterRegistry,
 	}
+}
 
-	// ========================================
-	// BR-FLEET-003 (#1511): CLUSTER REGISTRY (OPTIONAL)
-	// When fleet.mcpGatewayType is configured, SP watches the MCP Gateway's
-	// cluster-registration CRDs (Backend/MCPServerRegistration) directly via
-	// a dynamic K8s client, independent of the MCP protocol client above --
-	// this is used solely to resolve ClusterInfo.Labels for the `cluster`
-	// Rego classification dimension, not for remote resource reads.
-	// ========================================
-	var clusterRegistry fleetregistry.ClusterRegistry
-	if cfg.Fleet.MCPGatewayType != "" {
-		dynClient, dynErr := dynamic.NewForConfig(mgr.GetConfig())
-		if dynErr != nil {
-			setupLog.Error(dynErr, "Failed to create dynamic Kubernetes client for cluster registry, cluster classification disabled")
-		} else {
-			var crErr error
-			clusterRegistry, crErr = fleetregistry.NewClusterRegistry(
-				cfg.Fleet.MCPGatewayType,
-				dynClient,
-				fleetregistry.RegistryConfig{Namespace: cfg.Fleet.Namespace},
-				fleetregistry.NewMetricsWithRegistry(ctrlmetrics.Registry),
-				ctrl.Log.WithName("cluster-registry"),
-			)
-			if crErr != nil {
-				setupLog.Error(crErr, "Failed to create cluster registry, cluster classification disabled",
-					"gatewayType", cfg.Fleet.MCPGatewayType)
-			} else if startErr := clusterRegistry.Start(ctx); startErr != nil {
-				setupLog.Error(startErr, "Failed to start cluster registry, cluster classification disabled")
-				clusterRegistry = nil
-			} else {
-				k8sEnricher.SetClusterRegistry(clusterRegistry)
-				setupLog.Info("Cluster registry started, cluster classification labels enabled",
-					"gatewayType", cfg.Fleet.MCPGatewayType, "namespace", cfg.Fleet.Namespace)
-			}
-		}
-	}
-
-	// ========================================
-	// DD-PERF-001: Atomic Status Updates
-	// Status Manager for reducing K8s API calls by 66-75%
-	// Consolidates multiple status field updates into single atomic operations
-	// SP-CACHE-001: Pass APIReader to bypass cache for fresh refetches
-	// ========================================
+// setupSignalProcessingReconciler creates the atomic status manager
+// (DD-PERF-001, SP-CACHE-001) and audit manager (Phase 3 refactoring,
+// 2026-01-22), wires the SignalProcessingReconciler into mgr, and
+// registers the healthz/readyz checks. Exits the process on any failure,
+// matching main()'s original fail-fast behavior.
+func setupSignalProcessingReconciler(
+	mgr ctrl.Manager,
+	auditClient *spaudit.AuditClient,
+	policyEvaluator *evaluator.Evaluator,
+	signalModeClassifier *classifier.SignalModeClassifier,
+	enrichment *signalProcessingEnrichment,
+) {
 	statusManager := spstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	setupLog.Info("SignalProcessing status manager initialized (DD-PERF-001 + SP-CACHE-001)")
 
-	// ========================================
-	// Phase 3 Refactoring: Audit Manager (2026-01-22)
-	// Wraps AuditClient with ADR-032 enforcement
-	// Follows RO/WE/AIA/NT pattern for consistency
-	// ========================================
 	auditManager := spaudit.NewManager(auditClient)
 	setupLog.Info("SignalProcessing audit manager initialized (Phase 3 refactoring)")
 
-	// Setup reconciler with ALL required components
-	if err = (&signalprocessing.SignalProcessingReconciler{
+	if err := (&signalprocessing.SignalProcessingReconciler{
 		Client:               mgr.GetClient(),
 		Scheme:               mgr.GetScheme(),
 		AuditManager:         auditManager,
-		Metrics:              spMetrics,
+		Metrics:              enrichment.metrics,
 		Recorder:             mgr.GetEventRecorderFor("signalprocessing-controller"),
 		StatusManager:        statusManager,
 		PolicyEvaluator:      policyEvaluator,      // ADR-060: Unified evaluator
 		SignalModeClassifier: signalModeClassifier, // BR-SP-106: Proactive signal mode (ADR-054)
-		K8sEnricher:          k8sEnricher,
+		K8sEnricher:          enrichment.k8sEnricher,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "SignalProcessing")
 		os.Exit(1)
 	}
 
-	// Setup health checks
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
@@ -413,25 +444,33 @@ func main() {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
+}
 
-	// Issue #748: Load OCP TLS security profile from config before any TLS setup
+// configureSignalProcessingTLSAndHotReload applies the OCP TLS security
+// profile from config (Issue #748), starts the CA file watcher for
+// client-side TLS hot-reload (Issue #756), and starts the log-level
+// hot-reload watcher (Issue #875). Exits the process if the CA watcher
+// fails to start, matching main()'s original fail-fast behavior. Returns a
+// cleanup function that stops any watchers that were successfully started;
+// callers should defer the returned function.
+func configureSignalProcessingTLSAndHotReload(ctx context.Context, cfg *config.Config, configFile string, atomicLevel zaplog.AtomicLevel) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
 		setupLog.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	var cleanups []func()
+
 	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
 	}
 	if caWatcher != nil {
-		defer caWatcher.Stop()
+		cleanups = append(cleanups, caWatcher.Stop)
 	}
 
-	// Issue #875: Log level hot-reload via FileWatcher
 	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
 		configFile,
 		func(newContent string) error {
@@ -447,30 +486,68 @@ func main() {
 	)
 	if logWatchErr != nil {
 		setupLog.Error(logWatchErr, "Failed to create log level file watcher")
+	} else if err := logLevelWatcher.Start(ctx); err != nil {
+		setupLog.Info("Log level file watcher failed to start", "error", err)
 	} else {
-		if err := logLevelWatcher.Start(ctx); err != nil {
-			setupLog.Info("Log level file watcher failed to start", "error", err)
-		} else {
-			setupLog.Info("Log level hot-reload watcher started", "path", configFile)
-			defer logLevelWatcher.Stop()
-		}
+		setupLog.Info("Log level hot-reload watcher started", "path", configFile)
+		cleanups = append(cleanups, logLevelWatcher.Stop)
 	}
 
+	return func() {
+		for _, c := range cleanups {
+			c()
+		}
+	}
+}
+
+func main() {
+	// ========================================
+	// ADR-030: Configuration via YAML file
+	// Single --config flag; all functional config in YAML ConfigMap
+	// ========================================
+	var configFile string
+	flag.StringVar(&configFile, "config", config.DefaultConfigPath, "Path to configuration file")
+
+	flag.Parse()
+
+	// Issue #875: Bootstrap logger at INFO for config loading
+	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
+
+	cfg, controllerNS := loadSignalProcessingConfig(configFile, atomicLevel)
+	mgr := buildSignalProcessingManager(cfg, controllerNS)
+
+	// ADR-032: Audit is MANDATORY - controller will crash if not configured
+	auditStore, auditClient := wireSignalProcessingAudit(cfg)
+
+	// Issue #419: Policy path is constructed from cfg.Classifier instead of hardcoded.
+	ctx := ctrl.SetupSignalHandler()
+	policyEvaluator := wireSignalProcessingPolicyEvaluator(ctx, cfg)
+	defer policyEvaluator.Stop()
+
+	signalModeClassifier := buildSignalModeClassifier()
+	enrichment := wireSignalProcessingEnrichment(ctx, cfg, mgr)
+
+	setupSignalProcessingReconciler(mgr, auditClient, policyEvaluator, signalModeClassifier, enrichment)
+
+	cleanupHotReload := configureSignalProcessingTLSAndHotReload(ctx, cfg, configFile, atomicLevel)
+	defer cleanupHotReload()
+
 	// BR-INTEGRATION-054: Graceful shutdown for fleet MCP client
-	if fleetResilientClient != nil {
+	if enrichment.fleetClient != nil {
 		defer func() {
 			setupLog.Info("Closing fleet MCP Gateway connection")
-			if err := fleetResilientClient.Close(); err != nil {
+			if err := enrichment.fleetClient.Close(); err != nil {
 				setupLog.Error(err, "Failed to close fleet MCP client gracefully")
 			}
 		}()
 	}
 
 	// BR-FLEET-003 (#1511): Graceful shutdown for cluster registry watcher
-	if clusterRegistry != nil {
+	if enrichment.clusterRegistry != nil {
 		defer func() {
 			setupLog.Info("Stopping cluster registry watcher")
-			clusterRegistry.Stop()
+			enrichment.clusterRegistry.Stop()
 		}()
 	}
 

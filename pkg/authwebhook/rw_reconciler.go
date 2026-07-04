@@ -98,24 +98,8 @@ func (r *RemediationWorkflowReconciler) reconcileDelete(ctx context.Context, log
 
 	logger.Info("Reconciling deletion")
 
-	workflowID := rw.Status.WorkflowID
-	if workflowID != "" {
-		if err := r.DSClient.DisableWorkflow(ctx, workflowID, "CRD deleted (finalizer)", ""); err != nil {
-			if isConnectionError(err) {
-				// Issue #469: During helm uninstall + reinstall, DS may be
-				// unreachable. Proceed with finalizer removal so CRDs don't
-				// get stuck in Terminating. The stale catalog entry (if any)
-				// will be overwritten by the seed job on next install.
-				logger.Error(err, "DS unreachable during deletion, proceeding with finalizer removal", "workflowID", workflowID)
-			} else {
-				logger.Error(err, "DS DisableWorkflow failed, will retry", "workflowID", workflowID)
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-			}
-		} else {
-			logger.Info("Workflow disabled in DS", "workflowID", workflowID)
-		}
-	} else {
-		logger.Info("No WorkflowID in status — skipping DS disable")
+	if requeue := r.disableWorkflowInDS(ctx, logger, rw.Status.WorkflowID); requeue {
+		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	r.refreshActionTypeWorkflowCount(ctx, logger, rw.Spec.ActionType, rw.Namespace)
@@ -128,6 +112,34 @@ func (r *RemediationWorkflowReconciler) reconcileDelete(ctx context.Context, log
 
 	logger.Info("Finalizer removed, deletion complete")
 	return ctrl.Result{}, nil
+}
+
+// disableWorkflowInDS notifies DS that the workflow is disabled due to CRD
+// deletion. It returns true when the caller should requeue (a non-connection
+// error occurred and DS disable should be retried).
+func (r *RemediationWorkflowReconciler) disableWorkflowInDS(ctx context.Context, logger logr.Logger, workflowID string) bool {
+	if workflowID == "" {
+		logger.Info("No WorkflowID in status — skipping DS disable")
+		return false
+	}
+
+	err := r.DSClient.DisableWorkflow(ctx, workflowID, "CRD deleted (finalizer)", "")
+	if err == nil {
+		logger.Info("Workflow disabled in DS", "workflowID", workflowID)
+		return false
+	}
+
+	if isConnectionError(err) {
+		// Issue #469: During helm uninstall + reinstall, DS may be
+		// unreachable. Proceed with finalizer removal so CRDs don't
+		// get stuck in Terminating. The stale catalog entry (if any)
+		// will be overwritten by the seed job on next install.
+		logger.Error(err, "DS unreachable during deletion, proceeding with finalizer removal", "workflowID", workflowID)
+		return false
+	}
+
+	logger.Error(err, "DS DisableWorkflow failed, will retry", "workflowID", workflowID)
+	return true
 }
 
 // refreshActionTypeWorkflowCount queries DS for the authoritative active

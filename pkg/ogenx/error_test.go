@@ -382,6 +382,147 @@ func TestHTTPError_Error_FormatsCorrectly(t *testing.T) {
 	}
 }
 
+// ========================================
+// extractErrorDetail Characterization Tests (Wave E complexity remediation)
+// ========================================
+// These tests pin down current reflection-based behavior of extractErrorDetail
+// before refactoring to reduce cognitive complexity: the GetDetail() any (RFC
+// 7807) path, the exported "Detail" field path (plain string and OptString
+// variants), and the GetMessage() fallback.
+// ========================================
+
+// rfc7807Detail mimics an ogen-generated OptString exactly (exported Value/Set fields).
+type rfc7807Detail struct {
+	Value string
+	Set   bool
+}
+
+func (o rfc7807Detail) IsSet() bool { return o.Set }
+
+// MockDetailGetterAny exposes GetDetail() any, matching the exact signature
+// extractErrorDetail probes for via interface{ GetDetail() any }.
+type MockDetailGetterAny struct {
+	status int32
+	detail any
+}
+
+func (m *MockDetailGetterAny) GetStatus() int32 { return m.status }
+func (m *MockDetailGetterAny) GetDetail() any   { return m.detail }
+
+// MockDetailFieldString has an exported string "Detail" field (KA RFC 7807 style).
+type MockDetailFieldString struct {
+	Status int32
+	Detail string
+}
+
+func (m *MockDetailFieldString) GetStatus() int32 { return m.Status }
+
+// MockDetailFieldOptString has an exported "Detail" field of an OptString-like type.
+type MockDetailFieldOptString struct {
+	Status int32
+	Detail rfc7807Detail
+}
+
+func (m *MockDetailFieldOptString) GetStatus() int32 { return m.Status }
+
+func TestToError_DetailViaGetDetailAny_SetValue(t *testing.T) {
+	resp := &MockDetailGetterAny{status: 400, detail: rfc7807Detail{Value: "field is required", Set: true}}
+
+	err := ogenx.ToError(resp, nil)
+
+	httpErr := ogenx.GetHTTPError(err)
+	if httpErr == nil {
+		t.Fatalf("expected HTTPError, got %T", err)
+	}
+	if httpErr.Detail != "field is required" {
+		t.Errorf("expected detail %q, got %q", "field is required", httpErr.Detail)
+	}
+}
+
+func TestToError_DetailViaGetDetailAny_PointerValue(t *testing.T) {
+	resp := &MockDetailGetterAny{status: 400, detail: &rfc7807Detail{Value: "pointer detail", Set: true}}
+
+	err := ogenx.ToError(resp, nil)
+
+	httpErr := ogenx.GetHTTPError(err)
+	if httpErr == nil {
+		t.Fatalf("expected HTTPError, got %T", err)
+	}
+	if httpErr.Detail != "pointer detail" {
+		t.Errorf("expected detail %q, got %q", "pointer detail", httpErr.Detail)
+	}
+}
+
+func TestToError_DetailViaGetDetailAny_NotSet(t *testing.T) {
+	resp := &MockDetailGetterAny{status: 400, detail: rfc7807Detail{Value: "unused", Set: false}}
+
+	err := ogenx.ToError(resp, nil)
+
+	httpErr := ogenx.GetHTTPError(err)
+	if httpErr == nil {
+		t.Fatalf("expected HTTPError, got %T", err)
+	}
+	if httpErr.Detail != "" {
+		t.Errorf("expected empty detail when not set, got %q", httpErr.Detail)
+	}
+}
+
+func TestToError_DetailViaGetDetailAny_Nil(t *testing.T) {
+	resp := &MockDetailGetterAny{status: 400, detail: nil}
+
+	err := ogenx.ToError(resp, nil)
+
+	httpErr := ogenx.GetHTTPError(err)
+	if httpErr == nil {
+		t.Fatalf("expected HTTPError, got %T", err)
+	}
+	if httpErr.Detail != "" {
+		t.Errorf("expected empty detail for nil GetDetail() result, got %q", httpErr.Detail)
+	}
+}
+
+func TestToError_DetailViaExportedStringField(t *testing.T) {
+	resp := &MockDetailFieldString{Status: 400, Detail: "namespace is required"}
+
+	err := ogenx.ToError(resp, nil)
+
+	httpErr := ogenx.GetHTTPError(err)
+	if httpErr == nil {
+		t.Fatalf("expected HTTPError, got %T", err)
+	}
+	if httpErr.Detail != "namespace is required" {
+		t.Errorf("expected detail %q, got %q", "namespace is required", httpErr.Detail)
+	}
+}
+
+func TestToError_DetailViaExportedOptStringField(t *testing.T) {
+	resp := &MockDetailFieldOptString{Status: 400, Detail: rfc7807Detail{Value: "opt field detail", Set: true}}
+
+	err := ogenx.ToError(resp, nil)
+
+	httpErr := ogenx.GetHTTPError(err)
+	if httpErr == nil {
+		t.Fatalf("expected HTTPError, got %T", err)
+	}
+	if httpErr.Detail != "opt field detail" {
+		t.Errorf("expected detail %q, got %q", "opt field detail", httpErr.Detail)
+	}
+}
+
+func TestToError_DetailViaExportedOptStringField_NotSet(t *testing.T) {
+	resp := &MockDetailFieldOptString{Status: 400, Detail: rfc7807Detail{Value: "unused", Set: false}}
+
+	err := ogenx.ToError(resp, nil)
+
+	httpErr := ogenx.GetHTTPError(err)
+	if httpErr == nil {
+		t.Fatalf("expected HTTPError, got %T", err)
+	}
+	if httpErr.Detail != "" {
+		t.Errorf("expected empty detail when OptString field not set, got %q", httpErr.Detail)
+	}
+}
+
 // Example usage test showing real-world pattern
 func ExampleToError() {
 	// Simulate ogen client call

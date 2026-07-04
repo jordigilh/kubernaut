@@ -1163,7 +1163,23 @@ func (r *RoutingEngine) countForwardChain(entries []ogenclient.RemediationHistor
 	}
 	cutoff := time.Now().Add(-window)
 
-	// Filter: within window, same action type, failed EA
+	sorted := filterAndSortForwardChainCandidates(entries, cutoff, actionType)
+	if len(sorted) == 0 {
+		return 0
+	}
+
+	last := len(sorted) - 1
+	if !sorted[last].PostRemediationSpecHash.IsSet() || sorted[last].PostRemediationSpecHash.Value != currentPreHash {
+		return 0
+	}
+
+	return walkForwardChainLength(sorted)
+}
+
+// filterAndSortForwardChainCandidates returns entries within the window that
+// match actionType and were confirmed ineffective (SignalResolved == false),
+// sorted ascending by completion time.
+func filterAndSortForwardChainCandidates(entries []ogenclient.RemediationHistoryEntry, cutoff time.Time, actionType string) []ogenclient.RemediationHistoryEntry {
 	var filtered []ogenclient.RemediationHistoryEntry
 	for i := range entries {
 		e := entries[i]
@@ -1180,7 +1196,7 @@ func (r *RoutingEngine) countForwardChain(entries []ogenclient.RemediationHistor
 	}
 
 	if len(filtered) == 0 {
-		return 0
+		return nil
 	}
 
 	sorted := make([]ogenclient.RemediationHistoryEntry, len(filtered))
@@ -1188,26 +1204,25 @@ func (r *RoutingEngine) countForwardChain(entries []ogenclient.RemediationHistor
 	sort.Slice(sorted, func(i, j int) bool {
 		return sorted[i].CompletedAt.Before(sorted[j].CompletedAt)
 	})
+	return sorted
+}
 
-	last := len(sorted) - 1
-	if !sorted[last].PostRemediationSpecHash.IsSet() || sorted[last].PostRemediationSpecHash.Value != currentPreHash {
-		return 0
-	}
-
+// walkForwardChainLength walks backward from the tail of a time-ascending,
+// pre-filtered entry slice, counting the connected hash chain where each
+// entry's PostRemediationSpecHash feeds the next entry's PreRemediationSpecHash.
+func walkForwardChainLength(sorted []ogenclient.RemediationHistoryEntry) int {
 	chainLen := 1
-	for i := last; i > 0; i-- {
+	for i := len(sorted) - 1; i > 0; i-- {
 		prev := sorted[i-1]
 		curr := sorted[i]
 		if !prev.PostRemediationSpecHash.IsSet() || !curr.PreRemediationSpecHash.IsSet() {
 			break
 		}
-		if prev.PostRemediationSpecHash.Value == curr.PreRemediationSpecHash.Value {
-			chainLen++
-		} else {
+		if prev.PostRemediationSpecHash.Value != curr.PreRemediationSpecHash.Value {
 			break
 		}
+		chainLen++
 	}
-
 	return chainLen
 }
 
