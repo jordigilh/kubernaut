@@ -9,6 +9,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CI](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml/badge.svg)](https://github.com/jordigilh/kubernaut/actions/workflows/ci-pipeline.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/jordigilh/kubernaut/badge)](https://scorecard.dev/viewer/?uri=github.com/jordigilh/kubernaut)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13485/badge)](https://www.bestpractices.dev/projects/13485)
 [![Latest Release](https://img.shields.io/github/v/release/jordigilh/kubernaut)](https://github.com/jordigilh/kubernaut/releases/latest)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
