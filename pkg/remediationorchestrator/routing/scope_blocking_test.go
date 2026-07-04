@@ -45,6 +45,20 @@ import (
 //
 // Test IDs: UT-RO-010-001 through UT-RO-010-009
 
+// UT-RO-1553-001 [readiness gate Wave 3]: cmd/remediationorchestrator's
+// production wiring (wireFleetReadinessGate) needs to reach the federated
+// scope-checker's remote backend to build a readiness.ScopeCheckerProber,
+// mirroring GW's Server.ScopeChecker() (pkg/gateway/server.go). Without a
+// public accessor, RoutingEngine.scopeChecker is unreachable from main().
+var _ = Describe("RoutingEngine.ScopeChecker [readiness gate Wave 3]", func() {
+	It("UT-RO-1553-001: returns the scope checker the engine was constructed with", func() {
+		checker := &mocks.AlwaysManagedScopeChecker{}
+		fakeClient := fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+		engine := routing.NewRoutingEngine(fakeClient, fakeClient, "kubernaut-system", routing.Config{}, checker)
+		Expect(engine.ScopeChecker()).To(BeIdenticalTo(scope.ScopeChecker(checker)))
+	})
+})
+
 var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 	var (
 		ctx    context.Context
@@ -54,14 +68,14 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		config = routing.Config{
-			ConsecutiveFailureThreshold: 3,
-			ConsecutiveFailureCooldown:  3600, // 1 hour
-			RecentlyRemediatedCooldown:  300,  // 5 minutes
-			ExponentialBackoffBase:      60,   // 1 minute
-			ExponentialBackoffMax:       600,  // 10 minutes
+			ConsecutiveFailureThreshold:   3,
+			ConsecutiveFailureCooldown:    3600, // 1 hour
+			RecentlyRemediatedCooldown:    300,  // 5 minutes
+			ExponentialBackoffBase:        60,   // 1 minute
+			ExponentialBackoffMax:         600,  // 10 minutes
 			ExponentialBackoffMaxExponent: 4,
-			ScopeBackoffBase:            5,    // 5 seconds (ADR-053)
-			ScopeBackoffMax:             300,  // 5 minutes (ADR-053)
+			ScopeBackoffBase:              5,   // 5 seconds (ADR-053)
+			ScopeBackoffMax:               300, // 5 minutes (ADR-053)
 		}
 	})
 
