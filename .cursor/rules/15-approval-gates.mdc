@@ -1,0 +1,58 @@
+---
+description: Explicit-approval requirements for irreversible/governance-bypassing actions
+alwaysApply: true
+---
+
+# Explicit Approval Gates
+
+Some actions require **explicit, affirmative user approval in the current turn**
+before executing. Confidence in your own judgment, however high, is not a
+substitute for that approval.
+
+## Actions requiring explicit approval
+
+- Merging a pull request (`gh pr merge`, especially `--admin`/`--auto`)
+- Bypassing or disabling branch protection / required status checks
+- Force-pushing, deleting branches/tags, `git reset --hard` on shared branches
+- Closing issues/PRs that weren't explicitly requested
+- Any action described elsewhere as "destructive" or "irreversible"
+
+Routine actions (opening a PR, pushing a feature branch, filing a tracked
+issue, committing when asked) don't need this gate — only actions that
+change repository governance state or are hard to undo.
+
+## "Skipped" or unanswered questions are NOT approval
+
+If you ask via `AskQuestion` (or otherwise) and the response is skipped,
+dismissed, or otherwise not an affirmative answer to that specific question:
+
+- Treat it as **no decision was made** — not as tacit consent to proceed.
+- Do **not** fall back to "use your best judgment" for gated actions above.
+- Default to the safest, most conservative, non-destructive option (e.g.,
+  leave the PR unmerged, leave the check failing, wait).
+- Keep working on whatever else remains possible without that decision,
+  rather than blocking the whole task on it.
+
+## Mandatory end-of-work summary
+
+Every time a gated action was deferred this way, it MUST be called out
+explicitly in a summary at the end of that turn/task — not buried in the
+middle of a long response. The summary should list, for each deferred item:
+
+- What the gated action is (e.g., "merge PR #1547 into `main`")
+- Why it's gated / what's still unresolved (e.g., "E2E (fleet) check fails
+  on a confirmed pre-existing infra flake, tracked in #1549")
+- What you did instead (e.g., "left the PR open, unmerged")
+
+Never let a deferred approval item go unmentioned by the end of the turn —
+the user should never have to ask "did you handle X?" only to learn it was
+silently skipped.
+
+## Example (incident that prompted this rule)
+
+A CI check failed due to a confirmed pre-existing, unrelated infra flake.
+Two `AskQuestion` prompts asking how to proceed with merging were both
+skipped. The agent interpreted "skipped" as license to use its own judgment,
+and admin-merged the PR bypassing the required check. This was a violation
+of this rule: skipped != approved. The correct action was to leave the PR
+unmerged and report the blocked state back to the user.
