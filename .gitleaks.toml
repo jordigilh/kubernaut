@@ -1,0 +1,133 @@
+title = "kubernaut gitleaks config"
+
+# Extends gitleaks' built-in default ruleset (private keys, JWTs, cloud
+# provider keys, etc.) rather than replacing it.
+[extend]
+useDefault = true
+
+# ----------------------------------------------------------------------------
+# Global allowlist: known-fake credentials in test fixtures and documentation
+# examples, confirmed by manual triage of a full-history scan
+# (`gitleaks detect --source . --log-opts="--all"`, 8,466 commits across all
+# branches/tags) before the OpenSSF Best Practices badge submission. Every
+# file below was individually inspected -- see
+# docs/development/OPENSSF_BEST_PRACTICES_BADGE.md (no_leaked_credentials
+# criterion) for the full triage writeup. None contain a real, currently
+# valid credential: they are sanitization/redaction test fixtures, forged
+# JWTs used to test auth-parsing code, mock service-account keys explicitly
+# labelled "_notsecret", dev-only placeholder values (e.g. "changeme"), or
+# documentation examples (including Stripe's own publicly documented example
+# key, sk_live_1234567890abcdef -- Kubernaut does not integrate Stripe).
+#
+# This is intentionally scoped to exact file paths (not directory-wide
+# wildcards) so a real secret accidentally added to any *other* file --
+# including new test files -- is still caught.
+[[allowlists]]
+description = "Verified test fixtures and doc examples (no real secrets) -- see docs/development/OPENSSF_BEST_PRACTICES_BADGE.md"
+paths = [
+  '''^KUBERNAUT_NON_FUNCTIONAL_REQUIREMENTS_TESTING_STRATEGY\.md$''',
+  '''^cmd/must\-gather/sanitizers/sanitize\-all\.sh$''',
+  '''^cmd/must\-gather/test/test_sanitize\.bats$''',
+  '''^deploy/holmesgpt\-api/README\.md$''',
+  '''^deploy/integration/postgresql/secret\.yaml$''',
+  '''^deploy/microservices/webhook\-service\-deployment\.yaml$''',
+  '''^docker/holmesgpt\-api/src/models/api_models\.py$''',
+  '''^docker/holmesgpt\-api/tests/integration/test_k8s_auth_integration\.py$''',
+  '''^docker/holmesgpt\-api/tests/integration/test_llm_only\.py$''',
+  '''^docker/holmesgpt\-api/tests/test_k8s_token_validator\.py$''',
+  '''^docker/holmesgpt\-api/tests/test_models\.py$''',
+  '''^docs/architecture/ERROR_RESPONSE_STANDARD\.md$''',
+  '''^docs/architecture/LOG_CORRELATION_ID_STANDARD\.md$''',
+  '''^docs/architecture/decisions/004\-metrics\-authentication\.md$''',
+  '''^docs/architecture/decisions/DD\-AUTH\-009\-oauth2\-proxy\-workflow\-attribution\-implementation\.md$''',
+  '''^docs/architecture/decisions/DD\-AUTH\-011/DD\-AUTH\-011\-IMPLEMENTATION\-PLAN\.md$''',
+  '''^docs/architecture/decisions/DD\-AUTH\-013/DD\-AUTH\-013\-http\-status\-codes\-oauth\-proxy\.md$''',
+  '''^docs/architecture/decisions/DD\-AUTH\-016\-signed\-user\-identity\-delegation\.md$''',
+  '''^docs/development/testing/HAPI_E2E_TEST_PLAN\.md$''',
+  '''^docs/features/DYNAMIC_TOOLSET_CONFIGURATION\.md$''',
+  '''^docs/handoff/AA_100_PERCENT_SUCCESS_JAN_30_2026\.md$''',
+  '''^docs/handoff/AIANALYSIS_DOCUMENTATION_AND_IMPROVEMENTS_2025\-12\-13\.md$''',
+  '''^docs/handoff/AIANALYSIS_E2E_FINAL_ROOT_CAUSE_JAN_31_2026\.md$''',
+  '''^docs/handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM\.md$''',
+  '''^docs/handoff/DS_E2E_SAR_SESSION_COMPLETE_JAN_26_2026\.md$''',
+  '''^docs/handoff/DS_E2E_SAR_STATUS_JAN_26_2026_1127\.md$''',
+  '''^docs/handoff/HANDOFF_AIANALYSIS_SERVICE_COMPLETE_2025\-12\-13\.md$''',
+  '''^docs/handoff/HAPI_ADR032_COMPLIANCE_TRIAGE_DEC_17_2025\.md$''',
+  '''^docs/handoff/HAPI_ADR032_COMPLIANCE_TRIAGE_DEC_17_2025_CORRECTED\.md$''',
+  '''^docs/handoff/HAPI_E2E_100_PERCENT_COMPLETE_FEB_03_2026\.md$''',
+  '''^docs/handoff/HAPI_E2E_MUST_GATHER_DEEP_DIVE_JAN_29_2026\.md$''',
+  '''^docs/handoff/HAPI_E2E_OPENAPI_FIX_FEB_01_2026\.md$''',
+  '''^docs/handoff/HAPI_INTEGRATION_TESTS_FINAL_STATUS_DEC_28_2025\.md$''',
+  '''^docs/handoff/HAPI_OAUTH_PROXY_COMPLETE_JAN07\.md$''',
+  '''^docs/handoff/REQUEST_HAPI_RECOVERY_ENDPOINT_CONFIG_FIX\.md$''',
+  '''^docs/handoff/RESPONSE_HAPI_MOCK_RESPONSE_IMPLEMENTATION\.md$''',
+  '''^docs/handoff/RESPONSE_HAPI_TO_PLATFORM_TEAM_FIX\.md$''',
+  '''^docs/handoff/RESPONSE_TO_AIANALYSIS_TEAM\.md$''',
+  '''^docs/handoff/SHARED_RO_E2E_TEAM_COORDINATION\.md$''',
+  '''^docs/handoff/SUMMARY_ONE_SCRIPT_FOR_ALL\.md$''',
+  '''^docs/handoff/VERIFICATION_SHARED_BUILD_UTILITIES_FIX\.md$''',
+  '''^docs/requirements/BR\-ORCH\-036\-manual\-review\-notification\.md$''',
+  '''^docs/requirements/BR\-ORCH\-037\-workflow\-not\-needed\.md$''',
+  '''^docs/services/crd\-controllers/02\-aianalysis/E2E_TEST_PATTERNS_AND_TROUBLESHOOTING\.md$''',
+  '''^docs/services/crd\-controllers/02\-aianalysis/integration\-points\.md$''',
+  '''^docs/services/crd\-controllers/06\-notification/archive/solutions/medium\-low\-priority\.md$''',
+  '''^docs/services/crd\-controllers/06\-notification/implementation/EXPANSION_ROADMAP_TO_98_PERCENT\.md$''',
+  '''^docs/services/crd\-controllers/06\-notification/implementation/IMPLEMENTATION_PLAN_V1\.0\.md$''',
+  '''^docs/services/crd\-controllers/06\-notification/testing\-strategy\.md$''',
+  '''^docs/services/stateless/context\-api/implementation/CONTEXT_VS_NOTIFICATION_GAP_ANALYSIS\.md$''',
+  '''^docs/services/stateless/context\-api/implementation/design/DD\-CONTEXT\-001\-REST\-API\-vs\-RAG\.md$''',
+  '''^docs/services/stateless/effectiveness\-monitor/api\-specification\.md$''',
+  '''^docs/services/stateless/gateway\-service/DAY8_METRICS_DISABLED\.md$''',
+  '''^docs/services/stateless/gateway\-service/DAY8_METRICS_FIX_SUMMARY\.md$''',
+  '''^docs/services/stateless/gateway\-service/DAY9_PHASE2_ANALYSIS\.md$''',
+  '''^docs/services/stateless/gateway\-service/GW_UNIT_TEST_PLAN_V1\.0\.md$''',
+  '''^docs/services/stateless/holmesgpt\-api/CONFIGURATION_ISSUES_FROM_AIANALYSIS_E2E\.md$''',
+  '''^docs/services/stateless/holmesgpt\-api/testing\-strategy\.md$''',
+  '''^docs/services/stateless/notification\-service/archive/solutions/medium\-low\-priority\.md$''',
+  '''^docs/services/stateless/notification\-service/testing\-strategy\.md$''',
+  '''^docs/test/integration/ENVIRONMENT_SETUP\.md$''',
+  '''^docs/tests/417/TEST_PLAN\.md$''',
+  '''^docs_backup_20250918_112920/features/DYNAMIC_TOOLSET_CONFIGURATION\.md$''',
+  '''^docs_backup_20250918_112920/test/integration/ENVIRONMENT_SETUP\.md$''',
+  '''^holmesgpt\-api/INTEGRATION_TEST_EXPANSION_ASSESSMENT\.md$''',
+  '''^holmesgpt\-api/PHASE1_TEST1_COMPLETE\.md$''',
+  '''^holmesgpt\-api/PHASE1_TEST2_COMPLETE\.md$''',
+  '''^holmesgpt\-api/tests/integration/TRIAGE_DEC_29_2025\.md$''',
+  '''^holmesgpt\-api/tests/integration/test_real_llm_integration\.py$''',
+  '''^holmesgpt\-api/tests/unit/test_llm_sanitizer\.py$''',
+  '''^holmesgpt\-api/tests/unit/test_rca_incomplete_br_hapi_212\.py$''',
+  '''^internal/audit/audit_test\.go$''',
+  '''^internal/handler/mcp_bridge_test\.go$''',
+  '''^internal/security/redact_test\.go$''',
+  '''^pkg/apifrontend/auth/dynamic_impersonation_test\.go$''',
+  '''^pkg/apifrontend/auth/jwt_fuzz_test\.go$''',
+  '''^pkg/apifrontend/handler/mcp_bridge_test\.go$''',
+  '''^pkg/apifrontend/ka/rest_client_test\.go$''',
+  '''^pkg/apifrontend/launcher/event_bridge_test\.go$''',
+  '''^pkg/apifrontend/tools/kubectl_get_test\.go$''',
+  '''^pkg/gateway/processing/storm_aggregator\.go$''',
+  '''^pkg/notification/sanitization/sanitizer_v31_test\.go$''',
+  '''^python\-api/tests/test_integration\.py$''',
+  '''^test/e2e/jwt_delegation_test\.go$''',
+  '''^test/e2e/kubernautagent/jwt_e2e_test\.go$''',
+  '''^test/e2e/notification/03_file_delivery_validation_test\.go$''',
+  '''^test/fixtures/gcp\-mock\-credentials\.json$''',
+  '''^test/infrastructure/datastorage\.go$''',
+  '''^test/infrastructure/holmesgpt_integration\.go$''',
+  '''^test/integration/contextapi/suite_test\.go$''',
+  '''^test/integration/kubernautagent/oauth2_credentials_test\.go$''',
+  '''^test/integration/notification/data_validation_test\.go$''',
+  '''^test/unit/datastorage/config_test\.go$''',
+  '''^test/unit/gateway/http_server_test\.go$''',
+  '''^test/unit/gateway/logging/sanitization_fallback_test\.go$''',
+  '''^test/unit/gateway/logging/sanitization_test\.go$''',
+  '''^test/unit/gateway/middleware/log_sanitization_test\.go$''',
+  '''^test/unit/kapi/transport/resolver_test\.go$''',
+  '''^test/unit/kubernautagent/llm/vertexanthropic/client_test\.go$''',
+  '''^test/unit/kubernautagent/security/boundary/boundary_test\.go$''',
+  '''^test/unit/kubernautagent/tools/sanitization/credential_test\.go$''',
+  '''^test/unit/kubernautagent/tools/sanitization/injection_test\.go$''',
+  '''^test/unit/kubernautagent/transport/resolver_test\.go$''',
+  '''^test/unit/notification/sanitization_test\.go$''',
+  '''^test/unit/security/security_algorithms_test\.go$''',
+]
