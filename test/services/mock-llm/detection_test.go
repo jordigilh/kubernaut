@@ -67,6 +67,39 @@ var _ = Describe("Scenario Detection Rules", func() {
 		Entry("UT-MOCK-022-005: MemoryExceedsLimit → oomkilled", "- Signal Name: MemoryExceedsLimit\n- Namespace: prod", "oomkilled"),
 	)
 
+	// Issue #1542 follow-up: "BackOff" is Kubernetes' generic crash-loop
+	// reason and fires for ANY crash-looping container, regardless of root
+	// cause (OOM-induced restarts vs. a genuine ConfigMap misconfiguration).
+	// The "crashloop" scenario's real remediation script (crashloop-config-fix-v1)
+	// requires CONFIGMAP_NAME/KEY/VALUE parameters that only apply to the
+	// crashloop-app fixture; misrouting an OOM-triggered "BackOff" signal to it
+	// causes the Job to fail fast (configmap not found). See root cause: fullpipeline
+	// CI runs 28717432528/28718786969, E2E-FP-118-003.
+	Describe("UT-MOCK-026: Ambiguous BackOff signal disambiguation (Issue #1542 follow-up)", func() {
+		It("UT-MOCK-026-001: bare BackOff with no crashloop evidence routes to oomkilled, not crashloop", func() {
+			ctx := &scenarios.DetectionContext{
+				Content: "# Incident Analysis\n- Signal Name: BackOff\n- Resource: fp-approval-123/Deployment/memory-eater\n- Error: OOMKilled",
+				AllText: "# Incident Analysis\n- Signal Name: BackOff\n- Resource: fp-approval-123/Deployment/memory-eater\n- Error: OOMKilled",
+			}
+			result := registry.Detect(ctx)
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("oomkilled"),
+				"a bare BackOff signal on a memory-eater resource (no ConfigMap fixture) must not select "+
+					"crashloop-config-fix-v1, whose script requires CONFIGMAP_NAME/KEY/VALUE and fails fast when missing")
+		})
+
+		It("UT-MOCK-026-002: BackOff signal with crashloop-app resource evidence still routes to crashloop", func() {
+			ctx := &scenarios.DetectionContext{
+				Content: "# Incident Analysis\n- Signal Name: BackOff\n- Resource: staging/Deployment/crashloop-app",
+				AllText: "# Incident Analysis\n- Signal Name: BackOff\n- Resource: staging/Deployment/crashloop-app",
+			}
+			result := registry.Detect(ctx)
+			Expect(result).NotTo(BeNil())
+			Expect(result.Scenario.Name()).To(Equal("crashloop"),
+				"a BackOff signal on the crashloop-app fixture (which has the required ConfigMap) must still select crashloop-config-fix-v1")
+		})
+	})
+
 	Describe("UT-MOCK-023: Test signal detection", func() {
 		It("should detect 'test signal' keyword → test_signal", func() {
 			ctx := &scenarios.DetectionContext{
