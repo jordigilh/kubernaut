@@ -48,9 +48,13 @@ func ensureGVK(obj runtime.Object, scheme *runtime.Scheme) (schema.GroupVersionK
 	}
 
 	gvks, _, err := scheme.ObjectKinds(obj)
-	if err != nil || len(gvks) == 0 {
+	if err != nil {
 		return schema.GroupVersionKind{}, fmt.Errorf(
 			"object GVK Kind must be set before calling this method (scheme could not infer it for %T: %w)", obj, err)
+	}
+	if len(gvks) == 0 {
+		return schema.GroupVersionKind{}, fmt.Errorf(
+			"object GVK Kind must be set before calling this method (scheme has no registered kind for %T)", obj)
 	}
 
 	// Multiple registered GVKs (e.g. an internal + external version) are rare
