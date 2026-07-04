@@ -19,6 +19,7 @@ package fmc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -80,4 +81,27 @@ func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIden
 	}
 
 	return result.Managed, nil
+}
+
+// Ping checks connectivity to FMC's API by calling its HealthzPath on the
+// same base URL used for scope checks. Unlike IsManagedResource, Ping does
+// NOT swallow errors: the readiness gate (pkg/fleet/readiness.
+// ScopeCheckerProber) needs the real transport/status error to correctly
+// flip /readyz to NotReady when FMC is unreachable.
+func (c *HTTPClient) Ping(ctx context.Context) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+HealthzPath, nil)
+	if err != nil {
+		return fmt.Errorf("build FMC healthz request: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("FMC healthz unreachable: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("FMC healthz returned status %d", resp.StatusCode)
+	}
+	return nil
 }

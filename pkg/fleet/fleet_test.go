@@ -348,6 +348,77 @@ var _ = Describe("FleetOAuth2Config.TLSCAFile (BR-INTEGRATION-065)", func() {
 	})
 })
 
+// Readiness gate Wave 1 (#1553): FleetConfig.Validate() historically never
+// checked OAuth2 field consistency, unlike the local FleetOAuth2 pairing
+// check that SP/WE/KA already have. This left GW/RO/AF/EM able to start
+// with oauth2.enabled=true but a missing tokenURL/credentialsSecretRef,
+// silently sending unauthenticated requests to the MCP Gateway instead of
+// failing closed at startup. Mirrors the existing SP/WE check exactly
+// (pkg/signalprocessing/config/config.go, pkg/workflowexecution/config/config.go).
+var _ = Describe("FleetConfig.Validate OAuth2 pairing (BR-INTEGRATION-065, #1553)", func() {
+	It("UT-FLEET-CFG-060: accepts fleet disabled with oauth2.enabled=true but no tokenURL (Validate short-circuits on !Enabled)", func() {
+		cfg := fleet.FleetConfig{
+			Enabled: false,
+			OAuth2:  fleet.FleetOAuth2Config{Enabled: true},
+		}
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("UT-FLEET-CFG-061: accepts fleet enabled with oauth2.enabled=false regardless of empty OAuth2 fields", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "https://mcp-gateway:8443",
+			MCPGatewayType:     "eaigw",
+			OAuth2:             fleet.FleetOAuth2Config{Enabled: false},
+		}
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("UT-FLEET-CFG-062: rejects oauth2.enabled=true with empty tokenURL", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "https://mcp-gateway:8443",
+			MCPGatewayType:     "eaigw",
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:              true,
+				CredentialsSecretRef: "fleet-oauth2-creds",
+			},
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("tokenURL"))
+	})
+
+	It("UT-FLEET-CFG-063: rejects oauth2.enabled=true with empty credentialsSecretRef", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "https://mcp-gateway:8443",
+			MCPGatewayType:     "eaigw",
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:  true,
+				TokenURL: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+			},
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("credentialsSecretRef"))
+	})
+
+	It("UT-FLEET-CFG-064: accepts oauth2.enabled=true with both tokenURL and credentialsSecretRef set", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "https://mcp-gateway:8443",
+			MCPGatewayType:     "eaigw",
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:              true,
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				CredentialsSecretRef: "fleet-oauth2-creds",
+			},
+		}
+		Expect(cfg.Validate()).To(Succeed())
+	})
+})
+
 var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)", func() {
 	It("UT-FLEET-CFG-020 [CM-6]: EffectiveEndpoint derives FMC URL from POD_NAMESPACE when Endpoint is empty", func() {
 		GinkgoT().Setenv("POD_NAMESPACE", "kubernaut-system")

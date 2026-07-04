@@ -31,7 +31,9 @@ import (
 
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/version"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
@@ -135,6 +137,15 @@ func main() {
 	if err != nil {
 		logger.Error(err, "Failed to register adapters")
 		os.Exit(1)
+	}
+
+	// #1553 / ADR-068 / BR-INTEGRATION-065: fail closed on Fleet dependency
+	// unreachability via /readyz (pod-wide), instead of the previous
+	// fail-open behavior. Must be wired before the HTTP server starts
+	// accepting readiness probes.
+	fleetReadinessGate := wireFleetReadinessGate(serverCtx, srv, fleetResilientClient, serverCfg, logger)
+	if fleetReadinessGate != nil {
+		defer fleetReadinessGate.Stop()
 	}
 
 	// Start server in goroutine
@@ -301,9 +312,15 @@ func wireFleetOwnerResolution(
 		logger.WithName("fleet-client"), fleetOpts...,
 	)
 	if fleetErr != nil {
-		logger.Error(fleetErr, "Fleet MCP Gateway connection failed, remote owner resolution disabled",
+		// #1553: keep the (disconnected) client instead of discarding it —
+		// wireFleetReadinessGate attaches an MCPClientProber to it so the
+		// periodic readiness probe keeps retrying and /readyz correctly
+		// fails closed until the Gateway becomes reachable, instead of
+		// silently degrading forever with no path back to healthy.
+		logger.Error(fleetErr, "Fleet MCP Gateway connection failed at startup; readiness will report "+
+			"NotReady and keep retrying in the background; remote owner resolution disabled until reconnect",
 			"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
-		return nil
+		return fleetResilientClient
 	}
 
 	readerFactory := fleetclient.NewMCPReaderFactory(srv.GetCachedClient(), fleetResilientClient.Session())
@@ -311,6 +328,54 @@ func wireFleetOwnerResolution(
 	logger.Info("Fleet MCP Gateway connected, remote owner chain resolution enabled",
 		"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
 	return fleetResilientClient
+}
+
+// fleetReadinessProbeInterval controls how often the Fleet readiness gate
+// re-probes its dependencies once started. Independent of any single
+// prober's own internal retry/backoff bound (see readiness.DefaultProbeTimeout).
+const fleetReadinessProbeInterval = 15 * time.Second
+
+// wireFleetReadinessGate builds and starts the Fleet dependency readiness
+// gate (#1553, ADR-068, BR-INTEGRATION-065): once Fleet is enabled, GW's
+// pod-wide /readyz must fail closed when the MCP Gateway or the
+// scope-check backend becomes unreachable, instead of the previous
+// fail-open behavior of only logging an error. Returns nil when Fleet is
+// disabled, in which case readinessHandler skips the fleet check entirely
+// (fleet was never part of the readiness contract when disabled). Wires
+// the gate onto srv and starts its background probe loop; callers must
+// Stop() it on shutdown.
+func wireFleetReadinessGate(
+	ctx context.Context,
+	srv *gateway.Server,
+	fleetResilientClient *fleetclient.ResilientClient,
+	serverCfg *config.ServerConfig,
+	logger logr.Logger,
+) *readiness.Gate {
+	if !serverCfg.Fleet.Enabled {
+		return nil
+	}
+
+	var probers []readiness.Prober
+	if fleetResilientClient != nil {
+		probers = append(probers, &readiness.MCPClientProber{Client: fleetResilientClient})
+	}
+	if fed, ok := srv.ScopeChecker().(*fleet.FederatedScopeChecker); ok {
+		if pinger, ok := fed.Remote().(readiness.Pinger); ok {
+			probers = append(probers, &readiness.ScopeCheckerProber{Pinger: pinger})
+		}
+	}
+
+	if len(probers) == 0 {
+		logger.Info("Fleet is enabled but no readiness probers could be constructed " +
+			"(no MCP Gateway client and no federated scope-checker backend); readiness gate skipped")
+		return nil
+	}
+
+	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), probers...)
+	gate.Start(ctx)
+	srv.SetFleetReadinessGate(gate)
+	logger.Info("Fleet readiness gate started", "prober_count", len(probers), "ready", gate.Ready())
+	return gate
 }
 
 // buildFleetOAuth2Option builds the reloadable OAuth2 transport option for

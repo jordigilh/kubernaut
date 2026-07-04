@@ -52,6 +52,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/startup"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
@@ -144,7 +145,15 @@ func main() {
 	}
 	//+kubebuilder:scaffold:builder
 
-	if err := registerHealthChecks(mgr); err != nil {
+	// #1553 / ADR-068 / BR-INTEGRATION-065: fail closed on Fleet dependency
+	// unreachability via readyz (pod-wide), instead of the previous
+	// fail-open behavior of only logging an error.
+	fleetGate := wireFleetReadinessGate(ctx, fleetResilientClient, cfg, setupLog)
+	if fleetGate != nil {
+		defer fleetGate.Stop()
+	}
+
+	if err := registerHealthChecks(mgr, fleetGate); err != nil {
 		setupLog.Error(err, "unable to set up health checks")
 		os.Exit(1)
 	}
@@ -455,9 +464,15 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 	resilienceCfg := mcpclient.DefaultResilienceConfig()
 	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
 	if err != nil {
-		logger.Error(err, "Fleet MCP Gateway connection failed, remote cluster routing disabled",
+		// #1553: keep (don't discard) the disconnected client — the fleet
+		// readiness gate attaches an MCPClientProber to it so the periodic
+		// probe keeps retrying and the "fleet" readyz check correctly
+		// reports NotReady until reconnect, instead of the client being
+		// silently lost with no path back to healthy short of a restart.
+		logger.Error(err, "Fleet MCP Gateway connection failed at startup; readiness will report NotReady "+
+			"and keep retrying in the background; remote cluster routing disabled until reconnect",
 			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
-		return nil, nil, nil
+		return nil, mcpFleetClient, nil
 	}
 
 	clusterRegistry, err := registry.NewClusterRegistry(
@@ -583,13 +598,51 @@ func buildExternalClients(cfg *config.Config, httpClient *http.Client, logger lo
 	return promClient, amClient
 }
 
-// registerHealthChecks wires the standard healthz/readyz probes.
-func registerHealthChecks(mgr ctrl.Manager) error {
+// fleetReadinessProbeInterval controls how often the Fleet readiness gate
+// re-probes its dependencies once started (mirrors cmd/gateway/main.go and
+// cmd/remediationorchestrator/main.go).
+const fleetReadinessProbeInterval = 15 * time.Second
+
+// wireFleetReadinessGate builds and starts the Fleet dependency readiness
+// gate (#1553, ADR-068, BR-INTEGRATION-065): once Fleet is enabled, EM's
+// pod-wide readyz must fail closed when the MCP Gateway becomes
+// unreachable, instead of the previous fail-open behavior of only logging
+// an error. EM has no scope-checker dependency (unlike GW/RO), so its gate
+// only ever carries an MCPClientProber. Returns nil when Fleet is disabled
+// or fleetResilientClient is nil (buildFleetReaderFactory only returns a
+// non-nil client when Fleet.Enabled and an endpoint is configured). The
+// caller registers the returned Gate's Check method via
+// mgr.AddReadyzCheck and must Stop() it on shutdown.
+func wireFleetReadinessGate(
+	ctx context.Context,
+	fleetResilientClient *mcpclient.ResilientClient,
+	cfg *config.Config,
+	logger logr.Logger,
+) *readiness.Gate {
+	if !cfg.Fleet.Enabled || fleetResilientClient == nil {
+		return nil
+	}
+
+	prober := &readiness.MCPClientProber{Client: fleetResilientClient}
+	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), prober)
+	gate.Start(ctx)
+	logger.Info("Fleet readiness gate started", "ready", gate.Ready())
+	return gate
+}
+
+// registerHealthChecks wires the standard healthz/readyz probes, plus the
+// #1553 Fleet readiness gate (a nil fleetGate is a no-op — Fleet disabled).
+func registerHealthChecks(mgr ctrl.Manager, fleetGate *readiness.Gate) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check: %w", err)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up ready check: %w", err)
+	}
+	if fleetGate != nil {
+		if err := mgr.AddReadyzCheck("fleet", fleetGate.Check); err != nil {
+			return fmt.Errorf("unable to set up fleet readiness check: %w", err)
+		}
 	}
 	return nil
 }

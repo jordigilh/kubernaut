@@ -41,6 +41,7 @@ import (
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	"github.com/jordigilh/kubernaut/internal/version"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
@@ -81,7 +82,10 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 //   - interactive: reports the interactive mode status (#891). This is
 //     informational (does not fail the probe) since autonomous mode
 //     continues to function even when interactive is soft-disabled.
-func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness) http.HandlerFunc {
+//   - fleetGate: if non-nil, verifies the Fleet MCP Gateway is reachable
+//     (#1553, ADR-068 decision #11). Nil means fleet mode is not
+//     configured (soft dependency, matches the ds nil-check convention).
+func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness, fleetGate *readiness.Gate) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -117,6 +121,15 @@ func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.Swappa
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
 				"reason": "datastorage_client_unavailable",
+			})
+			return
+		}
+
+		if fleetGate != nil && !fleetGate.Ready() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_ready",
+				"reason": "fleet_mcp_gateway_unreachable",
 			})
 			return
 		}
@@ -157,6 +170,7 @@ type healthServersParams struct {
 	InteractiveReadiness *karbac.InteractiveReadiness
 	ShutdownFlag         *int32
 	APIServerReady       *int32
+	FleetGate            *readiness.Gate
 	Logger               logr.Logger
 }
 
@@ -172,7 +186,7 @@ func startHealthAndMetricsServers(p healthServersParams) (*http.Server, *http.Se
 
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(shutdownFlag, apiServerReady, swappable, ds, interactiveReadiness))
+	healthMux.HandleFunc("/readyz", readinessHandler(shutdownFlag, apiServerReady, swappable, ds, interactiveReadiness, p.FleetGate))
 	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
 	if !cfg.Runtime.Server.DisableAdminEndpoints {
 		healthMux.Handle("/admin/loglevel", atomicLevel)

@@ -34,6 +34,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 
@@ -260,7 +261,7 @@ func main() {
 	healthServer, metricsServer := startHealthAndMetricsServers(healthServersParams{
 		Config: cfg, AtomicLevel: atomicLevel, Swappable: swappable, DS: core.ds,
 		InteractiveReadiness: core.interactiveReadiness, ShutdownFlag: &shutdownFlag,
-		APIServerReady: &apiServerReady, Logger: logger,
+		APIServerReady: &apiServerReady, FleetGate: core.fleetGate, Logger: logger,
 	})
 
 	httpServer, sessionDrainer, cleanupServers := startAPIServer(ctx, apiServerStartParams{
@@ -277,8 +278,8 @@ func main() {
 	runShutdownSequence(shutdownParams{
 		cfg: cfg, mgr: stack.mgr, sessionDrainer: sessionDrainer,
 		httpServer: httpServer, healthServer: healthServer, metricsServer: metricsServer,
-		eventEmitter: core.eventEmitter, fleetClient: core.fleetClient, auditCleanup: core.auditCleanup,
-		logger: logger,
+		eventEmitter: core.eventEmitter, fleetClient: core.fleetClient, fleetGate: core.fleetGate,
+		auditCleanup: core.auditCleanup, logger: logger,
 	})
 }
 
@@ -294,6 +295,7 @@ type shutdownParams struct {
 	metricsServer  *http.Server
 	eventEmitter   *karbac.EventEmitter
 	fleetClient    *fleetclient.ResilientClient
+	fleetGate      *readiness.Gate
 	auditCleanup   func()
 	logger         logr.Logger
 }
@@ -318,6 +320,9 @@ func runShutdownSequence(p shutdownParams) {
 	shutdownServer(shutdownCtx, p.metricsServer, "metrics", p.logger)
 
 	p.eventEmitter.Shutdown()
+	if p.fleetGate != nil {
+		p.fleetGate.Stop()
+	}
 	if p.fleetClient != nil {
 		_ = p.fleetClient.Close()
 		p.logger.Info("fleet MCP client closed")

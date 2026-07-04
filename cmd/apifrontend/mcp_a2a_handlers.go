@@ -69,6 +69,7 @@ func buildMCPHandler(d *handlerDeps) (http.Handler, func() bool, error) {
 	depsReady := handler.AllReady(
 		d.Backends.KAClient.Healthy,
 		d.Backends.DSResilientTransport.Healthy,
+		d.Backends.FleetReady, // #1553, ADR-068: fail closed on Fleet unreachability
 	)
 	return h, depsReady, nil
 }
