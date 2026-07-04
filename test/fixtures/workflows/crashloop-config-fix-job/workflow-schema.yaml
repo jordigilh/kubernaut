@@ -24,7 +24,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:aac1f1ea1b845c33cbd825482380646e4d7f78271cb1816e7d2c1d3263402621
+    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:03d07597052ebeb1e08721a768411b05211026dd571c6fdd1b78a8db2c7cc531
     # DD-WE-005 v2.0: Pre-created SA with cross-namespace RBAC so remediate.sh
     # can kubectl get/patch Deployments and ConfigMaps in any namespace.
     serviceAccountName: workflow-job-executor
