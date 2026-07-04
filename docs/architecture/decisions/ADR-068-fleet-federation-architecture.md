@@ -282,9 +282,69 @@ business logic.
 | Risk | Mitigation |
 |------|-----------|
 | Valkey unavailable | FederatedScopeChecker returns `false` (fail-safe: rejects unmanaged) |
-| MCP Gateway down | ResilientClient reconnects with backoff; readiness gate prevents traffic |
+| MCP Gateway down | ResilientClient reconnects with backoff; fail-closed readiness gate (see below) flips `/readyz` to `NotReady` and removes the pod from service |
 | Stale cache (resource label removed) | TTL-based expiry (45s); false positive window bounded |
 | OAuth2 IdP unreachable | TokenTimeout (10s) prevents indefinite hangs |
+
+## Fleet Readiness Gate (fail-closed, pod-wide `/readyz`, #1553)
+
+**Problem**: Prior to #1553, every one of the 7 Fleet-dependent services (GW, RO, EM, SP, WE, AF, KA)
+degraded silently when a Fleet dependency (scope-checker backend, MCP Gateway, or OAuth2 provider)
+became unreachable *after* successful startup — the service kept reporting `/readyz=200` and either
+served stale/local-only data or silently treated remote resources as "unmanaged". Static
+misconfiguration (missing/partial Fleet config) was already fail-closed via `Validate()` +
+`os.Exit(1)` at startup, but *runtime* unreachability was fail-open. This was an intentional but
+undocumented asymmetry between "static config error" (fail-closed) and "transient runtime
+dependency" (fail-open) — see PR #1547 review discussion.
+
+**Decision**: Runtime unreachability of a Fleet dependency now also fails closed, matching static
+config validation. This is implemented as a shared, periodically-probed `pkg/fleet/readiness.Gate`
+(new in #1553) wired into every Fleet-dependent service's readiness check:
+
+| Component | Purpose |
+|-----------|---------|
+| `readiness.Prober` | Interface implemented by each dependency-specific prober (`Probe(ctx) error`) |
+| `readiness.MCPClientProber` | Wraps `mcpclient.ResilientClient`; bounds `Reconnect()` to `DefaultProbeTimeout` (10s) so an unreachable gateway can't stall the probe loop |
+| `readiness.ClusterRegistryProber` | Wraps `registry.ClusterRegistry.Ready()` |
+| `readiness.ScopeCheckerProber` | Wraps a `Pinger` (the `fmc.HTTPClient.Ping`/`acm.Client.Ping` methods added in #1553) for the scope-check backend |
+| `readiness.Gate` | Runs all configured probers on a ticker; `Gate.Check(*http.Request) error` returns non-nil (→ 503) while any prober is failing; `Gate.Ready() bool` for direct callers |
+
+**Blast radius: pod-wide, not per-request.** When any configured prober fails, the *entire* pod's
+`/readyz` flips to `NotReady` — not just the specific Fleet-dependent code path. Kubernetes removes
+the pod from Service endpoints until the dependency recovers and the next probe tick succeeds. This
+was an explicit trade-off (favor detectability and operational simplicity over partial availability):
+a service instance that can't reach its Fleet dependency is treated as unhealthy as a whole, the same
+way an unreachable primary database would be, rather than trying to keep serving local-only traffic
+through the same pod while silently degrading Fleet-routed traffic.
+
+**Wiring per service** (all via the existing `mgr.AddReadyzCheck` controller-runtime hook, or the
+service's existing readiness handler where no controller-runtime manager exists):
+
+| Service | Probers wired | Wiring location |
+|---------|---------------|------------------|
+| Gateway (GW) | `MCPClientProber` + `ScopeCheckerProber` (via `FederatedScopeChecker.Remote()`) | `pkg/gateway/server.go` readinessHandler |
+| RemediationOrchestrator (RO) | `MCPClientProber` + `ScopeCheckerProber` (via `RoutingEngine.ScopeChecker()`) | `cmd/remediationorchestrator/main.go` |
+| EffectivenessMonitor (EM) | `MCPClientProber` | `cmd/effectivenessmonitor/main.go` |
+| SignalProcessing (SP) | `MCPClientProber` + `ClusterRegistryProber` | `cmd/signalprocessing/main.go` |
+| WorkflowExecution (WE) | `MCPClientProber` | `cmd/workflowexecution/main.go` |
+| APIFrontend (AF) | `MCPClientProber` + `ClusterRegistryProber` (conditional on `MCPGatewayType`) | `cmd/apifrontend/backend_deps.go`, composed into `handler.AllReady` |
+| KubernautAgent (KA) | `MCPClientProber` | `cmd/kubernautagent/bootstrap.go`, `cmd/kubernautagent/health.go` |
+
+A precondition for this to work: every service's Fleet client-wiring function now **retains** (rather
+than discards) the `ResilientClient`/`ClusterRegistry` object on initial connection failure, so the
+`Gate` has something to keep probing/retrying instead of the client being silently lost with no path
+back to healthy short of a pod restart.
+
+**Known limitation (tracked separately, not fixed by #1553): ACM backend auth gap (#1556).**
+`pkg/fleet/acm.Client` (`fleet.backend: "acm"`) has never actually sent the `Authorization: Bearer
+<token>` header the real ACM Search API (`stolostron/search-v2-api`) mandatorily requires — despite
+this being spec'd earlier in this ADR (`fleet.acm.tokenSecretRef`, see the ACM Search Production Setup
+Guide below). This is a pre-existing gap, not introduced by #1553. Before #1553, it was silently
+invisible: `IsManagedResource` fail-safe-swallows the resulting 401 into `(false, nil)`. **After
+#1553, any deployment with `fleet.backend: "acm"` will have `/readyz` permanently stuck at
+`NotReady`** (the new `ScopeCheckerProber`'s `Ping` call will always 401) until #1556 is fixed. No
+default deployment is affected (`backend` defaults to `""`, i.e. the FMC path), but operators who have
+configured the ACM backend per this ADR's own setup guide should track #1556.
 
 ## Implementation Status
 
@@ -302,6 +362,8 @@ business logic.
 | WE Fleet Routing | WE JobExecutor.IsCompleted ClusterID propagation (BR-FLEET-054) | Complete |
 | EM Fleet Routing | EM target-read routing via ReaderFactory (BR-FLEET-054) | Complete |
 | AF Fleet Routing | AF kubectl_get/kubectl_list ResourceReader abstraction + list_clusters tool (BR-FLEET-054) | Complete |
+| Fleet Readiness Gate | Fail-closed, pod-wide `/readyz` for runtime Fleet dependency unreachability across all 7 services (#1553) | Complete |
+| ACM bearer-token auth | `acm.Client` authentication per this ADR's `fleet.acm.tokenSecretRef` spec | Planned (#1556) |
 | GatewayDiscoverer | Two-phase tool discovery (`list_clusters`/`list_tools_for_cluster`) with Kuadrant and EAIGW implementations | Planned (v1.6) |
 | Rancher Adapter | Rancher v3 API adapter for cluster discovery and scope checks | Planned (v1.6) |
 | Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
@@ -334,6 +396,13 @@ client cannot drive Dex's token-exchange grant).
 | AppendFleetToolsToRCA | registerFleetTools() → main | cmd/kubernautagent/main.go:231 | IT-KA-FLEET-001 |
 | CRDWatcher | main() | cmd/fmc/main.go | UT-FMC-004 |
 | BuildKey validation | BuildKey() | pkg/fleet/scopecache/client.go | UT-FLEET-SC-006/007/008 |
+| readiness.Gate (GW) | readinessHandler() | pkg/gateway/server.go | IT-GW-1553-001 |
+| readiness.Gate (RO) | setupFleetReadinessCheck() → mgr.AddReadyzCheck | cmd/remediationorchestrator/main.go | IT-RO-1553-001 |
+| readiness.Gate (EM) | mgr.AddReadyzCheck | cmd/effectivenessmonitor/main.go | IT-EM-1553-001 |
+| readiness.Gate (SP) | mgr.AddReadyzCheck | cmd/signalprocessing/main.go | IT-SP-1553-001 |
+| readiness.Gate (WE) | mgr.AddReadyzCheck | cmd/workflowexecution/main.go | IT-WE-1553-001 |
+| readiness.Gate (AF) | wireFleetReadinessGate() → handler.AllReady | cmd/apifrontend/backend_deps.go | IT-FLEET-READY-AF-001a/b |
+| readiness.Gate (KA) | wireFleetReadinessGate() → readinessHandler | cmd/kubernautagent/bootstrap.go | IT-FLEET-READY-KA-001a/b/c |
 | fmc securityContext | Helm template | charts/kubernaut/templates/fmc/fmc.yaml | helm template |
 | ResilientClient (SP) | main() | cmd/signalprocessing/main.go | IT-SP-054-001 |
 | MCPReaderFactory (SP) | main() | cmd/signalprocessing/main.go | IT-SP-054-001 |
