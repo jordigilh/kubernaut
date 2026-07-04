@@ -8,14 +8,14 @@
 #   Production:  podman build --target production -t aianalysis:v1.0 -f docker/aianalysis.Dockerfile .
 #   Development: podman build --build-arg GOFLAGS=-cover -t aianalysis:dev -f docker/aianalysis.Dockerfile .
 
-ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.26
-ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
+ARG BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset:1.26@sha256:ad1d5e19331fc80c28a6193c1f8489af93b8f54d06766f174de6d4ce1ec6a191
+ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:b217fa65d8c21058887b18f005f587e47a17dd1281a5196ac88d01724a273dbd
 
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/go-toolset:1.26
-# Best practice: pass --build-arg BUILDER_IMAGE=registry.access.redhat.com/ubi10/go-toolset@sha256:<digest> in CI; digests change with each image release.
+# SECURITY: BUILDER_IMAGE above is pinned by digest. Dependabot (docker
+# ecosystem, .github/dependabot.yml) re-resolves this digest weekly.
 FROM ${BUILDER_IMAGE} AS builder
 ENV GOTOOLCHAIN=auto
 
@@ -91,8 +91,8 @@ LABEL name="kubernaut-aianalysis" \
 # Stage 2b: Development/E2E runtime (ubi10-minimal -- debug + coverage, DD-TEST-007)
 # Default stage when no --target is specified (backwards compatible with CI).
 # ============================================================================
-# SECURITY: Pin to specific digest on release. Run: skopeo inspect --format '{{.Digest}}' docker://registry.access.redhat.com/ubi10/ubi-minimal:latest
-# Best practice: pass --build-arg BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal@sha256:<digest> in CI; digests change with each image release.
+# SECURITY: BASE_IMAGE above is pinned by digest. Dependabot (docker
+# ecosystem, .github/dependabot.yml) re-resolves this digest weekly.
 FROM ${BASE_IMAGE} AS development
 RUN microdnf update -y && \
 	microdnf install -y ca-certificates tzdata shadow-utils && \
