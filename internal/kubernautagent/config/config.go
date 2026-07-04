@@ -196,7 +196,14 @@ func (c *Config) validateLLMOAuth2AndTLS() error {
 	return validateTLSCertPair("ai.llm", c.AI.LLM.TLSCertFile, c.AI.LLM.TLSKeyFile, c.AI.LLM.TLSCaFile)
 }
 
-// validateFleetIntegration checks the Fleet OAuth2 integration settings.
+// validateFleetIntegration checks the Fleet OAuth2 integration settings and
+// the Endpoint/GatewayType pairing.
+//
+// #1553: registerFleetTools (cmd/kubernautagent/toolregistry.go) silently
+// treats fleet as disabled when either Endpoint or GatewayType is empty.
+// Without this check, an operator who set one but not the other got no
+// startup error -- KA just ran with fleet silently off instead of failing
+// closed on the misconfiguration.
 func (c *Config) validateFleetIntegration() error {
 	if c.Integrations.Fleet.OAuth2.Enabled {
 		if c.Integrations.Fleet.OAuth2.TokenURL == "" {
@@ -206,6 +213,16 @@ func (c *Config) validateFleetIntegration() error {
 			return fmt.Errorf("integrations.fleet.oauth2.credentialsSecretRef is required when oauth2.enabled=true")
 		}
 	}
+
+	endpoint := c.Integrations.Fleet.Endpoint
+	gatewayType := c.Integrations.Fleet.GatewayType
+	if endpoint != "" && gatewayType == "" {
+		return fmt.Errorf("integrations.fleet.gatewayType is required when integrations.fleet.endpoint is set")
+	}
+	if gatewayType != "" && endpoint == "" {
+		return fmt.Errorf("integrations.fleet.endpoint is required when integrations.fleet.gatewayType is set")
+	}
+
 	return nil
 }
 

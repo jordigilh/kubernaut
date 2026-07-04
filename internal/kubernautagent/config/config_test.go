@@ -937,4 +937,39 @@ integrations:
 				"empty gatewayType means fleet is disabled")
 		})
 	})
+
+	// Readiness gate Wave 1 (#1553): registerFleetTools (cmd/kubernautagent/
+	// toolregistry.go) silently returns (nil, nil) -- fleet disabled -- when
+	// either Endpoint or GatewayType is empty. Before this check, an operator
+	// who set one but not the other got no startup error: KA just ran with
+	// fleet silently off instead of failing closed on the misconfiguration.
+	Describe("KA FleetConfig Endpoint/GatewayType pairing (#1553)", func() {
+		It("UT-KA-CFG-003: rejects endpoint set without gatewayType", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.Endpoint = "http://mcp-gateway:1975/mcp"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("gatewayType"))
+		})
+
+		It("UT-KA-CFG-004: rejects gatewayType set without endpoint", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.GatewayType = "kuadrant"
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("endpoint"))
+		})
+
+		It("UT-KA-CFG-005: accepts both endpoint and gatewayType set", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.Endpoint = "http://mcp-gateway:1975/mcp"
+			cfg.Integrations.Fleet.GatewayType = "kuadrant"
+			Expect(cfg.Validate()).To(Succeed())
+		})
+
+		It("UT-KA-CFG-006: accepts neither endpoint nor gatewayType set (fleet disabled)", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.Validate()).To(Succeed())
+		})
+	})
 })

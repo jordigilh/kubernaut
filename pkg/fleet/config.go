@@ -166,6 +166,20 @@ func (c FleetConfig) Validate() error {
 		return fmt.Errorf("fleet: enabled requires either backend+endpoint or mcpGatewayEndpoint to be configured")
 	}
 
+	// #1553: mirrors the OAuth2 pairing check SP/WE/KA already have locally
+	// (pkg/signalprocessing/config, pkg/workflowexecution/config). Without
+	// this, GW/RO/AF/EM could start with oauth2.enabled=true but a missing
+	// tokenURL/credentialsSecretRef and silently send unauthenticated
+	// requests to the MCP Gateway instead of failing closed at startup.
+	if c.OAuth2.Enabled {
+		if c.OAuth2.TokenURL == "" {
+			return fmt.Errorf("fleet: oauth2.tokenURL is required when oauth2.enabled=true")
+		}
+		if c.OAuth2.CredentialsSecretRef == "" {
+			return fmt.Errorf("fleet: oauth2.credentialsSecretRef is required when oauth2.enabled=true")
+		}
+	}
+
 	return nil
 }
 
