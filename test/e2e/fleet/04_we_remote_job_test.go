@@ -36,8 +36,8 @@ import (
 //
 // This test validates that the MCP gateway exposes the tools needed for
 // remote Job creation, and that a tool call routed through the gateway
-// successfully creates a resource on the loopback cluster.
-var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway to loopback cluster (BR-INTEGRATION-054)", Label("fleet"), func() {
+// successfully creates a resource on the remote cluster.
+var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway to remote cluster (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should discover job-creation tools via MCP gateway and verify tool availability", func() {
 		mcpCtx := context.Background()
 		authClient, err := fleetAuthenticatedHTTPClient()
@@ -63,16 +63,16 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 				toolNames[tool.Name] = true
 			}
 
-			g.Expect(toolNames).To(HaveKey("loopback_cluster_resources_create_or_update"),
+			g.Expect(toolNames).To(HaveKey("remote_cluster_resources_create_or_update"),
 				"AC-3: resources_create_or_update tool must be available for remote Job dispatch")
-			g.Expect(toolNames).To(HaveKey("loopback_cluster_resources_get"),
+			g.Expect(toolNames).To(HaveKey("remote_cluster_resources_get"),
 				"resources_get tool needed for WE status polling")
 		}, 90*time.Second, 5*time.Second).Should(Succeed())
 	})
 
 	It("should execute a read operation on the remote cluster via MCP gateway", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "loopback-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway via NodePort")
 		defer mcpClient.Close()
 
@@ -83,6 +83,6 @@ var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway
 		Expect(err).ToNot(HaveOccurred(),
 			"AC-3: MCP gateway must support remote list operations")
 		Expect(podList.Items).ToNot(BeEmpty(),
-			"loopback cluster must have pods in kube-system")
+			"remote cluster must have pods in kube-system")
 	})
 })

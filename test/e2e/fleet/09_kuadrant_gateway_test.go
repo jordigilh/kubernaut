@@ -63,25 +63,25 @@ var _ = Describe("E2E-FLEET-KUA: Kuadrant MCP Gateway Pipeline", Label("fleet"),
 			for _, tool := range tools.Tools {
 				toolNames = append(toolNames, tool.Name)
 			}
-			g.Expect(toolNames).To(ContainElement(HavePrefix("loopback_cluster_")),
+			g.Expect(toolNames).To(ContainElement(HavePrefix("remote_cluster_")),
 				"CM-6: tool names must use prefix from MCPServerRegistration.spec.prefix")
 		}, 90*time.Second, 5*time.Second).Should(Succeed())
 	})
 
 	It("E2E-FLEET-KUA-002 [AC-3]: tool call routes through Kuadrant broker to kube-mcp-server backend", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "loopback-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
 		Expect(err).ToNot(HaveOccurred())
 		defer mcpClient.Close()
 
 		By("Executing namespaces_list tool call through Kuadrant gateway")
 		result, err := mcpClient.Session().CallTool(mcpCtx, &mcp.CallToolParams{
-			Name: "loopback_cluster_namespaces_list",
+			Name: "remote_cluster_namespaces_list",
 		})
 		Expect(err).ToNot(HaveOccurred(),
 			"AC-3: tool call must route through Kuadrant broker to kube-mcp-server")
 		Expect(result.Content).ToNot(BeEmpty(),
-			"tool call response must contain namespace data from loopback cluster")
+			"tool call response must contain namespace data from remote cluster")
 	})
 
 	It("E2E-FLEET-KUA-003 [CM-6]: FMC is running and healthy with gatewayType=kuadrant", func() {
@@ -95,15 +95,15 @@ var _ = Describe("E2E-FLEET-KUA: Kuadrant MCP Gateway Pipeline", Label("fleet"),
 		Expect(strings.TrimSpace(string(out))).To(Equal("1"),
 			"CM-6: FMC deployment must have 1 ready replica")
 
-		By("Verifying MCPServerRegistration 'loopback-cluster' exists")
+		By("Verifying MCPServerRegistration 'remote-cluster' exists")
 		regCmd := exec.CommandContext(context.Background(),
-			"kubectl", "get", "mcpserverregistration", "loopback-cluster",
+			"kubectl", "get", "mcpserverregistration", "remote-cluster",
 			"-n", namespace, "--kubeconfig", kubeconfigPath,
 			"-o", "name")
 		regOut, regErr := regCmd.Output()
 		Expect(regErr).ToNot(HaveOccurred(), "MCPServerRegistration must exist")
-		Expect(strings.TrimSpace(string(regOut))).To(ContainSubstring("loopback-cluster"),
-			"CM-6: MCPServerRegistration 'loopback-cluster' must be present")
+		Expect(strings.TrimSpace(string(regOut))).To(ContainSubstring("remote-cluster"),
+			"CM-6: MCPServerRegistration 'remote-cluster' must be present")
 
 		By("Verifying Valkey deployment is ready")
 		valkeyCmd := exec.CommandContext(context.Background(),

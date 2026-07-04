@@ -23,7 +23,7 @@ limitations under the License.
 //
 //	Alert → GW → SP(MCP enrich) → AA(MCP investigate) → WE(MCP dispatch) → EM → NT
 //
-// Every registered cluster identity (loopback-cluster, prod-east, prod-west)
+// Every registered cluster identity (remote-cluster, prod-east, prod-west)
 // is backed by the SAME remote bridge to the remote cluster's kube-mcp-server
 // (KubeMCPServerAuthConfig.AllRegistrationsRemote, test/infrastructure/fleet_e2e.go)
 // -- unlike the "loopback" pattern this suite used before, there is no local
@@ -31,7 +31,7 @@ limitations under the License.
 // primary cluster. kube-mcp-server runs in passthrough mode with a real RFC
 // 8693 Standard Token Exchange against Keycloak (mirrors the FMC E2E lane;
 // Keycloak replaces DEX here because DEX has no Standard Token Exchange,
-// Spike S17/S20). Tool names use the `loopback_cluster_` prefix from
+// Spike S17/S20). Tool names use the `remote_cluster_` prefix from
 // MCPServerRegistration.
 //
 // Because every fleet cluster identity is now remote, any K8s object a test
@@ -112,7 +112,7 @@ var (
 	apiReader client.Reader
 
 	// remoteK8sClient targets the second Kind cluster (DD-TEST-013) that
-	// backs loopback-cluster/prod-east/prod-west (AllRegistrationsRemote,
+	// backs remote-cluster/prod-east/prod-west (AllRegistrationsRemote,
 	// see test/infrastructure/fleet_e2e.go). Kubernaut's own CRDs
 	// (RemediationRequest, SignalProcessing, etc.) are reconciled by
 	// controllers running in the PRIMARY cluster and stay on k8sClient;
@@ -169,7 +169,7 @@ func postWithFleetAuth(url, contentType string, body io.Reader) (*http.Response,
 // resource created/labeled by a test immediately before posting an alert is
 // only guaranteed to be visible to FMC's scope-check endpoint after the next
 // full sync tick. Because syncAll() iterates every registered cluster
-// (loopback-cluster, prod-east, prod-west) x 6 resource kinds sequentially,
+// (remote-cluster, prod-east, prod-west) x 6 resource kinds sequentially,
 // a single cycle can itself take non-trivial wall time, so worst-case
 // staleness exceeds the nominal 10s interval. 45s gives ~2 sync cycles of
 // margin; a 15s window (the previous value) was measured insufficient and
@@ -248,7 +248,7 @@ func fleetAuthenticatedHTTPClient() (*http.Client, error) {
 }
 
 // newFleetMCPClient creates an MCP client with auto-discovered tool prefix.
-// Kuadrant uses "loopback_cluster_" (from MCPServerRegistration spec.prefix),
+// Kuadrant uses "remote_cluster_" (from MCPServerRegistration spec.prefix),
 // not the EAIGW "{clusterID}__" convention. DiscoverToolPrefix queries
 // tools/list and extracts the correct prefix for the given cluster.
 //
@@ -436,7 +436,7 @@ var _ = SynchronizedBeforeSuite(
 			Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label namespace %s: %s", ns, string(labelNSOut))
 		}
 
-		// The shared "memory-eater" fixture (referenced by clusterID=loopback-cluster/
+		// The shared "memory-eater" fixture (referenced by clusterID=remote-cluster/
 		// prod-east/prod-west across 01_signal_ingestion_test.go and
 		// 03_ro_clusterid_routing_test.go) must live on the REMOTE cluster now that
 		// AllRegistrationsRemote backs every registered cluster identity with the
@@ -510,7 +510,7 @@ var _ = SynchronizedBeforeSuite(
 		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Creating remote cluster's Kubernetes client (DD-TEST-013: backs loopback-cluster/prod-east/prod-west)")
+		By("Creating remote cluster's Kubernetes client (DD-TEST-013: backs remote-cluster/prod-east/prod-west)")
 		remoteCfg, remoteCfgErr := clientcmd.BuildConfigFromFlags("", remoteKubeconfigPath)
 		Expect(remoteCfgErr).ToNot(HaveOccurred(), "failed to build remote cluster kubeconfig")
 		remoteK8sClient, err = client.New(remoteCfg, client.Options{Scheme: scheme.Scheme})
@@ -568,7 +568,7 @@ var _ = SynchronizedAfterSuite(
 			GinkgoWriter.Println("CLUSTER PRESERVED FOR DEBUGGING")
 			GinkgoWriter.Printf("   To access: export KUBECONFIG=%s\n", kubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", clusterName)
-			GinkgoWriter.Printf("   Remote cluster (DD-TEST-013, backs loopback-cluster/prod-east/prod-west): export KUBECONFIG=%s\n", remoteKubeconfigPath)
+			GinkgoWriter.Printf("   Remote cluster (DD-TEST-013, backs remote-cluster/prod-east/prod-west): export KUBECONFIG=%s\n", remoteKubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", remoteClusterName)
 			return
 		}

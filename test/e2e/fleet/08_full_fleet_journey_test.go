@@ -39,17 +39,18 @@ import (
 // FedRAMP: AC-3, AC-4, SI-4 (end-to-end fleet remediation)
 //
 // This is the integration test that validates the complete multi-cluster
-// remediation lifecycle using the loopback pattern. It exercises:
+// remediation lifecycle against the genuinely remote cluster (AllRegistrationsRemote,
+// DD-TEST-013). It exercises:
 //   1. Gateway receives alert with cluster_id
 //   2. RR is created with spec.clusterID
 //   3. SP enriches the signal via MCP gateway (remote)
 //   4. RO routes the RR through the workflow pipeline
 var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from alert to enrichment (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should complete the full fleet remediation pipeline: alert -> RR -> SP enrichment", func() {
-		By("Step 1: Sending alert with cluster_id=loopback-cluster to Gateway (AC-4)")
+		By("Step 1: Sending alert with cluster_id=remote-cluster to Gateway (AC-4)")
 		// Issue #54 flakiness fix: distinct resource name from E2E-FLEET-004
 		// (03_ro_clusterid_routing_test.go), which also used "memory-eater" +
-		// "loopback-cluster" and therefore produced an identical dedup fingerprint
+		// "remote-cluster" and therefore produced an identical dedup fingerprint
 		// (see pkg/gateway/types/fingerprint.go). Running in parallel Ginkgo
 		// processes, the two specs raced for the same dedup slot.
 		//
@@ -86,7 +87,7 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
 		payload := buildPrometheusAlertWithCluster("FleetJourney", namespace, "critical",
-			"Deployment", targetName, "loopback-cluster")
+			"Deployment", targetName, "remote-cluster")
 
 		gatewayURL := "http://localhost:30080"
 		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
@@ -97,14 +98,14 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 
 		rrName := response["remediationRequestName"].(string)
 
-		By("Step 2: Verifying RR created with spec.clusterID=loopback-cluster (AC-3)")
+		By("Step 2: Verifying RR created with spec.clusterID=remote-cluster (AC-3)")
 		Eventually(func(g Gomega) {
 			var rr remediationv1.RemediationRequest
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{
 				Name: rrName, Namespace: namespace,
 			}, &rr)).To(Succeed())
-			g.Expect(rr.Spec.ClusterID).To(Equal("loopback-cluster"),
-				"AC-3: RR must carry loopback-cluster identity")
+			g.Expect(rr.Spec.ClusterID).To(Equal("remote-cluster"),
+				"AC-3: RR must carry remote-cluster identity")
 		}, timeout, interval).Should(Succeed())
 
 		By("Step 3: Verifying SP is created for signal enrichment")
@@ -115,14 +116,14 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 			var foundSP *signalprocessingv1.SignalProcessing
 			for i := range spList.Items {
 				sp := &spList.Items[i]
-				if sp.Spec.Signal.ClusterID == "loopback-cluster" &&
+				if sp.Spec.Signal.ClusterID == "remote-cluster" &&
 					sp.Spec.RemediationRequestRef.Name == rrName {
 					foundSP = sp
 					break
 				}
 			}
 			g.Expect(foundSP).ToNot(BeNil(),
-				"SP should be created for the fleet signal with clusterID=loopback-cluster")
+				"SP should be created for the fleet signal with clusterID=remote-cluster")
 		}, timeout, interval).Should(Succeed())
 
 		By("Step 4: Waiting for SP enrichment to complete via MCP gateway (SI-4)")
@@ -132,7 +133,7 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 
 			for i := range spList.Items {
 				sp := &spList.Items[i]
-				if sp.Spec.Signal.ClusterID == "loopback-cluster" &&
+				if sp.Spec.Signal.ClusterID == "remote-cluster" &&
 					sp.Spec.RemediationRequestRef.Name == rrName {
 					g.Expect(sp.Status.KubernetesContext).ToNot(BeNil(),
 						"SI-4: SP should be enriched via MCP gateway for remote cluster signal")

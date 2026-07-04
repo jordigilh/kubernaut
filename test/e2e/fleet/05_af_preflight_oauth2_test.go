@@ -61,7 +61,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 
 	It("should execute a preflight read via MCP gateway to validate cluster accessibility", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "loopback-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway for preflight")
 		defer mcpClient.Close()
 
@@ -72,7 +72,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 		Expect(err).ToNot(HaveOccurred(),
 			"SC-8: preflight namespace list via MCP gateway must succeed")
 		Expect(nsList.Items).ToNot(BeEmpty(),
-			"loopback cluster must have namespaces accessible via MCP")
+			"remote cluster must have namespaces accessible via MCP")
 
 		By("Verifying kubernaut-system namespace is accessible (preflight check)")
 		found := false
@@ -88,7 +88,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 
 	It("should list pods in kubernaut-system via MCP gateway with label selector", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "loopback-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
 		Expect(err).ToNot(HaveOccurred())
 		defer mcpClient.Close()
 

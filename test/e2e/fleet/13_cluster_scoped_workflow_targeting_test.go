@@ -98,13 +98,13 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 		matchWorkflowName := "fleet-cluster-match-" + suffix
 		mismatchWorkflowName := "fleet-cluster-mismatch-" + suffix
 
-		By("Step 1: Registering a workflow classified for the loopback-cluster's fleet classification (production)")
+		By("Step 1: Registering a workflow classified for the remote-cluster's fleet classification (production)")
 		registerFleetClusterWorkflow(matchWorkflowName, []string{"production"})
 
 		By("Step 1b: Registering a workflow classified for a DIFFERENT cluster (staging-eu) -- must be excluded on mismatch")
 		registerFleetClusterWorkflow(mismatchWorkflowName, []string{"staging-eu"})
 
-		By("Step 2: Sending a fleet alert (cluster_id=loopback-cluster) to Gateway (AC-4)")
+		By("Step 2: Sending a fleet alert (cluster_id=remote-cluster) to Gateway (AC-4)")
 		// Distinct target name from other fleet E2E specs to avoid a duplicate
 		// dedup fingerprint race (see 08_full_fleet_journey_test.go's note on
 		// the identical issue for "memory-eater").
@@ -134,7 +134,7 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
 		payload := buildPrometheusAlertWithCluster("FleetClusterScoped", namespace, "critical",
-			"Deployment", targetName, "loopback-cluster")
+			"Deployment", targetName, "remote-cluster")
 
 		gatewayURL := "http://localhost:30080"
 		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
@@ -152,7 +152,7 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 
 			for i := range spList.Items {
 				candidate := &spList.Items[i]
-				if candidate.Spec.Signal.ClusterID == "loopback-cluster" &&
+				if candidate.Spec.Signal.ClusterID == "remote-cluster" &&
 					candidate.Spec.RemediationRequestRef.Name == rrName {
 					sp = candidate
 					break
@@ -160,7 +160,7 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 			}
 			g.Expect(sp).ToNot(BeNil(), "SP should be created for the fleet signal")
 			g.Expect(sp.Status.ClusterClassification).To(Equal("production"),
-				"BR-FLEET-003: SP Rego must classify loopback-cluster as 'production' "+
+				"BR-FLEET-003: SP Rego must classify remote-cluster as 'production' "+
 					"from the MCPServerRegistration's environment=production onboarding label")
 		}, timeout, interval).Should(Succeed())
 
