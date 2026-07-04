@@ -11,6 +11,42 @@ computes/you must judge (e.g., issue response rate) that I can't verify on your 
 
 Legend: **Met** / **Unmet** / **N/A** — matches the three answer choices the form itself uses.
 
+## Important: this is a *different* badge from the OpenSSF Scorecard badge
+
+Don't confuse the two — both are now in progress for this repo, but they work differently:
+
+| | OpenSSF **Scorecard** | OpenSSF **Best Practices** (this doc, formerly "CII") |
+|---|---|---|
+| How it's scored | Fully automated, re-run weekly by `.github/workflows/scorecard.yml` | Self-certified by you, one-time form |
+| What it measures | ~18 supply-chain heuristics (pinning, permissions, SAST, etc.) | ~50 broader FLOSS best-practice criteria (docs, testing, crypto, process) |
+| README badge already added? | Yes | No — added after you complete the steps below |
+
+## How to submit
+
+1. Go to <https://www.bestpractices.dev/en/projects/new> and click **"Log in with GitHub"**
+   (uses your existing `jordigilh` GitHub account — no new credentials to manage).
+2. Enter the repository URL: `https://github.com/jordigilh/kubernaut`. The form auto-detects a few
+   fields (license, repo URL) from the repo itself.
+3. Work through the criteria sections below (Basics → Change Control → Reporting → Quality →
+   Security → Analysis). For each, select **Met** / **Unmet** / **N/A** and paste the
+   justification/URL text I've drafted. The form auto-saves as you go, so you can do this over
+   multiple sittings.
+4. For the ⚠️-flagged criteria, answer from your own knowledge/judgment rather than copying my
+   suggested text verbatim.
+5. The form shows a live "percentage complete" indicator. Once every MUST criterion is answered
+   **Met** or a justified **N/A**, the passing badge is awarded automatically — no manual review
+   or waiting period, unlike Scorecard's CI-based scoring.
+6. Once awarded, the project page (`https://www.bestpractices.dev/en/projects/<your-id>`) shows a
+   "Badges" / embed section with the exact markdown to paste into the README, in the form:
+   `[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/<id>/badge)](https://www.bestpractices.dev/projects/<id>)`.
+   Send me that snippet (or the project ID) once you have it and I'll add it to the README badge row.
+7. Optional follow-up: once "passing" is earned, the site lets you continue to the "Silver" and
+   "Gold" tiers, which add stricter criteria (two-person code review, reproducible builds, etc.) —
+   not necessary for the badge itself, only pursue if you want to go further.
+
+Estimated time: most of the ~50 criteria below already have drafted answers, so this should be a
+30–60 minute copy-paste session rather than a research project.
+
 ---
 
 ## Basics
