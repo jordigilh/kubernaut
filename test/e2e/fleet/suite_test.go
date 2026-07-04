@@ -69,6 +69,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -240,9 +242,61 @@ func newFleetMCPClient(ctx context.Context, clusterID string) (*mcpclient.Client
 		}
 		c.Close()
 
-		return mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithClusterID(clusterID), mcpclient.WithToolPrefix(prefix))
+		finalClient, err := mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithClusterID(clusterID), mcpclient.WithToolPrefix(prefix))
+		if err != nil {
+			lastErr = fmt.Errorf("create final MCP client for %q (attempt %d/%d): %w", clusterID, attempt+1, maxRetries+1, err)
+			time.Sleep(retryInterval)
+			continue
+		}
+
+		// warmUpFleetMCPSession's own probeAuthenticatedResourcesList (mirrored
+		// below) proved the *broker's* route/AuthPolicy had converged once,
+		// globally, during SynchronizedBeforeSuite (WaitForFleetReady). It did
+		// not prove that THIS brand-new session (the one just created above)
+		// can complete its own first real call: kube-mcp-server negotiates a
+		// session with the remote cluster lazily, on first use, per client --
+		// see mcp-gateway broker logs from a 2026-07-04 CI run, where 7 specs
+		// across 12 parallel processes all opened their first fresh session
+		// within the same ~150ms window right after SynchronizedBeforeSuite
+		// returned, and several got "failed to create client: transport
+		// error: authorization required" even though the readiness probe's
+		// own (single, earlier, non-concurrent) session had already
+		// succeeded. Absorb that thundering-herd race here, once per test
+		// client, instead of leaving every call site to retry independently.
+		if err := warmUpFleetMCPSession(ctx, finalClient); err != nil {
+			finalClient.Close()
+			lastErr = fmt.Errorf("warm up MCP session for %q (attempt %d/%d): %w", clusterID, attempt+1, maxRetries+1, err)
+			GinkgoWriter.Printf("  Waiting for broker session warm-up (attempt %d/%d): %v\n", attempt+1, maxRetries+1, err)
+			time.Sleep(retryInterval)
+			continue
+		}
+
+		return finalClient, nil
 	}
 	return nil, fmt.Errorf("broker sync timeout after %d attempts: %w", maxRetries+1, lastErr)
+}
+
+// warmUpFleetMCPSession performs one cheap, real resources_list call
+// (Pods, cluster-wide) on a freshly created client to force kube-mcp-server's
+// lazy per-session negotiation with the remote cluster to complete before the
+// caller's actual test assertions run. Retries internally for up to 15s --
+// the race window observed in CI closed within ~1s once the burst of
+// concurrent session negotiations settled, so this budget is deliberately
+// short relative to newFleetMCPClient's own 90s broker-sync retry loop.
+func warmUpFleetMCPSession(ctx context.Context, c *mcpclient.Client) error {
+	deadline := time.Now().Add(15 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "PodList"})
+		if err := c.List(ctx, list); err != nil {
+			lastErr = err
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("session warm-up did not succeed within 15s: %w", lastErr)
 }
 
 func TestFleetE2E(t *testing.T) {

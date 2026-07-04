@@ -144,11 +144,22 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 			"scoped tools must include namespaces_list")
 
 		By("Phase 3: Call a discovered tool — namespaces_list via the scoped session")
-		result, err := c.Session().CallTool(mcpCtx, &mcp.CallToolParams{
-			Name: "loopback_cluster_namespaces_list",
-		})
-		Expect(err).ToNot(HaveOccurred(),
-			"AC-3: tool call through two-phase discovery must succeed end-to-end")
+		// Unlike Phase 1/2 above, this was previously a single unretried call
+		// -- kube-mcp-server negotiates its session with the remote cluster
+		// lazily on first use, so this exact call is where a CI run observed
+		// "authorization required" during the thundering-herd race at suite
+		// start (12 parallel processes all opening fresh sessions within the
+		// same ~150ms window). Eventually here mirrors Phase 1/2's existing
+		// retry budget instead of leaving this call as the one unprotected
+		// step in an otherwise-retried journey.
+		var result *mcp.CallToolResult
+		Eventually(func(g Gomega) {
+			result, err = c.Session().CallTool(mcpCtx, &mcp.CallToolParams{
+				Name: "loopback_cluster_namespaces_list",
+			})
+			g.Expect(err).ToNot(HaveOccurred(),
+				"AC-3: tool call through two-phase discovery must succeed end-to-end")
+		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 		Expect(len(result.Content)).To(BeNumerically(">=", 1),
 			"tool call response must contain at least one content block with namespace data")
 		Expect(result.IsError).To(BeFalse(),
