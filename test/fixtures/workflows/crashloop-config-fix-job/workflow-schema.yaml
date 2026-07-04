@@ -22,7 +22,7 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:d494cc91e966e75107727360df8515a79ae7b5191f67ac1e580eb69b9d361884
+    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:aac1f1ea1b845c33cbd825482380646e4d7f78271cb1816e7d2c1d3263402621
   
   parameters:
     - name: TARGET_RESOURCE_NAME

@@ -111,7 +111,9 @@
 | DD-AUTH-004 | OpenShift OAuth-Proxy for SOC2 Legal Hold Authentication | ✅ Approved | 2026-01-07 | [DD-AUTH-004-openshift-oauth-proxy-legal-hold.md](decisions/DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) |
 | DD-AUTH-005 | DataStorage Client Authentication Pattern (Authoritative) | ✅ Approved | 2026-01-07 | [DD-AUTH-005-datastorage-client-authentication-pattern.md](decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md) |
 | DD-FLEET-002 | Cluster-Scoped Workflow Targeting via Rego Policy Classification | ✅ Approved | 2026-06-28 | [DD-FLEET-002-cluster-scoped-workflow-targeting.md](decisions/DD-FLEET-002-cluster-scoped-workflow-targeting.md) |
+| DD-FLEET-003 | Full Federation Validation (`ValidateFullFederation`, GW/RO dual-capability requirement) | ✅ Approved & Implemented | 2026-07-04 | [DD-FLEET-003-full-federation-validation.md](decisions/DD-FLEET-003-full-federation-validation.md) |
 | DD-AUDIT-008 | Audit Event Builder Registry Pattern (buildEventData decomposition) | ✅ Approved & Implemented | 2026-07-01 | [DD-AUDIT-008-audit-event-builder-registry-pattern.md](decisions/DD-AUDIT-008-audit-event-builder-registry-pattern.md) |
+| DD-TEST-014 | Fleet E2E Remote-Cluster-Only Topology (`AllRegistrationsRemote`, Keycloak adoption, `remote-cluster` rename) | ✅ Approved & Implemented | 2026-07-04 | [DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md](decisions/DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 

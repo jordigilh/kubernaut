@@ -305,6 +305,19 @@ business logic.
 | GatewayDiscoverer | Two-phase tool discovery (`list_clusters`/`list_tools_for_cluster`) with Kuadrant and EAIGW implementations | Planned (v1.6) |
 | Rancher Adapter | Rancher v3 API adapter for cluster discovery and scope checks | Planned (v1.6) |
 | Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
+| `ValidateFullFederation` (GW/RO dual-capability startup check) | Config validation | pkg/fleet/config.go | Complete (DD-FLEET-003) |
+| `FleetOAuth2Config.TLSCAFile` (OAuth2 token-fetch CA trust, all 6 services) | `ReloadableOAuth2Config` construction | cmd/{gateway,remediationorchestrator,apifrontend,effectivenessmonitor,signalprocessing,workflowexecution}/main.go | Complete |
+| Fleet Helm chart wiring (GW/RO/AF/EM/SP: `mcpGatewayEndpoint`/`mcpGatewayType`/`tlsCAFile`/`oauth2.*` + `mcpserverregistrations` RBAC) | ConfigMap render + ClusterRole rules | charts/kubernaut/templates/{gateway,remediationorchestrator,apifrontend,effectivenessmonitor,signalprocessing}/*.yaml | Complete |
+
+### Fleet E2E Topology
+
+The `test/e2e/fleet` full-pipeline suite runs against an **entirely
+remote-cluster** topology (every registration targets a genuinely separate
+Kind cluster, no local/loopback fallback) authenticated via Keycloak RFC
+8693 token exchange. See [DD-TEST-014](decisions/DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md)
+for the full rationale, including why a lighter-weight 2x-Dex alternative
+was evaluated and rejected (Spike S20: `kube-mcp-server`'s current STS
+client cannot drive Dex's token-exchange grant).
 
 ## Wiring Manifest
 
@@ -326,6 +339,8 @@ business logic.
 | MCPReaderFactory (SP) | main() | cmd/signalprocessing/main.go | IT-SP-054-001 |
 | K8sEnricher.SetReaderFactory | main() | cmd/signalprocessing/main.go | IT-SP-054-001/002 |
 | enrichRemote | Enrich() | pkg/signalprocessing/enricher/k8s_enricher.go | UT-SP-054-003a/b/c |
+| `mcpserverregistrations` RBAC (AF, EM, SP `ClusterRegistry` informers) | Helm ClusterRole, gated on `mcpGatewayType=="kuadrant"` | charts/kubernaut/templates/{apifrontend,effectivenessmonitor,signalprocessing}/*.yaml | E2E-FLEET-DISC-001/002/003 (proved via `test/infrastructure/fleet_e2e.go`'s equivalent E2E-only RBAC grant, mirrored into the Helm chart) |
+| `FleetConfig.ValidateFullFederation()` (GW/RO) | `ServerConfig.Validate()` / `Config.Validate()` | pkg/gateway/config/config.go, internal/config/remediationorchestrator/config.go | see DD-FLEET-003 Wiring Manifest |
 
 ## MCP Gateway Access Model
 
