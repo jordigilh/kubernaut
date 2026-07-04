@@ -514,7 +514,7 @@ data:
       backend: fleetmetadatacache
       mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
       mcpGatewayType: kuadrant
-`+fleetOAuth2YAMLBlock(6)+`
+`+fleetOAuth2YAMLBlock(6, fleetTLSCAFile("/etc/gateway"))+`
 `, namespace)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, gatewayConfigPatch); err != nil {
@@ -610,7 +610,7 @@ fleet:
   endpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
   namespace: "%s"
-`, namespace) + fleetOAuth2YAMLBlock(2)
+`, namespace) + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/signalprocessing"))
 	if err := appendYAMLBlockToConfigMap(ctx, kubeconfigPath, namespace, "signalprocessing-config", "config.yaml", fleetBlock, writer); err != nil {
 		return fmt.Errorf("signalprocessing-config fleet patch failed: %w", err)
 	}
@@ -667,32 +667,59 @@ stringData:
 	return nil
 }
 
+// fleetTLSCAMountDir is the directory every fleet-aware service mounts
+// deployFleetOAuth2Secret's neighboring "inter-service-ca" ConfigMap into,
+// derived from that service's own /etc/<service> base path (e.g.
+// "/etc/gateway/tls-ca"). fleetTLSCAFile appends the ConfigMap's "ca.crt"
+// key name, giving the exact path each cmd/*/main.go wires into
+// FleetOAuth2Config.TLSCAFile / ReloadableOAuth2Config.TlsCaFile.
+func fleetTLSCAMountDir(basePath string) string {
+	return basePath + "/tls-ca"
+}
+
+func fleetTLSCAFile(basePath string) string {
+	return fleetTLSCAMountDir(basePath) + "/ca.crt"
+}
+
 // fleetOAuth2YAMLBlock renders the "oauth2:" sub-block every fleet-aware
 // service's config nests under its own "fleet:" key (see
 // deployFleetOAuth2Secret). indent is the number of leading spaces for the
 // "oauth2:" line itself; nested lines are indented two spaces further,
-// matching this repo's two-space YAML convention.
-func fleetOAuth2YAMLBlock(indent int) string {
+// matching this repo's two-space YAML convention. tlsCAFile must match the
+// path patchDeploymentAddFleetOAuth2Volume mounts the inter-service-ca
+// ConfigMap at (fleetTLSCAFile(basePath)) -- without it, the OAuth2
+// token-fetch HTTP client falls back to the system CA trust store and
+// cannot verify Keycloak's self-signed cert (root cause of "tls: failed to
+// verify certificate: x509: certificate signed by unknown authority"
+// against https://keycloak:8443, which silently disabled remote owner
+// resolution/MCP reads for every one of these services).
+func fleetOAuth2YAMLBlock(indent int, tlsCAFile string) string {
 	pad := strings.Repeat(" ", indent)
 	return fmt.Sprintf(`%[1]soauth2:
 %[1]s  enabled: true
 %[1]s  tokenURL: %[2]q
 %[1]s  credentialsSecretRef: %[3]q
+%[1]s  tlsCAFile: %[4]q
 %[1]s  scopes:
 %[1]s    - "kube-mcp-server-audience"
-`, pad, fleetKeycloakTokenURL, fleetOAuth2SecretName)
+`, pad, fleetKeycloakTokenURL, fleetOAuth2SecretName, tlsCAFile)
 }
 
 // patchDeploymentAddFleetOAuth2Volume strategic-merge-patches an existing
 // Deployment to mount deployFleetOAuth2Secret's Secret into containerName at
 // mountPath (matching the basePath each service's cmd/*/main.go derives from
 // cfg.Fleet.OAuth2.CredentialsSecretRef, e.g.
-// "/etc/remediationorchestrator/fleet-oauth2-creds"). This patch changes
-// spec.template, so Kubernetes rolls the Deployment automatically -- callers
-// should NOT also issue an explicit `rollout restart` (that would trigger a
-// redundant second rollout) and should call this AFTER any ConfigMap content
-// patch, so the one resulting rollout picks up both changes together.
+// "/etc/remediationorchestrator/fleet-oauth2-creds"), plus the
+// "inter-service-ca" ConfigMap (Keycloak's self-signed CA, see
+// interservice_tls.go) at fleetTLSCAMountDir(basePath) so the token-fetch
+// HTTP client (fleetOAuth2YAMLBlock's tlsCAFile) can verify Keycloak's TLS
+// certificate. This patch changes spec.template, so Kubernetes rolls the
+// Deployment automatically -- callers should NOT also issue an explicit
+// `rollout restart` (that would trigger a redundant second rollout) and
+// should call this AFTER any ConfigMap content patch, so the one resulting
+// rollout picks up both changes together.
 func patchDeploymentAddFleetOAuth2Volume(ctx context.Context, namespace, kubeconfigPath, deploymentName, containerName, mountPath string, writer io.Writer) error {
+	tlsCAMountDir := fleetTLSCAMountDir(filepath.Dir(mountPath))
 	patch := map[string]interface{}{
 		"spec": map[string]interface{}{
 			"template": map[string]interface{}{
@@ -704,6 +731,12 @@ func patchDeploymentAddFleetOAuth2Volume(ctx context.Context, namespace, kubecon
 								"secretName": fleetOAuth2SecretName,
 							},
 						},
+						{
+							"name": "fleet-tls-ca",
+							"configMap": map[string]interface{}{
+								"name": "inter-service-ca",
+							},
+						},
 					},
 					"containers": []map[string]interface{}{
 						{
@@ -712,6 +745,11 @@ func patchDeploymentAddFleetOAuth2Volume(ctx context.Context, namespace, kubecon
 								{
 									"name":      "fleet-oauth2",
 									"mountPath": mountPath,
+									"readOnly":  true,
+								},
+								{
+									"name":      "fleet-tls-ca",
+									"mountPath": tlsCAMountDir,
 									"readOnly":  true,
 								},
 							},
@@ -790,7 +828,7 @@ fleet:
   enabled: true
   mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
-` + fleetOAuth2YAMLBlock(2)
+` + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/apifrontend"))
 	if err := appendYAMLBlockToConfigMap(ctx, kubeconfigPath, namespace, "apifrontend-config", "config.yaml", fleetBlock, writer); err != nil {
 		return fmt.Errorf("apifrontend-config fleet patch failed: %w", err)
 	}
@@ -812,7 +850,7 @@ fleet:
   enabled: true
   mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
-` + fleetOAuth2YAMLBlock(2)
+` + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/effectivenessmonitor"))
 	if err := appendYAMLBlockToConfigMap(ctx, kubeconfigPath, namespace, "effectivenessmonitor-config", "effectivenessmonitor.yaml", fleetBlock, writer); err != nil {
 		return fmt.Errorf("effectivenessmonitor-config fleet patch failed: %w", err)
 	}
@@ -834,7 +872,7 @@ func patchWorkflowExecutionConfigForFleet(ctx context.Context, namespace, kubeco
 	fleetBlock := `
 fleet:
   endpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
-` + fleetOAuth2YAMLBlock(2)
+` + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/workflowexecution"))
 	if err := appendYAMLBlockToConfigMap(ctx, kubeconfigPath, namespace, "workflowexecution-config", "workflowexecution.yaml", fleetBlock, writer); err != nil {
 		return fmt.Errorf("workflowexecution-config fleet patch failed: %w", err)
 	}
@@ -2118,7 +2156,7 @@ fleet:
   endpoint: "http://fleetmetadatacache-service.%[1]s.svc.cluster.local:8080"
   mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
-`, namespace) + fleetOAuth2YAMLBlock(2)
+`, namespace) + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/remediationorchestrator"))
 	patchedConfig := string(currentConfig) + fleetBlock
 
 	patchPayload, err := json.Marshal(map[string]interface{}{

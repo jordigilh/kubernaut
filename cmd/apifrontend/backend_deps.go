@@ -392,6 +392,7 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 			ClientIDPath:     basePath + "/client-id",
 			ClientSecretPath: basePath + "/client-secret",
 			Scopes:           cfg.Fleet.OAuth2.Scopes,
+			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
 		}
 		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
 	}

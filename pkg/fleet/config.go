@@ -94,6 +94,17 @@ type FleetOAuth2Config struct {
 	TokenURL             string   `yaml:"tokenURL"`
 	CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
 	Scopes               []string `yaml:"scopes,omitempty"`
+
+	// TLSCAFile is the path to a CA certificate bundle used to verify the
+	// TokenURL's TLS certificate when the OAuth2 provider (e.g. Keycloak,
+	// Dex) presents a certificate not signed by a public/system CA — for
+	// example a cluster-local or self-signed issuer. When empty, the
+	// token-fetch HTTP client falls back to the system CA trust store.
+	// Mirrors fmc/config.OAuth2Config.TlsCaFile, which every GW/RO/SP/WE/
+	// EM/AF caller was missing until this field was added (root cause of
+	// "tls: failed to verify certificate: x509: certificate signed by
+	// unknown authority" against an in-cluster OIDC provider).
+	TLSCAFile string `yaml:"tlsCAFile,omitempty"`
 }
 
 // MCPGatewayConfig holds MCP Gateway connectivity settings shared by services

@@ -260,6 +260,7 @@ func registerAdapters(
 				ClientIDPath:     basePath + "/client-id",
 				ClientSecretPath: basePath + "/client-secret",
 				Scopes:           fleetclient.DefaultFleetScopes(serverCfg.Fleet.OAuth2.Scopes),
+				TlsCaFile:        serverCfg.Fleet.OAuth2.TLSCAFile,
 			}
 			fleetOpts = append(fleetOpts,
 				fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),

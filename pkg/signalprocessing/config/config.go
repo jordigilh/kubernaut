@@ -86,6 +86,13 @@ type FleetOAuth2 struct {
 	TokenURL             string   `yaml:"tokenURL"`
 	CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
 	Scopes               []string `yaml:"scopes,omitempty"`
+
+	// TLSCAFile is the path to a CA bundle for verifying TokenURL's TLS
+	// certificate when the OAuth2 provider presents one not signed by a
+	// public/system CA (e.g. a cluster-local Keycloak/Dex issuer). Mirrors
+	// pkg/fleet.FleetOAuth2Config.TLSCAFile; see that field's doc comment
+	// for the root cause this addresses.
+	TLSCAFile string `yaml:"tlsCAFile,omitempty"`
 }
 
 // EnrichmentConfig holds settings for K8s context enrichment.
