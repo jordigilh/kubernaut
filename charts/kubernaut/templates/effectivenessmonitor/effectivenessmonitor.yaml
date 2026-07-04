@@ -1,4 +1,12 @@
 {{- include "kubernaut.monitoring.validate" . -}}
+{{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+{{- if not .Values.effectivenessmonitor.fleet.oauth2.tokenURL }}
+{{- fail "effectivenessmonitor.fleet.oauth2.tokenURL is required when effectivenessmonitor.fleet.oauth2.enabled=true" }}
+{{- end }}
+{{- if not .Values.effectivenessmonitor.fleet.oauth2.credentialsSecretRef }}
+{{- fail "effectivenessmonitor.fleet.oauth2.credentialsSecretRef is required when effectivenessmonitor.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -37,6 +45,28 @@ data:
       {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
       tlsCaFile: /etc/ssl/em/service-ca.crt
       {{- end }}
+    {{- if .Values.effectivenessmonitor.fleet.enabled }}
+    fleet:
+      enabled: true
+      mcpGatewayEndpoint: {{ .Values.effectivenessmonitor.fleet.mcpGatewayEndpoint | quote }}
+      {{- if .Values.effectivenessmonitor.fleet.mcpGatewayType }}
+      mcpGatewayType: {{ .Values.effectivenessmonitor.fleet.mcpGatewayType | quote }}
+      {{- end }}
+      tlsCAFile: {{ .Values.effectivenessmonitor.fleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      {{- if .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+      oauth2:
+        enabled: true
+        tokenURL: {{ .Values.effectivenessmonitor.fleet.oauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ .Values.effectivenessmonitor.fleet.oauth2.credentialsSecretRef | quote }}
+        {{- if .Values.effectivenessmonitor.fleet.oauth2.scopes }}
+        scopes:
+          {{- range .Values.effectivenessmonitor.fleet.oauth2.scopes }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- end }}
+        tlsCAFile: {{ .Values.effectivenessmonitor.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      {{- end }}
+    {{- end }}
 {{/* DEPRECATED v1.4 (Issue #848): OCP service-ca inject-cabundle ConfigMap.
      Will be removed in v1.5 — use the Kubernaut Operator for OCP. */}}
 {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
@@ -108,6 +138,13 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- if eq .Values.effectivenessmonitor.fleet.mcpGatewayType "kuadrant" }}
+  # BR-FLEET-054: EM's ClusterRegistry watches MCPServerRegistration CRs
+  # directly via a dynamic informer when the Kuadrant MCP Gateway is used.
+  - apiGroups: ["mcp.kuadrant.io"]
+    resources: ["mcpserverregistrations"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -240,6 +277,11 @@ spec:
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
+            {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+            - name: oauth2-credentials
+              mountPath: "/etc/effectivenessmonitor/{{ .Values.effectivenessmonitor.fleet.oauth2.credentialsSecretRef }}"
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.effectivenessmonitor.resources | nindent 12 }}
       volumes:
@@ -255,6 +297,11 @@ spec:
           configMap:
             name: inter-service-ca
             optional: true
+        {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+        - name: oauth2-credentials
+          secret:
+            secretName: {{ .Values.effectivenessmonitor.fleet.oauth2.credentialsSecretRef }}
+        {{- end }}
 {{/* DEPRECATED v1.4 (Issue #848): OCP monitoring RBAC block. Removed in v1.5. */}}
 {{- if include "kubernaut.monitoring.ocpRbac" . }}
 ---
