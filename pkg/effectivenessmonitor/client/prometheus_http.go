@@ -125,9 +125,9 @@ func (c *prometheusHTTPClient) Ready(ctx context.Context) error {
 
 // promAPIResponse represents the standard Prometheus API response.
 type promAPIResponse struct {
-	Status string          `json:"status"`
-	Data   promAPIData     `json:"data"`
-	Error  string          `json:"error,omitempty"`
+	Status string      `json:"status"`
+	Data   promAPIData `json:"data"`
+	Error  string      `json:"error,omitempty"`
 }
 
 type promAPIData struct {

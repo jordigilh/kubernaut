@@ -247,5 +247,3 @@ func (r *Redactor) passThroughValue(value interface{}, fieldNames []string) inte
 		return value
 	}
 }
-
-

@@ -135,7 +135,7 @@ func newCoreAndRoutingCollectors() (reconcileDuration *prometheus.HistogramVec, 
 		},
 		[]string{"phase", "namespace"},
 	)
-	return
+	return reconcileDuration, phaseTransitions, childCRDCreations, noActionNeeded, duplicatesSkipped, timeouts
 }
 
 // newBlockingApprovalOverrideCollectors constructs the blocking, approval,
@@ -176,7 +176,7 @@ func newBlockingApprovalOverrideCollectors() (blocked *prometheus.CounterVec, cu
 		},
 		[]string{"reason", "namespace"},
 	)
-	return
+	return blocked, currentBlocked, approvalDecisions, overrideApplied, overrideRejected
 }
 
 // newMetricsCollectors constructs all Metrics collectors, unregistered.
