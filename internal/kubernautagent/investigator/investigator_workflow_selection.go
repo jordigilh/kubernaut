@@ -190,62 +190,103 @@ func (inv *Investigator) selfCorrectWorkflowSelection(ctx context.Context, resul
 		return result, nil
 	}
 
-	attempt := 0
+	state := &selfCorrectionState{content: content, messages: messages}
 	correctionFn := func(r *katypes.InvestigationResult, validationErr error) (*katypes.InvestigationResult, error) {
-		attempt++
-		var errStrs []string
-		if validationErr != nil {
-			errStrs = []string{validationErr.Error()}
-		}
-		inv.emitValidationEvent(ctx, attempt, maxSelfCorrectionAttempts, false, errStrs, r.WorkflowID, correlationID)
-
-		correctionMsg, renderErr := inv.renderCorrectionMessage(validationErr, attempt, maxSelfCorrectionAttempts)
-		if renderErr != nil {
-			inv.logger.Error(renderErr, "failed to render validation error template, using fallback")
-			correctionMsg = fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
-		}
-		messages = append(messages, llm.Message{Role: "assistant", Content: content})
-		messages = append(messages, llm.Message{Role: "user", Content: correctionMsg})
-
-		corrLoopRes, corrErr := inv.runLLMLoop(ctx, messages, katypes.PhaseWorkflowDiscovery, llmCtx)
-		if corrErr != nil {
-			return nil, corrErr
-		}
-		switch cr := corrLoopRes.(type) {
-		case *CancelledResult:
-			return nil, context.Canceled
-		case *ExhaustedResult:
-			r.HumanReviewNeeded = true
-			r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
-			return r, nil
-		case *SubmitNoWorkflowResult:
-			return &katypes.InvestigationResult{
-				RCASummary:        rcaSummary,
-				HumanReviewNeeded: true,
-				HumanReviewReason: "no_matching_workflows",
-				Reason:            "LLM declined workflow during self-correction via submit_result_no_workflow",
-			}, nil
-		case *SubmitWithWorkflowResult:
-			content = cr.Content
-		case *SubmitResult:
-			content = cr.Content
-		case *TextResult:
-			content = cr.Content
-		}
-		return inv.resultParser.Parse(content)
+		return inv.runSelfCorrectionAttempt(ctx, r, validationErr, state, rcaSummary, correlationID, llmCtx)
 	}
 
 	corrected, corrErr := validator.SelfCorrect(result, maxSelfCorrectionAttempts, correctionFn)
 	if corrErr != nil {
-		if errors.Is(corrErr, context.Canceled) || errors.Is(corrErr, context.DeadlineExceeded) {
-			return &katypes.InvestigationResult{
-				RCASummary:     rcaSummary,
-				Cancelled:      true,
-				CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
-			}, nil
-		}
-		return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
+		return handleSelfCorrectError(corrErr, rcaSummary)
 	}
+	return inv.finalizeSelfCorrection(ctx, corrected, state.attempt, correlationID, validator), nil
+}
+
+// selfCorrectionState carries the mutable state threaded through the
+// correctionFn closure across validator.SelfCorrect attempts: the
+// accumulated message history, the latest raw content to parse, and the
+// attempt counter (used for both validation-event numbering and the final
+// emitValidationEvent call after SelfCorrect returns).
+type selfCorrectionState struct {
+	messages []llm.Message
+	content  string
+	attempt  int
+}
+
+// runSelfCorrectionAttempt is the correctionFn body invoked by
+// validator.SelfCorrect on each validation failure: it emits the
+// invalid-attempt audit event, renders and appends a correction message, and
+// re-runs the LLM loop, classifying the outcome via
+// classifySelfCorrectionLoopResult.
+func (inv *Investigator) runSelfCorrectionAttempt(ctx context.Context, r *katypes.InvestigationResult, validationErr error, state *selfCorrectionState, rcaSummary, correlationID string, llmCtx LLMInvocationContext) (*katypes.InvestigationResult, error) {
+	state.attempt++
+	var errStrs []string
+	if validationErr != nil {
+		errStrs = []string{validationErr.Error()}
+	}
+	inv.emitValidationEvent(ctx, state.attempt, maxSelfCorrectionAttempts, false, errStrs, r.WorkflowID, correlationID)
+
+	correctionMsg, renderErr := inv.renderCorrectionMessage(validationErr, state.attempt, maxSelfCorrectionAttempts)
+	if renderErr != nil {
+		inv.logger.Error(renderErr, "failed to render validation error template, using fallback")
+		correctionMsg = fmt.Sprintf("Validation failed: %s. Please select a valid workflow.", validationErr)
+	}
+	state.messages = append(state.messages, llm.Message{Role: "assistant", Content: state.content})
+	state.messages = append(state.messages, llm.Message{Role: "user", Content: correctionMsg})
+
+	corrLoopRes, corrErr := inv.runLLMLoop(ctx, state.messages, katypes.PhaseWorkflowDiscovery, llmCtx)
+	if corrErr != nil {
+		return nil, corrErr
+	}
+	return inv.classifySelfCorrectionLoopResult(corrLoopRes, r, state, rcaSummary)
+}
+
+// classifySelfCorrectionLoopResult classifies one self-correction retry's
+// LoopResult, updating state.content for the SubmitResult/TextResult cases
+// before parsing it into the corrected InvestigationResult.
+func (inv *Investigator) classifySelfCorrectionLoopResult(corrLoopRes LoopResult, r *katypes.InvestigationResult, state *selfCorrectionState, rcaSummary string) (*katypes.InvestigationResult, error) {
+	switch cr := corrLoopRes.(type) {
+	case *CancelledResult:
+		return nil, context.Canceled
+	case *ExhaustedResult:
+		r.HumanReviewNeeded = true
+		r.Reason = fmt.Sprintf("self-correction: %s", cr.Reason)
+		return r, nil
+	case *SubmitNoWorkflowResult:
+		return &katypes.InvestigationResult{
+			RCASummary:        rcaSummary,
+			HumanReviewNeeded: true,
+			HumanReviewReason: "no_matching_workflows",
+			Reason:            "LLM declined workflow during self-correction via submit_result_no_workflow",
+		}, nil
+	case *SubmitWithWorkflowResult:
+		state.content = cr.Content
+	case *SubmitResult:
+		state.content = cr.Content
+	case *TextResult:
+		state.content = cr.Content
+	}
+	return inv.resultParser.Parse(state.content)
+}
+
+// handleSelfCorrectError classifies a validator.SelfCorrect error: context
+// cancellation becomes a Cancelled InvestigationResult, anything else is
+// wrapped and returned as a hard error.
+func handleSelfCorrectError(corrErr error, rcaSummary string) (*katypes.InvestigationResult, error) {
+	if errors.Is(corrErr, context.Canceled) || errors.Is(corrErr, context.DeadlineExceeded) {
+		return &katypes.InvestigationResult{
+			RCASummary:     rcaSummary,
+			Cancelled:      true,
+			CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
+		}, nil
+	}
+	return nil, fmt.Errorf("validation self-correction failed: %w", corrErr)
+}
+
+// finalizeSelfCorrection emits the terminal validation-event (valid or
+// exhausted) and applies catalog enrichment plus target-alignment checks to
+// the SelfCorrect result.
+func (inv *Investigator) finalizeSelfCorrection(ctx context.Context, corrected *katypes.InvestigationResult, attempt int, correlationID string, validator *parser.Validator) *katypes.InvestigationResult {
 	isValid := !corrected.HumanReviewNeeded
 	var finalErrors []string
 	if !isValid {
@@ -254,7 +295,7 @@ func (inv *Investigator) selfCorrectWorkflowSelection(ctx context.Context, resul
 	inv.emitValidationEvent(ctx, attempt+1, maxSelfCorrectionAttempts, isValid, finalErrors, corrected.WorkflowID, correlationID)
 	enrichFromCatalog(corrected, validator)
 	CheckWorkflowTargetAlignment(ctx, corrected, validator, correlationID, inv.auditStore, inv.logger)
-	return corrected, nil
+	return corrected
 }
 
 const maxParseRetries = 2
@@ -305,56 +346,87 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			"max", maxParseRetries,
 			"correlation_id", correlationID)
 
-		retryMessages = append(retryMessages,
-			llm.Message{Role: "user", Content: correctionTemplate},
-		)
+		retryMessages = append(retryMessages, llm.Message{Role: "user", Content: correctionTemplate})
 
-		inv.emitRetryAudit(ctx, retryAuditParams{
-			correlationID: correlationID,
-			modelName:     modelName,
-			messages:      retryMessages,
-			attempt:       attempt + 1,
-			maxAttempts:   maxParseRetries,
-			phase:         katypes.PhaseWorkflowDiscovery,
-			retryReason:   "parse_level_correction",
+		result, updated, ok := inv.attemptWorkflowSubmitRetry(ctx, workflowSubmitRetryParams{
+			attempt: attempt, retryMessages: retryMessages, tools: submitOnlyTools, rcaSummary: rcaSummary,
+			correlationID: correlationID, modelName: modelName, client: client,
+			runtimeParams: runtimeParams, tokens: tokens,
 		})
-
-		resp, err := inv.chatOrStream(ctx, client, llm.ChatRequest{
-			Messages: retryMessages,
-			Tools:    submitOnlyTools,
-			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
-		}, attempt+1, string(katypes.PhaseWorkflowDiscovery), modelName, runtimeParams)
-		if err != nil {
-			inv.logger.Error(err, "retry LLM call failed",
-				"correlation_id", correlationID)
-			continue
+		if ok {
+			return result
 		}
-		if tokens != nil {
-			tokens.Add(resp.Usage)
-		}
-
-		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseWorkflowDiscovery), map[string]interface{}{
-			"content":       resp.Message.Content,
-			"retry_attempt": attempt + 1,
-		})
-
-		if len(resp.ToolCalls) > 0 {
-			for _, tc := range resp.ToolCalls {
-				result, matched := inv.classifyWorkflowSubmitToolCall(tc, rcaSummary, correlationID)
-				if !matched {
-					continue
-				}
-				if result == nil {
-					retryMessages = append(retryMessages, resp.Message)
-					continue
-				}
-				return result
-			}
-		}
-
-		retryMessages = append(retryMessages, resp.Message)
+		retryMessages = updated
 	}
 	return nil
+}
+
+// workflowSubmitRetryParams groups the fields needed by
+// attemptWorkflowSubmitRetry. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type workflowSubmitRetryParams struct {
+	attempt       int
+	retryMessages []llm.Message
+	tools         []llm.ToolDefinition
+	rcaSummary    string
+	correlationID string
+	modelName     string
+	client        llm.Client
+	runtimeParams llm.RuntimeParams
+	tokens        *TokenAccumulator
+}
+
+// attemptWorkflowSubmitRetry runs one parse-retry attempt: emits the retry
+// audit event, calls the LLM with p.retryMessages (which already include the
+// correction message), and classifies any tool calls in the response.
+// Returns ok=false with updatedMessages appended for the next attempt when
+// the LLM call failed or no submit tool call was recognized.
+func (inv *Investigator) attemptWorkflowSubmitRetry(ctx context.Context, p workflowSubmitRetryParams) (result *katypes.InvestigationResult, updatedMessages []llm.Message, ok bool) {
+	inv.emitRetryAudit(ctx, retryAuditParams{
+		correlationID: p.correlationID,
+		modelName:     p.modelName,
+		messages:      p.retryMessages,
+		attempt:       p.attempt + 1,
+		maxAttempts:   maxParseRetries,
+		phase:         katypes.PhaseWorkflowDiscovery,
+		retryReason:   "parse_level_correction",
+	})
+
+	resp, err := inv.chatOrStream(ctx, p.client, llm.ChatRequest{
+		Messages: p.retryMessages,
+		Tools:    p.tools,
+		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
+	}, p.attempt+1, string(katypes.PhaseWorkflowDiscovery), p.modelName, p.runtimeParams)
+	if err != nil {
+		inv.logger.Error(err, "retry LLM call failed",
+			"correlation_id", p.correlationID)
+		return nil, p.retryMessages, false
+	}
+	if p.tokens != nil {
+		p.tokens.Add(resp.Usage)
+	}
+
+	emitToSink(ctx, session.EventTypeReasoningDelta, p.attempt+1, string(katypes.PhaseWorkflowDiscovery), map[string]interface{}{
+		"content":       resp.Message.Content,
+		"retry_attempt": p.attempt + 1,
+	})
+
+	retryMessages := p.retryMessages
+	if len(resp.ToolCalls) > 0 {
+		for _, tc := range resp.ToolCalls {
+			result, matched := inv.classifyWorkflowSubmitToolCall(tc, p.rcaSummary, p.correlationID)
+			if !matched {
+				continue
+			}
+			if result == nil {
+				retryMessages = append(retryMessages, resp.Message)
+				continue
+			}
+			return result, retryMessages, true
+		}
+	}
+
+	return nil, append(retryMessages, resp.Message), false
 }
 
 // classifyWorkflowSubmitToolCall inspects a single tool call from a

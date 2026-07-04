@@ -312,17 +312,26 @@ func NewEvent(eventType string, correlationID string, opts ...EventOption) *Audi
 // back-pressure (buffer full), the enqueue fails and the event is dropped — this is
 // acceptable per ADR-038 (audit must never block business logic).
 // If the event has no ActorID/ActorType set, it inherits from the context (see WithActor).
-func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, logger logr.Logger) {
-	if event.ActorID == "" || event.ActorType == "" {
-		if id, typ, ok := ActorFromContext(ctx); ok {
-			if event.ActorID == "" {
-				event.ActorID = id
-			}
-			if event.ActorType == "" {
-				event.ActorType = typ
-			}
-		}
+// inheritActorFromContext fills in event.ActorID/ActorType from ctx (see
+// WithActor) for any fields not already set on the event.
+func inheritActorFromContext(ctx context.Context, event *AuditEvent) {
+	if event.ActorID != "" && event.ActorType != "" {
+		return
 	}
+	id, typ, ok := ActorFromContext(ctx)
+	if !ok {
+		return
+	}
+	if event.ActorID == "" {
+		event.ActorID = id
+	}
+	if event.ActorType == "" {
+		event.ActorType = typ
+	}
+}
+
+func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, logger logr.Logger) {
+	inheritActorFromContext(ctx, event)
 	if event.ClusterName == "" {
 		if cn, ok := ClusterNameFromContext(ctx); ok {
 			event.ClusterName = cn

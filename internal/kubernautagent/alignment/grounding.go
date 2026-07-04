@@ -32,6 +32,80 @@ type groundingResponse struct {
 	Explanation string `json:"explanation"`
 }
 
+// buildGroundingRequest flattens conversation into the grounding-review
+// ChatRequest (with the optional system prompt prepended), returning the
+// request alongside the rendered conversation text (needed by the caller to
+// compute the audit token-length estimate).
+func (e *Evaluator) buildGroundingRequest(conversation []llm.Message) (llm.ChatRequest, string) {
+	maxTokens := e.config.MaxConversationTokens
+	if maxTokens <= 0 {
+		maxTokens = e.config.MaxStepTokens * 50
+	}
+	conversationText := renderConversation(conversation, maxTokens)
+
+	messages := []llm.Message{
+		{Role: "user", Content: conversationText},
+	}
+	if e.prompt != "" {
+		messages = append([]llm.Message{{Role: "system", Content: e.prompt}}, messages...)
+	}
+
+	return llm.ChatRequest{
+		Messages: messages,
+		Options:  llm.ChatOptions{JSONMode: true},
+	}, conversationText
+}
+
+// parseGroundingResponse parses the shadow LLM's raw chat response into a
+// GroundingObservation, fail-closed (Grounded=false) on any malformed
+// response: a duplicate "grounded" key (prompt-injection defense), a JSON
+// parse error, or a missing "grounded" field. Returns the observation, the
+// audit "outcome" tag, and whether the response was fully parsed (used by
+// the caller to decide whether to emit the "grounding review completed"
+// debug log, which only applies to fully-parsed responses).
+func parseGroundingResponse(resp llm.ChatResponse, start time.Time) (obs GroundingObservation, outcome string, fullyParsed bool) {
+	if hasDuplicateGroundedKey(resp.Message.Content) {
+		return GroundingObservation{
+			Grounded:    false,
+			Explanation: "duplicate_key_attack (fail-closed): shadow LLM response contains duplicate 'grounded' key",
+			Usage:       resp.Usage,
+			Duration:    time.Since(start),
+		}, "malformed_response", false
+	}
+
+	content := extractJSON(resp.Message.Content)
+	var parsed groundingResponse
+	if jsonErr := json.Unmarshal([]byte(content), &parsed); jsonErr != nil {
+		return GroundingObservation{
+			Grounded:    false,
+			Explanation: fmt.Sprintf("grounding_review_failed (fail-closed): parse error: %v", jsonErr),
+			Usage:       resp.Usage,
+			Duration:    time.Since(start),
+		}, "parse_error", false
+	}
+
+	if parsed.Grounded == nil {
+		return GroundingObservation{
+			Grounded:    false,
+			Explanation: "grounding_review_failed (fail-closed): shadow LLM response missing 'grounded' field",
+			Usage:       resp.Usage,
+			Duration:    time.Since(start),
+		}, "missing_field", false
+	}
+
+	obs = GroundingObservation{
+		Grounded:    *parsed.Grounded,
+		Explanation: parsed.Explanation,
+		Usage:       resp.Usage,
+		Duration:    time.Since(start),
+	}
+	result := "grounded"
+	if !obs.Grounded {
+		result = "ungrounded"
+	}
+	return obs, result, true
+}
+
 // EvaluateGrounding sends an entire RCA conversation to the shadow LLM for
 // full-context grounding review. It answers: "given the tool evidence, are the
 // RCA conclusions well-grounded?"
@@ -49,23 +123,7 @@ func (e *Evaluator) EvaluateGrounding(ctx context.Context, conversation []llm.Me
 		}
 	}
 
-	maxTokens := e.config.MaxConversationTokens
-	if maxTokens <= 0 {
-		maxTokens = e.config.MaxStepTokens * 50
-	}
-	conversationText := renderConversation(conversation, maxTokens)
-
-	messages := []llm.Message{
-		{Role: "user", Content: conversationText},
-	}
-	if e.prompt != "" {
-		messages = append([]llm.Message{{Role: "system", Content: e.prompt}}, messages...)
-	}
-
-	req := llm.ChatRequest{
-		Messages: messages,
-		Options:  llm.ChatOptions{JSONMode: true},
-	}
+	req, conversationText := e.buildGroundingRequest(conversation)
 
 	emitAudit := e.auditStore != nil && correlationID != ""
 	if emitAudit {
@@ -85,53 +143,14 @@ func (e *Evaluator) EvaluateGrounding(ctx context.Context, conversation []llm.Me
 		return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, "error")
 	}
 
-	if hasDuplicateGroundedKey(resp.Message.Content) {
-		obs := GroundingObservation{
-			Grounded:    false,
-			Explanation: "duplicate_key_attack (fail-closed): shadow LLM response contains duplicate 'grounded' key",
-			Usage:       resp.Usage,
-			Duration:    time.Since(start),
-		}
-		return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, "malformed_response")
+	obs, outcome, fullyParsed := parseGroundingResponse(resp, start)
+	if fullyParsed {
+		e.debugLog("grounding review completed",
+			"correlation_id", correlationID,
+			"grounded", obs.Grounded,
+			"conversation_messages", len(conversation))
 	}
-
-	content := extractJSON(resp.Message.Content)
-	var parsed groundingResponse
-	if jsonErr := json.Unmarshal([]byte(content), &parsed); jsonErr != nil {
-		obs := GroundingObservation{
-			Grounded:    false,
-			Explanation: fmt.Sprintf("grounding_review_failed (fail-closed): parse error: %v", jsonErr),
-			Usage:       resp.Usage,
-			Duration:    time.Since(start),
-		}
-		return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, "parse_error")
-	}
-
-	if parsed.Grounded == nil {
-		obs := GroundingObservation{
-			Grounded:    false,
-			Explanation: "grounding_review_failed (fail-closed): shadow LLM response missing 'grounded' field",
-			Usage:       resp.Usage,
-			Duration:    time.Since(start),
-		}
-		return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, "missing_field")
-	}
-
-	obs := GroundingObservation{
-		Grounded:    *parsed.Grounded,
-		Explanation: parsed.Explanation,
-		Usage:       resp.Usage,
-		Duration:    time.Since(start),
-	}
-	result := "grounded"
-	if !obs.Grounded {
-		result = "ungrounded"
-	}
-	e.debugLog("grounding review completed",
-		"correlation_id", correlationID,
-		"grounded", obs.Grounded,
-		"conversation_messages", len(conversation))
-	return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, result)
+	return e.finalizeGroundingObservation(ctx, obs, correlationID, emitAudit, outcome)
 }
 
 // finalizeGroundingObservation emits the grounding-response audit event

@@ -353,33 +353,40 @@ func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error
 
 	// SEC-04: Check session TTL expiry.
 	if m.sessionTTL > 0 && time.Since(entry.session.StartedAt) > m.sessionTTL {
-		m.logger.Info("session TTL expired, auto-releasing",
-			"session_id", sessionID,
-			"rr_id", rrID)
-		_ = m.Release(sessionID, "ttl_expired")
-		if m.onSessionExpired != nil {
-			m.onSessionExpired(sessionID, rrID, "ttl_expired")
-		}
-		return nil, ErrSessionExpired
+		return nil, m.expireSession(sessionID, rrID, "ttl_expired", "session TTL expired, auto-releasing")
 	}
 
 	// SEC-04: Check inactivity timeout.
-	if m.inactivityTimeout > 0 {
-		if lastAct, ok := entry.lastActivity.Load().(time.Time); ok {
-			if time.Since(lastAct) > m.inactivityTimeout {
-				m.logger.Info("session inactivity timeout, auto-releasing",
-					"session_id", sessionID,
-					"rr_id", rrID)
-				_ = m.Release(sessionID, "inactivity_timeout")
-				if m.onSessionExpired != nil {
-					m.onSessionExpired(sessionID, rrID, "inactivity_timeout")
-				}
-				return nil, ErrSessionExpired
-			}
-		}
+	if m.isInactivityExpired(entry) {
+		return nil, m.expireSession(sessionID, rrID, "inactivity_timeout", "session inactivity timeout, auto-releasing")
 	}
 
 	return entry.session, nil
+}
+
+// isInactivityExpired reports whether entry has exceeded the configured
+// inactivity timeout (SEC-04).
+func (m *LeaseSessionManager) isInactivityExpired(entry *sessionEntry) bool {
+	if m.inactivityTimeout <= 0 {
+		return false
+	}
+	lastAct, ok := entry.lastActivity.Load().(time.Time)
+	if !ok {
+		return false
+	}
+	return time.Since(lastAct) > m.inactivityTimeout
+}
+
+// expireSession releases sessionID for the given expiry reason, notifies
+// onSessionExpired if configured, and returns ErrSessionExpired for the
+// caller (GetDriver) to propagate.
+func (m *LeaseSessionManager) expireSession(sessionID, rrID, reason, logMsg string) error {
+	m.logger.Info(logMsg, "session_id", sessionID, "rr_id", rrID)
+	_ = m.Release(sessionID, reason)
+	if m.onSessionExpired != nil {
+		m.onSessionExpired(sessionID, rrID, reason)
+	}
+	return ErrSessionExpired
 }
 
 // TouchActivity updates the last activity timestamp for a session (SEC-04).
