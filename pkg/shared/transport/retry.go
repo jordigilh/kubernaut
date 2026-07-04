@@ -101,48 +101,20 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	var lastErr error
 
-	logger := rt.config.Logger
-
 	for attempt := 1; attempt <= rt.config.MaxAttempts; attempt++ {
-		if attempt > 1 && req.GetBody != nil {
-			body, err := req.GetBody()
-			if err != nil {
-				return nil, err
-			}
-			req.Body = body
+		if err := rebindReplayableBody(req, attempt); err != nil {
+			return nil, err
 		}
 
-		resp, err := rt.next.RoundTrip(req)
-
-		if err == nil && !isRetryableStatus(resp.StatusCode) {
-			return resp, nil
+		resp, retryErr, done := rt.attemptRoundTrip(req, attempt)
+		if done {
+			return resp, retryErr
 		}
-
-		if err != nil {
-			if !isRetryableError(err) {
-				return nil, err
-			}
-			lastErr = err
-			if logger.GetSink() != nil {
-				logger.V(1).Info("retryable connection error",
-					"attempt", attempt, "max", rt.config.MaxAttempts,
-					"url", req.URL.String(), "error", err)
-			}
-		} else {
-			drainAndClose(resp.Body)
-			lastErr = fmt.Errorf("downstream returned retryable status %d for %s %s",
-				resp.StatusCode, req.Method, req.URL.String())
-			if logger.GetSink() != nil {
-				logger.V(1).Info("retryable HTTP status",
-					"attempt", attempt, "max", rt.config.MaxAttempts,
-					"url", req.URL.String(), "status", resp.StatusCode)
-			}
-		}
+		lastErr = retryErr
 
 		if !canReplay {
 			return nil, lastErr
 		}
-
 		if attempt < rt.config.MaxAttempts {
 			delay := rt.config.Backoff.Calculate(int32(attempt))
 			if err := sleepWithContext(req.Context(), delay); err != nil {
@@ -152,6 +124,66 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	return nil, lastErr
+}
+
+// rebindReplayableBody re-obtains the request body for attempts after the
+// first, since the original body reader was already consumed.
+func rebindReplayableBody(req *http.Request, attempt int) error {
+	if attempt <= 1 || req.GetBody == nil {
+		return nil
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return err
+	}
+	req.Body = body
+	return nil
+}
+
+// attemptRoundTrip performs a single RoundTrip attempt. done is true when the
+// result (resp, err) is final and RoundTrip should return immediately;
+// otherwise err is the retryable failure recorded for this attempt and the
+// caller decides whether to retry.
+func (rt *RetryTransport) attemptRoundTrip(req *http.Request, attempt int) (resp *http.Response, err error, done bool) {
+	resp, err = rt.next.RoundTrip(req)
+
+	if err == nil && !isRetryableStatus(resp.StatusCode) {
+		return resp, nil, true
+	}
+
+	if err != nil {
+		if !isRetryableError(err) {
+			return nil, err, true
+		}
+		rt.logRetryableConnectionError(req, attempt, err)
+		return nil, err, false
+	}
+
+	drainAndClose(resp.Body)
+	retryErr := fmt.Errorf("downstream returned retryable status %d for %s %s",
+		resp.StatusCode, req.Method, req.URL.String())
+	rt.logRetryableStatus(req, attempt, resp.StatusCode)
+	return nil, retryErr, false
+}
+
+func (rt *RetryTransport) logRetryableConnectionError(req *http.Request, attempt int, err error) {
+	logger := rt.config.Logger
+	if logger.GetSink() == nil {
+		return
+	}
+	logger.V(1).Info("retryable connection error",
+		"attempt", attempt, "max", rt.config.MaxAttempts,
+		"url", req.URL.String(), "error", err)
+}
+
+func (rt *RetryTransport) logRetryableStatus(req *http.Request, attempt int, statusCode int) {
+	logger := rt.config.Logger
+	if logger.GetSink() == nil {
+		return
+	}
+	logger.V(1).Info("retryable HTTP status",
+		"attempt", attempt, "max", rt.config.MaxAttempts,
+		"url", req.URL.String(), "status", statusCode)
 }
 
 func isRetryableStatus(code int) bool {

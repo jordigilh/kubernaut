@@ -321,17 +321,7 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
-	diagSendOK.Store(0)
-	diagSendDrop.Store(0)
-	diagSinkNil.Store(0)
-	defer func() {
-		inv.logger.Info("DIAG emitToSink summary",
-			"session_id", session.SessionIDFromContext(ctx),
-			"sent", diagSendOK.Load(),
-			"dropped", diagSendDrop.Load(),
-			"sink_nil", diagSinkNil.Load(),
-			"sink_ptr", fmt.Sprintf("%p", session.EventSinkFromContext(ctx)))
-	}()
+	defer inv.startDiagSummary(ctx)()
 	inv.pipeline.AnomalyDetector.Reset()
 
 	// #783 + #1470: Pin client per phase. Each phase resolves its own client,
@@ -366,49 +356,55 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	inv.emitRCAComplete(ctx, rcaResult, tokens, correlationID)
 
-	// BR-INTERACTIVE-010 / #1390: When interactive (either via signal or runtime
-	// upgrade flag), skip Phase 2+3 and return with InteractiveHold=true.
-	if signal.Interactive || session.InteractiveUpgradeFromContext(ctx) {
-		rcaResult.InteractiveHold = true
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
+	if early, done := inv.checkRCAEarlyReturn(ctx, rcaResult, signal, enrichData, tokens, correlationID); done {
+		return early, nil
 	}
 
-	if rcaResult.HumanReviewNeeded {
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
-	}
+	return inv.runWorkflowDiscoveryPhase(ctx, workflowDiscoveryPhaseParams{
+		Signal: signal, RCAResult: rcaResult, EnrichData: enrichData, EnrichmentCache: enrichmentCache,
+		SignalKind: signalKind, SignalName: signalName, SignalNS: signalNS, Tokens: tokens, CorrelationID: correlationID,
+	})
+}
 
-	// #1430 / BR-HAPI-200: When the RCA concludes no action is required
-	// (problem_resolved or predictive_no_action), skip workflow discovery.
-	// Guard: only short-circuit when no workflow was already identified by
-	// the RCA (defense-in-depth against LLM self-contradiction).
-	if rcaResult.IsActionable != nil && !*rcaResult.IsActionable && rcaResult.WorkflowID == "" {
-		inv.logger.Info("skipping workflow discovery: RCA concluded not actionable",
-			"investigation_outcome", rcaResult.InvestigationOutcome,
-			"correlation_id", correlationID)
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
-	}
+// workflowDiscoveryPhaseParams groups the fields needed by
+// runWorkflowDiscoveryPhase. Extracted per AGENTS.md's 8+-param
+// Options-pattern rule.
+type workflowDiscoveryPhaseParams struct {
+	Signal                           katypes.SignalContext
+	RCAResult                        *katypes.InvestigationResult
+	EnrichData                       *enrichment.EnrichmentResult
+	EnrichmentCache                  map[string]*enrichment.EnrichmentResult
+	SignalKind, SignalName, SignalNS string
+	Tokens                           *TokenAccumulator
+	CorrelationID                    string
+}
 
+// runWorkflowDiscoveryPhase runs Phase 3 (workflow discovery/selection) of
+// Investigate: GAP-001/ADR-056 target re-enrichment, workflow-signal
+// enrichment, and the workflow-selection LLM invocation, finalizing the
+// result via mergeAndFinalizeWorkflowResult.
+func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workflowDiscoveryPhaseParams) (*katypes.InvestigationResult, error) {
 	// GAP-001 / ADR-056: Re-enrich using RCA-identified remediation target if
 	// different. H3-fix: retain pre-RCA enrichment if re-enrichment fails.
 	workflowSignal, enrichData, hardFailed := inv.reEnrichWorkflowTarget(ctx, reEnrichWorkflowTargetParams{
-		Signal: signal, RCAResult: rcaResult, EnrichData: enrichData, EnrichmentCache: enrichmentCache,
-		SignalKind: signalKind, SignalName: signalName, SignalNS: signalNS,
+		Signal: p.Signal, RCAResult: p.RCAResult, EnrichData: p.EnrichData, EnrichmentCache: p.EnrichmentCache,
+		SignalKind: p.SignalKind, SignalName: p.SignalName, SignalNS: p.SignalNS,
 	})
 	if hardFailed {
-		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), nil
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, p.RCAResult, p.Signal, enrichData, p.Tokens, p.CorrelationID), nil
 	}
-	promptEnrichment = toPromptEnrichment(enrichData)
-	workflowSignal = inv.enrichWorkflowSignalForDiscovery(workflowSignal, signal, rcaResult, enrichData, correlationID)
+	promptEnrichment := toPromptEnrichment(enrichData)
+	workflowSignal = inv.enrichWorkflowSignalForDiscovery(workflowSignal, p.Signal, p.RCAResult, enrichData, p.CorrelationID)
 
 	inv.pipeline.AnomalyDetector.Reset()
 
 	wfClient, wfModelName, wfRuntimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 
-	p1Ctx := BuildPhase1Context(rcaResult)
+	p1Ctx := BuildPhase1Context(p.RCAResult)
 
-	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, rcaResult.RCASummary, promptEnrichment, p1Ctx, LLMInvocationContext{
-		Tokens:        tokens,
-		CorrelationID: correlationID,
+	workflowResult, err := inv.runWorkflowSelection(ctx, workflowSignal, p.RCAResult.RCASummary, promptEnrichment, p1Ctx, LLMInvocationContext{
+		Tokens:        p.Tokens,
+		CorrelationID: p.CorrelationID,
 		Client:        wfClient,
 		ModelName:     wfModelName,
 		RuntimeParams: wfRuntimeParams,
@@ -418,14 +414,55 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	}
 
 	if workflowResult.Cancelled {
-		inv.emitCancellationAudit(ctx, workflowResult, correlationID)
+		inv.emitCancellationAudit(ctx, workflowResult, p.CorrelationID)
 		return workflowResult, nil
 	}
 
 	return inv.mergeAndFinalizeWorkflowResult(ctx, mergeAndFinalizeWorkflowResultParams{
-		WorkflowResult: workflowResult, RCAResult: rcaResult, Signal: signal, WorkflowSignal: workflowSignal,
-		EnrichData: enrichData, P1Ctx: p1Ctx, Tokens: tokens, CorrelationID: correlationID,
+		WorkflowResult: workflowResult, RCAResult: p.RCAResult, Signal: p.Signal, WorkflowSignal: workflowSignal,
+		EnrichData: enrichData, P1Ctx: p1Ctx, Tokens: p.Tokens, CorrelationID: p.CorrelationID,
 	}), nil
+}
+
+// startDiagSummary resets the emitToSink diagnostic counters and returns a
+// func to defer that logs the accumulated sent/dropped/nil-sink counts at
+// Investigate's exit.
+func (inv *Investigator) startDiagSummary(ctx context.Context) func() {
+	diagSendOK.Store(0)
+	diagSendDrop.Store(0)
+	diagSinkNil.Store(0)
+	return func() {
+		inv.logger.Info("DIAG emitToSink summary",
+			"session_id", session.SessionIDFromContext(ctx),
+			"sent", diagSendOK.Load(),
+			"dropped", diagSendDrop.Load(),
+			"sink_nil", diagSinkNil.Load(),
+			"sink_ptr", fmt.Sprintf("%p", session.EventSinkFromContext(ctx)))
+	}
+}
+
+// checkRCAEarlyReturn evaluates the interactive-hold (BR-INTERACTIVE-010 /
+// #1390), human-review-needed, and not-actionable (#1430 / BR-HAPI-200)
+// short-circuit conditions after RCA completes. Returns done=true when
+// Investigate must return result immediately without running workflow
+// discovery.
+func (inv *Investigator) checkRCAEarlyReturn(ctx context.Context, rcaResult *katypes.InvestigationResult, signal katypes.SignalContext, enrichData *enrichment.EnrichmentResult, tokens *TokenAccumulator, correlationID string) (result *katypes.InvestigationResult, done bool) {
+	if signal.Interactive || session.InteractiveUpgradeFromContext(ctx) {
+		rcaResult.InteractiveHold = true
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
+	}
+	if rcaResult.HumanReviewNeeded {
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
+	}
+	// Guard: only short-circuit not-actionable when no workflow was already
+	// identified by the RCA (defense-in-depth against LLM self-contradiction).
+	if rcaResult.IsActionable != nil && !*rcaResult.IsActionable && rcaResult.WorkflowID == "" {
+		inv.logger.Info("skipping workflow discovery: RCA concluded not actionable",
+			"investigation_outcome", rcaResult.InvestigationOutcome,
+			"correlation_id", correlationID)
+		return inv.finalizeAndEmitRCAOnlyResult(ctx, rcaResult, signal, enrichData, tokens, correlationID), true
+	}
+	return nil, false
 }
 
 // finalizeAndEmitRCAOnlyResult applies the common Phase-1-only finalization
@@ -466,48 +503,81 @@ func (inv *Investigator) reEnrichWorkflowTarget(ctx context.Context, p reEnrichW
 	workflowSignal = signal
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
-	if postRCAKind != signalKind || postRCAName != signalName || postRCANS != signalNS {
-		inv.logger.Info("re-enriching with RCA remediation target",
-			"signal", signalKind+"/"+signalName,
-			"rca_target", postRCAKind+"/"+postRCAName,
-		)
-		reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
 
-		// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
-		// to prevent the merge from silently dropping the failure signal.
-		// Use enrichData (initial enrichment) for labels because the failed
-		// re-enrichment has empty/all-failed detections — preserving signal-level
-		// labels (e.g. pdbProtected) matches pre-#704 behaviour where
-		// allLabelDetectionsFailed() fell through to keep initial labels.
-		if reEnriched != nil && reEnriched.HardFail {
-			inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
-			rcaResult.HumanReviewNeeded = true
-			rcaResult.HumanReviewReason = "rca_incomplete"
-			return workflowSignal, enrichData, true
-		}
-
-		if reEnriched != nil && reEnriched.TargetResourceDeleted {
+	targetUnchanged := postRCAKind == signalKind && postRCAName == signalName && postRCANS == signalNS
+	if targetUnchanged {
+		if enrichData != nil && enrichData.TargetResourceDeleted {
 			rcaResult.Warnings = append(rcaResult.Warnings,
-				deletedResourceWarning(postRCAKind, postRCAName, postRCANS))
+				deletedResourceWarning(signalKind, signalName, signalNS))
 		}
-
-		if reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels) {
-			enrichData = reEnriched
-		} else if reEnriched != nil {
-			inv.logger.Info("re-enrichment labels all failed (RCA target not found), preserving signal-target labels",
-				"rca_target", postRCAKind+"/"+postRCAName)
-		} else {
-			inv.logger.Info("re-enrichment returned nil, retaining pre-RCA enrichment data")
-		}
-
-		workflowSignal.ResourceKind = postRCAKind
-		workflowSignal.ResourceName = postRCAName
-		workflowSignal.Namespace = postRCANS
-	} else if enrichData != nil && enrichData.TargetResourceDeleted {
-		rcaResult.Warnings = append(rcaResult.Warnings,
-			deletedResourceWarning(signalKind, signalName, signalNS))
+		return workflowSignal, enrichData, false
 	}
-	return workflowSignal, enrichData, false
+
+	enrichData, hardFailed = inv.applyReEnrichedTarget(ctx, reEnrichedTargetParams{
+		EnrichmentCache: enrichmentCache, RCAResult: rcaResult, WorkflowSignal: &workflowSignal,
+		EnrichData: enrichData, Signal: signal, SignalKind: signalKind, SignalName: signalName,
+		PostRCAKind: postRCAKind, PostRCAName: postRCAName, PostRCANS: postRCANS,
+	})
+	return workflowSignal, enrichData, hardFailed
+}
+
+// reEnrichedTargetParams groups the fields needed by applyReEnrichedTarget.
+// Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type reEnrichedTargetParams struct {
+	EnrichmentCache                     map[string]*enrichment.EnrichmentResult
+	RCAResult                           *katypes.InvestigationResult
+	WorkflowSignal                      *katypes.SignalContext
+	EnrichData                          *enrichment.EnrichmentResult
+	Signal                              katypes.SignalContext
+	SignalKind, SignalName              string
+	PostRCAKind, PostRCAName, PostRCANS string
+}
+
+// applyReEnrichedTarget handles the RCA-target-changed branch of
+// reEnrichWorkflowTarget: re-enriches using the post-RCA target, applies the
+// hard-fail/deleted-resource/label-preservation rules (BR-HAPI-261 AC#7,
+// #704), and updates p.WorkflowSignal's resource identity in place. Returns
+// hardFailed=true when the caller must treat rcaResult as final.
+func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnrichedTargetParams) (updatedEnrichData *enrichment.EnrichmentResult, hardFailed bool) {
+	enrichData := p.EnrichData
+	inv.logger.Info("re-enriching with RCA remediation target",
+		"signal", p.SignalKind+"/"+p.SignalName,
+		"rca_target", p.PostRCAKind+"/"+p.PostRCAName,
+	)
+	reEnriched := inv.resolveEnrichmentCached(ctx, p.EnrichmentCache, p.PostRCAKind, p.PostRCAName, p.PostRCANS, p.Signal.IncidentID)
+
+	// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
+	// to prevent the merge from silently dropping the failure signal.
+	// Use enrichData (initial enrichment) for labels because the failed
+	// re-enrichment has empty/all-failed detections — preserving signal-level
+	// labels (e.g. pdbProtected) matches pre-#704 behaviour where
+	// allLabelDetectionsFailed() fell through to keep initial labels.
+	if reEnriched != nil && reEnriched.HardFail {
+		inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
+		p.RCAResult.HumanReviewNeeded = true
+		p.RCAResult.HumanReviewReason = "rca_incomplete"
+		return enrichData, true
+	}
+
+	if reEnriched != nil && reEnriched.TargetResourceDeleted {
+		p.RCAResult.Warnings = append(p.RCAResult.Warnings,
+			deletedResourceWarning(p.PostRCAKind, p.PostRCAName, p.PostRCANS))
+	}
+
+	switch {
+	case reEnriched != nil && !allLabelDetectionsFailed(reEnriched.DetectedLabels):
+		enrichData = reEnriched
+	case reEnriched != nil:
+		inv.logger.Info("re-enrichment labels all failed (RCA target not found), preserving signal-target labels",
+			"rca_target", p.PostRCAKind+"/"+p.PostRCAName)
+	default:
+		inv.logger.Info("re-enrichment returned nil, retaining pre-RCA enrichment data")
+	}
+
+	p.WorkflowSignal.ResourceKind = p.PostRCAKind
+	p.WorkflowSignal.ResourceName = p.PostRCAName
+	p.WorkflowSignal.Namespace = p.PostRCANS
+	return enrichData, false
 }
 
 // enrichWorkflowSignalForDiscovery propagates the RCA-resolved apiVersion and

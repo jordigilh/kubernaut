@@ -30,6 +30,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/dynamic"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -49,6 +50,9 @@ import (
 	emclient "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/startup"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -117,9 +121,26 @@ func main() {
 	defer stopCAWatcher()
 
 	// AUDIT MANAGER + DS QUERIER + CONTROLLER SETUP
-	if err := wireController(mgr, cfg, emMetrics, promClient, amClient, auditStore, setupLog); err != nil {
+	fleetResilientClient, err := wireController(ctx, wireControllerDeps{
+		Manager:    mgr,
+		Config:     cfg,
+		Metrics:    emMetrics,
+		Prometheus: promClient,
+		AlertMgr:   amClient,
+		AuditStore: auditStore,
+		Logger:     setupLog,
+	})
+	if err != nil {
 		setupLog.Error(err, "unable to wire controller")
 		os.Exit(1)
+	}
+	if fleetResilientClient != nil {
+		defer func() {
+			setupLog.Info("Closing fleet MCP Gateway connection")
+			if err := fleetResilientClient.Close(); err != nil {
+				setupLog.Error(err, "failed to close fleet MCP client gracefully")
+			}
+		}()
 	}
 	//+kubebuilder:scaffold:builder
 
@@ -323,13 +344,27 @@ func initExternalDependencies(ctx context.Context, cfg *config.Config, logger lo
 // DataStorage querier, constructs the EffectivenessMonitor reconciler, and
 // registers it with mgr. Extracted from main (Wave 6 6a GREEN: funlen
 // remediation) — pure code motion, no behavior change.
-func wireController(mgr ctrl.Manager, cfg *config.Config, emMetrics *emmetrics.Metrics, promClient emclient.PrometheusQuerier, amClient emclient.AlertManagerClient, auditStore audit.AuditStore, logger logr.Logger) error {
-	auditManager := emaudit.NewManager(auditStore, ctrl.Log.WithName("em-audit"))
+// wireControllerDeps bundles wireController's dependencies into a single
+// parameter to stay under the Go anti-pattern checklist's 7-argument limit
+// (100go.co "function with too many parameters").
+type wireControllerDeps struct {
+	Manager    ctrl.Manager
+	Config     *config.Config
+	Metrics    *emmetrics.Metrics
+	Prometheus emclient.PrometheusQuerier
+	AlertMgr   emclient.AlertManagerClient
+	AuditStore audit.AuditStore
+	Logger     logr.Logger
+}
+
+func wireController(ctx context.Context, deps wireControllerDeps) (*mcpclient.ResilientClient, error) {
+	mgr, cfg, logger := deps.Manager, deps.Config, deps.Logger
+	auditManager := emaudit.NewManager(deps.AuditStore, ctrl.Log.WithName("em-audit"))
 	logger.Info("EM audit manager initialized (DD-AUDIT-003, Pattern 2)")
 
 	dsQuerier, err := emclient.NewOgenDataStorageQuerier(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
-		return fmt.Errorf("failed to create DataStorage querier (url=%s): %w", cfg.DataStorage.URL, err)
+		return nil, fmt.Errorf("failed to create DataStorage querier (url=%s): %w", cfg.DataStorage.URL, err)
 	}
 	logger.Info("DataStorage querier initialized (DD-API-001: ogen, DD-AUTH-005: SA auth)",
 		"url", cfg.DataStorage.URL)
@@ -340,9 +375,9 @@ func wireController(mgr ctrl.Manager, cfg *config.Config, emMetrics *emmetrics.M
 			APIReader:          mgr.GetAPIReader(),
 			Scheme:             mgr.GetScheme(),
 			Recorder:           mgr.GetEventRecorderFor("effectivenessmonitor-controller"),
-			Metrics:            emMetrics,
-			PrometheusClient:   promClient,
-			AlertManagerClient: amClient,
+			Metrics:            deps.Metrics,
+			PrometheusClient:   deps.Prometheus,
+			AlertManagerClient: deps.AlertMgr,
 			AuditManager:       auditManager,
 			DSQuerier:          dsQuerier,
 		},
@@ -357,10 +392,92 @@ func wireController(mgr ctrl.Manager, cfg *config.Config, emMetrics *emmetrics.M
 		}(),
 	)
 	emReconciler.SetRESTMapper(mgr.GetRESTMapper())
-	if err := emReconciler.SetupWithManager(mgr, cfg.Assessment.MaxConcurrentReconciles); err != nil {
-		return fmt.Errorf("unable to create controller %q: %w", "EffectivenessMonitor", err)
+
+	var dynClient dynamic.Interface
+	if dyn, dynErr := dynamic.NewForConfig(mgr.GetConfig()); dynErr != nil {
+		logger.Error(dynErr, "K8s dynamic client unavailable, fleet cluster routing disabled")
+	} else {
+		dynClient = dyn
 	}
-	return nil
+	readerFactory, fleetResilientClient, err := buildFleetReaderFactory(ctx, mgr.GetClient(), dynClient, cfg, logger)
+	if err != nil {
+		return nil, fmt.Errorf("fleet reader wiring: %w", err)
+	}
+	if readerFactory != nil {
+		emReconciler.SetReaderFactory(readerFactory)
+	}
+
+	if err := emReconciler.SetupWithManager(mgr, cfg.Assessment.MaxConcurrentReconciles); err != nil {
+		return fleetResilientClient, fmt.Errorf("unable to create controller %q: %w", "EffectivenessMonitor", err)
+	}
+	return fleetResilientClient, nil
+}
+
+// buildFleetReaderFactory wires BR-FLEET-054 multi-cluster target reads when
+// fleet federation is enabled: connects to the MCP Gateway, discovers
+// managed clusters via ClusterRegistry, and returns a fleet.ReaderFactory
+// for emReconciler.SetReaderFactory. Without this wiring, EM's
+// ReaderFor(ctx, ea.Spec.ClusterID) silently falls back to the local hub
+// cluster reader (reconciler.go:288-292), assessing health/hash for
+// fleet-routed remediations against the wrong cluster. A connectivity
+// failure degrades gracefully to hub-only mode (mirrors GW's
+// registerAdapters contract) rather than blocking EM startup. localClient
+// and dynClient are pre-built by the caller (independently testable with
+// fakes; dynClient nil is treated the same as a construction failure). The
+// returned *mcpclient.ResilientClient is non-nil whenever the reader factory
+// is wired, so the caller can close it on graceful shutdown.
+func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dynClient dynamic.Interface, cfg *config.Config, logger logr.Logger) (fleet.ReaderFactory, *mcpclient.ResilientClient, error) {
+	if !cfg.Fleet.Enabled || cfg.Fleet.MCPGatewayEndpoint == "" {
+		return nil, nil, nil
+	}
+	if dynClient == nil {
+		logger.Info("K8s dynamic client unavailable, fleet cluster routing disabled")
+		return nil, nil, nil
+	}
+
+	fleetLog := logger.WithName("fleet-mcp")
+	var opts []mcpclient.Option
+	if cfg.Fleet.OAuth2.Enabled {
+		basePath := "/etc/effectivenessmonitor/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/effectivenessmonitor/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+		reloadCfg := mcpclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           cfg.Fleet.OAuth2.Scopes,
+		}
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+	}
+
+	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
+	if err != nil {
+		logger.Error(err, "Fleet MCP Gateway connection failed, remote cluster routing disabled",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
+		return nil, nil, nil
+	}
+
+	clusterRegistry, err := registry.NewClusterRegistry(
+		registry.MCPGatewayType(cfg.Fleet.EffectiveMCPGatewayType()),
+		dynClient,
+		registry.RegistryConfig{},
+		registry.NewMetrics(),
+		fleetLog,
+	)
+	if err != nil {
+		return nil, mcpFleetClient, fmt.Errorf("create fleet cluster registry (gatewayType=%s): %w", cfg.Fleet.MCPGatewayType, err)
+	}
+	if err := clusterRegistry.Start(ctx); err != nil {
+		return nil, mcpFleetClient, fmt.Errorf("start fleet cluster registry: %w", err)
+	}
+
+	logger.Info("Fleet MCP Gateway connected, multi-cluster target reads enabled",
+		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
+	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
+		localClient, mcpFleetClient.SessionProvider(), registry.NewToolPrefixAdapter(clusterRegistry))
+	return readerFactory, mcpFleetClient, nil
 }
 
 // waitForCAFile polls for caFile to exist and contain non-empty content,

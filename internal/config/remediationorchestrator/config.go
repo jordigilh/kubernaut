@@ -283,18 +283,18 @@ func DefaultConfig() *Config {
 			Period: 24 * time.Hour,
 		},
 		Routing: RoutingConfig{
-			ConsecutiveFailureThreshold:  3,
-			ConsecutiveFailureCooldown:   1 * time.Hour,
-			RecentlyRemediatedCooldown:   5 * time.Minute,
-			ExponentialBackoffBase:       1 * time.Minute,
-			ExponentialBackoffMax:        10 * time.Minute,
+			ConsecutiveFailureThreshold:   3,
+			ConsecutiveFailureCooldown:    1 * time.Hour,
+			RecentlyRemediatedCooldown:    5 * time.Minute,
+			ExponentialBackoffBase:        1 * time.Minute,
+			ExponentialBackoffMax:         10 * time.Minute,
 			ExponentialBackoffMaxExponent: 4,
-			ScopeBackoffBase:            5 * time.Second,
-			ScopeBackoffMax:             5 * time.Minute,
-			IneffectiveChainThreshold:    3,
-			RecurrenceCountThreshold:     5,
-			IneffectiveTimeWindow:        4 * time.Hour,
-			NoActionRequiredDelayHours:   24, // Issue #314, #353: 24h suppression window
+			ScopeBackoffBase:              5 * time.Second,
+			ScopeBackoffMax:               5 * time.Minute,
+			IneffectiveChainThreshold:     3,
+			RecurrenceCountThreshold:      5,
+			IneffectiveTimeWindow:         4 * time.Hour,
+			NoActionRequiredDelayHours:    24, // Issue #314, #353: 24h suppression window
 		},
 		Logging:          sharedconfig.DefaultLoggingConfig(),
 		DryRunHoldPeriod: 1 * time.Hour, // #712, #736: Default GW suppression after dry-run completion
@@ -339,15 +339,59 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	// Validate controller config
+	if err := c.validateController(); err != nil {
+		return err
+	}
+	if err := c.validateTimeouts(); err != nil {
+		return err
+	}
+	if err := c.validateEA(); err != nil {
+		return err
+	}
+	if err := c.validateAsyncPropagation(); err != nil {
+		return err
+	}
+	if err := c.validateRouting(); err != nil {
+		return err
+	}
+
+	// #265: Validate retention period
+	if c.Retention.Period <= 0 {
+		return fmt.Errorf("retention.period must be positive, got %v", c.Retention.Period)
+	}
+
+	if err := c.validateDryRun(); err != nil {
+		return err
+	}
+
+	// ADR-068/BR-FLEET-054: When fleet is enabled, RO needs BOTH the
+	// Backend/Endpoint scope-check adapter (fleet.NewScopeChecker,
+	// buildRoutingEngine) AND MCPGatewayEndpoint (CapturePreRemediationHash
+	// remote reads, buildFleetReaderFactory). Configuring only one silently
+	// degrades RO to local-only behavior for fleet-routed
+	// RemediationRequests.
+	if err := c.Fleet.Validate(); err != nil {
+		return err
+	}
+	if err := c.Fleet.ValidateFullFederation(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *Config) validateController() error {
 	if c.Controller.MetricsAddr == "" {
 		return fmt.Errorf("controller.metricsAddr is required")
 	}
 	if c.Controller.HealthProbeAddr == "" {
 		return fmt.Errorf("controller.healthProbeAddr is required")
 	}
+	return nil
+}
 
-	// Validate timeouts (BR-ORCH-027, BR-ORCH-028)
+// validateTimeouts validates phase timeout config (BR-ORCH-027, BR-ORCH-028).
+func (c *Config) validateTimeouts() error {
 	if c.Timeouts.Global <= 0 {
 		return fmt.Errorf("timeouts.global must be positive, got %v", c.Timeouts.Global)
 	}
@@ -370,16 +414,23 @@ func (c *Config) Validate() error {
 	if c.Timeouts.Global < phaseSum {
 		return fmt.Errorf("timeouts.global (%v) must be >= sum of phase timeouts (%v)", c.Timeouts.Global, phaseSum)
 	}
+	return nil
+}
 
-	// Validate EA creation config (ADR-EM-001)
+// validateEA validates the EA creation config (ADR-EM-001).
+func (c *Config) validateEA() error {
 	if c.EA.StabilizationWindow < 1*time.Second {
 		return fmt.Errorf("effectivenessAssessment.stabilizationWindow must be at least 1s, got %v", c.EA.StabilizationWindow)
 	}
 	if c.EA.StabilizationWindow > 1*time.Hour {
 		return fmt.Errorf("effectivenessAssessment.stabilizationWindow must not exceed 1h, got %v", c.EA.StabilizationWindow)
 	}
+	return nil
+}
 
-	// Validate async propagation config (DD-EM-004 v2.0, BR-RO-103.4, Issue #253)
+// validateAsyncPropagation validates async propagation delays (DD-EM-004
+// v2.0, BR-RO-103.4, Issue #253).
+func (c *Config) validateAsyncPropagation() error {
 	if c.AsyncPropagation.GitOpsSyncDelay < 0 {
 		return fmt.Errorf("asyncPropagation.gitOpsSyncDelay must be >= 0, got %v", c.AsyncPropagation.GitOpsSyncDelay)
 	}
@@ -389,8 +440,12 @@ func (c *Config) Validate() error {
 	if c.AsyncPropagation.ProactiveAlertDelay < 0 {
 		return fmt.Errorf("asyncPropagation.proactiveAlertDelay must be >= 0, got %v", c.AsyncPropagation.ProactiveAlertDelay)
 	}
+	return nil
+}
 
-	// Validate routing config (DD-RO-002, BR-ORCH-042, DD-WE-004, Issue #214)
+// validateRouting validates the routing config (DD-RO-002, BR-ORCH-042,
+// DD-WE-004, Issue #214).
+func (c *Config) validateRouting() error {
 	if c.Routing.ConsecutiveFailureThreshold < 1 {
 		return fmt.Errorf("routing.consecutiveFailureThreshold must be >= 1, got %d", c.Routing.ConsecutiveFailureThreshold)
 	}
@@ -430,21 +485,20 @@ func (c *Config) Validate() error {
 	if c.Routing.NoActionRequiredDelayHours < 0 {
 		return fmt.Errorf("routing.noActionRequiredDelayHours must be >= 0 (0 = opt-out), got %d", c.Routing.NoActionRequiredDelayHours)
 	}
+	return nil
+}
 
-	// #265: Validate retention period
-	if c.Retention.Period <= 0 {
-		return fmt.Errorf("retention.period must be positive, got %v", c.Retention.Period)
+// validateDryRun validates dry-run hold period bounds when dry-run is
+// enabled (#712, #736).
+func (c *Config) validateDryRun() error {
+	if !c.DryRun {
+		return nil
 	}
-
-	// #712, #736: Validate dry-run hold period bounds when dry-run is enabled
-	if c.DryRun {
-		if c.DryRunHoldPeriod < 5*time.Minute {
-			return fmt.Errorf("dryRunHoldPeriod must be >= 5m when dryRun is enabled, got %v", c.DryRunHoldPeriod)
-		}
-		if c.DryRunHoldPeriod > 168*time.Hour {
-			return fmt.Errorf("dryRunHoldPeriod must be <= 168h (7d) when dryRun is enabled, got %v", c.DryRunHoldPeriod)
-		}
+	if c.DryRunHoldPeriod < 5*time.Minute {
+		return fmt.Errorf("dryRunHoldPeriod must be >= 5m when dryRun is enabled, got %v", c.DryRunHoldPeriod)
 	}
-
+	if c.DryRunHoldPeriod > 168*time.Hour {
+		return fmt.Errorf("dryRunHoldPeriod must be <= 168h (7d) when dryRun is enabled, got %v", c.DryRunHoldPeriod)
+	}
 	return nil
 }

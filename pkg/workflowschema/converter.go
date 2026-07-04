@@ -135,56 +135,83 @@ func SchemaToSpec(schema *models.WorkflowSchema) (*rwv1alpha1.RemediationWorkflo
 		})
 	}
 
-	if schema.DetectedLabels != nil {
-		raw, err := json.Marshal(schema.DetectedLabels)
-		if err != nil {
-			return nil, fmt.Errorf("marshal detectedLabels: %w", err)
-		}
-		spec.DetectedLabels = &apiextensionsv1.JSON{Raw: raw}
+	if err := applyDetectedLabelsToSpec(schema, spec); err != nil {
+		return nil, err
+	}
+	if err := applyExecutionToSpec(schema, spec); err != nil {
+		return nil, err
+	}
+	applyDependenciesToSpec(schema, spec)
+
+	if err := applyParametersToSpec(schema, spec); err != nil {
+		return nil, err
 	}
 
-	if schema.Execution != nil {
-		spec.Execution = rwv1alpha1.RemediationWorkflowExecution{
-			Engine:       schema.Execution.Engine,
-			Bundle:       schema.Execution.Bundle,
-			BundleDigest: schema.Execution.BundleDigest,
-		}
-		if schema.Execution.EngineConfig != nil {
-			raw, err := json.Marshal(schema.Execution.EngineConfig)
-			if err != nil {
-				return nil, fmt.Errorf("marshal engineConfig: %w", err)
-			}
-			spec.Execution.EngineConfig = &apiextensionsv1.JSON{Raw: raw}
-		}
-	}
+	return spec, nil
+}
 
-	if schema.Dependencies != nil {
-		deps := &rwv1alpha1.RemediationWorkflowDependencies{}
-		for _, s := range schema.Dependencies.Secrets {
-			deps.Secrets = append(deps.Secrets, rwv1alpha1.RemediationWorkflowResourceDependency{Name: s.Name})
-		}
-		for _, cm := range schema.Dependencies.ConfigMaps {
-			deps.ConfigMaps = append(deps.ConfigMaps, rwv1alpha1.RemediationWorkflowResourceDependency{Name: cm.Name})
-		}
-		spec.Dependencies = deps
+func applyDetectedLabelsToSpec(schema *models.WorkflowSchema, spec *rwv1alpha1.RemediationWorkflowSpec) error {
+	if schema.DetectedLabels == nil {
+		return nil
 	}
+	raw, err := json.Marshal(schema.DetectedLabels)
+	if err != nil {
+		return fmt.Errorf("marshal detectedLabels: %w", err)
+	}
+	spec.DetectedLabels = &apiextensionsv1.JSON{Raw: raw}
+	return nil
+}
 
+func applyExecutionToSpec(schema *models.WorkflowSchema, spec *rwv1alpha1.RemediationWorkflowSpec) error {
+	if schema.Execution == nil {
+		return nil
+	}
+	spec.Execution = rwv1alpha1.RemediationWorkflowExecution{
+		Engine:       schema.Execution.Engine,
+		Bundle:       schema.Execution.Bundle,
+		BundleDigest: schema.Execution.BundleDigest,
+	}
+	if schema.Execution.EngineConfig == nil {
+		return nil
+	}
+	raw, err := json.Marshal(schema.Execution.EngineConfig)
+	if err != nil {
+		return fmt.Errorf("marshal engineConfig: %w", err)
+	}
+	spec.Execution.EngineConfig = &apiextensionsv1.JSON{Raw: raw}
+	return nil
+}
+
+func applyDependenciesToSpec(schema *models.WorkflowSchema, spec *rwv1alpha1.RemediationWorkflowSpec) {
+	if schema.Dependencies == nil {
+		return
+	}
+	deps := &rwv1alpha1.RemediationWorkflowDependencies{}
+	for _, s := range schema.Dependencies.Secrets {
+		deps.Secrets = append(deps.Secrets, rwv1alpha1.RemediationWorkflowResourceDependency{Name: s.Name})
+	}
+	for _, cm := range schema.Dependencies.ConfigMaps {
+		deps.ConfigMaps = append(deps.ConfigMaps, rwv1alpha1.RemediationWorkflowResourceDependency{Name: cm.Name})
+	}
+	spec.Dependencies = deps
+}
+
+func applyParametersToSpec(schema *models.WorkflowSchema, spec *rwv1alpha1.RemediationWorkflowSpec) error {
 	for _, p := range schema.Parameters {
 		cp, err := convertSchemaParamToCRD(p)
 		if err != nil {
-			return nil, fmt.Errorf("convert parameter %q: %w", p.Name, err)
+			return fmt.Errorf("convert parameter %q: %w", p.Name, err)
 		}
 		spec.Parameters = append(spec.Parameters, cp)
 	}
 	for _, p := range schema.RollbackParameters {
 		cp, err := convertSchemaParamToCRD(p)
 		if err != nil {
-			return nil, fmt.Errorf("convert rollback parameter %q: %w", p.Name, err)
+			return fmt.Errorf("convert rollback parameter %q: %w", p.Name, err)
 		}
 		spec.RollbackParameters = append(spec.RollbackParameters, cp)
 	}
-
-	return spec, nil
+	return nil
 }
 
 func convertCRDParamToSchema(p rwv1alpha1.RemediationWorkflowParameter) models.WorkflowParameter {

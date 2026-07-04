@@ -64,12 +64,12 @@ const (
 )
 
 var transitionTypeNames = map[TransitionType]string{
-	TransitionNone:               "None",
-	TransitionAdvance:            "Advance",
-	TransitionFailed:             "Failed",
-	TransitionBlocked:            "Blocked",
-	TransitionVerifying:          "Verifying",
-	TransitionInheritedCompleted: "InheritedCompleted",
+	TransitionNone:                         "None",
+	TransitionAdvance:                      "Advance",
+	TransitionFailed:                       "Failed",
+	TransitionBlocked:                      "Blocked",
+	TransitionVerifying:                    "Verifying",
+	TransitionInheritedCompleted:           "InheritedCompleted",
 	TransitionInheritedFailed:              "InheritedFailed",
 	TransitionCompletedWithoutVerification: "CompletedWithoutVerification",
 }
@@ -112,16 +112,16 @@ type BlockMeta struct {
 // Reference: Issue #666 (RO Phase Handler Registry refactoring)
 type TransitionIntent struct {
 	Type               TransitionType
-	TargetPhase        Phase                          // TransitionAdvance
-	FailurePhase       remediationv1.FailurePhase     // TransitionFailed
-	FailureErr         error                          // TransitionFailed, TransitionInheritedFailed
-	Block              *BlockMeta                     // TransitionBlocked
-	Outcome            string                         // TransitionVerifying
-	SourceRef          string                         // TransitionInheritedCompleted, TransitionInheritedFailed
-	SourceKind         string                         // TransitionInheritedCompleted, TransitionInheritedFailed
-	RequeueAfter       time.Duration                  // TransitionNone
-	RequeueImmediately bool                           // TransitionNone
-	Reason             string                         // all types
+	TargetPhase        Phase                      // TransitionAdvance
+	FailurePhase       remediationv1.FailurePhase // TransitionFailed
+	FailureErr         error                      // TransitionFailed, TransitionInheritedFailed
+	Block              *BlockMeta                 // TransitionBlocked
+	Outcome            string                     // TransitionVerifying
+	SourceRef          string                     // TransitionInheritedCompleted, TransitionInheritedFailed
+	SourceKind         string                     // TransitionInheritedCompleted, TransitionInheritedFailed
+	RequeueAfter       time.Duration              // TransitionNone
+	RequeueImmediately bool                       // TransitionNone
+	Reason             string                     // all types
 }
 
 // Advance creates a TransitionIntent for normal forward progression.
@@ -225,39 +225,54 @@ func InheritFail(err error, sourceRef, sourceKind, reason string) TransitionInte
 	}
 }
 
-// Validate checks that a TransitionIntent is internally consistent.
-func (t TransitionIntent) Validate() error {
-	switch t.Type {
-	case TransitionAdvance:
+// transitionValidators maps each TransitionType to the consistency check for
+// the fields it requires. Kept as a data table (rather than a switch) so
+// Validate stays a single lookup + call regardless of how many transition
+// types are added.
+var transitionValidators = map[TransitionType]func(TransitionIntent) error{
+	TransitionAdvance: func(t TransitionIntent) error {
 		if t.TargetPhase == "" {
 			return fmt.Errorf("TransitionAdvance requires TargetPhase to be set")
 		}
-	case TransitionFailed:
+		return nil
+	},
+	TransitionFailed: func(t TransitionIntent) error {
 		if t.FailurePhase == "" {
 			return fmt.Errorf("TransitionFailed requires FailurePhase to be set")
 		}
-	case TransitionBlocked:
+		return nil
+	},
+	TransitionBlocked: func(t TransitionIntent) error {
 		if t.Block == nil {
 			return fmt.Errorf("TransitionBlocked requires Block metadata to be set")
 		}
-	case TransitionVerifying:
-		// Outcome is optional; no additional requirements
-	case TransitionCompletedWithoutVerification:
-		// Reason is optional; no additional requirements
-	case TransitionInheritedCompleted:
+		return nil
+	},
+	// Outcome/Reason are optional for these transition types; no additional requirements.
+	TransitionVerifying:                    func(TransitionIntent) error { return nil },
+	TransitionCompletedWithoutVerification: func(TransitionIntent) error { return nil },
+	TransitionNone:                         func(TransitionIntent) error { return nil },
+	TransitionInheritedCompleted: func(t TransitionIntent) error {
 		if t.SourceRef == "" || t.SourceKind == "" {
 			return fmt.Errorf("TransitionInheritedCompleted requires SourceRef and SourceKind to be set")
 		}
-	case TransitionInheritedFailed:
+		return nil
+	},
+	TransitionInheritedFailed: func(t TransitionIntent) error {
 		if t.SourceRef == "" || t.SourceKind == "" {
 			return fmt.Errorf("TransitionInheritedFailed requires SourceRef and SourceKind to be set")
 		}
-	case TransitionNone:
-		// No additional requirements
-	default:
+		return nil
+	},
+}
+
+// Validate checks that a TransitionIntent is internally consistent.
+func (t TransitionIntent) Validate() error {
+	validator, ok := transitionValidators[t.Type]
+	if !ok {
 		return fmt.Errorf("unknown TransitionType: %d", int(t.Type))
 	}
-	return nil
+	return validator(t)
 }
 
 // IsNoOp returns true if this intent represents a terminal no-op

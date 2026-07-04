@@ -141,43 +141,9 @@ func redactPatternSimple(content, pattern string) string {
 
 	idx := strings.Index(lowerOutput, pattern)
 	for idx != -1 {
-		// Find the value after the pattern
-		valueStart := idx + len(pattern)
-
-		// Skip whitespace
-		for valueStart < len(output) && (output[valueStart] == ' ' || output[valueStart] == '\t') {
-			valueStart++
-		}
-
-		if valueStart >= len(output) {
+		valueStart, valueEnd, ok := findRedactableValueBounds(output, idx+len(pattern))
+		if !ok {
 			break
-		}
-
-		// Find end of value
-		valueEnd := valueStart
-		inQuotes := false
-		quoteChar := byte(0)
-
-		if output[valueStart] == '"' || output[valueStart] == '\'' {
-			inQuotes = true
-			quoteChar = output[valueStart]
-			valueStart++
-			valueEnd = valueStart
-		}
-
-		for valueEnd < len(output) {
-			ch := output[valueEnd]
-			if inQuotes {
-				if ch == quoteChar {
-					break
-				}
-			} else {
-				if ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' ||
-					ch == ',' || ch == '"' || ch == '\'' || ch == '}' || ch == ']' {
-					break
-				}
-			}
-			valueEnd++
 		}
 
 		if valueEnd > valueStart {
@@ -185,20 +151,91 @@ func redactPatternSimple(content, pattern string) string {
 			lowerOutput = strings.ToLower(output)
 		}
 
-		// Search for next occurrence
-		searchStart := idx + len(pattern) + len(RedactedPlaceholder)
-		if searchStart >= len(lowerOutput) {
+		nextIdx, ok := nextPatternIndex(lowerOutput, idx+len(pattern)+len(RedactedPlaceholder), pattern)
+		if !ok {
 			break
 		}
-
-		remainingIdx := strings.Index(lowerOutput[searchStart:], pattern)
-		if remainingIdx == -1 {
-			break
-		}
-		idx = searchStart + remainingIdx
+		idx = nextIdx
 	}
 
 	return output
+}
+
+// findRedactableValueBounds locates the [start, end) byte range of the value
+// immediately following a matched pattern, skipping leading whitespace and
+// respecting an optional surrounding quote. ok is false when the pattern was
+// at the end of the string with no value to redact.
+func findRedactableValueBounds(output string, searchFrom int) (start, end int, ok bool) {
+	valueStart := skipLeadingWhitespace(output, searchFrom)
+	if valueStart >= len(output) {
+		return 0, 0, false
+	}
+
+	valueStart, quoteChar, inQuotes := consumeOpeningQuote(output, valueStart)
+	valueEnd := scanValueEnd(output, valueStart, quoteChar, inQuotes)
+
+	return valueStart, valueEnd, true
+}
+
+// skipLeadingWhitespace advances past spaces/tabs starting at from.
+func skipLeadingWhitespace(output string, from int) int {
+	i := from
+	for i < len(output) && (output[i] == ' ' || output[i] == '\t') {
+		i++
+	}
+	return i
+}
+
+// consumeOpeningQuote advances past a leading quote character, if present,
+// reporting the quote byte and whether the value is quoted.
+func consumeOpeningQuote(output string, at int) (newAt int, quoteChar byte, inQuotes bool) {
+	if output[at] == '"' || output[at] == '\'' {
+		return at + 1, output[at], true
+	}
+	return at, 0, false
+}
+
+// scanValueEnd finds the end of the value starting at valueStart: either the
+// matching closing quote (quoted values) or the first delimiter/whitespace
+// character (unquoted values).
+func scanValueEnd(output string, valueStart int, quoteChar byte, inQuotes bool) int {
+	valueEnd := valueStart
+	for valueEnd < len(output) {
+		ch := output[valueEnd]
+		if inQuotes {
+			if ch == quoteChar {
+				break
+			}
+		} else if isValueDelimiter(ch) {
+			break
+		}
+		valueEnd++
+	}
+	return valueEnd
+}
+
+// isValueDelimiter reports whether ch terminates an unquoted redactable value.
+func isValueDelimiter(ch byte) bool {
+	switch ch {
+	case ' ', '\t', '\n', '\r', ',', '"', '\'', '}', ']':
+		return true
+	default:
+		return false
+	}
+}
+
+// nextPatternIndex finds the next occurrence of pattern in lowerOutput at or
+// after searchStart, returning ok=false when the search window is exhausted
+// or no further occurrence exists.
+func nextPatternIndex(lowerOutput string, searchStart int, pattern string) (int, bool) {
+	if searchStart >= len(lowerOutput) {
+		return 0, false
+	}
+	remainingIdx := strings.Index(lowerOutput[searchStart:], pattern)
+	if remainingIdx == -1 {
+		return 0, false
+	}
+	return searchStart + remainingIdx, true
 }
 
 // SanitizeForLog is a convenience function for quick sanitization.
@@ -220,11 +257,33 @@ var defaultSanitizer = NewSanitizer()
 // IMPORTANT: Pattern order matters! Container patterns (generatorURL, annotations)
 // must come FIRST to prevent sub-patterns from corrupting larger structures.
 func DefaultRules() []*Rule {
+	rules := make([]*Rule, 0, 28)
+	// PRIORITY: container patterns must be processed first since they match
+	// larger structures (e.g. the annotations object) that may contain
+	// sub-patterns matched by later rules.
+	rules = append(rules, containerPatternRules()...)
+	rules = append(rules, passwordRules()...)
+	rules = append(rules, apiKeyRules()...)
+	rules = append(rules, tokenRules()...)
+	rules = append(rules, secretRules()...)
+	rules = append(rules, authorizationHeaderRules()...)
+	rules = append(rules, cloudCredentialRules()...)
+	rules = append(rules, databaseURLRules()...)
+	rules = append(rules, certificateAndKeyRules()...)
+	rules = append(rules, k8sSecretRules()...)
+	// Duplicated container patterns (generator-url/annotations-json) are kept
+	// intentionally: the sanitizer applies rules by name-dedup semantics and
+	// historical order, matching the pre-refactor rule list exactly.
+	rules = append(rules, containerPatternRules()...)
+	rules = append(rules, piiRules()...)
+	return rules
+}
+
+// containerPatternRules redacts larger container structures (Prometheus/
+// Alertmanager generator URLs, webhook annotations) that may embed
+// sub-patterns matched by more specific rules below.
+func containerPatternRules() []*Rule {
 	return []*Rule{
-		// ========================================
-		// PRIORITY: Container patterns (process first to prevent corruption)
-		// These patterns match larger structures that may contain sub-patterns
-		// ========================================
 		{
 			Name:        "generator-url",
 			Pattern:     regexp.MustCompile(`(?i)"generatorURL?"\s*:\s*"([^"]+)"`),
@@ -237,10 +296,13 @@ func DefaultRules() []*Rule {
 			Replacement: `"annotations":` + RedactedPlaceholder,
 			Description: "Redact webhook annotations",
 		},
+	}
+}
 
-		// ========================================
-		// Password Patterns
-		// ========================================
+// passwordRules redacts password fields in JSON, key=value/key: value plain
+// text, and basic-auth URL credentials.
+func passwordRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "password-json",
 			Pattern:     regexp.MustCompile(`(?i)"(password|passwd|pwd)"\s*:\s*"([^"]+)"`),
@@ -259,10 +321,13 @@ func DefaultRules() []*Rule {
 			Replacement: `://${1}:` + RedactedPlaceholder + `@`,
 			Description: "Redact passwords in URLs",
 		},
+	}
+}
 
-		// ========================================
-		// API Key Patterns
-		// ========================================
+// apiKeyRules redacts generic API key fields plus well-known provider key
+// formats (OpenAI).
+func apiKeyRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "api-key-json",
 			Pattern:     regexp.MustCompile(`(?i)"(api[_-]?key|apikey)"\s*:\s*"([^"]+)"`),
@@ -281,10 +346,13 @@ func DefaultRules() []*Rule {
 			Replacement: RedactedPlaceholder,
 			Description: "Redact OpenAI API keys",
 		},
+	}
+}
 
-		// ========================================
-		// Token Patterns
-		// ========================================
+// tokenRules redacts Bearer tokens, well-known provider token formats
+// (GitHub), and generic "token"/"access_token" fields.
+func tokenRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "bearer-token",
 			Pattern:     regexp.MustCompile(`(?i)Bearer\s+([A-Za-z0-9\-_\.]+)`),
@@ -309,10 +377,12 @@ func DefaultRules() []*Rule {
 			Replacement: `${1}: ` + RedactedPlaceholder,
 			Description: "Redact generic tokens",
 		},
+	}
+}
 
-		// ========================================
-		// Secret Patterns
-		// ========================================
+// secretRules redacts generic "secret"/"client_secret" fields.
+func secretRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "secret-json",
 			Pattern:     regexp.MustCompile(`(?i)"(secret|client_secret)"\s*:\s*"([^"]+)"`),
@@ -325,20 +395,24 @@ func DefaultRules() []*Rule {
 			Replacement: `${1}: ` + RedactedPlaceholder,
 			Description: "Redact secrets",
 		},
+	}
+}
 
-		// ========================================
-		// Authorization Headers
-		// ========================================
+// authorizationHeaderRules redacts the value of Authorization headers.
+func authorizationHeaderRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "authorization-header",
 			Pattern:     regexp.MustCompile(`(?i)(authorization)\s*:\s*["']?([^\s"',}]+)["']?`),
 			Replacement: `${1}: ` + RedactedPlaceholder,
 			Description: "Redact authorization headers",
 		},
+	}
+}
 
-		// ========================================
-		// Cloud Provider Credentials
-		// ========================================
+// cloudCredentialRules redacts AWS access/secret key environment variables.
+func cloudCredentialRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "aws-access-key",
 			Pattern:     regexp.MustCompile(`(?i)(AWS_ACCESS_KEY_ID|aws_access_key)\s*[:=]\s*["']?([A-Z0-9]{20})["']?`),
@@ -351,10 +425,13 @@ func DefaultRules() []*Rule {
 			Replacement: `${1}=` + RedactedPlaceholder,
 			Description: "Redact AWS secret keys",
 		},
+	}
+}
 
-		// ========================================
-		// Database Connection Strings
-		// ========================================
+// databaseURLRules redacts basic-auth credentials embedded in database
+// connection strings (PostgreSQL, MySQL, MongoDB, Redis).
+func databaseURLRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "postgresql-url",
 			Pattern:     regexp.MustCompile(`postgresql://([^:]+):([^@]+)@`),
@@ -379,10 +456,12 @@ func DefaultRules() []*Rule {
 			Replacement: `redis://${1}:` + RedactedPlaceholder + `@`,
 			Description: "Redact Redis URLs",
 		},
+	}
+}
 
-		// ========================================
-		// Certificates and Keys
-		// ========================================
+// certificateAndKeyRules redacts PEM-encoded certificates and private keys.
+func certificateAndKeyRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "pem-certificate",
 			Pattern:     regexp.MustCompile(`-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----`),
@@ -395,40 +474,26 @@ func DefaultRules() []*Rule {
 			Replacement: RedactedPlaceholder,
 			Description: "Redact private keys",
 		},
+	}
+}
 
-		// ========================================
-		// Kubernetes Secrets
-		// ========================================
+// k8sSecretRules redacts base64-looking values under common Kubernetes
+// Secret data keys (username/password/token/key/secret/credential).
+func k8sSecretRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "k8s-secret-data",
 			Pattern:     regexp.MustCompile(`(?m)^\s*(username|password|token|key|secret|credential):\s*([A-Za-z0-9+/=]{8,})\s*$`),
 			Replacement: `  ${1}: ` + RedactedPlaceholder,
 			Description: "Redact Kubernetes secret data (base64)",
 		},
+	}
+}
 
-		// ========================================
-		// Prometheus/Alertmanager URLs (may contain internal info)
-		// ========================================
-		{
-			Name:        "generator-url",
-			Pattern:     regexp.MustCompile(`(?i)"generatorURL?"\s*:\s*"([^"]+)"`),
-			Replacement: `"generatorURL":"` + RedactedPlaceholder + `"`,
-			Description: "Redact Prometheus/Alertmanager generator URLs",
-		},
-
-		// ========================================
-		// Webhook Annotations (may contain sensitive data)
-		// ========================================
-		{
-			Name:        "annotations-json",
-			Pattern:     regexp.MustCompile(`(?i)"annotations"\s*:\s*\{[^}]*\}`),
-			Replacement: `"annotations":` + RedactedPlaceholder,
-			Description: "Redact webhook annotations",
-		},
-
-		// ========================================
-		// PII Patterns (BR-GATEWAY-042)
-		// ========================================
+// piiRules redacts personally identifiable information (BR-GATEWAY-042):
+// email addresses and IPv4 addresses.
+func piiRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "email-address",
 			Pattern:     regexp.MustCompile(`\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Z|a-z]{2,}\b`),

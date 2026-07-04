@@ -143,6 +143,24 @@ func (c *httpClient) GetRules(ctx context.Context) ([]RuleGroup, error) {
 
 // InstantQuery evaluates a PromQL expression via /api/v1/query.
 func (c *httpClient) InstantQuery(ctx context.Context, query string) (*QueryResult, error) {
+	apiResp, err := c.fetchInstantQuery(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &QueryResult{Samples: make([]Sample, 0, len(apiResp.Data.Result))}
+	for _, raw := range apiResp.Data.Result {
+		if sample, ok := parseVectorSample(raw); ok {
+			result.Samples = append(result.Samples, sample)
+		}
+	}
+	return result, nil
+}
+
+// fetchInstantQuery performs the HTTP round-trip for InstantQuery and
+// returns the parsed API envelope, having already validated the HTTP status
+// and API-level "success" status.
+func (c *httpClient) fetchInstantQuery(ctx context.Context, query string) (*queryAPIResponse, error) {
 	params := url.Values{}
 	params.Set("query", query)
 
@@ -176,29 +194,32 @@ func (c *httpClient) InstantQuery(ctx context.Context, query string) (*QueryResu
 		return nil, redactErr(fmt.Errorf("query API error: %s", apiResp.Error))
 	}
 
-	result := &QueryResult{Samples: make([]Sample, 0)}
-	for _, raw := range apiResp.Data.Result {
-		var vr vectorResult
-		if err := json.Unmarshal(raw, &vr); err != nil {
-			continue
-		}
-		sample := Sample{Metric: vr.Metric}
-		if len(vr.Value) == 2 {
-			if ts, ok := vr.Value[0].(float64); ok {
-				sample.Timestamp = time.Unix(int64(ts), 0)
-			}
-			switch v := vr.Value[1].(type) {
-			case string:
-				if val, parseErr := strconv.ParseFloat(v, 64); parseErr == nil {
-					sample.Value = val
-				}
-			case float64:
-				sample.Value = v
-			}
-		}
-		result.Samples = append(result.Samples, sample)
+	return &apiResp, nil
+}
+
+// parseVectorSample decodes a single raw vector result entry into a Sample.
+// ok is false if the entry failed to unmarshal (the caller skips it).
+func parseVectorSample(raw json.RawMessage) (sample Sample, ok bool) {
+	var vr vectorResult
+	if err := json.Unmarshal(raw, &vr); err != nil {
+		return Sample{}, false
 	}
-	return result, nil
+	sample = Sample{Metric: vr.Metric}
+	if len(vr.Value) != 2 {
+		return sample, true
+	}
+	if ts, ok := vr.Value[0].(float64); ok {
+		sample.Timestamp = time.Unix(int64(ts), 0)
+	}
+	switch v := vr.Value[1].(type) {
+	case string:
+		if val, parseErr := strconv.ParseFloat(v, 64); parseErr == nil {
+			sample.Value = val
+		}
+	case float64:
+		sample.Value = v
+	}
+	return sample, true
 }
 
 // --- API response types ---

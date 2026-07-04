@@ -50,6 +50,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
@@ -78,20 +79,12 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
-func main() {
-	// ========================================
-	// ADR-030: Configuration via YAML file
-	// Single --config flag; all functional config in YAML ConfigMap
-	// ========================================
-	var configPath string
-	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
-
-	flag.Parse()
-
-	// Issue #875: Bootstrap logger at INFO for config loading
-	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
-
+// loadRemediationOrchestratorConfig loads and validates the
+// RemediationOrchestrator config (ADR-030), applies the config-driven log
+// level (Issue #875), discovers the controller namespace for CRD watch
+// restriction (ADR-057), and builds the controller manager. Exits the
+// process on any failure, matching main()'s original fail-fast behavior.
+func loadRemediationOrchestratorConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*config.Config, ctrl.Manager) {
 	setupLog.Info("Starting RemediationOrchestrator Controller",
 		"version", version.Version,
 		"gitCommit", version.GitCommit,
@@ -136,6 +129,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	return cfg, mgr
+}
+
+// setupRemediationOrchestratorControllers initializes the audit store
+// (DD-AUDIT-003, DD-API-001), metrics (DD-METRICS-001), the EA creator
+// (ADR-EM-001), the routing engine (DD-RO-002), the RemediationOrchestrator
+// reconciler, and the RemediationApprovalRequest audit controller
+// (BR-AUDIT-006). Returns the audit store (for the caller's graceful
+// shutdown flush) and the config-watcher stop function (for the caller to
+// defer). Exits the process on any failure, matching main()'s original
+// fail-fast behavior.
+func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Config, mgr ctrl.Manager, configPath string, setupLog logr.Logger) (audit.AuditStore, func()) {
 	// ========================================
 	// AUDIT STORE INITIALIZATION (DD-AUDIT-003, DD-API-001)
 	// ========================================
@@ -194,7 +199,7 @@ func main() {
 
 	// Setup RemediationOrchestrator controller with audit store and comprehensive timeout config
 	// ADR-030: Timeouts from YAML config (not CLI flags)
-	roReconciler, stopConfigWatcher, err := buildReconciler(reconcilerParams{
+	roReconciler, stopConfigWatcher, err := buildReconciler(ctx, reconcilerParams{
 		cfg:           cfg,
 		mgr:           mgr,
 		auditStore:    auditStore,
@@ -207,7 +212,6 @@ func main() {
 		setupLog.Error(err, "Failed to build RemediationOrchestrator reconciler")
 		os.Exit(1)
 	}
-	defer stopConfigWatcher()
 
 	if err = roReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
@@ -229,6 +233,34 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("RemediationApprovalRequest audit controller ready with metrics")
+
+	return auditStore, stopConfigWatcher
+}
+
+func main() {
+	// ========================================
+	// ADR-030: Configuration via YAML file
+	// Single --config flag; all functional config in YAML ConfigMap
+	// ========================================
+	var configPath string
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
+
+	flag.Parse()
+
+	// Issue #875: Bootstrap logger at INFO for config loading
+	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
+
+	cfg, mgr := loadRemediationOrchestratorConfig(configPath, atomicLevel)
+
+	// Issue #615/BR-FLEET-054: Signal context created early (mirrors EM's
+	// pattern, cmd/effectivenessmonitor/main.go) so buildReconciler's fleet
+	// MCP Gateway connection attempt respects graceful shutdown/cancellation
+	// instead of running against an unbounded context.Background().
+	ctx := ctrl.SetupSignalHandler()
+
+	auditStore, stopConfigWatcher := setupRemediationOrchestratorControllers(ctx, cfg, mgr, configPath, setupLog)
+	defer stopConfigWatcher()
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -241,9 +273,6 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-
-	// Setup signal handler for graceful shutdown
-	ctx := ctrl.SetupSignalHandler()
 
 	// Issue #748/#756/#875: TLS security profile + CA-cert and log-level hot-reload watchers.
 	stopHotReload := wireTLSHotReload(ctx, cfg, configPath, atomicLevel, setupLog)
@@ -430,7 +459,7 @@ type reconcilerParams struct {
 // caller must defer it. Extracted from main()
 // (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion, no behavior
 // change.
-func buildReconciler(p reconcilerParams, logger logr.Logger) (*controller.Reconciler, func(), error) {
+func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger) (*controller.Reconciler, func(), error) {
 	noop := func() {}
 	cfg, mgr := p.cfg, p.mgr
 
@@ -462,34 +491,25 @@ func buildReconciler(p reconcilerParams, logger logr.Logger) (*controller.Reconc
 
 	// DD-EM-002: Set REST mapper for pre-remediation hash Kind resolution
 	roReconciler.SetRESTMapper(mgr.GetRESTMapper())
+
+	// BR-FLEET-054: Wire fleet-aware target reads for CapturePreRemediationHash.
+	// Independent of the Backend/Endpoint scope checker wired into
+	// buildRoutingEngine above — this is the MCPGatewayEndpoint capability.
+	readerFactory, fleetResilientClient, err := buildFleetReaderFactory(ctx, mgr.GetClient(), cfg, logger)
+	if err != nil {
+		return nil, noop, fmt.Errorf("fleet reader wiring: %w", err)
+	}
+	if readerFactory != nil {
+		roReconciler.SetReaderFactory(readerFactory)
+	}
+
 	// DD-EM-004 v2.0, Issue #253: Wire config-driven async propagation delays
 	roReconciler.SetAsyncPropagation(cfg.AsyncPropagation)
 	// BR-ORCH-037 AC-037-08, Issue #590: Wire self-resolved notification toggle
 	roReconciler.SetNotifySelfResolved(cfg.Notifications.NotifySelfResolved)
 
-	// Issue #615: Discover cluster identity for notification context
-	clusterIdentity, clusterErr := clusterid.DiscoverIdentity(context.Background(), mgr.GetAPIReader())
-	if clusterErr != nil {
-		logger.Error(clusterErr, "Failed to discover cluster identity, notifications will omit cluster info")
-		clusterIdentity = &clusterid.Identity{}
-	}
-	logger.Info("Cluster identity discovered", "name", clusterIdentity.Name, "uuid", clusterIdentity.UUID)
-	roReconciler.SetClusterIdentity(clusterIdentity.Name, clusterIdentity.UUID)
-
-	// BR-ORCH-025: Configure distributed lock manager for WFE creation safety.
-	// Uses POD_NAME as holder ID for lease ownership tracking.
-	podName := os.Getenv("POD_NAME")
-	if podName == "" {
-		logger.Info("POD_NAME not set, distributed locking disabled (single-replica mode)")
-	} else {
-		controllerNS := os.Getenv("KUBERNAUT_CONTROLLER_NAMESPACE")
-		if controllerNS == "" {
-			controllerNS = "kubernaut-system"
-		}
-		lockMgr := locking.NewDistributedLockManager(mgr.GetClient(), controllerNS, podName)
-		roReconciler.SetLockManager(lockMgr)
-		logger.Info("Distributed lock manager configured", "holderID", podName, "namespace", controllerNS)
-	}
+	wireClusterIdentity(roReconciler, mgr, logger)
+	wireDistributedLockManager(roReconciler, mgr, logger)
 
 	// ADR-068: Wire fleet config for federated scope fallback path
 	roReconciler.SetFleetConfig(cfg.Fleet)
@@ -504,23 +524,128 @@ func buildReconciler(p reconcilerParams, logger logr.Logger) (*controller.Reconc
 
 	// #835, DD-INFRA-001: Start config file watcher for hot-reload.
 	// Only enabled when a config file is explicitly provided (not defaults).
-	stop := noop
-	if p.configPath != "" {
-		reloadCallback := controller.NewReloadCallback(roReconciler, logger)
-		configWatcher, watchErr := hotreload.NewFileWatcher(p.configPath, reloadCallback, logger)
-		if watchErr != nil {
-			logger.Error(watchErr, "Failed to create config file watcher, hot-reload disabled")
-		} else {
-			if startErr := configWatcher.Start(context.Background()); startErr != nil {
-				logger.Error(startErr, "Failed to start config file watcher, hot-reload disabled")
-			} else {
-				stop = configWatcher.Stop
-				logger.Info("Config hot-reload enabled (DD-INFRA-001)", "watchPath", p.configPath)
+	stop := startReconcilerConfigWatcher(roReconciler, p.configPath, noop, logger)
+	if fleetResilientClient != nil {
+		innerStop := stop
+		stop = func() {
+			innerStop()
+			logger.Info("Closing fleet MCP Gateway connection")
+			if closeErr := fleetResilientClient.Close(); closeErr != nil {
+				logger.Error(closeErr, "failed to close fleet MCP client gracefully")
 			}
 		}
 	}
 
 	return roReconciler, stop, nil
+}
+
+// wireClusterIdentity discovers the local cluster identity (Issue #615) for
+// notification context and wires it into the reconciler. Degrades
+// gracefully to an empty identity on discovery failure (notifications will
+// simply omit cluster info).
+func wireClusterIdentity(roReconciler *controller.Reconciler, mgr ctrl.Manager, logger logr.Logger) {
+	clusterIdentity, clusterErr := clusterid.DiscoverIdentity(context.Background(), mgr.GetAPIReader())
+	if clusterErr != nil {
+		logger.Error(clusterErr, "Failed to discover cluster identity, notifications will omit cluster info")
+		clusterIdentity = &clusterid.Identity{}
+	}
+	logger.Info("Cluster identity discovered", "name", clusterIdentity.Name, "uuid", clusterIdentity.UUID)
+	roReconciler.SetClusterIdentity(clusterIdentity.Name, clusterIdentity.UUID)
+}
+
+// wireDistributedLockManager configures the BR-ORCH-025 distributed lock
+// manager for WFE creation safety, using POD_NAME as the holder ID for
+// lease ownership tracking. Distributed locking is disabled (single-replica
+// mode) when POD_NAME is unset.
+func wireDistributedLockManager(roReconciler *controller.Reconciler, mgr ctrl.Manager, logger logr.Logger) {
+	podName := os.Getenv("POD_NAME")
+	if podName == "" {
+		logger.Info("POD_NAME not set, distributed locking disabled (single-replica mode)")
+		return
+	}
+
+	controllerNS := os.Getenv("KUBERNAUT_CONTROLLER_NAMESPACE")
+	if controllerNS == "" {
+		controllerNS = "kubernaut-system"
+	}
+	lockMgr := locking.NewDistributedLockManager(mgr.GetClient(), controllerNS, podName)
+	roReconciler.SetLockManager(lockMgr)
+	logger.Info("Distributed lock manager configured", "holderID", podName, "namespace", controllerNS)
+}
+
+// startReconcilerConfigWatcher starts the #835/DD-INFRA-001 config file
+// watcher for reconciler hot-reload, only when a config file is explicitly
+// provided (not defaults). Returns noop when no watcher was started or
+// startup failed.
+func startReconcilerConfigWatcher(roReconciler *controller.Reconciler, configPath string, noop func(), logger logr.Logger) func() {
+	if configPath == "" {
+		return noop
+	}
+
+	reloadCallback := controller.NewReloadCallback(roReconciler, logger)
+	configWatcher, watchErr := hotreload.NewFileWatcher(configPath, reloadCallback, logger)
+	if watchErr != nil {
+		logger.Error(watchErr, "Failed to create config file watcher, hot-reload disabled")
+		return noop
+	}
+
+	if startErr := configWatcher.Start(context.Background()); startErr != nil {
+		logger.Error(startErr, "Failed to start config file watcher, hot-reload disabled")
+		return noop
+	}
+
+	logger.Info("Config hot-reload enabled (DD-INFRA-001)", "watchPath", configPath)
+	return configWatcher.Stop
+}
+
+// buildFleetReaderFactory wires BR-FLEET-054 multi-cluster target reads when
+// fleet federation is enabled: connects to the MCP Gateway and returns a
+// fleet.ReaderFactory for Reconciler.SetReaderFactory. Without this wiring,
+// readerForHash(ctx, clusterID) silently falls back to the local hub
+// cluster reader (config_accessors.go:71-76), so CapturePreRemediationHash
+// computes the pre-remediation resource fingerprint against the wrong
+// cluster for fleet-routed RemediationRequests. This is independent of the
+// Backend/Endpoint federated scope checker wired via fleet.NewScopeChecker
+// in buildRoutingEngine — RO needs both capabilities (see ADR-068). A
+// connectivity failure degrades gracefully to hub-only mode (mirrors GW's
+// registerAdapters and EM's buildFleetReaderFactory contracts) rather than
+// blocking RO startup. localClient is pre-built by the caller (independently
+// testable with fakes). The returned *mcpclient.ResilientClient is non-nil
+// whenever the reader factory is wired, so the caller can close it on
+// graceful shutdown.
+func buildFleetReaderFactory(ctx context.Context, localClient client.Client, cfg *config.Config, logger logr.Logger) (fleet.ReaderFactory, *mcpclient.ResilientClient, error) {
+	if !cfg.Fleet.Enabled || cfg.Fleet.MCPGatewayEndpoint == "" {
+		return nil, nil, nil
+	}
+
+	fleetLog := logger.WithName("fleet-mcp")
+	var opts []mcpclient.Option
+	if cfg.Fleet.OAuth2.Enabled {
+		basePath := "/etc/remediationorchestrator/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/remediationorchestrator/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+		reloadCfg := mcpclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           cfg.Fleet.OAuth2.Scopes,
+		}
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+	}
+
+	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
+	if err != nil {
+		logger.Error(err, "Fleet MCP Gateway connection failed, remote pre-remediation hash reads disabled",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
+		return nil, nil, nil
+	}
+
+	logger.Info("Fleet MCP Gateway connected, remote pre-remediation hash reads enabled",
+		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
+	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(localClient, mcpFleetClient.SessionProvider())
+	return readerFactory, mcpFleetClient, nil
 }
 
 // wireTLSHotReload sets the initial TLS security profile (Issue #748) and

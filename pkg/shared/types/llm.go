@@ -131,6 +131,30 @@ func (c *LLMConfig) Validate(prefix string) error {
 	if c.Provider == "" {
 		return nil
 	}
+	if err := c.validateProviderAndModel(prefix); err != nil {
+		return err
+	}
+	if err := c.validateProviderRequiredFields(prefix); err != nil {
+		return err
+	}
+	if err := c.validatePaths(prefix); err != nil {
+		return err
+	}
+	if err := c.validateEndpointURL(prefix); err != nil {
+		return err
+	}
+	if err := c.validateOAuth2(prefix); err != nil {
+		return err
+	}
+	if err := c.validateCircuitBreaker(prefix); err != nil {
+		return err
+	}
+	return c.validatePhaseModels(prefix)
+}
+
+// validateProviderAndModel checks that Provider is one of the supported enum
+// values and that Model is set.
+func (c *LLMConfig) validateProviderAndModel(prefix string) error {
 	switch c.Provider {
 	case LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic,
 		LLMProviderOpenAI, LLMProviderOpenAICompatible:
@@ -139,11 +163,16 @@ func (c *LLMConfig) Validate(prefix string) error {
 			prefix, LLMProviderVertexAI, LLMProviderGemini, LLMProviderAnthropic,
 			LLMProviderOpenAI, LLMProviderOpenAICompatible, c.Provider)
 	}
-
 	if c.Model == "" {
 		return fmt.Errorf("%s.model is required when provider is set", prefix)
 	}
+	return nil
+}
 
+// validateProviderRequiredFields checks provider-specific required fields:
+// Vertex AI project/location, an API key (Gemini/Anthropic/OpenAI, unless
+// OAuth2 is enabled), and an endpoint (OpenAI/OpenAI-compatible).
+func (c *LLMConfig) validateProviderRequiredFields(prefix string) error {
 	if c.Provider == LLMProviderVertexAI {
 		if c.VertexProject == "" {
 			return fmt.Errorf("%s.vertexProject is required for provider %q", prefix, c.Provider)
@@ -166,51 +195,73 @@ func (c *LLMConfig) Validate(prefix string) error {
 	if c.Provider == LLMProviderOpenAI && c.APIKeyFile == "" && !c.OAuth2.Enabled {
 		return fmt.Errorf("%s.apiKeyFile (or oauth2) is required for provider %q", prefix, c.Provider)
 	}
+	return nil
+}
 
+// validatePaths checks that file-path fields are absolute and that any TLS
+// cert/key pair is fully and consistently specified.
+func (c *LLMConfig) validatePaths(prefix string) error {
 	if c.APIKeyFile != "" && !filepath.IsAbs(c.APIKeyFile) {
 		return fmt.Errorf("%s.apiKeyFile must be an absolute path, got %q", prefix, c.APIKeyFile)
 	}
-
 	if c.TLSCaFile != "" && !filepath.IsAbs(c.TLSCaFile) {
 		return fmt.Errorf("%s.tlsCaFile must be an absolute path, got %q", prefix, c.TLSCaFile)
 	}
+	return validateTLSCertPair(prefix, c.TLSCertFile, c.TLSKeyFile, c.TLSCaFile)
+}
 
-	if err := validateTLSCertPair(prefix, c.TLSCertFile, c.TLSKeyFile, c.TLSCaFile); err != nil {
-		return err
+// validateEndpointURL checks that Endpoint, if set, parses as a valid URL.
+func (c *LLMConfig) validateEndpointURL(prefix string) error {
+	if c.Endpoint == "" {
+		return nil
 	}
-
-	if c.Endpoint != "" {
-		if _, err := url.ParseRequestURI(c.Endpoint); err != nil {
-			return fmt.Errorf("%s.endpoint is not a valid URL: %w", prefix, err)
-		}
+	if _, err := url.ParseRequestURI(c.Endpoint); err != nil {
+		return fmt.Errorf("%s.endpoint is not a valid URL: %w", prefix, err)
 	}
+	return nil
+}
 
-	if c.OAuth2.Enabled {
-		if c.OAuth2.TokenURL == "" {
-			return fmt.Errorf("%s.oauth2.tokenURL is required when oauth2 is enabled", prefix)
-		}
-		if _, err := url.ParseRequestURI(c.OAuth2.TokenURL); err != nil {
-			return fmt.Errorf("%s.oauth2.tokenURL is not a valid URL: %w", prefix, err)
-		}
-		if c.OAuth2.CredentialsDir == "" {
-			return fmt.Errorf("%s.oauth2.credentialsDir is required when oauth2 is enabled", prefix)
-		}
-		if !filepath.IsAbs(c.OAuth2.CredentialsDir) {
-			return fmt.Errorf("%s.oauth2.credentialsDir must be an absolute path, got %q",
-				prefix, c.OAuth2.CredentialsDir)
-		}
+// validateOAuth2 checks OAuth2 fields when enabled: a valid tokenURL and a
+// non-empty, absolute credentialsDir.
+func (c *LLMConfig) validateOAuth2(prefix string) error {
+	if !c.OAuth2.Enabled {
+		return nil
 	}
-
-	if c.CircuitBreaker.Enabled {
-		if c.CircuitBreaker.FailureThreshold == 0 || c.CircuitBreaker.FailureThreshold > 100 {
-			return fmt.Errorf("%s.circuitBreaker.failureThreshold must be 1-100, got %d",
-				prefix, c.CircuitBreaker.FailureThreshold)
-		}
-		if c.CircuitBreaker.Timeout <= 0 {
-			return fmt.Errorf("%s.circuitBreaker.timeout must be positive", prefix)
-		}
+	if c.OAuth2.TokenURL == "" {
+		return fmt.Errorf("%s.oauth2.tokenURL is required when oauth2 is enabled", prefix)
 	}
+	if _, err := url.ParseRequestURI(c.OAuth2.TokenURL); err != nil {
+		return fmt.Errorf("%s.oauth2.tokenURL is not a valid URL: %w", prefix, err)
+	}
+	if c.OAuth2.CredentialsDir == "" {
+		return fmt.Errorf("%s.oauth2.credentialsDir is required when oauth2 is enabled", prefix)
+	}
+	if !filepath.IsAbs(c.OAuth2.CredentialsDir) {
+		return fmt.Errorf("%s.oauth2.credentialsDir must be an absolute path, got %q",
+			prefix, c.OAuth2.CredentialsDir)
+	}
+	return nil
+}
 
+// validateCircuitBreaker checks CircuitBreaker fields when enabled: a failure
+// threshold in [1,100] and a positive timeout.
+func (c *LLMConfig) validateCircuitBreaker(prefix string) error {
+	if !c.CircuitBreaker.Enabled {
+		return nil
+	}
+	if c.CircuitBreaker.FailureThreshold == 0 || c.CircuitBreaker.FailureThreshold > 100 {
+		return fmt.Errorf("%s.circuitBreaker.failureThreshold must be 1-100, got %d",
+			prefix, c.CircuitBreaker.FailureThreshold)
+	}
+	if c.CircuitBreaker.Timeout <= 0 {
+		return fmt.Errorf("%s.circuitBreaker.timeout must be positive", prefix)
+	}
+	return nil
+}
+
+// validatePhaseModels checks that every PhaseModels key is a known phase name
+// and every override has at least one non-empty field.
+func (c *LLMConfig) validatePhaseModels(prefix string) error {
 	for phase, override := range c.PhaseModels {
 		if !IsValidPhaseName(phase) {
 			return fmt.Errorf("%s.phaseModels: unknown phase %q", prefix, phase)
@@ -219,7 +270,6 @@ func (c *LLMConfig) Validate(prefix string) error {
 			return fmt.Errorf("%s.phaseModels[%q]: at least one override field must be set", prefix, phase)
 		}
 	}
-
 	return nil
 }
 

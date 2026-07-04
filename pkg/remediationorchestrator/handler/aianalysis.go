@@ -41,12 +41,12 @@ import (
 // AIAnalysisHandler handles AIAnalysis CRD status changes for the Remediation Orchestrator.
 // Reference: BR-ORCH-036 (manual review), BR-ORCH-037 (workflow not needed)
 type AIAnalysisHandler struct {
-	client                 client.Client
-	scheme                 *runtime.Scheme
-	notificationCreator    *creator.NotificationCreator
-	Metrics                *metrics.Metrics
-	transitionToFailed     func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error)
-	noActionRequiredDelay  time.Duration
+	client                client.Client
+	scheme                *runtime.Scheme
+	notificationCreator   *creator.NotificationCreator
+	Metrics               *metrics.Metrics
+	transitionToFailed    func(context.Context, *remediationv1.RemediationRequest, remediationv1.FailurePhase, error) (ctrl.Result, error)
+	noActionRequiredDelay time.Duration
 	notifySelfResolved    bool
 }
 
@@ -156,25 +156,10 @@ func (h *AIAnalysisHandler) handleCompleted(
 	return ctrl.Result{}, nil
 }
 
-// handleWorkflowNotNeeded processes AIAnalysis WorkflowNotNeeded (BR-ORCH-037).
-// This occurs when the LLM determines the problem has self-resolved.
-func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
-	ctx context.Context,
-	rr *remediationv1.RemediationRequest,
-	ai *aianalysisv1.AIAnalysis,
-) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues(
-		"remediationRequest", rr.Name,
-		"aiAnalysis", ai.Name,
-		"subReason", ai.Status.SubReason,
-	)
-
-	logger.Info("AIAnalysis determined no workflow needed - problem self-resolved")
-
-	// Update RR status (DD-GATEWAY-011, BR-ORCH-038)
-	// REFACTOR-RO-001: Using retry helper to preserve Gateway fields
-	err := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		// Update only RO-owned fields
+// markNoActionRequired updates RR status for a self-resolved problem (DD-GATEWAY-011, BR-ORCH-038).
+// REFACTOR-RO-001: Using retry helper to preserve Gateway fields.
+func (h *AIAnalysisHandler) markNoActionRequired(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) error {
+	return helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
 		rr.Status.Outcome = "NoActionRequired"
 		rr.Status.Message = ai.Status.Message
@@ -191,10 +176,55 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 
 		// BR-ORCH-043: Set Ready condition (terminal success - no action required)
 		remediationrequest.SetReady(rr, true, remediationrequest.ReasonNoActionRequired, "No action required", h.Metrics)
-
 		return nil
 	})
-	if err != nil {
+}
+
+// notifySelfResolvedIfConfigured emits the optional BR-ORCH-037 AC-037-08 informational
+// notification and appends its ref to RR status. Fully non-fatal: any failure here is
+// logged but never propagated, since the remediation itself already completed successfully.
+func (h *AIAnalysisHandler) notifySelfResolvedIfConfigured(ctx context.Context, logger logr.Logger, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) {
+	if !h.notifySelfResolved {
+		return
+	}
+
+	notifName, notifErr := h.notificationCreator.CreateSelfResolvedNotification(ctx, rr, ai)
+	if notifErr != nil {
+		logger.Error(notifErr, "Failed to create self-resolved notification (non-fatal)")
+		return
+	}
+
+	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
+	updateErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		for _, existing := range rr.Status.NotificationRequestRefs {
+			if existing.Name == ref.Name && existing.Namespace == ref.Namespace {
+				return nil
+			}
+		}
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+		return nil
+	})
+	if updateErr != nil {
+		logger.Error(updateErr, "Failed to update RR with self-resolved notification ref (non-fatal)")
+	}
+}
+
+// handleWorkflowNotNeeded processes AIAnalysis WorkflowNotNeeded (BR-ORCH-037).
+// This occurs when the LLM determines the problem has self-resolved.
+func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+) (ctrl.Result, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"aiAnalysis", ai.Name,
+		"subReason", ai.Status.SubReason,
+	)
+
+	logger.Info("AIAnalysis determined no workflow needed - problem self-resolved")
+
+	if err := h.markNoActionRequired(ctx, rr, ai); err != nil {
 		logger.Error(err, "Failed to update RR status for WorkflowNotNeeded")
 		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
 	}
@@ -208,27 +238,7 @@ func (h *AIAnalysisHandler) handleWorkflowNotNeeded(
 		h.Metrics.NoActionNeededTotal.WithLabelValues(reason, rr.Namespace).Inc()
 	}
 
-	// BR-ORCH-037 AC-037-08: Optional informational notification when configured.
-	// Non-fatal: notification failure is logged but does not block handler completion.
-	if h.notifySelfResolved {
-		notifName, notifErr := h.notificationCreator.CreateSelfResolvedNotification(ctx, rr, ai)
-		if notifErr != nil {
-			logger.Error(notifErr, "Failed to create self-resolved notification (non-fatal)")
-		} else {
-		ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
-		if updateErr := helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
-			for _, existing := range rr.Status.NotificationRequestRefs {
-				if existing.Name == ref.Name && existing.Namespace == ref.Namespace {
-					return nil
-				}
-			}
-			rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
-			return nil
-		}); updateErr != nil {
-			logger.Error(updateErr, "Failed to update RR with self-resolved notification ref (non-fatal)")
-		}
-		}
-	}
+	h.notifySelfResolvedIfConfigured(ctx, logger, rr, ai)
 
 	logger.Info("Remediation completed - no action required",
 		"outcome", "NoActionRequired",
@@ -342,6 +352,32 @@ func (h *AIAnalysisHandler) handleHumanReviewRequired(
 // was selected (Issue #550). The RR transitions to Completed with Outcome=ManualReviewRequired,
 // which is a valid terminal state (not a failure). This avoids inflating failure metrics and
 // exponential backoff for cases where the LLM intentionally omitted a workflow.
+// markManualReviewRequired updates RR status to Completed/ManualReviewRequired and records
+// the notification ref (BR-ORCH-035 AC-6, BR-ORCH-043).
+func (h *AIAnalysisHandler) markManualReviewRequired(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, ref corev1.ObjectReference) error {
+	return helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
+		rr.Status.OverallPhase = remediationv1.PhaseCompleted
+		rr.Status.Outcome = "ManualReviewRequired"
+		rr.Status.RequiresManualReview = true
+		rr.Status.Message = ai.Status.Message
+		now := metav1.Now()
+		rr.Status.CompletedAt = &now
+
+		// Reuse NoActionRequiredDelayHours for cooldown suppression
+		if h.noActionRequiredDelay > 0 {
+			nextAllowed := metav1.NewTime(time.Now().Add(h.noActionRequiredDelay))
+			rr.Status.NextAllowedExecution = &nextAllowed
+		}
+
+		// Track notification reference (BR-ORCH-035)
+		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
+
+		// BR-ORCH-043: Set Ready condition (terminal success - manual review required)
+		remediationrequest.SetReady(rr, true, remediationrequest.ReasonManualReviewRequired, "Manual review required", h.Metrics)
+		return nil
+	})
+}
+
 func (h *AIAnalysisHandler) handleManualReviewCompleted(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
@@ -375,30 +411,7 @@ func (h *AIAnalysisHandler) handleManualReviewCompleted(
 	// Build notification reference for tracking (BR-ORCH-035 AC-6)
 	ref := h.buildNotificationRef(ctx, notifName, rr.Namespace)
 
-	// Update RR status to Completed with ManualReviewRequired outcome
-	err = helpers.UpdateRemediationRequestStatus(ctx, h.client, rr, func(rr *remediationv1.RemediationRequest) error {
-		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.Outcome = "ManualReviewRequired"
-		rr.Status.RequiresManualReview = true
-		rr.Status.Message = ai.Status.Message
-		now := metav1.Now()
-		rr.Status.CompletedAt = &now
-
-		// Reuse NoActionRequiredDelayHours for cooldown suppression
-		if h.noActionRequiredDelay > 0 {
-			nextAllowed := metav1.NewTime(time.Now().Add(h.noActionRequiredDelay))
-			rr.Status.NextAllowedExecution = &nextAllowed
-		}
-
-		// Track notification reference (BR-ORCH-035)
-		rr.Status.NotificationRequestRefs = append(rr.Status.NotificationRequestRefs, ref)
-
-		// BR-ORCH-043: Set Ready condition (terminal success - manual review required)
-		remediationrequest.SetReady(rr, true, remediationrequest.ReasonManualReviewRequired, "Manual review required", h.Metrics)
-
-		return nil
-	})
-	if err != nil {
+	if err := h.markManualReviewRequired(ctx, rr, ai, ref); err != nil {
 		logger.Error(err, "Failed to update RR status for ManualReviewCompleted")
 		return ctrl.Result{}, fmt.Errorf("failed to update RR status: %w", err)
 	}

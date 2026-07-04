@@ -49,35 +49,9 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 
 	alignment.NotifyRCAComplete(ctx, messages)
 
-	var content string
-	switch r := loopRes.(type) {
-	case *CancelledResult:
-		cancelledResult := &katypes.InvestigationResult{
-			Cancelled:           true,
-			CancelledPhase:      string(katypes.PhaseRCA),
-			CancelledAtTurn:     r.Turn,
-			AccumulatedMessages: messagesToAuditFormat(r.Messages),
-		}
-		if r.Tokens != nil {
-			s := r.Tokens.Summary()
-			cancelledResult.TokenUsage = &katypes.TokenUsageSummary{
-				PromptTokens:     s.PromptTokens,
-				CompletionTokens: s.CompletionTokens,
-				TotalTokens:      s.TotalTokens,
-			}
-		}
-		return cancelledResult, nil
-	case *ExhaustedResult:
-		return &katypes.InvestigationResult{
-			HumanReviewNeeded: true,
-			Reason:            fmt.Sprintf("%s during RCA (maxTurns=%d)", r.Reason, inv.maxTurns),
-		}, nil
-	case *SubmitResult:
-		content = r.Content
-	case *TextResult:
-		content = r.Content
-	default:
-		content = ""
+	finalized, content, done := inv.classifyRCALoopResult(loopRes)
+	if done {
+		return finalized, nil
 	}
 
 	result, parseErr := inv.resultParser.Parse(content)
@@ -130,6 +104,49 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	return result, nil
 }
 
+// classifyRCALoopResult converts the raw LoopResult from runLLMLoop into
+// either a fully-finalized InvestigationResult (Cancelled/Exhausted — done
+// true, caller returns it immediately) or the raw content string still to be
+// parsed (SubmitResult/TextResult — done false).
+func (inv *Investigator) classifyRCALoopResult(loopRes LoopResult) (result *katypes.InvestigationResult, content string, done bool) {
+	switch r := loopRes.(type) {
+	case *CancelledResult:
+		return buildCancelledRCAResult(r), "", true
+	case *ExhaustedResult:
+		return &katypes.InvestigationResult{
+			HumanReviewNeeded: true,
+			Reason:            fmt.Sprintf("%s during RCA (maxTurns=%d)", r.Reason, inv.maxTurns),
+		}, "", true
+	case *SubmitResult:
+		return nil, r.Content, false
+	case *TextResult:
+		return nil, r.Content, false
+	default:
+		return nil, "", false
+	}
+}
+
+// buildCancelledRCAResult constructs the Cancelled InvestigationResult
+// snapshot from a CancelledResult loop outcome, including token usage when
+// available.
+func buildCancelledRCAResult(r *CancelledResult) *katypes.InvestigationResult {
+	cancelledResult := &katypes.InvestigationResult{
+		Cancelled:           true,
+		CancelledPhase:      string(katypes.PhaseRCA),
+		CancelledAtTurn:     r.Turn,
+		AccumulatedMessages: messagesToAuditFormat(r.Messages),
+	}
+	if r.Tokens != nil {
+		s := r.Tokens.Summary()
+		cancelledResult.TokenUsage = &katypes.TokenUsageSummary{
+			PromptTokens:     s.PromptTokens,
+			CompletionTokens: s.CompletionTokens,
+			TotalTokens:      s.TotalTokens,
+		}
+	}
+	return cancelledResult
+}
+
 const maxRCAParseRetries = 1
 
 // retryRCASubmit performs a single correction attempt when the RCA parse fails
@@ -138,13 +155,7 @@ const maxRCAParseRetries = 1
 func (inv *Investigator) retryRCASubmit(ctx context.Context, lastContent string, history []llm.Message, llmCtx LLMInvocationContext) *katypes.InvestigationResult {
 	tokens, correlationID, client, modelName, runtimeParams :=
 		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
-	submitOnlyTools := []llm.ToolDefinition{
-		{
-			Name:        SubmitResultToolName,
-			Description: "Submit root cause analysis result.",
-			Parameters:  parser.RCAResultSchema(),
-		},
-	}
+	submitOnlyTools := submitOnlyRCATools()
 
 	correctionMsg := `Your response could not be parsed. You MUST call submit_result with a JSON object like:
 {"root_cause_analysis":{"summary":"...","severity":"critical","signal_name":"SignalName","contributing_factors":["factor1"],"remediation_target":{"kind":"Deployment","name":"resource","namespace":"ns","api_version":"apps/v1"}},"confidence":0.9}
@@ -166,46 +177,74 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			"max", maxRCAParseRetries,
 			"correlation_id", correlationID)
 
-		retryMessages = append(retryMessages,
-			llm.Message{Role: "user", Content: correctionMsg},
-		)
+		retryMessages = append(retryMessages, llm.Message{Role: "user", Content: correctionMsg})
 
-		inv.emitRetryAudit(ctx, retryAuditParams{
-			correlationID: correlationID,
-			modelName:     modelName,
-			messages:      retryMessages,
-			attempt:       attempt + 1,
-			maxAttempts:   maxRCAParseRetries,
-			phase:         katypes.PhaseRCA,
-			retryReason:   "rca_parse_correction",
+		result, updated, ok := inv.attemptRCASubmitRetry(ctx, rcaSubmitRetryParams{
+			attempt: attempt, retryMessages: retryMessages, tools: submitOnlyTools,
+			correlationID: correlationID, modelName: modelName, client: client,
+			runtimeParams: runtimeParams, tokens: tokens,
 		})
-
-		resp, err := inv.chatOrStream(ctx, client, llm.ChatRequest{
-			Messages: retryMessages,
-			Tools:    submitOnlyTools,
-			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
-		}, attempt+1, string(katypes.PhaseRCA), modelName, runtimeParams)
-		if err != nil {
-			inv.logger.Error(err, "RCA retry LLM call failed",
-				"correlation_id", correlationID)
-			continue
-		}
-		if tokens != nil {
-			tokens.Add(resp.Usage)
-		}
-
-		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseRCA), map[string]interface{}{
-			"content":       resp.Message.Content,
-			"retry_attempt": attempt + 1,
-		})
-
-		if result, ok := inv.tryParseRCASubmitToolCall(resp, correlationID); ok {
+		if ok {
 			return result
 		}
-
-		retryMessages = append(retryMessages, resp.Message)
+		retryMessages = updated
 	}
 	return nil
+}
+
+// rcaSubmitRetryParams groups the fields needed by attemptRCASubmitRetry.
+// Extracted per AGENTS.md's 8+-param Options-pattern rule.
+type rcaSubmitRetryParams struct {
+	attempt       int
+	retryMessages []llm.Message
+	tools         []llm.ToolDefinition
+	correlationID string
+	modelName     string
+	client        llm.Client
+	runtimeParams llm.RuntimeParams
+	tokens        *TokenAccumulator
+}
+
+// attemptRCASubmitRetry runs one parse-retry attempt: emits the retry audit
+// event, calls the LLM with p.retryMessages (which already include the
+// correction message), and tries to parse a valid result from the response.
+// Returns ok=false with updatedMessages appended for the next attempt when
+// the LLM call failed or no valid result could be parsed.
+func (inv *Investigator) attemptRCASubmitRetry(ctx context.Context, p rcaSubmitRetryParams) (result *katypes.InvestigationResult, updatedMessages []llm.Message, ok bool) {
+	inv.emitRetryAudit(ctx, retryAuditParams{
+		correlationID: p.correlationID,
+		modelName:     p.modelName,
+		messages:      p.retryMessages,
+		attempt:       p.attempt + 1,
+		maxAttempts:   maxRCAParseRetries,
+		phase:         katypes.PhaseRCA,
+		retryReason:   "rca_parse_correction",
+	})
+
+	resp, err := inv.chatOrStream(ctx, p.client, llm.ChatRequest{
+		Messages: p.retryMessages,
+		Tools:    p.tools,
+		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
+	}, p.attempt+1, string(katypes.PhaseRCA), p.modelName, p.runtimeParams)
+	if err != nil {
+		inv.logger.Error(err, "RCA retry LLM call failed",
+			"correlation_id", p.correlationID)
+		return nil, p.retryMessages, false
+	}
+	if p.tokens != nil {
+		p.tokens.Add(resp.Usage)
+	}
+
+	emitToSink(ctx, session.EventTypeReasoningDelta, p.attempt+1, string(katypes.PhaseRCA), map[string]interface{}{
+		"content":       resp.Message.Content,
+		"retry_attempt": p.attempt + 1,
+	})
+
+	if parsed, ok := inv.tryParseRCASubmitToolCall(resp, p.correlationID); ok {
+		return parsed, p.retryMessages, true
+	}
+
+	return nil, append(p.retryMessages, resp.Message), false
 }
 
 // tryParseRCASubmitToolCall attempts to extract a valid InvestigationResult

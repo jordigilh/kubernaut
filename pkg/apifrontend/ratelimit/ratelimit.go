@@ -173,24 +173,32 @@ func (l *UserLimiter) cleanup() {
 		case <-l.stopCh:
 			return
 		case <-ticker.C:
-			l.mu.Lock()
-			cutoff := time.Now().Add(-l.cfg.MaxAge)
-			for k, e := range l.requests {
-				if e.lastSeen.Before(cutoff) {
-					delete(l.requests, k)
-				}
-			}
-			for k, e := range l.sessions {
-				if e.lastSeen.Before(cutoff) && (e.counter == nil || e.counter.Load() == 0) {
-					delete(l.sessions, k)
-				}
-			}
-			for k, e := range l.tools {
-				if e.lastSeen.Before(cutoff) {
-					delete(l.tools, k)
-				}
-			}
-			l.mu.Unlock()
+			l.evictStale()
+		}
+	}
+}
+
+// evictStale removes entries from requests/sessions/tools that have not been
+// seen since cutoff (session entries are only evicted once their concurrent
+// counter has drained to zero, to avoid dropping an in-flight slot).
+func (l *UserLimiter) evictStale() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	cutoff := time.Now().Add(-l.cfg.MaxAge)
+	for k, e := range l.requests {
+		if e.lastSeen.Before(cutoff) {
+			delete(l.requests, k)
+		}
+	}
+	for k, e := range l.sessions {
+		if e.lastSeen.Before(cutoff) && (e.counter == nil || e.counter.Load() == 0) {
+			delete(l.sessions, k)
+		}
+	}
+	for k, e := range l.tools {
+		if e.lastSeen.Before(cutoff) {
+			delete(l.tools, k)
 		}
 	}
 }

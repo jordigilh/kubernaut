@@ -52,55 +52,29 @@ func NewWorkflowExecutionCreator(c client.Client, s *runtime.Scheme, m *metrics.
 	}
 }
 
-// Create creates a WorkflowExecution CRD for the given RemediationRequest.
-// It uses the selected workflow from the completed AIAnalysis CRD.
-// It is idempotent - if the CRD already exists, it returns the existing name.
-// Reference: BR-ORCH-025 (workflow data pass-through), BR-ORCH-031 (cascade deletion)
-func (c *WorkflowExecutionCreator) Create(
-	ctx context.Context,
-	rr *remediationv1.RemediationRequest,
-	ai *aianalysisv1.AIAnalysis,
-) (string, error) {
-	logger := log.FromContext(ctx).WithValues(
-		"remediationRequest", rr.Name,
-		"namespace", rr.Namespace,
-		"aiAnalysis", ai.Name,
-	)
-
-	// Validate preconditions (BR-ORCH-025: "Missing selectedWorkflow → RR marked as Failed")
+// validateSelectedWorkflow enforces BR-ORCH-025's precondition: "Missing selectedWorkflow →
+// RR marked as Failed". Returns an error describing the first missing required field.
+func validateSelectedWorkflow(ai *aianalysisv1.AIAnalysis) error {
 	if ai.Status.SelectedWorkflow == nil {
-		return "", fmt.Errorf("AIAnalysis has no selectedWorkflow")
+		return fmt.Errorf("AIAnalysis has no selectedWorkflow")
 	}
 	if ai.Status.SelectedWorkflow.WorkflowID == "" {
-		return "", fmt.Errorf("selectedWorkflow.workflowId is required")
+		return fmt.Errorf("selectedWorkflow.workflowId is required")
 	}
 	if ai.Status.SelectedWorkflow.ExecutionBundle == "" {
-		return "", fmt.Errorf("selectedWorkflow.executionBundle is required")
+		return fmt.Errorf("selectedWorkflow.executionBundle is required")
 	}
+	return nil
+}
 
-	// Generate deterministic name
-	name := fmt.Sprintf("we-%s", rr.Name)
-
-	// Check if already exists (idempotency)
-	existing := &workflowexecutionv1.WorkflowExecution{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("WorkflowExecution already exists, reusing", "name", name)
-		return name, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing WorkflowExecution")
-		return "", fmt.Errorf("failed to check existing WorkflowExecution: %w", err)
-	}
-
-	// Build WorkflowExecution CRD
-	// BR-ORCH-025: Pass-through from AIAnalysis.Status.SelectedWorkflow
-	we := &workflowexecutionv1.WorkflowExecution{
+// buildWorkflowExecution constructs the WorkflowExecution CRD object (unpersisted) with
+// pass-through from ai.Status.SelectedWorkflow (BR-ORCH-025, BR-HAPI-191).
+func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, name string) *workflowexecutionv1.WorkflowExecution {
+	return &workflowexecutionv1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
 			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
-
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
 			// Parent reference for audit trail (REQUIRED)
@@ -120,9 +94,9 @@ func (c *WorkflowExecutionCreator) Create(
 				EngineConfig:          ai.Status.SelectedWorkflow.EngineConfig,
 			},
 			// TargetResource: String format "namespace/kind/name" (per API contract)
-		// BR-HAPI-191: Prefer LLM-identified RemediationTarget (e.g., Deployment)
-		// over the RR's TargetResource (e.g., Pod) when available.
-		// The LLM often identifies the correct higher-level resource to patch.
+			// BR-HAPI-191: Prefer LLM-identified RemediationTarget (e.g., Deployment)
+			// over the RR's TargetResource (e.g., Pod) when available.
+			// The LLM often identifies the correct higher-level resource to patch.
 			TargetResource: resolveTargetResource(rr, ai),
 			ClusterID:      rr.Spec.ClusterID,
 			Parameters:     ai.Status.SelectedWorkflow.Parameters,
@@ -135,6 +109,41 @@ func (c *WorkflowExecutionCreator) Create(
 			ExecutionConfig: c.buildExecutionConfig(rr),
 		},
 	}
+}
+
+// Create creates a WorkflowExecution CRD for the given RemediationRequest.
+// It uses the selected workflow from the completed AIAnalysis CRD.
+// It is idempotent - if the CRD already exists, it returns the existing name.
+// Reference: BR-ORCH-025 (workflow data pass-through), BR-ORCH-031 (cascade deletion)
+func (c *WorkflowExecutionCreator) Create(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+		"aiAnalysis", ai.Name,
+	)
+
+	if err := validateSelectedWorkflow(ai); err != nil {
+		return "", err
+	}
+
+	// Generate deterministic name
+	name := fmt.Sprintf("we-%s", rr.Name)
+
+	// Check if already exists (idempotency)
+	existing := &workflowexecutionv1.WorkflowExecution{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		logger.Info("WorkflowExecution already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing WorkflowExecution")
+		return "", fmt.Errorf("failed to check existing WorkflowExecution: %w", err)
+	}
 
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
@@ -142,6 +151,8 @@ func (c *WorkflowExecutionCreator) Create(
 		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
 		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
 	}
+
+	we := c.buildWorkflowExecution(rr, ai, name)
 
 	// Set owner reference for cascade deletion (BR-ORCH-031)
 	if err := controllerutil.SetControllerReference(rr, we, c.scheme); err != nil {

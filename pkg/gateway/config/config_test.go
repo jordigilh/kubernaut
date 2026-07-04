@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
 	config "github.com/jordigilh/kubernaut/pkg/gateway/config"
 )
 
@@ -208,6 +209,66 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 				"Service should remain operational after failed config update")
 		})
 
+	})
+
+	// ADR-068/BR-INTEGRATION-065: GW relies on BOTH FleetConfig capabilities
+	// to operate correctly: Backend/Endpoint (federated scope-check: is this
+	// resource fleet-managed?) AND MCPGatewayEndpoint (remote reads: owner-
+	// chain metadata resolution). Configuring only one leaves GW silently
+	// degraded to local-only behavior for fleet-routed signals.
+	Context("BR-INTEGRATION-065/ADR-068: Fleet full-federation validation", func() {
+		It("[UT-GW-FLEET-001] should reject fleet enabled with only Backend/Endpoint (no MCPGatewayEndpoint)", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.Fleet = fleet.FleetConfig{
+				Enabled:  true,
+				Backend:  "fleetmetadatacache",
+				Endpoint: "http://fmc:8080",
+			}
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred(),
+				"GW cannot operate without degradation unless both fleet capabilities are configured")
+			Expect(err.Error()).To(ContainSubstring("mcpGatewayEndpoint"))
+		})
+
+		It("[UT-GW-FLEET-002] should reject fleet enabled with only MCPGatewayEndpoint (no Backend/Endpoint)", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.Fleet = fleet.FleetConfig{
+				Enabled:            true,
+				MCPGatewayEndpoint: "http://mcp-gateway:8080/mcp",
+				MCPGatewayType:     fleet.GatewayEAIGW,
+			}
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("backend"))
+		})
+
+		It("[UT-GW-FLEET-003] should accept fleet enabled with both capabilities fully configured", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.Fleet = fleet.FleetConfig{
+				Enabled:            true,
+				Backend:            "fleetmetadatacache",
+				Endpoint:           "http://fmc:8080",
+				MCPGatewayEndpoint: "http://mcp-gateway:8080/mcp",
+				MCPGatewayType:     fleet.GatewayEAIGW,
+			}
+
+			Expect(cfg.Validate()).ToNot(HaveOccurred())
+		})
+
+		It("[UT-GW-FLEET-004] should accept fleet disabled regardless of partial config", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.Fleet = fleet.FleetConfig{
+				Enabled: false,
+				Backend: "fleetmetadatacache",
+			}
+
+			Expect(cfg.Validate()).ToNot(HaveOccurred())
+		})
+	})
+
+	Context("hot reload", func() {
 		It("[GW-UNIT-CFG-007] should support hot reload without service restart", func() {
 			// BR-GATEWAY-082: Config updates must not require pod restart
 			// BUSINESS LOGIC: Zero-downtime config updates enable operational agility

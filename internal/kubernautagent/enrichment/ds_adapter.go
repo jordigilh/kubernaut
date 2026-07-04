@@ -100,12 +100,30 @@ func mapTier1Entry(e ogenclient.RemediationHistoryEntry) Tier1Entry {
 		RemediationUID: e.RemediationUID,
 		CompletedAt:    e.CompletedAt,
 	}
+	applyTier1Classification(&entry, e)
+	applyTier1Outcome(&entry, e)
+	applyTier1SpecHashes(&entry, e)
+	if e.HealthChecks.Set {
+		entry.HealthChecks = mapHealthChecks(e.HealthChecks.Value)
+	}
+	if e.MetricDeltas.Set {
+		entry.MetricDeltas = mapMetricDeltas(e.MetricDeltas.Value)
+	}
+	return entry
+}
+
+// applyTier1Classification copies the signal/action classification fields.
+func applyTier1Classification(entry *Tier1Entry, e ogenclient.RemediationHistoryEntry) {
 	if e.SignalType.Set {
 		entry.SignalType = e.SignalType.Value
 	}
 	if e.ActionType.Set && !e.ActionType.Null {
 		entry.ActionType = e.ActionType.Value
 	}
+}
+
+// applyTier1Outcome copies the outcome/effectiveness scoring fields.
+func applyTier1Outcome(entry *Tier1Entry, e ogenclient.RemediationHistoryEntry) {
 	if e.Outcome.Set {
 		entry.Outcome = e.Outcome.Value
 	}
@@ -117,6 +135,13 @@ func mapTier1Entry(e ogenclient.RemediationHistoryEntry) Tier1Entry {
 		v := e.SignalResolved.Value
 		entry.SignalResolved = &v
 	}
+	if e.AssessmentReason.Set && !e.AssessmentReason.Null {
+		entry.AssessmentReason = string(e.AssessmentReason.Value)
+	}
+}
+
+// applyTier1SpecHashes copies the resource spec hash comparison fields.
+func applyTier1SpecHashes(entry *Tier1Entry, e ogenclient.RemediationHistoryEntry) {
 	if e.HashMatch.Set {
 		entry.HashMatch = string(e.HashMatch.Value)
 	}
@@ -126,16 +151,6 @@ func mapTier1Entry(e ogenclient.RemediationHistoryEntry) Tier1Entry {
 	if e.PostRemediationSpecHash.Set {
 		entry.PostRemediationSpecHash = e.PostRemediationSpecHash.Value
 	}
-	if e.AssessmentReason.Set && !e.AssessmentReason.Null {
-		entry.AssessmentReason = string(e.AssessmentReason.Value)
-	}
-	if e.HealthChecks.Set {
-		entry.HealthChecks = mapHealthChecks(e.HealthChecks.Value)
-	}
-	if e.MetricDeltas.Set {
-		entry.MetricDeltas = mapMetricDeltas(e.MetricDeltas.Value)
-	}
-	return entry
 }
 
 func mapTier2Summary(e ogenclient.RemediationHistorySummary) Tier2Summary {

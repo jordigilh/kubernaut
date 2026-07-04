@@ -108,20 +108,38 @@ type MCPGatewayConfig struct {
 }
 
 // Validate checks that FleetConfig has all required fields when enabled.
+//
+// FleetConfig bundles two independent capabilities under the Enabled flag:
+//   - Backend + Endpoint: the federated scope-check adapter (FMC HTTP API or
+//     ACM GraphQL), used by GW/RO to resolve owner chains and populate
+//     spec.clusterID.
+//   - MCPGatewayEndpoint + MCPGatewayType: remote K8s reads via the MCP
+//     Gateway, used by AF/EM/SP for kubectl-style tool calls and target
+//     reads against managed clusters.
+//
+// A service only needs to configure the capability it actually uses — AF
+// and EM, for example, never call the Backend/Endpoint scope-check adapter
+// (they discover clusters directly via ClusterRegistry watching Backend
+// CRDs), so requiring Backend/Endpoint whenever Enabled=true would force an
+// unused dependency on every MCPGatewayEndpoint-only deployment.
 func (c FleetConfig) Validate() error {
 	if !c.Enabled {
 		return nil
 	}
 
-	backend := c.effectiveBackend()
-	endpoint := c.EffectiveEndpoint()
+	backendConfigured := c.Backend != "" || c.Endpoint != ""
 
-	if !supportedBackends[backend] {
-		return fmt.Errorf("fleet: unsupported backend %q; must be one of: fleetmetadatacache, acm", backend)
-	}
+	if backendConfigured {
+		backend := c.effectiveBackend()
+		endpoint := c.EffectiveEndpoint()
 
-	if endpoint == "" {
-		return fmt.Errorf("fleet: endpoint must not be empty when fleet is enabled (backend=%s)", backend)
+		if !supportedBackends[backend] {
+			return fmt.Errorf("fleet: unsupported backend %q; must be one of: fleetmetadatacache, acm", backend)
+		}
+
+		if endpoint == "" {
+			return fmt.Errorf("fleet: endpoint must not be empty when fleet is enabled (backend=%s)", backend)
+		}
 	}
 
 	if c.MCPGatewayEndpoint != "" {
@@ -131,6 +149,38 @@ func (c FleetConfig) Validate() error {
 		if !registry.SupportedGateways[c.MCPGatewayType] {
 			return fmt.Errorf("fleet: unsupported mcpGatewayType %q; must be one of: eaigw, kuadrant", c.MCPGatewayType)
 		}
+	}
+
+	if !backendConfigured && c.MCPGatewayEndpoint == "" {
+		return fmt.Errorf("fleet: enabled requires either backend+endpoint or mcpGatewayEndpoint to be configured")
+	}
+
+	return nil
+}
+
+// ValidateFullFederation is a stricter, opt-in check for services that need
+// BOTH FleetConfig capabilities to operate correctly: GW (owner-chain
+// metadata resolution) and RO (pre-remediation spec hash computation) each
+// require the Backend/Endpoint scope-check adapter AND MCPGatewayEndpoint
+// remote reads — one does not work without the other for these two
+// services. Configuring only one leaves them silently degraded to
+// local-only behavior for fleet-routed resources, which defeats the
+// purpose of enabling fleet at all. Call this in addition to Validate()
+// (which only confirms whatever is configured is well-formed); GW/RO
+// callers should treat a non-nil error here as fatal at startup.
+func (c FleetConfig) ValidateFullFederation() error {
+	if !c.Enabled {
+		return nil
+	}
+
+	if c.Backend == "" && c.Endpoint == "" {
+		return fmt.Errorf("fleet: backend+endpoint is required when fleet is enabled " +
+			"(federated scope-check; without it, resource ownership cannot be determined)")
+	}
+
+	if c.MCPGatewayEndpoint == "" {
+		return fmt.Errorf("fleet: mcpGatewayEndpoint is required when fleet is enabled " +
+			"(remote reads; without it, fleet-routed resources silently degrade to local-only reads)")
 	}
 
 	return nil

@@ -93,48 +93,13 @@ func HandleInvestigateAlert(
 		return InvestigateAlertResult{}, ErrK8sUnavailable
 	}
 
-	if err := validate.AlertName(args.AlertName); err != nil {
-		incFailure("alert_name")
-		return InvestigateAlertResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-	}
-	if err := validate.APIVersion(args.APIVersion); err != nil {
-		incFailure("api_version")
-		return InvestigateAlertResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-	}
-	if err := validate.Kind(args.Kind); err != nil {
-		incFailure("kind")
-		return InvestigateAlertResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-	}
-	if args.Name == "" {
-		incFailure("name")
-		return InvestigateAlertResult{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
+	if err := validateInvestigateAlertFields(args, incFailure); err != nil {
+		return InvestigateAlertResult{}, err
 	}
 
-	clusterScoped := args.Namespace == ""
-
-	if cfg.Mapper != nil {
-		gv, parseErr := schema.ParseGroupVersion(args.APIVersion)
-		if parseErr == nil {
-			mapping, mapErr := cfg.Mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: args.Kind}, gv.Version)
-			if mapErr == nil {
-				isNamespaced := mapping.Scope.Name() == meta.RESTScopeNameNamespace
-				if isNamespaced && args.Namespace == "" {
-					incFailure("scope_mismatch")
-					return InvestigateAlertResult{}, fmt.Errorf(
-						"%w: kind %q in apiVersion %q is namespaced but namespace was not provided",
-						ErrInvalidInput, args.Kind, args.APIVersion)
-				}
-				if !isNamespaced && args.Namespace != "" {
-					logr.FromContextOrDiscard(ctx).Info("stripping namespace for cluster-scoped resource",
-						"kind", args.Kind,
-						"apiVersion", args.APIVersion,
-						"stripped_namespace", args.Namespace,
-					)
-					args.Namespace = ""
-				}
-				clusterScoped = !isNamespaced
-			}
-		}
+	clusterScoped, err := resolveInvestigateAlertScope(ctx, cfg.Mapper, args, incFailure)
+	if err != nil {
+		return InvestigateAlertResult{}, err
 	}
 
 	if !clusterScoped {
@@ -144,17 +109,9 @@ func HandleInvestigateAlert(
 		}
 	}
 
-	alertValidated := false
-	if cfg.PromClient != nil {
-		found, err := validateAlertExists(ctx, cfg.PromClient, args.AlertName)
-		if err != nil {
-			return InvestigateAlertResult{}, fmt.Errorf("alert validation failed: %w", err)
-		}
-		if !found {
-			incFailure("alert_not_found")
-			return InvestigateAlertResult{}, fmt.Errorf("%w: alert %q not found in active alerts or defined rules", ErrInvalidInput, args.AlertName)
-		}
-		alertValidated = true
+	alertValidated, err := validateAlertIfConfigured(ctx, cfg.PromClient, args.AlertName, incFailure)
+	if err != nil {
+		return InvestigateAlertResult{}, err
 	}
 
 	createArgs := &CreateRRArgs{
@@ -172,17 +129,7 @@ func HandleInvestigateAlert(
 		return InvestigateAlertResult{}, fmt.Errorf("create RR for alert investigation: %w", err)
 	}
 
-	if cfg.Signaler != nil {
-		rrName := extractRRNameFromID(result.RRID)
-		taskID := "a2a-" + rrName
-		signalerUsername, signalerGroups := resolveSignalerIdentity(ctx, username)
-		if signalErr := cfg.Signaler.SignalInteractive(ctx, taskID, rrName, signalerUsername, signalerGroups); signalErr != nil {
-			// Best-effort: do not fail RR creation (BR-INTERACTIVE-010 #1440).
-			// The signaler adapter logs internally; suppressing here avoids
-			// adding a logger dependency to this pure function.
-			_ = signalErr
-		}
-	}
+	signalInteractiveIfConfigured(ctx, cfg.Signaler, result.RRID, username)
 
 	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
 		RRID:      result.RRID,
@@ -202,6 +149,102 @@ func HandleInvestigateAlert(
 		Severity:       result.Severity,
 		SeveritySource: result.SeveritySource,
 	}, nil
+}
+
+// validateInvestigateAlertFields validates the required, well-formed-input
+// checks for kubernaut_investigate_alert (FedRAMP input validation),
+// incrementing incFailure with the appropriate reason on the first violation.
+func validateInvestigateAlertFields(args *InvestigateAlertArgs, incFailure func(string)) error {
+	if err := validate.AlertName(args.AlertName); err != nil {
+		incFailure("alert_name")
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if err := validate.APIVersion(args.APIVersion); err != nil {
+		incFailure("api_version")
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if err := validate.Kind(args.Kind); err != nil {
+		incFailure("kind")
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if args.Name == "" {
+		incFailure("name")
+		return fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
+	}
+	return nil
+}
+
+// resolveInvestigateAlertScope determines whether the target resource is
+// cluster-scoped, using the RESTMapper (when available) as the authoritative
+// source and falling back to "empty namespace means cluster-scoped" when the
+// mapper is unavailable or the kind/apiVersion can't be resolved. When the
+// mapper disagrees with the caller-supplied namespace, it either rejects the
+// request (namespaced kind, no namespace given) or strips a superfluous
+// namespace (cluster-scoped kind, namespace given) rather than trusting the
+// LLM-supplied value.
+func resolveInvestigateAlertScope(ctx context.Context, mapper meta.RESTMapper, args *InvestigateAlertArgs, incFailure func(string)) (bool, error) {
+	clusterScoped := args.Namespace == ""
+	if mapper == nil {
+		return clusterScoped, nil
+	}
+
+	gv, parseErr := schema.ParseGroupVersion(args.APIVersion)
+	if parseErr != nil {
+		return clusterScoped, nil
+	}
+	mapping, mapErr := mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: args.Kind}, gv.Version)
+	if mapErr != nil {
+		return clusterScoped, nil
+	}
+
+	isNamespaced := mapping.Scope.Name() == meta.RESTScopeNameNamespace
+	if isNamespaced && args.Namespace == "" {
+		incFailure("scope_mismatch")
+		return false, fmt.Errorf(
+			"%w: kind %q in apiVersion %q is namespaced but namespace was not provided",
+			ErrInvalidInput, args.Kind, args.APIVersion)
+	}
+	if !isNamespaced && args.Namespace != "" {
+		logr.FromContextOrDiscard(ctx).Info("stripping namespace for cluster-scoped resource",
+			"kind", args.Kind,
+			"apiVersion", args.APIVersion,
+			"stripped_namespace", args.Namespace,
+		)
+		args.Namespace = ""
+	}
+	return !isNamespaced, nil
+}
+
+// validateAlertIfConfigured checks alertName exists in Prometheus when
+// promClient is configured (graceful degradation when nil — validation is
+// skipped and alertValidated is reported false).
+func validateAlertIfConfigured(ctx context.Context, promClient apiprom.Client, alertName string, incFailure func(string)) (bool, error) {
+	if promClient == nil {
+		return false, nil
+	}
+	found, err := validateAlertExists(ctx, promClient, alertName)
+	if err != nil {
+		return false, fmt.Errorf("alert validation failed: %w", err)
+	}
+	if !found {
+		incFailure("alert_not_found")
+		return false, fmt.Errorf("%w: alert %q not found in active alerts or defined rules", ErrInvalidInput, alertName)
+	}
+	return true, nil
+}
+
+// signalInteractiveIfConfigured co-creates the InvestigationSession CRD via
+// signaler, when configured, to signal interactive intent (BR-INTERACTIVE-010,
+// #1440). Best-effort: errors are swallowed here (the signaler adapter logs
+// internally) so a signaling failure never fails RR creation.
+func signalInteractiveIfConfigured(ctx context.Context, signaler AlertISSignaler, rrID, username string) {
+	if signaler == nil {
+		return
+	}
+	rrName := extractRRNameFromID(rrID)
+	taskID := "a2a-" + rrName
+	signalerUsername, signalerGroups := resolveSignalerIdentity(ctx, username)
+	_ = signaler.SignalInteractive(ctx, taskID, rrName, signalerUsername, signalerGroups)
 }
 
 // extractRRNameFromID extracts the RR name from an RRID like "namespace/name".

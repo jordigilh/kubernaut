@@ -74,35 +74,12 @@ func NewHandler(sessions *session.Manager, inv InvestigationRunner, logger logr.
 func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	ctx context.Context, req *agentclient.IncidentRequest,
 ) (agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, error) {
-	if req.RemediationID == "" {
-		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
-			Type:     "https://kubernaut.ai/problems/validation-error",
-			Title:    "Validation Error",
-			Detail:   "remediation_id is required (DD-WORKFLOW-002)",
-			Status:   422,
-			Instance: "/api/v1/incident/analyze",
-		}, nil
+	if errRes := validateIncidentAnalyzeRequest(req); errRes != nil {
+		return errRes, nil
 	}
-
-	if req.IncidentID == "" {
-		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
-			Type:     "https://kubernaut.ai/problems/validation-error",
-			Title:    "Validation Error",
-			Detail:   "incident_id is required",
-			Status:   422,
-			Instance: "/api/v1/incident/analyze",
-		}, nil
-	}
-
 	if h.investigator == nil {
 		h.logger.Error(nil, "investigator not configured")
-		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
-			Type:     "https://kubernaut.ai/problems/internal-error",
-			Title:    "Internal Server Error",
-			Detail:   "investigator not configured",
-			Status:   500,
-			Instance: "/api/v1/incident/analyze",
-		}, nil
+		return investigatorNotConfiguredResponse(), nil
 	}
 
 	signal := MapIncidentRequestToSignal(req)
@@ -114,6 +91,66 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 		"actor", actor,
 	)
 
+	sessionID, errRes := h.startIncidentInvestigation(ctx, req, signal, actor)
+	if errRes != nil {
+		return errRes, nil
+	}
+
+	sid, err := uuid.Parse(sessionID)
+	if err != nil {
+		h.logger.Error(err, "invalid session ID format", "session_id", sessionID)
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError{
+			Type:     "https://kubernaut.ai/problems/internal-error",
+			Title:    "Internal Server Error",
+			Detail:   "invalid session ID",
+			Status:   500,
+			Instance: "/api/v1/incident/analyze",
+		}, nil
+	}
+	return &agentclient.AnalyzeAccepted{SessionID: sid}, nil
+}
+
+// validateIncidentAnalyzeRequest checks the required IncidentRequest fields,
+// returning a 422 validation-error response when a required field is
+// missing, or nil when the request is valid.
+func validateIncidentAnalyzeRequest(req *agentclient.IncidentRequest) agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes {
+	if req.RemediationID == "" {
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
+			Type:     "https://kubernaut.ai/problems/validation-error",
+			Title:    "Validation Error",
+			Detail:   "remediation_id is required (DD-WORKFLOW-002)",
+			Status:   422,
+			Instance: "/api/v1/incident/analyze",
+		}
+	}
+	if req.IncidentID == "" {
+		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplicationProblemJSON{
+			Type:     "https://kubernaut.ai/problems/validation-error",
+			Title:    "Validation Error",
+			Detail:   "incident_id is required",
+			Status:   422,
+			Instance: "/api/v1/incident/analyze",
+		}
+	}
+	return nil
+}
+
+// investigatorNotConfiguredResponse builds the 500 response returned when
+// h.investigator is nil.
+func investigatorNotConfiguredResponse() agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes {
+	return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+		Type:     "https://kubernaut.ai/problems/internal-error",
+		Title:    "Internal Server Error",
+		Detail:   "investigator not configured",
+		Status:   500,
+		Instance: "/api/v1/incident/analyze",
+	}
+}
+
+// startIncidentInvestigation starts the interactive or standard investigation
+// session for req/signal and returns its session ID, or a non-nil error
+// response (capacity-exhausted or internal-error) when starting failed.
+func (h *Handler) startIncidentInvestigation(ctx context.Context, req *agentclient.IncidentRequest, signal katypes.SignalContext, actor string) (string, agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes) {
 	sctx := session.SessionContext{
 		IncidentID:    req.IncidentID,
 		RemediationID: req.RemediationID,
@@ -133,39 +170,27 @@ func (h *Handler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(
 	} else {
 		sessionID, err = h.sessions.StartInvestigationWithContext(ctx, investigateFn, sctx)
 	}
-	if err != nil {
-		if errors.Is(err, session.ErrMaxInvestigationsReached) {
-			h.logger.Info("investigation rejected: max concurrent investigations reached")
-			return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
-				Type:     "https://kubernaut.ai/problems/capacity-exhausted",
-				Title:    "Capacity Exhausted",
-				Detail:   "maximum concurrent investigations reached, retry later",
-				Status:   500,
-				Instance: "/api/v1/incident/analyze",
-			}, nil
+	if err == nil {
+		return sessionID, nil
+	}
+	if errors.Is(err, session.ErrMaxInvestigationsReached) {
+		h.logger.Info("investigation rejected: max concurrent investigations reached")
+		return "", &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+			Type:     "https://kubernaut.ai/problems/capacity-exhausted",
+			Title:    "Capacity Exhausted",
+			Detail:   "maximum concurrent investigations reached, retry later",
+			Status:   500,
+			Instance: "/api/v1/incident/analyze",
 		}
-		h.logger.Error(err, "failed to start investigation")
-		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
-			Type:     "https://kubernaut.ai/problems/internal-error",
-			Title:    "Internal Server Error",
-			Detail:   "failed to start investigation",
-			Status:   500,
-			Instance: "/api/v1/incident/analyze",
-		}, nil
 	}
-
-	sid, err := uuid.Parse(sessionID)
-	if err != nil {
-		h.logger.Error(err, "invalid session ID format", "session_id", sessionID)
-		return &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONInternalServerError{
-			Type:     "https://kubernaut.ai/problems/internal-error",
-			Title:    "Internal Server Error",
-			Detail:   "invalid session ID",
-			Status:   500,
-			Instance: "/api/v1/incident/analyze",
-		}, nil
+	h.logger.Error(err, "failed to start investigation")
+	return "", &agentclient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplicationProblemJSON{
+		Type:     "https://kubernaut.ai/problems/internal-error",
+		Title:    "Internal Server Error",
+		Detail:   "failed to start investigation",
+		Status:   500,
+		Instance: "/api/v1/incident/analyze",
 	}
-	return &agentclient.AnalyzeAccepted{SessionID: sid}, nil
 }
 
 // IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements GET /api/v1/incident/session/{session_id}.

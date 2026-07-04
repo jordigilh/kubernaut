@@ -60,15 +60,15 @@ type RecurringPattern struct {
 
 // remediationHistoryTemplateData matches the remediation_history.tmpl contract.
 type remediationHistoryTemplateData struct {
-	TargetResource                string
-	RegressionDetected            bool
-	Tier1Entries                  []string
-	Tier1Window                   string
-	Tier2Entries                  []string
-	Tier2Window                   string
+	TargetResource                 string
+	RegressionDetected             bool
+	Tier1Entries                   []string
+	Tier1Window                    string
+	Tier2Entries                   []string
+	Tier2Window                    string
 	DecliningEffectivenessWarnings []string
 	RecurringRemediationWarnings   []string
-	HasSpecDrift                  bool
+	HasSpecDrift                   bool
 }
 
 // BuildRemediationHistorySection renders the full remediation history prompt section.
@@ -82,34 +82,66 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult,
 	}
 
 	causalChains := DetectSpecDriftCausalChains(result.Tier1)
+	allEntries := toHistoryEntries(result.Tier1, result.Tier2)
 
-	var tier1Rendered []string
-	for _, e := range result.Tier1 {
-		tier1Rendered = append(tier1Rendered, FormatTier1Entry(e, causalChains))
+	data := remediationHistoryTemplateData{
+		TargetResource:                 result.TargetResource,
+		RegressionDetected:             result.RegressionDetected,
+		Tier1Entries:                   renderTier1Entries(result.Tier1, causalChains),
+		Tier1Window:                    result.Tier1Window,
+		Tier2Entries:                   renderTier2Entries(result.Tier2),
+		Tier2Window:                    result.Tier2Window,
+		DecliningEffectivenessWarnings: buildDecliningEffectivenessWarnings(result.Tier1),
+		RecurringRemediationWarnings:   buildRecurringRemediationWarnings(allEntries, escalationThreshold),
+		HasSpecDrift:                   anyAssessmentReasonSpecDrift(allEntries),
 	}
 
-	var tier2Rendered []string
-	for _, e := range result.Tier2 {
-		tier2Rendered = append(tier2Rendered, FormatTier2Summary(e))
-	}
+	return renderRemediationHistoryTemplate(data)
+}
 
-	declining := DetectDecliningEffectiveness(result.Tier1)
-	var decliningWarnings []string
+// renderTier1Entries formats each Tier1 entry for the prompt.
+func renderTier1Entries(entries []enrichment.Tier1Entry, causalChains map[string]string) []string {
+	rendered := make([]string, 0, len(entries))
+	for _, e := range entries {
+		rendered = append(rendered, FormatTier1Entry(e, causalChains))
+	}
+	return rendered
+}
+
+// renderTier2Entries formats each Tier2 summary entry for the prompt.
+func renderTier2Entries(entries []enrichment.Tier2Summary) []string {
+	rendered := make([]string, 0, len(entries))
+	for _, e := range entries {
+		rendered = append(rendered, FormatTier2Summary(e))
+	}
+	return rendered
+}
+
+// buildDecliningEffectivenessWarnings builds one warning string per
+// workflow exhibiting monotonically declining effectiveness (KA
+// _detect_declining_effectiveness()).
+func buildDecliningEffectivenessWarnings(tier1 []enrichment.Tier1Entry) []string {
+	declining := DetectDecliningEffectiveness(tier1)
+	warnings := make([]string, 0, len(declining))
 	for _, actionType := range declining {
-		decliningWarnings = append(decliningWarnings, fmt.Sprintf(
+		warnings = append(warnings, fmt.Sprintf(
 			"**WARNING: DECLINING EFFECTIVENESS for '%s' workflow** -- "+
 				"Each successive application is less effective, suggesting the workflow "+
 				"treats the symptom rather than the root cause. Consider a different approach.",
 			actionType,
 		))
 	}
+	return warnings
+}
 
-	allEntries := toHistoryEntries(result.Tier1, result.Tier2)
-	recurring := DetectCompletedButRecurring(allEntries, escalationThreshold)
-	var recurringWarnings []string
-	for _, r := range recurring {
+// buildRecurringRemediationWarnings builds one warning string per detected
+// completed-but-recurring remediation pattern, escalating to a MANDATORY
+// warning when the pattern shows zero effectiveness across every occurrence.
+func buildRecurringRemediationWarnings(allEntries []HistoryEntry, escalationThreshold int) []string {
+	var warnings []string
+	for _, r := range DetectCompletedButRecurring(allEntries, escalationThreshold) {
 		if AllZeroEffectiveness(allEntries, r.ActionType, r.SignalType) {
-			recurringWarnings = append(recurringWarnings, fmt.Sprintf(
+			warnings = append(warnings, fmt.Sprintf(
 				"**MANDATORY: You MUST NOT re-select '%s' for signal "+
 					"'%s'.** This workflow has been applied %d times with "+
 					"zero effectiveness -- the signal continues to recur. Set "+
@@ -118,7 +150,7 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult,
 				r.ActionType, r.SignalType, r.Count,
 			))
 		} else {
-			recurringWarnings = append(recurringWarnings, fmt.Sprintf(
+			warnings = append(warnings, fmt.Sprintf(
 				"**WARNING: REPEATED INEFFECTIVE REMEDIATION for '%s'** -- "+
 					"Completed %d times for signal '%s' but the issue continues "+
 					"to recur. Set `investigation_outcome` to `inconclusive` and omit "+
@@ -127,27 +159,24 @@ func BuildRemediationHistorySection(result *enrichment.RemediationHistoryResult,
 			))
 		}
 	}
+	return warnings
+}
 
-	hasSpecDrift := false
-	for _, e := range allEntries {
+// anyAssessmentReasonSpecDrift reports whether any entry was assessed as
+// spec-drift-inconclusive.
+func anyAssessmentReasonSpecDrift(entries []HistoryEntry) bool {
+	for _, e := range entries {
 		if e.AssessmentReason == eav1.AssessmentReasonSpecDrift {
-			hasSpecDrift = true
-			break
+			return true
 		}
 	}
+	return false
+}
 
-	data := remediationHistoryTemplateData{
-		TargetResource:                 result.TargetResource,
-		RegressionDetected:             result.RegressionDetected,
-		Tier1Entries:                   tier1Rendered,
-		Tier1Window:                    result.Tier1Window,
-		Tier2Entries:                   tier2Rendered,
-		Tier2Window:                    result.Tier2Window,
-		DecliningEffectivenessWarnings: decliningWarnings,
-		RecurringRemediationWarnings:   recurringWarnings,
-		HasSpecDrift:                   hasSpecDrift,
-	}
-
+// renderRemediationHistoryTemplate parses and executes the
+// remediation_history.tmpl template, returning an inline error marker string
+// (rather than an error) on failure so prompt rendering never aborts.
+func renderRemediationHistoryTemplate(data remediationHistoryTemplateData) string {
 	tmpl, err := template.ParseFS(templateFS, "templates/remediation_history.tmpl")
 	if err != nil {
 		return fmt.Sprintf("[history template error: %v]", err)

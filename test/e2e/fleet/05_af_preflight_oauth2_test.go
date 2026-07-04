@@ -33,12 +33,16 @@ import (
 // Authority: Issue #54, ADR-068
 // FedRAMP: IA-5 (authenticator management), SC-8 (transmission confidentiality)
 var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via MCP gateway with OAuth2 client_credentials (BR-INTEGRATION-054)", Label("fleet"), func() {
-	It("should obtain DEX client_credentials token and verify MCP gateway accepts authenticated requests", func() {
-		By("Obtaining OAuth2 client_credentials token from DEX (IA-5)")
-		cfg := infrastructure.DefaultDexFleetReadConfig()
-		cfg.TokenEndpoint = "https://localhost:30556/dex/token"
-		token, err := infrastructure.GetDexClientCredentialsToken(cfg)
-		Expect(err).ToNot(HaveOccurred(), "DEX should issue client_credentials token")
+	It("should obtain Keycloak client_credentials token and verify MCP gateway accepts authenticated requests", func() {
+		// Keycloak replaces DEX in this suite (RFC 8693 Standard Token
+		// Exchange, Spike S17/S20 -- DEX has no Standard Token Exchange).
+		By("Obtaining OAuth2 client_credentials token from Keycloak (IA-5)")
+		// 30557: this suite's Keycloak NodePort (DD-TEST-001, same dedicated
+		// port as the FMC E2E lane -- see keycloakHostPortFleet in fleet_e2e.go).
+		cfg := infrastructure.DefaultKeycloakFleetReadConfig(30557)
+		cfg.Scopes = []string{"kube-mcp-server-audience"}
+		token, err := infrastructure.GetKeycloakClientCredentialsToken(cfg)
+		Expect(err).ToNot(HaveOccurred(), "Keycloak should issue client_credentials token")
 		Expect(token).ToNot(BeEmpty(), "IA-5: token must be non-empty")
 
 		By("Verifying MCP gateway is reachable via NodePort")

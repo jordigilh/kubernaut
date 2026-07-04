@@ -53,15 +53,15 @@ const maxSignalNameLen = 128
 // Metrics holds all Prometheus metrics for the Kubernaut Agent.
 // Per DD-METRICS-001: Dependency injection pattern for testability.
 type Metrics struct {
-	SessionsStartedTotal        *prometheus.CounterVec
-	SessionsCompletedTotal      *prometheus.CounterVec
-	SessionsActive              prometheus.Gauge
-	SessionDurationSeconds *prometheus.HistogramVec
-	HTTPRateLimitedTotal   prometheus.Counter
-	HTTPRequestDurationSeconds  *prometheus.HistogramVec
-	HTTPRequestsInFlight        prometheus.Gauge
-	AuthzDeniedTotal            *prometheus.CounterVec
-	AuditEventsEmittedTotal     *prometheus.CounterVec
+	SessionsStartedTotal       *prometheus.CounterVec
+	SessionsCompletedTotal     *prometheus.CounterVec
+	SessionsActive             prometheus.Gauge
+	SessionDurationSeconds     *prometheus.HistogramVec
+	HTTPRateLimitedTotal       prometheus.Counter
+	HTTPRequestDurationSeconds *prometheus.HistogramVec
+	HTTPRequestsInFlight       prometheus.Gauge
+	AuthzDeniedTotal           *prometheus.CounterVec
+	AuditEventsEmittedTotal    *prometheus.CounterVec
 
 	// Interactive mode metrics (PR6a)
 	InteractiveSessionsActive       prometheus.Gauge
@@ -91,99 +91,127 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 }
 
 func newMetrics(registry prometheus.Registerer) *Metrics {
-	m := &Metrics{
-		SessionsStartedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameSessionsStartedTotal,
-				Help: "Total investigation sessions started by signal type and severity",
-			},
-			[]string{"signal_name", "severity"},
-		),
-		SessionsCompletedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameSessionsCompletedTotal,
-				Help: "Total investigation sessions completed by outcome",
-			},
-			[]string{"outcome"},
-		),
-		SessionsActive: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: MetricNameSessionsActive,
-				Help: "Number of currently active investigation sessions",
-			},
-		),
-		SessionDurationSeconds: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameSessionDurationSeconds,
-				Help:    "Investigation session duration in seconds",
-				Buckets: []float64{5, 15, 30, 60, 120, 300, 600, 900},
-			},
-			[]string{"outcome"},
-		),
-		HTTPRateLimitedTotal: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: MetricNameHTTPRateLimitedTotal,
-				Help: "Total HTTP requests rejected by rate limiter",
-			},
-		),
-		HTTPRequestDurationSeconds: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameHTTPRequestDurationSeconds,
-				Help:    "HTTP request duration in seconds",
-				Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
-			},
-			[]string{"endpoint", "method", "status"},
-		),
-		HTTPRequestsInFlight: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: MetricNameHTTPRequestsInFlight,
-				Help: "Number of HTTP requests currently being processed",
-			},
-		),
-		AuthzDeniedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameAuthzDeniedTotal,
-				Help: "Total authorization denials by reason",
-			},
-			[]string{"reason"},
-		),
-		AuditEventsEmittedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameAuditEventsEmittedTotal,
-				Help: "Total audit events emitted by event type",
-			},
-			[]string{"event_type"},
-		),
-		InteractiveSessionsActive: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Name: MetricNameInteractiveSessionsActive,
-				Help: "Number of currently active MCP interactive sessions",
-			},
-		),
-		InteractiveCommandDuration: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    MetricNameInteractiveCommandDuration,
-				Help:    "MCP tool call duration in seconds by tool name and action",
-				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
-			},
-			[]string{"tool", "action"},
-		),
-		InteractiveTakeoverTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameInteractiveTakeoverTotal,
-				Help: "Total interactive takeover operations by outcome",
-			},
-			[]string{"outcome"},
-		),
-		InteractiveLeaseContentionTotal: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Name: MetricNameInteractiveLeaseContentionTotal,
-				Help: "Total Lease contention events (another driver holds the Lease)",
-			},
-		),
-	}
+	m := &Metrics{}
+	m.initCoreCollectors()
+	m.initInteractiveCollectors()
+	registry.MustRegister(m.allCollectors()...)
+	return m
+}
 
-	registry.MustRegister(
+// initCoreCollectors initializes the session-lifecycle and HTTP/authz/audit
+// metric collectors (DD-005 core metrics).
+func (m *Metrics) initCoreCollectors() {
+	m.initSessionCollectors()
+	m.initHTTPAndAuditCollectors()
+}
+
+// initSessionCollectors initializes the investigation-session-lifecycle
+// metric collectors.
+func (m *Metrics) initSessionCollectors() {
+	m.SessionsStartedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameSessionsStartedTotal,
+			Help: "Total investigation sessions started by signal type and severity",
+		},
+		[]string{"signal_name", "severity"},
+	)
+	m.SessionsCompletedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameSessionsCompletedTotal,
+			Help: "Total investigation sessions completed by outcome",
+		},
+		[]string{"outcome"},
+	)
+	m.SessionsActive = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: MetricNameSessionsActive,
+			Help: "Number of currently active investigation sessions",
+		},
+	)
+	m.SessionDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameSessionDurationSeconds,
+			Help:    "Investigation session duration in seconds",
+			Buckets: []float64{5, 15, 30, 60, 120, 300, 600, 900},
+		},
+		[]string{"outcome"},
+	)
+}
+
+// initHTTPAndAuditCollectors initializes the HTTP, authz, and audit metric
+// collectors.
+func (m *Metrics) initHTTPAndAuditCollectors() {
+	m.HTTPRateLimitedTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricNameHTTPRateLimitedTotal,
+			Help: "Total HTTP requests rejected by rate limiter",
+		},
+	)
+	m.HTTPRequestDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameHTTPRequestDurationSeconds,
+			Help:    "HTTP request duration in seconds",
+			Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),
+		},
+		[]string{"endpoint", "method", "status"},
+	)
+	m.HTTPRequestsInFlight = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: MetricNameHTTPRequestsInFlight,
+			Help: "Number of HTTP requests currently being processed",
+		},
+	)
+	m.AuthzDeniedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameAuthzDeniedTotal,
+			Help: "Total authorization denials by reason",
+		},
+		[]string{"reason"},
+	)
+	m.AuditEventsEmittedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameAuditEventsEmittedTotal,
+			Help: "Total audit events emitted by event type",
+		},
+		[]string{"event_type"},
+	)
+}
+
+// initInteractiveCollectors initializes the interactive-MCP-mode metric
+// collectors (PR6a, BR-INTERACTIVE-001..008).
+func (m *Metrics) initInteractiveCollectors() {
+	m.InteractiveSessionsActive = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: MetricNameInteractiveSessionsActive,
+			Help: "Number of currently active MCP interactive sessions",
+		},
+	)
+	m.InteractiveCommandDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameInteractiveCommandDuration,
+			Help:    "MCP tool call duration in seconds by tool name and action",
+			Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60},
+		},
+		[]string{"tool", "action"},
+	)
+	m.InteractiveTakeoverTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameInteractiveTakeoverTotal,
+			Help: "Total interactive takeover operations by outcome",
+		},
+		[]string{"outcome"},
+	)
+	m.InteractiveLeaseContentionTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: MetricNameInteractiveLeaseContentionTotal,
+			Help: "Total Lease contention events (another driver holds the Lease)",
+		},
+	)
+}
+
+// allCollectors returns every collector owned by m, for bulk registration.
+func (m *Metrics) allCollectors() []prometheus.Collector {
+	return []prometheus.Collector{
 		m.SessionsStartedTotal,
 		m.SessionsCompletedTotal,
 		m.SessionsActive,
@@ -197,9 +225,7 @@ func newMetrics(registry prometheus.Registerer) *Metrics {
 		m.InteractiveCommandDuration,
 		m.InteractiveTakeoverTotal,
 		m.InteractiveLeaseContentionTotal,
-	)
-
-	return m
+	}
 }
 
 // RecordSessionStarted increments the sessions started counter.

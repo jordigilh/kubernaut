@@ -79,13 +79,23 @@ nodes:
   - containerPort: 30443  # AF NodePort
     hostPort: 30443       # DD-TEST-001: AF HTTPS
     protocol: TCP
-  # DEX OIDC for AF authentication (Issue #1189)
+  # DEX OIDC for AF's own login flow (Issue #1189) -- unrelated to fleet;
+  # kept as-is, this DEX instance is never used for the K8s API server's
+  # OIDC trust below.
   - containerPort: 30556  # DEX NodePort
     hostPort: 30556       # DD-TEST-001: DEX for AF
     protocol: TCP
   # Fleet: Kuadrant MCP Gateway (multi-cluster tool routing, Issue #54)
   - containerPort: 31975  # Kuadrant Istio gateway MCP NodePort
     hostPort: 31975       # DD-TEST-001: MCP Gateway
+    protocol: TCP
+  # Fleet: Keycloak OIDC + RFC 8693 Standard Token Exchange (replaces DEX
+  # for kube-mcp-server passthrough auth and the K8s API server's OIDC
+  # trust -- DEX has no Standard Token Exchange, Spike S17/S20). Same
+  # dedicated port as the FMC E2E lane (DD-TEST-001); safe to reuse since
+  # each suite runs in its own isolated Kind cluster.
+  - containerPort: 30557  # Keycloak NodePort
+    hostPort: 30557       # DD-TEST-001: Keycloak for fleet token exchange
     protocol: TCP
   # Extra mounts for coverage data collection (DD-TEST-007) and notification output
   # Note: ALL extraMounts are added programmatically in SetupFullPipelineInfrastructure

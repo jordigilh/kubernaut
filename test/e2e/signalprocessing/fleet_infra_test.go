@@ -53,7 +53,8 @@ var _ = Describe("E2E-FLEET-SP-001 [SC-7]: Fleet infrastructure deploys with the
 		}
 		fmcImage := imageRegistry + "/fleetmetadatacache:" + imageTag
 
-		err := infrastructure.DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage, GinkgoWriter)
+		err := infrastructure.DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage,
+			infrastructure.DefaultKubeMCPServerAuthConfig(), infrastructure.DefaultFMCOAuth2Config(), GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Fleet infrastructure should deploy successfully")
 
 		err = infrastructure.WaitForFleetReady(infrastructure.DefaultDexFleetReadTokenFunc(), 31975, "loopback_cluster_", GinkgoWriter)

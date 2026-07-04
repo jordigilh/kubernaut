@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
+	"github.com/go-logr/logr"
 	adksession "google.golang.org/adk/session"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -49,13 +49,13 @@ type ConcurrencyLimiter interface {
 // execution context. This enables tool handlers (e.g., kubernaut_investigate)
 // to emit progressive reasoning artifacts directly to the A2A event queue.
 type StreamingExecutor struct {
-	inner          a2asrv.AgentExecutor
-	logger         logr.Logger
-	bridgeMetrics  BridgeMetrics
-	sessionSvc     SessionPhaseUpdater
-	llmSemaphore   ConcurrencyLimiter
-	adkSessionSvc  adksession.Service
-	appName        string
+	inner         a2asrv.AgentExecutor
+	logger        logr.Logger
+	bridgeMetrics BridgeMetrics
+	sessionSvc    SessionPhaseUpdater
+	llmSemaphore  ConcurrencyLimiter
+	adkSessionSvc adksession.Service
+	appName       string
 }
 
 // NewStreamingExecutor creates a StreamingExecutor that wraps the given executor.
@@ -101,22 +101,16 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	ctx = logr.NewContext(ctx, s.logger)
 	ctx = WithEventBridge(ctx, queue, reqCtx.TaskID, reqCtx.ContextID, s.bridgeMetrics)
 
-	user := auth.UserIdentityFromContext(ctx)
 	username := ""
-	if user != nil {
+	if user := auth.UserIdentityFromContext(ctx); user != nil {
 		username = user.Username
 	}
 
 	// SC-5: LLM concurrency gate — reject requests that exceed capacity
-	if s.llmSemaphore != nil {
-		if !s.llmSemaphore.Acquire() {
-			s.logger.Info("LLM concurrency limit reached, rejecting request",
-				"task_id", string(reqCtx.TaskID),
-				"user", username,
-			)
-			return ErrLLMCapacity
-		}
-		defer s.llmSemaphore.Release()
+	if release, ok := s.acquireLLMSlot(reqCtx, username); !ok {
+		return ErrLLMCapacity
+	} else if release != nil {
+		defer release()
 	}
 
 	s.logger.Info("a2a stream opened",
@@ -124,9 +118,52 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 		"user", username,
 	)
 
-	// Keepalive: emit a lightweight artifact every 5s to prevent idle SSE
-	// timeouts from proxies or clients during long LLM thinking pauses
-	// between tool calls.
+	stopKeepalive := startKeepalive(ctx)
+
+	err := s.inner.Execute(ctx, reqCtx, queue)
+
+	// BR-SESS-013: Re-invocation loop — when the agent produces a text-only
+	// response without tool calls, inject a synthetic "continue" message and
+	// re-invoke. This handles premature turn ends during active investigations.
+	if err == nil && s.adkSessionSvc != nil {
+		err = s.runReinvocationLoop(ctx, reqCtx, queue, username)
+	}
+
+	close(stopKeepalive)
+
+	s.logger.Info("a2a stream closed",
+		"task_id", string(reqCtx.TaskID),
+		"user", username,
+		"error", err != nil,
+	)
+
+	s.handleSSEDisconnect(ctx, reqCtx, username)
+
+	return err
+}
+
+// acquireLLMSlot enforces the SC-5 LLM concurrency gate. ok is false when a
+// semaphore is configured and full (caller should reject with
+// ErrLLMCapacity); release is non-nil only when a slot was actually
+// acquired and must be released by the caller.
+func (s *StreamingExecutor) acquireLLMSlot(reqCtx *a2asrv.RequestContext, username string) (release func(), ok bool) {
+	if s.llmSemaphore == nil {
+		return nil, true
+	}
+	if !s.llmSemaphore.Acquire() {
+		s.logger.Info("LLM concurrency limit reached, rejecting request",
+			"task_id", string(reqCtx.TaskID),
+			"user", username,
+		)
+		return nil, false
+	}
+	return s.llmSemaphore.Release, true
+}
+
+// startKeepalive emits a lightweight artifact every 5s to prevent idle SSE
+// timeouts from proxies or clients during long LLM thinking pauses between
+// tool calls. The returned channel must be closed by the caller to stop it.
+func startKeepalive(ctx context.Context) chan struct{} {
 	stopKeepalive := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
@@ -142,94 +179,91 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 			}
 		}
 	}()
+	return stopKeepalive
+}
 
-	err := s.inner.Execute(ctx, reqCtx, queue)
-
-	// BR-SESS-013: Re-invocation loop — when the agent produces a text-only
-	// response without tool calls, inject a synthetic "continue" message and
-	// re-invoke. This handles premature turn ends during active investigations.
-	if err == nil && s.adkSessionSvc != nil {
-		reinvokeCount := 0
-		for {
-			resp, getErr := s.adkSessionSvc.Get(ctx, &adksession.GetRequest{
-				AppName:         s.appName,
-				UserID:          username,
-				SessionID:       reqCtx.ContextID,
-				NumRecentEvents: 1,
-			})
-			if getErr != nil || resp == nil || resp.Session == nil {
-				break
-			}
-			if !session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), reinvokeCount) {
-				break
-			}
-			reinvokeCount++
-			s.logger.Info("re-invoking agent after text-only turn end",
-				"task_id", string(reqCtx.TaskID),
-				"reinvoke_count", reinvokeCount,
-			)
-			syntheticEvent := adksession.NewEvent("")
-			syntheticEvent.Author = "user"
-			syntheticEvent.Content = session.SyntheticMessage()
-			if appendErr := s.adkSessionSvc.AppendEvent(ctx, resp.Session, syntheticEvent); appendErr != nil {
-				s.logger.Error(appendErr, "failed to append synthetic re-invocation message")
-				break
-			}
-			err = s.inner.Execute(ctx, reqCtx, queue)
-			if err != nil {
-				break
-			}
+// runReinvocationLoop implements BR-SESS-013: when the agent produces a
+// text-only response without tool calls, inject a synthetic "continue"
+// message and re-invoke the inner executor. This handles premature turn
+// ends during active investigations.
+func (s *StreamingExecutor) runReinvocationLoop(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, username string) error {
+	var err error
+	reinvokeCount := 0
+	for {
+		resp, getErr := s.adkSessionSvc.Get(ctx, &adksession.GetRequest{
+			AppName:         s.appName,
+			UserID:          username,
+			SessionID:       reqCtx.ContextID,
+			NumRecentEvents: 1,
+		})
+		if getErr != nil || resp == nil || resp.Session == nil {
+			return err
+		}
+		if !session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), reinvokeCount) {
+			return err
+		}
+		reinvokeCount++
+		s.logger.Info("re-invoking agent after text-only turn end",
+			"task_id", string(reqCtx.TaskID),
+			"reinvoke_count", reinvokeCount,
+		)
+		syntheticEvent := adksession.NewEvent("")
+		syntheticEvent.Author = "user"
+		syntheticEvent.Content = session.SyntheticMessage()
+		if appendErr := s.adkSessionSvc.AppendEvent(ctx, resp.Session, syntheticEvent); appendErr != nil {
+			s.logger.Error(appendErr, "failed to append synthetic re-invocation message")
+			return err
+		}
+		err = s.inner.Execute(ctx, reqCtx, queue)
+		if err != nil {
+			return err
 		}
 	}
+}
 
-	close(stopKeepalive)
-
-	s.logger.Info("a2a stream closed",
-		"task_id", string(reqCtx.TaskID),
-		"user", username,
-		"error", err != nil,
-	)
-
-	// BR-SESS-003 / SI-4: On client SSE disconnect, transition materialized
-	// sessions to Disconnected phase so the CRD reflects the actual
-	// connection state. Tracker slot release is handled by the disconnect
-	// watcher goroutine in trackSSEConnection (router.go).
-	//
-	// The a2a-go library runs executors in a detached context
-	// (context.WithoutCancel), so ctx.Err() won't reflect SSE disconnects.
-	// We stored the original HTTP request context as a value (values survive
-	// WithoutCancel). Go's net/http cancels r.Context() when the client's
-	// connection closes — before ServeHTTP returns — making it a reliable
-	// disconnect signal even from within the detached goroutine.
+// handleSSEDisconnect implements BR-SESS-003 / SI-4: on client SSE
+// disconnect, transitions materialized sessions to Disconnected phase so the
+// CRD reflects the actual connection state. Tracker slot release is handled
+// by the disconnect watcher goroutine in trackSSEConnection (router.go).
+//
+// The a2a-go library runs executors in a detached context
+// (context.WithoutCancel), so ctx.Err() won't reflect SSE disconnects. We
+// stored the original HTTP request context as a value (values survive
+// WithoutCancel). Go's net/http cancels r.Context() when the client's
+// connection closes — before ServeHTTP returns — making it a reliable
+// disconnect signal even from within the detached goroutine.
+func (s *StreamingExecutor) handleSSEDisconnect(ctx context.Context, reqCtx *a2asrv.RequestContext, username string) {
 	sseCtx := SSEDisconnectCtxFromContext(ctx)
 	disconnected := ctx.Err() == context.Canceled ||
 		(sseCtx != nil && sseCtx.Err() == context.Canceled)
 
-	if disconnected && s.sessionSvc != nil {
-		// Use reqCtx.ContextID directly as the session ID. The
-		// BeforeExecuteCallback injects CreateContext inside the inner
-		// executor's scope, so session.CreateContextFromContext(ctx)
-		// would return nil here. reqCtx.ContextID is the A2A context ID
-		// that the ADK maps 1:1 to the session ID.
-		sessionID := reqCtx.ContextID
-		if sessionID != "" && s.sessionSvc.IsMaterialized(sessionID) {
-			if uerr := s.sessionSvc.UpdatePhase(
-				context.Background(), sessionID,
-				isv1alpha1.SessionPhaseDisconnected,
-				"client SSE disconnect", username,
-			); uerr != nil {
-				s.logger.Error(uerr, "failed to transition session to Disconnected on SSE disconnect",
-					"session_id", sessionID,
-				)
-			} else {
-				s.logger.Info("session transitioned to Disconnected on SSE disconnect",
-					"session_id", sessionID,
-				)
-			}
-		}
+	if !disconnected || s.sessionSvc == nil {
+		return
 	}
 
-	return err
+	// Use reqCtx.ContextID directly as the session ID. The
+	// BeforeExecuteCallback injects CreateContext inside the inner
+	// executor's scope, so session.CreateContextFromContext(ctx) would
+	// return nil here. reqCtx.ContextID is the A2A context ID that the ADK
+	// maps 1:1 to the session ID.
+	sessionID := reqCtx.ContextID
+	if sessionID == "" || !s.sessionSvc.IsMaterialized(sessionID) {
+		return
+	}
+
+	if uerr := s.sessionSvc.UpdatePhase(
+		context.Background(), sessionID,
+		isv1alpha1.SessionPhaseDisconnected,
+		"client SSE disconnect", username,
+	); uerr != nil {
+		s.logger.Error(uerr, "failed to transition session to Disconnected on SSE disconnect",
+			"session_id", sessionID,
+		)
+	} else {
+		s.logger.Info("session transitioned to Disconnected on SSE disconnect",
+			"session_id", sessionID,
+		)
+	}
 }
 
 // Cancel delegates directly to the inner executor.

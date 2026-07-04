@@ -123,77 +123,15 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 		// Issue #703: Strip Kubernetes impersonation headers to prevent privilege escalation.
 		stripImpersonationHeaders(r)
 
-		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			m.logSecurityEvent(r, "missing_auth_header", "", http.StatusUnauthorized)
-			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
-			return
-		}
-
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			m.logSecurityEvent(r, "invalid_auth_format", "", http.StatusUnauthorized)
-			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format")
-			return
-		}
-
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if token == "" {
-			m.logSecurityEvent(r, "empty_bearer_token", "", http.StatusUnauthorized)
-			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Empty Bearer token")
-			return
-		}
-
-		userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
-		if err != nil {
-			if errors.Is(err, ErrTokenInvalid) {
-				m.logSecurityEvent(r, "invalid_token", "", http.StatusUnauthorized)
-				m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
-				return
-			}
-			m.logger.Error(err, "Token validation failed",
-				"path", r.URL.Path,
-				"method", r.Method,
-			)
-			// Issue #673 C-2: Generic error message; details logged server-side only
-			m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
+		userInfo, ok := m.authenticateRequest(w, r)
+		if !ok {
 			return
 		}
 		user := userInfo.Username
 
-		m.logger.V(2).Info("Token validated",
-			"user", user,
-			"providerType", userInfo.ProviderType,
-			"path", r.URL.Path,
-		)
-
-		allowed, err := m.authorizer.CheckAccess(
-			r.Context(),
-			user,
-			m.config.Namespace,
-			m.config.Resource,
-			m.config.ResourceName,
-			m.config.Verb,
-		)
-		if err != nil {
-			m.logger.Error(err, "Authorization check failed",
-				"user", user,
-				"path", r.URL.Path,
-			)
-			// Issue #673 C-2: Generic error message; details logged server-side only
-			m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authorization service unavailable")
+		if !m.authorizeRequest(w, r, user) {
 			return
 		}
-
-		if !allowed {
-			m.logSecurityEvent(r, "authorization_denied", user, http.StatusForbidden)
-			m.writeError(w, http.StatusForbidden, "Forbidden", "Insufficient permissions")
-			return
-		}
-
-		m.logger.V(2).Info("Authorization granted",
-			"user", user,
-			"path", r.URL.Path,
-		)
 
 		ctx := context.WithValue(r.Context(), UserContextKey, user)
 		ctx = context.WithValue(ctx, UserInfoContextKey, userInfo)
@@ -201,6 +139,91 @@ func (m *Middleware) Handler(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// authenticateRequest extracts the Bearer token from r and validates it via
+// m.authenticator. On failure it writes the appropriate error response (401
+// for missing/malformed/invalid tokens, 500 for authenticator failures) and
+// returns ok=false; the caller must return immediately without proceeding.
+func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request) (userInfo UserInfo, ok bool) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		m.logSecurityEvent(r, "missing_auth_header", "", http.StatusUnauthorized)
+		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Missing Authorization header")
+		return UserInfo{}, false
+	}
+
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		m.logSecurityEvent(r, "invalid_auth_format", "", http.StatusUnauthorized)
+		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid Authorization header format")
+		return UserInfo{}, false
+	}
+
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+	if token == "" {
+		m.logSecurityEvent(r, "empty_bearer_token", "", http.StatusUnauthorized)
+		m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Empty Bearer token")
+		return UserInfo{}, false
+	}
+
+	userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
+	if err != nil {
+		if errors.Is(err, ErrTokenInvalid) {
+			m.logSecurityEvent(r, "invalid_token", "", http.StatusUnauthorized)
+			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
+			return UserInfo{}, false
+		}
+		m.logger.Error(err, "Token validation failed",
+			"path", r.URL.Path,
+			"method", r.Method,
+		)
+		// Issue #673 C-2: Generic error message; details logged server-side only
+		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authentication service unavailable")
+		return UserInfo{}, false
+	}
+
+	m.logger.V(2).Info("Token validated",
+		"user", userInfo.Username,
+		"providerType", userInfo.ProviderType,
+		"path", r.URL.Path,
+	)
+	return userInfo, true
+}
+
+// authorizeRequest performs the SAR authorization check for user via
+// m.authorizer. On failure or denial it writes the appropriate error response
+// (500 for authorizer failures, 403 for denial) and returns false; the caller
+// must return immediately without proceeding.
+func (m *Middleware) authorizeRequest(w http.ResponseWriter, r *http.Request, user string) bool {
+	allowed, err := m.authorizer.CheckAccess(
+		r.Context(),
+		user,
+		m.config.Namespace,
+		m.config.Resource,
+		m.config.ResourceName,
+		m.config.Verb,
+	)
+	if err != nil {
+		m.logger.Error(err, "Authorization check failed",
+			"user", user,
+			"path", r.URL.Path,
+		)
+		// Issue #673 C-2: Generic error message; details logged server-side only
+		m.writeError(w, http.StatusInternalServerError, "Internal Server Error", "Authorization service unavailable")
+		return false
+	}
+
+	if !allowed {
+		m.logSecurityEvent(r, "authorization_denied", user, http.StatusForbidden)
+		m.writeError(w, http.StatusForbidden, "Forbidden", "Insufficient permissions")
+		return false
+	}
+
+	m.logger.V(2).Info("Authorization granted",
+		"user", user,
+		"path", r.URL.Path,
+	)
+	return true
 }
 
 // GetUserFromContext extracts the authenticated user identity from the request context.

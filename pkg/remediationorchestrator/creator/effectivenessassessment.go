@@ -21,10 +21,10 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -105,6 +105,67 @@ type DualTarget struct {
 // checks by this duration beyond StabilizationWindow (#277, BR-EM-009).
 //
 // Returns the EA name if created (or already exists), or an error.
+// resolveDualTarget determines the signal and remediation targets for an EA (DD-EM-003).
+// Defaults both to rr.Spec.TargetResource; dualTarget, when provided, supplies the
+// AI-identified split between the alert-source resource and the actually-patched resource.
+func resolveDualTarget(rr *remediationv1.RemediationRequest, dualTarget *DualTarget) (signal, remediation eav1.TargetResource) {
+	signal = eav1.TargetResource{
+		Kind:       rr.Spec.TargetResource.Kind,
+		Name:       rr.Spec.TargetResource.Name,
+		Namespace:  rr.Spec.TargetResource.Namespace,
+		APIVersion: rr.Spec.TargetResource.APIVersion, // #1040
+	}
+	remediation = signal
+	if dualTarget != nil {
+		signal = dualTarget.Signal
+		remediation = dualTarget.Remediation
+	}
+	return signal, remediation
+}
+
+// buildEffectivenessAssessment constructs the EffectivenessAssessment CRD object
+// (unpersisted) per ADR-EM-001.
+func (c *EffectivenessAssessmentCreator) buildEffectivenessAssessment(
+	rr *remediationv1.RemediationRequest,
+	name string,
+	signalTarget, remediationTarget eav1.TargetResource,
+	hashComputeDelay, alertCheckDelay *metav1.Duration,
+) *eav1.EffectivenessAssessment {
+	return &eav1.EffectivenessAssessment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+		},
+		Spec: eav1.EffectivenessAssessmentSpec{
+			CorrelationID:           rr.Name,
+			RemediationRequestPhase: string(rr.Status.OverallPhase),
+			SignalTarget:            signalTarget,
+			RemediationTarget:       remediationTarget,
+			Config: eav1.EAConfig{
+				StabilizationWindow: metav1.Duration{Duration: c.stabilizationWindow},
+				HashComputeDelay:    hashComputeDelay,
+				AlertCheckDelay:     alertCheckDelay,
+			},
+			RemediationCreatedAt:   rr.CreationTimestamp.DeepCopy(),
+			SignalName:             rr.Spec.SignalName,
+			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash,
+			ClusterID:              rr.Spec.ClusterID,
+		},
+	}
+}
+
+// fixBlockOwnerDeletion overrides SetControllerReference's default (true) to false.
+// ADR-EM-001 Section 8: blockOwnerDeletion must be false to prevent RR deletion from
+// blocking on EA finalizers.
+func fixBlockOwnerDeletion(ea *eav1.EffectivenessAssessment) {
+	for i := range ea.OwnerReferences {
+		if ea.OwnerReferences[i].Controller != nil && *ea.OwnerReferences[i].Controller {
+			blockOwnerDeletion := false
+			ea.OwnerReferences[i].BlockOwnerDeletion = &blockOwnerDeletion
+		}
+	}
+}
+
 func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
@@ -132,43 +193,6 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 		return "", fmt.Errorf("failed to check existing EffectivenessAssessment: %w", err)
 	}
 
-	// DD-EM-003: Resolve signal and remediation targets.
-	signalTarget := eav1.TargetResource{
-		Kind:       rr.Spec.TargetResource.Kind,
-		Name:       rr.Spec.TargetResource.Name,
-		Namespace:  rr.Spec.TargetResource.Namespace,
-		APIVersion: rr.Spec.TargetResource.APIVersion, // #1040
-	}
-	remediationTarget := signalTarget
-	if dualTarget != nil {
-		signalTarget = dualTarget.Signal
-		remediationTarget = dualTarget.Remediation
-	}
-
-	// Build EffectivenessAssessment CRD
-	rrCreatedAt := rr.CreationTimestamp.DeepCopy()
-	ea := &eav1.EffectivenessAssessment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: rr.Namespace,
-		},
-		Spec: eav1.EffectivenessAssessmentSpec{
-			CorrelationID:           rr.Name,
-			RemediationRequestPhase: string(rr.Status.OverallPhase),
-			SignalTarget:            signalTarget,
-			RemediationTarget:       remediationTarget,
-			Config: eav1.EAConfig{
-				StabilizationWindow: metav1.Duration{Duration: c.stabilizationWindow},
-				HashComputeDelay:      hashComputeDelay,
-				AlertCheckDelay:     alertCheckDelay,
-			},
-			RemediationCreatedAt:   rrCreatedAt,
-			SignalName:             rr.Spec.SignalName,
-			PreRemediationSpecHash: rr.Status.PreRemediationSpecHash,
-			ClusterID:              rr.Spec.ClusterID,
-		},
-	}
-
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
 	if rr.UID == "" {
@@ -176,20 +200,15 @@ func (c *EffectivenessAssessmentCreator) CreateEffectivenessAssessment(
 		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
 	}
 
+	signalTarget, remediationTarget := resolveDualTarget(rr, dualTarget)
+	ea := c.buildEffectivenessAssessment(rr, name, signalTarget, remediationTarget, hashComputeDelay, alertCheckDelay)
+
 	// Set owner reference for cascade deletion (BR-ORCH-031)
 	if err := controllerutil.SetControllerReference(rr, ea, c.scheme); err != nil {
 		logger.Error(err, "Failed to set owner reference")
 		return "", fmt.Errorf("failed to set owner reference: %w", err)
 	}
-	// ADR-EM-001 Section 8: blockOwnerDeletion must be false to prevent
-	// RR deletion from blocking on EA finalizers. SetControllerReference
-	// defaults to true; override it here.
-	for i := range ea.OwnerReferences {
-		if ea.OwnerReferences[i].Controller != nil && *ea.OwnerReferences[i].Controller {
-			blockOwnerDeletion := false
-			ea.OwnerReferences[i].BlockOwnerDeletion = &blockOwnerDeletion
-		}
-	}
+	fixBlockOwnerDeletion(ea)
 
 	// Create the CRD
 	if err := c.client.Create(ctx, ea); err != nil {

@@ -486,6 +486,151 @@ var _ = Describe("SDKMCPClient", func() {
 	})
 })
 
+// =============================================================================
+// CHAR-AF-1532: Characterization tests for SDKMCPClient.StartInvestigation,
+// pinning current behavior before complexity-driven refactor (#1532 Wave A).
+// =============================================================================
+var _ = Describe("SDKMCPClient.StartInvestigation (CHAR-AF-1532)", func() {
+	var (
+		ts     *httptest.Server
+		client *ka.SDKMCPClient
+	)
+
+	AfterEach(func() {
+		if ts != nil {
+			ts.Close()
+		}
+	})
+
+	buildInvestigateServer := func(handler func(ctx context.Context, req *mcp.CallToolRequest, args map[string]any) (*mcp.CallToolResult, any, error)) *httptest.Server {
+		server := mcp.NewServer(&mcp.Implementation{Name: "ka-mock", Version: "test"}, nil)
+		mcp.AddTool(server, &mcp.Tool{
+			Name:        "kubernaut_investigate",
+			Description: "kubernaut_investigate",
+		}, handler)
+		httpHandler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
+			return server
+		}, nil)
+		mux := http.NewServeMux()
+		mux.Handle("/mcp", fakeAuthMiddleware(httpHandler))
+		mux.Handle("/mcp/", fakeAuthMiddleware(httpHandler))
+		return httptest.NewServer(mux)
+	}
+
+	It("CHAR-AF-1532-010: returns error when no user identity in context", func() {
+		ts = buildInvestigateServer(func(_ context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: `{}`}}}, nil, nil
+		})
+		httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+		client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
+
+		_, err := client.StartInvestigation(context.Background(), ka.StartInvestigationArgs{RRID: "rr-noident"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("user identity required"))
+	})
+
+	It("CHAR-AF-1532-011: happy path returns session_id/status, Events channel and Closer", func() {
+		var capturedArgs map[string]any
+		ts = buildInvestigateServer(func(_ context.Context, req *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+			_ = json.Unmarshal(req.Params.Arguments, &capturedArgs)
+			resp := `{"session_id":"sess-011","status":"started"}`
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: resp}}}, nil, nil
+		})
+		httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+		client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "alice@example.com",
+			Groups:   []string{"sre"},
+			RawToken: "token-for-alice@example.com",
+		})
+
+		result, err := client.StartInvestigation(ctx, ka.StartInvestigationArgs{RRID: "rr-011"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil())
+		Expect(result.SessionID).To(Equal("sess-011"))
+		Expect(result.Status).To(Equal("started"))
+		Expect(result.Events).NotTo(BeNil())
+		Expect(result.Closer).NotTo(BeNil())
+		Expect(result.Session).NotTo(BeNil())
+
+		Expect(capturedArgs).To(HaveKeyWithValue("rr_id", "rr-011"))
+		Expect(capturedArgs).To(HaveKeyWithValue("action", "start"))
+		Expect(capturedArgs).To(HaveKeyWithValue("acting_user", "alice@example.com"))
+		Expect(capturedArgs).NotTo(HaveKey("session_id"), "session_id omitted from args when not provided")
+
+		result.Closer()
+	})
+
+	It("CHAR-AF-1532-012: passes session_id through to args when provided (#1452)", func() {
+		var capturedArgs map[string]any
+		ts = buildInvestigateServer(func(_ context.Context, req *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+			_ = json.Unmarshal(req.Params.Arguments, &capturedArgs)
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: `{"session_id":"sess-012","status":"reconnected"}`}}}, nil, nil
+		})
+		httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+		client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice@example.com", RawToken: "token-for-alice@example.com"})
+		result, err := client.StartInvestigation(ctx, ka.StartInvestigationArgs{RRID: "rr-012", SessionID: "existing-session"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(capturedArgs).To(HaveKeyWithValue("session_id", "existing-session"))
+		result.Closer()
+	})
+
+	It("CHAR-AF-1532-013: returns error when the MCP tool call reports IsError", func() {
+		ts = buildInvestigateServer(func(_ context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{
+				IsError: true,
+				Content: []mcp.Content{&mcp.TextContent{Text: "lease already held by another session"}},
+			}, nil, nil
+		})
+		httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+		client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice@example.com", RawToken: "token-for-alice@example.com"})
+		_, err := client.StartInvestigation(ctx, ka.StartInvestigationArgs{RRID: "rr-013"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("lease already held"))
+	})
+
+	It("CHAR-AF-1532-014: streams a structured LoggingMessage event from KA to the Events channel", func() {
+		ts = buildInvestigateServer(func(ctx context.Context, req *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+			_ = req.Session.Log(ctx, &mcp.LoggingMessageParams{
+				Level: "info",
+				Data:  json.RawMessage(`{"type":"rca_progress","turn":1,"phase":"investigating"}`),
+			})
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: `{"session_id":"sess-014","status":"started"}`}}}, nil, nil
+		})
+		httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+		client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice@example.com", RawToken: "token-for-alice@example.com"})
+		result, err := client.StartInvestigation(ctx, ka.StartInvestigationArgs{RRID: "rr-014"})
+		Expect(err).NotTo(HaveOccurred())
+		defer result.Closer()
+
+		Eventually(result.Events).Should(Receive(Equal(ka.InvestigationEvent{Type: "rca_progress", Turn: 1, Phase: "investigating"})))
+	})
+
+	It("CHAR-AF-1532-015: Closer is idempotent (safe to call multiple times)", func() {
+		ts = buildInvestigateServer(func(_ context.Context, _ *mcp.CallToolRequest, _ map[string]any) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: `{"session_id":"sess-015","status":"started"}`}}}, nil, nil
+		})
+		httpClient := &http.Client{Transport: &authedRoundTripper{user: "alice@example.com"}}
+		client = ka.NewSDKMCPClient(ts.URL+"/mcp", httpClient, nil, logr.Discard())
+
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice@example.com", RawToken: "token-for-alice@example.com"})
+		result, err := client.StartInvestigation(ctx, ka.StartInvestigationArgs{RRID: "rr-015"})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(func() {
+			result.Closer()
+			result.Closer()
+		}).NotTo(Panic())
+	})
+})
+
 func fakeAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")

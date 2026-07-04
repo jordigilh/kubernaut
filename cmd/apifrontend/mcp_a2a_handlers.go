@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"time"
 
+	"google.golang.org/adk/agent"
+	"google.golang.org/adk/model"
 	adksession "google.golang.org/adk/session"
 
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
@@ -90,19 +92,49 @@ func buildA2AHandler(ctx context.Context, d *handlerDeps) (http.Handler, error) 
 	if err != nil {
 		return nil, fmt.Errorf("create LLM model: %w", err)
 	}
+	warnIfUnsupportedLLMTransport(d)
 
+	sessionSvcForAgent := sessionServiceForAgent(d)
+	rootAgent, _, err := agentpkg.NewRootAgent(buildRootAgentConfig(d, llmModel, sessionSvcForAgent))
+	if err != nil {
+		return nil, fmt.Errorf("create root agent: %w", err)
+	}
+
+	h, err := launcher.NewA2AHandler(buildA2AConfig(d, rootAgent, sessionSvcForAgent))
+	if err != nil {
+		return nil, fmt.Errorf("create A2A handler: %w", err)
+	}
+
+	d.Logger.Info("A2A handler wired with LLM backend",
+		"provider", d.Cfg.Agent.LLM.Provider,
+		"model", d.Cfg.Agent.LLM.Model,
+	)
+	return h, nil
+}
+
+// warnIfUnsupportedLLMTransport logs a warning when mTLS/OAuth2 transport
+// config is set for a provider whose upstream ADK wrapper cannot apply it
+// (blocked by issue #1342).
+func warnIfUnsupportedLLMTransport(d *handlerDeps) {
 	hasCustomTransport := d.Cfg.Agent.LLM.TLSCaFile != "" || d.Cfg.Agent.LLM.OAuth2.Enabled
 	if hasCustomTransport && (d.Cfg.Agent.LLM.Provider == types.LLMProviderVertexAI || d.Cfg.Agent.LLM.Provider == types.LLMProviderAnthropic) {
 		d.Logger.Info("WARNING: mTLS/OAuth2 transport config is set but CANNOT be applied to " + d.Cfg.Agent.LLM.Provider +
 			" — upstream ADK wrapper lacks HTTP client injection (blocked by issue #1342)")
 	}
+}
 
-	var sessionSvcForAgent *session.CRDSessionService
+// sessionServiceForAgent returns the CRD-backed session service when session
+// infrastructure is available, or nil otherwise.
+func sessionServiceForAgent(d *handlerDeps) *session.CRDSessionService {
 	if d.SessInfra != nil {
-		sessionSvcForAgent = d.SessInfra.SessionService
+		return d.SessInfra.SessionService
 	}
+	return nil
+}
 
-	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
+// buildRootAgentConfig assembles the AgentConfig passed to agentpkg.NewRootAgent.
+func buildRootAgentConfig(d *handlerDeps, llmModel model.LLM, sessionSvcForAgent *session.CRDSessionService) agentpkg.AgentConfig {
+	return agentpkg.AgentConfig{
 		Instruction:           agentpkg.BuildInstruction(d.Cfg.Session.Namespace),
 		InstructionProvider:   agentpkg.NewInstructionProvider(d.Cfg.Session.Namespace),
 		LLMModel:              llmModel,
@@ -125,11 +157,13 @@ func buildA2AHandler(ctx context.Context, d *handlerDeps) (http.Handler, error) 
 		ActiveContextRegistry: d.ActiveCtxRegistry,
 		InteractiveEnabled:    d.Cfg.Interactive.Enabled,
 		PromClient:            d.Backends.PromClient,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("create root agent: %w", err)
+		FleetReaderFactory:    d.Backends.FleetReaderFactory,
+		ClusterRegistry:       d.Backends.FleetClusterRegistry,
 	}
+}
 
+// buildA2AConfig assembles the A2AConfig passed to launcher.NewA2AHandler.
+func buildA2AConfig(d *handlerDeps, rootAgent agent.Agent, sessionSvcForAgent *session.CRDSessionService) launcher.A2AConfig {
 	var sessionSvc adksession.Service
 	if d.SessInfra != nil && d.SessInfra.SessionService != nil {
 		sessionSvc = session.NewServiceDecorator(d.SessInfra.SessionService)
@@ -137,8 +171,7 @@ func buildA2AHandler(ctx context.Context, d *handlerDeps) (http.Handler, error) 
 		sessionSvc = adksession.InMemoryService()
 	}
 
-	llmSemaphore := ratelimit.NewLLMSemaphore(d.Cfg.RateLimit.MaxConcurrentSessions)
-	a2aCfg := launcher.A2AConfig{
+	return launcher.A2AConfig{
 		Agent:               rootAgent,
 		SessionService:      sessionSvc,
 		AppName:             "kubernaut-apifrontend",
@@ -149,17 +182,6 @@ func buildA2AHandler(ctx context.Context, d *handlerDeps) (http.Handler, error) 
 		SessionInterceptor: launcher.NewSessionInterceptor(
 			d.ActiveCtxRegistry, d.Logger.WithName("session-interceptor"),
 		),
-		LLMSemaphore: llmSemaphore,
+		LLMSemaphore: ratelimit.NewLLMSemaphore(d.Cfg.RateLimit.MaxConcurrentSessions),
 	}
-
-	h, err := launcher.NewA2AHandler(a2aCfg)
-	if err != nil {
-		return nil, fmt.Errorf("create A2A handler: %w", err)
-	}
-
-	d.Logger.Info("A2A handler wired with LLM backend",
-		"provider", d.Cfg.Agent.LLM.Provider,
-		"model", d.Cfg.Agent.LLM.Model,
-	)
-	return h, nil
 }

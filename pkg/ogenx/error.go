@@ -214,101 +214,112 @@ type OptionalString interface {
 	IsSet() bool
 }
 
+// optionalString matches ogen-generated OptString types.
+// ogen generates: type OptString struct { Value string; Set bool }
+// with methods: IsSet() bool
+type optionalString interface {
+	IsSet() bool
+}
+
 // extractErrorDetail extracts error detail from RFC 7807 Problem Details or fallback fields.
 //
 // Tries common field patterns:
 //  1. GetDetail() returning optional string (RFC 7807)
-//  2. GetMessage() string (common alternative)
+//  2. Detail field via reflection (KA uses this)
+//  3. GetMessage() string (common alternative)
 //
 // Uses reflection to access ogen-generated OptString.Value field when available.
 func extractErrorDetail(resp any) string {
-	// Pattern 1: RFC 7807 GetDetail() returning OptString
-	// ogen generates: type OptString struct { Value string; Set bool }
-	// with methods: IsSet() bool
-	type optionalString interface {
-		IsSet() bool
+	if detail := extractDetailViaGetter(resp); detail != "" {
+		return detail
 	}
+	if detail := extractDetailViaField(resp); detail != "" {
+		return detail
+	}
+	return extractDetailViaMessage(resp)
+}
 
-	// Try GetDetail() - returns any type that we'll check for optional string interface
-	if detailResp, ok := resp.(interface {
+// extractDetailViaGetter handles Pattern 1: RFC 7807 GetDetail() returning
+// an "any" value that (when set) wraps an ogen-generated OptString.
+func extractDetailViaGetter(resp any) string {
+	detailResp, ok := resp.(interface {
 		GetDetail() any
-	}); ok {
-		optDetail := detailResp.GetDetail()
-		if optDetail != nil {
-			// Check if the returned value implements our optional string interface
-			if opt, ok := optDetail.(optionalString); ok && opt.IsSet() {
-				// Try to extract Value field using reflection
-				// ogen-generated OptString has: struct { Value string; Set bool }
-				val := reflect.ValueOf(optDetail)
-
-				// Handle pointer types
-				if val.Kind() == reflect.Ptr {
-					if val.IsNil() {
-						return ""
-					}
-					val = val.Elem()
-				}
-
-				// Check if it's a struct
-				if val.Kind() == reflect.Struct {
-					// Try to get Value field
-					valueField := val.FieldByName("Value")
-					if valueField.IsValid() && valueField.Kind() == reflect.String {
-						return valueField.String()
-					}
-				}
-			}
-		}
+	})
+	if !ok {
+		return ""
 	}
+	optDetail := detailResp.GetDetail()
+	if optDetail == nil {
+		return ""
+	}
+	opt, ok := optDetail.(optionalString)
+	if !ok || !opt.IsSet() {
+		return ""
+	}
+	return stringValueField(reflect.ValueOf(optDetail))
+}
 
-	// Pattern 2: Detail field (KA uses this)
-	// Use reflection to access struct fields when GetDetail() method doesn't exist
+// extractDetailViaField handles Pattern 2: an exported "Detail" struct field,
+// either a plain string (KA RFC 7807) or an OptString-like nested struct.
+func extractDetailViaField(resp any) string {
 	val := reflect.ValueOf(resp)
-
-	// Handle pointer types
 	if val.Kind() == reflect.Ptr {
-		if !val.IsNil() {
-			val = val.Elem()
+		if val.IsNil() {
+			return ""
 		}
+		val = val.Elem()
+	}
+	if val.Kind() != reflect.Struct {
+		return ""
 	}
 
-	// Check if it's a struct with a Detail field
-	if val.Kind() == reflect.Struct {
-		detailField := val.FieldByName("Detail")
-		if detailField.IsValid() {
-			// KA RFC 7807: Detail can be plain string (not OptString)
-			if detailField.Kind() == reflect.String {
-				return detailField.String()
-			}
-			// Detail is likely an OptString (struct with Value and Set)
-			// Check if it has IsSet() method
-			if detailField.CanInterface() {
-				detailVal := detailField.Interface()
-				if opt, ok := detailVal.(optionalString); ok && opt.IsSet() {
-					// Try to get Value field from the optional string
-					detailStructVal := reflect.ValueOf(detailVal)
-					if detailStructVal.Kind() == reflect.Struct {
-						valueField := detailStructVal.FieldByName("Value")
-						if valueField.IsValid() && valueField.Kind() == reflect.String {
-							return valueField.String()
-						}
-					}
-				}
-			}
-		}
+	detailField := val.FieldByName("Detail")
+	if !detailField.IsValid() {
+		return ""
+	}
+	if detailField.Kind() == reflect.String {
+		return detailField.String()
+	}
+	if !detailField.CanInterface() {
+		return ""
 	}
 
-	// Pattern 3: GetMessage() string
+	opt, ok := detailField.Interface().(optionalString)
+	if !ok || !opt.IsSet() {
+		return ""
+	}
+	return stringValueField(reflect.ValueOf(detailField.Interface()))
+}
+
+// extractDetailViaMessage handles Pattern 3: GetMessage() string fallback.
+func extractDetailViaMessage(resp any) string {
 	type messageGetter interface {
 		GetMessage() string
 	}
-	if v, ok := resp.(messageGetter); ok {
-		if msg := v.GetMessage(); msg != "" {
-			return msg
-		}
+	v, ok := resp.(messageGetter)
+	if !ok {
+		return ""
 	}
+	return v.GetMessage()
+}
 
-	return "" // No detail found
+// stringValueField extracts the "Value" field from an ogen-generated OptString
+// struct (or pointer to one) via reflection, returning "" if not found.
+func stringValueField(val reflect.Value) string {
+	if val.Kind() == reflect.Ptr {
+		if val.IsNil() {
+			return ""
+		}
+		val = val.Elem()
+	}
+	if val.Kind() != reflect.Struct {
+		return ""
+	}
+	valueField := val.FieldByName("Value")
+	if valueField.IsValid() && valueField.Kind() == reflect.String {
+		return valueField.String()
+	}
+	return ""
 }
 
 // extractErrorTitle extracts error title from RFC 7807 Problem Details.

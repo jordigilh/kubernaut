@@ -141,22 +141,8 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 			"auto-cancelled: disconnect TTL expired", ""); err != nil {
 			return ctrl.Result{}, fmt.Errorf("auto-cancel disconnected session: %w", err)
 		}
-	} else {
-		now := metav1.Now()
-		sess.Status.Phase = v1alpha1.SessionPhaseCancelled
-		sess.Status.CompletedAt = &now
-		sess.Status.Message = "auto-cancelled: disconnect TTL expired"
-		if sess.Labels == nil {
-			sess.Labels = make(map[string]string)
-		}
-		sess.Labels[session.LabelPhase] = string(v1alpha1.SessionPhaseCancelled)
-
-		if err := r.client.Status().Update(ctx, sess); err != nil {
-			return ctrl.Result{}, fmt.Errorf("cancel disconnected session: %w", err)
-		}
-		if err := r.client.Update(ctx, sess); err != nil {
-			return ctrl.Result{}, fmt.Errorf("update disconnected session labels: %w", err)
-		}
+	} else if err := r.cancelDisconnectedSessionDirect(ctx, sess); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	r.logger.Info("session auto-cancelled",
@@ -170,6 +156,28 @@ func (r *SessionCleanupReconciler) handleDisconnected(ctx context.Context, sess 
 	})
 	r.incTTLAction("cancel")
 	return ctrl.Result{}, nil
+}
+
+// cancelDisconnectedSessionDirect applies the Cancelled phase transition
+// directly via the client when no sessionService is wired (fallback path;
+// skips the gauge/audit/crdIndex side effects the service provides).
+func (r *SessionCleanupReconciler) cancelDisconnectedSessionDirect(ctx context.Context, sess *v1alpha1.InvestigationSession) error {
+	now := metav1.Now()
+	sess.Status.Phase = v1alpha1.SessionPhaseCancelled
+	sess.Status.CompletedAt = &now
+	sess.Status.Message = "auto-cancelled: disconnect TTL expired"
+	if sess.Labels == nil {
+		sess.Labels = make(map[string]string)
+	}
+	sess.Labels[session.LabelPhase] = string(v1alpha1.SessionPhaseCancelled)
+
+	if err := r.client.Status().Update(ctx, sess); err != nil {
+		return fmt.Errorf("cancel disconnected session: %w", err)
+	}
+	if err := r.client.Update(ctx, sess); err != nil {
+		return fmt.Errorf("update disconnected session labels: %w", err)
+	}
+	return nil
 }
 
 func (r *SessionCleanupReconciler) handleTerminal(ctx context.Context, sess *v1alpha1.InvestigationSession) (ctrl.Result, error) {

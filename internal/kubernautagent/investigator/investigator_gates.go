@@ -30,6 +30,37 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
+// submitOnlyRCATools returns the single-tool submit-only tool list used by
+// gate retries to force the LLM to resubmit its RCA result.
+func submitOnlyRCATools() []llm.ToolDefinition {
+	return []llm.ToolDefinition{
+		{
+			Name:        SubmitResultToolName,
+			Description: "Submit root cause analysis result.",
+			Parameters:  parser.RCAResultSchema(),
+		},
+	}
+}
+
+// appendCorrectionMessage returns a copy of history with a user correction
+// message appended, for use in gate-retry LLM calls.
+func appendCorrectionMessage(history []llm.Message, correctionMsg string) []llm.Message {
+	retryMessages := make([]llm.Message, len(history), len(history)+1)
+	copy(retryMessages, history)
+	return append(retryMessages, llm.Message{Role: "user", Content: correctionMsg})
+}
+
+// extractSubmitContent extracts the tool-call arguments (preferred) or falls
+// back to the raw message content from a gate-retry chat response.
+func extractSubmitContent(resp llm.ChatResponse) string {
+	for _, tc := range resp.ToolCalls {
+		if tc.Name == SubmitResultToolName {
+			return tc.Arguments
+		}
+	}
+	return resp.Message.Content
+}
+
 func (inv *Investigator) sameKindValidationGate(
 	ctx context.Context,
 	result *katypes.InvestigationResult,
@@ -37,8 +68,7 @@ func (inv *Investigator) sameKindValidationGate(
 	history []llm.Message,
 	llmCtx LLMInvocationContext,
 ) *katypes.InvestigationResult {
-	tokens, correlationID, client, modelName, runtimeParams :=
-		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
+	correlationID, modelName := llmCtx.CorrelationID, llmCtx.ModelName
 	if signal.ResourceKind == "" || result.RemediationTarget.Kind == "" {
 		return result
 	}
@@ -62,7 +92,14 @@ func (inv *Investigator) sameKindValidationGate(
 	gateEvent.Data["target_name"] = result.RemediationTarget.Name
 	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
-	correctionMsg := fmt.Sprintf(
+	return inv.retryForSameKind(ctx, result, history, llmCtx)
+}
+
+// sameKindCorrectionMessage builds the LLM correction message asking it to
+// re-evaluate whether a child resource (rather than targetKind, which
+// matches the input signal's kind) is the true root cause.
+func sameKindCorrectionMessage(targetKind string) string {
+	return fmt.Sprintf(
 		`Your remediation_target.kind is "%s", which is the same resource kind as the input signal. `+
 			`Signals often propagate upward: workload-level issues manifest as conditions on parent resources `+
 			`(e.g., pod memory leaks cause node DiskPressure, deployment misconfigurations appear as node conditions). `+
@@ -70,27 +107,22 @@ func (inv *Investigator) sameKindValidationGate(
 			`whose configuration should be modified? If after re-evaluation you are confident the %s itself is the `+
 			`correct remediation target, confirm by resubmitting with the same target and explain why in your `+
 			`due_diligence.target_accuracy field.`,
-		result.RemediationTarget.Kind,
-		result.RemediationTarget.Kind,
+		targetKind, targetKind,
 	)
+}
 
-	submitOnlyTools := []llm.ToolDefinition{
-		{
-			Name:        SubmitResultToolName,
-			Description: "Submit root cause analysis result.",
-			Parameters:  parser.RCAResultSchema(),
-		},
-	}
-
-	retryMessages := make([]llm.Message, len(history), len(history)+1)
-	copy(retryMessages, history)
-	retryMessages = append(retryMessages,
-		llm.Message{Role: "user", Content: correctionMsg},
-	)
+// retryForSameKind re-submits the RCA request with a correction message
+// asking the LLM to re-evaluate a same-kind remediation target, and parses
+// the retry response. Falls back to the original result at every failure
+// point: LLM error, empty response, parse error, or a retry result that
+// lost the remediation target.
+func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.InvestigationResult, history []llm.Message, llmCtx LLMInvocationContext) *katypes.InvestigationResult {
+	tokens, correlationID, client, runtimeParams := llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.RuntimeParams
+	correctionMsg := sameKindCorrectionMessage(result.RemediationTarget.Kind)
 
 	resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
-		Messages: retryMessages,
-		Tools:    submitOnlyTools,
+		Messages: appendCorrectionMessage(history, correctionMsg),
+		Tools:    submitOnlyRCATools(),
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
 	}, runtimeParams)
 	if err != nil {
@@ -102,16 +134,7 @@ func (inv *Investigator) sameKindValidationGate(
 		tokens.Add(resp.Usage)
 	}
 
-	var retryContent string
-	for _, tc := range resp.ToolCalls {
-		if tc.Name == SubmitResultToolName {
-			retryContent = tc.Arguments
-			break
-		}
-	}
-	if retryContent == "" && resp.Message.Content != "" {
-		retryContent = resp.Message.Content
-	}
+	retryContent := extractSubmitContent(resp)
 	if retryContent == "" {
 		inv.logger.Info("same-kind validation gate: no content in retry response, keeping original",
 			"correlation_id", correlationID)
@@ -260,23 +283,9 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 		kind, groupList, kind, result.RemediationTarget.Name,
 	)
 
-	submitOnlyTools := []llm.ToolDefinition{
-		{
-			Name:        SubmitResultToolName,
-			Description: "Submit root cause analysis result.",
-			Parameters:  parser.RCAResultSchema(),
-		},
-	}
-
-	retryMessages := make([]llm.Message, len(history), len(history)+1)
-	copy(retryMessages, history)
-	retryMessages = append(retryMessages,
-		llm.Message{Role: "user", Content: correctionMsg},
-	)
-
 	resp, retryErr := llm.ChatWithParams(ctx, client, llm.ChatRequest{
-		Messages: retryMessages,
-		Tools:    submitOnlyTools,
+		Messages: appendCorrectionMessage(history, correctionMsg),
+		Tools:    submitOnlyRCATools(),
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
 	}, runtimeParams)
 	if retryErr != nil {
@@ -288,16 +297,7 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 		tokens.Add(resp.Usage)
 	}
 
-	var retryContent string
-	for _, tc := range resp.ToolCalls {
-		if tc.Name == SubmitResultToolName {
-			retryContent = tc.Arguments
-			break
-		}
-	}
-	if retryContent == "" && resp.Message.Content != "" {
-		retryContent = resp.Message.Content
-	}
+	retryContent := extractSubmitContent(resp)
 	if retryContent == "" {
 		inv.logger.Info("apiVersionValidationGate: empty retry response, triggering human review",
 			"correlation_id", correlationID)

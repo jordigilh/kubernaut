@@ -32,84 +32,119 @@ import (
 )
 
 func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext) (LoopResult, error) {
-	tokens, correlationID, client, modelName, runtimeParams :=
-		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
-	toolDefs := inv.toolDefinitionsForPhase(phase)
-	loopStart := time.Now()
-	truncationRetried := false
-	maxTokens := 0
+	state := &loopTurnState{loopStart: time.Now()}
 
 	for turn := 0; turn < inv.maxTurns; turn++ {
-		if ctx.Err() != nil {
-			emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
-			return buildCancelledResult(messages, turn, string(phase), tokens), nil
-		}
-
-		inv.emitLLMRequestAudit(ctx, correlationID, modelName, messages, toolDefs)
-
-		chatReq := llm.ChatRequest{
-			Messages: messages,
-			Tools:    toolDefs,
-			Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: maxTokens},
-		}
-		resp, cancelled, err := inv.callLLMTurn(ctx, llmTurnCallParams{
-			client:        client,
-			chatReq:       chatReq,
-			messages:      messages,
-			turn:          turn,
-			phase:         string(phase),
-			correlationID: correlationID,
-			modelName:     modelName,
-			runtimeParams: runtimeParams,
-			tokens:        tokens,
-			loopStart:     loopStart,
-		})
+		result, newMessages, done, err := inv.runLoopTurn(ctx, state, messages, phase, llmCtx, turn)
+		messages = newMessages
 		if err != nil {
 			return nil, err
 		}
-		if cancelled != nil {
-			return cancelled, nil
+		if done {
+			return result, nil
 		}
-
-		if tokens != nil {
-			tokens.Add(resp.Usage)
-		}
-
-		inv.emitLLMResponseAudit(ctx, correlationID, resp)
-
-		emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
-			"content_preview": truncatePreview(resp.Message.Content, 200),
-			"tool_call_count": len(resp.ToolCalls),
-		})
-
-		if len(resp.ToolCalls) > 0 {
-			newMessages, sentinel, budgetExhausted := inv.processToolCalls(ctx, messages, resp, turn, string(phase), correlationID)
-			messages = newMessages
-			if sentinel != nil {
-				return sentinel, nil
-			}
-			if budgetExhausted {
-				return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
-			}
-			continue
-		}
-
-		if resp.FinishReason == llm.FinishReasonLength && !truncationRetried {
-			truncationRetried = true
-			maxTokens = escalateMaxTokens(resp.Usage.CompletionTokens)
-			inv.logger.Info("LLM response truncated, retrying with escalated MaxTokens",
-				"phase", string(phase),
-				"escalated_max_tokens", maxTokens,
-				"correlation_id", correlationID)
-
-			messages = append(messages, inv.buildTruncationRetryMessages(ctx, resp, correlationID, maxTokens)...)
-			continue
-		}
-
-		return &TextResult{Content: resp.Message.Content}, nil
 	}
 
 	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
+}
+
+// loopTurnState carries the mutable state that persists across turns of
+// runLLMLoop: the loop start time (for duration audit fields) and the
+// truncation-retry-once tracking (retried flag + escalated MaxTokens).
+type loopTurnState struct {
+	loopStart         time.Time
+	truncationRetried bool
+	maxTokens         int
+}
+
+// runLoopTurn executes a single turn of the investigation LLM loop: the
+// cancellation check, LLM call, response audit/sink emission, and outcome
+// classification (tool calls / truncation retry / final text). done=true
+// tells the caller to return result immediately (err is set only for
+// non-cancellation failures); done=false means the caller should continue
+// to the next turn with newMessages.
+func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext, turn int) (result LoopResult, newMessages []llm.Message, done bool, err error) {
+	tokens, correlationID := llmCtx.Tokens, llmCtx.CorrelationID
+	toolDefs := inv.toolDefinitionsForPhase(phase)
+
+	if ctx.Err() != nil {
+		emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
+		return buildCancelledResult(messages, turn, string(phase), tokens), messages, true, nil
+	}
+
+	inv.emitLLMRequestAudit(ctx, correlationID, llmCtx.ModelName, messages, toolDefs)
+
+	resp, cancelled, callErr := inv.doLLMCall(ctx, state, messages, phase, llmCtx, turn, toolDefs)
+	if callErr != nil {
+		return nil, messages, true, callErr
+	}
+	if cancelled != nil {
+		return cancelled, messages, true, nil
+	}
+
+	if tokens != nil {
+		tokens.Add(resp.Usage)
+	}
+
+	inv.emitLLMResponseAudit(ctx, correlationID, resp)
+
+	emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
+		"content_preview": truncatePreview(resp.Message.Content, 200),
+		"tool_call_count": len(resp.ToolCalls),
+	})
+
+	if len(resp.ToolCalls) > 0 {
+		toolMessages, sentinel, budgetExhausted := inv.processToolCalls(ctx, messages, resp, turn, string(phase), correlationID)
+		if sentinel != nil {
+			return sentinel, toolMessages, true, nil
+		}
+		if budgetExhausted {
+			return &ExhaustedResult{Reason: "tool budget exhausted"}, toolMessages, true, nil
+		}
+		return nil, toolMessages, false, nil
+	}
+
+	if resp.FinishReason == llm.FinishReasonLength && !state.truncationRetried {
+		return nil, inv.handleTruncation(ctx, state, messages, resp, phase, correlationID), false, nil
+	}
+
+	return &TextResult{Content: resp.Message.Content}, messages, true, nil
+}
+
+// doLLMCall builds the per-turn chat request (using state.maxTokens for any
+// escalated truncation retry) and dispatches to callLLMTurn.
+func (inv *Investigator) doLLMCall(ctx context.Context, state *loopTurnState, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext, turn int, toolDefs []llm.ToolDefinition) (llm.ChatResponse, LoopResult, error) {
+	chatReq := llm.ChatRequest{
+		Messages: messages,
+		Tools:    toolDefs,
+		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: submitResultSchemaForPhase(phase), MaxTokens: state.maxTokens},
+	}
+	return inv.callLLMTurn(ctx, llmTurnCallParams{
+		client:        llmCtx.Client,
+		chatReq:       chatReq,
+		messages:      messages,
+		turn:          turn,
+		phase:         string(phase),
+		correlationID: llmCtx.CorrelationID,
+		modelName:     llmCtx.ModelName,
+		runtimeParams: llmCtx.RuntimeParams,
+		tokens:        llmCtx.Tokens,
+		loopStart:     state.loopStart,
+	})
+}
+
+// handleTruncation marks the turn as retried, escalates state.maxTokens, and
+// returns the message history with the truncation-retry messages appended
+// for runLoopTurn to continue with on the next turn.
+func (inv *Investigator) handleTruncation(ctx context.Context, state *loopTurnState, messages []llm.Message, resp llm.ChatResponse, phase katypes.Phase, correlationID string) []llm.Message {
+	state.truncationRetried = true
+	state.maxTokens = escalateMaxTokens(resp.Usage.CompletionTokens)
+	inv.logger.Info("LLM response truncated, retrying with escalated MaxTokens",
+		"phase", string(phase),
+		"escalated_max_tokens", state.maxTokens,
+		"correlation_id", correlationID)
+
+	return append(messages, inv.buildTruncationRetryMessages(ctx, resp, correlationID, state.maxTokens)...)
 }
 
 // buildCancelledResult constructs the CancelledResult snapshot returned from

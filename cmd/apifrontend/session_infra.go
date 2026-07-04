@@ -44,6 +44,49 @@ type sessionInfra struct {
 // It creates a real ctrl.Manager, registers field indexes and reconcilers,
 // and starts the manager in a goroutine.
 func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*sessionInfra, error) {
+	scheme, err := buildSessionScheme()
+	if err != nil {
+		return nil, err
+	}
+	registerSessionMetricLabels(reg)
+
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("get kubeconfig: %w", err)
+	}
+	preflightSessionChecks(restCfg, cfg.Session.Namespace, auditor, logger)
+
+	mgr, err := newSessionControllerManager(restCfg, scheme, cfg.Session.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	svc, reconciler, err := registerSessionReconcilers(mgr, scheme, cfg, reg, auditor, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	healthy, stopFunc := startSessionManager(mgr, logger)
+
+	logger.Info("session controller manager started",
+		"namespace", cfg.Session.Namespace,
+		"disconnectTTL", cfg.Session.DisconnectTTL.String(),
+		"retentionTTL", cfg.Session.RetentionTTL.String(),
+	)
+
+	return &sessionInfra{
+		SessionService: svc,
+		Reconciler:     reconciler,
+		Scheme:         scheme,
+		Healthy:        healthy,
+		StopFunc:       stopFunc,
+	}, nil
+}
+
+// buildSessionScheme constructs the runtime scheme used by the session
+// controller manager, registering the coordination (Lease) and
+// InvestigationSession API groups.
+func buildSessionScheme() (*k8sruntime.Scheme, error) {
 	scheme := k8sruntime.NewScheme()
 	if err := coordinationv1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register coordination scheme: %w", err)
@@ -51,26 +94,29 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	if err := isv1alpha1.AddToScheme(scheme); err != nil {
 		return nil, fmt.Errorf("register InvestigationSession scheme: %w", err)
 	}
+	return scheme, nil
+}
 
+// registerSessionMetricLabels pre-registers the label combinations for the
+// session-lifecycle metrics so they report zero (rather than being absent)
+// before the first transition of each kind occurs.
+func registerSessionMetricLabels(reg *metrics.Registry) {
 	for _, phase := range []string{"Active", "Disconnected", "Completed", "Cancelled", "Failed"} {
 		reg.SessionsActive.WithLabelValues(phase)
 	}
 	for _, action := range []string{"cancel", "delete"} {
 		reg.SessionTTLActions.WithLabelValues(action)
 	}
+}
 
-	restCfg, err := ctrl.GetConfig()
-	if err != nil {
-		return nil, fmt.Errorf("get kubeconfig: %w", err)
-	}
-
-	preflightSessionChecks(restCfg, cfg.Session.Namespace, auditor, logger)
-
+// newSessionControllerManager creates the controller-runtime Manager used to
+// run the session cleanup and lease-sync reconcilers, scoped to namespace.
+func newSessionControllerManager(restCfg *rest.Config, scheme *k8sruntime.Scheme, namespace string) (ctrl.Manager, error) {
 	mgr, err := ctrl.NewManager(restCfg, ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{
-				cfg.Session.Namespace: {},
+				namespace: {},
 			},
 		},
 		Metrics:                metricsserver.Options{BindAddress: "0"},
@@ -80,11 +126,15 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	if err != nil {
 		return nil, fmt.Errorf("create session controller manager: %w", err)
 	}
-
 	if err := session.RegisterFieldIndexes(context.Background(), mgr.GetFieldIndexer()); err != nil {
 		return nil, fmt.Errorf("register InvestigationSession field index: %w", err)
 	}
+	return mgr, nil
+}
 
+// registerSessionReconcilers builds the CRDSessionService and registers the
+// session-cleanup and lease-sync reconcilers with mgr.
+func registerSessionReconcilers(mgr ctrl.Manager, scheme *k8sruntime.Scheme, cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*session.CRDSessionService, *controller.SessionCleanupReconciler, error) {
 	k8sClient := mgr.GetClient()
 
 	svc := session.NewCRDSessionService(
@@ -115,12 +165,18 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 	)
 
 	if err := reconciler.SetupWithManager(mgr); err != nil {
-		return nil, fmt.Errorf("register session reconciler: %w", err)
+		return nil, nil, fmt.Errorf("register session reconciler: %w", err)
 	}
 	if err := leaseSync.SetupWithManager(mgr); err != nil {
-		return nil, fmt.Errorf("register lease-sync reconciler: %w", err)
+		return nil, nil, fmt.Errorf("register lease-sync reconciler: %w", err)
 	}
+	return svc, reconciler, nil
+}
 
+// startSessionManager starts mgr in a background goroutine and tracks its
+// cache-sync health in the returned atomic.Bool. The returned stop func
+// cancels the manager's context.
+func startSessionManager(mgr ctrl.Manager, logger logr.Logger) (*atomic.Bool, func()) {
 	healthy := &atomic.Bool{}
 	mgrCtx, mgrCancel := context.WithCancel(context.Background()) //nolint:gosec // G118 false positive: mgrCancel is assigned to stopFunc below
 	go func() {
@@ -139,20 +195,7 @@ func buildSessionInfra(cfg *config.Config, reg *metrics.Registry, auditor audit.
 			logger.Error(nil, "session controller cache sync failed — session health degraded")
 		}
 	}()
-
-	logger.Info("session controller manager started",
-		"namespace", cfg.Session.Namespace,
-		"disconnectTTL", cfg.Session.DisconnectTTL.String(),
-		"retentionTTL", cfg.Session.RetentionTTL.String(),
-	)
-
-	return &sessionInfra{
-		SessionService: svc,
-		Reconciler:     reconciler,
-		Scheme:         scheme,
-		Healthy:        healthy,
-		StopFunc:       mgrCancel,
-	}, nil
+	return healthy, mgrCancel
 }
 
 // preflightSessionChecks runs diagnostic checks before starting the session
@@ -162,12 +205,23 @@ func preflightSessionChecks(restCfg *rest.Config, namespace string, auditor audi
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	if !checkInvestigationSessionCRD(ctx, restCfg, auditor, logger) {
+		return
+	}
+	checkInvestigationSessionRBAC(ctx, restCfg, namespace, auditor, logger)
+}
+
+// checkInvestigationSessionCRD verifies the InvestigationSession CRD is
+// registered on the cluster, logging and auditing the result. Returns false
+// (skip the RBAC check) only when the discovery client itself could not be
+// created — an absent CRD is logged as a warning but does not block startup.
+func checkInvestigationSessionCRD(ctx context.Context, restCfg *rest.Config, auditor audit.Emitter, logger logr.Logger) bool {
 	gvr := "investigationsessions.kubernaut.ai/v1alpha1"
 
 	dc, err := discovery.NewDiscoveryClientForConfig(restCfg)
 	if err != nil {
 		logger.Error(err, "pre-flight: failed to create discovery client")
-		return
+		return false
 	}
 	resources, err := dc.ServerResourcesForGroupVersion("kubernaut.ai/v1alpha1")
 	crdFound := false
@@ -192,47 +246,34 @@ func preflightSessionChecks(restCfg *rest.Config, namespace string, auditor audi
 			},
 		})
 	}
+	return true
+}
 
+// checkInvestigationSessionRBAC verifies (via SelfSubjectAccessReview) that
+// the current ServiceAccount can perform all verbs the session controller
+// and CRDSessionService need on investigationsessions (AC-6), logging and
+// auditing the result.
+func checkInvestigationSessionRBAC(ctx context.Context, restCfg *rest.Config, namespace string, auditor audit.Emitter, logger logr.Logger) {
 	k8s, err := kubernetes.NewForConfig(restCfg)
 	if err != nil {
 		logger.Error(err, "pre-flight: failed to create kubernetes client for SSAR")
 		return
 	}
 
-	// AC-6: Check all verbs the session controller and CRDSessionService need.
 	requiredVerbs := []string{"get", "list", "watch", "create", "update", "delete"}
 	allAllowed := true
 	var deniedVerbs []string
 	for _, verb := range requiredVerbs {
-		ssar := &authorizationv1.SelfSubjectAccessReview{
-			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
-				ResourceAttributes: &authorizationv1.ResourceAttributes{
-					Namespace: namespace,
-					Verb:      verb,
-					Group:     "kubernaut.ai",
-					Resource:  "investigationsessions",
-				},
-			},
-		}
-		result, err := k8s.AuthorizationV1().SelfSubjectAccessReviews().Create(
-			ctx, ssar, metav1.CreateOptions{},
-		)
+		allowed, err := checkSSARVerb(ctx, k8s, namespace, verb, logger)
 		if err != nil {
-			logger.Error(err, "pre-flight RBAC check failed", "verb", verb)
 			allAllowed = false
 			deniedVerbs = append(deniedVerbs, verb+"(error)")
 			continue
 		}
-		if !result.Status.Allowed {
+		if !allowed {
 			allAllowed = false
 			deniedVerbs = append(deniedVerbs, verb)
 		}
-		logger.Info("pre-flight RBAC check",
-			"verb", verb,
-			"resource", "investigationsessions",
-			"namespace", namespace,
-			"allowed", result.Status.Allowed,
-		)
 	}
 	if !allAllowed {
 		logger.Info("WARNING: ServiceAccount lacks permissions on investigationsessions — session controller may fail",
@@ -250,4 +291,33 @@ func preflightSessionChecks(restCfg *rest.Config, namespace string, auditor audi
 			},
 		})
 	}
+}
+
+// checkSSARVerb runs a single SelfSubjectAccessReview for verb against the
+// investigationsessions resource, logging the outcome.
+func checkSSARVerb(ctx context.Context, k8s kubernetes.Interface, namespace, verb string, logger logr.Logger) (bool, error) {
+	ssar := &authorizationv1.SelfSubjectAccessReview{
+		Spec: authorizationv1.SelfSubjectAccessReviewSpec{
+			ResourceAttributes: &authorizationv1.ResourceAttributes{
+				Namespace: namespace,
+				Verb:      verb,
+				Group:     "kubernaut.ai",
+				Resource:  "investigationsessions",
+			},
+		},
+	}
+	result, err := k8s.AuthorizationV1().SelfSubjectAccessReviews().Create(
+		ctx, ssar, metav1.CreateOptions{},
+	)
+	if err != nil {
+		logger.Error(err, "pre-flight RBAC check failed", "verb", verb)
+		return false, err
+	}
+	logger.Info("pre-flight RBAC check",
+		"verb", verb,
+		"resource", "investigationsessions",
+		"namespace", namespace,
+		"allowed", result.Status.Allowed,
+	)
+	return result.Status.Allowed, nil
 }

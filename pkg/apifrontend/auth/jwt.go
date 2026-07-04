@@ -348,42 +348,9 @@ func extractAudiences(claims map[string]interface{}) []string {
 }
 
 func buildIdentity(claims map[string]interface{}, issuer, rawToken string, mappings ClaimMappings) *UserIdentity {
-	var username string
-	var groups []string
-
-	if mappings.Username != "" {
-		if v, err := evaluateClaimCEL(mappings.Username, claims); err == nil {
-			username, _ = v.(string)
-		}
-	}
-	if username == "" {
-		username = extractStringClaim(claims, "preferred_username")
-		if username == "" {
-			username = extractStringClaim(claims, "sub")
-		}
-	}
-
-	if mappings.Groups != "" {
-		if v, err := evaluateClaimCEL(mappings.Groups, claims); err == nil {
-			switch g := v.(type) {
-			case []string:
-				groups = g
-			case []interface{}:
-				for _, item := range g {
-					if s, ok := item.(string); ok {
-						groups = append(groups, s)
-					}
-				}
-			}
-		}
-	}
-	if groups == nil {
-		groups = extractGroupsClaim(claims)
-	}
-
 	identity := &UserIdentity{
-		Username: SanitizeClaimValue(username),
-		Groups:   sanitizeGroups(groups),
+		Username: SanitizeClaimValue(resolveUsernameClaim(claims, mappings.Username)),
+		Groups:   sanitizeGroups(resolveGroupsClaim(claims, mappings.Groups)),
 		Issuer:   issuer,
 		RawToken: rawToken,
 	}
@@ -391,6 +358,63 @@ func buildIdentity(claims map[string]interface{}, issuer, rawToken string, mappi
 		identity.ExpiresAt = time.Unix(int64(exp), 0)
 	}
 	return identity
+}
+
+// resolveUsernameClaim resolves the username via the configured CEL mapping
+// expression, falling back to the standard "preferred_username" then "sub"
+// claims when no mapping is configured or it evaluates to a non-string.
+func resolveUsernameClaim(claims map[string]interface{}, usernameMapping string) string {
+	if usernameMapping != "" {
+		if v, err := evaluateClaimCEL(usernameMapping, claims); err == nil {
+			if username, ok := v.(string); ok && username != "" {
+				return username
+			}
+		}
+	}
+	if username := extractStringClaim(claims, "preferred_username"); username != "" {
+		return username
+	}
+	return extractStringClaim(claims, "sub")
+}
+
+// resolveGroupsClaim resolves groups via the configured CEL mapping
+// expression (accepting either []string or []interface{} results), falling
+// back to the standard "groups" claim when no mapping is configured or it
+// evaluates to neither of the expected shapes.
+func resolveGroupsClaim(claims map[string]interface{}, groupsMapping string) []string {
+	if groups := groupsFromCELMapping(claims, groupsMapping); groups != nil {
+		return groups
+	}
+	return extractGroupsClaim(claims)
+}
+
+// groupsFromCELMapping evaluates groupsMapping (if non-empty) and coerces the
+// result to []string, accepting either a native []string or a []interface{}
+// of strings. Returns nil when unmapped, the expression errors, or the
+// result doesn't match either expected shape (caller falls back to the
+// standard "groups" claim).
+func groupsFromCELMapping(claims map[string]interface{}, groupsMapping string) []string {
+	if groupsMapping == "" {
+		return nil
+	}
+	v, err := evaluateClaimCEL(groupsMapping, claims)
+	if err != nil {
+		return nil
+	}
+	switch g := v.(type) {
+	case []string:
+		return g
+	case []interface{}:
+		var groups []string
+		for _, item := range g {
+			if s, ok := item.(string); ok {
+				groups = append(groups, s)
+			}
+		}
+		return groups
+	default:
+		return nil
+	}
 }
 
 func sanitizeGroups(groups []string) []string {

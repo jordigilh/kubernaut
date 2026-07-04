@@ -124,6 +124,109 @@ func stateToString(state circuitbreaker.State) string {
 	}
 }
 
+// loadNotificationConfig loads and validates the notification controller
+// config (ADR-030), discovers the controller namespace for CRD watch
+// restriction (ADR-057), and reconfigures the logger at the config-driven
+// log level (Issue #878). Exits the process on any failure, matching main()'s
+// original fail-fast behavior.
+func loadNotificationConfig(configPath string, bootstrapLogger logr.Logger) (*notificationconfig.Config, string, logr.Logger, zaplog.AtomicLevel) {
+	bootstrapLogger.Info("Starting Notification Controller",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
+	)
+
+	bootstrapLogger.Info("Loading configuration from YAML file (ADR-030)",
+		"config_path", configPath)
+
+	// ADR-030: Load configuration from YAML file
+	cfg, err := notificationconfig.LoadFromFile(configPath)
+	if err != nil {
+		bootstrapLogger.Error(err, "Failed to load configuration file (ADR-030)",
+			"config_path", configPath)
+		os.Exit(1)
+	}
+
+	// ADR-030: Validate configuration (fail-fast)
+	if err := cfg.Validate(); err != nil {
+		bootstrapLogger.Error(err, "Invalid configuration (ADR-030)")
+		os.Exit(1)
+	}
+
+	// ADR-057: Discover controller namespace for CRD watch restriction
+	controllerNS, err := scope.GetControllerNamespace()
+	if err != nil {
+		bootstrapLogger.Error(err, "Unable to determine controller namespace")
+		os.Exit(1)
+	}
+
+	// Issue #878: Apply config-driven log level
+	atomicLevel := cfg.Logging.NewAtomicLevel()
+	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "notification",
+	}, atomicLevel)
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
+
+	logger.Info("Configuration loaded successfully (ADR-030)",
+		"service", "notification",
+		"log_level", cfg.Logging.Level,
+		"metrics_addr", cfg.Controller.MetricsAddr,
+		"health_probe_addr", cfg.Controller.HealthProbeAddr,
+		"data_storage_url", cfg.DataStorage.URL,
+		"credentials_dir", cfg.Delivery.Credentials.Dir)
+
+	return cfg, controllerNS, logger, atomicLevel
+}
+
+// setupNotificationReconciler builds the NotificationRequestReconciler with
+// its delivery/sanitization/audit/metrics/EventRecorder/statusManager/
+// deliveryOrchestrator/circuitBreaker dependencies, registers it with the
+// manager, and wires the healthz/readyz checks. Exits the process on any
+// failure, matching main()'s original fail-fast behavior.
+func setupNotificationReconciler(
+	mgr ctrl.Manager,
+	cfg *notificationconfig.Config,
+	ds *deliveryServices,
+	auditStore audit.AuditStore,
+	auditManager *notificationaudit.Manager,
+	ob *orchestratorBundle,
+	logger logr.Logger,
+) *notification.NotificationRequestReconciler {
+	reconciler := &notification.NotificationRequestReconciler{
+		Client:               mgr.GetClient(),
+		APIReader:            mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
+		Scheme:               mgr.GetScheme(),
+		ConsoleService:       ds.console,
+		FileService:          ds.file,                    // DD-NOT-006: File delivery
+		DeliveryOrchestrator: ob.orchestrator,            // Pattern 3: Delivery Orchestrator (P0)
+		CredentialResolver:   ds.credResolver,            // BR-NOT-104: Per-receiver credential resolution
+		DeliveryTimeout:      cfg.Delivery.Slack.Timeout, // HTTP timeout for webhook delivery channels
+		Sanitizer:            ob.sanitizer,
+		CircuitBreaker:       ob.circuitBreaker,                                  // BR-NOT-055: Circuit breaker with gobreaker
+		Metrics:              ob.metrics,                                         // DD-METRICS-001: Injected metrics
+		Recorder:             mgr.GetEventRecorderFor("notification-controller"), // P1: EventRecorder
+		AuditStore:           auditStore,                                         // ADR-032: Audit store
+		AuditManager:         auditManager,                                       // Direct audit manager (no wrapper)
+		StatusManager:        ob.statusManager,                                   // Pattern 2: Status Manager (P1)
+	}
+	if err := reconciler.SetupWithManager(mgr); err != nil {
+		logger.Error(err, "Unable to create controller", "controller", "NotificationRequest")
+		os.Exit(1)
+	}
+	//+kubebuilder:scaffold:builder
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		logger.Error(err, "Unable to set up health check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		logger.Error(err, "Unable to set up ready check")
+		os.Exit(1)
+	}
+
+	return reconciler
+}
+
 func main() {
 	// ========================================
 	// ADR-030: Configuration Management
@@ -137,55 +240,12 @@ func main() {
 
 	// Bootstrap logger at INFO for config loading
 	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
 		ServiceName: "notification",
 	}, bootstrapLevel)
-	defer kubelog.Sync(logger)
+	defer kubelog.Sync(bootstrapLogger)
 
-	logger.Info("Starting Notification Controller",
-		"version", version.Version,
-		"gitCommit", version.GitCommit,
-		"buildDate", version.BuildDate,
-	)
-
-	logger.Info("Loading configuration from YAML file (ADR-030)",
-		"config_path", configPath)
-
-	// ADR-030: Load configuration from YAML file
-	cfg, err := notificationconfig.LoadFromFile(configPath)
-	if err != nil {
-		logger.Error(err, "Failed to load configuration file (ADR-030)",
-			"config_path", configPath)
-		os.Exit(1)
-	}
-
-	// ADR-030: Validate configuration (fail-fast)
-	if err := cfg.Validate(); err != nil {
-		logger.Error(err, "Invalid configuration (ADR-030)")
-		os.Exit(1)
-	}
-
-	// ADR-057: Discover controller namespace for CRD watch restriction
-	controllerNS, err := scope.GetControllerNamespace()
-	if err != nil {
-		logger.Error(err, "Unable to determine controller namespace")
-		os.Exit(1)
-	}
-
-	// Issue #878: Apply config-driven log level
-	atomicLevel := cfg.Logging.NewAtomicLevel()
-	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
-		ServiceName: "notification",
-	}, atomicLevel)
-	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
-
-	logger.Info("Configuration loaded successfully (ADR-030)",
-		"service", "notification",
-		"log_level", cfg.Logging.Level,
-		"metrics_addr", cfg.Controller.MetricsAddr,
-		"health_probe_addr", cfg.Controller.HealthProbeAddr,
-		"data_storage_url", cfg.DataStorage.URL,
-		"credentials_dir", cfg.Delivery.Credentials.Dir)
+	cfg, controllerNS, logger, atomicLevel := loadNotificationConfig(configPath, bootstrapLogger)
 
 	// ADR-030: Use configuration values for controller manager
 	// #244: ConfigMap cache removed — routing config now loaded via FileWatcher
@@ -237,38 +297,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Setup controller with delivery services + sanitization + audit + metrics + EventRecorder + statusManager + deliveryOrchestrator + circuitBreaker
-	reconciler := &notification.NotificationRequestReconciler{
-		Client:               mgr.GetClient(),
-		APIReader:            mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
-		Scheme:               mgr.GetScheme(),
-		ConsoleService:       ds.console,
-		FileService:          ds.file,                    // DD-NOT-006: File delivery
-		DeliveryOrchestrator: ob.orchestrator,            // Pattern 3: Delivery Orchestrator (P0)
-		CredentialResolver:   ds.credResolver,            // BR-NOT-104: Per-receiver credential resolution
-		DeliveryTimeout:      cfg.Delivery.Slack.Timeout, // HTTP timeout for webhook delivery channels
-		Sanitizer:            sanitizer,
-		CircuitBreaker:       ob.circuitBreaker,                                  // BR-NOT-055: Circuit breaker with gobreaker
-		Metrics:              ob.metrics,                                         // DD-METRICS-001: Injected metrics
-		Recorder:             mgr.GetEventRecorderFor("notification-controller"), // P1: EventRecorder
-		AuditStore:           auditStore,                                         // ADR-032: Audit store
-		AuditManager:         auditManager,                                       // Direct audit manager (no wrapper)
-		StatusManager:        ob.statusManager,                                   // Pattern 2: Status Manager (P1)
-	}
-	if err = reconciler.SetupWithManager(mgr); err != nil {
-		logger.Error(err, "Unable to create controller", "controller", "NotificationRequest")
-		os.Exit(1)
-	}
-	//+kubebuilder:scaffold:builder
-
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		logger.Error(err, "Unable to set up health check")
-		os.Exit(1)
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		logger.Error(err, "Unable to set up ready check")
-		os.Exit(1)
-	}
+	reconciler := setupNotificationReconciler(mgr, cfg, ds, auditStore, auditManager, ob, logger)
 
 	logger.Info("Starting manager")
 
@@ -443,6 +472,7 @@ type orchestratorBundle struct {
 	metrics        *notificationmetrics.Metrics
 	statusManager  *notificationstatus.Manager
 	circuitBreaker *circuitbreaker.Manager
+	sanitizer      *sanitization.Sanitizer
 }
 
 // buildDeliveryOrchestrator wires DD-METRICS-001 metrics, the Pattern-2
@@ -525,13 +555,27 @@ func buildDeliveryOrchestrator(
 	logger.Info("Registered startup channels (per-receiver Slack registered on routing config load)",
 		"channels", startupChannels)
 
-	// #553: Workflow Name Enrichment — resolves workflow UUIDs to
-	// human-readable names in notification bodies before delivery, via the
-	// DataStorage catalog API.
-	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
+	if err := wireNotificationEnrichment(cfg, deliveryOrchestrator, logger); err != nil {
+		return nil, err
+	}
+
+	return &orchestratorBundle{
+		orchestrator:   deliveryOrchestrator,
+		metrics:        metricsRecorder,
+		statusManager:  statusManager,
+		circuitBreaker: circuitBreakerManager,
+		sanitizer:      sanitizer,
+	}, nil
+}
+
+// wireNotificationEnrichment sets up the #553 workflow-name enrichment
+// pipeline, which resolves workflow UUIDs to human-readable names in
+// notification bodies before delivery via the DataStorage catalog API
+// (Issue #853: RetryTransport-wrapped for transient failure resilience).
+func wireNotificationEnrichment(cfg *notificationconfig.Config, deliveryOrchestrator *delivery.Orchestrator, logger logr.Logger) error {
 	dsBaseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create TLS-aware base transport for DS enrichment client: %w", err)
+		return fmt.Errorf("failed to create TLS-aware base transport for DS enrichment client: %w", err)
 	}
 	dsOgenClient, err := ogenclient.NewClient(
 		cfg.DataStorage.URL,
@@ -541,7 +585,7 @@ func buildDeliveryOrchestrator(
 		}),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create datastorage ogen client for workflow name resolution: %w", err)
+		return fmt.Errorf("failed to create datastorage ogen client for workflow name resolution: %w", err)
 	}
 
 	dsResolver := enrichment.NewDataStorageResolver(dsOgenClient, ctrl.Log.WithName("workflow-resolver"))
@@ -549,12 +593,7 @@ func buildDeliveryOrchestrator(
 	deliveryOrchestrator.SetEnricher(notifEnricher)
 	logger.Info("Notification enricher initialized (#553: workflow name resolution)")
 
-	return &orchestratorBundle{
-		orchestrator:   deliveryOrchestrator,
-		metrics:        metricsRecorder,
-		statusManager:  statusManager,
-		circuitBreaker: circuitBreakerManager,
-	}, nil
+	return nil
 }
 
 // hotReloadParams groups wireHotReload's dependencies (Options pattern,
@@ -579,22 +618,49 @@ type hotReloadParams struct {
 func wireHotReload(ctx context.Context, p hotReloadParams, logger logr.Logger) func() {
 	stopFns := make([]func(), 0, 4)
 
-	// BR-NOT-104-002: Start credential hot-reload watcher before routing watcher
-	if p.credResolver != nil {
-		if err := p.credResolver.StartWatching(ctx); err != nil {
-			logger.Error(err, "Failed to start credential watcher (hot-reload disabled)")
-		} else {
-			logger.Info("Credential file watcher started (BR-NOT-104-002)")
-		}
-		stopFns = append(stopFns, func() {
-			if err := p.credResolver.Close(); err != nil {
-				logger.Error(err, "Failed to close credential resolver")
-			}
-		})
+	if stop, ok := startCredentialWatcher(ctx, p.credResolver, logger); ok {
+		stopFns = append(stopFns, stop)
+	}
+	stopFns = append(stopFns, startRoutingWatcher(ctx, p.reconciler, logger))
+	if stop, ok := startNotificationLogLevelWatcher(ctx, p.configPath, p.atomicLevel, logger); ok {
+		stopFns = append(stopFns, stop)
+	}
+	if stop, ok := startNotificationCAWatcher(ctx, p.cfg, logger); ok {
+		stopFns = append(stopFns, stop)
 	}
 
-	// #244: FileWatcher for routing config hot-reload (replaces ConfigMap informer)
-	// Startup order: credResolver.StartWatching → routingWatcher.Start → mgr.Start
+	return func() {
+		for _, stop := range stopFns {
+			stop()
+		}
+	}
+}
+
+// startCredentialWatcher starts the BR-NOT-104-002 per-receiver credential
+// hot-reload watcher. ok is false when no watcher is configured
+// (credResolver is nil).
+func startCredentialWatcher(ctx context.Context, credResolver *credentials.Resolver, logger logr.Logger) (stop func(), ok bool) {
+	if credResolver == nil {
+		return nil, false
+	}
+
+	if err := credResolver.StartWatching(ctx); err != nil {
+		logger.Error(err, "Failed to start credential watcher (hot-reload disabled)")
+	} else {
+		logger.Info("Credential file watcher started (BR-NOT-104-002)")
+	}
+	return func() {
+		if err := credResolver.Close(); err != nil {
+			logger.Error(err, "Failed to close credential resolver")
+		}
+	}, true
+}
+
+// startRoutingWatcher starts the #244 FileWatcher for routing config
+// hot-reload (replaces the ConfigMap informer). Exits the process if the
+// watcher fails to create or start, matching main()'s original fail-fast
+// behavior (routing config is required for delivery).
+func startRoutingWatcher(ctx context.Context, reconciler *notification.NotificationRequestReconciler, logger logr.Logger) func() {
 	routingConfigPath := "/etc/notification-routing/routing.yaml"
 	if envPath := os.Getenv("ROUTING_CONFIG_PATH"); envPath != "" {
 		routingConfigPath = envPath
@@ -602,7 +668,7 @@ func wireHotReload(ctx context.Context, p hotReloadParams, logger logr.Logger) f
 	routingWatcher, err := hotreload.NewFileWatcher(
 		routingConfigPath,
 		func(newContent string) error {
-			return p.reconciler.ReloadRoutingFromContent(newContent)
+			return reconciler.ReloadRoutingFromContent(newContent)
 		},
 		ctrl.Log.WithName("routing-watcher"),
 	)
@@ -613,14 +679,17 @@ func wireHotReload(ctx context.Context, p hotReloadParams, logger logr.Logger) f
 	if err := routingWatcher.Start(ctx); err != nil {
 		logger.Error(err, "Routing file watcher failed to start -- aborting startup")
 		os.Exit(1)
-	} else {
-		logger.Info("Routing file watcher started (#244)", "path", routingConfigPath)
-		stopFns = append(stopFns, routingWatcher.Stop)
 	}
+	logger.Info("Routing file watcher started (#244)", "path", routingConfigPath)
+	return routingWatcher.Stop
+}
 
-	// Issue #878: Log level hot-reload via FileWatcher
+// startNotificationLogLevelWatcher starts the Issue #878 config-file
+// log-level hot-reload watcher. ok is false when the watcher failed to
+// create or start.
+func startNotificationLogLevelWatcher(ctx context.Context, configPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger) (stop func(), ok bool) {
 	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
-		p.configPath,
+		configPath,
 		func(newContent string) error {
 			var partial struct {
 				Logging internalconfig.LoggingConfig `yaml:"logging"`
@@ -628,26 +697,34 @@ func wireHotReload(ctx context.Context, p hotReloadParams, logger logr.Logger) f
 			if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
 				return fmt.Errorf("failed to parse config for log level reload: %w", err)
 			}
-			return internalconfig.ParseAndSetLevel(p.atomicLevel, partial.Logging.Level)
+			return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
 		},
 		logger.WithName("log-level-watcher"),
 	)
 	if logWatchErr != nil {
 		logger.Error(logWatchErr, "Failed to create log level file watcher")
-	} else {
-		if err := logLevelWatcher.Start(ctx); err != nil {
-			logger.Info("Log level file watcher failed to start", "error", err)
-		} else {
-			logger.Info("Log level hot-reload watcher started", "path", p.configPath)
-			stopFns = append(stopFns, logLevelWatcher.Stop)
-		}
+		return nil, false
 	}
 
+	if err := logLevelWatcher.Start(ctx); err != nil {
+		logger.Info("Log level file watcher failed to start", "error", err)
+		return nil, false
+	}
+
+	logger.Info("Log level hot-reload watcher started", "path", configPath)
+	return logLevelWatcher.Stop, true
+}
+
+// startNotificationCAWatcher applies the Issue #748 OCP TLS security profile
+// and starts the Issue #756 CA-cert hot-reload watcher for client-side TLS.
+// Exits the process if the CA watcher fails to start, matching main()'s
+// original fail-fast behavior. ok is false when no watcher was started.
+func startNotificationCAWatcher(ctx context.Context, cfg *notificationconfig.Config, logger logr.Logger) (stop func(), ok bool) {
 	// Issue #748: Load OCP TLS security profile from config before any TLS setup
-	if err := sharedtls.SetDefaultSecurityProfileFromConfig(p.cfg.TLSProfile); err != nil {
+	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
-	} else if p.cfg.TLSProfile != "" {
-		logger.Info("TLS security profile active", "profile", p.cfg.TLSProfile)
+	} else if cfg.TLSProfile != "" {
+		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload
@@ -656,13 +733,8 @@ func wireHotReload(ctx context.Context, p hotReloadParams, logger logr.Logger) f
 		logger.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
 	}
-	if caWatcher != nil {
-		stopFns = append(stopFns, caWatcher.Stop)
+	if caWatcher == nil {
+		return nil, false
 	}
-
-	return func() {
-		for _, stop := range stopFns {
-			stop()
-		}
-	}
+	return caWatcher.Stop, true
 }

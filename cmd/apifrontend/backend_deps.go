@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/discovery/cached/memory"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +36,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
@@ -61,6 +65,24 @@ type backendDeps struct {
 	K8sCB                 *resilience.K8sCircuitBreaker
 	InvestigationRegistry *tools.MonitorRegistry
 	Mapper                meta.RESTMapper
+	// FleetReaderFactory routes kubectl_get/kubectl_list tool calls with a
+	// non-empty cluster_id to remote fleet clusters via the MCP Gateway
+	// (BR-FLEET-054). Nil when fleet federation is disabled.
+	FleetReaderFactory tools.ResourceReaderFactory
+	// FleetClusterRegistry backs the list_clusters tool (BR-FLEET-054). Nil
+	// when fleet federation is disabled.
+	FleetClusterRegistry registry.ClusterRegistry
+	// fleetResilientClient is the underlying MCP Gateway connection; closed
+	// on shutdown by run() when non-nil.
+	fleetResilientClient *mcpclient.ResilientClient
+}
+
+// FleetResilientClient returns the MCP Gateway connection backing
+// FleetReaderFactory, or nil when fleet federation is disabled or its
+// endpoint was unreachable at startup. Callers must check for nil before
+// closing.
+func (d *backendDeps) FleetResilientClient() *mcpclient.ResilientClient {
+	return d.fleetResilientClient
 }
 
 // K8sClient returns the pod service-account scoped dynamic K8s client,
@@ -80,13 +102,40 @@ func (d *backendDeps) TypedClient() crclient.WithWatch {
 func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*backendDeps, error) {
 	deps := &backendDeps{}
 
+	if err := buildDSClientDeps(ctx, cfg, deps, metricsReg, auditor, logger); err != nil {
+		return nil, err
+	}
+	if err := buildKAClientDeps(ctx, cfg, deps, metricsReg, auditor, logger); err != nil {
+		return nil, err
+	}
+
+	// F7+F8: Eager K8s dynamic client init with circuit breaker (WIRE-03).
+	// Fail-fast: log clearly on failure instead of returning silent nil.
+	buildK8sClientDeps(cfg, deps, metricsReg, logger)
+
+	if err := buildSeverityTriageDeps(ctx, cfg, deps, auditor, logger); err != nil {
+		return nil, err
+	}
+
+	if err := buildFleetReaderDeps(ctx, cfg, deps, logger); err != nil {
+		return nil, fmt.Errorf("fleet reader wiring: %w", err)
+	}
+
+	return deps, nil
+}
+
+// buildDSClientDeps wires the DataStorage ogen client behind a CA-reloadable,
+// resilient (retry + circuit breaker) transport. A DS client construction
+// failure degrades to a nil DSClient (DS tools return errors at runtime)
+// rather than failing AF startup.
+func buildDSClientDeps(ctx context.Context, cfg *config.Config, deps *backendDeps, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) error {
 	dsTransport, dsWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-ca"))
 	if err != nil {
-		return nil, fmt.Errorf("DS TLS transport: %w", err)
+		return fmt.Errorf("DS TLS transport: %w", err)
 	}
 	if dsWatcher != nil {
 		if err := dsWatcher.Start(ctx); err != nil {
-			return nil, fmt.Errorf("DS CA watcher start: %w", err)
+			return fmt.Errorf("DS CA watcher start: %w", err)
 		}
 		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ds-ca", watcher: dsWatcher})
 	}
@@ -111,14 +160,20 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	} else {
 		logger.Info("DS client unavailable, DS tools will return errors", "error", err)
 	}
+	return nil
+}
 
+// buildKAClientDeps wires both the pooled/dedicated MCP clients (for
+// investigation streaming, #1306/#1386) and the plain REST client used for
+// non-MCP KA calls.
+func buildKAClientDeps(ctx context.Context, cfg *config.Config, deps *backendDeps, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) error {
 	kaTransport, kaWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.KATLSCaFile, logger.WithName("ka-ca"))
 	if err != nil {
-		return nil, fmt.Errorf("KA TLS transport: %w", err)
+		return fmt.Errorf("KA TLS transport: %w", err)
 	}
 	if kaWatcher != nil {
 		if err := kaWatcher.Start(ctx); err != nil {
-			return nil, fmt.Errorf("KA CA watcher start: %w", err)
+			return fmt.Errorf("KA CA watcher start: %w", err)
 		}
 		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ka-ca", watcher: kaWatcher})
 	}
@@ -198,144 +253,268 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		StateGauge:   metricsReg.CircuitBreakerState,
 		DurationHist: metricsReg.DownstreamDuration,
 	})
+	return nil
+}
 
-	// F7+F8: Eager K8s dynamic client init with circuit breaker (WIRE-03).
-	// Fail-fast: log clearly on failure instead of returning silent nil.
+// buildK8sClientDeps eagerly initializes the K8s dynamic client (circuit
+// breaker wrapped), RESTMapper, and typed client. Each sub-step degrades
+// independently and logs clearly on failure rather than failing AF startup —
+// K8s-dependent tools return runtime errors instead when unavailable.
+func buildK8sClientDeps(cfg *config.Config, deps *backendDeps, metricsReg *metrics.Registry, logger logr.Logger) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Error(err, "K8s dynamic client unavailable — K8s tools will return errors at runtime")
-	} else {
-		inner, err := dynamic.NewForConfig(restCfg)
+		return
+	}
+	inner, err := dynamic.NewForConfig(restCfg)
+	if err != nil {
+		logger.Error(err, "K8s dynamic client creation failed — K8s tools will return errors at runtime")
+		return
+	}
+
+	k8sCfg := cfg.Resilience.K8s
+	deps.K8sCB = resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
+		Name:             "k8s",
+		MaxRequests:      k8sCfg.CBMaxRequests,
+		Interval:         k8sCfg.CBInterval,
+		Timeout:          k8sCfg.CBTimeout,
+		FailureThreshold: k8sCfg.CBFailureThreshold,
+		StateGauge:       metricsReg.CircuitBreakerState,
+		DependencyName:   "k8s",
+	})
+	deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
+	logger.Info("K8s dynamic client initialized with circuit breaker")
+
+	buildK8sDiscoveryMapper(restCfg, deps, logger)
+	buildK8sTypedClient(restCfg, deps, logger)
+}
+
+// buildK8sDiscoveryMapper wires the RESTMapper used for CRD kind resolution.
+// Unavailable discovery falls back to AF's static kind table.
+func buildK8sDiscoveryMapper(restCfg *rest.Config, deps *backendDeps, logger logr.Logger) {
+	disc, discErr := discovery.NewDiscoveryClientForConfig(restCfg)
+	if discErr != nil {
+		logger.Error(discErr, "K8s discovery client unavailable — CRD kind resolution will use static table only")
+		return
+	}
+	deps.Mapper = restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc))
+	logger.Info("K8s RESTMapper initialized for CRD kind resolution")
+}
+
+// buildK8sTypedClient wires the controller-runtime typed client for all
+// kubernaut CRDs (RR, RAR, EA, AIAnalysis, IS, #1428). Unavailable falls back
+// to dynamic-only CRD operations.
+func buildK8sTypedClient(restCfg *rest.Config, deps *backendDeps, logger logr.Logger) {
+	typedScheme := k8sruntime.NewScheme()
+	_ = eav1alpha1.AddToScheme(typedScheme)
+	_ = remediationv1.AddToScheme(typedScheme)
+	_ = aianalysisv1.AddToScheme(typedScheme)
+	_ = isv1alpha1.AddToScheme(typedScheme)
+	typedClient, tcErr := crclient.NewWithWatch(restCfg, crclient.Options{Scheme: typedScheme})
+	if tcErr != nil {
+		logger.Error(tcErr, "K8s typed client creation failed — CRD typed operations will fall back to dynamic")
+		return
+	}
+	deps.k8sTypedClient = typedClient
+	logger.Info("K8s typed client initialized for all kubernaut CRD operations (#1428)")
+}
+
+// buildSeverityTriageDeps wires the optional severity-triage subsystem
+// (Prometheus client, LLM triager, rule engine config). No-op when disabled.
+func buildSeverityTriageDeps(ctx context.Context, cfg *config.Config, deps *backendDeps, auditor audit.Emitter, logger logr.Logger) error {
+	if !cfg.SeverityTriage.Enabled {
+		return nil
+	}
+
+	promClient, err := buildTriagePrometheusClient(ctx, cfg, deps, logger)
+	if err != nil {
+		return err
+	}
+	deps.PromClient = promClient
+
+	llmTriager := buildTriageLLMTriager(ctx, cfg, logger)
+	severityCfg := buildTriageSeverityConfig(cfg)
+
+	var triagerOpts []severity.TriagerOption
+	triagerOpts = append(triagerOpts, severity.WithAuditor(auditor))
+	if deps.k8sDynClient != nil {
+		triagerOpts = append(triagerOpts, severity.WithPodResolver(
+			severity.NewK8sPodResolver(deps.k8sDynClient, logger.WithName("pod-resolver")),
+		))
+	}
+
+	deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), triagerOpts...)
+	logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL,
+		"podResolverEnabled", deps.k8sDynClient != nil)
+	return nil
+}
+
+// buildTriagePrometheusClient wires the CA-reloadable, optionally
+// bearer-authenticated Prometheus HTTP client used by severity triage.
+func buildTriagePrometheusClient(ctx context.Context, cfg *config.Config, deps *backendDeps, logger logr.Logger) (prom.Client, error) {
+	promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
+	if promErr != nil {
+		return nil, fmt.Errorf("prometheus TLS transport: %w", promErr)
+	}
+	if promWatcher != nil {
+		if err := promWatcher.Start(ctx); err != nil {
+			return nil, fmt.Errorf("prometheus CA watcher start: %w", err)
+		}
+		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "prom-ca", watcher: promWatcher})
+	}
+
+	if cfg.Resilience.Prometheus.ConnectTimeout > 0 {
+		if t, ok := promTransport.(*http.Transport); ok {
+			t = t.Clone()
+			t.DialContext = (&net.Dialer{Timeout: cfg.Resilience.Prometheus.ConnectTimeout}).DialContext
+			promTransport = t
+		}
+	}
+	promHTTPClient := &http.Client{
+		Transport: promTransport,
+		Timeout:   cfg.Resilience.Prometheus.RequestTimeout,
+	}
+	if cfg.SeverityTriage.PrometheusBearerTokenFile != "" {
+		promHTTPClient.Transport = &bearerTokenTransport{
+			base:      promTransport,
+			tokenFile: cfg.SeverityTriage.PrometheusBearerTokenFile,
+		}
+	}
+
+	return prom.NewHTTPClient(cfg.SeverityTriage.PrometheusURL, promHTTPClient), nil
+}
+
+// buildTriageLLMTriager resolves the effective triage LLM config (BR-AI-1404:
+// independent or inherited from the agent) and constructs the corresponding
+// triager, falling back to a noop triager when no provider is configured or
+// construction fails.
+func buildTriageLLMTriager(ctx context.Context, cfg *config.Config, logger logr.Logger) severity.LLMTriager {
+	triageLLMCfg := cfg.Agent.LLM
+	if cfg.SeverityTriage.LLM != nil {
+		triageLLMCfg = *cfg.SeverityTriage.LLM
+	}
+
+	if triageLLMCfg.Provider == "" {
+		logger.Info("LLM severity triage disabled (no LLM provider configured), using noop triager")
+		return severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
+	}
+
+	triager, triageErr := newLLMTriagerFromConfig(ctx, triageLLMCfg, logger.WithName("llm-triage"))
+	if triageErr != nil {
+		logger.Error(triageErr, "failed to create LLM triager, falling back to noop")
+		return severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
+	}
+	logger.Info("LLM severity triage enabled",
+		"provider", triageLLMCfg.Provider,
+		"model", triageLLMCfg.Model,
+		"source", triageLLMSource(cfg))
+	return triager
+}
+
+// buildTriageSeverityConfig resolves severity.Config from cfg.SeverityTriage,
+// applying documented defaults for any zero-valued field.
+func buildTriageSeverityConfig(cfg *config.Config) severity.Config {
+	severityCfg := severity.Config{
+		Enabled:           true,
+		MaxQueriesPerCall: cfg.SeverityTriage.MaxQueriesPerCall,
+		MaxRulesEvaluated: cfg.SeverityTriage.MaxRulesEvaluated,
+		CacheTTLSeconds:   cfg.SeverityTriage.CacheTTLSeconds,
+		LLMConfidence:     cfg.SeverityTriage.LLMConfidence,
+	}
+	if severityCfg.MaxQueriesPerCall == 0 {
+		severityCfg.MaxQueriesPerCall = 10
+	}
+	if severityCfg.MaxRulesEvaluated == 0 {
+		severityCfg.MaxRulesEvaluated = 100
+	}
+	if severityCfg.CacheTTLSeconds == 0 {
+		severityCfg.CacheTTLSeconds = 30
+	}
+	if severityCfg.LLMConfidence == 0 {
+		severityCfg.LLMConfidence = 0.7
+	}
+	return severityCfg
+}
+
+// buildFleetReaderDeps wires BR-FLEET-054 multi-cluster kubectl routing when
+// fleet federation is enabled: connects to the MCP Gateway, discovers
+// managed clusters via ClusterRegistry, and adapts the resulting
+// fleet.ReaderFactory (client.Reader) into a tools.ResourceReaderFactory
+// (dynamic-style ResourceReader) for kubectl_get/kubectl_list/list_clusters.
+// A connectivity failure degrades gracefully to single-cluster mode (mirrors
+// GW's registerAdapters contract, cmd/gateway/main.go:246-284) rather than
+// blocking AF startup — Fleet MCP Gateway connections are lazy/async.
+func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backendDeps, logger logr.Logger) error {
+	if !cfg.Fleet.Enabled || cfg.Fleet.MCPGatewayEndpoint == "" {
+		return nil
+	}
+	if deps.k8sDynClient == nil {
+		logger.Info("K8s dynamic client unavailable, fleet cluster routing disabled")
+		return nil
+	}
+
+	fleetLog := logger.WithName("fleet-mcp")
+	var opts []mcpclient.Option
+	if cfg.Fleet.OAuth2.Enabled {
+		basePath := "/etc/apifrontend/fleet-oauth2"
+		if cfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+			basePath = "/etc/apifrontend/" + cfg.Fleet.OAuth2.CredentialsSecretRef
+		}
+		reloadCfg := mcpclient.ReloadableOAuth2Config{
+			TokenURL:         cfg.Fleet.OAuth2.TokenURL,
+			ClientIDPath:     basePath + "/client-id",
+			ClientSecretPath: basePath + "/client-secret",
+			Scopes:           cfg.Fleet.OAuth2.Scopes,
+		}
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+	}
+
+	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
+	if err != nil {
+		logger.Error(err, "Fleet MCP Gateway connection failed, remote cluster routing disabled",
+			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
+		return nil
+	}
+	deps.fleetResilientClient = mcpFleetClient
+
+	clusterRegistry, err := registry.NewClusterRegistry(
+		registry.MCPGatewayType(cfg.Fleet.EffectiveMCPGatewayType()),
+		deps.k8sDynClient,
+		registry.RegistryConfig{},
+		registry.NewMetrics(),
+		fleetLog,
+	)
+	if err != nil {
+		return fmt.Errorf("create fleet cluster registry (gatewayType=%s): %w", cfg.Fleet.MCPGatewayType, err)
+	}
+	if err := clusterRegistry.Start(ctx); err != nil {
+		return fmt.Errorf("start fleet cluster registry: %w", err)
+	}
+	deps.FleetClusterRegistry = clusterRegistry
+
+	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
+		deps.k8sTypedClient, mcpFleetClient.SessionProvider(), registry.NewToolPrefixAdapter(clusterRegistry))
+	deps.FleetReaderFactory = adaptFleetReaderFactory(readerFactory)
+
+	logger.Info("Fleet MCP Gateway connected, multi-cluster kubectl routing enabled",
+		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
+	return nil
+}
+
+// adaptFleetReaderFactory adapts a fleet.ReaderFactory (client.Reader) into a
+// tools.ResourceReaderFactory (dynamic-style ResourceReader) so kubectl_get/
+// kubectl_list can consume BR-FLEET-054 remote cluster reads. Only ever
+// invoked with a non-empty clusterID: AF's kubectl tools call the local
+// dynamic client directly for local reads (see tools.NewKubectlGetTool).
+func adaptFleetReaderFactory(rf fleet.ReaderFactory) tools.ResourceReaderFactory {
+	return func(ctx context.Context, clusterID string) (tools.ResourceReader, error) {
+		r, err := rf.ReaderFor(ctx, clusterID)
 		if err != nil {
-			logger.Error(err, "K8s dynamic client creation failed — K8s tools will return errors at runtime")
-		} else {
-			k8sCfg := cfg.Resilience.K8s
-			deps.K8sCB = resilience.NewK8sCircuitBreaker(resilience.K8sCBConfig{
-				Name:             "k8s",
-				MaxRequests:      k8sCfg.CBMaxRequests,
-				Interval:         k8sCfg.CBInterval,
-				Timeout:          k8sCfg.CBTimeout,
-				FailureThreshold: k8sCfg.CBFailureThreshold,
-				StateGauge:       metricsReg.CircuitBreakerState,
-				DependencyName:   "k8s",
-			})
-			deps.k8sDynClient = resilience.NewResilientDynamicClient(inner, deps.K8sCB)
-			logger.Info("K8s dynamic client initialized with circuit breaker")
-
-			disc, discErr := discovery.NewDiscoveryClientForConfig(restCfg)
-			if discErr != nil {
-				logger.Error(discErr, "K8s discovery client unavailable — CRD kind resolution will use static table only")
-			} else {
-				deps.Mapper = restmapper.NewDeferredDiscoveryRESTMapper(memory.NewMemCacheClient(disc))
-				logger.Info("K8s RESTMapper initialized for CRD kind resolution")
-			}
-
-			typedScheme := k8sruntime.NewScheme()
-			_ = eav1alpha1.AddToScheme(typedScheme)
-			_ = remediationv1.AddToScheme(typedScheme)
-			_ = aianalysisv1.AddToScheme(typedScheme)
-			_ = isv1alpha1.AddToScheme(typedScheme)
-			typedClient, tcErr := crclient.NewWithWatch(restCfg, crclient.Options{Scheme: typedScheme})
-			if tcErr != nil {
-				logger.Error(tcErr, "K8s typed client creation failed — CRD typed operations will fall back to dynamic")
-			} else {
-				deps.k8sTypedClient = typedClient
-				logger.Info("K8s typed client initialized for all kubernaut CRD operations (#1428)")
-			}
+			return nil, err
 		}
+		return &tools.ClientResourceReader{Reader: r}, nil
 	}
-
-	if cfg.SeverityTriage.Enabled {
-		promTransport, promWatcher, promErr := tlswiring.CAReloadableTransport(cfg.SeverityTriage.PrometheusTLSCaFile, logger.WithName("prom-ca"))
-		if promErr != nil {
-			return nil, fmt.Errorf("prometheus TLS transport: %w", promErr)
-		}
-		if promWatcher != nil {
-			if err := promWatcher.Start(ctx); err != nil {
-				return nil, fmt.Errorf("prometheus CA watcher start: %w", err)
-			}
-			deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "prom-ca", watcher: promWatcher})
-		}
-
-		if cfg.Resilience.Prometheus.ConnectTimeout > 0 {
-			if t, ok := promTransport.(*http.Transport); ok {
-				t = t.Clone()
-				t.DialContext = (&net.Dialer{Timeout: cfg.Resilience.Prometheus.ConnectTimeout}).DialContext
-				promTransport = t
-			}
-		}
-		promHTTPClient := &http.Client{
-			Transport: promTransport,
-			Timeout:   cfg.Resilience.Prometheus.RequestTimeout,
-		}
-		if cfg.SeverityTriage.PrometheusBearerTokenFile != "" {
-			promHTTPClient.Transport = &bearerTokenTransport{
-				base:      promTransport,
-				tokenFile: cfg.SeverityTriage.PrometheusBearerTokenFile,
-			}
-		}
-
-		promClient := prom.NewHTTPClient(cfg.SeverityTriage.PrometheusURL, promHTTPClient)
-		deps.PromClient = promClient
-
-		// BR-AI-1404: Resolve effective triage LLM config (independent or inherited).
-		triageLLMCfg := cfg.Agent.LLM
-		if cfg.SeverityTriage.LLM != nil {
-			triageLLMCfg = *cfg.SeverityTriage.LLM
-		}
-
-		var llmTriager severity.LLMTriager
-		if triageLLMCfg.Provider != "" {
-			triager, triageErr := newLLMTriagerFromConfig(ctx, triageLLMCfg, logger.WithName("llm-triage"))
-			if triageErr != nil {
-				logger.Error(triageErr, "failed to create LLM triager, falling back to noop")
-				llmTriager = severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
-			} else {
-				llmTriager = triager
-				logger.Info("LLM severity triage enabled",
-					"provider", triageLLMCfg.Provider,
-					"model", triageLLMCfg.Model,
-					"source", triageLLMSource(cfg))
-			}
-		} else {
-			llmTriager = severity.NewNoopLLMTriager(logger.WithName("llm-triage"))
-			logger.Info("LLM severity triage disabled (no LLM provider configured), using noop triager")
-		}
-
-		severityCfg := severity.Config{
-			Enabled:           true,
-			MaxQueriesPerCall: cfg.SeverityTriage.MaxQueriesPerCall,
-			MaxRulesEvaluated: cfg.SeverityTriage.MaxRulesEvaluated,
-			CacheTTLSeconds:   cfg.SeverityTriage.CacheTTLSeconds,
-			LLMConfidence:     cfg.SeverityTriage.LLMConfidence,
-		}
-		if severityCfg.MaxQueriesPerCall == 0 {
-			severityCfg.MaxQueriesPerCall = 10
-		}
-		if severityCfg.MaxRulesEvaluated == 0 {
-			severityCfg.MaxRulesEvaluated = 100
-		}
-		if severityCfg.CacheTTLSeconds == 0 {
-			severityCfg.CacheTTLSeconds = 30
-		}
-		if severityCfg.LLMConfidence == 0 {
-			severityCfg.LLMConfidence = 0.7
-		}
-
-		var triagerOpts []severity.TriagerOption
-		triagerOpts = append(triagerOpts, severity.WithAuditor(auditor))
-		if deps.k8sDynClient != nil {
-			triagerOpts = append(triagerOpts, severity.WithPodResolver(
-				severity.NewK8sPodResolver(deps.k8sDynClient, logger.WithName("pod-resolver")),
-			))
-		}
-
-		deps.Triager = severity.NewTriager(promClient, llmTriager, severityCfg, logger.WithName("severity-triage"), triagerOpts...)
-		logger.Info("severity triage enabled", "prometheusURL", cfg.SeverityTriage.PrometheusURL,
-			"podResolverEnabled", deps.k8sDynClient != nil)
-	}
-
-	return deps, nil
 }
 
 // newLLMTriagerFromConfig creates a provider-aware LLMTriager based on the resolved

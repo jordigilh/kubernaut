@@ -480,39 +480,16 @@ func (r *Receiver) GetChannels() []string {
 func (r *Receiver) QualifiedChannels() []string {
 	var channels []string
 
-	for i, sc := range r.SlackConfigs {
-		if sc.CredentialRef != "" {
-			if len(r.SlackConfigs) > 1 {
-				channels = append(channels, fmt.Sprintf("slack:%s:%d", r.Name, i))
-			} else {
-				channels = append(channels, fmt.Sprintf("slack:%s", r.Name))
-			}
-		} else {
-			channels = append(channels, "slack")
-		}
-	}
-	for i, pc := range r.PagerDutyConfigs {
-		if pc.CredentialRef != "" {
-			if len(r.PagerDutyConfigs) > 1 {
-				channels = append(channels, fmt.Sprintf("pagerduty:%s:%d", r.Name, i))
-			} else {
-				channels = append(channels, fmt.Sprintf("pagerduty:%s", r.Name))
-			}
-		} else {
-			channels = append(channels, "pagerduty")
-		}
-	}
-	for i, tc := range r.TeamsConfigs {
-		if tc.CredentialRef != "" {
-			if len(r.TeamsConfigs) > 1 {
-				channels = append(channels, fmt.Sprintf("teams:%s:%d", r.Name, i))
-			} else {
-				channels = append(channels, fmt.Sprintf("teams:%s", r.Name))
-			}
-		} else {
-			channels = append(channels, "teams")
-		}
-	}
+	channels = append(channels, qualifiedCredentialChannels("slack", r.Name, len(r.SlackConfigs), func(i int) string {
+		return r.SlackConfigs[i].CredentialRef
+	})...)
+	channels = append(channels, qualifiedCredentialChannels("pagerduty", r.Name, len(r.PagerDutyConfigs), func(i int) string {
+		return r.PagerDutyConfigs[i].CredentialRef
+	})...)
+	channels = append(channels, qualifiedCredentialChannels("teams", r.Name, len(r.TeamsConfigs), func(i int) string {
+		return r.TeamsConfigs[i].CredentialRef
+	})...)
+
 	if len(r.EmailConfigs) > 0 {
 		channels = append(channels, "email")
 	}
@@ -529,6 +506,27 @@ func (r *Receiver) QualifiedChannels() []string {
 		channels = append(channels, "log")
 	}
 
+	return channels
+}
+
+// qualifiedCredentialChannels builds the qualified channel names for a
+// credential-capable channel type (slack, pagerduty, teams). Each config
+// entry that sets a CredentialRef is qualified with the receiver name; when
+// more than one entry has a credential, the index disambiguates them.
+// Entries without a CredentialRef use the unqualified channel type name.
+func qualifiedCredentialChannels(channelType, receiverName string, count int, credentialRefAt func(i int) string) []string {
+	channels := make([]string, 0, count)
+	for i := 0; i < count; i++ {
+		credRef := credentialRefAt(i)
+		switch {
+		case credRef == "":
+			channels = append(channels, channelType)
+		case count > 1:
+			channels = append(channels, fmt.Sprintf("%s:%s:%d", channelType, receiverName, i))
+		default:
+			channels = append(channels, fmt.Sprintf("%s:%s", channelType, receiverName))
+		}
+	}
 	return channels
 }
 

@@ -23,6 +23,41 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
+// staticGVKByKind holds the well-known core/apps/kubernaut.ai Kind ->
+// GroupVersionKind mappings resolved without consulting the REST mapper (see
+// ResolveGVKForKind). Expressed as a map rather than a switch to keep
+// cyclomatic complexity low for what is otherwise a flat lookup table.
+var staticGVKByKind = map[string]schema.GroupVersionKind{
+	"Deployment":              {Group: "apps", Version: "v1", Kind: "Deployment"},
+	"StatefulSet":             {Group: "apps", Version: "v1", Kind: "StatefulSet"},
+	"DaemonSet":               {Group: "apps", Version: "v1", Kind: "DaemonSet"},
+	"ReplicaSet":              {Group: "apps", Version: "v1", Kind: "ReplicaSet"},
+	"Pod":                     {Group: "", Version: "v1", Kind: "Pod"},
+	"Service":                 {Group: "", Version: "v1", Kind: "Service"},
+	"ConfigMap":               {Group: "", Version: "v1", Kind: "ConfigMap"},
+	"Secret":                  {Group: "", Version: "v1", Kind: "Secret"},
+	"Endpoints":               {Group: "", Version: "v1", Kind: "Endpoints"},
+	"Namespace":               {Group: "", Version: "v1", Kind: "Namespace"},
+	"Job":                     {Group: "batch", Version: "v1", Kind: "Job"},
+	"CronJob":                 {Group: "batch", Version: "v1", Kind: "CronJob"},
+	"Ingress":                 {Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"},
+	"NetworkPolicy":           {Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"},
+	"PersistentVolumeClaim":   {Group: "", Version: "v1", Kind: "PersistentVolumeClaim"},
+	"Node":                    {Group: "", Version: "v1", Kind: "Node"},
+	"HorizontalPodAutoscaler": {Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"},
+	"PodDisruptionBudget":     {Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"},
+	"Certificate":             {Group: "cert-manager.io", Version: "v1", Kind: "Certificate"},
+	"RemediationRequest":      {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequest"},
+	"RemediationWorkflow":     {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationWorkflow"},
+	"InvestigationSession":    {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "InvestigationSession"},
+	"AIAnalysis":              {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "AIAnalysis"},
+	"SignalProcessing":        {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "SignalProcessing"},
+	"EffectivenessAssessment": {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "EffectivenessAssessment"},
+	"WorkflowExecution":       {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "WorkflowExecution"},
+	"ActionType":              {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "ActionType"},
+	"NotificationRequest":     {Group: "kubernaut.ai", Version: "v1alpha1", Kind: "NotificationRequest"},
+}
+
 // ResolveGVKForKind resolves a Kubernetes Kind string to its canonical
 // GroupVersionKind. Well-known core and apps kinds are resolved statically
 // to avoid ambiguity when multiple API groups register the same Kind
@@ -32,63 +67,8 @@ import (
 //
 // Callers: RemediationOrchestrator reconciler, EffectivenessMonitor reconciler.
 func ResolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersionKind, error) {
-	switch kind {
-	case "Deployment":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}, nil
-	case "StatefulSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSet"}, nil
-	case "DaemonSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "DaemonSet"}, nil
-	case "ReplicaSet":
-		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "ReplicaSet"}, nil
-	case "Pod":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Pod"}, nil
-	case "Service":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Service"}, nil
-	case "ConfigMap":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "ConfigMap"}, nil
-	case "Secret":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"}, nil
-	case "Endpoints":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Endpoints"}, nil
-	case "Namespace":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"}, nil
-	case "Job":
-		return schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "Job"}, nil
-	case "CronJob":
-		return schema.GroupVersionKind{Group: "batch", Version: "v1", Kind: "CronJob"}, nil
-	case "Ingress":
-		return schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}, nil
-	case "NetworkPolicy":
-		return schema.GroupVersionKind{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy"}, nil
-	case "PersistentVolumeClaim":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "PersistentVolumeClaim"}, nil
-	case "Node":
-		return schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Node"}, nil
-	case "HorizontalPodAutoscaler":
-		return schema.GroupVersionKind{Group: "autoscaling", Version: "v2", Kind: "HorizontalPodAutoscaler"}, nil
-	case "PodDisruptionBudget":
-		return schema.GroupVersionKind{Group: "policy", Version: "v1", Kind: "PodDisruptionBudget"}, nil
-	case "Certificate":
-		return schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "Certificate"}, nil
-	case "RemediationRequest":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationRequest"}, nil
-	case "RemediationWorkflow":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationWorkflow"}, nil
-	case "InvestigationSession":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "InvestigationSession"}, nil
-	case "AIAnalysis":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "AIAnalysis"}, nil
-	case "SignalProcessing":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "SignalProcessing"}, nil
-	case "EffectivenessAssessment":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "EffectivenessAssessment"}, nil
-	case "WorkflowExecution":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "WorkflowExecution"}, nil
-	case "ActionType":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "ActionType"}, nil
-	case "NotificationRequest":
-		return schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "NotificationRequest"}, nil
+	if gvk, ok := staticGVKByKind[kind]; ok {
+		return gvk, nil
 	}
 
 	if mapper != nil {

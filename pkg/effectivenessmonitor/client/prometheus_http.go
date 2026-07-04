@@ -125,9 +125,9 @@ func (c *prometheusHTTPClient) Ready(ctx context.Context) error {
 
 // promAPIResponse represents the standard Prometheus API response.
 type promAPIResponse struct {
-	Status string          `json:"status"`
-	Data   promAPIData     `json:"data"`
-	Error  string          `json:"error,omitempty"`
+	Status string      `json:"status"`
+	Data   promAPIData `json:"data"`
+	Error  string      `json:"error,omitempty"`
 }
 
 type promAPIData struct {
@@ -167,37 +167,52 @@ func parsePromResponse(body io.Reader) (*QueryResult, error) {
 
 	switch apiResp.Data.ResultType {
 	case "vector":
-		for _, raw := range apiResp.Data.Result {
-			var vr promVectorResult
-			if err := json.Unmarshal(raw, &vr); err != nil {
-				continue
-			}
-			sample, err := parseVectorSample(vr)
-			if err != nil {
-				continue
-			}
-			result.Samples = append(result.Samples, sample)
-		}
+		result.Samples = append(result.Samples, parseVectorResults(apiResp.Data.Result)...)
 	case "matrix":
-		for _, raw := range apiResp.Data.Result {
-			var mr promMatrixResult
-			if err := json.Unmarshal(raw, &mr); err != nil {
-				continue
-			}
-			// Return ALL data points from the matrix result.
-			// QueryRange returns time series with multiple [timestamp, value] pairs;
-			// callers need the full set to compare earliest vs latest (pre/post remediation).
-			for _, valuePair := range mr.Values {
-				sample, err := parseValuePair(mr.Metric, valuePair)
-				if err != nil {
-					continue
-				}
-				result.Samples = append(result.Samples, sample)
-			}
-		}
+		result.Samples = append(result.Samples, parseMatrixResults(apiResp.Data.Result)...)
 	}
 
 	return result, nil
+}
+
+// parseVectorResults decodes each raw vector result entry into a Sample,
+// silently skipping entries that fail to unmarshal or parse.
+func parseVectorResults(raws []json.RawMessage) []Sample {
+	samples := make([]Sample, 0, len(raws))
+	for _, raw := range raws {
+		var vr promVectorResult
+		if err := json.Unmarshal(raw, &vr); err != nil {
+			continue
+		}
+		sample, err := parseVectorSample(vr)
+		if err != nil {
+			continue
+		}
+		samples = append(samples, sample)
+	}
+	return samples
+}
+
+// parseMatrixResults decodes each raw matrix result entry, returning ALL data
+// points across all series. QueryRange returns time series with multiple
+// [timestamp, value] pairs; callers need the full set to compare earliest vs
+// latest (pre/post remediation).
+func parseMatrixResults(raws []json.RawMessage) []Sample {
+	var samples []Sample
+	for _, raw := range raws {
+		var mr promMatrixResult
+		if err := json.Unmarshal(raw, &mr); err != nil {
+			continue
+		}
+		for _, valuePair := range mr.Values {
+			sample, err := parseValuePair(mr.Metric, valuePair)
+			if err != nil {
+				continue
+			}
+			samples = append(samples, sample)
+		}
+	}
+	return samples
 }
 
 func parseVectorSample(vr promVectorResult) (Sample, error) {

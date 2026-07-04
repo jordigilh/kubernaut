@@ -160,24 +160,32 @@ func (c Config) Calculate(attempts int32) time.Duration {
 	// WITHOUT jitter: All 100 retry at EXACTLY 30s → API overload
 	// WITH ±10% jitter: 100 retry spread over 27-33s → manageable load
 	if c.JitterPercent > 0 {
-		jitterRange := backoff * time.Duration(c.JitterPercent) / 100
-		if jitterRange > 0 {
-			// Random jitter between -JitterPercent% and +JitterPercent%
-			jitter := time.Duration(rand.Int63n(int64(jitterRange)*2)) - jitterRange
-			backoff += jitter
-
-			// Ensure backoff remains within bounds after jitter
-			// Never go below BasePeriod (minimum backoff)
-			if backoff < c.BasePeriod {
-				backoff = c.BasePeriod
-			}
-			// Never exceed MaxPeriod (maximum backoff)
-			if c.MaxPeriod > 0 && backoff > c.MaxPeriod {
-				backoff = c.MaxPeriod
-			}
-		}
+		backoff = c.applyJitter(backoff)
 	}
 
+	return backoff
+}
+
+// applyJitter adds randomized jitter (±JitterPercent%) to backoff, then
+// re-clamps the result to [BasePeriod, MaxPeriod] since jitter can push the
+// value outside either bound.
+func (c Config) applyJitter(backoff time.Duration) time.Duration {
+	jitterRange := backoff * time.Duration(c.JitterPercent) / 100
+	if jitterRange <= 0 {
+		return backoff
+	}
+
+	// Random jitter between -JitterPercent% and +JitterPercent%
+	jitter := time.Duration(rand.Int63n(int64(jitterRange)*2)) - jitterRange
+	backoff += jitter
+
+	// Ensure backoff remains within bounds after jitter.
+	if backoff < c.BasePeriod {
+		backoff = c.BasePeriod
+	}
+	if c.MaxPeriod > 0 && backoff > c.MaxPeriod {
+		backoff = c.MaxPeriod
+	}
 	return backoff
 }
 
