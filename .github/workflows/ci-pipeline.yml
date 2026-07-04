@@ -300,6 +300,19 @@ jobs:
           export PATH="${{ github.workspace }}/bin:$PATH"
           make test-unit-${{ matrix.service }}
 
+      - name: Run fuzz corpus regression (this service's fuzz targets, if any)
+        # ginkgo's runner (used by test-unit-* above) only executes Ginkgo
+        # specs and silently skips func FuzzXxx(f *testing.F) functions in the
+        # same package. This reuses the checkout/generate already done above
+        # (no extra job/setup) to run each service's fuzz seed + saved-crasher
+        # corpus as a plain `go test` -- catches regressions like the
+        # nil-pointer panic found in pkg/notification/routing.ParseConfig.
+        # No-op for services with no fuzz targets. Does NOT do new fuzzing
+        # (needs a time budget); see `make fuzz`.
+        run: |
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make test-fuzz-${{ matrix.service }}
+
       - name: Calculate and save coverage
         if: always()
         run: |
@@ -336,55 +349,6 @@ jobs:
             coverage_unit_${{ matrix.service }}.txt
           retention-days: 1
           if-no-files-found: ignore
-
-  # ========================================
-  # Fuzz corpus regression (Issue: native Go fuzz tests use func FuzzXxx(f
-  # *testing.F), which the ginkgo-based unit-tests job above never executes --
-  # ginkgo's runner only runs Ginkgo specs. This job runs every fuzz target's
-  # seed + saved-crasher corpus as a plain `go test`, catching regressions
-  # like the nil-pointer panic found in pkg/notification/routing.ParseConfig.
-  # This does NOT do new fuzzing (that needs a time budget); see `make fuzz`.
-  # ========================================
-
-  fuzz-regression:
-    name: Fuzz Corpus Regression
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
-        with:
-          submodules: true
-
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version: '1.26.4'
-          cache: true
-
-      - name: Cache generated code
-        id: gen-cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            api/*/v1alpha1/zz_generated.deepcopy.go
-            pkg/shared/types/zz_generated.deepcopy.go
-            pkg/agentclient/oas_*.go
-            pkg/datastorage/ogen-client/oas_*.go
-            pkg/datastorage/server/middleware/openapi_spec_data.yaml
-            pkg/audit/openapi_spec_data.yaml
-          key: generated-code-v1-${{ hashFiles('api/**/*.go', 'pkg/shared/types/**/*.go', 'api/openapi/**', 'internal/kubernautagent/api/openapi.json', 'pkg/agentclient/generate.go', 'pkg/datastorage/ogen-client/gen.go', 'Makefile') }}
-
-      - name: Generate Go code (cache miss)
-        if: steps.gen-cache.outputs.cache-hit != 'true'
-        run: |
-          export PATH="${{ github.workspace }}/bin:$PATH"
-          make generate
-
-      - name: Run fuzz corpus regression
-        run: make test-fuzz
 
   # ========================================
   # STAGE 2: BUILD & PUSH IMAGES (ghcr.io)
@@ -1372,7 +1336,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, fuzz-regression, build-and-push-images, build-infra-images, create-ci-manifests, integration-tests, e2e-tests, helm-smoke-test]
+    needs: [detect-changes, lint-go, unit-tests, build-and-push-images, build-infra-images, create-ci-manifests, integration-tests, e2e-tests, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1525,8 +1489,7 @@ jobs:
           echo ""
           echo "STAGE 1 - Lint & Unit Tests (All Parallel):"
           echo "  Lint (Go):        ${{ needs.lint-go.result }}"
-          echo "  Unit Tests (13):  ${{ needs.unit-tests.result }}"
-          echo "  Fuzz Regression:  ${{ needs.fuzz-regression.result }}"
+          echo "  Unit Tests (13):  ${{ needs.unit-tests.result }} (includes per-service fuzz corpus regression)"
           echo ""
           echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
           echo "  Go Services (12×2 arch):    ${{ needs.build-and-push-images.result }}"
@@ -1577,17 +1540,6 @@ jobs:
           elif [ "${{ needs.unit-tests.result }}" == "cancelled" ]; then
             echo ""
             echo "⚠️  Unit tests cancelled"
-            exit 1
-          fi
-
-          # Check for fuzz corpus regression failure (critical)
-          if [ "${{ needs.fuzz-regression.result }}" == "failure" ]; then
-            echo ""
-            echo "❌ Fuzz corpus regression failed - a fuzz target's seed or saved-crasher corpus no longer passes"
-            exit 1
-          elif [ "${{ needs.fuzz-regression.result }}" == "cancelled" ]; then
-            echo ""
-            echo "⚠️  Fuzz corpus regression cancelled"
             exit 1
           fi
 

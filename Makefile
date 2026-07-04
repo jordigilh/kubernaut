@@ -513,9 +513,9 @@ build-all: build-all-services ## Build all services (alias)
 # These targets close that gap. See AGENTS.md "Exception: Go Native Fuzz Tests".
 
 .PHONY: test-fuzz
-test-fuzz: ## Run all fuzz targets' seed + regression corpora as regular tests (fast, CI-gated, no new fuzzing)
+test-fuzz: ## Run all fuzz targets' seed + regression corpora as regular tests (fast, no new fuzzing; local convenience -- CI runs this per-service, see test-fuzz-%)
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@echo "🐛 Fuzz Corpus Regression (seed + saved crashers, no new fuzzing)"
+	@echo "🐛 Fuzz Corpus Regression -- all services (seed + saved crashers, no new fuzzing)"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@pkgs=$$(grep -rl '^func Fuzz' --include='*_test.go' . | xargs -n1 dirname | sort -u); \
 	if [ -z "$$pkgs" ]; then \
@@ -523,6 +523,16 @@ test-fuzz: ## Run all fuzz targets' seed + regression corpora as regular tests (
 		exit 0; \
 	fi; \
 	echo "Packages: $$pkgs"; \
+	go test $$pkgs -run '^Fuzz' -v
+
+.PHONY: test-fuzz-%
+test-fuzz-%: ## Run fuzz corpus regression for one service's fuzz targets, if any (no-op otherwise): make test-fuzz-gateway. Wired into CI's per-service unit-tests job.
+	@pkgs=$$(grep -rl '^func Fuzz' --include='*_test.go' ./pkg/$* 2>/dev/null | xargs -n1 dirname | sort -u); \
+	if [ -z "$$pkgs" ]; then \
+		echo "🐛 No fuzz targets in pkg/$* -- skipping"; \
+		exit 0; \
+	fi; \
+	echo "🐛 Fuzz Corpus Regression ($*): $$pkgs"; \
 	go test $$pkgs -run '^Fuzz' -v
 
 .PHONY: fuzz
