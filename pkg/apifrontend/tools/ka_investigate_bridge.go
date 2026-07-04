@@ -153,57 +153,85 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 				return summary.String(), rcaResult, ExitReasonChannelClosed
 			}
 			inactivity.Reset(inactivityTimeout)
-			// #1438: Handle session_ended before generic emit to avoid double-emit.
-			if evt.Type == ka.EventTypeSessionEnded {
-				phase := mapReasonToPhase(evt.Phase)
-				_ = launcher.EmitStatusWithMetaSafe(ctx,
-					FormatEventForUser(evt),
-					map[string]any{
-						"type":     launcher.MetaTypeInvestigation,
-						"phase":    phase,
-						"reason":   evt.Phase,
-						"terminal": true,
-					})
-				return summary.String(), rcaResult, ExitReasonChannelClosed
-			}
-			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
-			switch evt.Type {
-			case ka.EventTypeReasoningDelta:
-				if chunk := extractJSONField(evt.Data, "text"); chunk != "" {
-					summary.WriteString(chunk)
-				}
-			case ka.EventTypeTokenDelta:
-				if chunk := extractJSONField(evt.Data, "delta"); chunk != "" {
-					summary.WriteString(chunk)
-				}
-			case ka.EventTypeAlignmentVerdict:
-				if len(evt.Data) > 0 {
-					var avr katypes.AlignmentVerdictResult
-					if json.Unmarshal(evt.Data, &avr) == nil && avr.Result != "aligned" {
-						meta := map[string]any{
-							"type":  launcher.MetaTypeAlignmentCheckFailed,
-							"rr_id": extractRRIDFromContext(ctx),
-						}
-						_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), meta)
-					}
-				}
-			case ka.EventTypeComplete:
-				if len(evt.Data) > 0 {
-					var rca InvestigateRCA
-					if json.Unmarshal(evt.Data, &rca) == nil && rca.Severity != "" {
-						rcaResult = &rca
-						if rca.RCASummary != "" && summary.Len() == 0 {
-							summary.WriteString(rca.RCASummary)
-						}
-						emitEarlyRCA(ctx, &rca)
-					}
-				}
-				return summary.String(), rcaResult, ExitReasonChannelClosed
-			case ka.EventTypeCancelled:
-				return summary.String(), rcaResult, ExitReasonChannelClosed
+			if done, exitReason := processBridgeEvent(ctx, evt, &summary, &rcaResult); done {
+				return summary.String(), rcaResult, exitReason
 			}
 		}
 	}
+}
+
+// processBridgeEvent handles a single investigation event: emits it to A2A,
+// accumulates streamed text into summary, and captures the RCA result when
+// the investigation completes. Returns done=true (with the terminal exit
+// reason) when bridgeEventsCollectSummary's loop should stop.
+func processBridgeEvent(ctx context.Context, evt ka.InvestigationEvent, summary *strings.Builder, rcaResult **InvestigateRCA) (bool, string) {
+	// #1438: Handle session_ended before generic emit to avoid double-emit.
+	if evt.Type == ka.EventTypeSessionEnded {
+		phase := mapReasonToPhase(evt.Phase)
+		_ = launcher.EmitStatusWithMetaSafe(ctx,
+			FormatEventForUser(evt),
+			map[string]any{
+				"type":     launcher.MetaTypeInvestigation,
+				"phase":    phase,
+				"reason":   evt.Phase,
+				"terminal": true,
+			})
+		return true, ExitReasonChannelClosed
+	}
+	emitEventToA2A(ctx, evt, FormatEventForUser(evt))
+	switch evt.Type {
+	case ka.EventTypeReasoningDelta:
+		if chunk := extractJSONField(evt.Data, "text"); chunk != "" {
+			summary.WriteString(chunk)
+		}
+	case ka.EventTypeTokenDelta:
+		if chunk := extractJSONField(evt.Data, "delta"); chunk != "" {
+			summary.WriteString(chunk)
+		}
+	case ka.EventTypeAlignmentVerdict:
+		emitAlignmentVerdictIfMisaligned(ctx, evt)
+	case ka.EventTypeComplete:
+		captureCompleteEventRCA(ctx, evt, summary, rcaResult)
+		return true, ExitReasonChannelClosed
+	case ka.EventTypeCancelled:
+		return true, ExitReasonChannelClosed
+	}
+	return false, ""
+}
+
+// emitAlignmentVerdictIfMisaligned emits an alignment-check-failed event when
+// evt carries a non-"aligned" AlignmentVerdictResult payload.
+func emitAlignmentVerdictIfMisaligned(ctx context.Context, evt ka.InvestigationEvent) {
+	if len(evt.Data) == 0 {
+		return
+	}
+	var avr katypes.AlignmentVerdictResult
+	if json.Unmarshal(evt.Data, &avr) != nil || avr.Result == "aligned" {
+		return
+	}
+	meta := map[string]any{
+		"type":  launcher.MetaTypeAlignmentCheckFailed,
+		"rr_id": extractRRIDFromContext(ctx),
+	}
+	_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), meta)
+}
+
+// captureCompleteEventRCA parses the terminal "complete" event's RCA payload,
+// stores it in rcaResult, seeds summary with the RCA text when no streamed
+// text was accumulated, and emits the progressive early-RCA artifact.
+func captureCompleteEventRCA(ctx context.Context, evt ka.InvestigationEvent, summary *strings.Builder, rcaResult **InvestigateRCA) {
+	if len(evt.Data) == 0 {
+		return
+	}
+	var rca InvestigateRCA
+	if json.Unmarshal(evt.Data, &rca) != nil || rca.Severity == "" {
+		return
+	}
+	*rcaResult = &rca
+	if rca.RCASummary != "" && summary.Len() == 0 {
+		summary.WriteString(rca.RCASummary)
+	}
+	emitEarlyRCA(ctx, &rca)
 }
 
 // emitEarlyRCA emits a progressive RCA status-update via the EventBridge so

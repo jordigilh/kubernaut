@@ -8,6 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	k8sretry "k8s.io/client-go/util/retry"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -98,34 +99,12 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 			return fmt.Errorf("phase transition: %w", err)
 		}
 
-		now := metav1.Now()
-		crd.Status.Phase = to
-		crd.Status.Message = message
-
-		switch {
-		case IsTerminal(to):
-			crd.Status.CompletedAt = &now
-		case to == v1alpha1.SessionPhaseDisconnected:
-			crd.Status.DisconnectedAt = &now
-			crd.Status.ConnectionState = v1alpha1.ConnectionStateDisconnected
-		case from == v1alpha1.SessionPhaseDisconnected && to == v1alpha1.SessionPhaseActive:
-			crd.Status.ReconnectedAt = &now
-			crd.Status.ConnectionState = v1alpha1.ConnectionStateConnected
-		}
-
+		applyPhaseStatus(&crd, from, to, message)
 		if err := s.client.Status().Update(ctx, &crd); err != nil {
 			return err
 		}
 
-		// Update phase label (requires separate Update due to status subresource split)
-		if err := reader.Get(ctx, nn, &crd); err != nil {
-			return fmt.Errorf("re-read session for label update: %w", err)
-		}
-		if crd.Labels == nil {
-			crd.Labels = make(map[string]string)
-		}
-		crd.Labels[LabelPhase] = string(to)
-		return s.client.Update(ctx, &crd)
+		return s.updatePhaseLabel(ctx, reader, nn, to)
 	})
 	if err != nil {
 		return err
@@ -143,19 +122,7 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 	})
 
 	if IsTerminal(to) {
-		detail := map[string]string{
-			"session_id":     sessionID,
-			"terminal_phase": string(to),
-		}
-		nn := types.NamespacedName{Name: crdName, Namespace: s.namespace}
-		var crdForDuration v1alpha1.InvestigationSession
-		if err := s.getReader().Get(ctx, nn, &crdForDuration); err == nil {
-			created := crdForDuration.CreationTimestamp.Time
-			if !created.IsZero() {
-				detail["total_duration_ms"] = fmt.Sprintf("%d", time.Since(created).Milliseconds())
-			}
-		}
-		s.emitAudit(ctx, audit.EventSessionCompleted, userID, detail)
+		s.emitSessionCompletedAudit(ctx, nn, sessionID, userID, to)
 	}
 
 	s.decSessionGauge(string(from))
@@ -167,4 +134,56 @@ func (s *CRDSessionService) UpdatePhase(ctx context.Context, sessionID string, t
 		s.mu.Unlock()
 	}
 	return nil
+}
+
+// applyPhaseStatus sets crd.Status.Phase/Message and the phase-specific
+// timestamp/connection-state fields for the from->to transition.
+func applyPhaseStatus(crd *v1alpha1.InvestigationSession, from, to v1alpha1.SessionPhase, message string) {
+	now := metav1.Now()
+	crd.Status.Phase = to
+	crd.Status.Message = message
+
+	switch {
+	case IsTerminal(to):
+		crd.Status.CompletedAt = &now
+	case to == v1alpha1.SessionPhaseDisconnected:
+		crd.Status.DisconnectedAt = &now
+		crd.Status.ConnectionState = v1alpha1.ConnectionStateDisconnected
+	case from == v1alpha1.SessionPhaseDisconnected && to == v1alpha1.SessionPhaseActive:
+		crd.Status.ReconnectedAt = &now
+		crd.Status.ConnectionState = v1alpha1.ConnectionStateConnected
+	}
+}
+
+// updatePhaseLabel re-reads the CRD and updates its phase label. A separate
+// Update is required because the status subresource split means the earlier
+// Status().Update call does not persist label changes.
+func (s *CRDSessionService) updatePhaseLabel(ctx context.Context, reader client.Reader, nn types.NamespacedName, to v1alpha1.SessionPhase) error {
+	var crd v1alpha1.InvestigationSession
+	if err := reader.Get(ctx, nn, &crd); err != nil {
+		return fmt.Errorf("re-read session for label update: %w", err)
+	}
+	if crd.Labels == nil {
+		crd.Labels = make(map[string]string)
+	}
+	crd.Labels[LabelPhase] = string(to)
+	return s.client.Update(ctx, &crd)
+}
+
+// emitSessionCompletedAudit emits the EventSessionCompleted audit event for
+// a terminal phase transition, including total investigation duration when
+// the CRD's creation timestamp is available.
+func (s *CRDSessionService) emitSessionCompletedAudit(ctx context.Context, nn types.NamespacedName, sessionID, userID string, to v1alpha1.SessionPhase) {
+	detail := map[string]string{
+		"session_id":     sessionID,
+		"terminal_phase": string(to),
+	}
+	var crdForDuration v1alpha1.InvestigationSession
+	if err := s.getReader().Get(ctx, nn, &crdForDuration); err == nil {
+		created := crdForDuration.CreationTimestamp.Time
+		if !created.IsZero() {
+			detail["total_duration_ms"] = fmt.Sprintf("%d", time.Since(created).Milliseconds())
+		}
+	}
+	s.emitAudit(ctx, audit.EventSessionCompleted, userID, detail)
 }

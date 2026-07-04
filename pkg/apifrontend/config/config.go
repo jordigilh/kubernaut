@@ -45,8 +45,8 @@ type Config struct {
 // kubernaut_investigate, kubernaut_message) are hidden from MCP enumeration
 // and the A2A agent tool list (#1366).
 type InteractiveConfig struct {
-	Enabled                bool          `yaml:"enabled"`
-	AwaitSessionTimeout    time.Duration `yaml:"awaitSessionTimeout,omitempty"`
+	Enabled                 bool          `yaml:"enabled"`
+	AwaitSessionTimeout     time.Duration `yaml:"awaitSessionTimeout,omitempty"`
 	BridgeInactivityTimeout time.Duration `yaml:"bridgeInactivityTimeout,omitempty"`
 }
 
@@ -59,15 +59,15 @@ type SessionConfig struct {
 
 // SeverityTriageConfig holds settings for the Prometheus-based severity triage pipeline.
 type SeverityTriageConfig struct {
-	Enabled                   bool              `yaml:"enabled"`
-	LLM                       *types.LLMConfig  `yaml:"llm,omitempty"`
-	PrometheusURL             string     `yaml:"prometheusURL,omitempty"`
-	PrometheusTLSCaFile       string     `yaml:"prometheusTlsCaFile,omitempty"`
-	PrometheusBearerTokenFile string     `yaml:"prometheusBearerTokenFile,omitempty"`
-	CacheTTLSeconds           int        `yaml:"cacheTTLSeconds,omitempty"`
-	MaxQueriesPerCall         int        `yaml:"maxQueriesPerCall,omitempty"`
-	MaxRulesEvaluated         int        `yaml:"maxRulesEvaluated,omitempty"`
-	LLMConfidence             float64    `yaml:"llmConfidence,omitempty"`
+	Enabled                   bool             `yaml:"enabled"`
+	LLM                       *types.LLMConfig `yaml:"llm,omitempty"`
+	PrometheusURL             string           `yaml:"prometheusURL,omitempty"`
+	PrometheusTLSCaFile       string           `yaml:"prometheusTlsCaFile,omitempty"`
+	PrometheusBearerTokenFile string           `yaml:"prometheusBearerTokenFile,omitempty"`
+	CacheTTLSeconds           int              `yaml:"cacheTTLSeconds,omitempty"`
+	MaxQueriesPerCall         int              `yaml:"maxQueriesPerCall,omitempty"`
+	MaxRulesEvaluated         int              `yaml:"maxRulesEvaluated,omitempty"`
+	LLMConfidence             float64          `yaml:"llmConfidence,omitempty"`
 }
 
 // ResilienceConfig holds per-dependency circuit breaker and retry settings.
@@ -192,23 +192,22 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	KABaseURL          string          `yaml:"kaBaseURL"`
-	KAMCPEndpoint      string          `yaml:"kaMCPEndpoint"`
-	DSBaseURL          string          `yaml:"dsBaseURL"`
-	DSBearerTokenFile  string          `yaml:"dsBearerTokenFile,omitempty"`
-	KABearerTokenFile  string          `yaml:"kaBearerTokenFile,omitempty"`
-	KATLSCaFile        string          `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile        string          `yaml:"dsTlsCaFile,omitempty"`
-	LLM                types.LLMConfig `yaml:"llm"`
+	KABaseURL         string          `yaml:"kaBaseURL"`
+	KAMCPEndpoint     string          `yaml:"kaMCPEndpoint"`
+	DSBaseURL         string          `yaml:"dsBaseURL"`
+	DSBearerTokenFile string          `yaml:"dsBearerTokenFile,omitempty"`
+	KABearerTokenFile string          `yaml:"kaBearerTokenFile,omitempty"`
+	KATLSCaFile       string          `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile       string          `yaml:"dsTlsCaFile,omitempty"`
+	LLM               types.LLMConfig `yaml:"llm"`
 }
-
 
 // MCPConfig holds Model Context Protocol feature flags.
 type MCPConfig struct {
-	Enabled            bool                       `yaml:"enabled"`
-	SessionIdleTimeout time.Duration              `yaml:"sessionIdleTimeout,omitempty"`
-	ToolTimeout        time.Duration              `yaml:"toolTimeout,omitempty"`
-	ToolTimeouts       map[string]time.Duration   `yaml:"toolTimeouts,omitempty"`
+	Enabled            bool                     `yaml:"enabled"`
+	SessionIdleTimeout time.Duration            `yaml:"sessionIdleTimeout,omitempty"`
+	ToolTimeout        time.Duration            `yaml:"toolTimeout,omitempty"`
+	ToolTimeouts       map[string]time.Duration `yaml:"toolTimeouts,omitempty"`
 }
 
 // AgentCardConfig holds the agent card endpoint configuration.
@@ -243,10 +242,10 @@ func DefaultConfig() *Config {
 			Enabled:     false,
 			ToolTimeout: 30 * time.Second,
 			ToolTimeouts: map[string]time.Duration{
-				"kubernaut_investigate":          15 * time.Minute,
-				"kubernaut_await_session":        3 * time.Minute,
-				"kubernaut_watch":                15 * time.Minute,
-				"kubernaut_discover_workflows":   60 * time.Second,
+				"kubernaut_investigate":        15 * time.Minute,
+				"kubernaut_await_session":      3 * time.Minute,
+				"kubernaut_watch":              15 * time.Minute,
+				"kubernaut_discover_workflows": 60 * time.Second,
 			},
 		},
 		Logging: LoggingConfig{
@@ -259,51 +258,57 @@ func DefaultConfig() *Config {
 		Shutdown: ShutdownConfig{
 			DrainSeconds: 15,
 		},
-		Resilience: ResilienceConfig{
-			KA: DependencyConfig{
-				ConnectTimeout:     5 * time.Second,
-				RequestTimeout:     30 * time.Second,
-				CBMaxRequests:      3,
-				CBInterval:         10 * time.Second,
-				CBTimeout:          30 * time.Second,
-				CBFailureThreshold: 5,
-				RetryMax:           2,
-				RetryInitBackoff:   500 * time.Millisecond,
-				RetryMaxBackoff:    5 * time.Second,
-				RetryableStatuses:  []int{502, 503, 504},
-			},
-			DS: DependencyConfig{
-				ConnectTimeout:     3 * time.Second,
-				RequestTimeout:     10 * time.Second,
-				CBMaxRequests:      3,
-				CBInterval:         10 * time.Second,
-				CBTimeout:          15 * time.Second,
-				CBFailureThreshold: 3,
-				RetryMax:           3,
-				RetryInitBackoff:   200 * time.Millisecond,
-				RetryMaxBackoff:    3 * time.Second,
-				RetryableStatuses:  []int{502, 503, 504},
-			},
-			K8s: DependencyConfig{
-				ConnectTimeout:     5 * time.Second,
-				RequestTimeout:     30 * time.Second,
-				CBMaxRequests:      3,
-				CBInterval:         10 * time.Second,
-				CBTimeout:          30 * time.Second,
-				CBFailureThreshold: 5,
-				RetryMax:           0,
-				RetryableStatuses:  []int{},
-			},
-			Prometheus: DependencyConfig{
-				ConnectTimeout: 5 * time.Second,
-				RequestTimeout: 10 * time.Second,
-			},
-		},
+		Resilience: defaultResilienceConfig(),
 		RBAC: RBACConfig{
 			SARCacheTTL: 30 * time.Second,
 		},
 		Interactive: InteractiveConfig{
 			Enabled: true,
+		},
+	}
+}
+
+// defaultResilienceConfig returns the per-dependency circuit-breaker/retry
+// defaults for KA, DataStorage, K8s, and Prometheus clients.
+func defaultResilienceConfig() ResilienceConfig {
+	return ResilienceConfig{
+		KA: DependencyConfig{
+			ConnectTimeout:     5 * time.Second,
+			RequestTimeout:     30 * time.Second,
+			CBMaxRequests:      3,
+			CBInterval:         10 * time.Second,
+			CBTimeout:          30 * time.Second,
+			CBFailureThreshold: 5,
+			RetryMax:           2,
+			RetryInitBackoff:   500 * time.Millisecond,
+			RetryMaxBackoff:    5 * time.Second,
+			RetryableStatuses:  []int{502, 503, 504},
+		},
+		DS: DependencyConfig{
+			ConnectTimeout:     3 * time.Second,
+			RequestTimeout:     10 * time.Second,
+			CBMaxRequests:      3,
+			CBInterval:         10 * time.Second,
+			CBTimeout:          15 * time.Second,
+			CBFailureThreshold: 3,
+			RetryMax:           3,
+			RetryInitBackoff:   200 * time.Millisecond,
+			RetryMaxBackoff:    3 * time.Second,
+			RetryableStatuses:  []int{502, 503, 504},
+		},
+		K8s: DependencyConfig{
+			ConnectTimeout:     5 * time.Second,
+			RequestTimeout:     30 * time.Second,
+			CBMaxRequests:      3,
+			CBInterval:         10 * time.Second,
+			CBTimeout:          30 * time.Second,
+			CBFailureThreshold: 5,
+			RetryMax:           0,
+			RetryableStatuses:  []int{},
+		},
+		Prometheus: DependencyConfig{
+			ConnectTimeout: 5 * time.Second,
+			RequestTimeout: 10 * time.Second,
 		},
 	}
 }
@@ -324,6 +329,34 @@ func Load(data []byte) (*Config, error) {
 // Validate checks required fields and value constraints. Returns the first
 // validation error encountered (fail-fast).
 func (c *Config) Validate() error {
+	if err := c.validateServerPorts(); err != nil {
+		return err
+	}
+	if err := c.validateAgentBaseFields(); err != nil {
+		return err
+	}
+	for _, validate := range []func() error{
+		c.validateLLM,
+		c.validateAuth,
+		c.validateLogging,
+		c.validateRateLimit,
+		c.validateShutdown,
+		c.validateResilience,
+		c.validateTLSPaths,
+		c.validateSeverityTriage,
+		c.validateSession,
+		c.Fleet.Validate,
+	} {
+		if err := validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateServerPorts checks the three HTTP listener ports are in the
+// non-privileged range and mutually distinct.
+func (c *Config) validateServerPorts() error {
 	if c.Server.Port < 1024 || c.Server.Port > 65535 {
 		return fmt.Errorf("server.port must be 1024-65535 (non-privileged), got %d", c.Server.Port)
 	}
@@ -333,9 +366,12 @@ func (c *Config) Validate() error {
 	if c.Server.HealthPort < 1024 || c.Server.HealthPort > 65535 {
 		return fmt.Errorf("server.healthPort must be 1024-65535 (non-privileged), got %d", c.Server.HealthPort)
 	}
-	if err := validatePortsDistinct(c.Server.Port, c.Server.MetricsPort, c.Server.HealthPort); err != nil {
-		return err
-	}
+	return validatePortsDistinct(c.Server.Port, c.Server.MetricsPort, c.Server.HealthPort)
+}
+
+// validateAgentBaseFields checks the required KA/DataStorage base URLs are
+// present and well-formed, and that any configured bearer-token files exist.
+func (c *Config) validateAgentBaseFields() error {
 	if c.Agent.KABaseURL == "" {
 		return fmt.Errorf("agent.kaBaseURL is required")
 	}
@@ -363,36 +399,6 @@ func (c *Config) Validate() error {
 		if _, err := os.Stat(c.Agent.KABearerTokenFile); err != nil {
 			return fmt.Errorf("agent.kaBearerTokenFile %q is not accessible: %w", c.Agent.KABearerTokenFile, err)
 		}
-	}
-	if err := c.validateLLM(); err != nil {
-		return err
-	}
-	if err := c.validateAuth(); err != nil {
-		return err
-	}
-	if err := c.validateLogging(); err != nil {
-		return err
-	}
-	if err := c.validateRateLimit(); err != nil {
-		return err
-	}
-	if err := c.validateShutdown(); err != nil {
-		return err
-	}
-	if err := c.validateResilience(); err != nil {
-		return err
-	}
-	if err := c.validateTLSPaths(); err != nil {
-		return err
-	}
-	if err := c.validateSeverityTriage(); err != nil {
-		return err
-	}
-	if err := c.validateSession(); err != nil {
-		return err
-	}
-	if err := c.Fleet.Validate(); err != nil {
-		return err
 	}
 	return nil
 }

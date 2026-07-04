@@ -76,6 +76,13 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 	}
 	defer watcher.Stop()
 
+	return watchForSessionID(watchCtx, watcher, args.RRName)
+}
+
+// watchForSessionID drains watcher's event channel until an AIAnalysis event
+// matching rrName carries a non-empty KASession.ID, the watch closes, or
+// watchCtx is done (timeout).
+func watchForSessionID(watchCtx context.Context, watcher watch.Interface, rrName string) (AwaitSessionResult, error) {
 	for {
 		select {
 		case <-watchCtx.Done():
@@ -84,20 +91,28 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 			if !ok {
 				return AwaitSessionResult{Status: "timeout", Message: "watch closed unexpectedly"}, nil
 			}
-			if evt.Type == watch.Modified || evt.Type == watch.Added {
-				aia, ok := evt.Object.(*aiav1alpha1.AIAnalysis)
-				if !ok {
-					continue
-				}
-				if aia.Spec.RemediationRequestRef.Name != args.RRName {
-					continue
-				}
-				if aia.Status.KASession != nil && aia.Status.KASession.ID != "" {
-					return AwaitSessionResult{SessionID: aia.Status.KASession.ID, Status: "ready"}, nil
-				}
+			if sessionID, matched := sessionIDFromEvent(evt, rrName); matched {
+				return AwaitSessionResult{SessionID: sessionID, Status: "ready"}, nil
 			}
 		}
 	}
+}
+
+// sessionIDFromEvent extracts the KA session ID from a watch event, if it is
+// an Added/Modified event for the AIAnalysis matching rrName with a
+// non-empty session ID already set. matched is true only in that case.
+func sessionIDFromEvent(evt watch.Event, rrName string) (sessionID string, matched bool) {
+	if evt.Type != watch.Modified && evt.Type != watch.Added {
+		return "", false
+	}
+	aia, ok := evt.Object.(*aiav1alpha1.AIAnalysis)
+	if !ok || aia.Spec.RemediationRequestRef.Name != rrName {
+		return "", false
+	}
+	if aia.Status.KASession == nil || aia.Status.KASession.ID == "" {
+		return "", false
+	}
+	return aia.Status.KASession.ID, true
 }
 
 // pollForSessionID is a fallback that polls AIAnalysis resources until session ID appears.

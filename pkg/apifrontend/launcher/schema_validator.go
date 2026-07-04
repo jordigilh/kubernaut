@@ -33,36 +33,47 @@ func initSchemas() {
 			if entry.IsDir() {
 				continue
 			}
-			data, err := schemaFS.ReadFile("schemas/" + entry.Name())
-			if err != nil {
-				schemaInitErr = fmt.Errorf("read schema %s: %w", entry.Name(), err)
+			if err := compileSchemaEntry(c, entry.Name()); err != nil {
+				schemaInitErr = err
 				return
 			}
-			var doc any
-			if err := json.Unmarshal(data, &doc); err != nil {
-				schemaInitErr = fmt.Errorf("parse schema %s: %w", entry.Name(), err)
-				return
-			}
-			url := "https://kubernaut.ai/schemas/a2a/" + entry.Name()
-			if err := c.AddResource(url, doc); err != nil {
-				schemaInitErr = fmt.Errorf("add schema %s: %w", entry.Name(), err)
-				return
-			}
-
-			sch, err := c.Compile(url)
-			if err != nil {
-				schemaInitErr = fmt.Errorf("compile schema %s: %w", entry.Name(), err)
-				return
-			}
-
-			name := entry.Name()
-			// Strip ".v1.schema.json" suffix to get the schema name
-			if len(name) > len(".v1.schema.json") {
-				name = name[:len(name)-len(".v1.schema.json")]
-			}
-			schemaCache[name] = sch
 		}
 	})
+}
+
+// compileSchemaEntry reads, parses, and compiles a single embedded schema
+// file, caching the result under its short name (see schemaCacheName).
+func compileSchemaEntry(c *jsonschema.Compiler, entryName string) error {
+	data, err := schemaFS.ReadFile("schemas/" + entryName)
+	if err != nil {
+		return fmt.Errorf("read schema %s: %w", entryName, err)
+	}
+	var doc any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		return fmt.Errorf("parse schema %s: %w", entryName, err)
+	}
+	url := "https://kubernaut.ai/schemas/a2a/" + entryName
+	if err := c.AddResource(url, doc); err != nil {
+		return fmt.Errorf("add schema %s: %w", entryName, err)
+	}
+
+	sch, err := c.Compile(url)
+	if err != nil {
+		return fmt.Errorf("compile schema %s: %w", entryName, err)
+	}
+
+	schemaCache[schemaCacheName(entryName)] = sch
+	return nil
+}
+
+// schemaCacheName strips the ".v1.schema.json" suffix from an embedded
+// schema filename to get its cache key.
+func schemaCacheName(entryName string) string {
+	const suffix = ".v1.schema.json"
+	if len(entryName) > len(suffix) {
+		return entryName[:len(entryName)-len(suffix)]
+	}
+	return entryName
 }
 
 // ValidatePayload validates a structured payload against its named JSON Schema.

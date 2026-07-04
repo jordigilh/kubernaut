@@ -98,6 +98,51 @@ var _ = Describe("kubernaut_await_session", func() {
 		})
 	})
 
+	Describe("HandleAwaitSession watch path (CHAR-AF-1532)", func() {
+		It("observes a session ID that appears via a watch event after the initial list misses it", func() {
+			aa := newTypedAIAnalysis("default", "aa-watch", "rr-watch", "")
+			tc := newTypedAIAnalysisClient(aa)
+
+			go func() {
+				defer GinkgoRecover()
+				time.Sleep(200 * time.Millisecond)
+				var updated aiav1alpha1.AIAnalysis
+				Expect(tc.Get(ctx, crclient.ObjectKey{Namespace: "default", Name: "aa-watch"}, &updated)).To(Succeed())
+				updated.Status.KASession = &aiav1alpha1.KASession{ID: "session-via-watch"}
+				Expect(tc.Status().Update(ctx, &updated)).To(Succeed())
+
+				// Unrelated AIAnalysis events (different RR name) must be
+				// ignored by the watch loop rather than mistakenly matched.
+				other := newTypedAIAnalysis("default", "aa-watch-other", "rr-watch-other", "session-should-be-ignored")
+				Expect(tc.Create(ctx, other)).To(Succeed())
+			}()
+
+			result, err := tools.HandleAwaitSession(ctx, tc, tools.AwaitSessionArgs{
+				Namespace: "default",
+				RRName:    "rr-watch",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("ready"))
+			Expect(result.SessionID).To(Equal("session-via-watch"))
+		})
+
+		It("times out when the watch never observes a session ID for this RR", func() {
+			orig := tools.AwaitSessionTimeout
+			tools.AwaitSessionTimeout = 500 * time.Millisecond
+			defer func() { tools.AwaitSessionTimeout = orig }()
+
+			aa := newTypedAIAnalysis("default", "aa-timeout", "rr-timeout", "")
+			tc := newTypedAIAnalysisClient(aa)
+
+			result, err := tools.HandleAwaitSession(ctx, tc, tools.AwaitSessionArgs{
+				Namespace: "default",
+				RRName:    "rr-timeout",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).To(Equal("timeout"))
+		})
+	})
+
 	Describe("HandleAwaitSession list filtering", func() {
 		It("UT-AF-1293-007: list ignores AIAnalysis for different RR name", func() {
 			aa := newTypedAIAnalysis("default", "aa-other", "rr-other", "session-other")

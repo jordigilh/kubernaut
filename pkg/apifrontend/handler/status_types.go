@@ -78,69 +78,87 @@ func BuildPhaseMetadata(rr *remediationv1.RemediationRequest, ea *eav1alpha1.Eff
 		meta["alert_name"] = rr.Spec.SignalName
 	}
 
-	phase := rr.Status.OverallPhase
+	addPhaseSpecificMetadata(meta, rr, ea)
 
-	switch phase {
+	return meta
+}
+
+// addPhaseSpecificMetadata dispatches to the per-phase metadata builder for
+// rr's current OverallPhase (split out of BuildPhaseMetadata to keep both
+// functions under the complexity gate).
+func addPhaseSpecificMetadata(meta map[string]any, rr *remediationv1.RemediationRequest, ea *eav1alpha1.EffectivenessAssessment) {
+	switch rr.Status.OverallPhase {
 	case remediationv1.PhaseExecuting:
-		if rr.Status.SelectedWorkflowRef != nil {
-			meta["workflow_id"] = rr.Status.SelectedWorkflowRef.WorkflowID
-		}
-		if rr.Status.ExecutingStartTime != nil {
-		meta["started_at"] = rr.Status.ExecutingStartTime.Format(time.RFC3339)
-	}
-
+		addExecutingPhaseMetadata(meta, rr)
 	case remediationv1.PhaseVerifying:
-		if rr.Status.VerificationDeadline != nil {
-			meta["verification_deadline"] = rr.Status.VerificationDeadline.Format(time.RFC3339)
-		}
-		if rr.Status.ExecutingStartTime != nil {
-			meta["started_at"] = rr.Status.ExecutingStartTime.Format(time.RFC3339)
-		}
-		if ea != nil {
-			meta["ea_phase"] = ea.Status.Phase
-			if ea.Status.PrometheusCheckAfter != nil {
-				meta["stabilization_deadline"] = ea.Status.PrometheusCheckAfter.Format(time.RFC3339)
-			}
-		}
-
+		addVerifyingPhaseMetadata(meta, rr, ea)
 	case remediationv1.PhaseBlocked:
-		if rr.Status.BlockedUntil != nil {
-			meta["blocked_until"] = rr.Status.BlockedUntil.Format(time.RFC3339)
-		}
-		if rr.Status.BlockReason != "" {
-			meta["block_reason"] = string(rr.Status.BlockReason)
-		}
-		if rr.Status.BlockMessage != "" {
-			meta["block_message"] = rr.Status.BlockMessage
-		}
-
+		addBlockedPhaseMetadata(meta, rr)
 	case remediationv1.PhaseAwaitingApproval:
 		rarName := fmt.Sprintf("rar-%s", rr.Name)
 		meta["approval_request_name"] = rr.Namespace + "/" + rarName
-
 	case remediationv1.PhaseCompleted:
 		if rr.Status.Outcome != "" {
 			meta["outcome"] = rr.Status.Outcome
 		}
-
 	case remediationv1.PhaseFailed:
-		if rr.Status.FailureReason != nil {
-			meta["failure_reason"] = *rr.Status.FailureReason
-		}
-		if rr.Status.FailurePhase != nil {
-			meta["failure_phase"] = string(*rr.Status.FailurePhase)
-		}
-
+		addFailedPhaseMetadata(meta, rr)
 	case remediationv1.PhaseTimedOut:
 		if rr.Status.TimeoutPhase != nil {
 			meta["failure_phase"] = string(*rr.Status.TimeoutPhase)
 		}
-
 	case remediationv1.PhaseSkipped:
 		if rr.Status.SkipReason != "" {
 			meta["skip_reason"] = string(rr.Status.SkipReason)
 		}
 	}
+}
 
-	return meta
+// addExecutingPhaseMetadata populates phase metadata for PhaseExecuting.
+func addExecutingPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest) {
+	if rr.Status.SelectedWorkflowRef != nil {
+		meta["workflow_id"] = rr.Status.SelectedWorkflowRef.WorkflowID
+	}
+	if rr.Status.ExecutingStartTime != nil {
+		meta["started_at"] = rr.Status.ExecutingStartTime.Format(time.RFC3339)
+	}
+}
+
+// addVerifyingPhaseMetadata populates phase metadata for PhaseVerifying.
+func addVerifyingPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest, ea *eav1alpha1.EffectivenessAssessment) {
+	if rr.Status.VerificationDeadline != nil {
+		meta["verification_deadline"] = rr.Status.VerificationDeadline.Format(time.RFC3339)
+	}
+	if rr.Status.ExecutingStartTime != nil {
+		meta["started_at"] = rr.Status.ExecutingStartTime.Format(time.RFC3339)
+	}
+	if ea != nil {
+		meta["ea_phase"] = ea.Status.Phase
+		if ea.Status.PrometheusCheckAfter != nil {
+			meta["stabilization_deadline"] = ea.Status.PrometheusCheckAfter.Format(time.RFC3339)
+		}
+	}
+}
+
+// addBlockedPhaseMetadata populates phase metadata for PhaseBlocked.
+func addBlockedPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest) {
+	if rr.Status.BlockedUntil != nil {
+		meta["blocked_until"] = rr.Status.BlockedUntil.Format(time.RFC3339)
+	}
+	if rr.Status.BlockReason != "" {
+		meta["block_reason"] = string(rr.Status.BlockReason)
+	}
+	if rr.Status.BlockMessage != "" {
+		meta["block_message"] = rr.Status.BlockMessage
+	}
+}
+
+// addFailedPhaseMetadata populates phase metadata for PhaseFailed.
+func addFailedPhaseMetadata(meta map[string]any, rr *remediationv1.RemediationRequest) {
+	if rr.Status.FailureReason != nil {
+		meta["failure_reason"] = *rr.Status.FailureReason
+	}
+	if rr.Status.FailurePhase != nil {
+		meta["failure_phase"] = string(*rr.Status.FailurePhase)
+	}
 }

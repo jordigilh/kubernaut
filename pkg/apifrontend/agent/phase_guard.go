@@ -172,22 +172,32 @@ func recordDriverEntryState(ctx tool.Context, inputArgs, resp map[string]any) {
 	// Prefer rr_id from response (kubernaut_investigate returns it).
 	// Fall back to input args (kubernaut_reconnect takes it as input
 	// but does not echo it in the response).
-	if rrID, ok := resp["rr_id"].(string); ok && rrID != "" {
-		if err := state.Set(stateKeyActiveRRID, rrID); err != nil {
-			logger.Error(err, "phase-guard failed to store rr_id in state")
-		}
-	} else if inputArgs != nil {
-		if rrID, ok := inputArgs["rr_id"].(string); ok && rrID != "" {
-			if err := state.Set(stateKeyActiveRRID, rrID); err != nil {
-				logger.Error(err, "phase-guard failed to store rr_id from input args")
-			}
-		}
-	}
+	storeActiveRRID(state, resp, inputArgs, logger)
 
 	if sessionID, ok := resp["session_id"].(string); ok && sessionID != "" {
 		if err := state.Set(stateKeyActiveSession, sessionID); err != nil {
 			logger.Error(err, "phase-guard failed to store session_id in state")
 		}
+	}
+}
+
+// storeActiveRRID resolves the RR ID for a driver-entry tool call, preferring
+// the value in resp (kubernaut_investigate returns it) and falling back to
+// inputArgs (kubernaut_reconnect takes it as input but does not echo it in
+// the response), then persists it into session state.
+func storeActiveRRID(state session.State, resp, inputArgs map[string]any, logger logr.Logger) {
+	rrID, ok := resp["rr_id"].(string)
+	if !ok || rrID == "" {
+		if inputArgs == nil {
+			return
+		}
+		rrID, ok = inputArgs["rr_id"].(string)
+		if !ok || rrID == "" {
+			return
+		}
+	}
+	if err := state.Set(stateKeyActiveRRID, rrID); err != nil {
+		logger.Error(err, "phase-guard failed to store rr_id in state")
 	}
 }
 

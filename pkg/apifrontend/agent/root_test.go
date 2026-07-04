@@ -9,6 +9,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
@@ -41,18 +43,18 @@ type mockToolCtx struct {
 	callID string
 }
 
-func (mockToolCtx) UserContent() *genai.Content                { return nil }
-func (mockToolCtx) InvocationID() string                       { return "" }
-func (mockToolCtx) AgentName() string                          { return "" }
-func (mockToolCtx) ReadonlyState() session.ReadonlyState       { return nil }
-func (mockToolCtx) UserID() string                             { return "" }
-func (mockToolCtx) AppName() string                            { return "" }
-func (mockToolCtx) SessionID() string                          { return "" }
-func (mockToolCtx) Branch() string                             { return "" }
-func (mockToolCtx) Artifacts() agent.Artifacts                 { return nil }
-func (mockToolCtx) State() session.State                       { return nil }
-func (m mockToolCtx) FunctionCallID() string                   { return m.callID }
-func (mockToolCtx) Actions() *session.EventActions             { return nil }
+func (mockToolCtx) UserContent() *genai.Content          { return nil }
+func (mockToolCtx) InvocationID() string                 { return "" }
+func (mockToolCtx) AgentName() string                    { return "" }
+func (mockToolCtx) ReadonlyState() session.ReadonlyState { return nil }
+func (mockToolCtx) UserID() string                       { return "" }
+func (mockToolCtx) AppName() string                      { return "" }
+func (mockToolCtx) SessionID() string                    { return "" }
+func (mockToolCtx) Branch() string                       { return "" }
+func (mockToolCtx) Artifacts() agent.Artifacts           { return nil }
+func (mockToolCtx) State() session.State                 { return nil }
+func (m mockToolCtx) FunctionCallID() string             { return m.callID }
+func (mockToolCtx) Actions() *session.EventActions       { return nil }
 func (mockToolCtx) SearchMemory(context.Context, string) (*adkmemory.SearchResponse, error) {
 	return nil, nil
 }
@@ -61,10 +63,24 @@ func (mockToolCtx) RequestConfirmation(string, any) error                { retur
 
 var _ tool.Context = mockToolCtx{}
 
+// getCounterVecValue reads back the current value of a labeled counter from
+// a CounterVec for assertions in characterization tests.
+func getCounterVecValue(cv *prometheus.CounterVec, labels prometheus.Labels) float64 {
+	counter, err := cv.GetMetricWith(labels)
+	if err != nil {
+		return 0
+	}
+	var m dto.Metric
+	if err := counter.(prometheus.Metric).Write(&m); err != nil {
+		return 0
+	}
+	return m.GetCounter().GetValue()
+}
+
 // llmAdapter wraps mockToolCallLLM to satisfy model.LLM interface at the
 // package level (struct methods can't be declared inside Describe blocks).
 type llmAdapter struct {
-	m    any
+	m     any
 	genFn func(context.Context, *model.LLMRequest, bool) iter.Seq2[*model.LLMResponse, error]
 }
 
@@ -593,6 +609,130 @@ var _ = Describe("Root Agent", func() {
 	})
 
 	// =========================================================================
+	// CHAR-AF-1532: Characterization tests for newMetricsToolCallbacks, pinning
+	// current behavior before complexity-driven refactor (#1532 Wave A).
+	// =========================================================================
+	Describe("newMetricsToolCallbacks (CHAR-AF-1532)", func() {
+		newTestTool := func(name string) tool.Tool {
+			mockTool, err := functiontool.New(functiontool.Config{
+				Name:        name,
+				Description: "test tool",
+			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+				return struct{}{}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+			return mockTool
+		}
+
+		It("CHAR-AF-1532-001: before/after happy path increments counter and observes duration", func() {
+			toolCalls := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "char_1532_calls_total_001"}, []string{"tool", "result"})
+			toolDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "char_1532_duration_001", Buckets: prometheus.DefBuckets}, []string{"tool", "type"})
+			before, after := agentpkg.NewMetricsToolCallbacksForTest(toolCalls, toolDuration)
+
+			mockTool := newTestTool("kubectl_get")
+			ctx := newMockToolContext("char-001")
+
+			result, err := before(ctx, mockTool, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			result, err = after(ctx, mockTool, nil, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			Expect(getCounterVecValue(toolCalls, prometheus.Labels{"tool": "kubectl_get", "result": "success"})).To(Equal(1.0))
+
+			obs, obsErr := toolDuration.GetMetricWith(prometheus.Labels{"tool": "kubectl_get", "type": "function"})
+			Expect(obsErr).NotTo(HaveOccurred())
+			var m dto.Metric
+			Expect(obs.(prometheus.Metric).Write(&m)).To(Succeed())
+			Expect(m.GetHistogram().GetSampleCount()).To(Equal(uint64(1)), "duration must be observed once a matching before() ran")
+		})
+
+		It("CHAR-AF-1532-002: after with tool error labels counter as error", func() {
+			toolCalls := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "char_1532_calls_total_002"}, []string{"tool", "result"})
+			toolDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "char_1532_duration_002", Buckets: prometheus.DefBuckets}, []string{"tool", "type"})
+			before, after := agentpkg.NewMetricsToolCallbacksForTest(toolCalls, toolDuration)
+
+			mockTool := newTestTool("kubectl_delete")
+			ctx := newMockToolContext("char-002")
+
+			_, _ = before(ctx, mockTool, nil)
+			_, err := after(ctx, mockTool, nil, nil, fmt.Errorf("boom"))
+			Expect(err).NotTo(HaveOccurred(), "after() itself must not fail just because the tool call failed")
+
+			Expect(getCounterVecValue(toolCalls, prometheus.Labels{"tool": "kubectl_delete", "result": "error"})).To(Equal(1.0))
+			Expect(getCounterVecValue(toolCalls, prometheus.Labels{"tool": "kubectl_delete", "result": "success"})).To(Equal(0.0))
+		})
+
+		It("CHAR-AF-1532-003: before is a no-op when both counters are nil", func() {
+			before, _ := agentpkg.NewMetricsToolCallbacksForTest(nil, nil)
+			mockTool := newTestTool("kubectl_apply")
+			ctx := newMockToolContext("char-003")
+
+			result, err := before(ctx, mockTool, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+		})
+
+		It("CHAR-AF-1532-004: after tolerates a missing start time (no prior before call) without panicking", func() {
+			toolCalls := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "char_1532_calls_total_004"}, []string{"tool", "result"})
+			toolDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "char_1532_duration_004", Buckets: prometheus.DefBuckets}, []string{"tool", "type"})
+			_, after := agentpkg.NewMetricsToolCallbacksForTest(toolCalls, toolDuration)
+
+			mockTool := newTestTool("kubectl_logs")
+			ctx := newMockToolContext("char-004-orphan")
+
+			Expect(func() {
+				_, _ = after(ctx, mockTool, nil, nil, nil)
+			}).NotTo(Panic())
+
+			Expect(getCounterVecValue(toolCalls, prometheus.Labels{"tool": "kubectl_logs", "result": "success"})).To(Equal(1.0), "counter still increments even without a matching before() call")
+
+			obs, obsErr := toolDuration.GetMetricWith(prometheus.Labels{"tool": "kubectl_logs", "type": "function"})
+			Expect(obsErr).NotTo(HaveOccurred())
+			var m dto.Metric
+			Expect(obs.(prometheus.Metric).Write(&m)).To(Succeed())
+			Expect(m.GetHistogram().GetSampleCount()).To(Equal(uint64(0)), "no duration observed when there is no matching before() start time")
+		})
+
+		It("CHAR-AF-1532-005: toolDuration nil, toolCalls set — only the counter is touched", func() {
+			toolCalls := prometheus.NewCounterVec(prometheus.CounterOpts{Name: "char_1532_calls_total_005"}, []string{"tool", "result"})
+			before, after := agentpkg.NewMetricsToolCallbacksForTest(toolCalls, nil)
+
+			mockTool := newTestTool("kubectl_top")
+			ctx := newMockToolContext("char-005")
+
+			_, _ = before(ctx, mockTool, nil)
+			_, err := after(ctx, mockTool, nil, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(getCounterVecValue(toolCalls, prometheus.Labels{"tool": "kubectl_top", "result": "success"})).To(Equal(1.0))
+		})
+
+		It("CHAR-AF-1532-006: toolCalls nil, toolDuration set — only the histogram is touched", func() {
+			toolDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{Name: "char_1532_duration_006", Buckets: prometheus.DefBuckets}, []string{"tool", "type"})
+			before, after := agentpkg.NewMetricsToolCallbacksForTest(nil, toolDuration)
+
+			mockTool := newTestTool("kubectl_exec")
+			ctx := newMockToolContext("char-006")
+
+			result, err := before(ctx, mockTool, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(), "before() still records the start time even when only toolDuration is set (guard only skips when BOTH are nil)")
+
+			_, err = after(ctx, mockTool, nil, nil, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			obs, obsErr := toolDuration.GetMetricWith(prometheus.Labels{"tool": "kubectl_exec", "type": "function"})
+			Expect(obsErr).NotTo(HaveOccurred())
+			var m dto.Metric
+			Expect(obs.(prometheus.Metric).Write(&m)).To(Succeed())
+			Expect(m.GetHistogram().GetSampleCount()).To(Equal(uint64(1)))
+		})
+	})
+
+	// =========================================================================
 	// DedicatedClient wiring — verifies kubernaut_investigate uses the
 	// dedicated SDKMCPClient when DedicatedClient is set, and falls back
 	// to MCPClient when nil.
@@ -872,7 +1012,7 @@ var _ = Describe("kubernaut_investigate_alert wiring (#1372)", func() {
 
 type stubPromClient struct{}
 
-func (s *stubPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) { return nil, nil }
+func (s *stubPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error)    { return nil, nil }
 func (s *stubPromClient) GetRules(_ context.Context) ([]prom.RuleGroup, error) { return nil, nil }
 func (s *stubPromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {
 	return nil, nil

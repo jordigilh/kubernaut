@@ -93,37 +93,8 @@ const pingTimeout = 2 * time.Second
 func (p *KASessionPool) Acquire(ctx context.Context, rrID, username string) (PoolSession, error) {
 	key := poolKey{rrID: rrID, username: username}
 
-	p.mu.Lock()
-	entry, exists := p.entries[key]
-	if exists && entry != nil {
-		session := entry.session
-		sid := entry.sessionID
-		entry.lastUsed = time.Now()
-		p.mu.Unlock()
-
-		pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
-		defer cancel()
-		if err := session.Ping(pingCtx, nil); err != nil {
-			p.logger.Info("cached session failed health check, evicting",
-				"rr_id", rrID, "username", username, "mcp_session_id", sid, "error", err.Error())
-			p.mu.Lock()
-			var evictedEntry *poolEntry
-			if cur, ok := p.entries[key]; ok && cur.session == session {
-				evictedEntry = cur
-				delete(p.entries, key)
-			}
-			p.mu.Unlock()
-			if evictedEntry != nil && evictedEntry.onRelease != nil {
-				evictedEntry.onRelease()
-			}
-			_ = session.Close()
-		} else {
-			p.logger.Info("pool session reused (cache hit)",
-				"rr_id", rrID, "username", username, "mcp_session_id", sid)
-			return session, nil
-		}
-	} else {
-		p.mu.Unlock()
+	if reused, ok := p.tryReuseCachedSession(ctx, key, rrID, username); ok {
+		return reused, nil
 	}
 
 	p.mu.Lock()
@@ -151,6 +122,46 @@ func (p *KASessionPool) Acquire(ctx context.Context, rrID, username string) (Poo
 	}
 
 	return session, nil
+}
+
+// tryReuseCachedSession checks for an existing pooled entry for key and, if
+// found, health-checks it via Ping before reuse. A failed health check
+// evicts and closes the stale session and reports (nil, false) so the
+// caller falls through to creating a fresh one.
+func (p *KASessionPool) tryReuseCachedSession(ctx context.Context, key poolKey, rrID, username string) (PoolSession, bool) {
+	p.mu.Lock()
+	entry, exists := p.entries[key]
+	if !exists || entry == nil {
+		p.mu.Unlock()
+		return nil, false
+	}
+	session := entry.session
+	sid := entry.sessionID
+	entry.lastUsed = time.Now()
+	p.mu.Unlock()
+
+	pingCtx, cancel := context.WithTimeout(ctx, pingTimeout)
+	defer cancel()
+	if err := session.Ping(pingCtx, nil); err != nil {
+		p.logger.Info("cached session failed health check, evicting",
+			"rr_id", rrID, "username", username, "mcp_session_id", sid, "error", err.Error())
+		p.mu.Lock()
+		var evictedEntry *poolEntry
+		if cur, ok := p.entries[key]; ok && cur.session == session {
+			evictedEntry = cur
+			delete(p.entries, key)
+		}
+		p.mu.Unlock()
+		if evictedEntry != nil && evictedEntry.onRelease != nil {
+			evictedEntry.onRelease()
+		}
+		_ = session.Close()
+		return nil, false
+	}
+
+	p.logger.Info("pool session reused (cache hit)",
+		"rr_id", rrID, "username", username, "mcp_session_id", sid)
+	return session, true
 }
 
 // Inject places an externally-created session into the pool under the given

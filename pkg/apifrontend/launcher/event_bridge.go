@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -525,35 +525,36 @@ func (b *EventBridge) EmitArtifact(ctx context.Context, data map[string]any, tex
 	return err
 }
 
+// emojiRange is an inclusive Unicode codepoint range known to contain emoji.
+type emojiRange struct {
+	lo, hi rune
+}
+
+// emojiRanges enumerates the Unicode blocks isEmoji treats as emoji
+// codepoints. Kept as a data table (rather than a switch) so isEmoji stays a
+// single simple loop regardless of how many blocks are added.
+var emojiRanges = []emojiRange{
+	{0x1F600, 0x1F64F}, // Emoticons
+	{0x1F300, 0x1F5FF}, // Misc Symbols and Pictographs
+	{0x1F680, 0x1F6FF}, // Transport and Map
+	{0x1F900, 0x1F9FF}, // Supplemental Symbols and Pictographs
+	{0x1FA00, 0x1FA6F}, // Chess Symbols
+	{0x1FA70, 0x1FAFF}, // Symbols and Pictographs Extended-A
+	{0x2600, 0x26FF},   // Misc symbols (sun, cloud, etc.)
+	{0x2700, 0x27BF},   // Dingbats
+	{0xFE00, 0xFE0F},   // Variation Selectors
+	{0x200D, 0x200D},   // Zero Width Joiner
+	{0x20E3, 0x20E3},   // Combining Enclosing Keycap
+	{0x2300, 0x23FF},   // Misc Technical (includes hourglass, keyboard, etc.)
+	{0x2B50, 0x2B55},   // Stars and circles
+}
+
 // isEmoji returns true if the rune is a Unicode emoji codepoint.
 func isEmoji(r rune) bool {
-	switch {
-	case r >= 0x1F600 && r <= 0x1F64F: // Emoticons
-		return true
-	case r >= 0x1F300 && r <= 0x1F5FF: // Misc Symbols and Pictographs
-		return true
-	case r >= 0x1F680 && r <= 0x1F6FF: // Transport and Map
-		return true
-	case r >= 0x1F900 && r <= 0x1F9FF: // Supplemental Symbols and Pictographs
-		return true
-	case r >= 0x1FA00 && r <= 0x1FA6F: // Chess Symbols
-		return true
-	case r >= 0x1FA70 && r <= 0x1FAFF: // Symbols and Pictographs Extended-A
-		return true
-	case r >= 0x2600 && r <= 0x26FF: // Misc symbols (sun, cloud, etc.)
-		return true
-	case r >= 0x2700 && r <= 0x27BF: // Dingbats
-		return true
-	case r >= 0xFE00 && r <= 0xFE0F: // Variation Selectors
-		return true
-	case r >= 0x200D && r <= 0x200D: // Zero Width Joiner
-		return true
-	case r == 0x20E3: // Combining Enclosing Keycap
-		return true
-	case r >= 0x2300 && r <= 0x23FF: // Misc Technical (includes hourglass, keyboard, etc.)
-		return true
-	case r >= 0x2B50 && r <= 0x2B55: // Stars and circles
-		return true
+	for _, rg := range emojiRanges {
+		if r >= rg.lo && r <= rg.hi {
+			return true
+		}
 	}
 	return false
 }

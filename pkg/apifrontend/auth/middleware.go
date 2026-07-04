@@ -59,29 +59,8 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			)
 			ctx := logging.WithLogger(r.Context(), reqLogger)
 
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				reqLogger.V(1).Info("auth failed: missing authorization header")
-				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "missing_header", authMethod)
-				httputil.WriteProblem(w, http.StatusUnauthorized,
-					"Missing Authorization", "The Authorization header is required.")
-				return
-			}
-
-			if err := security.ValidateHeaderValue(authHeader); err != nil {
-				reqLogger.V(1).Info("auth failed: invalid authorization header", "error", err)
-				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "control_chars", authMethod)
-				httputil.WriteProblem(w, http.StatusBadRequest,
-					"Invalid Authorization Header", "The Authorization header contains invalid characters.")
-				return
-			}
-
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-			if token == authHeader {
-				reqLogger.V(1).Info("auth failed: non-bearer scheme")
-				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), "non_bearer", authMethod)
-				httputil.WriteProblem(w, http.StatusUnauthorized,
-					"Invalid Scheme", "The Authorization header must use the Bearer scheme.")
+			token, ok := extractBearerToken(w, r, ctx, cfg.Auditor, reqLogger, authMethod)
+			if !ok {
 				return
 			}
 
@@ -106,19 +85,60 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			ctx = WithUserIdentity(ctx, identity)
 			ctx = logging.WithUserID(ctx, identity.Username)
 
-			// Derive deadline from token expiry so streaming handlers terminate
-			// before the token becomes invalid. Jitter prevents timing oracle.
-			if !identity.ExpiresAt.IsZero() {
-				jitter := time.Duration(25+cryptoRandIntn(10)) * time.Second
-				deadline := identity.ExpiresAt.Add(-jitter)
-				var cancel context.CancelFunc
-				ctx, cancel = context.WithDeadline(ctx, deadline)
+			ctx, cancel := applyTokenExpiryDeadline(ctx, identity)
+			if cancel != nil {
 				defer cancel()
 			}
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// extractBearerToken validates the Authorization header is present,
+// control-character-free, and uses the Bearer scheme, writing the
+// appropriate problem response (and emitting an auth-failure audit event) and
+// returning ok=false on the first violation.
+func extractBearerToken(w http.ResponseWriter, r *http.Request, ctx context.Context, auditor audit.Emitter, reqLogger logr.Logger, authMethod string) (string, bool) {
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		reqLogger.V(1).Info("auth failed: missing authorization header")
+		emitAuthFailure(ctx, auditor, "", httputil.ExtractClientIP(r), "missing_header", authMethod)
+		httputil.WriteProblem(w, http.StatusUnauthorized,
+			"Missing Authorization", "The Authorization header is required.")
+		return "", false
+	}
+
+	if err := security.ValidateHeaderValue(authHeader); err != nil {
+		reqLogger.V(1).Info("auth failed: invalid authorization header", "error", err)
+		emitAuthFailure(ctx, auditor, "", httputil.ExtractClientIP(r), "control_chars", authMethod)
+		httputil.WriteProblem(w, http.StatusBadRequest,
+			"Invalid Authorization Header", "The Authorization header contains invalid characters.")
+		return "", false
+	}
+
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+	if token == authHeader {
+		reqLogger.V(1).Info("auth failed: non-bearer scheme")
+		emitAuthFailure(ctx, auditor, "", httputil.ExtractClientIP(r), "non_bearer", authMethod)
+		httputil.WriteProblem(w, http.StatusUnauthorized,
+			"Invalid Scheme", "The Authorization header must use the Bearer scheme.")
+		return "", false
+	}
+	return token, true
+}
+
+// applyTokenExpiryDeadline derives a context deadline from the token's expiry
+// so streaming handlers terminate before the token becomes invalid. Jitter
+// prevents a timing oracle on token expiry. Returns a nil cancel func when
+// identity has no expiry (deadline not applicable).
+func applyTokenExpiryDeadline(ctx context.Context, identity *UserIdentity) (context.Context, context.CancelFunc) {
+	if identity.ExpiresAt.IsZero() {
+		return ctx, nil
+	}
+	jitter := time.Duration(25+cryptoRandIntn(10)) * time.Second
+	deadline := identity.ExpiresAt.Add(-jitter)
+	return context.WithDeadline(ctx, deadline)
 }
 
 func authMethodFromIdentity(identity *UserIdentity) string {

@@ -50,11 +50,11 @@ type Registry struct {
 	LLMTokensTotal       *prometheus.CounterVec
 	SessionsActive       *prometheus.GaugeVec
 
-	A2ABridgeEventsTotal            prometheus.Counter
-	A2ABridgeWriteFailures          prometheus.Counter
-	A2ABridgeStatusEventsTotal      prometheus.Counter
-	A2ABridgeStatusWriteFailures    prometheus.Counter
-	SessionTTLActions               *prometheus.CounterVec
+	A2ABridgeEventsTotal         prometheus.Counter
+	A2ABridgeWriteFailures       prometheus.Counter
+	A2ABridgeStatusEventsTotal   prometheus.Counter
+	A2ABridgeStatusWriteFailures prometheus.Counter
+	SessionTTLActions            *prometheus.CounterVec
 
 	// AlertInvestigationValidationFailures tracks input validation failures
 	// for kubernaut_investigate_alert, partitioned by failure reason (#1372).
@@ -67,6 +67,14 @@ func NewRegistry() *Registry {
 	reg.MustRegister(collectors.NewGoCollector())
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
+	r := newMetricsCollectors(reg)
+	registerAllCollectors(reg, r)
+	return r
+}
+
+// newMetricsCollectors constructs all AF metric collectors (GA metric set:
+// 18 metrics requiring real-time aggregation or threshold-based alerting).
+func newMetricsCollectors(reg *prometheus.Registry) *Registry {
 	r := &Registry{
 		registry: reg,
 		HTTPRequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -129,42 +137,55 @@ func NewRegistry() *Registry {
 			Name:      "sessions_active",
 			Help:      "Number of currently active InvestigationSessions by phase.",
 		}, []string{"phase"}),
-		A2ABridgeEventsTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "af",
-			Subsystem: "a2a",
-			Name:      "bridge_events_total",
-			Help:      "Total progressive reasoning artifacts emitted via the A2A EventBridge.",
-		}),
-		A2ABridgeWriteFailures: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "af",
-			Subsystem: "a2a",
-			Name:      "bridge_write_failures_total",
-			Help:      "Total failures writing to the A2A event queue via the EventBridge.",
-		}),
-		A2ABridgeStatusEventsTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "af",
-			Subsystem: "a2a",
-			Name:      "bridge_status_events_total",
-			Help:      "Total status update events emitted via the A2A EventBridge.",
-		}),
-		A2ABridgeStatusWriteFailures: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "af",
-			Subsystem: "a2a",
-			Name:      "bridge_status_write_failures_total",
-			Help:      "Total failures writing status events to the A2A event queue.",
-		}),
-		SessionTTLActions: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "af",
-			Name:      "session_ttl_actions_total",
-			Help:      "TTL-driven session lifecycle actions.",
-		}, []string{"action"}),
-		AlertInvestigationValidationFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "af",
-			Name:      "alert_investigation_validation_failures_total",
-			Help:      "Input validation failures for kubernaut_investigate_alert (#1372).",
-		}, []string{"reason"}),
 	}
+	newA2ABridgeCollectors(r)
+	return r
+}
 
+// newA2ABridgeCollectors populates r's A2A EventBridge and session-lifecycle
+// collectors (split out from newMetricsCollectors purely to stay under the
+// function-length gate; all collectors still share the single Registry).
+func newA2ABridgeCollectors(r *Registry) {
+	r.A2ABridgeEventsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "af",
+		Subsystem: "a2a",
+		Name:      "bridge_events_total",
+		Help:      "Total progressive reasoning artifacts emitted via the A2A EventBridge.",
+	})
+	r.A2ABridgeWriteFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "af",
+		Subsystem: "a2a",
+		Name:      "bridge_write_failures_total",
+		Help:      "Total failures writing to the A2A event queue via the EventBridge.",
+	})
+	r.A2ABridgeStatusEventsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "af",
+		Subsystem: "a2a",
+		Name:      "bridge_status_events_total",
+		Help:      "Total status update events emitted via the A2A EventBridge.",
+	})
+	r.A2ABridgeStatusWriteFailures = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "af",
+		Subsystem: "a2a",
+		Name:      "bridge_status_write_failures_total",
+		Help:      "Total failures writing status events to the A2A event queue.",
+	})
+	r.SessionTTLActions = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "af",
+		Name:      "session_ttl_actions_total",
+		Help:      "TTL-driven session lifecycle actions.",
+	}, []string{"action"})
+	r.AlertInvestigationValidationFailures = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "af",
+		Name:      "alert_investigation_validation_failures_total",
+		Help:      "Input validation failures for kubernaut_investigate_alert (#1372).",
+	}, []string{"reason"})
+}
+
+// registerAllCollectors registers every AF-specific collector in r against
+// reg (the Go/process collectors are registered separately by the caller,
+// before r is constructed).
+func registerAllCollectors(reg *prometheus.Registry, r *Registry) {
 	reg.MustRegister(r.HTTPRequestsTotal)
 	reg.MustRegister(r.HTTPRequestDuration)
 	reg.MustRegister(r.HTTPPanicsTotal)
@@ -183,8 +204,6 @@ func NewRegistry() *Registry {
 	reg.MustRegister(r.A2ABridgeStatusWriteFailures)
 	reg.MustRegister(r.SessionTTLActions)
 	reg.MustRegister(r.AlertInvestigationValidationFailures)
-
-	return r
 }
 
 // Handler returns an HTTP handler for the /metrics endpoint.

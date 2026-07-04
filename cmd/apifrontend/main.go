@@ -24,6 +24,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
@@ -31,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 const configPath = "/etc/apifrontend/config.yaml"
@@ -38,116 +40,33 @@ const configPath = "/etc/apifrontend/config.yaml"
 func main() { os.Exit(run()) }
 
 func run() int {
-	cfg, err := loadConfig()
+	cfg, logger, zapLogger, err := setupConfigAndLogger()
 	if err != nil {
-		z, _ := zap.NewProduction()
-		z.Error("failed to load config", zap.Error(err))
+		if zapLogger != nil {
+			_ = zapLogger.Sync()
+		}
 		return 1
 	}
-	origPort := cfg.Server.Port
-	config.ApplyPortEnvOverride(cfg)
-	if err := cfg.ResolveDefaults(); err != nil {
-		z, _ := zap.NewProduction()
-		z.Error("failed to resolve config defaults", zap.Error(err))
-		return 1
-	}
-
-	logLevel, _ := parseLogLevel(cfg.Logging.Level)
-	zapLogger := newZapLogger(logLevel)
 	defer func() { _ = zapLogger.Sync() }()
-	logger := zapr.NewLogger(zapLogger).WithName("apifrontend")
 	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
-	if cfg.Server.Port != origPort {
-		logger.Info("PORT env override applied", "original", origPort, "effective", cfg.Server.Port)
-	} else if p := os.Getenv("PORT"); p != "" {
-		logger.Info("PORT env var ignored (invalid or out-of-range)", "value", p)
-	}
-
-	if err := cfg.Validate(); err != nil {
-		logger.Error(err, "invalid config")
-		return 1
-	}
-
-	cfg.Session.Namespace = agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
-	logger.Info("operational namespace resolved", "namespace", cfg.Session.Namespace)
-
-	if cfg.Interactive.AwaitSessionTimeout > 0 {
-		tools.AwaitSessionTimeout = cfg.Interactive.AwaitSessionTimeout
-	}
-	if cfg.Interactive.BridgeInactivityTimeout > 0 {
-		tools.BridgeInactivityTimeout = cfg.Interactive.BridgeInactivityTimeout
-	}
-
-	restCfg, err := ctrl.GetConfig()
+	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL)
 	if err != nil {
-		logger.Error(err, "failed to get in-cluster config for SAR client")
 		return 1
 	}
-	k8sClient, err := kubernetes.NewForConfig(restCfg)
-	if err != nil {
-		logger.Error(err, "failed to create kubernetes client for SAR")
-		return 1
-	}
-	sarChecker := auth.NewSARChecker(k8sClient, cfg.RBAC.SARCacheTTL, logger.WithName("sar"))
 
 	metricsReg := metrics.NewRegistry()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Issue #1156: Wire audit to shared pkg/audit.BufferedAuditStore + StoreAdapter.
-	var auditDSTransport http.RoundTripper
-	if cfg.Agent.DSBaseURL != "" {
-		transport, auditDSWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-audit-ca"))
-		if err != nil {
-			logger.Error(err, "DS audit CA transport failed — refusing to start with broken TLS")
-			return 1
-		}
-		if auditDSWatcher != nil {
-			if err := auditDSWatcher.Start(ctx); err != nil {
-				logger.Error(err, "DS audit CA watcher failed to start")
-				return 1
-			}
-			defer auditDSWatcher.Stop()
-		}
-		auditDSTransport = transport
-		if cfg.Agent.DSBearerTokenFile != "" {
-			auditDSTransport = &bearerTokenTransport{
-				base:      transport,
-				tokenFile: cfg.Agent.DSBearerTokenFile,
-			}
-		}
-	}
-	dsAuditClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
-		cfg.Agent.DSBaseURL, cfg.Resilience.DS.RequestTimeout, auditDSTransport)
+	auditor, stopAuditWiring, err := buildAuditWiring(ctx, cfg, logger)
 	if err != nil {
-		logger.Error(err, "DS audit client creation failed — refusing to start")
 		return 1
 	}
-	auditStore, err := sharedaudit.NewBufferedStore(dsAuditClient, sharedaudit.DefaultConfig(), "apifrontend", logger)
-	if err != nil {
-		logger.Error(err, "failed to create buffered audit store")
-		return 1
-	}
-	auditor := audit.NewStoreAdapter(auditStore, logger)
-	logger.Info("audit trail wired to shared BufferedAuditStore", "dsURL", cfg.Agent.DSBaseURL)
+	defer stopAuditWiring()
 
-	// F-005 + SM-01/SM-02/CFG-01: Wire all rate limit config fields.
-	rlCfg := ratelimit.DefaultConfig()
-	rlCfg.PerIP.RequestsPerSecond = float64(cfg.RateLimit.IPRequestsPerSec)
-	rlCfg.PerIP.Burst = cfg.RateLimit.IPRequestsPerSec * 2
-	if cfg.RateLimit.UserRequestsPerSec > 0 {
-		rlCfg.PerUser.RequestsPerMinute = cfg.RateLimit.UserRequestsPerSec * 60
-	}
-	if cfg.RateLimit.MaxConcurrentSessions > 0 {
-		rlCfg.PerUser.MaxConcurrentSessions = cfg.RateLimit.MaxConcurrentSessions
-	}
-	if cfg.RateLimit.ToolCallsPerMinute > 0 {
-		rlCfg.PerUser.ToolCallsPerMinute = cfg.RateLimit.ToolCallsPerMinute
-	}
-	ipLimiter := ratelimit.NewIPLimiter(rlCfg.PerIP)
-	userLimiter := ratelimit.NewUserLimiter(rlCfg.PerUser)
+	ipLimiter, userLimiter := buildRateLimiters(cfg)
 
 	sessInfra, err := buildSessionInfra(cfg, metricsReg, auditor, logger)
 	if err != nil {
@@ -160,50 +79,15 @@ func run() int {
 		logger.Error(err, "failed to create backend dependencies")
 		return 1
 	}
-	defer func() {
-		for _, w := range deps.CAWatchers {
-			w.watcher.Stop()
-		}
-	}()
-	defer func() {
-		if fc := deps.FleetResilientClient(); fc != nil {
-			logger.Info("Closing fleet MCP Gateway connection")
-			if err := fc.Close(); err != nil {
-				logger.Error(err, "failed to close fleet MCP client gracefully")
-			}
-		}
-	}()
+	defer stopBackendDeps(deps, logger)
 
 	// AF-HIGH-2: Schedule periodic idle session eviction to prevent pool growth.
-	evictStop := make(chan struct{})
-	if deps.Pool != nil {
-		go func() {
-			ticker := time.NewTicker(2 * time.Minute)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-ticker.C:
-					if n := deps.Pool.EvictIdle(); n > 0 {
-						logger.V(1).Info("evicted idle KA sessions", "count", n)
-					}
-				case <-evictStop:
-					return
-				}
-			}
-		}()
-	}
+	evictStop := startIdleSessionEviction(deps.Pool, logger)
 
-	hDeps := &handlerDeps{
-		Cfg:               cfg,
-		Backends:          deps,
-		SessInfra:         sessInfra,
-		MetricsReg:        metricsReg,
-		Authorizer:        sarChecker,
-		Auditor:           auditor,
-		Logger:            logger,
-		UserLimiter:       userLimiter,
-		ActiveCtxRegistry: launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout),
-	}
+	hDeps := buildHandlerDeps(buildHandlerDepsParams{
+		Cfg: cfg, Deps: deps, SessInfra: sessInfra, MetricsReg: metricsReg,
+		SARChecker: sarChecker, Auditor: auditor, UserLimiter: userLimiter, Logger: logger,
+	})
 
 	mcpHandler, depsReady, err := buildMCPHandler(hDeps)
 	if err != nil {
@@ -212,6 +96,366 @@ func run() int {
 	}
 
 	// CM-02: Wire config file watcher for drift detection + audit trail.
+	defer startConfigWatcher(ctx, cfg, auditor, logger)()
+
+	agentCardHandler, a2aHandler, err := buildCardAndA2AHandler(ctx, cfg, hDeps, auditor)
+	if err != nil {
+		logger.Error(err, "failed to create agent card/A2A handler")
+		return 1
+	}
+
+	// F-001: Wire JWT auth middleware (fall back to noop only when auth is unconfigured).
+	authMiddleware, authReady := buildAuthMiddleware(cfg, metricsReg, auditor, logger)
+	preAuthMW, postAuthMW := buildRateLimitMiddlewares(metricsReg, auditor, ipLimiter, userLimiter)
+
+	rs, draining, stopTLSWatchers, err := startRouterAndServers(ctx, startRouterParams{
+		HDeps: hDeps, MCPHandler: mcpHandler, DepsReady: depsReady,
+		AgentCardHandler: agentCardHandler, A2AHandler: a2aHandler,
+		AuthMiddleware: authMiddleware, AuthReady: authReady,
+		PreAuthMW: preAuthMW, PostAuthMW: postAuthMW,
+	}, cfg, logger)
+	if err != nil {
+		// startRouterAndServers already logged the specific failure.
+		return 1
+	}
+	defer stopTLSWatchers()
+
+	<-ctx.Done()
+	draining.Store(true)
+	sessInfra.StopFunc()
+	runShutdown(runShutdownParams{
+		RS: rs, Cfg: cfg, Deps: deps, Auditor: auditor, EvictStop: evictStop,
+		IPLimiter: ipLimiter, UserLimiter: userLimiter, Logger: logger,
+	})
+	return 0
+}
+
+// startRouterParams bundles the handler/middleware inputs needed to build
+// and start the router and its HTTP servers.
+type startRouterParams struct {
+	HDeps            *handlerDeps
+	MCPHandler       http.Handler
+	DepsReady        func() bool
+	AgentCardHandler http.Handler
+	A2AHandler       http.Handler
+	AuthMiddleware   func(http.Handler) http.Handler
+	AuthReady        handler.ReadyChecker
+	PreAuthMW        func(http.Handler) http.Handler
+	PostAuthMW       func(http.Handler) http.Handler
+}
+
+// startRouterAndServers builds the router/HTTP servers and starts them in
+// background goroutines. The returned atomic.Bool is the draining flag that
+// the caller must set to true before initiating graceful shutdown.
+func startRouterAndServers(ctx context.Context, p startRouterParams, cfg *config.Config, logger logr.Logger) (*routerAndServers, *atomic.Bool, func(), error) {
+	draining := &atomic.Bool{}
+	rs, stopTLSWatchers, err := buildRouterAndServers(ctx, routerBuildParams{
+		HDeps:            p.HDeps,
+		MCPHandler:       p.MCPHandler,
+		DepsReady:        p.DepsReady,
+		AgentCardHandler: p.AgentCardHandler,
+		A2AHandler:       p.A2AHandler,
+		AuthMiddleware:   p.AuthMiddleware,
+		AuthReady:        p.AuthReady,
+		PreAuthMW:        p.PreAuthMW,
+		PostAuthMW:       p.PostAuthMW,
+		Draining:         draining,
+	})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	startServers(rs, cfg, logger)
+	return rs, draining, stopTLSWatchers, nil
+}
+
+// runShutdownParams bundles the running server/backend state runShutdown
+// needs to assemble shutdownDeps.
+type runShutdownParams struct {
+	RS          *routerAndServers
+	Cfg         *config.Config
+	Deps        *backendDeps
+	Auditor     audit.ClosableEmitter
+	EvictStop   chan struct{}
+	IPLimiter   *ratelimit.IPLimiter
+	UserLimiter *ratelimit.UserLimiter
+	Logger      logr.Logger
+}
+
+// runShutdown assembles shutdownDeps from the running server/backend state
+// and drives graceful shutdown.
+func runShutdown(p runShutdownParams) {
+	gracefulShutdown(shutdownDeps{
+		Cfg:           p.Cfg,
+		Logger:        p.Logger,
+		Deps:          p.Deps,
+		SSETracker:    p.RS.RouterCfg.SSETracker,
+		HTTPServer:    p.RS.HTTPServer,
+		HealthServer:  p.RS.HealthServer,
+		MetricsServer: p.RS.MetricsServer,
+		Auditor:       p.Auditor,
+		EvictStop:     p.EvictStop,
+		IPLimiter:     p.IPLimiter,
+		UserLimiter:   p.UserLimiter,
+	})
+}
+
+// stopBackendDeps stops the CA file watchers and closes the Fleet resilient
+// MCP client, logging any close error. Safe to call via defer unconditionally.
+func stopBackendDeps(deps *backendDeps, logger logr.Logger) {
+	for _, w := range deps.CAWatchers {
+		w.watcher.Stop()
+	}
+	if fc := deps.FleetResilientClient(); fc != nil {
+		logger.Info("Closing fleet MCP Gateway connection")
+		if err := fc.Close(); err != nil {
+			logger.Error(err, "failed to close fleet MCP client gracefully")
+		}
+	}
+}
+
+// startServers launches the API, health, and metrics HTTP servers in
+// background goroutines and logs the started-up banner.
+func startServers(rs *routerAndServers, cfg *config.Config, logger logr.Logger) {
+	go startServerTLS(rs.HTTPServer, rs.TLSEnabled, "API", logger)
+	go startServer(rs.HealthServer, "health", logger)
+	go startServer(rs.MetricsServer, "metrics", logger)
+
+	logger.Info("kubernaut-apifrontend started",
+		"addr", rs.Addr, "tls", rs.TLSEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
+}
+
+// buildHandlerDepsParams bundles the inputs buildHandlerDeps needs to
+// assemble the shared handlerDeps bundle.
+type buildHandlerDepsParams struct {
+	Cfg         *config.Config
+	Deps        *backendDeps
+	SessInfra   *sessionInfra
+	MetricsReg  *metrics.Registry
+	SARChecker  auth.ToolAuthorizer
+	Auditor     audit.Emitter
+	UserLimiter *ratelimit.UserLimiter
+	Logger      logr.Logger
+}
+
+// buildHandlerDeps assembles the shared handlerDeps bundle passed to the MCP,
+// A2A, and router builders.
+func buildHandlerDeps(p buildHandlerDepsParams) *handlerDeps {
+	return &handlerDeps{
+		Cfg:               p.Cfg,
+		Backends:          p.Deps,
+		SessInfra:         p.SessInfra,
+		MetricsReg:        p.MetricsReg,
+		Authorizer:        p.SARChecker,
+		Auditor:           p.Auditor,
+		Logger:            p.Logger,
+		UserLimiter:       p.UserLimiter,
+		ActiveCtxRegistry: launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout),
+	}
+}
+
+// buildCardAndA2AHandler wires the audited agent-card handler and the A2A
+// (Agent-to-Agent) handler used by the router.
+func buildCardAndA2AHandler(ctx context.Context, cfg *config.Config, hDeps *handlerDeps, auditor audit.Emitter) (http.Handler, http.Handler, error) {
+	agentCardBase, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
+		Name:        "Kubernaut Agent",
+		Description: "Kubernaut AI-driven remediation agent",
+		URL:         cfg.AgentCard.URL,
+		Version:     version(),
+		Skills:      handler.DefaultAgentSkills(cfg.Interactive.Enabled),
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	agentCardHandler := handler.WithAgentCardAudit(agentCardBase, auditor)
+
+	a2aHandler, err := buildA2AHandler(ctx, hDeps)
+	if err != nil {
+		return nil, nil, err
+	}
+	return agentCardHandler, a2aHandler, nil
+}
+
+// buildRateLimitMiddlewares constructs the pre-auth (per-IP) and post-auth
+// (per-user) rate-limiting middlewares (F-005 / SM-01 / SM-02).
+func buildRateLimitMiddlewares(metricsReg *metrics.Registry, auditor audit.Emitter, ipLimiter *ratelimit.IPLimiter, userLimiter *ratelimit.UserLimiter) (func(http.Handler) http.Handler, func(http.Handler) http.Handler) {
+	preAuthMW := ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
+		Limiter: ipLimiter,
+		Auditor: auditor,
+		Metrics: metricsReg.RateLimitDenied,
+	})
+	postAuthMW := ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
+		Limiter: userLimiter,
+		Auditor: auditor,
+		Metrics: metricsReg.RateLimitDenied,
+	})
+	return preAuthMW, postAuthMW
+}
+
+// setupConfigAndLogger loads and validates the AF config, resolves the
+// operational namespace and interactive timeouts, and constructs the
+// zap-backed logr.Logger. On failure, the returned error has already been
+// logged with a best-effort logger (the real one may not exist yet); the
+// returned *zap.Logger is non-nil as soon as it has been constructed, so
+// callers can still flush it (Sync) even on a later failure (e.g. Validate).
+func setupConfigAndLogger() (*config.Config, logr.Logger, *zap.Logger, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		z, _ := zap.NewProduction()
+		z.Error("failed to load config", zap.Error(err))
+		return nil, logr.Logger{}, nil, err
+	}
+	origPort := cfg.Server.Port
+	config.ApplyPortEnvOverride(cfg)
+	if err := cfg.ResolveDefaults(); err != nil {
+		z, _ := zap.NewProduction()
+		z.Error("failed to resolve config defaults", zap.Error(err))
+		return nil, logr.Logger{}, nil, err
+	}
+
+	logLevel, _ := parseLogLevel(cfg.Logging.Level)
+	zapLogger := newZapLogger(logLevel)
+	logger := zapr.NewLogger(zapLogger).WithName("apifrontend")
+
+	if cfg.Server.Port != origPort {
+		logger.Info("PORT env override applied", "original", origPort, "effective", cfg.Server.Port)
+	} else if p := os.Getenv("PORT"); p != "" {
+		logger.Info("PORT env var ignored (invalid or out-of-range)", "value", p)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		logger.Error(err, "invalid config")
+		return nil, logr.Logger{}, zapLogger, err
+	}
+
+	cfg.Session.Namespace = agentpkg.ResolveNamespace(cfg.Session.Namespace, agentpkg.DefaultNamespaceFile)
+	logger.Info("operational namespace resolved", "namespace", cfg.Session.Namespace)
+
+	if cfg.Interactive.AwaitSessionTimeout > 0 {
+		tools.AwaitSessionTimeout = cfg.Interactive.AwaitSessionTimeout
+	}
+	if cfg.Interactive.BridgeInactivityTimeout > 0 {
+		tools.BridgeInactivityTimeout = cfg.Interactive.BridgeInactivityTimeout
+	}
+
+	return cfg, logger, zapLogger, nil
+}
+
+// buildSARClient wires the SelfSubjectAccessReview-based authorizer used for
+// K8s-tool RBAC gating.
+func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration) (auth.ToolAuthorizer, error) {
+	restCfg, err := ctrl.GetConfig()
+	if err != nil {
+		logger.Error(err, "failed to get in-cluster config for SAR client")
+		return nil, err
+	}
+	k8sClient, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		logger.Error(err, "failed to create kubernetes client for SAR")
+		return nil, err
+	}
+	return auth.NewSARChecker(k8sClient, sarCacheTTL, logger.WithName("sar")), nil
+}
+
+// buildAuditWiring wires AF's audit trail to the shared BufferedAuditStore
+// (#1156), including the optional CA-reloadable DS audit transport. Always
+// returns a non-nil cleanup func (a no-op if no watcher was started);
+// callers should defer it unconditionally.
+func buildAuditWiring(ctx context.Context, cfg *config.Config, logger logr.Logger) (audit.ClosableEmitter, func(), error) {
+	auditDSTransport, cleanup, err := buildAuditDSTransport(ctx, cfg, logger)
+	if err != nil {
+		return nil, cleanup, err
+	}
+	dsAuditClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
+		cfg.Agent.DSBaseURL, cfg.Resilience.DS.RequestTimeout, auditDSTransport)
+	if err != nil {
+		logger.Error(err, "DS audit client creation failed — refusing to start")
+		return nil, cleanup, err
+	}
+	auditStore, err := sharedaudit.NewBufferedStore(dsAuditClient, sharedaudit.DefaultConfig(), "apifrontend", logger)
+	if err != nil {
+		logger.Error(err, "failed to create buffered audit store")
+		return nil, cleanup, err
+	}
+	auditor := audit.NewStoreAdapter(auditStore, logger)
+	logger.Info("audit trail wired to shared BufferedAuditStore", "dsURL", cfg.Agent.DSBaseURL)
+	return auditor, cleanup, nil
+}
+
+// buildAuditDSTransport constructs the (optional) CA-reloadable, optionally
+// bearer-token-wrapped HTTP transport used by the DS audit client. Returns a
+// nil transport (and a no-op cleanup) when no DS base URL is configured.
+func buildAuditDSTransport(ctx context.Context, cfg *config.Config, logger logr.Logger) (http.RoundTripper, func(), error) {
+	noopCleanup := func() {}
+	if cfg.Agent.DSBaseURL == "" {
+		return nil, noopCleanup, nil
+	}
+
+	transport, auditDSWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, logger.WithName("ds-audit-ca"))
+	if err != nil {
+		logger.Error(err, "DS audit CA transport failed — refusing to start with broken TLS")
+		return nil, noopCleanup, err
+	}
+	cleanup := noopCleanup
+	if auditDSWatcher != nil {
+		if err := auditDSWatcher.Start(ctx); err != nil {
+			logger.Error(err, "DS audit CA watcher failed to start")
+			return nil, noopCleanup, err
+		}
+		cleanup = auditDSWatcher.Stop
+	}
+	if cfg.Agent.DSBearerTokenFile == "" {
+		return transport, cleanup, nil
+	}
+	return &bearerTokenTransport{base: transport, tokenFile: cfg.Agent.DSBearerTokenFile}, cleanup, nil
+}
+
+// buildRateLimiters constructs the per-IP and per-user rate limiters from
+// cfg.RateLimit (F-005 + SM-01/SM-02/CFG-01).
+func buildRateLimiters(cfg *config.Config) (*ratelimit.IPLimiter, *ratelimit.UserLimiter) {
+	rlCfg := ratelimit.DefaultConfig()
+	rlCfg.PerIP.RequestsPerSecond = float64(cfg.RateLimit.IPRequestsPerSec)
+	rlCfg.PerIP.Burst = cfg.RateLimit.IPRequestsPerSec * 2
+	if cfg.RateLimit.UserRequestsPerSec > 0 {
+		rlCfg.PerUser.RequestsPerMinute = cfg.RateLimit.UserRequestsPerSec * 60
+	}
+	if cfg.RateLimit.MaxConcurrentSessions > 0 {
+		rlCfg.PerUser.MaxConcurrentSessions = cfg.RateLimit.MaxConcurrentSessions
+	}
+	if cfg.RateLimit.ToolCallsPerMinute > 0 {
+		rlCfg.PerUser.ToolCallsPerMinute = cfg.RateLimit.ToolCallsPerMinute
+	}
+	return ratelimit.NewIPLimiter(rlCfg.PerIP), ratelimit.NewUserLimiter(rlCfg.PerUser)
+}
+
+// startIdleSessionEviction schedules periodic idle KA session eviction
+// (AF-HIGH-2) to prevent unbounded pool growth. No-op (returns an unused,
+// never-closed-by-anyone-but-caller channel) when pool is nil.
+func startIdleSessionEviction(pool *ka.KASessionPool, logger logr.Logger) chan struct{} {
+	evictStop := make(chan struct{})
+	if pool == nil {
+		return evictStop
+	}
+	go func() {
+		ticker := time.NewTicker(2 * time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if n := pool.EvictIdle(); n > 0 {
+					logger.V(1).Info("evicted idle KA sessions", "count", n)
+				}
+			case <-evictStop:
+				return
+			}
+		}
+	}()
+	return evictStop
+}
+
+// startConfigWatcher wires CM-02 config file drift detection + audit trail.
+// Returns a cleanup func to stop the watcher; safe to call unconditionally
+// even if the watcher was never started.
+func startConfigWatcher(ctx context.Context, cfg *config.Config, auditor audit.Emitter, logger logr.Logger) func() {
 	cfgWatcher, err := config.NewFileWatcher(configPath, func(newContent []byte) error {
 		var newCfg config.Config
 		if err := yaml.Unmarshal(newContent, &newCfg); err != nil {
@@ -224,112 +468,68 @@ func run() int {
 	}, config.WithLogger(logger.WithName("config-watcher")), config.WithAuditor(auditor))
 	if err != nil {
 		logger.Info("config file watcher unavailable", "error", err)
-	} else {
-		if err := cfgWatcher.Start(ctx); err != nil {
-			logger.Info("config file watcher start failed", "error", err)
-		} else {
-			defer cfgWatcher.Stop()
-		}
+		return func() {}
 	}
-
-	agentCardBase, err := handler.NewAgentCardHandler(handler.AgentCardConfig{
-		Name:        "Kubernaut Agent",
-		Description: "Kubernaut AI-driven remediation agent",
-		URL:         cfg.AgentCard.URL,
-		Version:     version(),
-		Skills:      handler.DefaultAgentSkills(cfg.Interactive.Enabled),
-	})
-	if err != nil {
-		logger.Error(err, "failed to create agent card handler")
-		return 1
+	if err := cfgWatcher.Start(ctx); err != nil {
+		logger.Info("config file watcher start failed", "error", err)
+		return func() {}
 	}
-	agentCardHandler := handler.WithAgentCardAudit(agentCardBase, auditor)
+	return cfgWatcher.Stop
+}
 
-	a2aHandler, err := buildA2AHandler(ctx, hDeps)
-	if err != nil {
-		logger.Error(err, "failed to create A2A handler")
-		return 1
-	}
+// shutdownDeps groups the dependencies needed by gracefulShutdown. Extracted
+// per AGENTS.md's 8+-param Options-pattern rule (GO-ANTIPATTERN-AUDIT-2026-07-01
+// Phase 4g), same pattern as routerBuildParams/handlerDeps in this file.
+type shutdownDeps struct {
+	Cfg           *config.Config
+	Logger        logr.Logger
+	Deps          *backendDeps
+	SSETracker    *streaming.ConnectionTracker
+	HTTPServer    *http.Server
+	HealthServer  *http.Server
+	MetricsServer *http.Server
+	Auditor       audit.ClosableEmitter
+	EvictStop     chan struct{}
+	IPLimiter     *ratelimit.IPLimiter
+	UserLimiter   *ratelimit.UserLimiter
+}
 
-	// F-001: Wire JWT auth middleware (fall back to noop only when auth is unconfigured).
-	authMiddleware, authReady := buildAuthMiddleware(cfg, metricsReg, auditor, logger)
-	preAuthMW := ratelimit.PreAuthMiddlewareWithConfig(ratelimit.PreAuthMiddlewareConfig{
-		Limiter: ipLimiter,
-		Auditor: auditor,
-		Metrics: metricsReg.RateLimitDenied,
-	})
-	postAuthMW := ratelimit.PostAuthMiddlewareWithConfig(ratelimit.PostAuthMiddlewareConfig{
-		Limiter: userLimiter,
-		Auditor: auditor,
-		Metrics: metricsReg.RateLimitDenied,
-	})
+// gracefulShutdown runs AF's shutdown sequence: drain in-flight SSE/investigation/
+// pool sessions, stop the HTTP/health/metrics servers, flush the audit store,
+// and stop rate-limiter background goroutines (WIRE-16).
+func gracefulShutdown(d shutdownDeps) {
+	d.Logger.Info("shutting down...")
 
-	draining := &atomic.Bool{}
-	rs, stopTLSWatchers, err := buildRouterAndServers(ctx, routerBuildParams{
-		HDeps:            hDeps,
-		MCPHandler:       mcpHandler,
-		DepsReady:        depsReady,
-		AgentCardHandler: agentCardHandler,
-		A2AHandler:       a2aHandler,
-		AuthMiddleware:   authMiddleware,
-		AuthReady:        authReady,
-		PreAuthMW:        preAuthMW,
-		PostAuthMW:       postAuthMW,
-		Draining:         draining,
-	})
-	if err != nil {
-		// buildRouterAndServers already logged the specific failure.
-		return 1
-	}
-	defer stopTLSWatchers()
-	routerCfg := rs.RouterCfg
-	httpServer := rs.HTTPServer
-	healthServer := rs.HealthServer
-	metricsServer := rs.MetricsServer
-
-	go startServerTLS(httpServer, rs.TLSEnabled, "API", logger)
-	go startServer(healthServer, "health", logger)
-	go startServer(metricsServer, "metrics", logger)
-
-	logger.Info("kubernaut-apifrontend started",
-		"addr", rs.Addr, "tls", rs.TLSEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
-
-	<-ctx.Done()
-	draining.Store(true)
-	sessInfra.StopFunc()
-	logger.Info("shutting down...")
-
-	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout(cfg))
+	shutCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout(d.Cfg))
 	defer cancel()
 
-	if tracker := routerCfg.SSETracker; tracker != nil {
-		tracker.DrainAll(shutCtx)
+	if d.SSETracker != nil {
+		d.SSETracker.DrainAll(shutCtx)
 	}
-	if deps.InvestigationRegistry != nil {
-		deps.InvestigationRegistry.StopAll()
-		logger.Info("stopped active investigation sessions")
+	if d.Deps.InvestigationRegistry != nil {
+		d.Deps.InvestigationRegistry.StopAll()
+		d.Logger.Info("stopped active investigation sessions")
 	}
-	if deps.Pool != nil {
-		if err := deps.Pool.DrainAll(shutCtx); err != nil {
-			logger.Error(err, "failed to drain KA session pool on shutdown")
+	if d.Deps.Pool != nil {
+		if err := d.Deps.Pool.DrainAll(shutCtx); err != nil {
+			d.Logger.Error(err, "failed to drain KA session pool on shutdown")
 		}
 	}
-	shutdownServer(shutCtx, httpServer, "API", logger)
-	shutdownServer(shutCtx, healthServer, "health", logger)
-	shutdownServer(shutCtx, metricsServer, "metrics", logger)
+	shutdownServer(shutCtx, d.HTTPServer, "API", d.Logger)
+	shutdownServer(shutCtx, d.HealthServer, "health", d.Logger)
+	shutdownServer(shutCtx, d.MetricsServer, "metrics", d.Logger)
 
 	// Issue #1156: Drain shared audit store before exit to prevent event loss.
-	if err := auditor.Close(shutCtx); err != nil {
-		logger.Error(err, "failed to flush audit store on shutdown")
+	if err := d.Auditor.Close(shutCtx); err != nil {
+		d.Logger.Error(err, "failed to flush audit store on shutdown")
 	}
 
 	// WIRE-16: Stop background goroutines in limiters to prevent leaks.
-	close(evictStop)
-	ipLimiter.Stop()
-	userLimiter.Stop()
+	close(d.EvictStop)
+	d.IPLimiter.Stop()
+	d.UserLimiter.Stop()
 
-	logger.Info("shutdown complete")
-	return 0
+	d.Logger.Info("shutdown complete")
 }
 
 // routerBuildParams groups the dependencies needed to build the router and
@@ -374,6 +574,40 @@ type routerAndServers struct {
 func buildRouterAndServers(ctx context.Context, p routerBuildParams) (*routerAndServers, func(), error) {
 	cfg := p.HDeps.Cfg
 	logger := p.HDeps.Logger
+
+	routerCfg, router, err := buildRouterConfig(p)
+	if err != nil {
+		logger.Error(err, "failed to create router")
+		return nil, nil, err
+	}
+
+	addr, httpServer, healthServer, metricsServer := buildHTTPServers(p, router)
+
+	tlsEnabled, certReloader, err := configureServerTLS(httpServer, cfg, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	stopWatchers, err := startTLSWatchers(ctx, cfg.Server.TLS.CertDir, certReloader, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return &routerAndServers{
+		RouterCfg:     routerCfg,
+		HTTPServer:    httpServer,
+		HealthServer:  healthServer,
+		MetricsServer: metricsServer,
+		TLSEnabled:    tlsEnabled,
+		Addr:          addr,
+	}, stopWatchers, nil
+}
+
+// buildRouterConfig assembles handler.RouterConfig from routerBuildParams and
+// constructs the chi router.
+func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler, error) {
+	cfg := p.HDeps.Cfg
+	logger := p.HDeps.Logger
 	metricsReg := p.HDeps.MetricsReg
 	sessInfra := p.HDeps.SessInfra
 
@@ -398,13 +632,20 @@ func buildRouterAndServers(ctx context.Context, p routerBuildParams) (*routerAnd
 	}
 	router, err := handler.NewRouter(routerCfg)
 	if err != nil {
-		logger.Error(err, "failed to create router")
-		return nil, nil, err
+		return routerCfg, nil, err
 	}
+	return routerCfg, router, nil
+}
 
-	addr := fmt.Sprintf(":%d", cfg.Server.Port)
+// buildHTTPServers constructs the three *http.Server instances (API/health/
+// metrics) sharing the router built by buildRouterConfig.
+func buildHTTPServers(p routerBuildParams, router http.Handler) (addr string, httpServer, healthServer, metricsServer *http.Server) {
+	cfg := p.HDeps.Cfg
+	metricsReg := p.HDeps.MetricsReg
+	sessInfra := p.HDeps.SessInfra
 
-	httpServer := &http.Server{
+	addr = fmt.Sprintf(":%d", cfg.Server.Port)
+	httpServer = &http.Server{
 		Addr:              addr,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
@@ -412,51 +653,60 @@ func buildRouterAndServers(ctx context.Context, p routerBuildParams) (*routerAnd
 		IdleTimeout:       120 * time.Second,
 	}
 
-	healthAddr := fmt.Sprintf(":%d", cfg.Server.HealthPort)
-	metricsAddr := fmt.Sprintf(":%d", cfg.Server.MetricsPort)
-
 	healthMux := buildHealthMux(handler.AllReady(p.DepsReady, p.AuthReady, sessInfra.Healthy.Load), p.Draining)
-	healthServer := &http.Server{
-		Addr:              healthAddr,
+	healthServer = &http.Server{
+		Addr:              fmt.Sprintf(":%d", cfg.Server.HealthPort),
 		Handler:           healthMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", metricsReg.Handler())
-	metricsServer := &http.Server{
-		Addr:              metricsAddr,
+	metricsServer = &http.Server{
+		Addr:              fmt.Sprintf(":%d", cfg.Server.MetricsPort),
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	return addr, httpServer, healthServer, metricsServer
+}
 
-	tlsEnabled, certReloader, err := tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
+// configureServerTLS wires hot-reloadable TLS certs onto httpServer if
+// certificate material is present, warning loudly (F-006) when TLS ends up
+// disabled and failing fast if TLS is explicitly required but unavailable.
+func configureServerTLS(httpServer *http.Server, cfg *config.Config, logger logr.Logger) (tlsEnabled bool, certReloader *sharedtls.CertReloader, err error) {
+	tlsEnabled, certReloader, err = tlswiring.ConfigureServer(httpServer, cfg.Server.TLS.CertDir)
 	if err != nil {
 		logger.Error(err, "failed to configure TLS")
-		return nil, nil, err
+		return false, nil, err
 	}
 	if tlsEnabled {
 		logger.Info("TLS enabled with hot-reloadable certificates", "certDir", cfg.Server.TLS.CertDir)
-	} else {
-		// F-006: Warn loudly when TLS is disabled; production deployments must use
-		// either application TLS or document mesh/ingress TLS as compensating control.
-		if warn := tlswiring.CheckPartialTLSMaterial(cfg.Server.TLS.CertDir); warn != "" {
-			logger.Info("WARNING: "+warn, "certDir", cfg.Server.TLS.CertDir)
-		}
-		if cfg.Server.TLS.Required {
-			reqErr := fmt.Errorf("TLS required but no certificates found")
-			logger.Error(reqErr, "server.tls.required is true but certDir is empty or missing certs")
-			return nil, nil, reqErr
-		}
-		logger.Info("WARNING: TLS disabled, serving plain HTTP — not suitable for FedRAMP production")
+		return tlsEnabled, certReloader, nil
 	}
 
+	// F-006: Warn loudly when TLS is disabled; production deployments must use
+	// either application TLS or document mesh/ingress TLS as compensating control.
+	if warn := tlswiring.CheckPartialTLSMaterial(cfg.Server.TLS.CertDir); warn != "" {
+		logger.Info("WARNING: "+warn, "certDir", cfg.Server.TLS.CertDir)
+	}
+	if cfg.Server.TLS.Required {
+		reqErr := fmt.Errorf("TLS required but no certificates found")
+		logger.Error(reqErr, "server.tls.required is true but certDir is empty or missing certs")
+		return false, nil, reqErr
+	}
+	logger.Info("WARNING: TLS disabled, serving plain HTTP — not suitable for FedRAMP production")
+	return tlsEnabled, certReloader, nil
+}
+
+// startTLSWatchers starts the cert and CA file watchers (if configured) and
+// returns a single cleanup func that stops whichever ones were started.
+func startTLSWatchers(ctx context.Context, certDir string, certReloader *sharedtls.CertReloader, logger logr.Logger) (func(), error) {
 	var stoppers []func()
 
-	certWatcher, err := tlswiring.StartCertFileWatcher(ctx, cfg.Server.TLS.CertDir, certReloader, logger)
+	certWatcher, err := tlswiring.StartCertFileWatcher(ctx, certDir, certReloader, logger)
 	if err != nil {
 		logger.Error(err, "failed to start certificate file watcher")
-		return nil, nil, err
+		return nil, err
 	}
 	if certWatcher != nil {
 		stoppers = append(stoppers, certWatcher.Stop)
@@ -465,24 +715,17 @@ func buildRouterAndServers(ctx context.Context, p routerBuildParams) (*routerAnd
 	caWatcher, err := tlswiring.StartCAFileWatcher(ctx, logger)
 	if err != nil {
 		logger.Error(err, "failed to start CA file watcher")
-		return nil, nil, err
+		return nil, err
 	}
 	if caWatcher != nil {
 		stoppers = append(stoppers, caWatcher.Stop)
 	}
 
-	return &routerAndServers{
-			RouterCfg:     routerCfg,
-			HTTPServer:    httpServer,
-			HealthServer:  healthServer,
-			MetricsServer: metricsServer,
-			TLSEnabled:    tlsEnabled,
-			Addr:          addr,
-		}, func() {
-			for _, stop := range stoppers {
-				stop()
-			}
-		}, nil
+	return func() {
+		for _, stop := range stoppers {
+			stop()
+		}
+	}, nil
 }
 
 func newZapLogger(level zapcore.Level) *zap.Logger {
