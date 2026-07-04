@@ -4,8 +4,7 @@ name: Gitleaks secret scan
 # gitleaks CLI (MIT-licensed), installed directly from a checksum-verified
 # release binary. Deliberately NOT using the official gitleaks/gitleaks-action
 # wrapper: that action carries its own commercial EULA and requires a
-# (free but manually-provisioned) license key for organization-owned repos --
-# see docs/development/OPENSSF_BEST_PRACTICES_BADGE.md for the rationale.
+# (free but manually-provisioned) license key for organization-owned repos.
 # Known-fake credentials in test fixtures/docs are pre-triaged in
 # .gitleaks.toml so only genuinely new findings fail the job.
 on:

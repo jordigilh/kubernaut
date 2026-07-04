@@ -104,7 +104,7 @@ Every push and pull request is automatically scanned by:
 | [gitleaks](https://github.com/gitleaks/gitleaks) | `.github/workflows/gitleaks.yml` | Hardcoded secrets/credentials, scanning full git history on every push, PR, and weekly schedule |
 | [OpenSSF Scorecard](https://scorecard.dev/) | `.github/workflows/scorecard.yml` | Supply-chain security posture (pinning, permissions, branch protection, etc.) |
 
-Known-benign matches (e.g., fake credentials in the sanitization/redaction test suites, which necessarily contain secret-shaped strings as test input) are tracked in `.gitleaks.toml` with a documented rationale for each -- see `docs/development/OPENSSF_BEST_PRACTICES_BADGE.md` for the full triage.
+Known-benign matches (e.g., fake credentials in the sanitization/redaction test suites, which necessarily contain secret-shaped strings as test input) are tracked in `.gitleaks.toml`, which documents the full triage rationale inline.
 
 ## Disclosure Policy
 

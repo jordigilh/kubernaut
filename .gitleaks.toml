@@ -7,23 +7,21 @@ useDefault = true
 
 # ----------------------------------------------------------------------------
 # Global allowlist: known-fake credentials in test fixtures and documentation
-# examples, confirmed by manual triage of a full-history scan
-# (`gitleaks detect --source . --log-opts="--all"`, 8,466 commits across all
-# branches/tags) before the OpenSSF Best Practices badge submission. Every
-# file below was individually inspected -- see
-# docs/development/OPENSSF_BEST_PRACTICES_BADGE.md (no_leaked_credentials
-# criterion) for the full triage writeup. None contain a real, currently
-# valid credential: they are sanitization/redaction test fixtures, forged
-# JWTs used to test auth-parsing code, mock service-account keys explicitly
-# labelled "_notsecret", dev-only placeholder values (e.g. "changeme"), or
-# documentation examples (including Stripe's own publicly documented example
-# key, sk_live_1234567890abcdef -- Kubernaut does not integrate Stripe).
+# examples, confirmed by manually triaging every match from a full-history
+# scan (`gitleaks detect --source . --log-opts="--all"`, 8,466 commits across
+# all branches/tags). Every file below was individually inspected. None
+# contain a real, currently valid credential: they are sanitization/redaction
+# test fixtures, forged JWTs used to test auth-parsing code, mock
+# service-account keys explicitly labelled "_notsecret", dev-only placeholder
+# values (e.g. "changeme"), or documentation examples (including Stripe's own
+# publicly documented example key, sk_live_1234567890abcdef -- Kubernaut does
+# not integrate Stripe).
 #
 # This is intentionally scoped to exact file paths (not directory-wide
 # wildcards) so a real secret accidentally added to any *other* file --
 # including new test files -- is still caught.
 [[allowlists]]
-description = "Verified test fixtures and doc examples (no real secrets) -- see docs/development/OPENSSF_BEST_PRACTICES_BADGE.md"
+description = "Verified test fixtures and doc examples confirmed to contain no real secrets (see comment above)"
 paths = [
   '''^KUBERNAUT_NON_FUNCTIONAL_REQUIREMENTS_TESTING_STRATEGY\.md$''',
   '''^cmd/must\-gather/sanitizers/sanitize\-all\.sh$''',
