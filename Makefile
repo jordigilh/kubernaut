@@ -240,7 +240,8 @@ clean: ## Clean build artifacts
 
 # Coverage Directory Setup
 .PHONY: ensure-coverage-dirs
-ensure-coverage-dirs: ## Ensure coverage directories exist for all test tiers
+ensure-coverage-dirs: ## Ensure coverage directories exist for all test tiers, purged of any stale runs
+	@rm -rf coverdata coverage-reports
 	@mkdir -p coverdata coverage-reports
 	@chmod -f 777 coverdata coverage-reports 2>/dev/null || true
 
