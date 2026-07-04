@@ -19,6 +19,7 @@ package aggregator
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -51,6 +52,30 @@ type AggregatedStatus struct {
 	AllChildrenHealthy     bool
 }
 
+// aggregateChildPhase resolves a single child CRD's phase via getPhase and applies it to
+// *dest, falling back to graceful degradation (AllChildrenHealthy=false, empty phase) when
+// the child is missing or unreachable. Shared by AggregateStatus for each of the three
+// child CRD kinds to avoid duplicated nested error-handling per kind.
+func (a *StatusAggregator) aggregateChildPhase(
+	logger logr.Logger,
+	result *AggregatedStatus,
+	dest *string,
+	refKind, refName string,
+	getPhase func() (string, error),
+) {
+	phase, err := getPhase()
+	if err == nil {
+		*dest = phase
+		return
+	}
+	if apierrors.IsNotFound(err) {
+		logger.Info(refKind+" CRD not found, continuing gracefully", refKind+"Ref", refName)
+	} else {
+		logger.Error(err, "Failed to get "+refKind+" status")
+	}
+	result.AllChildrenHealthy = false
+}
+
 // AggregateStatus fetches child CRD statuses and returns aggregated status.
 // Handles missing child CRDs gracefully - logs warning and continues with empty phase.
 // Reference: BR-ORCH-029
@@ -59,55 +84,19 @@ func (a *StatusAggregator) AggregateStatus(ctx context.Context, rr *remediationv
 
 	result := &AggregatedStatus{AllChildrenHealthy: true}
 
-	// Aggregate SignalProcessing status
-	if rr.Status.SignalProcessingRef != nil {
-		phase, err := a.getSignalProcessingPhase(ctx, rr.Status.SignalProcessingRef.Name, rr.Status.SignalProcessingRef.Namespace)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				logger.Info("SignalProcessing CRD not found, continuing gracefully",
-					"signalProcessingRef", rr.Status.SignalProcessingRef.Name)
-				result.AllChildrenHealthy = false
-			} else {
-				logger.Error(err, "Failed to get SignalProcessing status")
-				result.AllChildrenHealthy = false
-			}
-		} else {
-			result.SignalProcessingPhase = phase
-		}
+	if ref := rr.Status.SignalProcessingRef; ref != nil {
+		a.aggregateChildPhase(logger, result, &result.SignalProcessingPhase, "signalProcessing", ref.Name,
+			func() (string, error) { return a.getSignalProcessingPhase(ctx, ref.Name, ref.Namespace) })
 	}
 
-	// Aggregate AIAnalysis status
-	if rr.Status.AIAnalysisRef != nil {
-		phase, err := a.getAIAnalysisPhase(ctx, rr.Status.AIAnalysisRef.Name, rr.Status.AIAnalysisRef.Namespace)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				logger.Info("AIAnalysis CRD not found, continuing gracefully",
-					"aiAnalysisRef", rr.Status.AIAnalysisRef.Name)
-				result.AllChildrenHealthy = false
-			} else {
-				logger.Error(err, "Failed to get AIAnalysis status")
-				result.AllChildrenHealthy = false
-			}
-		} else {
-			result.AIAnalysisPhase = phase
-		}
+	if ref := rr.Status.AIAnalysisRef; ref != nil {
+		a.aggregateChildPhase(logger, result, &result.AIAnalysisPhase, "aiAnalysis", ref.Name,
+			func() (string, error) { return a.getAIAnalysisPhase(ctx, ref.Name, ref.Namespace) })
 	}
 
-	// Aggregate WorkflowExecution status
-	if rr.Status.WorkflowExecutionRef != nil {
-		phase, err := a.getWorkflowExecutionPhase(ctx, rr.Status.WorkflowExecutionRef.Name, rr.Status.WorkflowExecutionRef.Namespace)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				logger.Info("WorkflowExecution CRD not found, continuing gracefully",
-					"workflowExecutionRef", rr.Status.WorkflowExecutionRef.Name)
-				result.AllChildrenHealthy = false
-			} else {
-				logger.Error(err, "Failed to get WorkflowExecution status")
-				result.AllChildrenHealthy = false
-			}
-		} else {
-			result.WorkflowExecutionPhase = phase
-		}
+	if ref := rr.Status.WorkflowExecutionRef; ref != nil {
+		a.aggregateChildPhase(logger, result, &result.WorkflowExecutionPhase, "workflowExecution", ref.Name,
+			func() (string, error) { return a.getWorkflowExecutionPhase(ctx, ref.Name, ref.Namespace) })
 	}
 
 	logger.V(1).Info("Status aggregated successfully",

@@ -54,39 +54,14 @@ func NewSignalProcessingCreator(c client.Client, s *runtime.Scheme, m *metrics.M
 	}
 }
 
-// Create creates a SignalProcessing CRD for the given RemediationRequest.
-// It is idempotent - if the CRD already exists, it returns the existing name.
-// Reference: BR-ORCH-025 (data pass-through), BR-ORCH-031 (cascade deletion)
-func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.RemediationRequest) (string, error) {
-	logger := log.FromContext(ctx).WithValues(
-		"remediationRequest", rr.Name,
-		"namespace", rr.Namespace,
-	)
-
-	// Generate deterministic name
-	name := fmt.Sprintf("sp-%s", rr.Name)
-
-	// Check if already exists (idempotency)
-	existing := &signalprocessingv1.SignalProcessing{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		// Already exists, return existing name
-		logger.Info("SignalProcessing already exists, reusing", "name", name)
-		return name, nil
-	}
-	if !apierrors.IsNotFound(err) {
-		// Real error (not "not found"), return it
-		logger.Error(err, "Failed to check existing SignalProcessing")
-		return "", fmt.Errorf("failed to check existing SignalProcessing: %w", err)
-	}
-
-	// Build SignalProcessing CRD with data pass-through (BR-ORCH-025)
-	sp := &signalprocessingv1.SignalProcessing{
+// buildSignalProcessing constructs the SignalProcessing CRD object (unpersisted) with
+// data pass-through from rr (BR-ORCH-025).
+func (c *SignalProcessingCreator) buildSignalProcessing(rr *remediationv1.RemediationRequest, name string) *signalprocessingv1.SignalProcessing {
+	return &signalprocessingv1.SignalProcessing{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
 			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
-
 		},
 		Spec: signalprocessingv1.SignalProcessingSpec{
 			// Reference to parent RemediationRequest for audit trail
@@ -115,6 +90,33 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 			},
 		},
 	}
+}
+
+// Create creates a SignalProcessing CRD for the given RemediationRequest.
+// It is idempotent - if the CRD already exists, it returns the existing name.
+// Reference: BR-ORCH-025 (data pass-through), BR-ORCH-031 (cascade deletion)
+func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.RemediationRequest) (string, error) {
+	logger := log.FromContext(ctx).WithValues(
+		"remediationRequest", rr.Name,
+		"namespace", rr.Namespace,
+	)
+
+	// Generate deterministic name
+	name := fmt.Sprintf("sp-%s", rr.Name)
+
+	// Check if already exists (idempotency)
+	existing := &signalprocessingv1.SignalProcessing{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
+	if err == nil {
+		// Already exists, return existing name
+		logger.Info("SignalProcessing already exists, reusing", "name", name)
+		return name, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		// Real error (not "not found"), return it
+		logger.Error(err, "Failed to check existing SignalProcessing")
+		return "", fmt.Errorf("failed to check existing SignalProcessing: %w", err)
+	}
 
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
@@ -122,6 +124,8 @@ func (c *SignalProcessingCreator) Create(ctx context.Context, rr *remediationv1.
 		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
 		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
 	}
+
+	sp := c.buildSignalProcessing(rr, name)
 
 	// Set owner reference for cascade deletion (BR-ORCH-031)
 	if err := controllerutil.SetControllerReference(rr, sp, c.scheme); err != nil {

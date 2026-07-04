@@ -23,11 +23,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -74,10 +76,10 @@ type Engine interface {
 // Reference: DD-RO-002 (Centralized Routing Responsibility)
 type RoutingEngine struct {
 	client       client.Client
-	apiReader    client.Reader       // DD-STATUS-001: Cache-bypassed reader for fresh routing queries
+	apiReader    client.Reader // DD-STATUS-001: Cache-bypassed reader for fresh routing queries
 	namespace    string
 	config       Config
-	scopeChecker scope.ScopeChecker // BR-SCOPE-010 + ADR-068: Mandatory scope validation (DI)
+	scopeChecker scope.ScopeChecker        // BR-SCOPE-010 + ADR-068: Mandatory scope validation (DI)
 	dsClient     RemediationHistoryQuerier // Issue #214: DataStorage client for ineffective chain detection
 }
 
@@ -352,24 +354,18 @@ func parseTargetResource(s string) TargetResource {
 // to pre-remediation state) are NOT counted here. Instead, they are detected by
 // CheckIneffectiveRemediationChain via DataStorage audit traces (Option C: LLM-driven
 // escalation). See BR-ORCH-042.6 for the decision rationale.
-func (r *RoutingEngine) CheckConsecutiveFailures(
-	ctx context.Context,
-	rr *remediationv1.RemediationRequest,
-) *BlockingCondition {
-	logger := log.FromContext(ctx)
-
-	// Query for all RemediationRequests with the same fingerprint in the SAME NAMESPACE
+// fingerprintHistory queries and returns all RemediationRequests sharing rr's SignalFingerprint,
+// scoped to the incoming RR's target-resource namespace (multi-tenant isolation, #222, ADR-057),
+// sorted newest-first by creation timestamp.
+func (r *RoutingEngine) fingerprintHistory(ctx context.Context, logger logr.Logger, rr *remediationv1.RemediationRequest) ([]remediationv1.RemediationRequest, error) {
 	// BR-ORCH-042: Consecutive failure blocking MUST be namespace-scoped (multi-tenant isolation)
 	list := &remediationv1.RemediationRequestList{}
-	err := r.client.List(ctx, list,
+	if err := r.client.List(ctx, list,
 		client.InNamespace(rr.Namespace), // MULTI-TENANT SAFETY: Isolate by namespace
 		client.MatchingFields{
 			"spec.signalFingerprint": rr.Spec.SignalFingerprint,
-		})
-	if err != nil {
-		// Log error but don't block on query failure
-		logger.Error(err, "Failed to query RRs by fingerprint", "fingerprint", rr.Spec.SignalFingerprint)
-		return nil
+		}); err != nil {
+		return nil, err
 	}
 
 	logger.Info("CheckConsecutiveFailures query results",
@@ -388,16 +384,12 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 			filtered = append(filtered, list.Items[i])
 		}
 	}
-	list.Items = filtered
 
-	// Sort ALL RRs by creation timestamp (newest first)
-	// We need to check consecutive failures from most recent
-	sort.Slice(list.Items, func(i, j int) bool {
-		return list.Items[i].CreationTimestamp.After(list.Items[j].CreationTimestamp.Time)
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].CreationTimestamp.After(filtered[j].CreationTimestamp.Time)
 	})
 
-	// Log all RRs for debugging
-	for i, item := range list.Items {
+	for i, item := range filtered {
 		logger.Info("RR in history",
 			"index", i,
 			"name", item.Name,
@@ -406,48 +398,64 @@ func (r *RoutingEngine) CheckConsecutiveFailures(
 			"isIncoming", item.UID == rr.UID)
 	}
 
-	// Count consecutive failures from most recent RRs
-	// Stop counting when we hit a non-Failed RR (success breaks the consecutive chain)
+	return filtered, nil
+}
+
+// countConsecutiveFailures walks history (newest-first, excluding the incoming RR) counting
+// terminal failures until a genuine success breaks the chain. #1091 (BR-ORCH-042.6):
+// Completed+Inconclusive counts as a functional failure since EA confirmed the alert still fires.
+func countConsecutiveFailures(logger logr.Logger, history []remediationv1.RemediationRequest, incomingUID types.UID) int {
 	consecutiveFailures := 0
-	for i := range list.Items {
-		item := &list.Items[i]
-		if item.UID == rr.UID {
+	for i := range history {
+		item := &history[i]
+		if item.UID == incomingUID {
 			logger.Info("Skipping incoming RR", "name", item.Name)
 			continue
 		}
 
-		// Count Failed and Blocked RRs as failures.
-		// #1091 (BR-ORCH-042.6): Also count Completed+Inconclusive as a functional failure —
-		// EA confirmed alert still firing, automatic retry is futile.
-		if item.Status.OverallPhase == remediationv1.PhaseFailed ||
-		   item.Status.OverallPhase == remediationv1.PhaseBlocked {
+		switch {
+		case item.Status.OverallPhase == remediationv1.PhaseFailed || item.Status.OverallPhase == remediationv1.PhaseBlocked:
 			consecutiveFailures++
 			logger.Info("Counted failed/blocked RR", "name", item.Name, "phase", item.Status.OverallPhase, "consecutiveFailures", consecutiveFailures)
-		} else if item.Status.OverallPhase == remediationv1.PhaseCompleted {
-			if item.Status.Outcome == "Inconclusive" {
-				consecutiveFailures++
-				logger.Info("Counted Completed+Inconclusive RR as functional failure", "name", item.Name, "consecutiveFailures", consecutiveFailures)
-			} else {
-				logger.Info("Found completed RR with successful outcome - breaking chain", "name", item.Name, "outcome", item.Status.Outcome, "consecutiveFailures", consecutiveFailures)
-				break
-			}
-		} else {
+		case item.Status.OverallPhase == remediationv1.PhaseCompleted && item.Status.Outcome == "Inconclusive":
+			consecutiveFailures++
+			logger.Info("Counted Completed+Inconclusive RR as functional failure", "name", item.Name, "consecutiveFailures", consecutiveFailures)
+		case item.Status.OverallPhase == remediationv1.PhaseCompleted:
+			logger.Info("Found completed RR with successful outcome - breaking chain", "name", item.Name, "outcome", item.Status.Outcome, "consecutiveFailures", consecutiveFailures)
+			return consecutiveFailures
+		default:
+			// Ignore RRs in other phases (Pending, Processing, etc.) - they're not terminal yet
 			logger.Info("Ignoring non-terminal RR", "name", item.Name, "phase", item.Status.OverallPhase)
 		}
-		// Ignore RRs in other phases (Pending, Processing, etc.) - they're not terminal yet
 	}
+	return consecutiveFailures
+}
+
+// CheckConsecutiveFailures blocks when consecutive failures >= threshold. See doc comment above.
+func (r *RoutingEngine) CheckConsecutiveFailures(
+	ctx context.Context,
+	rr *remediationv1.RemediationRequest,
+) *BlockingCondition {
+	logger := log.FromContext(ctx)
+
+	history, err := r.fingerprintHistory(ctx, logger, rr)
+	if err != nil {
+		// Log error but don't block on query failure
+		logger.Error(err, "Failed to query RRs by fingerprint", "fingerprint", rr.Spec.SignalFingerprint)
+		return nil
+	}
+
+	consecutiveFailures := countConsecutiveFailures(logger, history, rr.UID)
 
 	logger.Info("CheckConsecutiveFailures result",
 		"consecutiveFailures", consecutiveFailures,
 		"threshold", r.config.ConsecutiveFailureThreshold,
 		"willBlock", consecutiveFailures >= r.config.ConsecutiveFailureThreshold)
 
-	// Check if threshold exceeded
 	if consecutiveFailures < r.config.ConsecutiveFailureThreshold {
 		return nil // Not blocked
 	}
 
-	// Calculate when cooldown expires
 	cooldownDuration := time.Duration(r.config.ConsecutiveFailureCooldown) * time.Second
 	blockedUntil := time.Now().Add(cooldownDuration)
 
@@ -825,8 +833,8 @@ func (r *RoutingEngine) CalculateExponentialBackoff(consecutiveFailures int32) t
 	config := backoff.Config{
 		BasePeriod:    time.Duration(r.config.ExponentialBackoffBase) * time.Second,
 		MaxPeriod:     time.Duration(r.config.ExponentialBackoffMax) * time.Second,
-		Multiplier:    2.0,  // Standard exponential (power-of-2)
-		JitterPercent: 10,   // ±10% variance prevents thundering herd in HA deployment
+		Multiplier:    2.0, // Standard exponential (power-of-2)
+		JitterPercent: 10,  // ±10% variance prevents thundering herd in HA deployment
 	}
 
 	// Note: MaxExponent capping is handled by MaxPeriod in shared library
@@ -1026,6 +1034,38 @@ func (r *RoutingEngine) FindRecentCompletedWFE(
 //
 // Fail-open: DS query errors are logged and nil is returned.
 // Returns: BlockingCondition with BlockReasonIneffectiveChain, or nil.
+// ineffectiveHistory fetches the DataStorage audit trace for target used by the three
+// detection layers in CheckIneffectiveRemediationChain. Fail-open: a nil dsClient or a
+// DS query error both yield (nil, nil) so the caller treats it as "no evidence, don't block".
+func (r *RoutingEngine) ineffectiveHistory(ctx context.Context, logger logr.Logger, target TargetResource, preRemediationSpecHash string) []ogenclient.RemediationHistoryEntry {
+	if r.dsClient == nil {
+		logger.V(1).Info("dsClient is nil, skipping ineffective chain detection")
+		return nil
+	}
+
+	entries, err := r.dsClient.GetRemediationHistory(ctx, target, preRemediationSpecHash, r.config.IneffectiveTimeWindow)
+	if err != nil {
+		logger.Error(err, "DataStorage query failed for ineffective chain detection (fail-open)")
+		return nil
+	}
+
+	logger.V(1).Info("Ineffective chain detection: DS query completed", "entryCount", len(entries))
+	return entries
+}
+
+// countRecentEntries implements Layer 3 (safety net): counts entries completed within
+// the configured ineffective-time-window, regardless of hash-chain continuity.
+func countRecentEntries(entries []ogenclient.RemediationHistoryEntry, window time.Duration) int {
+	windowCutoff := time.Now().Add(-window)
+	recentCount := 0
+	for i := range entries {
+		if entries[i].CompletedAt.After(windowCutoff) {
+			recentCount++
+		}
+	}
+	return recentCount
+}
+
 func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 	ctx context.Context,
 	rr *remediationv1.RemediationRequest,
@@ -1038,20 +1078,7 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 		"target", target.String(),
 	)
 
-	if r.dsClient == nil {
-		logger.V(1).Info("dsClient is nil, skipping ineffective chain detection")
-		return nil
-	}
-
-	entries, err := r.dsClient.GetRemediationHistory(ctx, target, preRemediationSpecHash, r.config.IneffectiveTimeWindow)
-	if err != nil {
-		logger.Error(err, "DataStorage query failed for ineffective chain detection (fail-open)")
-		return nil
-	}
-
-	logger.V(1).Info("Ineffective chain detection: DS query completed",
-		"entryCount", len(entries))
-
+	entries := r.ineffectiveHistory(ctx, logger, target, preRemediationSpecHash)
 	if len(entries) == 0 {
 		return nil
 	}
@@ -1080,14 +1107,7 @@ func (r *RoutingEngine) CheckIneffectiveRemediationChain(
 	}
 
 	// Layer 3: Safety net -- count total entries within time window
-	windowCutoff := time.Now().Add(-r.config.IneffectiveTimeWindow)
-	recentCount := 0
-	for i := range entries {
-		if entries[i].CompletedAt.After(windowCutoff) {
-			recentCount++
-		}
-	}
-
+	recentCount := countRecentEntries(entries, r.config.IneffectiveTimeWindow)
 	if recentCount >= r.config.RecurrenceCountThreshold {
 		logger.Info("Ineffective remediation chain detected (Layer 3 safety net)",
 			"recentCount", recentCount,

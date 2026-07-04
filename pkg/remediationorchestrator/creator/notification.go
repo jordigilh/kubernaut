@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -132,6 +133,51 @@ func FormatClusterLine(clusterName, clusterUUID string) string {
 	return fmt.Sprintf("**Cluster**: %s (%s)\n\n", clusterName, clusterUUID)
 }
 
+// existingNotification checks whether a NotificationRequest named `name` already exists
+// (idempotent create). Returns (true, nil) when found and reusable, (false, nil) when not
+// found (caller should proceed to build+create), or (false, err) on unexpected API error.
+// kind labels the notification type in log messages (e.g. "Approval", "Completion").
+func (c *NotificationCreator) existingNotification(ctx context.Context, logger logr.Logger, name, namespace, kind string) (bool, error) {
+	existing := &notificationv1.NotificationRequest{}
+	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, existing)
+	if err == nil {
+		logger.Info(kind+" notification already exists, reusing", "name", name)
+		return true, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to check existing NotificationRequest")
+		return false, fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+	}
+	return false, nil
+}
+
+// persistNotification validates rr's owner-reference eligibility, sets the controller
+// reference for cascade deletion (BR-ORCH-031), and creates nr -- tolerating a
+// concurrent-create race (IsAlreadyExists) as a successful idempotent outcome.
+// kind labels the notification type in log messages.
+func (c *NotificationCreator) persistNotification(ctx context.Context, logger logr.Logger, rr *remediationv1.RemediationRequest, nr *notificationv1.NotificationRequest, name, kind string) (string, error) {
+	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
+	if rr.UID == "" {
+		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	}
+
+	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
+		logger.Error(err, "Failed to set owner reference")
+		return "", fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	if err := c.client.Create(ctx, nr); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			logger.Info(kind+" NotificationRequest already exists (concurrent create), reusing", "name", name)
+			return name, nil
+		}
+		logger.Error(err, "Failed to create "+kind+" NotificationRequest")
+		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
+	}
+	return name, nil
+}
+
 // CreateApprovalNotification creates a NotificationRequest for approval (BR-ORCH-001).
 // It receives AIAnalysis as a parameter (consistent with Day 2-3 pattern).
 // Reference: BR-ORCH-001 (approval notification), BR-ORCH-031 (cascade deletion), BR-ORCH-035 (ref tracking)
@@ -160,21 +206,37 @@ func (c *NotificationCreator) CreateApprovalNotification(
 	name := fmt.Sprintf("nr-approval-%s", rr.Name)
 
 	// Check if already exists (idempotency)
-	existing := &notificationv1.NotificationRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("Approval notification already exists, reusing", "name", name)
-		return name, nil
+	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Approval")
+	if err != nil {
+		return "", err
 	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing NotificationRequest")
-		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+	if exists {
+		return name, nil
 	}
 
 	// Build NotificationRequest for approval
-	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
-	// API Contract: Uses Subject/Body (not Title/Message), Context + Extensions
-	nr := &notificationv1.NotificationRequest{
+	nr := c.buildApprovalNotificationRequest(name, rr, ai)
+
+	result, err := c.persistNotification(ctx, logger, rr, nr, name, "Approval")
+	if err != nil {
+		return "", err
+	}
+
+	logger.Info("Created approval NotificationRequest",
+		"name", result,
+		"approvalReason", ai.Status.ApprovalReason,
+	)
+
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	return result, nil
+}
+
+// buildApprovalNotificationRequest constructs the NotificationRequest object for an
+// approval notification (BR-ORCH-001). Split from CreateApprovalNotification for funlen.
+// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
+// API Contract: Uses Subject/Body (not Title/Message), Context + Extensions
+func (c *NotificationCreator) buildApprovalNotificationRequest(name string, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) *notificationv1.NotificationRequest {
+	return &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
@@ -209,37 +271,6 @@ func (c *NotificationCreator) CreateApprovalNotification(
 			},
 		},
 	}
-
-	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
-	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
-	}
-
-	// Set owner reference for cascade deletion (BR-ORCH-031)
-	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: %w", err)
-	}
-
-	// Create the CRD
-	if err := c.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Approval NotificationRequest already exists (concurrent create), reusing", "name", name)
-			return name, nil
-		}
-		logger.Error(err, "Failed to create approval NotificationRequest")
-		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
-	}
-
-	logger.Info("Created approval NotificationRequest",
-		"name", name,
-		"approvalReason", ai.Status.ApprovalReason,
-	)
-
-	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
-	return name, nil
 }
 
 // mapPriority maps remediation priority string to NotificationPriority enum.
@@ -327,39 +358,87 @@ func (c *NotificationCreator) CreateCompletionNotification(
 	name := fmt.Sprintf("nr-completion-%s", rr.Name)
 
 	// Check if already exists (idempotency)
-	existing := &notificationv1.NotificationRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("Completion notification already exists, reusing", "name", name)
+	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Completion")
+	if err != nil {
+		return "", err
+	}
+	if exists {
 		return name, nil
 	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing NotificationRequest")
-		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+
+	// Build NotificationRequest for completion
+	nr, workflowID := c.buildCompletionNotificationRequest(name, rr, ai, executionEngine, ea)
+
+	result, err := c.persistNotification(ctx, logger, rr, nr, name, "Completion")
+	if err != nil {
+		return "", err
 	}
 
-	// Build completion notification body
+	logger.Info("Created completion NotificationRequest",
+		"name", result,
+		"workflowId", workflowID,
+	)
+
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	return result, nil
+}
+
+// completionContent holds the derived content fields for a completion notification,
+// resolved once from AIAnalysis/EffectivenessAssessment and shared between the
+// notification body and its structured Context. Extracted for funlen.
+type completionContent struct {
+	RootCause        string
+	WorkflowID       string
+	ActionType       string
+	Rationale        string
+	VerificationText string
+	VerificationCtx  *notificationv1.VerificationContext
+}
+
+// resolveCompletionContent derives the completion notification content fields from
+// AIAnalysis and the (optional) EffectivenessAssessment.
+// #318: ea is optional -- nil produces "Verification: not available" (graceful degradation).
+func resolveCompletionContent(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, ea *eav1.EffectivenessAssessment) completionContent {
 	rootCause := ai.Status.RootCause
 	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
 		rootCause = ai.Status.RootCauseAnalysis.Summary
 	}
 
-	workflowID := ""
-	actionType := ""
-	rationale := ""
+	var workflowID, actionType, rationale string
 	if ai.Status.SelectedWorkflow != nil {
 		workflowID = ai.Status.SelectedWorkflow.WorkflowID
 		actionType = ai.Status.SelectedWorkflow.ActionType
 		rationale = ai.Status.SelectedWorkflow.Rationale
 	}
-	// Issue #518: executionEngine is now passed as parameter (sourced from WFE status).
 
 	// #318 + #546: Build verification summary from EA (with RR for hash degradation)
 	verificationText, verificationCtx := BuildVerificationSummary(ea, rr)
 
-	// Build NotificationRequest for completion
-	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
-	// API Contract: Uses Subject/Body (not Title/Message), Context + Extensions
+	return completionContent{
+		RootCause:        rootCause,
+		WorkflowID:       workflowID,
+		ActionType:       actionType,
+		Rationale:        rationale,
+		VerificationText: verificationText,
+		VerificationCtx:  verificationCtx,
+	}
+}
+
+// buildCompletionNotificationRequest constructs the NotificationRequest object for a
+// completion notification (BR-ORCH-045). Split from CreateCompletionNotification for funlen.
+// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
+// API Contract: Uses Subject/Body (not Title/Message), Context + Extensions
+// Returns the built request plus workflowID (used by the caller for logging).
+func (c *NotificationCreator) buildCompletionNotificationRequest(
+	name string,
+	rr *remediationv1.RemediationRequest,
+	ai *aianalysisv1.AIAnalysis,
+	executionEngine string,
+	ea *eav1.EffectivenessAssessment,
+) (*notificationv1.NotificationRequest, string) {
+	// Issue #518: executionEngine is now passed as parameter (sourced from WFE status).
+	content := resolveCompletionContent(rr, ai, ea)
+
 	nr := &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -380,13 +459,13 @@ func (c *NotificationCreator) CreateCompletionNotification(
 			Severity:  rr.Spec.Severity,
 			Subject:   fmt.Sprintf("Remediation Completed: %s", rr.Spec.SignalName),
 			Body: c.buildCompletionBody(rr, completionBodyParams{
-				RootCause:        rootCause,
-				WorkflowID:       workflowID,
+				RootCause:        content.RootCause,
+				WorkflowID:       content.WorkflowID,
 				ExecutionEngine:  executionEngine,
-				ActionType:       actionType,
-				Rationale:        rationale,
+				ActionType:       content.ActionType,
+				Rationale:        content.Rationale,
 				Target:           resolveNotificationTargetResource(rr, ai),
-				VerificationText: verificationText,
+				VerificationText: content.VerificationText,
 			}),
 			Context: &notificationv1.NotificationContext{
 				Lineage: &notificationv1.LineageContext{
@@ -394,48 +473,18 @@ func (c *NotificationCreator) CreateCompletionNotification(
 					AIAnalysis:         ai.Name,
 				},
 				Workflow: &notificationv1.WorkflowContext{
-					WorkflowID:      workflowID,
+					WorkflowID:      content.WorkflowID,
 					ExecutionEngine: executionEngine,
 				},
 				Analysis: &notificationv1.AnalysisContext{
-					RootCause: rootCause,
+					RootCause: content.RootCause,
 					Outcome:   string(rr.Status.Outcome),
 				},
-				Verification: verificationCtx,
+				Verification: content.VerificationCtx,
 			},
 		},
 	}
-
-	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
-	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
-	}
-
-	// Set owner reference for cascade deletion (BR-ORCH-031)
-	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: %w", err)
-	}
-
-	// Create the CRD
-	if err := c.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Completion NotificationRequest already exists (concurrent create), reusing", "name", name)
-			return name, nil
-		}
-		logger.Error(err, "Failed to create completion NotificationRequest")
-		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
-	}
-
-	logger.Info("Created completion NotificationRequest",
-		"name", name,
-		"workflowId", workflowID,
-	)
-
-	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
-	return name, nil
+	return nr, content.WorkflowID
 }
 
 // completionBodyParams groups the completion-notification content fields
@@ -515,15 +564,12 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 	name := fmt.Sprintf("nr-bulk-%s", rr.Name)
 
 	// Check if already exists (idempotency)
-	existing := &notificationv1.NotificationRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("Bulk notification already exists, reusing", "name", name)
-		return name, nil
+	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Bulk")
+	if err != nil {
+		return "", err
 	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing NotificationRequest")
-		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+	if exists {
+		return name, nil
 	}
 
 	// Build bulk notification
@@ -559,33 +605,15 @@ func (c *NotificationCreator) CreateBulkDuplicateNotification(
 		},
 	}
 
-	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
-	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	result, err := c.persistNotification(ctx, logger, rr, nr, name, "Bulk")
+	if err != nil {
+		return "", err
 	}
 
-	// Set owner reference for cascade deletion (BR-ORCH-031)
-	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: %w", err)
-	}
-
-	// Create the CRD
-	if err := c.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Bulk NotificationRequest already exists (concurrent create), reusing", "name", name)
-			return name, nil
-		}
-		logger.Error(err, "Failed to create bulk NotificationRequest")
-		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
-	}
-
-	logger.Info("Created bulk duplicate NotificationRequest", "name", name)
+	logger.Info("Created bulk duplicate NotificationRequest", "name", result)
 
 	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
-	return name, nil
+	return result, nil
 }
 
 // buildBulkDuplicateBody builds the bulk duplicate notification body.
@@ -703,15 +731,12 @@ func (c *NotificationCreator) CreateEscalationNotification(
 
 	name := fmt.Sprintf("nr-escalation-%s", rr.Name)
 
-	existing := &notificationv1.NotificationRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("Escalation notification already exists, reusing", "name", name)
-		return name, nil
+	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Escalation")
+	if err != nil {
+		return "", err
 	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing escalation NotificationRequest")
-		return "", fmt.Errorf("failed to check existing escalation NotificationRequest: %w", err)
+	if exists {
+		return name, nil
 	}
 
 	subject := fmt.Sprintf("🚨 Remediation Failed: %s (phase: %s)", rr.Spec.SignalName, escCtx.FailurePhase)
@@ -739,27 +764,13 @@ func (c *NotificationCreator) CreateEscalationNotification(
 		},
 	}
 
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	result, err := c.persistNotification(ctx, logger, rr, nr, name, "Escalation")
+	if err != nil {
+		return "", err
 	}
 
-	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: %w", err)
-	}
-
-	if err := c.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Escalation NotificationRequest already exists (concurrent create), reusing", "name", name)
-			return name, nil
-		}
-		logger.Error(err, "Failed to create escalation NotificationRequest")
-		return "", fmt.Errorf("failed to create escalation NotificationRequest: %w", err)
-	}
-
-	logger.Info("Created escalation NotificationRequest", "name", name)
-	return name, nil
+	logger.Info("Created escalation NotificationRequest", "name", result)
+	return result, nil
 }
 
 // CreateBlockNotification creates a NotificationRequest when an RR enters the Blocked phase.
@@ -780,15 +791,12 @@ func (c *NotificationCreator) CreateBlockNotification(
 
 	name := fmt.Sprintf("nr-block-%s-%s", strings.ToLower(blockCtx.BlockReason), rr.Name)
 
-	existing := &notificationv1.NotificationRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("Block notification already exists, reusing", "name", name)
-		return name, nil
+	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Block")
+	if err != nil {
+		return "", err
 	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing block NotificationRequest")
-		return "", fmt.Errorf("failed to check existing block NotificationRequest: %w", err)
+	if exists {
+		return name, nil
 	}
 
 	nrType, priority := c.mapBlockReasonToTypeAndPriority(blockCtx.BlockReason)
@@ -817,27 +825,13 @@ func (c *NotificationCreator) CreateBlockNotification(
 		},
 	}
 
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
+	result, err := c.persistNotification(ctx, logger, rr, nr, name, "Block")
+	if err != nil {
+		return "", err
 	}
 
-	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: %w", err)
-	}
-
-	if err := c.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Block NotificationRequest already exists (concurrent create), reusing", "name", name)
-			return name, nil
-		}
-		logger.Error(err, "Failed to create block NotificationRequest")
-		return "", fmt.Errorf("failed to create block NotificationRequest: %w", err)
-	}
-
-	logger.Info("Created block NotificationRequest", "name", name, "type", nrType, "priority", priority)
-	return name, nil
+	logger.Info("Created block NotificationRequest", "name", result, "type", nrType, "priority", priority)
+	return result, nil
 }
 
 // mapBlockReasonToTypeAndPriority determines NR type and priority based on block reason.
@@ -903,26 +897,44 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 	name := fmt.Sprintf("nr-manual-review-%s", rr.Name)
 
 	// Check if already exists (idempotency)
-	existing := &notificationv1.NotificationRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("Manual review notification already exists, reusing", "name", name)
-		return name, nil
+	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Manual review")
+	if err != nil {
+		return "", err
 	}
-	if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to check existing NotificationRequest")
-		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+	if exists {
+		return name, nil
 	}
 
 	// Determine priority based on source and reason (per BR-ORCH-036 priority mapping)
 	priority := c.mapManualReviewPriority(reviewCtx)
 
-	// Build notification context
-	nCtx := c.buildManualReviewContext(rr, reviewCtx)
-
 	// Build NotificationRequest for manual review
-	// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
-	nr := &notificationv1.NotificationRequest{
+	nr := c.buildManualReviewNotificationRequest(name, rr, reviewCtx, priority)
+
+	result, err := c.persistNotification(ctx, logger, rr, nr, name, "Manual review")
+	if err != nil {
+		return "", err
+	}
+
+	logger.Info("Created manual review NotificationRequest",
+		"name", result,
+		"priority", priority,
+	)
+
+	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
+	return result, nil
+}
+
+// buildManualReviewNotificationRequest constructs the NotificationRequest object for a
+// manual review notification (BR-ORCH-036). Split from CreateManualReviewNotification for funlen.
+// #260: Channels resolved by NT routing rules (BR-NOT-065), not set by RO
+func (c *NotificationCreator) buildManualReviewNotificationRequest(
+	name string,
+	rr *remediationv1.RemediationRequest,
+	reviewCtx *ManualReviewContext,
+	priority notificationv1.NotificationPriority,
+) *notificationv1.NotificationRequest {
+	return &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
@@ -943,40 +955,9 @@ func (c *NotificationCreator) CreateManualReviewNotification(
 			ReviewSource: reviewCtx.Source,
 			Subject:      fmt.Sprintf("⚠️ Manual Review Required: %s", rr.Spec.SignalName),
 			Body:         c.buildManualReviewBody(rr, reviewCtx),
-			Context:      nCtx,
+			Context:      c.buildManualReviewContext(rr, reviewCtx),
 		},
 	}
-
-	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
-	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
-	}
-
-	// Set owner reference for cascade deletion (BR-ORCH-031)
-	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: %w", err)
-	}
-
-	// Create the CRD
-	if err := c.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Manual review NotificationRequest already exists (concurrent create), reusing", "name", name)
-			return name, nil
-		}
-		logger.Error(err, "Failed to create manual review NotificationRequest")
-		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
-	}
-
-	logger.Info("Created manual review NotificationRequest",
-		"name", name,
-		"priority", priority,
-	)
-
-	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
-	return name, nil
 }
 
 // mapManualReviewPriority maps manual review context to notification priority.
@@ -1089,35 +1070,55 @@ func (c *NotificationCreator) buildManualReviewBody(rr *remediationv1.Remediatio
 	}
 
 	body += renderAlignmentVerdictSection(ctx)
-
-	if ctx.RootCauseAnalysis != "" && !isRCASentinel(ctx.RootCauseAnalysis) {
-		if ctx.AlignmentVerdict != nil && ctx.AlignmentVerdict.CircuitBreakerActivated {
-			body += "\n\n**Primary LLM Analysis** (relegated — review with caution):\n" + ctx.RootCauseAnalysis
-		} else {
-			body += fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", ctx.RootCauseAnalysis)
-		}
-	}
-
-	if len(ctx.Warnings) > 0 {
-		body += "\n\n**Warnings**:"
-		for _, w := range ctx.Warnings {
-			body += fmt.Sprintf("\n- %s", w)
-		}
-	}
-
-	if ctx.Source == notificationv1.ReviewSourceWorkflowExecution {
-		if ctx.RetryCount > 0 || ctx.MaxRetries > 0 {
-			body += fmt.Sprintf("\n\n**Retry Information**:\n- Retries attempted: %d/%d", ctx.RetryCount, ctx.MaxRetries)
-		}
-		if ctx.LastExitCode != 0 {
-			body += fmt.Sprintf("\n- Last exit code: %d", ctx.LastExitCode)
-		}
-		if ctx.PreviousExecution != "" {
-			body += fmt.Sprintf("\n- Previous execution: %s", ctx.PreviousExecution)
-		}
-	}
+	body += renderRootCauseSection(ctx)
+	body += renderWarningsSection(ctx)
+	body += renderRetryInfoSection(ctx)
 
 	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
+}
+
+// renderRootCauseSection renders the root cause analysis section of a manual review body.
+// Returns empty string when no RCA is available or it is a known sentinel value (Issue #588).
+func renderRootCauseSection(ctx *ManualReviewContext) string {
+	if ctx.RootCauseAnalysis == "" || isRCASentinel(ctx.RootCauseAnalysis) {
+		return ""
+	}
+	if ctx.AlignmentVerdict != nil && ctx.AlignmentVerdict.CircuitBreakerActivated {
+		return "\n\n**Primary LLM Analysis** (relegated — review with caution):\n" + ctx.RootCauseAnalysis
+	}
+	return fmt.Sprintf("\n\n**Root Cause Analysis**:\n%s", ctx.RootCauseAnalysis)
+}
+
+// renderWarningsSection renders the warnings list section of a manual review body.
+// Returns empty string when there are no warnings.
+func renderWarningsSection(ctx *ManualReviewContext) string {
+	if len(ctx.Warnings) == 0 {
+		return ""
+	}
+	body := "\n\n**Warnings**:"
+	for _, w := range ctx.Warnings {
+		body += fmt.Sprintf("\n- %s", w)
+	}
+	return body
+}
+
+// renderRetryInfoSection renders the WorkflowExecution-specific retry information section
+// of a manual review body. Returns empty string for non-WorkflowExecution sources.
+func renderRetryInfoSection(ctx *ManualReviewContext) string {
+	if ctx.Source != notificationv1.ReviewSourceWorkflowExecution {
+		return ""
+	}
+	var body string
+	if ctx.RetryCount > 0 || ctx.MaxRetries > 0 {
+		body += fmt.Sprintf("\n\n**Retry Information**:\n- Retries attempted: %d/%d", ctx.RetryCount, ctx.MaxRetries)
+	}
+	if ctx.LastExitCode != 0 {
+		body += fmt.Sprintf("\n- Last exit code: %d", ctx.LastExitCode)
+	}
+	if ctx.PreviousExecution != "" {
+		body += fmt.Sprintf("\n- Previous execution: %s", ctx.PreviousExecution)
+	}
+	return body
 }
 
 const maxFindingsInBody = 20
@@ -1192,22 +1193,35 @@ func (c *NotificationCreator) CreateSelfResolvedNotification(
 
 	name := fmt.Sprintf("nr-self-resolved-%s", rr.Name)
 
-	existing := &notificationv1.NotificationRequest{}
-	err := c.client.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, existing)
-	if err == nil {
-		logger.Info("Self-resolved notification already exists, reusing", "name", name)
+	exists, err := c.existingNotification(ctx, logger, name, rr.Namespace, "Self-resolved")
+	if err != nil {
+		return "", err
+	}
+	if exists {
 		return name, nil
 	}
-	if !apierrors.IsNotFound(err) {
-		return "", fmt.Errorf("failed to check existing NotificationRequest: %w", err)
+
+	nr := c.buildSelfResolvedNotificationRequest(name, rr, ai)
+
+	result, err := c.persistNotification(ctx, logger, rr, nr, name, "Self-resolved")
+	if err != nil {
+		return "", err
 	}
 
+	logger.Info("Created self-resolved NotificationRequest", "name", result)
+	return result, nil
+}
+
+// buildSelfResolvedNotificationRequest constructs the NotificationRequest object for a
+// self-resolved notification (BR-ORCH-037 AC-037-08). Split from
+// CreateSelfResolvedNotification for funlen.
+func (c *NotificationCreator) buildSelfResolvedNotificationRequest(name string, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) *notificationv1.NotificationRequest {
 	rootCause := ai.Status.RootCause
 	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
 		rootCause = ai.Status.RootCauseAnalysis.Summary
 	}
 
-	nr := &notificationv1.NotificationRequest{
+	return &notificationv1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
@@ -1238,28 +1252,6 @@ func (c *NotificationCreator) CreateSelfResolvedNotification(
 			},
 		},
 	}
-
-	if rr.UID == "" {
-		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
-	}
-
-	if err := controllerutil.SetControllerReference(rr, nr, c.scheme); err != nil {
-		logger.Error(err, "Failed to set owner reference")
-		return "", fmt.Errorf("failed to set owner reference: %w", err)
-	}
-
-	if err := c.client.Create(ctx, nr); err != nil {
-		if apierrors.IsAlreadyExists(err) {
-			logger.Info("Self-resolved NotificationRequest already exists (concurrent create), reusing", "name", name)
-			return name, nil
-		}
-		logger.Error(err, "Failed to create self-resolved NotificationRequest")
-		return "", fmt.Errorf("failed to create NotificationRequest: %w", err)
-	}
-
-	logger.Info("Created self-resolved NotificationRequest", "name", name)
-	return name, nil
 }
 
 // buildSelfResolvedBody builds the informational notification body for self-resolved signals.

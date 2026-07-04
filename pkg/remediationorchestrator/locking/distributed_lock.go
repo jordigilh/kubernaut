@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -64,6 +65,70 @@ func NewDistributedLockManager(k8sClient client.Client, namespace, holderID stri
 	}
 }
 
+// createLease creates a new lease for targetResource, acquiring the lock immediately.
+// Called when no lease currently exists (first acquisition for this target).
+func (m *DistributedLockManager) createLease(ctx context.Context, leaseName string) (bool, error) {
+	now := metav1.NowMicro()
+	leaseDuration := int32(LockDurationSeconds)
+
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      leaseName,
+			Namespace: m.namespace,
+		},
+		Spec: coordinationv1.LeaseSpec{
+			HolderIdentity:       &m.holderID,
+			LeaseDurationSeconds: &leaseDuration,
+			AcquireTime:          &now,
+			RenewTime:            &now,
+		},
+	}
+
+	if err := m.client.Create(ctx, lease); err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to create lease: %w", err)
+	}
+	return true, nil
+}
+
+// renewOwnLease refreshes RenewTime on a lease this pod already holds (idempotent re-acquire).
+// Renewal failures are logged but non-fatal: the caller still owns the lock until it expires.
+func (m *DistributedLockManager) renewOwnLease(ctx context.Context, logger logr.Logger, lease *coordinationv1.Lease) bool {
+	now := metav1.NowMicro()
+	lease.Spec.RenewTime = &now
+	if err := m.client.Update(ctx, lease); err != nil {
+		logger.Info("Failed to renew own lease (will retry)", "error", err)
+	}
+	return true
+}
+
+// leaseExpired reports whether lease's RenewTime + LeaseDurationSeconds has elapsed.
+// A lease with a nil RenewTime or LeaseDurationSeconds is treated as ambiguous, not expired.
+func leaseExpired(lease *coordinationv1.Lease) bool {
+	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+		return false
+	}
+	expiry := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second)
+	return time.Now().After(expiry)
+}
+
+// takeoverExpiredLease claims an expired lease held by another pod for this pod.
+func (m *DistributedLockManager) takeoverExpiredLease(ctx context.Context, lease *coordinationv1.Lease) (bool, error) {
+	now := metav1.NowMicro()
+	lease.Spec.HolderIdentity = &m.holderID
+	lease.Spec.RenewTime = &now
+
+	if err := m.client.Update(ctx, lease); err != nil {
+		if apierrors.IsConflict(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to take over expired lease: %w", err)
+	}
+	return true, nil
+}
+
 // AcquireLock attempts to acquire a distributed lock for the given target resource.
 //
 // Returns:
@@ -84,61 +149,17 @@ func (m *DistributedLockManager) AcquireLock(ctx context.Context, targetResource
 		if !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("failed to check for existing lease: %w", err)
 		}
-
-		// Lease doesn't exist — create new lease and acquire lock
-		now := metav1.NowMicro()
-		leaseDuration := int32(LockDurationSeconds)
-
-		lease = &coordinationv1.Lease{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      leaseName,
-				Namespace: m.namespace,
-			},
-			Spec: coordinationv1.LeaseSpec{
-				HolderIdentity:       &m.holderID,
-				LeaseDurationSeconds: &leaseDuration,
-				AcquireTime:          &now,
-				RenewTime:            &now,
-			},
-		}
-
-		if err := m.client.Create(ctx, lease); err != nil {
-			if apierrors.IsAlreadyExists(err) {
-				return false, nil
-			}
-			return false, fmt.Errorf("failed to create lease: %w", err)
-		}
-
-		return true, nil
+		return m.createLease(ctx, leaseName)
 	}
 
 	// Lease exists — check if we own it (idempotent re-acquire with renewal)
 	if lease.Spec.HolderIdentity != nil && *lease.Spec.HolderIdentity == m.holderID {
-		now := metav1.NowMicro()
-		lease.Spec.RenewTime = &now
-		if err := m.client.Update(ctx, lease); err != nil {
-			logger.V(1).Info("Failed to renew own lease (will retry)", "error", err)
-		}
-		return true, nil
+		return m.renewOwnLease(ctx, logger, lease), nil
 	}
 
-	// Lease held by another pod — check if expired
-	if lease.Spec.RenewTime != nil && lease.Spec.LeaseDurationSeconds != nil {
-		expiry := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds) * time.Second)
-		if time.Now().After(expiry) {
-			now := metav1.NowMicro()
-			lease.Spec.HolderIdentity = &m.holderID
-			lease.Spec.RenewTime = &now
-
-			if err := m.client.Update(ctx, lease); err != nil {
-				if apierrors.IsConflict(err) {
-					return false, nil
-				}
-				return false, fmt.Errorf("failed to take over expired lease: %w", err)
-			}
-
-			return true, nil
-		}
+	// Lease held by another pod — take over if expired
+	if leaseExpired(lease) {
+		return m.takeoverExpiredLease(ctx, lease)
 	}
 
 	// Lease held by another pod and not expired (or nil RenewTime = ambiguous)
