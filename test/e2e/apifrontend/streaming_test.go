@@ -230,75 +230,101 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 
 		slotsToFill := maxSSE - baseline
 
-		type slotResult struct {
-			idx    int
-			status int
-			err    error
-		}
-		var mu sync.Mutex
-		cancels := make([]context.CancelFunc, slotsToFill)
-		ready := make(chan slotResult, 1)
-		var wg sync.WaitGroup
+		var (
+			mu      sync.Mutex
+			cancels []context.CancelFunc
+			wg      sync.WaitGroup
+		)
 
-		// Establish SSE connections sequentially to avoid a race where all
-		// goroutines hit the server simultaneously and some are rejected
-		// before prior connections are fully registered in the semaphore.
-		for i := 0; i < slotsToFill; i++ {
-			wg.Add(1)
-			go func(idx int) {
-				defer wg.Done()
-				sctx, scancel := context.WithCancel(context.Background())
-				mu.Lock()
-				cancels[idx] = scancel
-				mu.Unlock()
+		// probeSSE issues a single /debug/slow-sse request. On 200, the
+		// connection is left open (drained in a background goroutine so it
+		// keeps occupying its cap slot) and the returned cancel func
+		// releases it later; on any other status, the response body is
+		// drained/closed immediately and cancel is nil.
+		probeSSE := func() (status int, body string, cancel context.CancelFunc, err error) {
+			sctx, scancel := context.WithCancel(context.Background())
+			req, rerr := http.NewRequestWithContext(sctx, http.MethodPost, baseURL+"/debug/slow-sse", nil)
+			if rerr != nil {
+				scancel()
+				return -1, "", nil, rerr
+			}
+			req.Header.Set("Accept", "text/event-stream")
 
-				req, rerr := http.NewRequestWithContext(sctx, http.MethodPost, baseURL+"/debug/slow-sse", nil)
-				if rerr != nil {
-					ready <- slotResult{idx: idx, status: -1, err: rerr}
-					scancel()
-					return
-				}
-				req.Header.Set("Accept", "text/event-stream")
-
-				resp, derr := httpClient.Do(req)
-				if derr != nil {
-					ready <- slotResult{idx: idx, status: -1, err: derr}
-					scancel()
-					return
-				}
-				if resp.StatusCode != http.StatusOK {
-					body, _ := io.ReadAll(resp.Body)
-					_ = resp.Body.Close()
-					ready <- slotResult{idx: idx, status: resp.StatusCode, err: fmt.Errorf("body: %s", body)}
-					scancel()
-					return
-				}
-
-				ready <- slotResult{idx: idx, status: resp.StatusCode}
-				_, _ = io.Copy(io.Discard, resp.Body)
+			resp, derr := httpClient.Do(req)
+			if derr != nil {
+				scancel()
+				return -1, "", nil, derr
+			}
+			if resp.StatusCode != http.StatusOK {
+				b, _ := io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				scancel()
-			}(i)
+				return resp.StatusCode, string(b), nil, nil
+			}
 
-			// Wait for this connection to be established before launching the
-			// next one. The goroutine stays alive (blocked on io.Copy) keeping
-			// the SSE slot occupied.
-			sr := <-ready
-			Expect(sr.status).To(Equal(http.StatusOK),
-				"SSE slot %d (goroutine %d) should connect within cap; err=%v", i, sr.idx, sr.err)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}()
+			return http.StatusOK, "", scancel, nil
 		}
 
-		extraReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/debug/slow-sse", nil)
-		Expect(err).NotTo(HaveOccurred())
-		extraReq.Header.Set("Accept", "text/event-stream")
+		// Establish SSE connections sequentially to avoid a race where all
+		// requests hit the server simultaneously and some are rejected
+		// before prior connections are fully registered in the semaphore.
+		for i := 0; i < slotsToFill; i++ {
+			status, _, cancel, ferr := probeSSE()
+			Expect(status).To(Equal(http.StatusOK),
+				"SSE fill connection %d should connect within cap; err=%v", i, ferr)
+			mu.Lock()
+			cancels = append(cancels, cancel)
+			mu.Unlock()
+		}
 
-		exResp, exErr := httpClient.Do(extraReq)
-		Expect(exErr).NotTo(HaveOccurred())
-		defer func() { _ = exResp.Body.Close() }()
-		Expect(exResp.StatusCode).To(Equal(http.StatusServiceUnavailable))
-		extraBody, rerr := io.ReadAll(exResp.Body)
-		Expect(rerr).NotTo(HaveOccurred())
-		Expect(strings.ToLower(string(extraBody))).To(ContainSubstring("too many concurrent connections"))
+		// Cap enforcement: concurrent E2E traffic in other Ginkgo processes
+		// (--procs > 1, shared ConnectionTracker) can release slots between
+		// the baseline sample above and now, so a single "extra" probe can
+		// transiently land in freed headroom rather than proving the cap.
+		// Instead of asserting on one probe, keep adding filler connections
+		// -- which occupy the same shared cap regardless of which spec
+		// created them -- until the cap is genuinely observed, bounded by a
+		// generous ceiling so a real enforcement regression still fails
+		// deterministically instead of hanging.
+		const (
+			maxCapProbeAttempts = 200
+			capProbeBudget      = 120 * time.Second
+			capProbeInterval    = 250 * time.Millisecond
+		)
+		var (
+			capEnforced bool
+			lastStatus  int
+			lastBody    string
+		)
+		deadline := time.Now().Add(capProbeBudget)
+		attempt := 0
+		for attempt < maxCapProbeAttempts && time.Now().Before(deadline) {
+			attempt++
+			status, body, cancel, ferr := probeSSE()
+			Expect(ferr).NotTo(HaveOccurred(), "cap probe attempt %d failed", attempt)
+			lastStatus, lastBody = status, body
+
+			if status == http.StatusServiceUnavailable {
+				capEnforced = true
+				break
+			}
+			Expect(status).To(Equal(http.StatusOK),
+				"unexpected status while probing for cap enforcement (attempt %d): %d body=%s", attempt, status, body)
+			mu.Lock()
+			cancels = append(cancels, cancel)
+			mu.Unlock()
+			time.Sleep(capProbeInterval)
+		}
+		Expect(capEnforced).To(BeTrue(),
+			"cap was never enforced after %d attempts (budget %s); last status=%d body=%s",
+			attempt, capProbeBudget, lastStatus, lastBody)
+		Expect(strings.ToLower(lastBody)).To(ContainSubstring("too many concurrent connections"))
 
 		mu.Lock()
 		for _, c := range cancels {
@@ -430,7 +456,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		GinkgoWriter.Printf("Turn 1: %d artifacts, %d statuses\n", len(arts1), len(statuses1))
 
 		// AU-6: Verify SSE events are produced (stream lifecycle visible)
-		Expect(len(arts1) + len(statuses1)).To(BeNumerically(">", 0),
+		Expect(len(arts1)+len(statuses1)).To(BeNumerically(">", 0),
 			"AU-6: streaming must produce at least one SSE event (artifact or status)")
 
 		hasTerminal := false
