@@ -116,41 +116,62 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 		fn(o)
 	}
 
-	var vertexOpt option.RequestOption
-	var tokenSource oauth2.TokenSource
-
-	trimmed := bytes.TrimSpace(credentialsJSON)
-	if len(trimmed) > 0 {
-		credType, err := validateCredentialType(trimmed)
-		if err != nil {
-			return nil, err
-		}
-		creds, err := google.CredentialsFromJSONWithType(ctx, trimmed, credType,
-			"https://www.googleapis.com/auth/cloud-platform",
-		)
-		if err != nil {
-			return nil, fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
-		}
-		vertexOpt = vertex.WithCredentials(ctx, location, project, creds)
-		tokenSource = creds.TokenSource
-	} else {
-		var adcErr error
-		vertexOpt, adcErr = safeWithGoogleAuth(ctx, location, project)
-		if adcErr != nil {
-			return nil, adcErr
-		}
-		adcCreds, err := google.FindDefaultCredentials(ctx,
-			"https://www.googleapis.com/auth/cloud-platform")
-		if err == nil {
-			tokenSource = adcCreds.TokenSource
-		}
+	vertexOpt, tokenSource, err := resolveVertexAuth(ctx, credentialsJSON, project, location)
+	if err != nil {
+		return nil, err
 	}
 
+	sdk := anthropic.NewClient(buildSDKOptions(o, vertexOpt, tokenSource)...)
+	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
+}
+
+// resolveVertexAuth resolves the Vertex AI SDK request option and OAuth2
+// token source: explicit credentialsJSON when non-empty, otherwise ambient
+// Application Default Credentials (ADC).
+func resolveVertexAuth(ctx context.Context, credentialsJSON []byte, project, location string) (option.RequestOption, oauth2.TokenSource, error) {
+	trimmed := bytes.TrimSpace(credentialsJSON)
+	if len(trimmed) == 0 {
+		return resolveADCAuth(ctx, project, location)
+	}
+
+	credType, err := validateCredentialType(trimmed)
+	if err != nil {
+		return nil, nil, err
+	}
+	creds, err := google.CredentialsFromJSONWithType(ctx, trimmed, credType,
+		"https://www.googleapis.com/auth/cloud-platform",
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
+	}
+	return vertex.WithCredentials(ctx, location, project, creds), creds.TokenSource, nil
+}
+
+// resolveADCAuth resolves ambient Application Default Credentials for
+// Vertex AI. The token source is best-effort: a FindDefaultCredentials
+// failure does not abort New, it simply leaves tokenSource nil.
+func resolveADCAuth(ctx context.Context, project, location string) (option.RequestOption, oauth2.TokenSource, error) {
+	vertexOpt, err := safeWithGoogleAuth(ctx, location, project)
+	if err != nil {
+		return nil, nil, err
+	}
+	var tokenSource oauth2.TokenSource
+	if adcCreds, credErr := google.FindDefaultCredentials(ctx,
+		"https://www.googleapis.com/auth/cloud-platform"); credErr == nil {
+		tokenSource = adcCreds.TokenSource
+	}
+	return vertexOpt, tokenSource, nil
+}
+
+// buildSDKOptions assembles the Anthropic SDK request options: the Vertex
+// auth option, an optional request timeout, an optional OAuth2-wrapped
+// custom transport (#1342 enterprise mTLS), and any extra caller-supplied
+// SDK options.
+func buildSDKOptions(o *clientOpts, vertexOpt option.RequestOption, tokenSource oauth2.TokenSource) []option.RequestOption {
 	sdkOpts := []option.RequestOption{vertexOpt}
 	if o.httpTimeout > 0 {
 		sdkOpts = append(sdkOpts, option.WithRequestTimeout(o.httpTimeout))
 	}
-
 	if o.baseTransport != nil && tokenSource != nil {
 		oauthClient := &http.Client{
 			Transport: &oauth2.Transport{
@@ -161,11 +182,7 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 		}
 		sdkOpts = append(sdkOpts, option.WithHTTPClient(oauthClient))
 	}
-
-	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
-	sdk := anthropic.NewClient(sdkOpts...)
-
-	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
+	return append(sdkOpts, o.extraSDKOpts...)
 }
 
 // Chat translates a Kubernaut ChatRequest to the Anthropic Messages API,

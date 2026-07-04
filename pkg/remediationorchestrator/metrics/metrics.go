@@ -89,101 +89,140 @@ type Metrics struct {
 	OverrideValidationRejectedTotal *prometheus.CounterVec
 }
 
+// newCoreAndRoutingCollectors constructs the reconciliation, child-CRD, and
+// routing-decision collectors (unregistered).
+func newCoreAndRoutingCollectors() (reconcileDuration *prometheus.HistogramVec, phaseTransitions, childCRDCreations, noActionNeeded, duplicatesSkipped, timeouts *prometheus.CounterVec) {
+	reconcileDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    MetricNameReconcileDuration, // DD-005 V3.0: Pattern B (full name),
+			Help:    "Duration of reconciliation in seconds",
+			Buckets: prometheus.ExponentialBuckets(0.01, 2, 10), // 10ms to ~10s
+		},
+		[]string{"namespace", "phase"},
+	)
+	phaseTransitions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNamePhaseTransitionsTotal, // DD-005 V3.0: Pattern B (full name),
+			Help: "Total number of phase transitions",
+		},
+		[]string{"from_phase", "to_phase", "namespace"},
+	)
+	childCRDCreations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameChildCRDCreationsTotal, // DD-005 V3.0: Pattern B (full name),
+			Help: "Total number of child CRD creations",
+		},
+		[]string{"child_type", "namespace"},
+	)
+	noActionNeeded = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameNoActionNeededTotal, // DD-005 V3.0: Pattern B (full name),
+			Help: "Total number of remediations where no action was needed (problem self-resolved)",
+		},
+		[]string{"reason", "namespace"},
+	)
+	duplicatesSkipped = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameDuplicatesSkippedTotal, // DD-005 V3.0: Pattern B (full name),
+			Help: "Total number of duplicate remediations skipped",
+		},
+		[]string{"skip_reason", "namespace"},
+	)
+	timeouts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameTimeoutsTotal, // DD-005 V3.0: Pattern B (full name),
+			Help: "Total number of remediation timeouts",
+		},
+		[]string{"phase", "namespace"},
+	)
+	return reconcileDuration, phaseTransitions, childCRDCreations, noActionNeeded, duplicatesSkipped, timeouts
+}
+
+// newBlockingApprovalOverrideCollectors constructs the blocking, approval,
+// and override collectors (unregistered).
+func newBlockingApprovalOverrideCollectors() (blocked *prometheus.CounterVec, currentBlocked *prometheus.GaugeVec, approvalDecisions, overrideApplied, overrideRejected *prometheus.CounterVec) {
+	blocked = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameBlockedTotal, // DD-005 V3.0: Pattern B (full name),
+			Help: "Total RemediationRequests blocked due to consecutive failures",
+		},
+		[]string{"namespace", "reason"},
+	)
+	currentBlocked = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: MetricNameCurrentBlocked, // DD-005 V3.0: Pattern B (full name),
+			Help: "Current number of blocked RRs",
+		},
+		[]string{"namespace"},
+	)
+	approvalDecisions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameApprovalDecisionsTotal, // DD-005 V3.0: Pattern B (full name)
+			Help: "Total number of approval decisions (approved/rejected/expired). Business Value: Track approval rates for compliance reporting and operational insights (SOC 2 CC8.1).",
+		},
+		[]string{"decision", "namespace"},
+	)
+	overrideApplied = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameOverrideAppliedTotal,
+			Help: "Total operator overrides applied via RAR approval (#594).",
+		},
+		[]string{"type", "namespace"},
+	)
+	overrideRejected = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: MetricNameOverrideValidationRejectedTotal,
+			Help: "Total operator overrides rejected by webhook validation (#594).",
+		},
+		[]string{"reason", "namespace"},
+	)
+	return blocked, currentBlocked, approvalDecisions, overrideApplied, overrideRejected
+}
+
+// newMetricsCollectors constructs all Metrics collectors, unregistered.
+// Shared by NewMetrics and NewMetricsWithRegistry to avoid duplicating
+// collector definitions across the global-registry and test-registry paths.
+func newMetricsCollectors() *Metrics {
+	reconcileDuration, phaseTransitions, childCRDCreations, noActionNeeded, duplicatesSkipped, timeouts := newCoreAndRoutingCollectors()
+	blocked, currentBlocked, approvalDecisions, overrideApplied, overrideRejected := newBlockingApprovalOverrideCollectors()
+
+	return &Metrics{
+		ReconcileDurationSeconds:        reconcileDuration,
+		PhaseTransitionsTotal:           phaseTransitions,
+		ChildCRDCreationsTotal:          childCRDCreations,
+		NoActionNeededTotal:             noActionNeeded,
+		DuplicatesSkippedTotal:          duplicatesSkipped,
+		TimeoutsTotal:                   timeouts,
+		BlockedTotal:                    blocked,
+		CurrentBlockedGauge:             currentBlocked,
+		ApprovalDecisionsTotal:          approvalDecisions,
+		OverrideAppliedTotal:            overrideApplied,
+		OverrideValidationRejectedTotal: overrideRejected,
+	}
+}
+
+// initZeroValues initializes all pre-registration-eligible metrics with 0
+// values so they appear in the /metrics endpoint before first increment.
+// Per DD-METRICS-001: Metrics visibility requirement for E2E tests.
+func initZeroValues(m *Metrics) {
+	m.ChildCRDCreationsTotal.WithLabelValues("SignalProcessing", "default").Add(0)
+	m.NoActionNeededTotal.WithLabelValues("default", "Completed").Add(0)
+	m.DuplicatesSkippedTotal.WithLabelValues("default", "test_signal").Add(0)
+	m.TimeoutsTotal.WithLabelValues("default", "Pending").Add(0)
+	m.BlockedTotal.WithLabelValues("default", "ConsecutiveFailures").Add(0)
+	m.CurrentBlockedGauge.WithLabelValues("default").Set(0)
+
+	// BR-AUDIT-006: Initialize approval decision metrics
+	m.ApprovalDecisionsTotal.WithLabelValues("Approved", "default").Add(0)
+	m.ApprovalDecisionsTotal.WithLabelValues("Rejected", "default").Add(0)
+	m.ApprovalDecisionsTotal.WithLabelValues("Expired", "default").Add(0)
+}
+
 // NewMetrics creates a new Metrics instance and registers with controller-runtime.
 // Uses controller-runtime's global registry for automatic /metrics endpoint exposure.
 // Per DD-METRICS-001: Dependency injection pattern for V1.0 maturity.
 func NewMetrics() *Metrics {
-	m := &Metrics{
-		// Core reconciliation metrics
-		ReconcileDurationSeconds: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name: MetricNameReconcileDuration, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Duration of reconciliation in seconds",
-				Buckets:   prometheus.ExponentialBuckets(0.01, 2, 10), // 10ms to ~10s
-			},
-			[]string{"namespace", "phase"},
-		),
-		PhaseTransitionsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNamePhaseTransitionsTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of phase transitions",
-			},
-			[]string{"from_phase", "to_phase", "namespace"},
-		),
-
-		// Child CRD orchestration
-		ChildCRDCreationsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameChildCRDCreationsTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of child CRD creations",
-			},
-			[]string{"child_type", "namespace"},
-		),
-
-		// Routing decision metrics
-		NoActionNeededTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameNoActionNeededTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of remediations where no action was needed (problem self-resolved)",
-			},
-			[]string{"reason", "namespace"},
-		),
-		DuplicatesSkippedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameDuplicatesSkippedTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of duplicate remediations skipped",
-			},
-			[]string{"skip_reason", "namespace"},
-		),
-		TimeoutsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameTimeoutsTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of remediation timeouts",
-			},
-			[]string{"phase", "namespace"},
-		),
-
-		// Blocking metrics (BR-ORCH-042)
-		BlockedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameBlockedTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total RemediationRequests blocked due to consecutive failures",
-			},
-			[]string{"namespace", "reason"},
-		),
-		CurrentBlockedGauge: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: MetricNameCurrentBlocked, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Current number of blocked RRs",
-			},
-			[]string{"namespace"},
-		),
-
-		// Approval decision metrics (BR-AUDIT-006 - SOC 2 compliance)
-		ApprovalDecisionsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameApprovalDecisionsTotal, // DD-005 V3.0: Pattern B (full name)
-				Help: "Total number of approval decisions (approved/rejected/expired). Business Value: Track approval rates for compliance reporting and operational insights (SOC 2 CC8.1).",
-			},
-			[]string{"decision", "namespace"},
-		),
-
-		// Override metrics (#594)
-		OverrideAppliedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameOverrideAppliedTotal,
-				Help: "Total operator overrides applied via RAR approval (#594).",
-			},
-			[]string{"type", "namespace"},
-		),
-		OverrideValidationRejectedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameOverrideValidationRejectedTotal,
-				Help: "Total operator overrides rejected by webhook validation (#594).",
-			},
-			[]string{"reason", "namespace"},
-		),
-	}
+	m := newMetricsCollectors()
 
 	// Register all metrics with controller-runtime's global registry
 	// This makes metrics available at :8080/metrics endpoint
@@ -201,20 +240,7 @@ func NewMetrics() *Metrics {
 		m.OverrideValidationRejectedTotal,
 	)
 
-	// Initialize all metrics with 0 values so they appear in /metrics endpoint
-	// Per DD-METRICS-001: Metrics visibility requirement for E2E tests
-	// This ensures metrics are discoverable even before first increment
-	m.ChildCRDCreationsTotal.WithLabelValues("SignalProcessing", "default").Add(0)
-	m.NoActionNeededTotal.WithLabelValues("default", "Completed").Add(0)
-	m.DuplicatesSkippedTotal.WithLabelValues("default", "test_signal").Add(0)
-	m.TimeoutsTotal.WithLabelValues("default", "Pending").Add(0)
-	m.BlockedTotal.WithLabelValues("default", "ConsecutiveFailures").Add(0)
-	m.CurrentBlockedGauge.WithLabelValues("default").Set(0)
-
-	// BR-AUDIT-006: Initialize approval decision metrics
-	m.ApprovalDecisionsTotal.WithLabelValues("Approved", "default").Add(0)
-	m.ApprovalDecisionsTotal.WithLabelValues("Rejected", "default").Add(0)
-	m.ApprovalDecisionsTotal.WithLabelValues("Expired", "default").Add(0)
+	initZeroValues(m)
 
 	return m
 }
@@ -223,91 +249,7 @@ func NewMetrics() *Metrics {
 // Tests should use this to avoid polluting the global registry.
 // Per DD-METRICS-001: Test isolation pattern.
 func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
-	m := &Metrics{
-		// Core reconciliation metrics
-		ReconcileDurationSeconds: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name: MetricNameReconcileDuration, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Duration of reconciliation in seconds",
-				Buckets:   prometheus.ExponentialBuckets(0.01, 2, 10),
-			},
-			[]string{"namespace", "phase"},
-		),
-		PhaseTransitionsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNamePhaseTransitionsTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of phase transitions",
-			},
-			[]string{"from_phase", "to_phase", "namespace"},
-		),
-		ChildCRDCreationsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameChildCRDCreationsTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of child CRD creations",
-			},
-			[]string{"child_type", "namespace"},
-		),
-		NoActionNeededTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameNoActionNeededTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of remediations where no action was needed",
-			},
-			[]string{"reason", "namespace"},
-		),
-		DuplicatesSkippedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameDuplicatesSkippedTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of duplicate remediations skipped",
-			},
-			[]string{"skip_reason", "namespace"},
-		),
-		TimeoutsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameTimeoutsTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total number of remediation timeouts",
-			},
-			[]string{"phase", "namespace"},
-		),
-		BlockedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameBlockedTotal, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Total RemediationRequests blocked due to consecutive failures",
-			},
-			[]string{"namespace", "reason"},
-		),
-		CurrentBlockedGauge: prometheus.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: MetricNameCurrentBlocked, // DD-005 V3.0: Pattern B (full name),
-				Help:      "Current number of blocked RRs",
-			},
-			[]string{"namespace"},
-		),
-
-		// Approval decision metrics (BR-AUDIT-006 - SOC 2 compliance)
-		ApprovalDecisionsTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameApprovalDecisionsTotal, // DD-005 V3.0: Pattern B (full name)
-				Help: "Total number of approval decisions (approved/rejected/expired). Business Value: Track approval rates for compliance reporting and operational insights (SOC 2 CC8.1).",
-			},
-			[]string{"decision", "namespace"},
-		),
-
-		// Override metrics (#594)
-		OverrideAppliedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameOverrideAppliedTotal,
-				Help: "Total operator overrides applied via RAR approval (#594).",
-			},
-			[]string{"type", "namespace"},
-		),
-		OverrideValidationRejectedTotal: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: MetricNameOverrideValidationRejectedTotal,
-				Help: "Total operator overrides rejected by webhook validation (#594).",
-			},
-			[]string{"reason", "namespace"},
-		),
-	}
+	m := newMetricsCollectors()
 
 	// Register with provided registry (test registry)
 	registry.MustRegister(
@@ -324,20 +266,7 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 		m.OverrideValidationRejectedTotal,
 	)
 
-	// Initialize all metrics with 0 values so they appear in /metrics endpoint
-	// Per E2E test requirements: metrics should be visible even if not yet incremented
-	// This prevents "metric not found" errors in E2E tests
-	m.ChildCRDCreationsTotal.WithLabelValues("SignalProcessing", "default").Add(0)
-	m.NoActionNeededTotal.WithLabelValues("default", "Completed").Add(0)
-	m.DuplicatesSkippedTotal.WithLabelValues("default", "test_signal").Add(0)
-	m.TimeoutsTotal.WithLabelValues("default", "Pending").Add(0)
-	m.BlockedTotal.WithLabelValues("default", "ConsecutiveFailures").Add(0)
-	m.CurrentBlockedGauge.WithLabelValues("default").Set(0)
-
-	// BR-AUDIT-006: Initialize approval decision metrics
-	m.ApprovalDecisionsTotal.WithLabelValues("Approved", "default").Add(0)
-	m.ApprovalDecisionsTotal.WithLabelValues("Rejected", "default").Add(0)
-	m.ApprovalDecisionsTotal.WithLabelValues("Expired", "default").Add(0)
+	initZeroValues(m)
 
 	return m
 }
@@ -363,4 +292,3 @@ func NewMetricsWithRegistry(registry prometheus.Registerer) *Metrics {
 func (m *Metrics) RecordApprovalDecision(decision, namespace string) {
 	m.ApprovalDecisionsTotal.WithLabelValues(decision, namespace).Inc()
 }
-

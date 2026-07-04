@@ -91,6 +91,19 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		return nil, nil
 	}
 
+	constructors := coreToolConstructors(cfg)
+	if cfg.PromClient != nil {
+		constructors = append(constructors, alertToolConstructors(cfg)...)
+	}
+	return instantiateTools(cfg, constructors)
+}
+
+// coreToolConstructors builds the always-registered tool constructors: K8s
+// triage/remediation tools (AF SA), interactive KA-MCP tools, and fleet
+// cluster discovery (registered conditionally when fleet is configured).
+//
+//nolint:gocritic // hugeParam: value copy intentional; function is internal
+func coreToolConstructors(cfg AgentConfig) []toolConstructor {
 	k8s := cfg.K8sClient
 	dsC := cfg.DSClient
 	mcpC := cfg.MCPClient
@@ -105,7 +118,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 	// own SA. Users do not need direct K8s permissions for triage.
 	saFactory := auth.StaticDynamicFactory(k8s)
 
-	constructors := []toolConstructor{
+	return []toolConstructor{
 		{"list_remediations", func() (tool.Tool, error) { return tools.NewListRemediationsTool(cfg.TypedClient, cfg.Namespace) }},
 		{"get_remediation", func() (tool.Tool, error) { return tools.NewGetRemediationTool(cfg.TypedClient, cfg.Namespace) }},
 		{"list_approval_requests", func() (tool.Tool, error) { return tools.NewListApprovalRequestsTool(cfg.TypedClient, cfg.Namespace) }},
@@ -131,8 +144,12 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"get_effectiveness", func() (tool.Tool, error) { return tools.NewGetEffectivenessTool(dsC) }},
 		{"get_audit_trail", func() (tool.Tool, error) { return tools.NewGetAuditTrailTool(dsC) }},
 		// Generic K8s triage tools (#1230) — AF SA reads; access gated by MCP RBAC
-		{"kubectl_get", func() (tool.Tool, error) { return tools.NewKubectlGetTool(saFactory, cfg.RESTMapper, cfg.FleetReaderFactory) }},
-		{"kubectl_list", func() (tool.Tool, error) { return tools.NewKubectlListTool(saFactory, cfg.RESTMapper, cfg.FleetReaderFactory) }},
+		{"kubectl_get", func() (tool.Tool, error) {
+			return tools.NewKubectlGetTool(saFactory, cfg.RESTMapper, cfg.FleetReaderFactory)
+		}},
+		{"kubectl_list", func() (tool.Tool, error) {
+			return tools.NewKubectlListTool(saFactory, cfg.RESTMapper, cfg.FleetReaderFactory)
+		}},
 		{"kubectl_list_events", func() (tool.Tool, error) { return tools.NewKubectlListEventsTool(saFactory) }},
 		// Fleet cluster discovery (BR-FLEET-054) — registered only when fleet is configured
 		{"list_clusters", func() (tool.Tool, error) {
@@ -146,7 +163,9 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"complete", func() (tool.Tool, error) { return tools.NewCompleteTool(mcpC, cfg.Auditor) }},
 		{"cancel", func() (tool.Tool, error) { return tools.NewCancelInvestigationTool(mcpC, cfg.Auditor) }},
 		{"status", func() (tool.Tool, error) { return tools.NewStatusTool(mcpC, cfg.Auditor) }},
-		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.TypedClient, cfg.Namespace, cfg.Auditor) }},
+		{"reconnect", func() (tool.Tool, error) {
+			return tools.NewReconnectTool(mcpC, cfg.TypedClient, cfg.Namespace, cfg.Auditor)
+		}},
 		// RR tools — AF SA writes AF-owned CRDs
 		{"check_existing_remediation", func() (tool.Tool, error) {
 			return tools.NewCheckExistingRemediationTool(cfg.TypedClient, cfg.Namespace)
@@ -155,18 +174,22 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 			return tools.NewRemediateTool(cfg.TypedClient, k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
 		}},
 	}
+}
 
-	// Alert observation tools (#1367) — conditionally registered when
-	// Prometheus/Thanos is configured (severityTriage.enabled: true).
-	if cfg.PromClient != nil {
-		constructors = append(constructors,
-			toolConstructor{"list_alerts", func() (tool.Tool, error) {
-				return tools.NewListAlertsTool(cfg.PromClient)
-			}},
-			toolConstructor{"get_alert_details", func() (tool.Tool, error) {
-				return tools.NewGetAlertDetailsTool(cfg.PromClient)
-			}},
-		toolConstructor{"kubernaut_investigate_alert", func() (tool.Tool, error) {
+// alertToolConstructors builds the alert-observation tool constructors
+// (#1367), registered only when Prometheus/Thanos is configured
+// (severityTriage.enabled: true). Caller must check cfg.PromClient != nil.
+//
+//nolint:gocritic // hugeParam: value copy intentional; function is internal
+func alertToolConstructors(cfg AgentConfig) []toolConstructor {
+	return []toolConstructor{
+		{"list_alerts", func() (tool.Tool, error) {
+			return tools.NewListAlertsTool(cfg.PromClient)
+		}},
+		{"get_alert_details", func() (tool.Tool, error) {
+			return tools.NewGetAlertDetailsTool(cfg.PromClient)
+		}},
+		{"kubernaut_investigate_alert", func() (tool.Tool, error) {
 			return tools.NewInvestigateAlertTool(tools.InvestigateAlertConfig{
 				Client:             cfg.TypedClient,
 				DynClient:          cfg.K8sClient,
@@ -179,9 +202,15 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 				Signaler:           buildAlertISSignaler(cfg),
 			})
 		}},
-		)
 	}
+}
 
+// instantiateTools calls each constructor, dropping tools that return a nil
+// Tool (feature not configured, e.g. list_clusters without a ClusterRegistry)
+// and session-dependent tools when interactive mode is disabled for cfg.
+//
+//nolint:gocritic // hugeParam: value copy intentional; function is internal
+func instantiateTools(cfg AgentConfig, constructors []toolConstructor) ([]tool.Tool, error) {
 	result := make([]tool.Tool, 0, len(constructors))
 	for _, c := range constructors {
 		t, err := c.fn()
@@ -196,7 +225,6 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		}
 		result = append(result, t)
 	}
-
 	return result, nil
 }
 
@@ -304,21 +332,7 @@ func newRateLimitGuard(limiter *ratelimit.UserLimiter, auditor audit.Emitter) ll
 // defense-in-depth.
 func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *prometheus.HistogramVec) (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 	var starts sync.Map
-
-	// Periodic sweep: evict entries older than 5 minutes (abandoned tool calls).
-	go func() {
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
-		for range ticker.C {
-			cutoff := time.Now().Add(-5 * time.Minute)
-			starts.Range(func(key, value any) bool {
-				if t, ok := value.(time.Time); ok && t.Before(cutoff) {
-					starts.Delete(key)
-				}
-				return true
-			})
-		}
-	}()
+	go sweepAbandonedToolCallStarts(&starts)
 
 	before := func(ctx tool.Context, _ tool.Tool, _ map[string]any) (map[string]any, error) {
 		if toolCalls == nil && toolDuration == nil {
@@ -337,12 +351,7 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 			toolCalls.WithLabelValues(t.Name(), resultLabel).Inc()
 		}
 		if toolDuration != nil {
-			if raw, ok := starts.LoadAndDelete(ctx.FunctionCallID()); ok {
-				if start, ok := raw.(time.Time); ok {
-					elapsed := time.Since(start).Seconds()
-					toolDuration.WithLabelValues(t.Name(), "function").Observe(elapsed)
-				}
-			}
+			recordToolDuration(&starts, ctx, t, toolDuration)
 		}
 		return nil, nil
 	}
@@ -350,10 +359,48 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 	return before, after
 }
 
+// sweepAbandonedToolCallStarts periodically evicts starts entries older than
+// 5 minutes (tool calls that never reached the "after" callback, e.g. due to
+// a crashed goroutine or dropped context) to prevent unbounded map growth.
+func sweepAbandonedToolCallStarts(starts *sync.Map) {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-5 * time.Minute)
+		starts.Range(func(key, value any) bool {
+			if t, ok := value.(time.Time); ok && t.Before(cutoff) {
+				starts.Delete(key)
+			}
+			return true
+		})
+	}
+}
+
+// recordToolDuration observes the elapsed time since the matching "before"
+// callback recorded a start time for this tool call, if one was recorded.
+func recordToolDuration(starts *sync.Map, ctx tool.Context, t tool.Tool, toolDuration *prometheus.HistogramVec) {
+	raw, ok := starts.LoadAndDelete(ctx.FunctionCallID())
+	if !ok {
+		return
+	}
+	start, ok := raw.(time.Time)
+	if !ok {
+		return
+	}
+	elapsed := time.Since(start).Seconds()
+	toolDuration.WithLabelValues(t.Name(), "function").Observe(elapsed)
+}
+
 // NewToolLoggingCallbacksForTest is an exported alias of newToolLoggingCallbacks
 // for unit testing. Production code should use the unexported constructor.
 func NewToolLoggingCallbacksForTest() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 	return newToolLoggingCallbacks()
+}
+
+// NewMetricsToolCallbacksForTest is an exported alias of newMetricsToolCallbacks
+// for unit testing. Production code should use the unexported constructor.
+func NewMetricsToolCallbacksForTest(toolCalls *prometheus.CounterVec, toolDuration *prometheus.HistogramVec) (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
+	return newMetricsToolCallbacks(toolCalls, toolDuration)
 }
 
 // newToolLoggingCallbacks returns Before/After callbacks that log tool call
@@ -464,22 +511,7 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 			return nil, nil
 		}
 
-		result := "success"
-		if toolErr != nil {
-			result = "failure"
-			logr.FromContextOrDiscard(ctx).Error(toolErr, "tool call failed", "tool", t.Name())
-		}
-
-		detail := map[string]string{
-			"tool_name":    t.Name(),
-			"tool_outcome": result,
-		}
-		if toolErr != nil {
-			detail["error"] = security.RedactError(toolErr)
-		}
-		if ns, ok := input["namespace"].(string); ok && ns != "" {
-			detail["namespace"] = ns
-		}
+		detail := buildToolAuditDetail(ctx, t, input, toolErr)
 
 		// Issue #1189: A2A task-to-RR correlation. When kubernaut_remediate or
 		// kubernaut_investigate succeeds within an A2A task, include both
@@ -489,17 +521,7 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 		if sc != nil && sc.TaskID != "" {
 			detail["a2a_task_id"] = sc.TaskID
 		}
-		toolName := t.Name()
-		isRRCreatingTool := (toolName == "kubernaut_remediate" || toolName == "kubernaut_investigate")
-		if isRRCreatingTool && toolErr == nil && output != nil {
-			if rrID, ok := output["rr_id"].(string); ok && rrID != "" {
-				detail["rr_id"] = rrID
-				if sc != nil {
-					sc.RRName = rrID
-					sc.RRNamespace = controllerNS
-				}
-			}
-		}
+		correlateRRToSession(sc, t.Name(), toolErr, output, controllerNS, detail)
 
 		userID := ""
 		if identity := auth.UserIdentityFromContext(ctx); identity != nil {
@@ -516,3 +538,45 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 	}
 }
 
+// buildToolAuditDetail constructs the base audit-event detail map for a tool
+// call: outcome, error (redacted), and namespace (when present in input).
+// Logs the error at the call site (not in the audit event itself) for
+// operator observability.
+func buildToolAuditDetail(ctx tool.Context, t tool.Tool, input map[string]any, toolErr error) map[string]string {
+	result := "success"
+	if toolErr != nil {
+		result = "failure"
+		logr.FromContextOrDiscard(ctx).Error(toolErr, "tool call failed", "tool", t.Name())
+	}
+
+	detail := map[string]string{
+		"tool_name":    t.Name(),
+		"tool_outcome": result,
+	}
+	if toolErr != nil {
+		detail["error"] = security.RedactError(toolErr)
+	}
+	if ns, ok := input["namespace"].(string); ok && ns != "" {
+		detail["namespace"] = ns
+	}
+	return detail
+}
+
+// correlateRRToSession adds rr_id to detail (and updates sc's RR reference)
+// when toolName is one of the RR-creating tools and it succeeded with a
+// non-empty rr_id in output (#1189: A2A task-to-RR correlation).
+func correlateRRToSession(sc *session.CreateContext, toolName string, toolErr error, output map[string]any, controllerNS string, detail map[string]string) {
+	isRRCreatingTool := toolName == "kubernaut_remediate" || toolName == "kubernaut_investigate"
+	if !isRRCreatingTool || toolErr != nil || output == nil {
+		return
+	}
+	rrID, ok := output["rr_id"].(string)
+	if !ok || rrID == "" {
+		return
+	}
+	detail["rr_id"] = rrID
+	if sc != nil {
+		sc.RRName = rrID
+		sc.RRNamespace = controllerNS
+	}
+}

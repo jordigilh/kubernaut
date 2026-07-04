@@ -324,38 +324,56 @@ func (t *Triager) runTier2(ctx context.Context, input TriageInput, ruleGroups []
 			if len(matchedRules) >= t.config.MaxRulesEvaluated {
 				break
 			}
-			if r.State != "inactive" {
-				continue
-			}
-			matchers, err := prom.ExtractLabelMatchers(r.Query)
-			if err != nil {
-				continue
-			}
-			if !prom.MatchesResource(matchers, input.Labels) {
+			result, matched, found := t.evaluateTier2Rule(ctx, r, input, &queryCount)
+			if !matched {
 				continue
 			}
 			matchedRules = append(matchedRules, r)
-
-			if queryCount >= t.config.MaxQueriesPerCall {
-				continue
-			}
-			queryCount++
-
-			qr, qErr := t.promClient.InstantQuery(ctx, r.Query)
-			if qErr != nil {
-				t.logger.Info("Tier 2 query failed", "rule", r.Name, "error", qErr.Error())
-				continue
-			}
-			if len(qr.Samples) > 0 {
-				return TriageResult{
-					Severity: r.Labels["severity"],
-					Source:   SourceRuleEval,
-					RuleName: r.Name,
-				}, matchedRules, true
+			if found {
+				return result, matchedRules, true
 			}
 		}
 	}
 	return TriageResult{}, matchedRules, false
+}
+
+// evaluateTier2Rule checks whether a single Prometheus alerting rule
+// correlates with input (Tier 2 label-matcher correlation), and if so,
+// queries its expression to see if it is currently firing. matched
+// indicates the rule should be recorded in matchedRules regardless of
+// query outcome; found indicates a firing match was found and result is
+// populated with the resolved severity.
+func (t *Triager) evaluateTier2Rule(ctx context.Context, r prom.Rule, input TriageInput, queryCount *int) (result TriageResult, matched, found bool) {
+	if r.State != "inactive" {
+		return TriageResult{}, false, false
+	}
+	matchers, err := prom.ExtractLabelMatchers(r.Query)
+	if err != nil {
+		return TriageResult{}, false, false
+	}
+	if !prom.MatchesResource(matchers, input.Labels) {
+		return TriageResult{}, false, false
+	}
+
+	if *queryCount >= t.config.MaxQueriesPerCall {
+		return TriageResult{}, true, false
+	}
+	*queryCount++
+
+	qr, qErr := t.promClient.InstantQuery(ctx, r.Query)
+	if qErr != nil {
+		t.logger.Info("Tier 2 query failed", "rule", r.Name, "error", qErr.Error())
+		return TriageResult{}, true, false
+	}
+	if len(qr.Samples) == 0 {
+		return TriageResult{}, true, false
+	}
+
+	return TriageResult{
+		Severity: r.Labels["severity"],
+		Source:   SourceRuleEval,
+		RuleName: r.Name,
+	}, true, true
 }
 
 func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules []prom.Rule) (TriageResult, bool) {

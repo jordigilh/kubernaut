@@ -82,10 +82,10 @@ type PrioritizedAlerts struct {
 
 // ListAlertsResult is the output of list_alerts.
 type ListAlertsResult struct {
-	Alerts      []AlertSummary   `json:"alerts"`
-	Count       int              `json:"count"`
-	TotalCount  int              `json:"total_count,omitempty"`
-	Truncated   bool             `json:"truncated,omitempty"`
+	Alerts      []AlertSummary     `json:"alerts"`
+	Count       int                `json:"count"`
+	TotalCount  int                `json:"total_count,omitempty"`
+	Truncated   bool               `json:"truncated,omitempty"`
 	Prioritized *PrioritizedAlerts `json:"prioritized,omitempty"`
 }
 
@@ -140,16 +140,8 @@ func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsAr
 	if client == nil {
 		return ListAlertsResult{}, ErrPromUnavailable
 	}
-	if args.Namespace != "" {
-		if err := validate.Namespace(args.Namespace); err != nil {
-			return ListAlertsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-		}
-	}
-	if args.Severity != "" && !validAlertSeverities[strings.ToLower(args.Severity)] {
-		return ListAlertsResult{}, fmt.Errorf("%w: severity must be one of critical, high, warning, info", ErrInvalidInput)
-	}
-	if args.State != "" && !validStates[strings.ToLower(args.State)] {
-		return ListAlertsResult{}, fmt.Errorf("%w: state must be firing or pending", ErrInvalidInput)
+	if err := validateListAlertsArgs(args); err != nil {
+		return ListAlertsResult{}, err
 	}
 
 	alerts, err := client.GetAlerts(ctx)
@@ -157,6 +149,46 @@ func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsAr
 		return ListAlertsResult{}, errors.New(security.RedactError(err))
 	}
 
+	result := filterAndRedactAlerts(alerts, args)
+	totalCount := len(result)
+
+	var prioritized *PrioritizedAlerts
+	if len(result) > 0 {
+		p := PrioritizeAlerts(result)
+		prioritized = &p
+	}
+
+	out := ListAlertsResult{
+		Alerts:      result,
+		Count:       len(result),
+		TotalCount:  totalCount,
+		Prioritized: prioritized,
+	}
+
+	out = trimResultToFit(out)
+	return out, nil
+}
+
+// validateListAlertsArgs validates the optional namespace/severity/state
+// filters for kubernaut_list_alerts.
+func validateListAlertsArgs(args ListAlertsArgs) error {
+	if args.Namespace != "" {
+		if err := validate.Namespace(args.Namespace); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		}
+	}
+	if args.Severity != "" && !validAlertSeverities[strings.ToLower(args.Severity)] {
+		return fmt.Errorf("%w: severity must be one of critical, high, warning, info", ErrInvalidInput)
+	}
+	if args.State != "" && !validStates[strings.ToLower(args.State)] {
+		return fmt.Errorf("%w: state must be firing or pending", ErrInvalidInput)
+	}
+	return nil
+}
+
+// filterAndRedactAlerts applies the namespace/severity/state filters and
+// redacts each matching alert's labels/annotations before returning it.
+func filterAndRedactAlerts(alerts []prom.Alert, args ListAlertsArgs) []AlertSummary {
 	result := make([]AlertSummary, 0, len(alerts))
 	for i := range alerts {
 		a := &alerts[i]
@@ -176,24 +208,7 @@ func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsAr
 			ActiveAt:    a.ActiveAt,
 		})
 	}
-
-	totalCount := len(result)
-
-	var prioritized *PrioritizedAlerts
-	if len(result) > 0 {
-		p := PrioritizeAlerts(result)
-		prioritized = &p
-	}
-
-	out := ListAlertsResult{
-		Alerts:      result,
-		Count:       len(result),
-		TotalCount:  totalCount,
-		Prioritized: prioritized,
-	}
-
-	out = trimResultToFit(out)
-	return out, nil
+	return result
 }
 
 // trimResultToFit serializes the full ListAlertsResult and removes alerts from

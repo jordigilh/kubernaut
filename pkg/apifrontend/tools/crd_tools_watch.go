@@ -53,17 +53,8 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 	if client == nil {
 		return WatchResult{}, ErrK8sUnavailable
 	}
-	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
-	if err != nil {
-		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	args.Namespace = ns
-	args.Name = name
-	if err := validate.Namespace(args.Namespace); err != nil {
-		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
-	}
-	if err := validate.ResourceName(args.Name); err != nil {
-		return WatchResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	if err := normalizeAndValidateWatchArgs(&args); err != nil {
+		return WatchResult{}, err
 	}
 
 	logger := logr.FromContextOrDiscard(ctx)
@@ -84,34 +75,42 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 	}
 	defer rrWatcher.Stop()
 
-	rarName := fmt.Sprintf("rar-%s", args.Name)
-	var rarCh <-chan watch.Event
-	rarWatcher, rarErr := client.Watch(watchCtx, &remediationv1.RemediationApprovalRequestList{},
-		crclient.InNamespace(args.Namespace),
-		crclient.MatchingFields{"metadata.name": rarName})
-	if rarErr != nil {
-		logger.V(1).Info("RAR watch unavailable, continuing with RR-only watch",
-			"rar_name", rarName, "error", rarErr)
-	} else {
-		defer rarWatcher.Stop()
-		rarCh = rarWatcher.ResultChan()
-	}
+	rarName, rarCh, stopRARWatch := setupRARWatch(watchCtx, client, args, logger)
+	defer stopRARWatch()
 
 	state := &watchLoopState{startedAt: time.Now().UTC().Format(time.RFC3339)}
 	defer state.stopEAWatcher()
 
 	_ = launcher.EmitStatusSafe(ctx, "Watching remediation progress...\n")
 
+	deps := watchDeps{Client: client, Args: args, Logger: logger, RARName: rarName}
+	return state.run(ctx, watchCtx, deps, rrWatcher.ResultChan(), rarCh)
+}
+
+// watchDeps bundles the request-scoped dependencies shared by the
+// watchLoopState methods, keeping their parameter counts within the
+// argument-limit lint gate.
+type watchDeps struct {
+	Client  crclient.WithWatch
+	Args    WatchArgs
+	Logger  logr.Logger
+	RARName string
+}
+
+// run drives the watch-loop's event-dispatch select statement until the
+// caller's context is cancelled, the RR watch channel closes, or a
+// terminal/awaiting-approval RR event is observed.
+func (s *watchLoopState) run(ctx, watchCtx context.Context, deps watchDeps, rrCh <-chan watch.Event, rarCh <-chan watch.Event) (WatchResult, error) {
 	for {
 		select {
 		case <-ctx.Done():
-			return WatchResult{Events: state.events, Status: "cancelled"}, nil
+			return WatchResult{Events: s.events, Status: "cancelled"}, nil
 
-		case evt, ok := <-rrWatcher.ResultChan():
+		case evt, ok := <-rrCh:
 			if !ok {
-				return WatchResult{Events: state.events, Status: "completed"}, nil
+				return WatchResult{Events: s.events, Status: "completed"}, nil
 			}
-			done, result, herr := state.handleRREvent(ctx, watchCtx, client, args, logger, rarName, evt)
+			done, result, herr := s.handleRREvent(ctx, watchCtx, deps, evt)
 			if herr != nil {
 				return WatchResult{}, herr
 			}
@@ -124,16 +123,51 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 				rarCh = nil
 				continue
 			}
-			state.handleRAREvent(ctx, evt)
+			s.handleRAREvent(ctx, evt)
 
-		case evt, ok := <-state.eaCh:
+		case evt, ok := <-s.eaCh:
 			if !ok {
-				state.eaCh = nil
+				s.eaCh = nil
 				continue
 			}
-			state.handleEAEvent(ctx, evt)
+			s.handleEAEvent(ctx, evt)
 		}
 	}
+}
+
+// normalizeAndValidateWatchArgs resolves args.Namespace/Name from RRID (if
+// given) and validates the result in place.
+func normalizeAndValidateWatchArgs(args *WatchArgs) error {
+	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	args.Namespace = ns
+	args.Name = name
+	if err := validate.Namespace(args.Namespace); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if err := validate.ResourceName(args.Name); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	return nil
+}
+
+// setupRARWatch starts a best-effort watch on the RemediationApprovalRequest
+// named after args.Name. RAR watch failures are non-fatal (logged at V(1))
+// since RAR only exists once the RR reaches AwaitingApproval; the returned
+// channel is nil and the stop func is a no-op when unavailable.
+func setupRARWatch(watchCtx context.Context, client crclient.WithWatch, args WatchArgs, logger logr.Logger) (string, <-chan watch.Event, func()) {
+	rarName := fmt.Sprintf("rar-%s", args.Name)
+	rarWatcher, rarErr := client.Watch(watchCtx, &remediationv1.RemediationApprovalRequestList{},
+		crclient.InNamespace(args.Namespace),
+		crclient.MatchingFields{"metadata.name": rarName})
+	if rarErr != nil {
+		logger.V(1).Info("RAR watch unavailable, continuing with RR-only watch",
+			"rar_name", rarName, "error", rarErr)
+		return rarName, nil, func() {}
+	}
+	return rarName, rarWatcher.ResultChan(), rarWatcher.Stop
 }
 
 // watchLoopState carries the mutable state shared across watch-loop
@@ -162,14 +196,7 @@ func (s *watchLoopState) stopEAWatcher() {
 // handleRREvent processes one RemediationRequest watch event. It returns
 // done=true when the watch should terminate (terminal phase or
 // awaiting-approval), along with the WatchResult to return to the caller.
-func (s *watchLoopState) handleRREvent(
-	ctx, watchCtx context.Context,
-	client crclient.WithWatch,
-	args WatchArgs,
-	logger logr.Logger,
-	rarName string,
-	evt watch.Event,
-) (bool, WatchResult, error) {
+func (s *watchLoopState) handleRREvent(ctx, watchCtx context.Context, deps watchDeps, evt watch.Event) (bool, WatchResult, error) {
 	if evt.Type != watch.Modified && evt.Type != watch.Added {
 		return false, WatchResult{}, nil
 	}
@@ -191,33 +218,7 @@ func (s *watchLoopState) handleRREvent(
 		Message:   msg,
 	})
 	if phase == "Verifying" {
-		s.verifyingStartedAt = time.Now().UTC()
-		eaName := ResolveEAName(rrObj)
-		timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
-
-		statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
-		if timing.StabilizationWindow != "" {
-			statusMeta["stabilization_window"] = timing.StabilizationWindow
-			statusMeta["started_at"] = s.verifyingStartedAt.Format(time.RFC3339)
-		}
-		if timing.ValidityDeadline != "" {
-			statusMeta["validity_deadline"] = timing.ValidityDeadline
-		}
-		_ = launcher.EmitStatusWithMetaSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase), statusMeta)
-
-		if s.eaCh == nil {
-			eaList := &eav1alpha1.EffectivenessAssessmentList{}
-			eaWatcher, eaErr := client.Watch(watchCtx, eaList,
-				crclient.InNamespace(args.Namespace),
-				crclient.MatchingFields{"metadata.name": eaName})
-			if eaErr != nil {
-				logger.V(1).Info("EA watch unavailable, verification_step events will not be emitted",
-					"ea_name", eaName, "error", eaErr)
-			} else {
-				s.eaWatcher = eaWatcher
-				s.eaCh = eaWatcher.ResultChan()
-			}
-		}
+		s.enterVerifyingPhase(ctx, watchCtx, deps, rrObj, phase)
 	} else {
 		_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase))
 	}
@@ -229,36 +230,79 @@ func (s *watchLoopState) handleRREvent(
 	progressMeta := map[string]any{"type": "execution_progress"}
 	if phase == "Verifying" {
 		eaName := ResolveEAName(rrObj)
-		timing := FetchEATimingMetadata(ctx, client, nil, args.Namespace, eaName)
+		timing := FetchEATimingMetadata(ctx, deps.Client, nil, deps.Args.Namespace, eaName)
 		if timing.StabilizationWindow != "" {
 			progressMeta["stabilization_window"] = timing.StabilizationWindow
 		}
 	}
-	snapshot := BuildProgressSnapshot(phase, args.Name, s.startedAt, completedAt)
+	snapshot := BuildProgressSnapshot(phase, deps.Args.Name, s.startedAt, completedAt)
 	_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
 
 	if IsTerminalPhase(phase) {
 		return true, WatchResult{Events: s.events, Status: "completed", Outcome: rrObj.Status.Outcome, Message: rrObj.Status.Message}, nil
 	}
 	if phase == "AwaitingApproval" {
-		var rarObj remediationv1.RemediationApprovalRequest
-		getErr := client.Get(ctx, crclient.ObjectKey{Namespace: args.Namespace, Name: rarName}, &rarObj)
-		if getErr == nil {
-			if payload, mErr := MarshalApprovalRequestPayload(&rarObj); mErr == nil {
-				_ = launcher.EmitStructuredMetaSafe(ctx, payload, map[string]any{"type": launcher.MetaTypeApprovalRequest})
-			}
-			if rarObj.Status.Decision != "" {
-				if resolved, mErr := MarshalApprovalResolvedPayload(&rarObj); mErr == nil {
-					_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
-				}
-			}
-		} else {
-			logger.V(1).Info("RAR GET for structured event failed, continuing with text-only",
-				"rar_name", rarName, "error", getErr)
-		}
+		emitApprovalRequestEvent(ctx, deps)
 		return true, WatchResult{Events: s.events, Status: "awaiting_approval"}, nil
 	}
 	return false, WatchResult{}, nil
+}
+
+// enterVerifyingPhase emits the "Verifying" status update (with stabilization
+// timing metadata when available) and lazily starts the EA watcher on first
+// entry into this phase.
+func (s *watchLoopState) enterVerifyingPhase(ctx, watchCtx context.Context, deps watchDeps, rrObj *remediationv1.RemediationRequest, phase string) {
+	s.verifyingStartedAt = time.Now().UTC()
+	eaName := ResolveEAName(rrObj)
+	timing := FetchEATimingMetadata(ctx, deps.Client, nil, deps.Args.Namespace, eaName)
+
+	statusMeta := map[string]any{"type": launcher.MetaTypeStatus}
+	if timing.StabilizationWindow != "" {
+		statusMeta["stabilization_window"] = timing.StabilizationWindow
+		statusMeta["started_at"] = s.verifyingStartedAt.Format(time.RFC3339)
+	}
+	if timing.ValidityDeadline != "" {
+		statusMeta["validity_deadline"] = timing.ValidityDeadline
+	}
+	_ = launcher.EmitStatusWithMetaSafe(ctx, fmt.Sprintf("Remediation phase: %s\n", phase), statusMeta)
+
+	if s.eaCh != nil {
+		return
+	}
+	eaList := &eav1alpha1.EffectivenessAssessmentList{}
+	eaWatcher, eaErr := deps.Client.Watch(watchCtx, eaList,
+		crclient.InNamespace(deps.Args.Namespace),
+		crclient.MatchingFields{"metadata.name": eaName})
+	if eaErr != nil {
+		deps.Logger.V(1).Info("EA watch unavailable, verification_step events will not be emitted",
+			"ea_name", eaName, "error", eaErr)
+		return
+	}
+	s.eaWatcher = eaWatcher
+	s.eaCh = eaWatcher.ResultChan()
+}
+
+// emitApprovalRequestEvent fetches the RemediationApprovalRequest named
+// rarName and emits its structured payload (plus a resolved payload if
+// already decided) for the SSE stream. Best-effort: a GET failure only logs
+// and falls back to the text-only phase-change event already emitted by the
+// caller.
+func emitApprovalRequestEvent(ctx context.Context, deps watchDeps) {
+	var rarObj remediationv1.RemediationApprovalRequest
+	if getErr := deps.Client.Get(ctx, crclient.ObjectKey{Namespace: deps.Args.Namespace, Name: deps.RARName}, &rarObj); getErr != nil {
+		deps.Logger.V(1).Info("RAR GET for structured event failed, continuing with text-only",
+			"rar_name", deps.RARName, "error", getErr)
+		return
+	}
+	if payload, mErr := MarshalApprovalRequestPayload(&rarObj); mErr == nil {
+		_ = launcher.EmitStructuredMetaSafe(ctx, payload, map[string]any{"type": launcher.MetaTypeApprovalRequest})
+	}
+	if rarObj.Status.Decision == "" {
+		return
+	}
+	if resolved, mErr := MarshalApprovalResolvedPayload(&rarObj); mErr == nil {
+		_ = launcher.EmitStructuredMetaSafe(ctx, resolved, map[string]any{"type": launcher.MetaTypeApprovalRequestResolved})
+	}
 }
 
 // handleRAREvent processes one RemediationApprovalRequest watch event.

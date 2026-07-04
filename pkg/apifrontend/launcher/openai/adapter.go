@@ -266,29 +266,29 @@ func convertSchema(s *genai.Schema) map[string]any {
 
 // chatCompletionResponse represents the OpenAI chat completion response.
 type chatCompletionResponse struct {
-	ID      string                  `json:"id"`
-	Object  string                  `json:"object"`
-	Model   string                  `json:"model"`
-	Choices []chatCompletionChoice  `json:"choices"`
-	Usage   *chatCompletionUsage    `json:"usage,omitempty"`
+	ID      string                 `json:"id"`
+	Object  string                 `json:"object"`
+	Model   string                 `json:"model"`
+	Choices []chatCompletionChoice `json:"choices"`
+	Usage   *chatCompletionUsage   `json:"usage,omitempty"`
 }
 
 type chatCompletionChoice struct {
-	Index        int                    `json:"index"`
-	Message      chatCompletionMessage  `json:"message"`
-	FinishReason *string                `json:"finish_reason"`
+	Index        int                   `json:"index"`
+	Message      chatCompletionMessage `json:"message"`
+	FinishReason *string               `json:"finish_reason"`
 }
 
 type chatCompletionMessage struct {
-	Role      string              `json:"role"`
-	Content   *string             `json:"content"`
-	ToolCalls []chatToolCall      `json:"tool_calls,omitempty"`
+	Role      string         `json:"role"`
+	Content   *string        `json:"content"`
+	ToolCalls []chatToolCall `json:"tool_calls,omitempty"`
 }
 
 type chatToolCall struct {
-	ID       string          `json:"id"`
-	Type     string          `json:"type"`
-	Function chatToolCallFn  `json:"function"`
+	ID       string         `json:"id"`
+	Type     string         `json:"type"`
+	Function chatToolCallFn `json:"function"`
 }
 
 type chatToolCallFn struct {
@@ -357,22 +357,22 @@ type chatCompletionChunk struct {
 }
 
 type chatCompletionChunkChoice struct {
-	Index        int                       `json:"index"`
-	Delta        chatCompletionChunkDelta  `json:"delta"`
-	FinishReason *string                   `json:"finish_reason"`
+	Index        int                      `json:"index"`
+	Delta        chatCompletionChunkDelta `json:"delta"`
+	FinishReason *string                  `json:"finish_reason"`
 }
 
 type chatCompletionChunkDelta struct {
-	Role      string               `json:"role,omitempty"`
-	Content   string               `json:"content,omitempty"`
-	ToolCalls []chatChunkToolCall  `json:"tool_calls,omitempty"`
+	Role      string              `json:"role,omitempty"`
+	Content   string              `json:"content,omitempty"`
+	ToolCalls []chatChunkToolCall `json:"tool_calls,omitempty"`
 }
 
 type chatChunkToolCall struct {
-	Index    int              `json:"index"`
-	ID       string           `json:"id,omitempty"`
-	Type     string           `json:"type,omitempty"`
-	Function chatChunkToolFn  `json:"function"`
+	Index    int             `json:"index"`
+	ID       string          `json:"id,omitempty"`
+	Type     string          `json:"type,omitempty"`
+	Function chatChunkToolFn `json:"function"`
 }
 
 type chatChunkToolFn struct {
@@ -392,11 +392,10 @@ func (m *Model) handleStreamingResponse(body io.Reader, yield func(*model.LLMRes
 	scanner := bufio.NewScanner(body)
 
 	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
+		data, ok := sseDataLine(scanner.Text())
+		if !ok {
 			continue
 		}
-		data := strings.TrimPrefix(line, "data: ")
 		if data == "[DONE]" {
 			break
 		}
@@ -405,65 +404,92 @@ func (m *Model) handleStreamingResponse(body io.Reader, yield func(*model.LLMRes
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
-
 		if len(chunk.Choices) == 0 {
 			continue
 		}
 
-		choice := chunk.Choices[0]
-
-		if choice.Delta.Content != "" {
-			resp := &model.LLMResponse{
-				Content: &genai.Content{
-					Role:  "model",
-					Parts: []*genai.Part{{Text: choice.Delta.Content}},
-				},
-			}
-			if !yield(resp, nil) {
-				return
-			}
-		}
-
-		for _, tc := range choice.Delta.ToolCalls {
-			acc, exists := accumulators[tc.Index]
-			if !exists {
-				acc = &toolCallAccumulator{}
-				accumulators[tc.Index] = acc
-			}
-			if tc.ID != "" {
-				acc.id = tc.ID
-			}
-			if tc.Function.Name != "" {
-				acc.name = tc.Function.Name
-			}
-			acc.args.WriteString(tc.Function.Arguments)
-		}
-
-		if choice.FinishReason != nil {
-			finishReason := mapFinishReason(choice.FinishReason)
-
-			resp := &model.LLMResponse{
-				Content: &genai.Content{
-					Role: "model",
-				},
-				FinishReason: finishReason,
-				TurnComplete: true,
-			}
-
-			for _, acc := range accumulators {
-				resp.Content.Parts = append(resp.Content.Parts,
-					parseFunctionCall(acc.id, acc.name, acc.args.String()))
-			}
-
-			if !yield(resp, nil) {
-				return
-			}
+		if !processStreamChoice(chunk.Choices[0], accumulators, yield) {
+			return
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		yield(nil, fmt.Errorf("read SSE stream: %w", err))
 	}
+}
+
+// sseDataLine extracts the payload from an SSE "data: ..." line. ok is false
+// for lines that are not data lines (comments, blank keep-alives, etc.).
+func sseDataLine(line string) (data string, ok bool) {
+	if !strings.HasPrefix(line, "data: ") {
+		return "", false
+	}
+	return strings.TrimPrefix(line, "data: "), true
+}
+
+// processStreamChoice handles a single streamed choice: forwarding any
+// content delta, accumulating tool-call fragments, and (on FinishReason)
+// emitting the final response. Returns false if yield requested the stream
+// to stop.
+func processStreamChoice(choice chatCompletionChunkChoice, accumulators map[int]*toolCallAccumulator, yield func(*model.LLMResponse, error) bool) bool {
+	if choice.Delta.Content != "" {
+		resp := &model.LLMResponse{
+			Content: &genai.Content{
+				Role:  "model",
+				Parts: []*genai.Part{{Text: choice.Delta.Content}},
+			},
+		}
+		if !yield(resp, nil) {
+			return false
+		}
+	}
+
+	accumulateToolCallDeltas(choice.Delta.ToolCalls, accumulators)
+
+	if choice.FinishReason != nil {
+		return yield(buildFinishResponse(choice.FinishReason, accumulators), nil)
+	}
+	return true
+}
+
+// accumulateToolCallDeltas merges streamed tool-call fragments into their
+// per-index accumulator (OpenAI streams tool call id/name/arguments
+// incrementally across multiple chunks).
+func accumulateToolCallDeltas(toolCalls []chatChunkToolCall, accumulators map[int]*toolCallAccumulator) {
+	for _, tc := range toolCalls {
+		acc, exists := accumulators[tc.Index]
+		if !exists {
+			acc = &toolCallAccumulator{}
+			accumulators[tc.Index] = acc
+		}
+		if tc.ID != "" {
+			acc.id = tc.ID
+		}
+		if tc.Function.Name != "" {
+			acc.name = tc.Function.Name
+		}
+		acc.args.WriteString(tc.Function.Arguments)
+	}
+}
+
+// buildFinishResponse builds the terminal LLMResponse once a choice reports
+// a FinishReason, resolving all accumulated tool calls into function-call
+// parts.
+func buildFinishResponse(finishReason *string, accumulators map[int]*toolCallAccumulator) *model.LLMResponse {
+	resp := &model.LLMResponse{
+		Content: &genai.Content{
+			Role: "model",
+		},
+		FinishReason: mapFinishReason(finishReason),
+		TurnComplete: true,
+	}
+
+	for _, acc := range accumulators {
+		resp.Content.Parts = append(resp.Content.Parts,
+			parseFunctionCall(acc.id, acc.name, acc.args.String()))
+	}
+
+	return resp
 }
 
 func parseFunctionCall(id, name, argsJSON string) *genai.Part {
@@ -495,4 +521,3 @@ func mapFinishReason(reason *string) genai.FinishReason {
 		return genai.FinishReasonUnspecified
 	}
 }
-

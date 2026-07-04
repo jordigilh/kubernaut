@@ -53,6 +53,41 @@ func NewAIAnalysisCreator(c client.Client, s *runtime.Scheme, m *metrics.Metrics
 	}
 }
 
+// buildAIAnalysis constructs the AIAnalysis CRD object (unpersisted) with data pass-through
+// from rr and sp (BR-ORCH-025).
+func (c *AIAnalysisCreator) buildAIAnalysis(rr *remediationv1.RemediationRequest, sp *signalprocessingv1.SignalProcessing, name string) *aianalysisv1.AIAnalysis {
+	return &aianalysisv1.AIAnalysis{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: rr.Namespace,
+			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
+		},
+		Spec: aianalysisv1.AIAnalysisSpec{
+			// Parent reference for audit trail
+			RemediationRequestRef: corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
+			// DD-AUDIT-CORRELATION-001: Use RR name for consistency
+			// TODO(v2): Deprecate RemediationID field (use RemediationRequestRef.Name instead)
+			RemediationID: rr.Name,
+			// Analysis request with signal context
+			AnalysisRequest: aianalysisv1.AnalysisRequest{
+				SignalContext: c.buildSignalContext(rr, sp),
+				AnalysisTypes: []aianalysisv1.AnalysisType{
+					aianalysisv1.AnalysisTypeInvestigation,
+					aianalysisv1.AnalysisTypeRootCause,
+					aianalysisv1.AnalysisTypeWorkflowSelection,
+				},
+			},
+			ClusterID: rr.Spec.ClusterID,
+		},
+	}
+}
+
 // Create creates an AIAnalysis CRD for the given RemediationRequest.
 // It uses enrichment data from the completed SignalProcessing CRD.
 // It is idempotent - if the CRD already exists, it returns the existing name.
@@ -85,45 +120,14 @@ func (c *AIAnalysisCreator) Create(
 		return "", fmt.Errorf("failed to check existing AIAnalysis: %w", err)
 	}
 
-	// Build AIAnalysis CRD
-	ai := &aianalysisv1.AIAnalysis{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: rr.Namespace,
-			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
-
-		},
-		Spec: aianalysisv1.AIAnalysisSpec{
-			// Parent reference for audit trail
-			RemediationRequestRef: corev1.ObjectReference{
-				APIVersion: remediationv1.GroupVersion.String(),
-				Kind:       "RemediationRequest",
-				Name:       rr.Name,
-				Namespace:  rr.Namespace,
-				UID:        rr.UID,
-			},
-		// DD-AUDIT-CORRELATION-001: Use RR name for consistency
-		// TODO(v2): Deprecate RemediationID field (use RemediationRequestRef.Name instead)
-		RemediationID: rr.Name,
-			// Analysis request with signal context
-			AnalysisRequest: aianalysisv1.AnalysisRequest{
-				SignalContext: c.buildSignalContext(rr, sp),
-			AnalysisTypes: []aianalysisv1.AnalysisType{
-				aianalysisv1.AnalysisTypeInvestigation,
-				aianalysisv1.AnalysisTypeRootCause,
-				aianalysisv1.AnalysisTypeWorkflowSelection,
-			},
-			},
-			ClusterID: rr.Spec.ClusterID,
-		},
-	}
-
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
 	if rr.UID == "" {
 		logger.Error(nil, "RemediationRequest has empty UID, cannot set owner reference")
 		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
 	}
+
+	ai := c.buildAIAnalysis(rr, sp, name)
 
 	// Set owner reference for cascade deletion (BR-ORCH-031)
 	if err := controllerutil.SetControllerReference(rr, ai, c.scheme); err != nil {
@@ -176,8 +180,8 @@ func (c *AIAnalysisCreator) buildSignalContext(
 
 	return aianalysisv1.SignalContextInput{
 		Fingerprint:      rr.Spec.SignalFingerprint,
-		Severity:         sp.Status.Severity, // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
-		SignalName:       signalType,          // BR-SP-106: Normalized by SP (not raw from RR)
+		Severity:         sp.Status.Severity,   // DD-SEVERITY-001: Use normalized severity from SignalProcessing Rego (not external rr.Spec.Severity)
+		SignalName:       signalType,           // BR-SP-106: Normalized by SP (not raw from RR)
 		SignalMode:       sp.Status.SignalMode, // BR-AI-084: Proactive signal mode for KA prompt switching
 		Environment:      environment,
 		BusinessPriority: priority,

@@ -43,46 +43,36 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func main() {
-	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
-	var configPath string
-	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
-	flag.Parse()
-
-	// Bootstrap logger at INFO for config loading
-	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
-		ServiceName: "gateway",
-	}, bootstrapLevel)
-	defer kubelog.Sync(logger)
-
-	ctrl.SetLogger(logger)
-
-	logger.Info("Starting Gateway Service",
+// loadGatewayConfig loads and validates the gateway ServerConfig (ADR-030:
+// single --config flag, all functional config in YAML ConfigMap; secrets via
+// env per LoadFromEnv), and reconfigures the logger at the config-driven log
+// level (Issue #877). Exits the process on load or validation failure,
+// matching main()'s original fail-fast behavior.
+func loadGatewayConfig(configPath string, bootstrapLogger logr.Logger) (*config.ServerConfig, logr.Logger, zap.AtomicLevel) {
+	bootstrapLogger.Info("Starting Gateway Service",
 		"version", version.Version,
 		"gitCommit", version.GitCommit,
 		"buildDate", version.BuildDate,
 		"config_path", configPath)
 
-	// ADR-030: Load configuration from YAML file
 	var serverCfg *config.ServerConfig
 	if configPath != "" {
 		var err error
 		serverCfg, err = config.LoadFromFile(configPath)
 		if err != nil {
-			logger.Error(err, "Failed to load configuration",
+			bootstrapLogger.Error(err, "Failed to load configuration",
 				"config_path", configPath)
 			os.Exit(1)
 		}
-		logger.Info("Configuration loaded successfully", "config_path", configPath)
+		bootstrapLogger.Info("Configuration loaded successfully", "config_path", configPath)
 	} else {
-		logger.Info("No config file specified, using defaults")
+		bootstrapLogger.Info("No config file specified, using defaults")
 		serverCfg = config.DefaultServerConfig()
 	}
 
 	// Issue #877: Apply config-driven log level
 	atomicLevel := serverCfg.Logging.NewAtomicLevel()
-	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
 		ServiceName: "gateway",
 	}, atomicLevel)
 	ctrl.SetLogger(logger)
@@ -91,7 +81,6 @@ func main() {
 	// Override configuration with environment variables (e.g., secrets only per ADR-030)
 	serverCfg.LoadFromEnv()
 
-	// Validate configuration
 	if err := serverCfg.Validate(); err != nil {
 		logger.Error(err, "Invalid configuration")
 		os.Exit(1)
@@ -100,6 +89,25 @@ func main() {
 	logger.Info("Configuration validated",
 		"listen_addr", serverCfg.Server.ListenAddr,
 		"data_storage_url", serverCfg.DataStorage.URL)
+
+	return serverCfg, logger, atomicLevel
+}
+
+func main() {
+	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
+	var configPath string
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
+	flag.Parse()
+
+	// Bootstrap logger at INFO for config loading
+	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	bootstrapLogger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "gateway",
+	}, bootstrapLevel)
+	defer kubelog.Sync(bootstrapLogger)
+	ctrl.SetLogger(bootstrapLogger)
+
+	serverCfg, logger, atomicLevel := loadGatewayConfig(configPath, bootstrapLogger)
 
 	// Create Gateway server
 	srv, err := gateway.NewServer(serverCfg, logger.WithName("server"))
@@ -242,47 +250,7 @@ func registerAdapters(
 	// BR-INTEGRATION-065: Fleet MCP Gateway for remote owner chain resolution.
 	// When mcpGatewayEndpoint is configured, GW constructs a ReaderFactory that
 	// dispatches owner resolution to the remote cluster's K8s API via MCP.
-	var fleetResilientClient *fleetclient.ResilientClient
-	if serverCfg.Fleet.Enabled && serverCfg.Fleet.MCPGatewayEndpoint != "" {
-		logger.Info("Fleet MCP Gateway configured for remote owner chain resolution",
-			"endpoint", serverCfg.Fleet.MCPGatewayEndpoint,
-			"oauth2Enabled", serverCfg.Fleet.OAuth2.Enabled)
-
-		fleetLog := logger.WithName("fleet-oauth2")
-		fleetOpts := []fleetclient.Option{}
-		if serverCfg.Fleet.OAuth2.Enabled {
-			basePath := "/etc/gateway/fleet-oauth2"
-			if serverCfg.Fleet.OAuth2.CredentialsSecretRef != "" {
-				basePath = "/etc/gateway/" + serverCfg.Fleet.OAuth2.CredentialsSecretRef
-			}
-			reloadCfg := fleetclient.ReloadableOAuth2Config{
-				TokenURL:         serverCfg.Fleet.OAuth2.TokenURL,
-				ClientIDPath:     basePath + "/client-id",
-				ClientSecretPath: basePath + "/client-secret",
-				Scopes:           fleetclient.DefaultFleetScopes(serverCfg.Fleet.OAuth2.Scopes),
-				TlsCaFile:        serverCfg.Fleet.OAuth2.TLSCAFile,
-			}
-			fleetOpts = append(fleetOpts,
-				fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
-			)
-		}
-
-		resilienceCfg := fleetclient.DefaultResilienceConfig()
-		var fleetErr error
-		fleetResilientClient, fleetErr = fleetclient.NewResilient(
-			ctx, serverCfg.Fleet.MCPGatewayEndpoint, resilienceCfg,
-			logger.WithName("fleet-client"), fleetOpts...,
-		)
-		if fleetErr != nil {
-			logger.Error(fleetErr, "Fleet MCP Gateway connection failed, remote owner resolution disabled",
-				"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
-		} else {
-			readerFactory := fleetclient.NewMCPReaderFactory(srv.GetCachedClient(), fleetResilientClient.Session())
-			prometheusAdapter.SetReaderFactory(readerFactory)
-			logger.Info("Fleet MCP Gateway connected, remote owner chain resolution enabled",
-				"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
-		}
-	}
+	fleetResilientClient := wireFleetOwnerResolution(ctx, srv, prometheusAdapter, serverCfg, logger)
 
 	if err := srv.RegisterAdapter(prometheusAdapter); err != nil {
 		return fleetResilientClient, fmt.Errorf("failed to register prometheus adapter: %w", err)
@@ -300,6 +268,114 @@ func registerAdapters(
 		"adapters", []string{"prometheus", "kubernetes-event"})
 
 	return fleetResilientClient, nil
+}
+
+// wireFleetOwnerResolution wires the Fleet MCP Gateway for remote owner
+// chain resolution (BR-INTEGRATION-065) when configured, setting the
+// Prometheus adapter's ReaderFactory on success. Returns the resilient
+// client (nil if Fleet isn't configured or the connection fails) so the
+// caller can close it on shutdown.
+func wireFleetOwnerResolution(
+	ctx context.Context,
+	srv *gateway.Server,
+	prometheusAdapter *adapters.PrometheusAdapter,
+	serverCfg *config.ServerConfig,
+	logger logr.Logger,
+) *fleetclient.ResilientClient {
+	if !serverCfg.Fleet.Enabled || serverCfg.Fleet.MCPGatewayEndpoint == "" {
+		return nil
+	}
+
+	logger.Info("Fleet MCP Gateway configured for remote owner chain resolution",
+		"endpoint", serverCfg.Fleet.MCPGatewayEndpoint,
+		"oauth2Enabled", serverCfg.Fleet.OAuth2.Enabled)
+
+	fleetOpts := []fleetclient.Option{}
+	if serverCfg.Fleet.OAuth2.Enabled {
+		fleetOpts = append(fleetOpts, buildFleetOAuth2Option(serverCfg, logger.WithName("fleet-oauth2")))
+	}
+
+	resilienceCfg := fleetclient.DefaultResilienceConfig()
+	fleetResilientClient, fleetErr := fleetclient.NewResilient(
+		ctx, serverCfg.Fleet.MCPGatewayEndpoint, resilienceCfg,
+		logger.WithName("fleet-client"), fleetOpts...,
+	)
+	if fleetErr != nil {
+		logger.Error(fleetErr, "Fleet MCP Gateway connection failed, remote owner resolution disabled",
+			"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
+		return nil
+	}
+
+	readerFactory := fleetclient.NewMCPReaderFactory(srv.GetCachedClient(), fleetResilientClient.Session())
+	prometheusAdapter.SetReaderFactory(readerFactory)
+	logger.Info("Fleet MCP Gateway connected, remote owner chain resolution enabled",
+		"endpoint", serverCfg.Fleet.MCPGatewayEndpoint)
+	return fleetResilientClient
+}
+
+// buildFleetOAuth2Option builds the reloadable OAuth2 transport option for
+// the Fleet MCP client from the server config's credentials secret path.
+func buildFleetOAuth2Option(serverCfg *config.ServerConfig, fleetLog logr.Logger) fleetclient.Option {
+	basePath := "/etc/gateway/fleet-oauth2"
+	if serverCfg.Fleet.OAuth2.CredentialsSecretRef != "" {
+		basePath = "/etc/gateway/" + serverCfg.Fleet.OAuth2.CredentialsSecretRef
+	}
+	reloadCfg := fleetclient.ReloadableOAuth2Config{
+		TokenURL:         serverCfg.Fleet.OAuth2.TokenURL,
+		ClientIDPath:     basePath + "/client-id",
+		ClientSecretPath: basePath + "/client-secret",
+		Scopes:           fleetclient.DefaultFleetScopes(serverCfg.Fleet.OAuth2.Scopes),
+		TlsCaFile:        serverCfg.Fleet.OAuth2.TLSCAFile,
+	}
+	return fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)
+}
+
+// startLogLevelWatcher starts the config-file log-level hot-reload watcher
+// (Issue #877) when a configPath is set. Returns the watcher's stop function
+// and true on success; ok is false when no watcher was started (no
+// configPath, or the watcher failed to create/start).
+func startLogLevelWatcher(
+	ctx context.Context,
+	configPath string,
+	atomicLevel zap.AtomicLevel,
+	srv *gateway.Server,
+	logger logr.Logger,
+) (stop func(), ok bool) {
+	if configPath == "" {
+		return nil, false
+	}
+
+	logLevelWatcher, watchErr := hotreload.NewFileWatcher(
+		configPath,
+		func(newContent string) error {
+			var partial struct {
+				Logging internalconfig.LoggingConfig `yaml:"logging"`
+			}
+			reloadErr := func() error {
+				if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
+					return fmt.Errorf("failed to parse config for log level reload: %w", err)
+				}
+				return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
+			}()
+			// GAP-11 (Issue #1505): audit every log-level hot-reload attempt,
+			// success or rejection (SOC2 CC7.2 change management).
+			srv.EmitConfigReloadAudit(ctx, "log_level", reloadErr)
+			return reloadErr
+		},
+		logger.WithName("log-level-watcher"),
+	)
+	if watchErr != nil {
+		logger.Error(watchErr, "Failed to create log level file watcher")
+		return nil, false
+	}
+
+	if err := logLevelWatcher.Start(ctx); err != nil {
+		logger.Info("Log level file watcher failed to start", "error", err)
+		return nil, false
+	}
+
+	logger.Info("Log level hot-reload watcher started", "path", configPath)
+	return logLevelWatcher.Stop, true
 }
 
 // wireHotReload sets the initial TLS security profile and starts the
@@ -328,36 +404,8 @@ func wireHotReload(
 	stopFns := make([]func(), 0, 2)
 
 	// Issue #877: Log level hot-reload via FileWatcher
-	if configPath != "" {
-		logLevelWatcher, watchErr := hotreload.NewFileWatcher(
-			configPath,
-			func(newContent string) error {
-				var partial struct {
-					Logging internalconfig.LoggingConfig `yaml:"logging"`
-				}
-				reloadErr := func() error {
-					if err := yaml.Unmarshal([]byte(newContent), &partial); err != nil {
-						return fmt.Errorf("failed to parse config for log level reload: %w", err)
-					}
-					return internalconfig.ParseAndSetLevel(atomicLevel, partial.Logging.Level)
-				}()
-				// GAP-11 (Issue #1505): audit every log-level hot-reload attempt,
-				// success or rejection (SOC2 CC7.2 change management).
-				srv.EmitConfigReloadAudit(ctx, "log_level", reloadErr)
-				return reloadErr
-			},
-			logger.WithName("log-level-watcher"),
-		)
-		if watchErr != nil {
-			logger.Error(watchErr, "Failed to create log level file watcher")
-		} else {
-			if err := logLevelWatcher.Start(ctx); err != nil {
-				logger.Info("Log level file watcher failed to start", "error", err)
-			} else {
-				logger.Info("Log level hot-reload watcher started", "path", configPath)
-				stopFns = append(stopFns, logLevelWatcher.Stop)
-			}
-		}
+	if stop, ok := startLogLevelWatcher(ctx, configPath, atomicLevel, srv, logger); ok {
+		stopFns = append(stopFns, stop)
 	}
 
 	// Issue #756: Start CA file watcher for client-side TLS hot-reload

@@ -62,6 +62,53 @@ func NewApprovalCreator(c client.Client, s *runtime.Scheme, m *metrics.Metrics, 
 	}
 }
 
+// validateApprovalPreconditions enforces the AIAnalysis fields required to build an approval
+// request: a non-nil AIAnalysis with a SelectedWorkflow that carries a WorkflowID.
+func validateApprovalPreconditions(ai *aianalysisv1.AIAnalysis) error {
+	if ai == nil {
+		return fmt.Errorf("AIAnalysis is nil")
+	}
+	if ai.Status.SelectedWorkflow == nil {
+		return fmt.Errorf("AIAnalysis %s/%s missing SelectedWorkflow for approval request", ai.Namespace, ai.Name)
+	}
+	if ai.Status.SelectedWorkflow.WorkflowID == "" {
+		return fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing WorkflowID", ai.Namespace, ai.Name)
+	}
+	return nil
+}
+
+// initApprovalConditions sets the initial DD-CRD-002-RAR conditions on rar in-memory
+// (Pending=true, Decided=false, Expired=false) prior to Create().
+func (c *ApprovalCreator) initApprovalConditions(rar *remediationv1.RemediationApprovalRequest) {
+	remediationapprovalrequest.SetApprovalPending(rar, true,
+		fmt.Sprintf("Awaiting decision, expires %s", rar.Spec.RequiredBy.Format(time.RFC3339)), c.metrics)
+	remediationapprovalrequest.SetApprovalDecided(rar, false,
+		remediationapprovalrequest.ReasonPendingDecision,
+		"No decision yet", c.metrics)
+	remediationapprovalrequest.SetApprovalExpired(rar, false,
+		"Approval has not expired", c.metrics)
+}
+
+// persistApprovalRequest creates rar and then writes its initial status via the status
+// subresource. The status must be saved and restored around Create() because the API
+// server strips status from the response for CRDs with +kubebuilder:subresource:status.
+func (c *ApprovalCreator) persistApprovalRequest(ctx context.Context, rar *remediationv1.RemediationApprovalRequest) error {
+	now := metav1.Now()
+	rar.Status.CreatedAt = &now
+	c.initApprovalConditions(rar)
+
+	savedStatus := rar.Status
+	if err := c.client.Create(ctx, rar); err != nil {
+		return fmt.Errorf("failed to create RemediationApprovalRequest: %w", err)
+	}
+
+	rar.Status = savedStatus
+	if err := c.client.Status().Update(ctx, rar); err != nil {
+		return fmt.Errorf("failed to update RemediationApprovalRequest status: %w", err)
+	}
+	return nil
+}
+
 // Create creates a RemediationApprovalRequest CRD for the given RemediationRequest and AIAnalysis.
 // V1.0 Implementation: Per ADR-040 V1.0 scope.
 // Reference: BR-ORCH-026 (Approval Orchestration)
@@ -70,15 +117,8 @@ func (c *ApprovalCreator) Create(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 ) (string, error) {
-	// Precondition validation
-	if ai == nil {
-		return "", fmt.Errorf("AIAnalysis is nil")
-	}
-	if ai.Status.SelectedWorkflow == nil {
-		return "", fmt.Errorf("AIAnalysis %s/%s missing SelectedWorkflow for approval request", ai.Namespace, ai.Name)
-	}
-	if ai.Status.SelectedWorkflow.WorkflowID == "" {
-		return "", fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing WorkflowID", ai.Namespace, ai.Name)
+	if err := validateApprovalPreconditions(ai); err != nil {
+		return "", err
 	}
 
 	logger := log.FromContext(ctx).WithValues(
@@ -102,9 +142,6 @@ func (c *ApprovalCreator) Create(
 		return "", fmt.Errorf("failed to check existing RemediationApprovalRequest: %w", err)
 	}
 
-	// Build the RemediationApprovalRequest
-	rar := c.buildApprovalRequest(rr, ai, name)
-
 	// Validate RemediationRequest has required metadata for owner reference (defensive programming)
 	// Gap 2.1: Prevents orphaned child CRDs if RR not properly persisted
 	if rr.UID == "" {
@@ -112,41 +149,17 @@ func (c *ApprovalCreator) Create(
 		return "", fmt.Errorf("failed to set owner reference: RemediationRequest UID is required but empty")
 	}
 
+	rar := c.buildApprovalRequest(rr, ai, name)
+
 	// Set owner reference for cascade deletion (BR-ORCH-031)
 	if err := controllerutil.SetControllerReference(rr, rar, c.scheme); err != nil {
 		logger.Error(err, "Failed to set owner reference")
 		return "", fmt.Errorf("failed to set owner reference: %w", err)
 	}
 
-	// Issue #118 Gap 10: Set creation timestamp for audit trail
-	now := metav1.Now()
-	rar.Status.CreatedAt = &now
-
-	// DD-CRD-002-RAR: Set initial conditions before creation
-	// Conditions are set in-memory and persisted with the Create() call
-	remediationapprovalrequest.SetApprovalPending(rar, true,
-		fmt.Sprintf("Awaiting decision, expires %s", rar.Spec.RequiredBy.Format(time.RFC3339)), c.metrics)
-	remediationapprovalrequest.SetApprovalDecided(rar, false,
-		remediationapprovalrequest.ReasonPendingDecision,
-		"No decision yet", c.metrics)
-	remediationapprovalrequest.SetApprovalExpired(rar, false,
-		"Approval has not expired", c.metrics)
-
-	// Save status before Create() — the API server strips status from the
-	// response for CRDs with +kubebuilder:subresource:status, and Create()
-	// mutates rar in place with the server response, clearing our status fields.
-	savedStatus := rar.Status
-
-	if err := c.client.Create(ctx, rar); err != nil {
-		logger.Error(err, "Failed to create RemediationApprovalRequest")
-		return "", fmt.Errorf("failed to create RemediationApprovalRequest: %w", err)
-	}
-
-	// Restore status and persist via the status subresource
-	rar.Status = savedStatus
-	if err := c.client.Status().Update(ctx, rar); err != nil {
-		logger.Error(err, "Failed to update RemediationApprovalRequest status after creation")
-		return "", fmt.Errorf("failed to update RemediationApprovalRequest status: %w", err)
+	if err := c.persistApprovalRequest(ctx, rar); err != nil {
+		logger.Error(err, "Failed to persist RemediationApprovalRequest")
+		return "", err
 	}
 
 	logger.Info("Created RemediationApprovalRequest",
@@ -158,6 +171,59 @@ func (c *ApprovalCreator) Create(
 	return name, nil
 }
 
+// confidenceLevelFor buckets a numeric confidence into the "low"/"medium"/"high" tiers
+// used in the approval UI.
+func confidenceLevelFor(confidence float64) string {
+	switch {
+	case confidence >= 0.8:
+		return "high"
+	case confidence >= 0.6:
+		return "medium"
+	default:
+		return "low"
+	}
+}
+
+// approvalInvestigationSummary picks the best available investigation summary: the
+// legacy RootCause string, falling back to the structured RootCauseAnalysis.Summary.
+func approvalInvestigationSummary(ai *aianalysisv1.AIAnalysis) string {
+	if ai.Status.RootCause != "" {
+		return ai.Status.RootCause
+	}
+	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
+		return ai.Status.RootCauseAnalysis.Summary
+	}
+	return "Investigation completed"
+}
+
+// applyApprovalContext maps AIAnalysis's optional ApprovalContext (BR-AI-059, BR-AI-076,
+// #307) onto rar.Spec: evidence collected, alternatives considered, and policy evaluation.
+func applyApprovalContext(rar *remediationv1.RemediationApprovalRequest, ac *aianalysisv1.ApprovalContext) {
+	if ac == nil {
+		return
+	}
+	rar.Spec.EvidenceCollected = ac.EvidenceCollected
+
+	if len(ac.AlternativesConsidered) > 0 {
+		alts := make([]remediationv1.ApprovalAlternative, len(ac.AlternativesConsidered))
+		for i, a := range ac.AlternativesConsidered {
+			alts[i] = remediationv1.ApprovalAlternative{
+				Approach: a.Approach,
+				ProsCons: a.ProsCons,
+			}
+		}
+		rar.Spec.AlternativesConsidered = alts
+	}
+
+	if ac.PolicyEvaluation != nil {
+		rar.Spec.PolicyEvaluation = &remediationv1.ApprovalPolicyEvaluation{
+			PolicyName:   ac.PolicyEvaluation.PolicyName,
+			MatchedRules: ac.PolicyEvaluation.MatchedRules,
+			Decision:     string(ac.PolicyEvaluation.Decision),
+		}
+	}
+}
+
 // buildApprovalRequest constructs the RemediationApprovalRequest from RR and AIAnalysis.
 func (c *ApprovalCreator) buildApprovalRequest(
 	rr *remediationv1.RemediationRequest,
@@ -166,26 +232,15 @@ func (c *ApprovalCreator) buildApprovalRequest(
 ) *remediationv1.RemediationApprovalRequest {
 	requiredBy := metav1.NewTime(time.Now().Add(c.approvalTimeout))
 
-	// Determine confidence level
 	confidence := float64(0)
-	confidenceLevel := "low"
-	if ai.Status.SelectedWorkflow != nil {
-		confidence = ai.Status.SelectedWorkflow.Confidence
-		if confidence >= 0.8 {
-			confidenceLevel = "high"
-		} else if confidence >= 0.6 {
-			confidenceLevel = "medium"
-		}
-	}
-
-	// Build recommended workflow summary
 	var recommendedWorkflow remediationv1.RecommendedWorkflowSummary
 	if ai.Status.SelectedWorkflow != nil {
+		confidence = ai.Status.SelectedWorkflow.Confidence
 		recommendedWorkflow = remediationv1.RecommendedWorkflowSummary{
-			WorkflowID:     ai.Status.SelectedWorkflow.WorkflowID,
-			Version:        ai.Status.SelectedWorkflow.Version,
+			WorkflowID:      ai.Status.SelectedWorkflow.WorkflowID,
+			Version:         ai.Status.SelectedWorkflow.Version,
 			ExecutionBundle: ai.Status.SelectedWorkflow.ExecutionBundle,
-			Rationale:      ai.Status.SelectedWorkflow.Rationale,
+			Rationale:       ai.Status.SelectedWorkflow.Rationale,
 		}
 	}
 
@@ -197,68 +252,35 @@ func (c *ApprovalCreator) buildApprovalRequest(
 		},
 	}
 
-	// Build investigation summary
-	investigationSummary := "Investigation completed"
-	if ai.Status.RootCause != "" {
-		investigationSummary = ai.Status.RootCause
-	} else if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
-		investigationSummary = ai.Status.RootCauseAnalysis.Summary
-	}
-
-	// Build RemediationRequestRef using RR's ObjectMeta
-	rrRef := corev1.ObjectReference{
-		APIVersion: remediationv1.GroupVersion.String(),
-		Kind:       "RemediationRequest",
-		Name:       rr.Name,
-		Namespace:  rr.Namespace,
-		UID:        rr.UID,
-	}
-
 	rar := &remediationv1.RemediationApprovalRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: rr.Namespace,
 		},
 		Spec: remediationv1.RemediationApprovalRequestSpec{
-			RemediationRequestRef: rrRef,
+			RemediationRequestRef: corev1.ObjectReference{
+				APIVersion: remediationv1.GroupVersion.String(),
+				Kind:       "RemediationRequest",
+				Name:       rr.Name,
+				Namespace:  rr.Namespace,
+				UID:        rr.UID,
+			},
 			AIAnalysisRef: remediationv1.ObjectRef{
 				Name: ai.Name,
 			},
-			ClusterID:  rr.Spec.ClusterID,
+			ClusterID:            rr.Spec.ClusterID,
 			Confidence:           confidence,
-			ConfidenceLevel:      confidenceLevel,
+			ConfidenceLevel:      confidenceLevelFor(confidence),
 			Reason:               ai.Status.ApprovalReason,
 			RecommendedWorkflow:  recommendedWorkflow,
-			InvestigationSummary: investigationSummary,
+			InvestigationSummary: approvalInvestigationSummary(ai),
 			RecommendedActions:   recommendedActions,
 			WhyApprovalRequired:  ai.Status.ApprovalReason,
 			RequiredBy:           requiredBy,
 		},
 	}
 
-	// Map ApprovalContext fields (BR-AI-059, BR-AI-076, #307)
-	if ac := ai.Status.ApprovalContext; ac != nil {
-		rar.Spec.EvidenceCollected = ac.EvidenceCollected
-
-		if len(ac.AlternativesConsidered) > 0 {
-			alts := make([]remediationv1.ApprovalAlternative, len(ac.AlternativesConsidered))
-			for i, a := range ac.AlternativesConsidered {
-				alts[i] = remediationv1.ApprovalAlternative{
-					Approach: a.Approach,
-					ProsCons: a.ProsCons,
-				}
-			}
-			rar.Spec.AlternativesConsidered = alts
-		}
-
-		if ac.PolicyEvaluation != nil {
-			rar.Spec.PolicyEvaluation = &remediationv1.ApprovalPolicyEvaluation{
-				PolicyName:   ac.PolicyEvaluation.PolicyName,
-				MatchedRules: ac.PolicyEvaluation.MatchedRules,
-				Decision:     string(ac.PolicyEvaluation.Decision),
-			}
-		}
-	}
+	applyApprovalContext(rar, ai.Status.ApprovalContext)
 
 	return rar
 }

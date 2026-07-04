@@ -137,58 +137,8 @@ func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*ogenclie
 
 	// Insert each event
 	for _, event := range events {
-		eventID := uuid.New().String()
-		eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
-
-		eventDataJSON, err := json.Marshal(event.EventData)
-		if err != nil {
-			return fmt.Errorf("failed to marshal event_data: %w", err)
-		}
-
-		// DF-M1: Validate EventData before insert (defense-in-depth)
-		if err := eventdata.ValidateEventData(eventDataJSON); err != nil {
-			return fmt.Errorf("event_data validation failed: %w", err)
-		}
-
-		actorType := ""
-		if event.ActorType.IsSet() {
-			actorType = event.ActorType.Value
-		}
-		actorID := ""
-		if event.ActorID.IsSet() {
-			actorID = event.ActorID.Value
-		}
-		resourceType := ""
-		if event.ResourceType.IsSet() {
-			resourceType = event.ResourceType.Value
-		}
-		resourceID := ""
-		if event.ResourceID.IsSet() {
-			resourceID = event.ResourceID.Value
-		}
-
-		const defaultIsSensitive = false
-
-		_, err = stmt.ExecContext(ctx,
-			eventID,
-			event.Version,
-			event.EventTimestamp,
-			eventDate,
-			event.EventType,
-			event.EventCategory,
-			event.EventAction,
-			string(event.EventOutcome),
-			actorType,
-			actorID,
-			resourceType,
-			resourceID,
-			event.CorrelationID,
-			eventDataJSON,
-			c.config.RetentionDays, // DF-H2: configurable, not hardcoded
-			defaultIsSensitive,
-		)
-		if err != nil {
-			return fmt.Errorf("failed to insert audit event: %w", err)
+		if err := c.insertAuditEvent(ctx, stmt, event); err != nil {
+			return err
 		}
 	}
 
@@ -198,4 +148,55 @@ func (c *InternalAuditClient) StoreBatch(ctx context.Context, events []*ogenclie
 	}
 
 	return nil
+}
+
+// insertAuditEvent marshals, validates, and executes a single audit event
+// insert against the prepared statement within StoreBatch's transaction.
+func (c *InternalAuditClient) insertAuditEvent(ctx context.Context, stmt *sql.Stmt, event *ogenclient.AuditEventRequest) error {
+	eventID := uuid.New().String()
+	eventDate := event.EventTimestamp.Truncate(24 * time.Hour)
+
+	eventDataJSON, err := json.Marshal(event.EventData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal event_data: %w", err)
+	}
+
+	// DF-M1: Validate EventData before insert (defense-in-depth)
+	if err := eventdata.ValidateEventData(eventDataJSON); err != nil {
+		return fmt.Errorf("event_data validation failed: %w", err)
+	}
+
+	const defaultIsSensitive = false
+
+	_, err = stmt.ExecContext(ctx,
+		eventID,
+		event.Version,
+		event.EventTimestamp,
+		eventDate,
+		event.EventType,
+		event.EventCategory,
+		event.EventAction,
+		string(event.EventOutcome),
+		optionalStringValue(event.ActorType),
+		optionalStringValue(event.ActorID),
+		optionalStringValue(event.ResourceType),
+		optionalStringValue(event.ResourceID),
+		event.CorrelationID,
+		eventDataJSON,
+		c.config.RetentionDays, // DF-H2: configurable, not hardcoded
+		defaultIsSensitive,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to insert audit event: %w", err)
+	}
+	return nil
+}
+
+// optionalStringValue extracts the underlying value of an ogen OptString
+// field, returning "" when unset.
+func optionalStringValue(opt ogenclient.OptString) string {
+	if !opt.IsSet() {
+		return ""
+	}
+	return opt.Value
 }

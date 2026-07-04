@@ -146,9 +146,9 @@ func (stubFleetClusterRegistry) Get(_ string) (registry.ClusterInfo, bool) {
 	return registry.ClusterInfo{}, false
 }
 func (stubFleetClusterRegistry) WatchClusters() <-chan registry.ClusterEvent { return nil }
-func (stubFleetClusterRegistry) Ready() bool                                { return true }
-func (stubFleetClusterRegistry) Start(_ context.Context) error              { return nil }
-func (stubFleetClusterRegistry) Stop()                                      {}
+func (stubFleetClusterRegistry) Ready() bool                                 { return true }
+func (stubFleetClusterRegistry) Start(_ context.Context) error               { return nil }
+func (stubFleetClusterRegistry) Stop()                                       {}
 
 var _ registry.ClusterRegistry = stubFleetClusterRegistry{}
 

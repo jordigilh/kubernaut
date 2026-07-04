@@ -26,6 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
+	"github.com/redis/go-redis/v9"
 )
 
 // ========================================
@@ -290,35 +291,45 @@ func (c *Client) drainStreamPass(ctx context.Context, streamKey, auditType strin
 			// next outer-loop iteration. Failed messages are retried in pass 2.
 			cursor = "(" + msg.ID
 
-			dlqMsg, err := c.parseStreamMessage(msg)
-			if err != nil {
-				c.logger.Error(err, "Failed to parse DLQ message during drain",
-					"message_id", msg.ID,
-					"audit_type", auditType)
+			if c.drainOneMessage(ctx, streamKey, auditType, msg, writeFn) {
+				processed++
+			} else {
 				hadFailures = true
-				continue
 			}
-
-			if err := writeFn(ctx, dlqMsg); err != nil {
-				c.logger.Error(err, "Failed to write DLQ message to database during drain",
-					"message_id", msg.ID,
-					"audit_type", auditType,
-					"correlation_id", dlqMsg.AuditMessage.CorrelationID())
-				hadFailures = true
-				continue
-			}
-
-			if err := c.redisClient.XDel(ctx, streamKey, msg.ID).Err(); err != nil {
-				c.logger.Error(err, "Failed to delete DLQ message during drain",
-					"message_id", msg.ID,
-					"audit_type", auditType)
-			}
-
-			processed++
 		}
 	}
 
 	return processed, hadFailures, nil
+}
+
+// drainOneMessage parses, writes, and deletes a single DLQ stream message.
+// Returns true when the message was successfully written and processed
+// should count toward the drain total; false when parsing or writing failed
+// (the message is left in Redis for a subsequent drain pass).
+func (c *Client) drainOneMessage(ctx context.Context, streamKey, auditType string, msg redis.XMessage, writeFn messageWriteFunc) bool {
+	dlqMsg, err := c.parseStreamMessage(msg)
+	if err != nil {
+		c.logger.Error(err, "Failed to parse DLQ message during drain",
+			"message_id", msg.ID,
+			"audit_type", auditType)
+		return false
+	}
+
+	if err := writeFn(ctx, dlqMsg); err != nil {
+		c.logger.Error(err, "Failed to write DLQ message to database during drain",
+			"message_id", msg.ID,
+			"audit_type", auditType,
+			"correlation_id", dlqMsg.AuditMessage.CorrelationID())
+		return false
+	}
+
+	if err := c.redisClient.XDel(ctx, streamKey, msg.ID).Err(); err != nil {
+		c.logger.Error(err, "Failed to delete DLQ message during drain",
+			"message_id", msg.ID,
+			"audit_type", auditType)
+	}
+
+	return true
 }
 
 // getStreamKey returns the Redis stream key for a given audit type

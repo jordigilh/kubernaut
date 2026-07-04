@@ -274,71 +274,86 @@ func (c *Config) validateInteractive() error {
 	return c.Interactive.validateJWTProviders()
 }
 
+// defaultRuntimeConfig returns the production-default RuntimeConfig (server,
+// session, audit, shutdown). Extracted from DefaultConfig per the
+// GO-ANTIPATTERN-AUDIT-2026-07-01 complexity remediation (Wave C).
+func defaultRuntimeConfig() RuntimeConfig {
+	return RuntimeConfig{
+		Logging: internalconfig.DefaultLoggingConfig(),
+		Server: ServerConfig{
+			Address: "0.0.0.0", Port: 8443, HealthAddr: ":8081", MetricsAddr: ":9090",
+			DisableProfiling:      true,
+			DisableAdminEndpoints: true,
+			MaxConcurrentRequests: 100,
+			RateLimit: RateLimitConfig{
+				RequestsPerSecond: 5,
+				Burst:             10,
+				CleanupInterval:   5 * time.Minute,
+				MaxAge:            10 * time.Minute,
+			},
+		},
+		Session: SessionConfig{TTL: 30 * time.Minute, MaxConcurrentInvestigations: 10},
+		Audit: AuditConfig{
+			Enabled:    true,
+			BufferSize: 100,
+			BatchSize:  10,
+			Verbosity:  "full",
+		},
+		Shutdown: ShutdownConfig{DrainSeconds: 30},
+	}
+}
+
+// defaultAIConfig returns the production-default AIConfig (LLM, investigation,
+// summarizer, enrichment, alignment-check, safety). Extracted from
+// DefaultConfig per the GO-ANTIPATTERN-AUDIT-2026-07-01 complexity
+// remediation (Wave C).
+func defaultAIConfig() AIConfig {
+	return AIConfig{
+		LLM:           types.LLMConfig{Provider: "openai"},
+		Investigation: InvestigationConfig{MaxTurns: 40},
+		Summarizer: SummarizerConfig{
+			Threshold:         8000,
+			MaxToolOutputSize: DefaultMaxToolOutputSize,
+		},
+		Enrichment: EnrichmentConfig{
+			MaxRetries:  3,
+			BaseBackoff: 1 * time.Second,
+		},
+		AlignmentCheck: AlignmentCheckConfig{
+			Enabled:        false,
+			Mode:           AlignmentModeEnforce,
+			Timeout:        10 * time.Second,
+			MaxStepTokens:  500,
+			MaxRetries:     1,
+			VerdictTimeout: 30 * time.Second,
+			Canary:         CanaryConfig{ForceEscalation: true},
+			GroundingReview: GroundingReviewConfig{
+				Enabled:               false,
+				Timeout:               30 * time.Second,
+				MaxConversationTokens: 32000,
+			},
+		},
+		Safety: SafetyConfig{
+			Sanitization: SanitizationConfig{
+				InjectionPatternsEnabled: true,
+				CredentialScrubEnabled:   true,
+				SecretRedactionEnabled:   true,
+			},
+			Anomaly: AnomalyConfig{
+				MaxToolCallsPerTool: 10,
+				MaxTotalToolCalls:   30,
+				MaxRepeatedFailures: 3,
+				ExemptPrefixes:      []string{"todo_"},
+			},
+		},
+	}
+}
+
 // DefaultConfig returns a Config with production defaults applied.
 func DefaultConfig() *Config {
 	return &Config{
-		Runtime: RuntimeConfig{
-			Logging: internalconfig.DefaultLoggingConfig(),
-			Server: ServerConfig{
-				Address: "0.0.0.0", Port: 8443, HealthAddr: ":8081", MetricsAddr: ":9090",
-				DisableProfiling:      true,
-				DisableAdminEndpoints: true,
-				MaxConcurrentRequests: 100,
-				RateLimit: RateLimitConfig{
-					RequestsPerSecond: 5,
-					Burst:             10,
-					CleanupInterval:   5 * time.Minute,
-					MaxAge:            10 * time.Minute,
-				},
-			},
-			Session: SessionConfig{TTL: 30 * time.Minute, MaxConcurrentInvestigations: 10},
-			Audit: AuditConfig{
-				Enabled:    true,
-				BufferSize: 100,
-				BatchSize:  10,
-				Verbosity:  "full",
-			},
-			Shutdown: ShutdownConfig{DrainSeconds: 30},
-		},
-		AI: AIConfig{
-			LLM:           types.LLMConfig{Provider: "openai"},
-			Investigation: InvestigationConfig{MaxTurns: 40},
-			Summarizer: SummarizerConfig{
-				Threshold:         8000,
-				MaxToolOutputSize: DefaultMaxToolOutputSize,
-			},
-			Enrichment: EnrichmentConfig{
-				MaxRetries:  3,
-				BaseBackoff: 1 * time.Second,
-			},
-			AlignmentCheck: AlignmentCheckConfig{
-				Enabled:        false,
-				Mode:           AlignmentModeEnforce,
-				Timeout:        10 * time.Second,
-				MaxStepTokens:  500,
-				MaxRetries:     1,
-				VerdictTimeout: 30 * time.Second,
-				Canary:         CanaryConfig{ForceEscalation: true},
-				GroundingReview: GroundingReviewConfig{
-					Enabled:               false,
-					Timeout:               30 * time.Second,
-					MaxConversationTokens: 32000,
-				},
-			},
-			Safety: SafetyConfig{
-				Sanitization: SanitizationConfig{
-					InjectionPatternsEnabled: true,
-					CredentialScrubEnabled:   true,
-					SecretRedactionEnabled:   true,
-				},
-				Anomaly: AnomalyConfig{
-					MaxToolCallsPerTool: 10,
-					MaxTotalToolCalls:   30,
-					MaxRepeatedFailures: 3,
-					ExemptPrefixes:      []string{"todo_"},
-				},
-			},
-		},
+		Runtime: defaultRuntimeConfig(),
+		AI:      defaultAIConfig(),
 		Integrations: IntegrationsConfig{
 			DataStorage: DataStorageConfig{SATokenPath: "/var/run/secrets/kubernetes.io/serviceaccount/token"},
 		},

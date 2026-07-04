@@ -141,24 +141,11 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 		return nil, fmt.Errorf("no circuit breaker configured for issuer: %s", issuerURL)
 	}
 
-	// Return cached keys if still fresh (skip network round-trip)
-	if c.refreshInterval > 0 {
-		c.mu.RLock()
-		entry, hasCached := c.entries[issuerURL]
-		c.mu.RUnlock()
-		if hasCached && entry.keys != nil && time.Since(entry.fetchedAt) < c.refreshInterval {
-			return entry.keys, nil
-		}
+	if keys, ok := c.freshCachedKeys(issuerURL); ok {
+		return keys, nil
 	}
-
-	// SC-5: per-provider fetch rate limiting — return cached keys when throttled
-	if c.fetchLimiter != nil && !c.fetchLimiter.AllowFetch(issuerURL) {
-		c.mu.RLock()
-		entry, hasCached := c.entries[issuerURL]
-		c.mu.RUnlock()
-		if hasCached && entry.keys != nil {
-			return entry.keys, nil
-		}
+	if keys, ok := c.throttledCachedKeys(issuerURL); ok {
+		return keys, nil
 	}
 
 	result, err := cb.Execute(func() (*jose.JSONWebKeySet, error) {
@@ -171,7 +158,45 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 		return result, nil
 	}
 
-	// Circuit breaker rejected or fetch failed -- try cached keys with staleness cap
+	return c.staleFallback(issuerURL, cb, err)
+}
+
+// freshCachedKeys returns cached keys when refresh-interval caching is
+// enabled and the cache entry is still within that interval, skipping the
+// network round-trip entirely.
+func (c *JWKSCache) freshCachedKeys(issuerURL string) (*jose.JSONWebKeySet, bool) {
+	if c.refreshInterval <= 0 {
+		return nil, false
+	}
+	c.mu.RLock()
+	entry, hasCached := c.entries[issuerURL]
+	c.mu.RUnlock()
+	if hasCached && entry.keys != nil && time.Since(entry.fetchedAt) < c.refreshInterval {
+		return entry.keys, true
+	}
+	return nil, false
+}
+
+// throttledCachedKeys returns cached keys when SC-5 per-provider fetch rate
+// limiting is throttling this issuer, regardless of staleness (better to
+// serve stale keys than to hammer a rate-limited provider).
+func (c *JWKSCache) throttledCachedKeys(issuerURL string) (*jose.JSONWebKeySet, bool) {
+	if c.fetchLimiter == nil || c.fetchLimiter.AllowFetch(issuerURL) {
+		return nil, false
+	}
+	c.mu.RLock()
+	entry, hasCached := c.entries[issuerURL]
+	c.mu.RUnlock()
+	if hasCached && entry.keys != nil {
+		return entry.keys, true
+	}
+	return nil, false
+}
+
+// staleFallback is invoked when the circuit breaker rejected the call or the
+// fetch itself failed. It tries to serve cached keys within the staleness
+// cap, then falls back to ErrCircuitOpen (breaker open) or the raw fetchErr.
+func (c *JWKSCache) staleFallback(issuerURL string, cb *gobreaker.CircuitBreaker[*jose.JSONWebKeySet], fetchErr error) (*jose.JSONWebKeySet, error) {
 	c.mu.RLock()
 	entry, hasCached := c.entries[issuerURL]
 	c.mu.RUnlock()
@@ -187,7 +212,7 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 		return nil, ErrCircuitOpen
 	}
 
-	return nil, fmt.Errorf("JWKS fetch failed for %s: %w", issuerURL, err)
+	return nil, fmt.Errorf("JWKS fetch failed for %s: %w", issuerURL, fetchErr)
 }
 
 // Healthy returns true if no circuit breaker is in the Open state.

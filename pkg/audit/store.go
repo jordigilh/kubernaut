@@ -372,168 +372,198 @@ func (s *BufferedAuditStore) Close() error {
 // - Flushes partial batches periodically (every FlushInterval)
 // - Retries failed writes with exponential backoff (up to MaxRetries)
 // - Drops batches after max retries (logs for manual investigation)
+// auditWriterLoopState tracks the mutable state threaded through
+// backgroundWriter's select loop iterations (batch contents and flush timing).
+type auditWriterLoopState struct {
+	batch         []*ogenclient.AuditEventRequest
+	lastFlushTime time.Time
+	tickCount     int
+	startTime     time.Time
+}
+
 func (s *BufferedAuditStore) backgroundWriter() {
 	defer s.wg.Done()
 
 	ticker := time.NewTicker(s.config.FlushInterval)
 	defer ticker.Stop()
 
-	startTime := time.Now()
-	lastFlushTime := startTime
-	tickCount := 0
+	state := &auditWriterLoopState{startTime: time.Now()}
+	state.lastFlushTime = state.startTime
 
 	// DEBUG: Log when background writer starts (RO Team request - Dec 27, 2025)
 	s.logger.Info("🚀 Audit background writer started",
 		"flush_interval", s.config.FlushInterval,
 		"batch_size", s.config.BatchSize,
 		"buffer_size", s.config.BufferSize,
-		"start_time", startTime.Format(time.RFC3339Nano))
+		"start_time", state.startTime.Format(time.RFC3339Nano))
 
-	batch := make([]*ogenclient.AuditEventRequest, 0, s.config.BatchSize)
+	state.batch = make([]*ogenclient.AuditEventRequest, 0, s.config.BatchSize)
 
 	for {
 		select {
 		case event, ok := <-s.buffer:
 			if !ok {
-				// Channel closed, flush remaining events
-				if len(batch) > 0 {
-					batchSizeBeforeFlush := len(batch)
-					s.logger.V(1).Info("🛑 Flushing remaining events on shutdown",
-						"batch_size", batchSizeBeforeFlush)
-					s.writeBatchWithRetry(batch)
-					s.logger.Info("✅ Shutdown flush completed",
-						"flushed_count", batchSizeBeforeFlush)
-				}
-				s.logger.Info("🛑 Audit background writer stopped",
-					"total_runtime", time.Since(startTime),
-					"total_ticks", tickCount)
+				s.handleShutdown(state)
 				return
 			}
-
-			// FIX: Moved inside case block - was incorrectly un-indented, causing events to be dropped
-			batch = append(batch, event)
-
-			// Write when batch is full
-			if len(batch) >= s.config.BatchSize {
-				// Capture size BEFORE flushing (AA Team: prevent misleading logs)
-				batchSizeBeforeFlush := len(batch)
-				bufferUtilizationBeforeFlush := len(s.buffer)
-				timeSinceLastFlush := time.Since(lastFlushTime)
-
-				s.logger.V(2).Info("📦 Batch-full flush triggered",
-					"batch_size", batchSizeBeforeFlush,
-					"buffer_utilization", bufferUtilizationBeforeFlush,
-					"time_since_last_flush", timeSinceLastFlush)
-				s.writeBatchWithRetry(batch)
-				lastFlushTime = time.Now()
-				batch = batch[:0] // Reset batch
-				s.logger.V(2).Info("✅ Batch-full flush completed",
-					"flushed_count", batchSizeBeforeFlush,
-					"batch_size_after_flush", len(batch),
-					"buffer_utilization_after_flush", len(s.buffer))
-			}
-
+			s.handleBufferedEvent(state, event)
 		case tickTime := <-ticker.C:
-			tickCount++
-			timeSinceLastFlush := time.Since(lastFlushTime)
-			expectedInterval := s.config.FlushInterval
-			drift := timeSinceLastFlush - expectedInterval
-
-			// Capture batch size BEFORE any flushing (AA Team: prevent misleading logs)
-			// This prevents the "batch_size: 0" confusion that occurred when logging AFTER flush
-			batchSizeBeforeFlush := len(batch)
-			bufferUtilizationBeforeFlush := len(s.buffer)
-
-			// V(2): Demoted from V(1) — per-second ticks drown real signals in
-			// E2E/debug logs. Enable with -v=2 when diagnosing flush timing delays.
-			s.logger.V(2).Info("⏰ Timer tick received",
-				"tick_number", tickCount,
-				"batch_size_before_flush", batchSizeBeforeFlush,
-				"buffer_utilization", bufferUtilizationBeforeFlush,
-				"expected_interval", expectedInterval,
-				"actual_interval", timeSinceLastFlush,
-				"drift", drift,
-				"tick_time", tickTime.Format(time.RFC3339Nano))
-
-			// Warn if tick drift exceeds 5x expected interval (genuine scheduling issue)
-			if timeSinceLastFlush > expectedInterval*5 {
-				s.logger.Error(nil, "🚨 TIMER BUG DETECTED: Tick interval significantly exceeded expected",
-					"expected_interval", expectedInterval,
-					"actual_interval", timeSinceLastFlush,
-					"drift", drift,
-					"drift_multiplier", float64(timeSinceLastFlush)/float64(expectedInterval))
-			}
-
-			// Flush partial batch periodically
-			if batchSizeBeforeFlush > 0 {
-				s.logger.V(2).Info("⏱️  Timer-based flush triggered",
-					"batch_size", batchSizeBeforeFlush,
-					"buffer_utilization", bufferUtilizationBeforeFlush,
-					"time_since_last_flush", timeSinceLastFlush)
-				s.writeBatchWithRetry(batch)
-				lastFlushTime = time.Now()
-				batch = batch[:0]
-				s.logger.V(2).Info("✅ Timer-based flush completed",
-					"flushed_count", batchSizeBeforeFlush,
-					"batch_size_after_flush", len(batch),
-					"buffer_utilization_after_flush", len(s.buffer))
-			} else {
-				// Timer fired but no events to flush
-				s.logger.V(2).Info("⏱️  Timer tick (no events to flush)",
-					"buffer_utilization", bufferUtilizationBeforeFlush,
-					"time_since_last_flush", timeSinceLastFlush)
-				lastFlushTime = time.Now()
-			}
-
+			s.handleFlushTick(state, tickTime)
 		case done := <-s.flushChan:
-			// Explicit flush requested (typically from tests or graceful shutdown prep)
-			initialBatchSize := len(batch)
-			initialBufferSize := len(s.buffer)
-
-			s.logger.V(2).Info("🔄 Processing explicit flush request",
-				"batch_size_before_drain", initialBatchSize,
-				"buffer_size_before_drain", initialBufferSize)
-
-			// BUG FIX (SP-AUDIT-001): Drain s.buffer channel into batch BEFORE flushing
-			// The explicit flush was only writing the batch array, missing events in s.buffer channel
-			// This caused test failures where events were "buffered successfully" but never written
-			drainedCount := 0
-		drainLoop:
-			for {
-				select {
-				case event := <-s.buffer:
-					batch = append(batch, event)
-					drainedCount++
-				default:
-					// Buffer drained (no more events available without blocking)
-					break drainLoop
-				}
-			}
-
-			if drainedCount > 0 {
-				s.logger.V(2).Info("🔄 Drained buffer channel into batch",
-					"drained_count", drainedCount,
-					"batch_size_after_drain", len(batch),
-					"buffer_size_after_drain", len(s.buffer))
-			}
-
-			if len(batch) > 0 {
-				batchSizeBeforeFlush := len(batch)
-				s.writeBatchWithRetry(batch)
-				lastFlushTime = time.Now()
-				batch = batch[:0] // Reset batch
-				s.logger.V(2).Info("✅ Explicit flush completed",
-					"flushed_count", batchSizeBeforeFlush,
-					"drained_from_buffer", drainedCount,
-					"buffer_size_after", len(s.buffer))
-				done <- nil // Signal success
-			} else {
-				s.logger.V(2).Info("✅ Explicit flush completed (no events to flush)",
-					"buffer_was_empty", initialBufferSize == 0)
-				done <- nil // Signal success (nothing to flush)
-			}
+			s.handleExplicitFlush(state, done)
 		}
 	}
+}
+
+// handleShutdown flushes any remaining batched events when the buffer
+// channel is closed, then logs final background-writer statistics.
+func (s *BufferedAuditStore) handleShutdown(state *auditWriterLoopState) {
+	if len(state.batch) > 0 {
+		batchSizeBeforeFlush := len(state.batch)
+		s.logger.V(1).Info("🛑 Flushing remaining events on shutdown",
+			"batch_size", batchSizeBeforeFlush)
+		s.writeBatchWithRetry(state.batch)
+		s.logger.Info("✅ Shutdown flush completed",
+			"flushed_count", batchSizeBeforeFlush)
+	}
+	s.logger.Info("🛑 Audit background writer stopped",
+		"total_runtime", time.Since(state.startTime),
+		"total_ticks", state.tickCount)
+}
+
+// handleBufferedEvent appends a newly received event to the batch and
+// flushes immediately once the batch reaches its configured size.
+func (s *BufferedAuditStore) handleBufferedEvent(state *auditWriterLoopState, event *ogenclient.AuditEventRequest) {
+	// FIX: Moved inside case block - was incorrectly un-indented, causing events to be dropped
+	state.batch = append(state.batch, event)
+
+	if len(state.batch) < s.config.BatchSize {
+		return
+	}
+
+	// Capture size BEFORE flushing (AA Team: prevent misleading logs)
+	batchSizeBeforeFlush := len(state.batch)
+	bufferUtilizationBeforeFlush := len(s.buffer)
+	timeSinceLastFlush := time.Since(state.lastFlushTime)
+
+	s.logger.V(2).Info("📦 Batch-full flush triggered",
+		"batch_size", batchSizeBeforeFlush,
+		"buffer_utilization", bufferUtilizationBeforeFlush,
+		"time_since_last_flush", timeSinceLastFlush)
+	s.writeBatchWithRetry(state.batch)
+	state.lastFlushTime = time.Now()
+	state.batch = state.batch[:0]
+	s.logger.V(2).Info("✅ Batch-full flush completed",
+		"flushed_count", batchSizeBeforeFlush,
+		"batch_size_after_flush", len(state.batch),
+		"buffer_utilization_after_flush", len(s.buffer))
+}
+
+// handleFlushTick logs periodic timer diagnostics and flushes any partial
+// batch when the flush-interval ticker fires.
+func (s *BufferedAuditStore) handleFlushTick(state *auditWriterLoopState, tickTime time.Time) {
+	state.tickCount++
+	timeSinceLastFlush := time.Since(state.lastFlushTime)
+	expectedInterval := s.config.FlushInterval
+	drift := timeSinceLastFlush - expectedInterval
+
+	// Capture batch size BEFORE any flushing (AA Team: prevent misleading logs)
+	// This prevents the "batch_size: 0" confusion that occurred when logging AFTER flush
+	batchSizeBeforeFlush := len(state.batch)
+	bufferUtilizationBeforeFlush := len(s.buffer)
+
+	// V(2): Demoted from V(1) — per-second ticks drown real signals in
+	// E2E/debug logs. Enable with -v=2 when diagnosing flush timing delays.
+	s.logger.V(2).Info("⏰ Timer tick received",
+		"tick_number", state.tickCount,
+		"batch_size_before_flush", batchSizeBeforeFlush,
+		"buffer_utilization", bufferUtilizationBeforeFlush,
+		"expected_interval", expectedInterval,
+		"actual_interval", timeSinceLastFlush,
+		"drift", drift,
+		"tick_time", tickTime.Format(time.RFC3339Nano))
+
+	// Warn if tick drift exceeds 5x expected interval (genuine scheduling issue)
+	if timeSinceLastFlush > expectedInterval*5 {
+		s.logger.Error(nil, "🚨 TIMER BUG DETECTED: Tick interval significantly exceeded expected",
+			"expected_interval", expectedInterval,
+			"actual_interval", timeSinceLastFlush,
+			"drift", drift,
+			"drift_multiplier", float64(timeSinceLastFlush)/float64(expectedInterval))
+	}
+
+	if batchSizeBeforeFlush == 0 {
+		// Timer fired but no events to flush
+		s.logger.V(2).Info("⏱️  Timer tick (no events to flush)",
+			"buffer_utilization", bufferUtilizationBeforeFlush,
+			"time_since_last_flush", timeSinceLastFlush)
+		state.lastFlushTime = time.Now()
+		return
+	}
+
+	s.logger.V(2).Info("⏱️  Timer-based flush triggered",
+		"batch_size", batchSizeBeforeFlush,
+		"buffer_utilization", bufferUtilizationBeforeFlush,
+		"time_since_last_flush", timeSinceLastFlush)
+	s.writeBatchWithRetry(state.batch)
+	state.lastFlushTime = time.Now()
+	state.batch = state.batch[:0]
+	s.logger.V(2).Info("✅ Timer-based flush completed",
+		"flushed_count", batchSizeBeforeFlush,
+		"batch_size_after_flush", len(state.batch),
+		"buffer_utilization_after_flush", len(s.buffer))
+}
+
+// handleExplicitFlush drains any events waiting in the buffer channel into
+// the batch and writes it immediately, signaling completion via done.
+// Explicit flushes are typically requested by tests or graceful shutdown prep.
+func (s *BufferedAuditStore) handleExplicitFlush(state *auditWriterLoopState, done chan<- error) {
+	initialBatchSize := len(state.batch)
+	initialBufferSize := len(s.buffer)
+
+	s.logger.V(2).Info("🔄 Processing explicit flush request",
+		"batch_size_before_drain", initialBatchSize,
+		"buffer_size_before_drain", initialBufferSize)
+
+	// BUG FIX (SP-AUDIT-001): Drain s.buffer channel into batch BEFORE flushing
+	// The explicit flush was only writing the batch array, missing events in s.buffer channel
+	// This caused test failures where events were "buffered successfully" but never written
+	drainedCount := 0
+drainLoop:
+	for {
+		select {
+		case event := <-s.buffer:
+			state.batch = append(state.batch, event)
+			drainedCount++
+		default:
+			// Buffer drained (no more events available without blocking)
+			break drainLoop
+		}
+	}
+
+	if drainedCount > 0 {
+		s.logger.V(2).Info("🔄 Drained buffer channel into batch",
+			"drained_count", drainedCount,
+			"batch_size_after_drain", len(state.batch),
+			"buffer_size_after_drain", len(s.buffer))
+	}
+
+	if len(state.batch) == 0 {
+		s.logger.V(2).Info("✅ Explicit flush completed (no events to flush)",
+			"buffer_was_empty", initialBufferSize == 0)
+		done <- nil // Signal success (nothing to flush)
+		return
+	}
+
+	batchSizeBeforeFlush := len(state.batch)
+	s.writeBatchWithRetry(state.batch)
+	state.lastFlushTime = time.Now()
+	state.batch = state.batch[:0]
+	s.logger.V(2).Info("✅ Explicit flush completed",
+		"flushed_count", batchSizeBeforeFlush,
+		"drained_from_buffer", drainedCount,
+		"buffer_size_after", len(s.buffer))
+	done <- nil // Signal success
 }
 
 // writeBatchWithRetryBackoff configures the exponential backoff (with jitter)

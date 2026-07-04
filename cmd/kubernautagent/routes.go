@@ -179,46 +179,57 @@ func registerAPIRoutes(r chi.Router, ctx context.Context, p apiRoutesParams) (*m
 		}
 
 		if p.cfg.Interactive.Enabled {
-			var mcpHandler http.Handler
-			mcpHandler, sessionDrainer = buildMCPHandler(ctx, mcpHandlerParams{
-				cfg: p.cfg, infra: p.infra, ds: p.ds, inv: p.inv, enricher: p.enricher,
-				autoMgr: p.mgr, authMw: authMw, agentMetrics: p.agentMetrics,
-				auditStore: p.instrumentedAudit, logger: p.logger,
-			})
-			if mcpHandler != nil {
-				// SEC-02: Per-user rate limiting for MCP interactive endpoint.
-				userRL := kaserver.NewUserRateLimiter(
-					kaserver.DefaultUserRateLimitConfig(p.cfg.Interactive.RateLimitPerUser),
-					p.agentMetrics.HTTPRateLimitedTotal,
-				)
-				defer userRL.Stop()
-
-				r.Route("/mcp", func(mcpRouter chi.Router) {
-					mcpRouter.Use(userRL.Middleware)
-					mcpRouter.Handle("/", kaserver.SSEHeadersMiddleware(mcpHandler))
-					mcpRouter.Handle("/*", kaserver.SSEHeadersMiddleware(mcpHandler))
-				})
-				p.interactiveReadiness.SetEnabled()
-				if p.eventEmitter != nil {
-					p.eventEmitter.EmitInteractiveEnabled()
-				}
-				p.logger.Info("MCP interactive route mounted",
-					"path", "/api/v1/mcp",
-					"rateLimitPerUser", p.cfg.Interactive.RateLimitPerUser,
-				)
-			} else {
-				p.interactiveReadiness.SetSoftDisabled("handler construction failed (check preceding errors)")
-				if p.eventEmitter != nil {
-					p.eventEmitter.EmitInteractiveSoftDisabled("MCP handler construction failed")
-				}
-				p.logger.Error(nil, "MCP interactive mode enabled but handler construction failed (check preceding errors)")
-			}
+			sessionDrainer = mountInteractiveMCPRoute(r, ctx, p, authMw)
 		}
 
 		r.Handle("/*", kaserver.SSEHeadersMiddleware(p.ogenSrv))
 	})
 
 	return sessionDrainer, authCleanupRef
+}
+
+// mountInteractiveMCPRoute builds the MCP interactive handler and, on
+// success, mounts it under /api/v1/mcp with per-user rate limiting (SEC-02),
+// signaling interactive readiness accordingly. On handler construction
+// failure, marks interactive readiness as soft-disabled instead of mounting
+// the route. Returns the session drainer for graceful shutdown (nil when
+// construction failed).
+func mountInteractiveMCPRoute(r chi.Router, ctx context.Context, p apiRoutesParams, authMw *auth.Middleware) *mcpkg.SessionDrainer {
+	mcpHandler, sessionDrainer := buildMCPHandler(ctx, mcpHandlerParams{
+		cfg: p.cfg, infra: p.infra, ds: p.ds, inv: p.inv, enricher: p.enricher,
+		autoMgr: p.mgr, authMw: authMw, agentMetrics: p.agentMetrics,
+		auditStore: p.instrumentedAudit, logger: p.logger,
+	})
+	if mcpHandler == nil {
+		p.interactiveReadiness.SetSoftDisabled("handler construction failed (check preceding errors)")
+		if p.eventEmitter != nil {
+			p.eventEmitter.EmitInteractiveSoftDisabled("MCP handler construction failed")
+		}
+		p.logger.Error(nil, "MCP interactive mode enabled but handler construction failed (check preceding errors)")
+		return nil
+	}
+
+	// SEC-02: Per-user rate limiting for MCP interactive endpoint.
+	userRL := kaserver.NewUserRateLimiter(
+		kaserver.DefaultUserRateLimitConfig(p.cfg.Interactive.RateLimitPerUser),
+		p.agentMetrics.HTTPRateLimitedTotal,
+	)
+	defer userRL.Stop()
+
+	r.Route("/mcp", func(mcpRouter chi.Router) {
+		mcpRouter.Use(userRL.Middleware)
+		mcpRouter.Handle("/", kaserver.SSEHeadersMiddleware(mcpHandler))
+		mcpRouter.Handle("/*", kaserver.SSEHeadersMiddleware(mcpHandler))
+	})
+	p.interactiveReadiness.SetEnabled()
+	if p.eventEmitter != nil {
+		p.eventEmitter.EmitInteractiveEnabled()
+	}
+	p.logger.Info("MCP interactive route mounted",
+		"path", "/api/v1/mcp",
+		"rateLimitPerUser", p.cfg.Interactive.RateLimitPerUser,
+	)
+	return sessionDrainer
 }
 
 // mcpHandlerParams groups the dependencies needed to build the MCP
@@ -237,24 +248,70 @@ type mcpHandlerParams struct {
 	logger       logr.Logger
 }
 
-// buildMCPHandler constructs the fully-wired MCP interactive handler with all
-// tools registered. Returns nil if prerequisites are missing (K8s infra or DS).
-// PR6a: Production wiring for MCP interactive mode (BR-INTERACTIVE-001..008).
-func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mcpkg.SessionDrainer) {
-	cfg, infra, ds, inv, enricher, autoMgr, authMw, agentMetrics, auditStore, logger :=
-		p.cfg, p.infra, p.ds, p.inv, p.enricher, p.autoMgr, p.authMw, p.agentMetrics, p.auditStore, p.logger
-
-	if !checkMCPPrerequisites(p) {
-		return nil, nil
+// resolveContextReconstructor returns the DS-backed ContextReconstructor
+// when DS is available, or a no-op fail-open implementation otherwise.
+func resolveContextReconstructor(ds *dsClients, logger logr.Logger) mcpkg.ContextReconstructor {
+	if ds == nil {
+		logger.Info("MCP interactive mode: DS unavailable — context reconstruction disabled")
+		return &noopReconstructor{}
 	}
+	return mcpkg.NewDSContextReconstructor(ds.ogenClient, 10*time.Second, logger)
+}
+
+// resolveWorkflowQuerier returns the DS-backed WorkflowQuerier when DS is
+// available, or a no-op fail-open implementation otherwise (mirrors
+// resolveContextReconstructor's fail-open pattern).
+func resolveWorkflowQuerier(ds *dsClients, logger logr.Logger) wfclient.WorkflowQuerier {
+	if ds == nil {
+		logger.Info("MCP interactive mode: DS unavailable — workflow catalog lookups disabled")
+		return &noopWorkflowQuerier{}
+	}
+	return wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
+}
+
+// resolveMCPTimeouts applies the DefaultMCPKeepAlive/DefaultMCPSessionTimeout
+// fallbacks for any zero-valued interactive config timeouts.
+func resolveMCPTimeouts(cfg *kaconfig.Config) (keepAlive, sessionTimeout time.Duration) {
+	keepAlive = cfg.Interactive.MCPKeepAlive
+	if keepAlive == 0 {
+		keepAlive = kaconfig.DefaultMCPKeepAlive
+	}
+	sessionTimeout = cfg.Interactive.MCPSessionTimeout
+	if sessionTimeout == 0 {
+		sessionTimeout = kaconfig.DefaultMCPSessionTimeout
+	}
+	return keepAlive, sessionTimeout
+}
+
+// mcpCoreDeps groups the session/lease/timeout/reconstruction/disconnect
+// infrastructure built once at MCP interactive-handler construction time by
+// buildMCPCoreDeps, and consumed by the remainder of buildMCPHandler.
+type mcpCoreDeps struct {
+	ctrlCli           ctrlclient.Client
+	namespace         string
+	leaseMgr          *mcpkg.LeaseSessionManager
+	recon             mcpkg.ContextReconstructor
+	eventStore        *mcpkg.DelegatingEventStore
+	timeoutMgr        *mcpkg.TimeoutManager
+	disconnectHandler *mcpkg.GracefulSessionClosedHandler
+}
+
+// buildMCPCoreDeps wires the controller-runtime client (SEC-07), the
+// K8s-Lease-backed session manager, context reconstruction, the SDK event
+// store, the inactivity TimeoutManager (SEC-04, HARM-03/04), and the
+// GracefulSessionClosedHandler (BR-INTERACTIVE-001) — including its
+// reconnect callback (#1442) and background Run goroutine. Returns an error
+// when the controller-runtime client cannot be constructed.
+func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, error) {
+	cfg, infra, ds, inv, autoMgr, agentMetrics, auditStore, logger :=
+		p.cfg, p.infra, p.ds, p.inv, p.autoMgr, p.agentMetrics, p.auditStore, p.logger
 
 	// SEC-07: Build controller-runtime client with MCP-specific timeouts.
 	// Scheme includes remediationv1 for RR existence validation (HARM-004)
 	// and future NL signal intake (#714).
 	ctrlCli, err := buildMCPControllerClient(infra)
 	if err != nil {
-		logger.Error(err, "MCP interactive mode: failed to create controller-runtime client")
-		return nil, nil
+		return nil, err
 	}
 
 	namespace := detectNamespace()
@@ -268,13 +325,7 @@ func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mc
 	leaseMgr := buildMCPLeaseManager(ctrlCli, namespace, cfg, autoMgr, agentMetrics, logger, emitDisconnectAudit)
 
 	// Context reconstruction from DS audit events (best-effort).
-	var recon mcpkg.ContextReconstructor
-	if ds != nil {
-		recon = mcpkg.NewDSContextReconstructor(ds.ogenClient, 10*time.Second, logger)
-	} else {
-		recon = &noopReconstructor{}
-		logger.Info("MCP interactive mode: DS unavailable — context reconstruction disabled")
-	}
+	recon := resolveContextReconstructor(ds, logger)
 
 	// DelegatingEventStore: bridges MCP SDK session lifecycle to our disconnect
 	// handler. Wraps SDK's MemoryEventStore for stream resumption support.
@@ -320,6 +371,21 @@ func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mc
 	// Start disconnect handler goroutine.
 	go disconnectHandler.Run(ctx)
 
+	return &mcpCoreDeps{
+		ctrlCli: ctrlCli, namespace: namespace, leaseMgr: leaseMgr, recon: recon,
+		eventStore: eventStore, timeoutMgr: timeoutMgr, disconnectHandler: disconnectHandler,
+	}, nil
+}
+
+// buildAndRegisterMCPTools constructs the InvestigateTool, SelectWorkflowTool,
+// and CompleteNoActionTool (with their shared rate-limiter, RR-existence
+// checker, signal-context resolver, and workflow-catalog adapter), then
+// registers them with the MCP SDK server. Returns the registered ToolDeps
+// and the SessionNotifier (needed later for the session drainer).
+func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.ToolDeps, *mcpkg.SessionNotifier) {
+	cfg, ds, inv, enricher, autoMgr, agentMetrics, auditStore, logger :=
+		p.cfg, p.ds, p.inv, p.enricher, p.autoMgr, p.agentMetrics, p.auditStore, p.logger
+
 	// Build the InvestigatorRunner adapter.
 	investigatorRunner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
 
@@ -330,36 +396,30 @@ func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mc
 	sessionNotifier := mcpkg.NewSessionNotifier()
 
 	// HARM-004: Validate RR existence before creating interactive Leases.
-	rrChecker := mcptools.NewK8sRRExistenceChecker(ctrlCli, namespace)
+	rrChecker := mcptools.NewK8sRRExistenceChecker(core.ctrlCli, core.namespace)
 
 	// Signal context resolver: reads the SignalContext stored on the session
 	// from the original AA IncidentRequest payload. Falls back to reading
 	// the RR CRD for sessions without stored signal (e.g. interactive sessions
 	// started directly via MCP without an AA payload).
-	signalResolver := mcpadapters.NewSessionSignalContextResolver(autoMgr, ctrlCli, namespace)
+	signalResolver := mcpadapters.NewSessionSignalContextResolver(autoMgr, core.ctrlCli, core.namespace)
 
 	// Build the WorkflowCatalog adapter (shared between InvestigateTool and SelectWorkflowTool).
 	// DS is optional at startup (same fail-open contract as recon above and
 	// buildToolRegistry/readinessHandler elsewhere in this package): when
 	// unavailable, catalog lookups fail per-call with a clear error instead
 	// of panicking the whole MCP interactive-mode handler at construction.
-	var wfQuerier wfclient.WorkflowQuerier
-	if ds != nil {
-		wfQuerier = wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
-	} else {
-		wfQuerier = &noopWorkflowQuerier{}
-		logger.Info("MCP interactive mode: DS unavailable — workflow catalog lookups disabled")
-	}
+	wfQuerier := resolveWorkflowQuerier(ds, logger)
 	catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
 
 	investigateTool, selectWfTool, completeNoActionTool := buildMCPTools(mcpToolsDeps{
-		leaseMgr:           leaseMgr,
+		leaseMgr:           core.leaseMgr,
 		investigatorRunner: investigatorRunner,
-		recon:              recon,
+		recon:              core.recon,
 		autoMgr:            autoMgr,
 		agentMetrics:       agentMetrics,
 		sessionRateLimiter: sessionRateLimiter,
-		timeoutMgr:         timeoutMgr,
+		timeoutMgr:         core.timeoutMgr,
 		sessionNotifier:    sessionNotifier,
 		rrChecker:          rrChecker,
 		auditStore:         auditStore,
@@ -371,35 +431,48 @@ func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mc
 
 	// Register tools with the MCP SDK server.
 	toolDeps := mcpkg.ToolDeps{}
-	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, eventStore, sessionNotifier, logger)
+	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, core.eventStore, sessionNotifier, logger)
 	toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool, logger)
 	toolDeps.CompleteNoAction = mcptools.CompleteNoActionRegistration(completeNoActionTool, logger)
+	return toolDeps, sessionNotifier
+}
 
-	mcpKeepAlive := cfg.Interactive.MCPKeepAlive
-	if mcpKeepAlive == 0 {
-		mcpKeepAlive = kaconfig.DefaultMCPKeepAlive
+// buildMCPHandler constructs the fully-wired MCP interactive handler with all
+// tools registered. Returns nil if prerequisites are missing (K8s infra or DS).
+// PR6a: Production wiring for MCP interactive mode (BR-INTERACTIVE-001..008).
+func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mcpkg.SessionDrainer) {
+	cfg, authMw, auditStore, logger := p.cfg, p.authMw, p.auditStore, p.logger
+
+	if !checkMCPPrerequisites(p) {
+		return nil, nil
 	}
-	mcpSessionTimeout := cfg.Interactive.MCPSessionTimeout
-	if mcpSessionTimeout == 0 {
-		mcpSessionTimeout = kaconfig.DefaultMCPSessionTimeout
+
+	core, err := buildMCPCoreDeps(ctx, p)
+	if err != nil {
+		logger.Error(err, "MCP interactive mode: failed to create controller-runtime client")
+		return nil, nil
 	}
+
+	toolDeps, sessionNotifier := buildAndRegisterMCPTools(core, p)
+
+	mcpKeepAlive, mcpSessionTimeout := resolveMCPTimeouts(cfg)
 	mcpHandler, _ := mcpkg.BootstrapMCP(mcpkg.MCPDeps{
 		AuthMiddleware: func(next http.Handler) http.Handler {
 			return kaserver.AuditAuthMiddleware(authMw.Handler(next), auditStore, logger)
 		},
 		Tools:          toolDeps,
-		EventStore:     eventStore,
+		EventStore:     core.eventStore,
 		KeepAlive:      mcpKeepAlive,
 		SessionTimeout: mcpSessionTimeout,
 	})
 
-	drainer := mcpkg.NewSessionDrainer(leaseMgr, sessionNotifier, logger.WithName("session-drainer"))
+	drainer := mcpkg.NewSessionDrainer(core.leaseMgr, sessionNotifier, logger.WithName("session-drainer"))
 
 	logger.Info("MCP interactive mode fully wired",
 		"investigate", true,
 		"select_workflow", true,
 		"complete_no_action", true,
-		"enrichment_in_select_workflow", enricher != nil,
+		"enrichment_in_select_workflow", p.enricher != nil,
 		"event_store", true,
 		"timeout_manager", true,
 		"disconnect_handler", true,

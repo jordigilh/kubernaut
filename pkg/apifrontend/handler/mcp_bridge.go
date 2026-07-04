@@ -419,49 +419,25 @@ func registerTool[In any](srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.
 func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName string, handler func(context.Context, In) (any, error)) mcp.ToolHandlerFor[In, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input In) (toolResult *mcp.CallToolResult, extra any, retErr error) {
 		start := time.Now()
-		resultLabel := "success"
 
 		defer func() {
 			if r := recover(); r != nil {
-				resultLabel = "panic"
-				recordMetrics(cfg, toolName, resultLabel, start)
+				recordMetrics(cfg, toolName, "panic", start)
 				emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "internal error"})
 				cfg.Logger.Error(fmt.Errorf("panic: %v", r), "tool handler panicked",
 					"tool", toolName, "user", usernameFromCtx(ctx))
-				toolResult = &mcp.CallToolResult{
-					Content: []mcp.Content{&mcp.TextContent{Text: "internal error"}},
-					IsError: true,
-				}
+				toolResult = toolErrorResult("internal error")
 			}
 		}()
 
 		// RBAC enforcement at runtime
 		if err := checkRBAC(ctx, cfg, toolName); err != nil {
-			resultLabel = "denied"
-			recordMetrics(cfg, toolName, resultLabel, start)
-			emitAudit(ctx, cfg, toolName, audit.EventAuthAccessDenied, nil)
-			cfg.Logger.Info("tool call denied by RBAC",
-				"tool", toolName, "user", usernameFromCtx(ctx))
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}},
-				IsError: true,
-			}, nil, nil
+			return denyRBAC(ctx, cfg, toolName, start, err), nil, nil
 		}
 
 		// Per-user tool call rate limiting
-		if cfg.UserLimiter != nil {
-			username := usernameFromCtx(ctx)
-			if !cfg.UserLimiter.AllowToolCall(username) {
-				resultLabel = "rate_limited"
-				recordMetrics(cfg, toolName, resultLabel, start)
-				emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "rate_limited"})
-				cfg.Logger.Info("tool call rate limited",
-					"tool", toolName, "user", username)
-				return &mcp.CallToolResult{
-					Content: []mcp.Content{&mcp.TextContent{Text: "rate limit exceeded — too many tool calls per minute, please retry later"}},
-					IsError: true,
-				}, nil, nil
-			}
+		if cfg.UserLimiter != nil && !cfg.UserLimiter.AllowToolCall(usernameFromCtx(ctx)) {
+			return denyRateLimited(ctx, cfg, toolName, start), nil, nil
 		}
 
 		// Timeout enforcement — covers semaphore wait + tool execution
@@ -470,76 +446,114 @@ func wrapTool[In any](cfg *MCPBridgeConfig, sem *semaphore.Weighted, toolName st
 
 		// Semaphore for per-session concurrency limiting
 		if err := sem.Acquire(toolCtx, 1); err != nil {
-			resultLabel = "throttled"
-			recordMetrics(cfg, toolName, resultLabel, start)
-			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "throttled"})
-			cfg.Logger.Info("tool call throttled",
-				"tool", toolName, "user", usernameFromCtx(ctx))
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "server busy — too many concurrent tool calls, please retry"}},
-				IsError: true,
-			}, nil, nil
+			return denyThrottled(ctx, cfg, toolName, start), nil, nil
 		}
 		defer sem.Release(1)
 
 		// Execute handler
 		result, err := handler(toolCtx, input)
 		if err != nil {
-			if toolCtx.Err() != nil {
-				resultLabel = "timeout"
-			} else {
-				resultLabel = "error"
-			}
-			recordMetrics(cfg, toolName, resultLabel, start)
-			redacted := security.RedactError(err)
-			errDetail := map[string]string{"error": redacted}
-			enrichAuditFromArgs(errDetail, input)
-			if cfg.Namespace != "" {
-				errDetail["namespace"] = cfg.Namespace
-			}
-			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, errDetail)
-			cfg.Logger.Error(err, "tool call failed",
-				"tool", toolName, "result", resultLabel, "user", usernameFromCtx(ctx))
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: redacted}},
-				IsError: true,
-			}, nil, nil
+			errResult, _ := handleToolExecError(ctx, toolCtx, cfg, toolName, start, input, err)
+			return errResult, nil, nil
 		}
 
 		// Marshal result to JSON text
 		resultJSON, err := json.Marshal(result)
 		if err != nil {
-			resultLabel = "error"
-			recordMetrics(cfg, toolName, resultLabel, start)
-			emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "marshal failure"})
-			cfg.Logger.Error(err, "tool result marshal failed",
-				"tool", toolName, "user", usernameFromCtx(ctx))
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{&mcp.TextContent{Text: "internal error: failed to marshal result"}},
-				IsError: true,
-			}, nil, nil
+			return handleMarshalError(ctx, cfg, toolName, start, err), nil, nil
 		}
 
-		durationMs := fmt.Sprintf("%d", time.Since(start).Milliseconds())
-		recordMetrics(cfg, toolName, resultLabel, start)
-		auditDetail := map[string]string{
-			"tool_outcome":          "success",
-			"execution_duration_ms": durationMs,
-		}
-		enrichAuditFromArgs(auditDetail, input)
-		if cfg.Namespace != "" {
-			auditDetail["namespace"] = cfg.Namespace
-		}
-		emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail)
-		cfg.Logger.Info("tool call succeeded",
-			"tool", toolName,
-			"user", usernameFromCtx(ctx),
-			"duration_ms", durationMs,
-		)
+		return handleToolSuccess(ctx, cfg, toolName, start, input, resultJSON), nil, nil
+	}
+}
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}},
-		}, nil, nil
+// denyRBAC builds the response for an RBAC-denied tool call, recording
+// metrics/audit/logging as a side effect.
+func denyRBAC(ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, err error) *mcp.CallToolResult {
+	recordMetrics(cfg, toolName, "denied", start)
+	emitAudit(ctx, cfg, toolName, audit.EventAuthAccessDenied, nil)
+	cfg.Logger.Info("tool call denied by RBAC", "tool", toolName, "user", usernameFromCtx(ctx))
+	return toolErrorResult(err.Error())
+}
+
+// denyRateLimited builds the response for a per-user rate-limited tool call.
+func denyRateLimited(ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time) *mcp.CallToolResult {
+	username := usernameFromCtx(ctx)
+	recordMetrics(cfg, toolName, "rate_limited", start)
+	emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "rate_limited"})
+	cfg.Logger.Info("tool call rate limited", "tool", toolName, "user", username)
+	return toolErrorResult("rate limit exceeded — too many tool calls per minute, please retry later")
+}
+
+// denyThrottled builds the response for a concurrency-throttled tool call
+// (per-session semaphore exhausted).
+func denyThrottled(ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time) *mcp.CallToolResult {
+	recordMetrics(cfg, toolName, "throttled", start)
+	emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "throttled"})
+	cfg.Logger.Info("tool call throttled", "tool", toolName, "user", usernameFromCtx(ctx))
+	return toolErrorResult("server busy — too many concurrent tool calls, please retry")
+}
+
+// handleToolExecError builds the response for a failed tool handler
+// invocation, classifying the failure as "timeout" (toolCtx deadline
+// exceeded/cancelled) or "error" otherwise. Returns the response and the
+// resultLabel the caller should record for its own bookkeeping.
+func handleToolExecError[In any](ctx, toolCtx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, err error) (*mcp.CallToolResult, string) {
+	resultLabel := "error"
+	if toolCtx.Err() != nil {
+		resultLabel = "timeout"
+	}
+	recordMetrics(cfg, toolName, resultLabel, start)
+	redacted := security.RedactError(err)
+	errDetail := map[string]string{"error": redacted}
+	enrichAuditFromArgs(errDetail, input)
+	if cfg.Namespace != "" {
+		errDetail["namespace"] = cfg.Namespace
+	}
+	emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, errDetail)
+	cfg.Logger.Error(err, "tool call failed",
+		"tool", toolName, "result", resultLabel, "user", usernameFromCtx(ctx))
+	return toolErrorResult(redacted), resultLabel
+}
+
+// handleMarshalError builds the response for a tool result that failed to
+// marshal to JSON (should not normally happen; indicates a bug in the tool).
+func handleMarshalError(ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, err error) *mcp.CallToolResult {
+	recordMetrics(cfg, toolName, "error", start)
+	emitAudit(ctx, cfg, toolName, audit.EventMCPToolFailed, map[string]string{"error": "marshal failure"})
+	cfg.Logger.Error(err, "tool result marshal failed", "tool", toolName, "user", usernameFromCtx(ctx))
+	return toolErrorResult("internal error: failed to marshal result")
+}
+
+// handleToolSuccess builds the response for a successful tool call.
+func handleToolSuccess[In any](ctx context.Context, cfg *MCPBridgeConfig, toolName string, start time.Time, input In, resultJSON []byte) *mcp.CallToolResult {
+	durationMs := fmt.Sprintf("%d", time.Since(start).Milliseconds())
+	recordMetrics(cfg, toolName, "success", start)
+	auditDetail := map[string]string{
+		"tool_outcome":          "success",
+		"execution_duration_ms": durationMs,
+	}
+	enrichAuditFromArgs(auditDetail, input)
+	if cfg.Namespace != "" {
+		auditDetail["namespace"] = cfg.Namespace
+	}
+	emitAudit(ctx, cfg, toolName, audit.EventToolExecuted, auditDetail)
+	cfg.Logger.Info("tool call succeeded",
+		"tool", toolName,
+		"user", usernameFromCtx(ctx),
+		"duration_ms", durationMs,
+	)
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: string(resultJSON)}},
+	}
+}
+
+// toolErrorResult builds an error CallToolResult with the given user-facing
+// text.
+func toolErrorResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
+		IsError: true,
 	}
 }
 

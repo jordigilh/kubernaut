@@ -129,52 +129,17 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 	if d.Client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
 	}
-	if err := validate.Namespace(d.ControllerNS); err != nil {
-		return CreateRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-	}
-	if args.ClusterScoped {
-		if args.Namespace != "" {
-			return CreateRRResult{}, fmt.Errorf("%w: cluster-scoped resources must have empty namespace", ErrInvalidInput)
-		}
-	} else {
-		if err := validate.Namespace(args.Namespace); err != nil {
-			return CreateRRResult{}, fmt.Errorf("%w: workload namespace: %w", ErrInvalidInput, err)
-		}
-	}
-	if err := validate.Kind(args.Kind); err != nil {
-		return CreateRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-	}
-	if args.Name == "" {
-		return CreateRRResult{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
-	}
-	if args.APIVersion != "" {
-		if err := validate.APIVersion(args.APIVersion); err != nil {
-			return CreateRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-		}
+	if err := validateCreateRRArgs(d, args); err != nil {
+		return CreateRRResult{}, err
 	}
 
 	if len(args.Description) > maxDescriptionLen {
 		args.Description = args.Description[:maxDescriptionLen]
 	}
 
-	resolvedSeverity := "warning"
-	var triageResult *severity.TriageResult
-	if d.Triager != nil {
-		input := severity.TriageInput{
-			Namespace:   args.Namespace,
-			Kind:        args.Kind,
-			Name:        args.Name,
-			Description: args.Description,
-			Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
-		}
-		result, err := d.Triager.Triage(ctx, input)
-		if err != nil {
-			return CreateRRResult{}, fmt.Errorf("severity triage failed: %w", err)
-		}
-		if result.Severity != "" {
-			resolvedSeverity = result.Severity
-			triageResult = &result
-		}
+	resolvedSeverity, triageResult, err := resolveCreateRRSeverity(ctx, d, args)
+	if err != nil {
+		return CreateRRResult{}, err
 	}
 
 	signalName := args.SignalNameOverride
@@ -184,77 +149,11 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name)
 
 	result, err, _ := rrCreateGroup.Do(fingerprint, func() (interface{}, error) {
-		existing, checkErr := checkExistingRRByFingerprint(ctx, d.Client, d.ControllerNS, fingerprint)
-		if checkErr != nil {
-			return nil, checkErr
-		}
-		if existing.Exists {
-			return &CreateRRResult{
-				RRID:          existing.RRID,
-				Message:       fmt.Sprintf("RemediationRequest already exists (%s)", existing.Phase),
-				AlreadyExists: true,
-				Severity:      existing.Severity,
-			}, nil
-		}
-
-		fpPrefix := fingerprint
-		if len(fpPrefix) > 12 {
-			fpPrefix = fpPrefix[:12]
-		}
-		rrName := fmt.Sprintf("rr-%s-%s", fpPrefix, uuid.New().String()[:8])
-
-		nowTime := metav1.Now()
-
-		rrObj := &remediationv1.RemediationRequest{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      rrName,
-				Namespace: d.ControllerNS,
-			},
-			Spec: remediationv1.RemediationRequestSpec{
-				SignalName:        signalName,
-				SignalSource:      "a2a-agent",
-				SignalType:        "alert",
-				SignalFingerprint: fingerprint,
-				Severity:          resolvedSeverity,
-				FiringTime:        nowTime,
-				ReceivedTime:      nowTime,
-				TargetType:        "kubernetes",
-				TargetResource:    buildTypedTargetResource(args),
-				ClusterID:         args.ClusterID,
-				ClusterName:       args.ClusterName,
-			},
-		}
-
-		if triageResult != nil {
-			rrObj.Spec.SignalLabels = map[string]string{
-				"severity_source": string(triageResult.Source),
-			}
-			if triageResult.AlertName != "" {
-				rrObj.Spec.SignalLabels["severity_alert_name"] = triageResult.AlertName
-			}
-			if triageResult.RuleName != "" {
-				rrObj.Spec.SignalLabels["severity_rule_name"] = triageResult.RuleName
-			}
-		}
-
-		if createErr := d.Client.Create(ctx, rrObj); createErr != nil {
-			return nil, ToUserFriendlyError(createErr)
-		}
-
-		out := &CreateRRResult{
-			RRID:       rrObj.Name,
-			Message:    fmt.Sprintf("RemediationRequest created for %s/%s by %s", args.Kind, args.Name, username),
-			SignalName: signalName,
-		}
-		if triageResult != nil {
-			out.Severity = triageResult.Severity
-			out.SeveritySource = string(triageResult.Source)
-		} else {
-			out.Severity = resolvedSeverity
-		}
-		return out, nil
+		return createOrReuseRR(ctx, d, createRRRequest{
+			Args: args, Username: username, Fingerprint: fingerprint,
+			SignalName: signalName, ResolvedSeverity: resolvedSeverity, TriageResult: triageResult,
+		})
 	})
-
 	if err != nil {
 		return CreateRRResult{}, fmt.Errorf("create RR for %s/%s: %w", args.Kind, args.Name, err)
 	}
@@ -263,36 +162,185 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 		return CreateRRResult{}, fmt.Errorf("create RR: unexpected singleflight result type")
 	}
 
-	if d.Auditor != nil {
-		if res.AlreadyExists {
-			d.Auditor.Emit(ctx, &audit.Event{
-				Type:        audit.EventRRDeduplicated,
-				UserID:      username,
-				ClusterName: args.ClusterName,
-				Detail: map[string]string{
-					"namespace":   d.ControllerNS,
-					"kind":        args.Kind,
-					"name":        args.Name,
-					"existing_rr": res.RRID,
-				},
-			})
-		} else {
-			d.Auditor.Emit(ctx, &audit.Event{
-				Type:        audit.EventRRCreated,
-				UserID:      username,
-				ClusterName: args.ClusterName,
-				Detail: map[string]string{
-					"namespace": d.ControllerNS,
-					"kind":      args.Kind,
-					"name":      args.Name,
-					"rr_id":     res.RRID,
-					"severity":  resolvedSeverity,
-				},
-			})
+	emitCreateRRAudit(ctx, d, args, username, res, resolvedSeverity)
+	return *res, nil
+}
+
+// validateCreateRRArgs validates all HandleCreateRR inputs, returning a
+// wrapped ErrInvalidInput on the first violation found.
+func validateCreateRRArgs(d *ToolDeps, args *CreateRRArgs) error {
+	if err := validate.Namespace(d.ControllerNS); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if args.ClusterScoped {
+		if args.Namespace != "" {
+			return fmt.Errorf("%w: cluster-scoped resources must have empty namespace", ErrInvalidInput)
+		}
+	} else if err := validate.Namespace(args.Namespace); err != nil {
+		return fmt.Errorf("%w: workload namespace: %w", ErrInvalidInput, err)
+	}
+	if err := validate.Kind(args.Kind); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
+	if args.Name == "" {
+		return fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
+	}
+	if args.APIVersion != "" {
+		if err := validate.APIVersion(args.APIVersion); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}
 	}
+	return nil
+}
 
-	return *res, nil
+// resolveCreateRRSeverity runs the severity-triage pipeline when a Triager is
+// configured, returning the resolved severity (defaulting to "warning") and
+// the triage result (nil if no triager, or triage found no severity signal).
+func resolveCreateRRSeverity(ctx context.Context, d *ToolDeps, args *CreateRRArgs) (string, *severity.TriageResult, error) {
+	if d.Triager == nil {
+		return "warning", nil, nil
+	}
+	input := severity.TriageInput{
+		Namespace:   args.Namespace,
+		Kind:        args.Kind,
+		Name:        args.Name,
+		Description: args.Description,
+		Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+	}
+	result, err := d.Triager.Triage(ctx, input)
+	if err != nil {
+		return "", nil, fmt.Errorf("severity triage failed: %w", err)
+	}
+	if result.Severity == "" {
+		return "warning", nil, nil
+	}
+	return result.Severity, &result, nil
+}
+
+// createRRRequest bundles the resolved signal identity/severity fields
+// createOrReuseRR needs, keeping its parameter count within the argument-limit
+// lint gate.
+type createRRRequest struct {
+	Args             *CreateRRArgs
+	Username         string
+	Fingerprint      string
+	SignalName       string
+	ResolvedSeverity string
+	TriageResult     *severity.TriageResult
+}
+
+// createOrReuseRR is the singleflight-guarded body of HandleCreateRR: it
+// returns the existing RR if one is already active for req's fingerprint,
+// otherwise creates a new RemediationRequest CRD.
+func createOrReuseRR(ctx context.Context, d *ToolDeps, req createRRRequest) (*CreateRRResult, error) {
+	existing, checkErr := checkExistingRRByFingerprint(ctx, d.Client, d.ControllerNS, req.Fingerprint)
+	if checkErr != nil {
+		return nil, checkErr
+	}
+	if existing.Exists {
+		return &CreateRRResult{
+			RRID:          existing.RRID,
+			Message:       fmt.Sprintf("RemediationRequest already exists (%s)", existing.Phase),
+			AlreadyExists: true,
+			Severity:      existing.Severity,
+		}, nil
+	}
+
+	rrObj := buildRRObject(d.ControllerNS, req.Args, req.Fingerprint, req.SignalName, req.ResolvedSeverity, req.TriageResult)
+	if createErr := d.Client.Create(ctx, rrObj); createErr != nil {
+		return nil, ToUserFriendlyError(createErr)
+	}
+
+	out := &CreateRRResult{
+		RRID:       rrObj.Name,
+		Message:    fmt.Sprintf("RemediationRequest created for %s/%s by %s", req.Args.Kind, req.Args.Name, req.Username),
+		SignalName: req.SignalName,
+	}
+	if req.TriageResult != nil {
+		out.Severity = req.TriageResult.Severity
+		out.SeveritySource = string(req.TriageResult.Source)
+	} else {
+		out.Severity = req.ResolvedSeverity
+	}
+	return out, nil
+}
+
+// buildRRObject constructs the RemediationRequest CRD to be created for a new
+// (non-duplicate) signal.
+func buildRRObject(controllerNS string, args *CreateRRArgs, fingerprint, signalName, resolvedSeverity string, triageResult *severity.TriageResult) *remediationv1.RemediationRequest {
+	fpPrefix := fingerprint
+	if len(fpPrefix) > 12 {
+		fpPrefix = fpPrefix[:12]
+	}
+	rrName := fmt.Sprintf("rr-%s-%s", fpPrefix, uuid.New().String()[:8])
+	nowTime := metav1.Now()
+
+	rrObj := &remediationv1.RemediationRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      rrName,
+			Namespace: controllerNS,
+		},
+		Spec: remediationv1.RemediationRequestSpec{
+			SignalName:        signalName,
+			SignalSource:      "a2a-agent",
+			SignalType:        "alert",
+			SignalFingerprint: fingerprint,
+			Severity:          resolvedSeverity,
+			FiringTime:        nowTime,
+			ReceivedTime:      nowTime,
+			TargetType:        "kubernetes",
+			TargetResource:    buildTypedTargetResource(args),
+			ClusterID:         args.ClusterID,
+			ClusterName:       args.ClusterName,
+		},
+	}
+
+	if triageResult != nil {
+		rrObj.Spec.SignalLabels = map[string]string{
+			"severity_source": string(triageResult.Source),
+		}
+		if triageResult.AlertName != "" {
+			rrObj.Spec.SignalLabels["severity_alert_name"] = triageResult.AlertName
+		}
+		if triageResult.RuleName != "" {
+			rrObj.Spec.SignalLabels["severity_rule_name"] = triageResult.RuleName
+		}
+	}
+	return rrObj
+}
+
+// emitCreateRRAudit emits the RR-created or RR-deduplicated audit event, when
+// an auditor is configured.
+func emitCreateRRAudit(ctx context.Context, d *ToolDeps, args *CreateRRArgs, username string, res *CreateRRResult, resolvedSeverity string) {
+	if d.Auditor == nil {
+		return
+	}
+	if res.AlreadyExists {
+		d.Auditor.Emit(ctx, &audit.Event{
+			Type:        audit.EventRRDeduplicated,
+			UserID:      username,
+			ClusterName: args.ClusterName,
+			Detail: map[string]string{
+				"namespace":   d.ControllerNS,
+				"kind":        args.Kind,
+				"name":        args.Name,
+				"existing_rr": res.RRID,
+			},
+		})
+		return
+	}
+	d.Auditor.Emit(ctx, &audit.Event{
+		Type:        audit.EventRRCreated,
+		UserID:      username,
+		ClusterName: args.ClusterName,
+		Detail: map[string]string{
+			"namespace": d.ControllerNS,
+			"kind":      args.Kind,
+			"name":      args.Name,
+			"rr_id":     res.RRID,
+			"severity":  resolvedSeverity,
+		},
+	})
 }
 
 // buildTypedTargetResource constructs the typed ResourceIdentifier for the RR CRD spec.
@@ -314,8 +362,8 @@ func buildTypedTargetResource(args *CreateRRArgs) remediationv1.ResourceIdentifi
 // deriveSignalName selects a grounded signal name using a priority cascade:
 //  1. Triager AlertName (from Prometheus firing/pending alert — most specific)
 //  2. Triager RuleName (from inactive rule match — known rule, not yet firing)
-//  3a. Dominant K8s event reason on the target resource (e.g., Deployment)
-//  3b. Dominant K8s event reason on Pods owned by the target (name-prefix match)
+//     3a. Dominant K8s event reason on the target resource (e.g., Deployment)
+//     3b. Dominant K8s event reason on Pods owned by the target (name-prefix match)
 //  4. Fallback: "unknown" (no grounded infrastructure signal found)
 //
 // The signal name is critical: KA uses it to drive investigation behavior.
@@ -332,49 +380,65 @@ func buildTypedTargetResource(args *CreateRRArgs) remediationv1.ResourceIdentifi
 // events (F-SIG-08): ScalingReplicaSet, Scheduled, Pulled, Created, etc.
 // are not failure signals and would mislead KA's scenario detection.
 func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs, triageResult *severity.TriageResult) string {
-	if triageResult != nil {
-		if triageResult.AlertName != "" {
-			return triageResult.AlertName
-		}
-		if triageResult.RuleName != "" {
-			return triageResult.RuleName
-		}
+	if name := signalNameFromTriage(triageResult); name != "" {
+		return name
 	}
-
-	if client != nil {
-		// Tier 3a: events on the target resource itself (e.g., Deployment)
-		evResult, err := HandleListEvents(ctx, client, ListEventsArgs{
-			Namespace: namespace,
-			Kind:      args.Kind,
-		})
-		if err != nil {
-			logr.FromContextOrDiscard(ctx).Error(err, "deriveSignalName failed to list events", "kind", args.Kind, "namespace", namespace)
-		} else if len(evResult.Events) > 0 {
-			if dominant := DominantEventReason(evResult.Events); dominant != "" {
-				return dominant
-			}
-		}
-
-		// Tier 3b: Pod-level events for pods owned by the target resource.
-		// BackOff, OOMKilled, CrashLoopBackOff are emitted on Pods, not on
-		// the owning Deployment/StatefulSet. Filter by name prefix to scope
-		// to pods belonging to this specific owner.
-		if args.Kind != "Pod" {
-			podResult, err := HandleListEvents(ctx, client, ListEventsArgs{
-				Namespace: namespace,
-				Kind:      "Pod",
-			})
-			if err != nil {
-				logr.FromContextOrDiscard(ctx).Error(err, "deriveSignalName failed to list Pod events", "namespace", namespace)
-			} else if len(podResult.Events) > 0 {
-				related := FilterRelatedPodEvents(podResult.Events, args.Name)
-				if dominant := DominantEventReason(related); dominant != "" {
-					return dominant
-				}
-			}
-		}
+	if client == nil {
+		return "unknown"
 	}
-
+	if name := signalNameFromResourceEvents(ctx, client, namespace, args); name != "" {
+		return name
+	}
+	if name := signalNameFromPodEvents(ctx, client, namespace, args); name != "" {
+		return name
+	}
 	return "unknown"
 }
 
+// signalNameFromTriage returns the alert/rule name from an upstream
+// severity-triage result, if any (highest-priority signal source).
+func signalNameFromTriage(triageResult *severity.TriageResult) string {
+	if triageResult == nil {
+		return ""
+	}
+	if triageResult.AlertName != "" {
+		return triageResult.AlertName
+	}
+	return triageResult.RuleName
+}
+
+// signalNameFromResourceEvents implements Tier 3a: events on the target
+// resource itself (e.g., Deployment). Returns "" if none found.
+func signalNameFromResourceEvents(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs) string {
+	evResult, err := HandleListEvents(ctx, client, ListEventsArgs{
+		Namespace: namespace,
+		Kind:      args.Kind,
+	})
+	if err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "deriveSignalName failed to list events", "kind", args.Kind, "namespace", namespace)
+		return ""
+	}
+	return DominantEventReason(evResult.Events)
+}
+
+// signalNameFromPodEvents implements Tier 3b: Pod-level events for pods
+// owned by the target resource. BackOff, OOMKilled, CrashLoopBackOff are
+// emitted on Pods, not on the owning Deployment/StatefulSet, so this cascade
+// is necessary when Tier 3a finds no operationally significant signal.
+// Filtered by name prefix to scope to pods belonging to this specific owner.
+// Skipped (returns "") when the target resource is already a Pod.
+func signalNameFromPodEvents(ctx context.Context, client dynamic.Interface, namespace string, args *CreateRRArgs) string {
+	if args.Kind == "Pod" {
+		return ""
+	}
+	podResult, err := HandleListEvents(ctx, client, ListEventsArgs{
+		Namespace: namespace,
+		Kind:      "Pod",
+	})
+	if err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "deriveSignalName failed to list Pod events", "namespace", namespace)
+		return ""
+	}
+	related := FilterRelatedPodEvents(podResult.Events, args.Name)
+	return DominantEventReason(related)
+}

@@ -87,20 +87,13 @@ func tektonCRDsAvailable(mapper meta.RESTMapper) bool {
 	return err == nil
 }
 
-func main() {
-	// ========================================
-	// CONFIGURATION LOADING (ADR-030)
-	// Only --config flag is supported. All other settings are in the YAML config file.
-	// ========================================
-	var configPath string
-	flag.StringVar(&configPath, "config", weconfig.DefaultConfigPath, "Path to configuration file (optional, uses defaults if not provided)")
-
-	flag.Parse()
-
-	// Issue #875: Bootstrap logger at INFO for config loading
-	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
-
+// setupWorkflowExecutionConfig loads and validates the WorkflowExecution
+// config (ADR-030), applies the config-driven log level (Issue #875),
+// discovers the controller namespace for CRD watch restriction (ADR-057;
+// PipelineRun and Job are watched in kubernaut-workflows and are not
+// restricted), and builds the controller manager. Exits the process on any
+// failure, matching main()'s original fail-fast behavior.
+func setupWorkflowExecutionConfig(configPath string, atomicLevel zaplog.AtomicLevel) (*weconfig.Config, ctrl.Manager, string) {
 	setupLog.Info("Starting WorkflowExecution Controller",
 		"version", version.Version,
 		"gitCommit", version.GitCommit,
@@ -143,11 +136,18 @@ func main() {
 		"dataStorageURL", cfg.DataStorage.URL,
 	)
 
-	// ========================================
-	// DD-AUDIT-003 P0 MUST: Initialize AuditStore
-	// Per DD-AUDIT-002: Use pkg/audit/ shared library
-	// Per ADR-038: Async buffered audit ingestion
-	// ========================================
+	return cfg, mgr, controllerNS
+}
+
+// initWorkflowExecutionServices initializes the mandatory audit store
+// (DD-AUDIT-003, DD-AUDIT-002, ADR-038; audit is P0/business-critical per
+// ADR-032 §2/§3 — the controller MUST crash if audit is unavailable rather
+// than degrade gracefully), the dependency-injected metrics (DD-METRICS-001),
+// the atomic status manager (DD-PERF-001), the phase manager
+// (CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §1), and the audit manager
+// (CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §7). Exits the process if the
+// audit store cannot be created.
+func initWorkflowExecutionServices(cfg *weconfig.Config, mgr ctrl.Manager) (audit.AuditStore, *wemetrics.Metrics, *westatus.Manager, *wephase.Manager, *weaudit.Manager) {
 	setupLog.Info("Initializing audit store (DD-AUDIT-003, DD-AUDIT-002)",
 		"dataStorageURL", cfg.DataStorage.URL,
 	)
@@ -168,35 +168,38 @@ func main() {
 		"flush_interval", cfg.DataStorage.Buffer.FlushInterval,
 	)
 
-	// ========================================
-	// DD-METRICS-001: Dependency-Injected Metrics
-	// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Metrics MUST be wired to controller
-	// NewMetrics() automatically registers with controller-runtime registry
-	// ========================================
 	weMetrics := wemetrics.NewMetrics()
 	setupLog.Info("WorkflowExecution metrics initialized and registered (DD-METRICS-001)")
 
-	// ========================================
-	// DD-PERF-001: Atomic Status Updates
-	// Status Manager for reducing K8s API calls by 50%+
-	// Consolidates multiple status field updates into single atomic operations
-	// ========================================
 	statusManager := westatus.NewManager(mgr.GetClient())
 	setupLog.Info("WorkflowExecution status manager initialized (DD-PERF-001)")
 
-	// ========================================
-	// CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §1: Phase State Machine (P0)
-	// Phase Manager for validated phase transitions and terminal state checking
-	// ========================================
 	phaseManager := wephase.NewManager()
 	setupLog.Info("WorkflowExecution phase manager initialized (P0: Phase State Machine)")
 
-	// ========================================
-	// CONTROLLER_REFACTORING_PATTERN_LIBRARY.md §7: Audit Manager (P3)
-	// Audit Manager for typed audit event methods and better testability
-	// ========================================
 	auditManager := weaudit.NewManager(auditStore, ctrl.Log.WithName("audit-manager"))
 	setupLog.Info("WorkflowExecution audit manager initialized (P3: Audit Manager)")
+
+	return auditStore, weMetrics, statusManager, phaseManager, auditManager
+}
+
+func main() {
+	// ========================================
+	// CONFIGURATION LOADING (ADR-030)
+	// Only --config flag is supported. All other settings are in the YAML config file.
+	// ========================================
+	var configPath string
+	flag.StringVar(&configPath, "config", weconfig.DefaultConfigPath, "Path to configuration file (optional, uses defaults if not provided)")
+
+	flag.Parse()
+
+	// Issue #875: Bootstrap logger at INFO for config loading
+	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
+
+	cfg, mgr, controllerNS := setupWorkflowExecutionConfig(configPath, atomicLevel)
+
+	auditStore, weMetrics, statusManager, phaseManager, auditManager := initWorkflowExecutionServices(cfg, mgr)
 
 	// Issue #902: Initialize signal context and TLS before executor registry,
 	// so that DefaultBaseTransport() has the CA reloader ready when AWX client

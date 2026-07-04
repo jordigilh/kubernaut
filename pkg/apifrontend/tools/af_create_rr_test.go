@@ -16,6 +16,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
@@ -661,6 +662,69 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(result2.AlreadyExists).To(BeFalse(),
 				"same resource on different clusters should NOT deduplicate")
 			Expect(result2.RRID).NotTo(Equal(result1.RRID))
+		})
+	})
+
+	Describe("Audit trail (CHAR-AF-1532)", func() {
+		It("emits EventRRCreated with severity detail on first creation", func() {
+			tc := newTypedFakeClient()
+			rec := &auditRecorder{}
+
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: "kubernaut-system",
+				Auditor:      rec,
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "audit created", APIVersion: "apps/v1",
+			}, "alice")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlreadyExists).To(BeFalse())
+
+			Expect(rec.events).To(HaveLen(1))
+			ev := rec.events[0]
+			Expect(ev.Type).To(Equal(audit.EventRRCreated))
+			Expect(ev.UserID).To(Equal("alice"))
+			Expect(ev.Detail["rr_id"]).To(Equal(extractRRName(result.RRID)))
+			Expect(ev.Detail["severity"]).To(Equal("warning"))
+			Expect(ev.Detail["kind"]).To(Equal("Deployment"))
+			Expect(ev.Detail["name"]).To(Equal("web"))
+		})
+
+		It("emits EventRRDeduplicated with existing_rr detail when a non-terminal RR already exists", func() {
+			rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+			tc := newTypedFakeClient(rr)
+			rec := &auditRecorder{}
+
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: "prod",
+				Auditor:      rec,
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "audit dedup", APIVersion: "apps/v1",
+			}, "bob")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlreadyExists).To(BeTrue())
+
+			Expect(rec.events).To(HaveLen(1))
+			ev := rec.events[0]
+			Expect(ev.Type).To(Equal(audit.EventRRDeduplicated))
+			Expect(ev.UserID).To(Equal("bob"))
+			Expect(ev.Detail["existing_rr"]).To(Equal(result.RRID))
+		})
+
+		It("does not panic and creates the RR when no Auditor is configured", func() {
+			tc := newTypedFakeClient()
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: "kubernaut-system",
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "no auditor", APIVersion: "apps/v1",
+			}, "carol")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).To(HavePrefix("rr-"))
 		})
 	})
 })

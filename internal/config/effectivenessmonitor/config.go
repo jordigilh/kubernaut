@@ -170,8 +170,26 @@ func (c *Config) Validate() error {
 	if err := c.Logging.Validate(); err != nil {
 		return err
 	}
+	if err := c.validateAssessment(); err != nil {
+		return err
+	}
 
-	// Validate assessment config
+	// Validate DataStorage config (ADR-030)
+	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
+		return err
+	}
+	if err := c.validateController(); err != nil {
+		return err
+	}
+	if err := c.validateExternal(); err != nil {
+		return err
+	}
+
+	return c.Fleet.Validate()
+}
+
+// validateAssessment checks the assessment window and concurrency settings.
+func (c *Config) validateAssessment() error {
 	if c.Assessment.StabilizationWindow < 30*time.Second {
 		return fmt.Errorf("assessment.stabilizationWindow must be at least 30s, got %v", c.Assessment.StabilizationWindow)
 	}
@@ -188,26 +206,30 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("assessment.stabilizationWindow (%v) must be shorter than validityWindow (%v)",
 			c.Assessment.StabilizationWindow, c.Assessment.ValidityWindow)
 	}
-
-	// Validate DataStorage config (ADR-030)
-	if err := sharedconfig.ValidateDataStorageConfig(&c.DataStorage); err != nil {
-		return err
+	if c.Assessment.MaxConcurrentReconciles < 1 {
+		return fmt.Errorf("assessment.maxConcurrentReconciles must be at least 1, got %d", c.Assessment.MaxConcurrentReconciles)
 	}
+	return nil
+}
 
-	// Validate controller config
+// validateController checks the controller's required listen addresses.
+//
+// Issue #484: TLSCaFile is NOT validated at config-load time. On OCP the
+// service-ca operator injects the CA bundle asynchronously; the file may not
+// exist when the process starts. The startup retry loop in main.go waits for
+// it, and the CAReloader hot-reloads changes.
+func (c *Config) validateController() error {
 	if c.Controller.MetricsAddr == "" {
 		return fmt.Errorf("controller.metricsAddr is required")
 	}
 	if c.Controller.HealthProbeAddr == "" {
 		return fmt.Errorf("controller.healthProbeAddr is required")
 	}
+	return nil
+}
 
-	// Issue #484: TLSCaFile is NOT validated at config-load time.
-	// On OCP the service-ca operator injects the CA bundle asynchronously;
-	// the file may not exist when the process starts. The startup retry
-	// loop in main.go waits for it, and the CAReloader hot-reloads changes.
-
-	// Validate external service config
+// validateExternal checks Prometheus/AlertManager connectivity settings.
+func (c *Config) validateExternal() error {
 	if c.External.PrometheusEnabled && c.External.PrometheusURL == "" {
 		return fmt.Errorf("external.prometheusUrl is required when Prometheus is enabled")
 	}
@@ -223,13 +245,5 @@ func (c *Config) Validate() error {
 	if c.External.ScrapeInterval < 5*time.Second {
 		return fmt.Errorf("external.scrapeInterval must be at least 5s, got %v", c.External.ScrapeInterval)
 	}
-	if c.Assessment.MaxConcurrentReconciles < 1 {
-		return fmt.Errorf("assessment.maxConcurrentReconciles must be at least 1, got %d", c.Assessment.MaxConcurrentReconciles)
-	}
-
-	if err := c.Fleet.Validate(); err != nil {
-		return err
-	}
-
 	return nil
 }

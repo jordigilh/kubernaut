@@ -58,50 +58,78 @@ func (rt *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= rt.config.MaxAttempts; attempt++ {
-		if attempt > 1 && req.GetBody != nil {
-			body, err := req.GetBody()
-			if err != nil {
-				return nil, err
-			}
-			req.Body = body
+		if err := rewindRequestBody(req, attempt); err != nil {
+			return nil, err
 		}
 
-		resp, err := rt.next.RoundTrip(req)
-
-		if err == nil && !rt.isRetryableStatus(resp.StatusCode) {
-			return resp, nil
+		resp, retryable, err := rt.attemptRoundTrip(req)
+		if !retryable {
+			return resp, err
 		}
-
-		if err != nil {
-			if !isRetryableError(err) {
-				return nil, err
-			}
-			lastErr = err
-		} else {
-			drainAndClose(resp.Body)
-			lastErr = fmt.Errorf("downstream returned retryable status %d", resp.StatusCode)
-		}
+		lastErr = err
 
 		if !canReplay {
 			return nil, lastErr
 		}
 
 		if attempt < rt.config.MaxAttempts {
-			if rt.config.RetryCounter != nil {
-				rt.config.RetryCounter.WithLabelValues(
-					rt.config.DependencyName,
-					fmt.Sprintf("%d", attempt+1),
-				).Inc()
-			}
-
-			delay := rt.calculateBackoff(attempt)
-			if err2 := sleepWithContext(req.Context(), delay); err2 != nil {
+			if err2 := rt.waitBeforeRetry(req, attempt); err2 != nil {
 				return nil, err2
 			}
 		}
 	}
 
 	return nil, lastErr
+}
+
+// rewindRequestBody re-obtains a fresh, replayable request body via
+// req.GetBody before a retry attempt (a no-op on the first attempt or when
+// the request has no body).
+func rewindRequestBody(req *http.Request, attempt int) error {
+	if attempt <= 1 || req.GetBody == nil {
+		return nil
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return err
+	}
+	req.Body = body
+	return nil
+}
+
+// attemptRoundTrip performs a single RoundTrip attempt. retryable is false
+// when the caller should return (resp, err) immediately (success, or a
+// non-retryable failure); when true, err holds the retryable failure reason
+// (network error or retryable HTTP status) for the caller to track as
+// lastErr.
+func (rt *RetryTransport) attemptRoundTrip(req *http.Request) (resp *http.Response, retryable bool, err error) {
+	resp, err = rt.next.RoundTrip(req)
+
+	if err == nil && !rt.isRetryableStatus(resp.StatusCode) {
+		return resp, false, nil
+	}
+	if err != nil {
+		if !isRetryableError(err) {
+			return nil, false, err
+		}
+		return nil, true, err
+	}
+	drainAndClose(resp.Body)
+	return nil, true, fmt.Errorf("downstream returned retryable status %d", resp.StatusCode)
+}
+
+// waitBeforeRetry records the retry-attempt metric and sleeps for the
+// backoff duration before the next attempt, respecting req's context.
+func (rt *RetryTransport) waitBeforeRetry(req *http.Request, attempt int) error {
+	if rt.config.RetryCounter != nil {
+		rt.config.RetryCounter.WithLabelValues(
+			rt.config.DependencyName,
+			fmt.Sprintf("%d", attempt+1),
+		).Inc()
+	}
+
+	delay := rt.calculateBackoff(attempt)
+	return sleepWithContext(req.Context(), delay)
 }
 
 func (rt *RetryTransport) isRetryableStatus(code int) bool {

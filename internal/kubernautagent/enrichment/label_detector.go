@@ -125,6 +125,15 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 		result.FailedDetections = failed
 	}
 
+	d.logDetectionResult(rootKind, rootName, rootNS, result, quotaSummary)
+
+	return result, quotaSummary, nil
+}
+
+// logDetectionResult emits the V(1) "label detection complete" summary log
+// covering every detected category plus the quota-summary size and any
+// failed detections.
+func (d *LabelDetector) logDetectionResult(rootKind, rootName, rootNS string, result *DetectedLabels, quotaSummary map[string]QuotaResourceUsage) {
 	d.logger.V(1).Info("label detection complete",
 		"root", rootKind+"/"+rootName,
 		"namespace", rootNS,
@@ -144,8 +153,6 @@ func (d *LabelDetector) DetectLabels(ctx context.Context, kind, name, namespace 
 		"quotaSummaryKeys", len(quotaSummary),
 		"failedDetections", result.FailedDetections,
 	)
-
-	return result, quotaSummary, nil
 }
 
 // fetchResource retrieves a resource using scope-aware client dispatch (#762).

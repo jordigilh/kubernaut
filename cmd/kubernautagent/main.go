@@ -32,42 +32,158 @@ import (
 	"github.com/go-logr/logr"
 	"go.uber.org/zap"
 
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	mcpkg "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
+	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
-func main() {
-	var (
-		configPath     string
-		llmRuntimePath string
-		addr           string
-	)
+// parseCLIFlags parses the process command-line flags and returns the
+// static-config path, hot-reloadable LLM-runtime config path, and the
+// optional HTTP listen address override.
+func parseCLIFlags() (configPath, llmRuntimePath, addr string) {
 	flag.StringVar(&configPath, "config", "/etc/kubernautagent/config.yaml", "Path to static YAML configuration file")
 	flag.StringVar(&llmRuntimePath, "llm-runtime", "/etc/kubernautagent/llm-runtime.yaml", "Path to hot-reloadable LLM runtime configuration")
 	flag.StringVar(&addr, "addr", "", "HTTP listen address (overrides config server.port)")
 	flag.Parse()
+	return configPath, llmRuntimePath, addr
+}
 
-	// Bootstrap logger at INFO for startup; replaced after config is loaded (#875).
-	bootstrapLogger := kubelog.NewLogger(kubelog.Options{Level: 0, ServiceName: "kubernaut-agent"})
+// buildDSTokenSource creates the shared #1055 TokenSource used by every
+// DataStorage-bound HTTP client (ogen DS client and audit store), logging a
+// startup warning when the SA token file is not yet present.
+func buildDSTokenSource(cfg *kaconfig.Config, logger logr.Logger) *auth.TokenSource {
+	dsTokenSource := auth.NewTokenSource(cfg.Integrations.DataStorage.SATokenPath)
+	dsTokenSource.SetLogger(logger.WithName("ds-token-source"))
+	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
+		logger.Info("WARNING: SA token file not found at startup, DS/audit API calls will fail auth until file appears",
+			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
+	} else {
+		logger.Info("SA token source configured (shared cache with token refresh)",
+			"token_path", cfg.Integrations.DataStorage.SATokenPath)
+	}
+	return dsTokenSource
+}
 
-	cfg, llmRuntime, logger, atomicLevel := loadStartupConfig(configPath, llmRuntimePath, bootstrapLogger)
-	defer kubelog.Sync(logger)
+// buildRouterAndRateLimiter constructs the chi router and the API rate
+// limiter. The caller is responsible for deferring apiRateLimiter.Stop() in
+// its own scope so the cleanup goroutine lives for the server's lifetime.
+func buildRouterAndRateLimiter(cfg *kaconfig.Config, agentMetrics *kametrics.Metrics, instrumentedAudit audit.AuditStore, logger logr.Logger) (chi.Router, *kaserver.RateLimiter) {
+	r := chi.NewRouter()
+	apiRateLimiter := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
+		RequestsPerSecond: cfg.Runtime.Server.RateLimit.RequestsPerSecond,
+		Burst:             cfg.Runtime.Server.RateLimit.Burst,
+		CleanupInterval:   cfg.Runtime.Server.RateLimit.CleanupInterval,
+		MaxAge:            cfg.Runtime.Server.RateLimit.MaxAge,
+		TrustedProxyCIDRs: cfg.Runtime.Server.RateLimit.TrustedProxyCIDRs,
+	}, agentMetrics.HTTPRateLimitedTotal, kaserver.WithAuditStore(instrumentedAudit, logger))
+	return r, apiRateLimiter
+}
 
-	if addr == "" {
-		addr = fmt.Sprintf("%s:%d", cfg.Runtime.Server.Address, cfg.Runtime.Server.Port)
+// apiServerStartParams groups the dependencies needed to register routes,
+// construct the HTTP server, wire hot-reload, and start serving. Extracted
+// per AGENTS.md's 8+-param Options-pattern rule.
+type apiServerStartParams struct {
+	r                  chi.Router
+	cfg                *kaconfig.Config
+	addr               string
+	llmRuntimePath     string
+	swappable          *llm.SwappableClient
+	phaseResolver      *investigator.DefaultPhaseResolver
+	core               *coreServices
+	inv                *investigator.Investigator
+	mgr                *session.Manager
+	store              *session.Store
+	agentMetrics       *kametrics.Metrics
+	instrumentedAudit  audit.AuditStore
+	ogenSrv            *agentclient.Server
+	apiRateLimiter     *kaserver.RateLimiter
+	maxRequestBodySize int64
+	apiServerReady     *int32
+	logger             logr.Logger
+}
+
+// startAPIServer registers API routes, builds the HTTP server, wires
+// hot-reload watchers, starts the session cleanup loop, marks the API server
+// ready, and launches the listen goroutine. Extracted from main() to keep
+// main() under the funlen statement budget (GO-ANTIPATTERN-AUDIT-2026-07-01
+// complexity remediation, Wave C).
+//
+// Returns the constructed httpServer (needed for shutdown), the session
+// drainer (needed for graceful drain), and a combined cleanup function that
+// releases the JWKS auth cache and stops the hot-reload watchers — the
+// caller must defer this in its own scope so these live for the server's
+// lifetime, not just this function's call.
+func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *http.Server, sessionDrainer *mcpkg.SessionDrainer, cleanup func()) {
+	sessionDrainer, authCleanup := registerAPIRoutes(p.r, ctx, apiRoutesParams{
+		cfg: p.cfg, infra: p.core.infra, ds: p.core.ds, inv: p.inv, enricher: p.core.enricher,
+		mgr: p.mgr, agentMetrics: p.agentMetrics, instrumentedAudit: p.instrumentedAudit,
+		ogenSrv: p.ogenSrv, eventEmitter: p.core.eventEmitter, interactiveReadiness: p.core.interactiveReadiness,
+		apiRateLimiter: p.apiRateLimiter, maxRequestBodySize: p.maxRequestBodySize, logger: p.logger,
+	})
+
+	httpServer = &http.Server{
+		Addr:              p.addr,
+		Handler:           p.r,
+		ReadHeaderTimeout: 30 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		// WriteTimeout intentionally omitted: SSE/MCP streams are long-lived
+		// connections that would be killed by a finite WriteTimeout.
 	}
 
-	logger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
+	stopHotReload := wireHotReload(ctx, p.cfg, httpServer, p.llmRuntimePath, p.swappable, p.phaseResolver, p.logger)
 
+	p.store.StartCleanupLoop(ctx, p.cfg.Runtime.Session.TTL/2)
+
+	// Route setup (including the JWKS pre-warm inside newAuthMiddleware) has
+	// completed by this point; only the network bind remains. Mark the API
+	// server ready now so /readyz does not report ready any earlier than this.
+	atomic.StoreInt32(p.apiServerReady, 1)
+
+	go func() {
+		p.logger.Info("HTTP server listening", "addr", p.addr)
+		var listenErr error
+		if httpServer.TLSConfig != nil {
+			listenErr = httpServer.ListenAndServeTLS("", "")
+		} else {
+			listenErr = httpServer.ListenAndServe()
+		}
+		if listenErr != nil && listenErr != http.ErrServerClosed {
+			p.logger.Error(listenErr, "HTTP server error")
+			os.Exit(1)
+		}
+	}()
+
+	cleanup = func() {
+		// authCleanup releases the JWKS cache goroutines.
+		if authCleanup != nil {
+			authCleanup()
+		}
+		stopHotReload()
+	}
+	return httpServer, sessionDrainer, cleanup
+}
+
+// initializeAgent builds the LLM clients, prompt/parser/phase-tool
+// dependencies, the DS token source, and the full investigation stack
+// (core services + investigator + session store/manager + ogen server).
+// Extracted from main() to keep main() under the funlen line budget
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 complexity remediation, Wave C).
+func initializeAgent(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig, logger logr.Logger) (swappable *llm.SwappableClient, core *coreServices, stack *investigationStack) {
 	swappable, phaseSwappables := buildLLMClients(cfg, llmRuntime, logger)
 
 	promptBuilder, err := prompt.NewBuilder()
@@ -82,56 +198,11 @@ func main() {
 	// #1055: Create a single shared TokenSource for all DS-bound HTTP clients.
 	// Both the ogen DS client and the audit store share this cache, so a 401 on
 	// either side immediately invalidates the token for both.
-	dsTokenSource := auth.NewTokenSource(cfg.Integrations.DataStorage.SATokenPath)
-	dsTokenSource.SetLogger(logger.WithName("ds-token-source"))
-	if _, err := os.Stat(cfg.Integrations.DataStorage.SATokenPath); err != nil {
-		logger.Info("WARNING: SA token file not found at startup, DS/audit API calls will fail auth until file appears",
-			"token_path", cfg.Integrations.DataStorage.SATokenPath, "error", err)
-	} else {
-		logger.Info("SA token source configured (shared cache with token refresh)",
-			"token_path", cfg.Integrations.DataStorage.SATokenPath)
-	}
+	dsTokenSource := buildDSTokenSource(cfg, logger)
 
-	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
-	k8sInfra := initK8sInfra(logger)
+	core = buildCoreServices(cfg, llmRuntime, swappable, dsTokenSource, phaseTools, logger)
 
-	// #1288: SSAR impersonate gate removed — KA uses its own SA for all K8s
-	// API calls. Interactive readiness is no longer gated on impersonation RBAC.
-	interactiveReadiness := karbac.NewInteractiveReadiness()
-	var eventEmitter *karbac.EventEmitter
-	if cfg.Interactive.Enabled && k8sInfra != nil {
-		podName, podNS := karbac.DetectPodIdentity()
-		eventEmitter = karbac.NewEventEmitter(k8sInfra.clientset, podName, podNS)
-	}
-
-	ds := initDSClients(cfg, k8sInfra, dsTokenSource, logger)
-	if ds == nil {
-		logger.Error(nil, "FATAL: DataStorage client initialization failed — KA cannot operate without DS (workflow discovery, audit, enrichment all require it)")
-		os.Exit(1)
-	}
-	reg := buildToolRegistry(cfg, logger, k8sInfra, ds, auditStore)
-	fleetClient, fleetToolNames := registerFleetTools(context.Background(), cfg, reg, logger)
-	if len(fleetToolNames) > 0 {
-		investigator.AppendFleetToolsToRCA(phaseTools, fleetToolNames)
-	}
-	enricher := buildEnricher(cfg, ds, k8sInfra, auditStore, logger)
-	sanitizer := buildSanitizationPipeline(cfg, logger)
-	anomalyDetector := buildAnomalyDetector(cfg, logger)
-	sum := buildSummarizer(swappable, cfg, logger)
-
-	instrumentedLLM := llm.NewInstrumentedClient(swappable)
-
-	var catalogFetcher investigator.CatalogFetcher
-	if ds != nil {
-		catalogFetcher = newDSCatalogFetcher(ds, logger)
-		logger.Info("workflow catalog fetcher enabled (per-request, DD-HAPI-002)")
-	} else {
-		logger.Info("workflow catalog fetcher disabled (no DataStorage — dev mode)")
-	}
-
-	effectiveLLM, effectiveReg, alignEvaluator, alignCfg := buildAlignmentStack(cfg, llmRuntime, instrumentedLLM, reg, auditStore, logger)
-
-	stack := buildInvestigationRunner(investigationRunnerParams{
+	stack = buildInvestigationRunner(investigationRunnerParams{
 		cfg:             cfg,
 		llmRuntime:      llmRuntime,
 		swappable:       swappable,
@@ -139,133 +210,120 @@ func main() {
 		promptBuilder:   promptBuilder,
 		resultParser:    resultParser,
 		phaseTools:      phaseTools,
-		enricher:        enricher,
-		auditStore:      auditStore,
-		effectiveLLM:    effectiveLLM,
-		effectiveReg:    effectiveReg,
-		alignEvaluator:  alignEvaluator,
-		alignCfg:        alignCfg,
-		infra:           k8sInfra,
-		sanitizer:       sanitizer,
-		anomalyDetector: anomalyDetector,
-		catalogFetcher:  catalogFetcher,
-		summarizer:      sum,
+		enricher:        core.enricher,
+		auditStore:      core.auditStore,
+		effectiveLLM:    core.effectiveLLM,
+		effectiveReg:    core.effectiveReg,
+		alignEvaluator:  core.alignEvaluator,
+		alignCfg:        core.alignCfg,
+		infra:           core.infra,
+		sanitizer:       core.sanitizer,
+		anomalyDetector: core.anomalyDetector,
+		catalogFetcher:  core.catalogFetcher,
+		summarizer:      core.summarizer,
 		logger:          logger,
 	})
-	agentMetrics := stack.agentMetrics
-	instrumentedAudit := stack.instrumentedAudit
-	phaseResolver := stack.phaseResolver
-	inv := stack.inv
-	store := stack.store
-	mgr := stack.mgr
-	ogenSrv := stack.ogenSrv
+	return swappable, core, stack
+}
 
-	r := chi.NewRouter()
+func main() {
+	configPath, llmRuntimePath, addr := parseCLIFlags()
+
+	// Bootstrap logger at INFO for startup; replaced after config is loaded (#875).
+	bootstrapLogger := kubelog.NewLogger(kubelog.Options{Level: 0, ServiceName: "kubernaut-agent"})
+
+	cfg, llmRuntime, logger, atomicLevel := loadStartupConfig(configPath, llmRuntimePath, bootstrapLogger)
+	defer kubelog.Sync(logger)
+
+	if addr == "" {
+		addr = fmt.Sprintf("%s:%d", cfg.Runtime.Server.Address, cfg.Runtime.Server.Port)
+	}
+
+	logger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
+
+	swappable, core, stack := initializeAgent(cfg, llmRuntime, logger)
 
 	const maxRequestBodySize int64 = 1 << 20 // 1 MiB
 
-	apiRateLimiter := kaserver.NewRateLimiter(kaserver.RateLimitConfig{
-		RequestsPerSecond: cfg.Runtime.Server.RateLimit.RequestsPerSecond,
-		Burst:             cfg.Runtime.Server.RateLimit.Burst,
-		CleanupInterval:   cfg.Runtime.Server.RateLimit.CleanupInterval,
-		MaxAge:            cfg.Runtime.Server.RateLimit.MaxAge,
-		TrustedProxyCIDRs: cfg.Runtime.Server.RateLimit.TrustedProxyCIDRs,
-	}, agentMetrics.HTTPRateLimitedTotal, kaserver.WithAuditStore(instrumentedAudit, logger))
+	r, apiRateLimiter := buildRouterAndRateLimiter(cfg, stack.agentMetrics, stack.instrumentedAudit, logger)
 	defer apiRateLimiter.Stop()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	// Start health/metrics servers BEFORE the route setup closure so that
-	// liveness/readiness probes are served even while the JWKS pre-warm
-	// (up to 15 s) blocks inside newAuthMiddleware. Without this, the
-	// liveness probe kills the pod before the health server ever starts.
-	var shutdownFlag int32
-
-	// apiServerReady is set to 1 only once the main API server (port 8443/8080)
-	// goroutine is about to start listening. Without this gate, /readyz would
-	// report ready as soon as the health server starts (immediately), while
-	// the main API server is still blocked behind the JWKS pre-warm inside the
-	// route-setup closure below -- causing clients to see "connection reset"
-	// for requests sent right after Kubernetes reports the pod Ready.
-	var apiServerReady int32
+	// shutdownFlag/apiServerReady gate /healthz and /readyz: health/metrics
+	// servers start BEFORE route setup so probes are served during the JWKS
+	// pre-warm, but /readyz must not report ready until the API server is
+	// actually about to listen (see startAPIServer).
+	var shutdownFlag, apiServerReady int32
 
 	healthServer, metricsServer := startHealthAndMetricsServers(healthServersParams{
-		Config: cfg, AtomicLevel: atomicLevel, Swappable: swappable, DS: ds,
-		InteractiveReadiness: interactiveReadiness, ShutdownFlag: &shutdownFlag,
+		Config: cfg, AtomicLevel: atomicLevel, Swappable: swappable, DS: core.ds,
+		InteractiveReadiness: core.interactiveReadiness, ShutdownFlag: &shutdownFlag,
 		APIServerReady: &apiServerReady, Logger: logger,
 	})
 
-	sessionDrainer, authCleanup := registerAPIRoutes(r, ctx, apiRoutesParams{
-		cfg: cfg, infra: k8sInfra, ds: ds, inv: inv, enricher: enricher,
-		mgr: mgr, agentMetrics: agentMetrics, instrumentedAudit: instrumentedAudit,
-		ogenSrv: ogenSrv, eventEmitter: eventEmitter, interactiveReadiness: interactiveReadiness,
-		apiRateLimiter: apiRateLimiter, maxRequestBodySize: maxRequestBodySize, logger: logger,
+	httpServer, sessionDrainer, cleanupServers := startAPIServer(ctx, apiServerStartParams{
+		r: r, cfg: cfg, addr: addr, llmRuntimePath: llmRuntimePath,
+		swappable: swappable, phaseResolver: stack.phaseResolver, core: core, inv: stack.inv,
+		mgr: stack.mgr, store: stack.store, agentMetrics: stack.agentMetrics, instrumentedAudit: stack.instrumentedAudit,
+		ogenSrv: stack.ogenSrv, apiRateLimiter: apiRateLimiter, maxRequestBodySize: maxRequestBodySize,
+		apiServerReady: &apiServerReady, logger: logger,
 	})
-	// authCleanup releases the JWKS cache goroutines; deferred here in the main
-	// scope so they live for the server's lifetime (registerAPIRoutes returns
-	// immediately after chi route registration).
-	if authCleanup != nil {
-		defer authCleanup()
-	}
-
-	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           r,
-		ReadHeaderTimeout: 30 * time.Second,
-		ReadTimeout:       60 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		// WriteTimeout intentionally omitted: SSE/MCP streams are long-lived
-		// connections that would be killed by a finite WriteTimeout.
-	}
-
-	stopHotReload := wireHotReload(ctx, cfg, httpServer, llmRuntimePath, swappable, phaseResolver, logger)
-	defer stopHotReload()
-
-	store.StartCleanupLoop(ctx, cfg.Runtime.Session.TTL/2)
-
-	// Route setup (including the JWKS pre-warm inside newAuthMiddleware) has
-	// completed by this point; only the network bind remains. Mark the API
-	// server ready now so /readyz does not report ready any earlier than this.
-	atomic.StoreInt32(&apiServerReady, 1)
-
-	go func() {
-		logger.Info("HTTP server listening", "addr", addr)
-		var listenErr error
-		if httpServer.TLSConfig != nil {
-			listenErr = httpServer.ListenAndServeTLS("", "")
-		} else {
-			listenErr = httpServer.ListenAndServe()
-		}
-		if listenErr != nil && listenErr != http.ErrServerClosed {
-			logger.Error(listenErr, "HTTP server error")
-			os.Exit(1)
-		}
-	}()
+	defer cleanupServers()
 
 	<-ctx.Done()
 	atomic.StoreInt32(&shutdownFlag, 1)
-	logger.Info("shutting down...")
-	mgr.Shutdown()
+	runShutdownSequence(shutdownParams{
+		cfg: cfg, mgr: stack.mgr, sessionDrainer: sessionDrainer,
+		httpServer: httpServer, healthServer: healthServer, metricsServer: metricsServer,
+		eventEmitter: core.eventEmitter, fleetClient: core.fleetClient, auditCleanup: core.auditCleanup,
+		logger: logger,
+	})
+}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout(cfg))
+// shutdownParams groups the servers/dependencies that runShutdownSequence
+// must drain and close on process termination. Extracted per AGENTS.md's
+// 8+-param Options-pattern rule.
+type shutdownParams struct {
+	cfg            *kaconfig.Config
+	mgr            *session.Manager
+	sessionDrainer *mcpkg.SessionDrainer
+	httpServer     *http.Server
+	healthServer   *http.Server
+	metricsServer  *http.Server
+	eventEmitter   *karbac.EventEmitter
+	fleetClient    *fleetclient.ResilientClient
+	auditCleanup   func()
+	logger         logr.Logger
+}
+
+// runShutdownSequence drains in-flight sessions, shuts down the API/health/
+// metrics HTTP servers, stops the fleet MCP client, and flushes the audit
+// store. Extracted from main() to keep main() under the funlen statement
+// budget (GO-ANTIPATTERN-AUDIT-2026-07-01 complexity remediation, Wave C).
+func runShutdownSequence(p shutdownParams) {
+	p.logger.Info("shutting down...")
+	p.mgr.Shutdown()
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout(p.cfg))
 	defer cancel()
 
-	if sessionDrainer != nil {
-		sessionDrainer.DrainSessions(shutdownCtx)
+	if p.sessionDrainer != nil {
+		p.sessionDrainer.DrainSessions(shutdownCtx)
 	}
 
-	shutdownServer(shutdownCtx, httpServer, "API", logger)
-	shutdownServer(shutdownCtx, healthServer, "health", logger)
-	shutdownServer(shutdownCtx, metricsServer, "metrics", logger)
+	shutdownServer(shutdownCtx, p.httpServer, "API", p.logger)
+	shutdownServer(shutdownCtx, p.healthServer, "health", p.logger)
+	shutdownServer(shutdownCtx, p.metricsServer, "metrics", p.logger)
 
-	eventEmitter.Shutdown()
-	if fleetClient != nil {
-		_ = fleetClient.Close()
-		logger.Info("fleet MCP client closed")
+	p.eventEmitter.Shutdown()
+	if p.fleetClient != nil {
+		_ = p.fleetClient.Close()
+		p.logger.Info("fleet MCP client closed")
 	}
-	logger.Info("flushing audit store...")
-	auditCleanup()
+	p.logger.Info("flushing audit store...")
+	p.auditCleanup()
 }
 
 // loadStartupConfig reads and validates the static config and hot-reloadable

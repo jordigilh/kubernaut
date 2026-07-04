@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-logr/logr"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
@@ -93,30 +94,62 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		"name", req.Name,
 	)
 
-	rar := &remediationv1.RemediationApprovalRequest{}
+	rar, oldRAR, resp, done := h.decodeRARRequest(logger, req)
+	if done {
+		return resp
+	}
 
-	// Decode the RemediationApprovalRequest object from the request
-	err := json.Unmarshal(req.Object.Raw, rar)
-	if err != nil {
+	if earlyResp, earlyDone := earlyDecisionResponse(logger, rar, oldRAR); earlyDone {
+		return earlyResp
+	}
+
+	authCtx, isDelegation, resp, done := h.authenticateAndAttribute(ctx, logger, rar, req)
+	if done {
+		return resp
+	}
+
+	if rar.Status.WorkflowOverride != nil {
+		if resp, done := h.checkWorkflowOverride(ctx, logger, rar, authCtx); done {
+			return resp
+		}
+	}
+
+	now := metav1.Now()
+	rar.Status.DecidedAt = &now
+	logger.Info("Populating decision attribution",
+		"decidedBy", rar.Status.DecidedBy,
+		"decidedVia", rar.Status.DecidedVia,
+		"decision", rar.Status.Decision,
+		"isDelegation", isDelegation,
+	)
+
+	h.emitApprovalAuditEvent(ctx, logger, rar, authCtx, isDelegation)
+
+	return finalizeRARResponse(logger, req, rar)
+}
+
+// decodeRARRequest decodes the new (and, if present, old) RemediationApprovalRequest
+// objects from the admission request. done is true when an error response has
+// already been returned and the caller must stop processing.
+func (h *RemediationApprovalRequestAuthHandler) decodeRARRequest(logger logr.Logger, req admission.Request) (rar, oldRAR *remediationv1.RemediationApprovalRequest, resp admission.Response, done bool) {
+	rar = &remediationv1.RemediationApprovalRequest{}
+	if err := json.Unmarshal(req.Object.Raw, rar); err != nil {
 		logger.Error(err, "Failed to decode RemediationApprovalRequest")
-		return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode RemediationApprovalRequest: %w", err))
+		return nil, nil, admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode RemediationApprovalRequest: %w", err)), true
 	}
 
 	// SECURITY: Decode OLD object to determine if this is a truly NEW decision
 	// Per AUTHWEBHOOK_INT_COMPLETE_RCA_FEB_03_2026.md: OLD object comparison prevents identity forgery
 	// SOC 2 CC8.1 (User Attribution), CC6.8 (Non-Repudiation)
-	var oldRAR *remediationv1.RemediationApprovalRequest
 	if len(req.OldObject.Raw) > 0 {
 		oldRAR = &remediationv1.RemediationApprovalRequest{}
 		if err := json.Unmarshal(req.OldObject.Raw, oldRAR); err != nil {
 			logger.Error(err, "Failed to decode old RemediationApprovalRequest")
-			return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode old RemediationApprovalRequest: %w", err))
+			return nil, nil, admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode old RemediationApprovalRequest: %w", err)), true
 		}
 	}
 
-	// LOG: Decision check (verbose for debugging)
-	oldDecision := ""
-	oldDecidedBy := ""
+	oldDecision, oldDecidedBy := "", ""
 	if oldRAR != nil {
 		oldDecision = string(oldRAR.Status.Decision)
 		oldDecidedBy = oldRAR.Status.DecidedBy
@@ -128,11 +161,16 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		"oldDecidedBy", oldDecidedBy,
 	)
 
-	// Check if a decision has been made
+	return rar, oldRAR, admission.Response{}, false
+}
+
+// earlyDecisionResponse handles the request states that terminate processing
+// before authentication is needed: no decision yet, an invalid decision,
+// true idempotency (decision already attributed), and system-initiated expiry.
+func earlyDecisionResponse(logger logr.Logger, rar, oldRAR *remediationv1.RemediationApprovalRequest) (admission.Response, bool) {
 	if rar.Status.Decision == "" {
-		// No decision yet - allow without modification
 		logger.Info("Skipping RAR (no decision made)")
-		return admission.Allowed("no decision made")
+		return admission.Allowed("no decision made"), true
 	}
 
 	// REFACTOR-AW-001: Validate decision using extracted helper
@@ -141,7 +179,7 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 			"decision", rar.Status.Decision,
 			"error", err,
 		)
-		return admission.Denied(err.Error())
+		return admission.Denied(err.Error()), true
 	}
 
 	// SECURITY: TRUE Idempotency Check - Compare OLD object with NEW object
@@ -149,16 +187,13 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// - OLD object has decision → true idempotency (preserve existing attribution)
 	// - OLD object has NO decision → NEW decision (OVERWRITE any user-provided DecidedBy)
 	isNewDecision := oldRAR == nil || oldRAR.Status.Decision == ""
-
 	if !isNewDecision {
-		// Decision already exists in OLD object - preserve existing attribution (true idempotency)
-		// This prevents duplicate webhook processing on the same decision
 		logger.Info("Skipping RAR (decision already exists in old object) - TRUE IDEMPOTENCY",
 			"oldDecision", oldRAR.Status.Decision,
 			"oldDecidedBy", oldRAR.Status.DecidedBy,
 			"newDecision", rar.Status.Decision,
 		)
-		return admission.Allowed("decision already attributed")
+		return admission.Allowed("decision already attributed"), true
 	}
 
 	// CRD spec (remediationapprovalrequest_types.go:197): DecidedBy = "system" for timeout.
@@ -166,15 +201,23 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// The webhook must preserve this value rather than overwriting with the controller's SA.
 	if rar.Status.Decision == remediationv1.ApprovalDecisionExpired && rar.Status.DecidedBy == "system" {
 		logger.Info("System-initiated expiry detected, preserving DecidedBy=system per CRD spec")
-		return admission.Allowed("system-initiated expiry, DecidedBy preserved per CRD spec")
+		return admission.Allowed("system-initiated expiry, DecidedBy preserved per CRD spec"), true
 	}
 
+	return admission.Response{}, false
+}
+
+// authenticateAndAttribute extracts the authenticated caller and applies
+// attribution to rar.Status (delegation via the trusted AF SA, or standard
+// forgery-prevention overwrite). done is true when authentication failed and
+// the caller must return resp immediately.
+func (h *RemediationApprovalRequestAuthHandler) authenticateAndAttribute(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, req admission.Request) (authCtx *AuthContext, isDelegation bool, resp admission.Response, done bool) {
 	// SECURITY: This is a NEW decision - Extract authenticated user
 	// Even if user provided DecidedBy in their request, webhook MUST overwrite with authenticated identity
 	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
 	if err != nil {
 		logger.Error(err, "Authentication failed")
-		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
+		return nil, false, admission.Denied(fmt.Sprintf("authentication required: %v", err)), true
 	}
 
 	logger.Info("User authenticated",
@@ -185,7 +228,7 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// Trusted intermediary delegation (DD-AUTH-MCP-001 v3.0, AC-6: Least Privilege)
 	// AF SA is the sole trusted intermediary — hardcoded, derived from POD_NAMESPACE.
 	// When AF delegates, it has already authenticated the human via JWT+SAR.
-	isDelegation := h.isAFServiceAccount(authCtx.Username) && rar.Status.DecidedBy != ""
+	isDelegation = h.isAFServiceAccount(authCtx.Username) && rar.Status.DecidedBy != ""
 
 	if isDelegation {
 		// AF SA delegation: preserve human decidedBy, set decidedVia for operational visibility
@@ -202,35 +245,31 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		rar.Status.DecidedVia = "" // AC-3: Clear any user-submitted value (prevent spoofing)
 	}
 
-	// G5: Override validation AFTER authentication (SOC2 CC8.1 — audit trail captures WHO attempted invalid overrides)
-	if rar.Status.WorkflowOverride != nil {
-		overrideLog := logger.WithValues(
-			"override.workflowName", rar.Status.WorkflowOverride.WorkflowName,
-			"override.hasParams", rar.Status.WorkflowOverride.Parameters != nil,
-			"override.rationale", rar.Status.WorkflowOverride.Rationale,
-			"authenticatedUser", authCtx.Username,
-		)
-		if err := h.validateWorkflowOverride(ctx, rar); err != nil {
-			overrideLog.Info("Override validation failed", "error", err.Error(), "decision", rar.Status.Decision)
-			return admission.Denied(err.Error())
-		}
-		overrideLog.Info("Override validation passed")
-	}
+	return authCtx, isDelegation, admission.Response{}, false
+}
 
-	// Populate DecidedAt timestamp
-	logger.Info("Populating decision attribution",
-		"decidedBy", rar.Status.DecidedBy,
-		"decidedVia", rar.Status.DecidedVia,
-		"decision", rar.Status.Decision,
-		"isDelegation", isDelegation,
+// checkWorkflowOverride validates a WorkflowOverride, if present, AFTER
+// authentication (SOC2 CC8.1 — audit trail captures WHO attempted invalid
+// overrides). done is true when validation failed and resp must be returned.
+func (h *RemediationApprovalRequestAuthHandler) checkWorkflowOverride(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext) (admission.Response, bool) {
+	overrideLog := logger.WithValues(
+		"override.workflowName", rar.Status.WorkflowOverride.WorkflowName,
+		"override.hasParams", rar.Status.WorkflowOverride.Parameters != nil,
+		"override.rationale", rar.Status.WorkflowOverride.Rationale,
+		"authenticatedUser", authCtx.Username,
 	)
-	now := metav1.Now()
-	rar.Status.DecidedAt = &now
+	if err := h.validateWorkflowOverride(ctx, rar); err != nil {
+		overrideLog.Info("Override validation failed", "error", err.Error(), "decision", rar.Status.Decision)
+		return admission.Denied(err.Error()), true
+	}
+	overrideLog.Info("Override validation passed")
+	return admission.Response{}, false
+}
 
-	// Write complete audit event (DD-WEBHOOK-003: Webhook-Complete Audit Pattern)
-	// Per ADR-034 v1.7 Section 1.1.1: Two-Event Pattern for RAR approvals
-	// - Event 1 (Webhook): webhook.remediationapprovalrequest.decided (WHO - authenticated user)
-	// - Event 2 (Orchestration): orchestrator.approval.{approved|rejected} (WHAT/WHY - business context)
+// emitApprovalAuditEvent writes the webhook-complete audit event for the
+// decision (DD-WEBHOOK-003, ADR-034 v1.7 two-event pattern, Event 1).
+// Storage failures are non-blocking but logged for observability.
+func (h *RemediationApprovalRequestAuthHandler) emitApprovalAuditEvent(ctx context.Context, logger logr.Logger, rar *remediationv1.RemediationApprovalRequest, authCtx *AuthContext, isDelegation bool) {
 	auditEvent := audit.NewAuditEventRequest()
 	audit.SetEventType(auditEvent, EventTypeRARDecided) // Per ADR-034 v1.7
 	audit.SetEventCategory(auditEvent, EventCategoryApproval)
@@ -265,8 +304,6 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 	// - namespace: rar.Namespace (via audit.SetNamespace)
 	// - event_action: "approval_decided" (via audit.SetEventAction)
 
-	// Store audit event asynchronously (buffered write)
-	// Audit failures are non-blocking but logged for observability
 	if err := h.auditStore.StoreAudit(ctx, auditEvent); err != nil {
 		logger.Error(err, "Audit event storage failed (non-blocking)",
 			"eventType", auditEvent.EventType,
@@ -279,22 +316,23 @@ func (h *RemediationApprovalRequestAuthHandler) Handle(ctx context.Context, req 
 		"rarName", rar.Name,
 		"eventAction", "approval_decided",
 	)
+}
 
-	// Marshal the patched object
+// finalizeRARResponse marshals the patched RAR and builds the admission
+// patch response, or an error response if marshaling fails.
+func finalizeRARResponse(logger logr.Logger, req admission.Request, rar *remediationv1.RemediationApprovalRequest) admission.Response {
 	marshaledRAR, err := json.Marshal(rar)
 	if err != nil {
 		logger.Error(err, "Failed to marshal patched RAR")
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to marshal patched RemediationApprovalRequest: %w", err))
 	}
 
-	// LOG: Success
 	logger.Info("RAR mutation complete",
 		"decidedBy", rar.Status.DecidedBy,
 		"decidedAt", rar.Status.DecidedAt.Time,
 		"decision", rar.Status.Decision,
 	)
 
-	// Return patched response
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledRAR)
 }
 

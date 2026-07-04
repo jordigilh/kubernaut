@@ -97,26 +97,49 @@ func extractFromVolumes(podSpec map[string]interface{}, seen map[string]bool) {
 		if !ok {
 			continue
 		}
-		if cm, ok := vol["configMap"].(map[string]interface{}); ok {
-			if name, ok := cm["name"].(string); ok && name != "" {
-				seen[name] = true
-			}
+		extractVolumeConfigMapName(vol, seen)
+		extractProjectedVolumeConfigMapNames(vol, seen)
+	}
+}
+
+// extractVolumeConfigMapName records the name referenced by
+// volumes[].configMap.name, if present.
+func extractVolumeConfigMapName(vol map[string]interface{}, seen map[string]bool) {
+	cm, ok := vol["configMap"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	recordConfigMapName(cm, seen)
+}
+
+// extractProjectedVolumeConfigMapNames records the names referenced by
+// volumes[].projected.sources[].configMap.name.
+func extractProjectedVolumeConfigMapNames(vol map[string]interface{}, seen map[string]bool) {
+	proj, ok := vol["projected"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	sources, ok := proj["sources"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, s := range sources {
+		src, ok := s.(map[string]interface{})
+		if !ok {
+			continue
 		}
-		if proj, ok := vol["projected"].(map[string]interface{}); ok {
-			if sources, ok := proj["sources"].([]interface{}); ok {
-				for _, s := range sources {
-					src, ok := s.(map[string]interface{})
-					if !ok {
-						continue
-					}
-					if cm, ok := src["configMap"].(map[string]interface{}); ok {
-						if name, ok := cm["name"].(string); ok && name != "" {
-							seen[name] = true
-						}
-					}
-				}
-			}
+		cm, ok := src["configMap"].(map[string]interface{})
+		if !ok {
+			continue
 		}
+		recordConfigMapName(cm, seen)
+	}
+}
+
+// recordConfigMapName adds cm["name"] to seen if it is a non-empty string.
+func recordConfigMapName(cm map[string]interface{}, seen map[string]bool) {
+	if name, ok := cm["name"].(string); ok && name != "" {
+		seen[name] = true
 	}
 }
 
@@ -132,34 +155,52 @@ func extractFromContainerSlice(podSpec map[string]interface{}, key string, seen 
 		if !ok {
 			continue
 		}
-		if envFroms, ok := container["envFrom"].([]interface{}); ok {
-			for _, ef := range envFroms {
-				entry, ok := ef.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				if ref, ok := entry["configMapRef"].(map[string]interface{}); ok {
-					if name, ok := ref["name"].(string); ok && name != "" {
-						seen[name] = true
-					}
-				}
-			}
+		extractEnvFromConfigMapNames(container, seen)
+		extractEnvValueFromConfigMapNames(container, seen)
+	}
+}
+
+// extractEnvFromConfigMapNames records the names referenced by
+// envFrom[].configMapRef.name.
+func extractEnvFromConfigMapNames(container map[string]interface{}, seen map[string]bool) {
+	envFroms, ok := container["envFrom"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, ef := range envFroms {
+		entry, ok := ef.(map[string]interface{})
+		if !ok {
+			continue
 		}
-		if envs, ok := container["env"].([]interface{}); ok {
-			for _, e := range envs {
-				env, ok := e.(map[string]interface{})
-				if !ok {
-					continue
-				}
-				if vf, ok := env["valueFrom"].(map[string]interface{}); ok {
-					if ref, ok := vf["configMapKeyRef"].(map[string]interface{}); ok {
-						if name, ok := ref["name"].(string); ok && name != "" {
-							seen[name] = true
-						}
-					}
-				}
-			}
+		ref, ok := entry["configMapRef"].(map[string]interface{})
+		if !ok {
+			continue
 		}
+		recordConfigMapName(ref, seen)
+	}
+}
+
+// extractEnvValueFromConfigMapNames records the names referenced by
+// env[].valueFrom.configMapKeyRef.name.
+func extractEnvValueFromConfigMapNames(container map[string]interface{}, seen map[string]bool) {
+	envs, ok := container["env"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, e := range envs {
+		env, ok := e.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		vf, ok := env["valueFrom"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		ref, ok := vf["configMapKeyRef"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		recordConfigMapName(ref, seen)
 	}
 }
 

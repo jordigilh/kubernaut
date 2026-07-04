@@ -275,6 +275,76 @@ func resolveAPIKeyForReload(merged *types.LLMConfig, provider string, logger log
 	}
 }
 
+// swapExistingPhaseClient hot-swaps an already-registered phase SwappableClient
+// with the newly-built phaseClient/phaseRT, logging the model transition.
+func swapExistingPhaseClient(existing *llm.SwappableClient, phaseName string, phaseClient llm.Client, phaseRT kaconfig.LLMRuntimeConfig, logger logr.Logger) {
+	oldModel := existing.ModelName()
+	if swapErr := existing.Swap(phaseClient, phaseRT.Model, llm.RuntimeParams{
+		Temperature:    phaseRT.Temperature,
+		TimeoutSeconds: phaseRT.TimeoutSeconds,
+		MaxRetries:     phaseRT.MaxRetries,
+	}); swapErr != nil {
+		logger.Error(swapErr, "reload: failed to swap phase client",
+			"phase", phaseName)
+		return
+	}
+	logger.Info("llm_runtime_reload phase_model updated",
+		"event", "llm_runtime_reload",
+		"phase", phaseName,
+		"old_model", oldModel,
+		"new_model", phaseRT.Model,
+	)
+}
+
+// registerNewPhaseClient creates and registers a SwappableClient for a phase
+// that does not yet have one on the resolver.
+func registerNewPhaseClient(resolver *investigator.DefaultPhaseResolver, phase katypes.Phase, phaseName string, phaseClient llm.Client, phaseRT kaconfig.LLMRuntimeConfig, logger logr.Logger) {
+	newSw, swErr := llm.NewSwappableClient(phaseClient, phaseRT.Model, llm.RuntimeParams{
+		Temperature:    phaseRT.Temperature,
+		TimeoutSeconds: phaseRT.TimeoutSeconds,
+		MaxRetries:     phaseRT.MaxRetries,
+	})
+	if swErr != nil {
+		logger.Error(swErr, "reload: failed to create phase SwappableClient",
+			"phase", phaseName)
+		return
+	}
+	resolver.SetPhaseSwappable(phase, newSw)
+	logger.Info("llm_runtime_reload phase_model added",
+		"event", "llm_runtime_reload",
+		"phase", phaseName,
+		"model", phaseRT.Model,
+	)
+}
+
+// reloadSinglePhaseClient rebuilds the LLM client for one phase override and
+// either hot-swaps the existing phase SwappableClient or registers a new one.
+func reloadSinglePhaseClient(
+	staticCfg *kaconfig.Config,
+	rt *kaconfig.LLMRuntimeConfig,
+	resolver *investigator.DefaultPhaseResolver,
+	phaseName string,
+	override *kaconfig.LLMOverrideConfig,
+	logger logr.Logger,
+) {
+	phase := katypes.Phase(phaseName)
+	phaseLLM, phaseRT := rt.EffectivePhaseConfig(phaseName, staticCfg.AI.LLM, *rt)
+	merged := mergeLLMConfig(phaseLLM, &phaseRT)
+
+	phaseClient, err := buildLLMClientFromConfig(context.Background(), merged)
+	if err != nil {
+		logger.Error(err, "reload: failed to build phase LLM client",
+			"phase", phaseName, "model", override.Model)
+		return
+	}
+
+	if existing := resolver.PhaseSwappable(phase); existing != nil {
+		swapExistingPhaseClient(existing, phaseName, phaseClient, phaseRT, logger)
+	} else {
+		registerNewPhaseClient(resolver, phase, phaseName, phaseClient, phaseRT, logger)
+	}
+}
+
 // reloadPhaseClients synchronizes the phase resolver with the new config.
 // It adds/updates phase-specific SwappableClients for each phase in PhaseModels
 // and removes phases that are no longer configured.
@@ -287,55 +357,8 @@ func reloadPhaseClients(
 	configuredPhases := make(map[katypes.Phase]bool)
 
 	for phaseName, override := range rt.PhaseModels {
-		phase := katypes.Phase(phaseName)
-		configuredPhases[phase] = true
-
-		phaseLLM, phaseRT := rt.EffectivePhaseConfig(phaseName, staticCfg.AI.LLM, *rt)
-		merged := mergeLLMConfig(phaseLLM, &phaseRT)
-
-		phaseClient, err := buildLLMClientFromConfig(context.Background(), merged)
-		if err != nil {
-			logger.Error(err, "reload: failed to build phase LLM client",
-				"phase", phaseName, "model", override.Model)
-			continue
-		}
-
-		existing := resolver.PhaseSwappable(phase)
-		if existing != nil {
-			oldModel := existing.ModelName()
-			if swapErr := existing.Swap(phaseClient, phaseRT.Model, llm.RuntimeParams{
-				Temperature:    phaseRT.Temperature,
-				TimeoutSeconds: phaseRT.TimeoutSeconds,
-				MaxRetries:     phaseRT.MaxRetries,
-			}); swapErr != nil {
-				logger.Error(swapErr, "reload: failed to swap phase client",
-					"phase", phaseName)
-				continue
-			}
-			logger.Info("llm_runtime_reload phase_model updated",
-				"event", "llm_runtime_reload",
-				"phase", phaseName,
-				"old_model", oldModel,
-				"new_model", phaseRT.Model,
-			)
-		} else {
-			newSw, swErr := llm.NewSwappableClient(phaseClient, phaseRT.Model, llm.RuntimeParams{
-				Temperature:    phaseRT.Temperature,
-				TimeoutSeconds: phaseRT.TimeoutSeconds,
-				MaxRetries:     phaseRT.MaxRetries,
-			})
-			if swErr != nil {
-				logger.Error(swErr, "reload: failed to create phase SwappableClient",
-					"phase", phaseName)
-				continue
-			}
-			resolver.SetPhaseSwappable(phase, newSw)
-			logger.Info("llm_runtime_reload phase_model added",
-				"event", "llm_runtime_reload",
-				"phase", phaseName,
-				"model", phaseRT.Model,
-			)
-		}
+		configuredPhases[katypes.Phase(phaseName)] = true
+		reloadSinglePhaseClient(staticCfg, rt, resolver, phaseName, override, logger)
 	}
 
 	for _, existingPhase := range resolver.Phases() {

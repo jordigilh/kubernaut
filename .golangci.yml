@@ -29,6 +29,33 @@ linters:
                    # findings in production code; two pre-existing, reviewed
                    # exceptions carry //nolint:containedctx (DD-scoped lifecycle
                    # contexts). Test-double interface embeddings are excluded below.
+    - funlen     # Flags overly long functions (AGENTS.md anti-pattern checklist).
+                 # Fully remediated across 127 pre-existing findings in
+                 # GO-ANTIPATTERN-AUDIT-2026-07-01 §complexity remediation
+                 # (5-wave TDD effort, Issue #1532); production code only,
+                 # test files excluded below.
+    - gocyclo    # Cyclomatic complexity. Fully remediated alongside funlen/
+                 # gocognit/nestif (Issue #1532); production code only.
+    - gocognit   # Cognitive complexity. Fully remediated alongside funlen/
+                 # gocyclo/nestif (Issue #1532); production code only.
+    - nestif     # Deeply nested if-statements. Fully remediated alongside
+                 # funlen/gocyclo/gocognit (Issue #1532); production code only.
+    - maintidx   # Composite maintainability index (cyclomatic complexity +
+                 # Halstead volume + LOC). Verified 100% overlap with the
+                 # funlen/gocyclo/gocognit/nestif baseline during preflight;
+                 # cleared as a side effect of that remediation (Issue #1532).
+    - interfacebloat # Flags interfaces with too many methods (AGENTS.md
+                     # "Interface pollution (5+ methods)" checklist item).
+                     # Verified 0 findings repo-wide as of GO-ANTIPATTERN-
+                     # AUDIT-2026-07-01 follow-up (Issue #1532).
+    - nakedret   # Flags naked returns in functions longer than 5 lines
+                 # (AGENTS.md checklist item). Verified 0 findings repo-wide.
+    - rowserrcheck   # Flags missing sql.Rows.Err() checks (resource-leak risk).
+                     # Verified 0 findings repo-wide.
+    - sqlclosecheck  # Flags unclosed sql.Rows/Stmt/*DB resources. Verified 0
+                     # findings repo-wide.
+    - loggercheck    # Validates structured logr key-value pair arity/typing.
+                     # Verified 0 findings repo-wide.
 
   settings:
     govet:
@@ -42,6 +69,17 @@ linters:
         - name: argument-limit
           arguments: [7]  # AGENTS.md Go Anti-Pattern Checklist: 8+ params -> Options pattern
           severity: warning
+    funlen:
+      lines: 80
+      statements: 60
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 20
+    nestif:
+      min-complexity: 5
+    maintidx:
+      under: 20
     forbidigo:
       # ANTI-PATTERN DETECTION: Per TESTING_GUIDELINES.md and NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md
       forbid:
@@ -156,6 +194,18 @@ linters:
           - prealloc
           - revive
         text: "Consider preallocating|argument-limit"
+      # funlen/gocyclo/gocognit/nestif/maintidx: per the plan behind Issue
+      # #1532, these 5 complexity linters apply to production code only.
+      # Ginkgo BDD test files/suites are long and branchy by nature (table-
+      # driven DescribeTable entries, multi-scenario Context/When nesting)
+      # and were never in scope for the remediation baseline.
+      - path: (_test\.go|^test/)
+        linters:
+          - funlen
+          - gocyclo
+          - gocognit
+          - nestif
+          - maintidx
       # containedctx: test doubles that embed context.Context to satisfy an
       # interface (e.g. tool.Context, agent.ReadonlyContext fakes) are not the
       # long-lived-context anti-pattern this linter targets. Also covers

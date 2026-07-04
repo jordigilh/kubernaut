@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	zap2 "go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
 	actiontypev1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
@@ -46,23 +47,17 @@ func init() {
 	utilruntime.Must(actiontypev1.AddToScheme(scheme))
 }
 
-func main() {
-	// ADR-030: YAML-based configuration via -config flag
-	var configPath string
-	flag.StringVar(&configPath, "config", awconfig.DefaultConfigPath, "Path to YAML configuration file (ADR-030)")
-	flag.Parse()
-
-	// Issue #876: Bootstrap logger at INFO for config loading
-	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
-	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
-
+// loadAuthWebhookConfig loads the YAML config (or defaults, ADR-030),
+// validates it, and applies the config-driven log level (Issue #876).
+// Exits the process on any failure, matching main()'s original fail-fast
+// behavior.
+func loadAuthWebhookConfig(configPath string, atomicLevel zap2.AtomicLevel) *awconfig.Config {
 	setupLog.Info("Starting AuthWebhook",
 		"version", version.Version,
 		"gitCommit", version.GitCommit,
 		"buildDate", version.BuildDate,
 	)
 
-	// Load configuration: YAML file if provided, defaults otherwise
 	var cfg *awconfig.Config
 	if configPath != "" {
 		var err error
@@ -77,13 +72,11 @@ func main() {
 		setupLog.Info("Using default configuration (no -config flag provided)")
 	}
 
-	// ADR-030: Validate configuration before startup
 	if err := cfg.Validate(); err != nil {
 		setupLog.Error(err, "Configuration validation failed")
 		os.Exit(1)
 	}
 
-	// Issue #876: Apply config-driven log level
 	atomicLevel.SetLevel(cfg.Logging.ZapLevel())
 	setupLog.Info("Log level configured from config file", "level", cfg.Logging.Level)
 
@@ -92,9 +85,16 @@ func main() {
 		"cert_dir", cfg.Webhook.CertDir,
 		"data_storage_url", cfg.DataStorage.URL)
 
-	// Create manager with health probe server
-	// Note: Metrics disabled (audit traces sufficient per WEBHOOK_METRICS_TRIAGE.md)
-	//       but health probes enabled on separate port for Kubernetes liveness/readiness
+	return cfg
+}
+
+// buildAuthWebhookManager creates the controller-runtime manager with the
+// webhook server and health-probe bind address from cfg (metrics disabled
+// per WEBHOOK_METRICS_TRIAGE.md), then registers the BR-WORKFLOW-007 field
+// index used by the RemediationWorkflow handler to look up ActionType CRDs
+// by spec.name. Exits the process on any failure, matching main()'s
+// original fail-fast behavior.
+func buildAuthWebhookManager(cfg *awconfig.Config) ctrl.Manager {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
@@ -111,9 +111,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// BR-WORKFLOW-007: Cache field index for ActionType .spec.name
-	// Required by RemediationWorkflow handler's cross-update that looks up ActionType
-	// CRDs by their spec.name using MatchingFieldsSelector.
 	if err := mgr.GetFieldIndexer().IndexField(
 		context.Background(),
 		&actiontypev1.ActionType{},
@@ -130,8 +127,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create REAL audit store (DD-WEBHOOK-003: Webhooks write complete audit events)
-	// ADR-030: Use DataStorage URL and buffer config from YAML ConfigMap
+	return mgr
+}
+
+// wireAuthWebhookAuditStore creates the real, buffered audit store
+// (DD-WEBHOOK-003, ADR-030) and starts a background goroutine that flushes
+// it when ctx is cancelled during graceful shutdown. Exits the process on
+// any failure, matching main()'s original fail-fast behavior.
+func wireAuthWebhookAuditStore(ctx context.Context, cfg *awconfig.Config) audit.AuditStore {
 	setupLog.Info("Initializing audit store", "data_storage_url", cfg.DataStorage.URL)
 	dsClient, err := audit.NewOpenAPIClientAdapter(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
 	if err != nil {
@@ -158,8 +161,6 @@ func main() {
 	}
 	setupLog.Info("Audit store initialized", "service", "authwebhook", "buffer_size", auditConfig.BufferSize)
 
-	// Graceful shutdown: Flush audit store before exit
-	ctx := ctrl.SetupSignalHandler()
 	go func() {
 		<-ctx.Done()
 		setupLog.Info("Flushing audit store before shutdown...")
@@ -172,13 +173,38 @@ func main() {
 		}
 	}()
 
-	// Get webhook server
-	webhookServer := mgr.GetWebhookServer()
+	return auditStore
+}
 
-	// Create decoder for webhook handlers
+// registerAuthWebhookHandlers wires the webhook admission handlers
+// (WorkflowExecution, RemediationApprovalRequest, RemediationRequest,
+// NotificationRequest DELETE, RemediationWorkflow, ActionType), the
+// RemediationWorkflow finalizer reconciler (Issue #418), the startup
+// reconciler (Issue #548, #1246), and the healthz/readyz checks. Exits the
+// process on any failure, matching main()'s original fail-fast behavior.
+func registerAuthWebhookHandlers(mgr ctrl.Manager, cfg *awconfig.Config, auditStore audit.AuditStore) {
+	registerAuthWebhookCRUDHandlers(mgr, auditStore)
+	registerAuthWebhookWorkflowHandlers(mgr, cfg, auditStore)
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up health check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+	setupLog.Info("Registered health check endpoints", "liveness", "/healthz", "readiness", "/readyz")
+}
+
+// registerAuthWebhookCRUDHandlers wires the WorkflowExecution,
+// RemediationApprovalRequest, RemediationRequest, and NotificationRequest
+// DELETE admission handlers (DD-WEBHOOK-003, Gap #8). Exits the process on
+// any failure, matching main()'s original fail-fast behavior.
+func registerAuthWebhookCRUDHandlers(mgr ctrl.Manager, auditStore audit.AuditStore) {
+	webhookServer := mgr.GetWebhookServer()
 	decoder := admission.NewDecoder(scheme)
 
-	// Register WorkflowExecution handler (DD-WEBHOOK-003: Complete audit events)
 	wfeHandler := authwebhook.NewWorkflowExecutionAuthHandler(auditStore)
 	if err := wfeHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into WorkflowExecution handler")
@@ -187,7 +213,6 @@ func main() {
 	webhookServer.Register("/mutate-workflowexecution", &webhook.Admission{Handler: wfeHandler})
 	setupLog.Info("Registered WorkflowExecution webhook handler with audit store")
 
-	// Register RemediationApprovalRequest handler (DD-WEBHOOK-003: Complete audit events)
 	// I1: Use mgr.GetClient() (cached) for consistency with other webhook handlers
 	// DD-AUTH-MCP-001 v3.0: Derive trusted AF SA from POD_NAMESPACE (K8s downward API)
 	podNamespace := os.Getenv("POD_NAMESPACE")
@@ -206,7 +231,7 @@ func main() {
 	webhookServer.Register("/mutate-remediationapprovalrequest", &webhook.Admission{Handler: rarHandler})
 	setupLog.Info("Registered RemediationApprovalRequest webhook handler with audit store")
 
-	// Register RemediationRequest status handler (Gap #8: TimeoutConfig mutation audit)
+	// Gap #8: TimeoutConfig mutation audit.
 	rrHandler := authwebhook.NewRemediationRequestStatusHandler(auditStore)
 	if err := rrHandler.InjectDecoder(decoder); err != nil {
 		setupLog.Error(err, "failed to inject decoder into RemediationRequest handler")
@@ -215,7 +240,6 @@ func main() {
 	webhookServer.Register("/mutate-remediationrequest", &webhook.Admission{Handler: rrHandler})
 	setupLog.Info("Registered RemediationRequest webhook handler with audit store (Gap #8)")
 
-	// Register NotificationRequest DELETE handler (DD-WEBHOOK-003: Complete audit events)
 	// Note: This handler writes audit traces for DELETE attribution (K8s prevents object mutation during DELETE)
 	nrHandler := authwebhook.NewNotificationRequestDeleteHandler(auditStore)
 	if err := nrHandler.InjectDecoder(decoder); err != nil {
@@ -224,8 +248,16 @@ func main() {
 	}
 	webhookServer.Register("/validate-notificationrequest-delete", &webhook.Admission{Handler: nrHandler})
 	setupLog.Info("Registered NotificationRequest DELETE webhook handler with audit store")
+}
 
-	// Register RemediationWorkflow handler (ADR-058: CRD-based workflow registration)
+// registerAuthWebhookWorkflowHandlers wires the RemediationWorkflow and
+// ActionType admission handlers (ADR-058, ADR-059), the RemediationWorkflow
+// finalizer reconciler (Issue #418), and the startup reconciler that syncs
+// existing CRDs with DataStorage on boot (Issue #548, #1246). Exits the
+// process on any failure, matching main()'s original fail-fast behavior.
+func registerAuthWebhookWorkflowHandlers(mgr ctrl.Manager, cfg *awconfig.Config, auditStore audit.AuditStore) {
+	webhookServer := mgr.GetWebhookServer()
+
 	rwDSClient, err := authwebhook.NewDSClientAdapter(
 		cfg.DataStorage.URL,
 		cfg.DataStorage.Timeout,
@@ -256,8 +288,8 @@ func main() {
 	}
 	setupLog.Info("Registered RemediationWorkflow finalizer reconciler")
 
-	// Register ActionType handler (ADR-059: CRD-based action type lifecycle)
-	// Reuses the same DS client adapter since it connects to the same Data Storage service
+	// ADR-059: CRD-based action type lifecycle. Reuses the same DS client
+	// adapter since it connects to the same Data Storage service.
 	atHandler := authwebhook.NewActionTypeHandler(rwDSClient, auditStore, mgr.GetClient())
 	webhookServer.Register("/validate-actiontype", &webhook.Admission{Handler: atHandler})
 	setupLog.Info("Registered ActionType webhook handler with DS client and audit store")
@@ -278,38 +310,33 @@ func main() {
 		os.Exit(1)
 	}
 	setupLog.Info("Registered startup reconciler (Issue #548: PVC-wipe resilience)")
+}
 
-	// Register health check endpoints for liveness and readiness probes
-	// These are required by Kubernetes deployment health checks
-	// Uses standard healthz.Ping checker (same pattern as other controllers)
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
-	}
-	setupLog.Info("Registered health check endpoints", "liveness", "/healthz", "readiness", "/readyz")
-
-	// Issue #748: Load OCP TLS security profile from config before any TLS setup
+// configureAuthWebhookTLSAndHotReload applies the OCP TLS security profile
+// from config (Issue #748), starts the CA file watcher for client-side TLS
+// hot-reload (Issue #756), and starts the log-level hot-reload watcher
+// (Issue #876). Exits the process if the CA watcher fails to start,
+// matching main()'s original fail-fast behavior. Returns a cleanup function
+// that stops any watchers that were successfully started; callers should
+// defer the returned function.
+func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Config, configPath string, atomicLevel zap2.AtomicLevel) func() {
 	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
 		setupLog.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
 	} else if cfg.TLSProfile != "" {
 		setupLog.Info("TLS security profile active", "profile", cfg.TLSProfile)
 	}
 
-	// Issue #756: Start CA file watcher for client-side TLS hot-reload
+	var cleanups []func()
+
 	caWatcher, caWatchErr := sharedtls.StartCAFileWatcher(ctx, setupLog)
 	if caWatchErr != nil {
 		setupLog.Error(caWatchErr, "Failed to start CA file watcher")
 		os.Exit(1)
 	}
 	if caWatcher != nil {
-		defer caWatcher.Stop()
+		cleanups = append(cleanups, caWatcher.Stop)
 	}
 
-	// Issue #876: Log level hot-reload via FileWatcher
 	logLevelWatcher, logWatchErr := hotreload.NewFileWatcher(
 		configPath,
 		func(newContent string) error {
@@ -325,14 +352,41 @@ func main() {
 	)
 	if logWatchErr != nil {
 		setupLog.Error(logWatchErr, "Failed to create log level file watcher")
+	} else if err := logLevelWatcher.Start(ctx); err != nil {
+		setupLog.Info("Log level file watcher failed to start", "error", err)
 	} else {
-		if err := logLevelWatcher.Start(ctx); err != nil {
-			setupLog.Info("Log level file watcher failed to start", "error", err)
-		} else {
-			setupLog.Info("Log level hot-reload watcher started", "path", configPath)
-			defer logLevelWatcher.Stop()
+		setupLog.Info("Log level hot-reload watcher started", "path", configPath)
+		cleanups = append(cleanups, logLevelWatcher.Stop)
+	}
+
+	return func() {
+		for _, c := range cleanups {
+			c()
 		}
 	}
+}
+
+func main() {
+	// ADR-030: YAML-based configuration via -config flag
+	var configPath string
+	flag.StringVar(&configPath, "config", awconfig.DefaultConfigPath, "Path to YAML configuration file (ADR-030)")
+	flag.Parse()
+
+	// Issue #876: Bootstrap logger at INFO for config loading
+	atomicLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
+	ctrl.SetLogger(zap.New(zap.Level(atomicLevel)))
+
+	cfg := loadAuthWebhookConfig(configPath, atomicLevel)
+	mgr := buildAuthWebhookManager(cfg)
+
+	// Graceful shutdown: Flush audit store before exit
+	ctx := ctrl.SetupSignalHandler()
+	auditStore := wireAuthWebhookAuditStore(ctx, cfg)
+
+	registerAuthWebhookHandlers(mgr, cfg, auditStore)
+
+	cleanupHotReload := configureAuthWebhookTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
+	defer cleanupHotReload()
 
 	setupLog.Info("Starting webhook server", "port", cfg.Webhook.Port)
 	if err := mgr.Start(ctx); err != nil {

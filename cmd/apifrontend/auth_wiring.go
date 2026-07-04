@@ -102,6 +102,71 @@ func loadReplayCachePassword(path string) (string, error) {
 	return password, nil
 }
 
+// denyAllMiddleware returns a middleware that rejects every request with a
+// 503, used whenever the auth system cannot be safely initialized.
+func denyAllMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
+		})
+	}
+}
+
+// notReadyChecker returns a ReadyChecker that always reports not-ready,
+// paired with denyAllMiddleware when auth infra is unavailable.
+func notReadyChecker() handler.ReadyChecker {
+	return handler.ReadyChecker(func() bool { return false })
+}
+
+// getK8sConfigFunc resolves the in-cluster or local kubeconfig used by the
+// TokenReview auth fallback. It is a package-level indirection (rather than
+// calling ctrl.GetConfig directly) so unit tests can deterministically
+// exercise both the "kubeconfig available" and "kubeconfig unavailable"
+// branches of buildTokenReviewFallback (AF-CRIT-1) without requiring a real
+// cluster. Production code always uses the real ctrl.GetConfig.
+var getK8sConfigFunc = ctrl.GetConfig
+
+// buildTokenReviewFallback assembles the TokenReview-based JWT validator
+// option used when no OIDC/JWT issuer is configured (AF-CRIT-1). Returns
+// ok=false with a deny-all middleware and not-ready checker if kubeconfig or
+// the Kubernetes client cannot be constructed — fail closed rather than
+// silently allowing unauthenticated requests.
+func buildTokenReviewFallback(logger logr.Logger) (opt auth.JWTValidatorOption, denyAll func(http.Handler) http.Handler, notReady handler.ReadyChecker, ok bool) {
+	restCfg, k8sErr := getK8sConfigFunc()
+	if k8sErr != nil {
+		logger.Error(k8sErr, "CRITICAL: no auth issuer configured and kubeconfig unavailable — denying all authenticated requests (AF-CRIT-1)")
+		return nil, denyAllMiddleware(), notReadyChecker(), false
+	}
+	k8sClient, k8sErr := kubernetes.NewForConfig(restCfg)
+	if k8sErr != nil {
+		logger.Error(k8sErr, "CRITICAL: failed to create kubernetes client for TokenReview — denying all authenticated requests (AF-CRIT-1)")
+		return nil, denyAllMiddleware(), notReadyChecker(), false
+	}
+	logger.Info("auth mode: TokenReview (no OIDC issuer configured)")
+	return auth.WithTokenReviewer(auth.NewTokenReviewer(k8sClient)), nil, nil, true
+}
+
+// buildOIDCValidatorOpts assembles JWT validator options for the OIDC/JWKS
+// auth mode: an optional custom-CA HTTP client for the JWKS fetcher, plus the
+// replay cache. Returns ok=false with a deny-all middleware if the custom CA
+// HTTP client cannot be built.
+func buildOIDCValidatorOpts(cfg *config.Config, authCfg auth.Config, logger logr.Logger) (opts []auth.JWTValidatorOption, denyAll func(http.Handler) http.Handler, ok bool) {
+	if cfg.Auth.OIDCCaFile != "" {
+		httpClient, err := buildOIDCHTTPClient(cfg.Auth.OIDCCaFile)
+		if err != nil {
+			logger.Error(err, "failed to build OIDC HTTP client with custom CA")
+			return nil, denyAllMiddleware(), false
+		}
+		opts = append(opts, auth.WithHTTPClient(httpClient))
+		logger.Info("OIDC JWKS fetcher configured with custom CA", "caFile", cfg.Auth.OIDCCaFile)
+	}
+	if rc := buildReplayCache(cfg.Auth.ReplayCache, cfg.Auth.EnableReplayProtection, logger); rc != nil {
+		opts = append(opts, auth.WithReplayCache(rc))
+	}
+	logger.Info("auth mode: OIDC/JWKS", "providers", len(authCfg.JWT))
+	return opts, nil, true
+}
+
 func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (func(http.Handler) http.Handler, handler.ReadyChecker) {
 	alwaysReady := handler.ReadyChecker(func() bool { return true })
 
@@ -110,48 +175,17 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	var validatorOpts []auth.JWTValidatorOption
 
 	if len(authCfg.JWT) == 0 {
-		restCfg, k8sErr := ctrl.GetConfig()
-		if k8sErr != nil {
-			logger.Error(k8sErr, "CRITICAL: no auth issuer configured and kubeconfig unavailable — denying all authenticated requests (AF-CRIT-1)")
-			denyAll := func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
-				})
-			}
-			notReady := handler.ReadyChecker(func() bool { return false })
+		tokenReviewOpt, denyAll, notReady, ok := buildTokenReviewFallback(logger)
+		if !ok {
 			return denyAll, notReady
 		}
-		k8sClient, k8sErr := kubernetes.NewForConfig(restCfg)
-		if k8sErr != nil {
-			logger.Error(k8sErr, "CRITICAL: failed to create kubernetes client for TokenReview — denying all authenticated requests (AF-CRIT-1)")
-			denyAll := func(next http.Handler) http.Handler {
-				return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-					http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
-				})
-			}
-			notReady := handler.ReadyChecker(func() bool { return false })
-			return denyAll, notReady
-		}
-		validatorOpts = append(validatorOpts, auth.WithTokenReviewer(auth.NewTokenReviewer(k8sClient)))
-		logger.Info("auth mode: TokenReview (no OIDC issuer configured)")
+		validatorOpts = append(validatorOpts, tokenReviewOpt)
 	} else {
-		if cfg.Auth.OIDCCaFile != "" {
-			httpClient, err := buildOIDCHTTPClient(cfg.Auth.OIDCCaFile)
-			if err != nil {
-				logger.Error(err, "failed to build OIDC HTTP client with custom CA")
-				return func(next http.Handler) http.Handler {
-					return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-						http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
-					})
-				}, alwaysReady
-			}
-			validatorOpts = append(validatorOpts, auth.WithHTTPClient(httpClient))
-			logger.Info("OIDC JWKS fetcher configured with custom CA", "caFile", cfg.Auth.OIDCCaFile)
+		oidcOpts, denyAll, ok := buildOIDCValidatorOpts(cfg, authCfg, logger)
+		if !ok {
+			return denyAll, alwaysReady
 		}
-		if rc := buildReplayCache(cfg.Auth.ReplayCache, cfg.Auth.EnableReplayProtection, logger); rc != nil {
-			validatorOpts = append(validatorOpts, auth.WithReplayCache(rc))
-		}
-		logger.Info("auth mode: OIDC/JWKS", "providers", len(authCfg.JWT))
+		validatorOpts = append(validatorOpts, oidcOpts...)
 	}
 	providerLimiter := ratelimit.NewProviderLimiter(ratelimit.PerProviderConfig{
 		FetchIntervalSeconds: 300,
@@ -161,11 +195,7 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	validator, err := auth.NewJWTValidator(authCfg, validatorOpts...)
 	if err != nil {
 		logger.Error(err, "failed to create JWT validator — falling back to deny-all")
-		return func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				http.Error(w, "authentication system unavailable", http.StatusServiceUnavailable)
-			})
-		}, alwaysReady
+		return denyAllMiddleware(), alwaysReady
 	}
 
 	mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{

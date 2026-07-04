@@ -41,7 +41,6 @@ func DiffEASteps(prev, curr *eav1alpha1.EffectivenessAssessment) []VerificationS
 		return nil
 	}
 
-	var steps []VerificationStep
 	prevC := eav1alpha1.EAComponents{}
 	prevPhase := ""
 	if prev != nil {
@@ -51,128 +50,147 @@ func DiffEASteps(prev, curr *eav1alpha1.EffectivenessAssessment) []VerificationS
 	currC := curr.Status.Components
 	currPhase := curr.Status.Phase
 
-	if prevPhase != currPhase && currPhase != "" {
-		if currPhase == eav1alpha1.PhaseAssessing &&
-			(prevPhase == eav1alpha1.PhaseStabilizing || prevPhase == "" || prevPhase == eav1alpha1.PhasePending) {
-			steps = append(steps, VerificationStep{
-				Step:    "stabilization_elapsed",
-				Message: "Stabilization window elapsed",
-				Data: map[string]any{
-					"step_status": StepStatusCompleted,
-					"detail":      "Stabilization window elapsed",
-				},
-			})
-		} else {
-			status := StepStatusCompleted
-			if currPhase == eav1alpha1.PhaseFailed {
-				status = StepStatusFailed
-			}
-			step := VerificationStep{
-				Step:    "phase_transition",
-				Message: fmt.Sprintf("EA phase: %s", currPhase),
-				Data: map[string]any{
-					"phase":       currPhase,
-					"step_status": status,
-					"detail":      fmt.Sprintf("EA phase: %s", currPhase),
-				},
-			}
-			if prevPhase != "" {
-				step.Data["previous_phase"] = prevPhase
-			}
-			steps = append(steps, step)
+	var steps []VerificationStep
+	appendIfPresent := func(step *VerificationStep) {
+		if step != nil {
+			steps = append(steps, *step)
 		}
 	}
 
-	if !prevC.HashComputed && currC.HashComputed {
-		detail := "Spec hash comparison completed"
-		if currC.PostRemediationSpecHash != "" {
-			short := currC.PostRemediationSpecHash
-			if len(short) > 12 {
-				short = short[:12]
-			}
-			detail = fmt.Sprintf("Spec hash computed (%s)", short)
-		}
-		data := map[string]any{
-			"step_status": StepStatusCompleted,
-			"detail":      detail,
-		}
-		if currC.PostRemediationSpecHash != "" {
-			data["post_remediation_spec_hash"] = currC.PostRemediationSpecHash
-		}
-		steps = append(steps, VerificationStep{
-			Step:    "spec_hash_computed",
-			Message: detail,
-			Data:    data,
-		})
-	}
-
-	// Alert decay retries → alert_check in_progress (only when not yet completed).
-	// Placed before the completed check so that in the rare case both fire in the
-	// same diff (AlertDecayRetries changed AND AlertAssessed became true), only
-	// the completed event is emitted (the !currC.AlertAssessed guard filters it).
-	if prevC.AlertDecayRetries != currC.AlertDecayRetries && currC.AlertDecayRetries > 0 && !currC.AlertAssessed {
-		detail := fmt.Sprintf("Waiting for alert to clear (retry %d)", currC.AlertDecayRetries)
-		if curr.Spec.SignalName != "" {
-			detail = fmt.Sprintf("Waiting for %s to clear (retry %d)", curr.Spec.SignalName, currC.AlertDecayRetries)
-		}
-		steps = append(steps, VerificationStep{
-			Step:    "alert_check",
-			Message: detail,
-			Data: map[string]any{
-				"step_status": StepStatusInProgress,
-				"detail":      detail,
-				"retry_count": currC.AlertDecayRetries,
-			},
-		})
-	}
-
-	if !prevC.AlertAssessed && currC.AlertAssessed {
-		detail := "Alert resolution check completed"
-		data := map[string]any{
-			"step_status": StepStatusCompleted,
-			"detail":      detail,
-		}
-		if currC.AlertScore != nil {
-			data["score"] = *currC.AlertScore
-		}
-		steps = append(steps, VerificationStep{
-			Step:    "alert_check",
-			Message: detail,
-			Data:    data,
-		})
-	}
-
-	if !prevC.HealthAssessed && currC.HealthAssessed {
-		detail := "Health check completed"
-		data := map[string]any{
-			"step_status": StepStatusCompleted,
-			"detail":      detail,
-		}
-		if currC.HealthScore != nil {
-			data["score"] = *currC.HealthScore
-		}
-		steps = append(steps, VerificationStep{
-			Step:    "health_check",
-			Message: detail,
-			Data:    data,
-		})
-	}
-
-	if !prevC.MetricsAssessed && currC.MetricsAssessed {
-		detail := "Metrics comparison completed"
-		data := map[string]any{
-			"step_status": StepStatusCompleted,
-			"detail":      detail,
-		}
-		if currC.MetricsScore != nil {
-			data["score"] = *currC.MetricsScore
-		}
-		steps = append(steps, VerificationStep{
-			Step:    "metrics_check",
-			Message: detail,
-			Data:    data,
-		})
-	}
+	appendIfPresent(diffPhaseTransitionStep(prevPhase, currPhase))
+	appendIfPresent(diffSpecHashStep(prevC, currC))
+	appendIfPresent(diffAlertCheckInProgressStep(prevC, currC, curr.Spec.SignalName))
+	appendIfPresent(diffAlertCheckCompletedStep(prevC, currC))
+	appendIfPresent(diffHealthCheckStep(prevC, currC))
+	appendIfPresent(diffMetricsCheckStep(prevC, currC))
 
 	return steps
+}
+
+// diffPhaseTransitionStep reports the EA phase transition between prevPhase
+// and currPhase, if any. The Stabilizing/Pending -> Assessing transition gets
+// its own dedicated "stabilization_elapsed" step name (Console contract);
+// all other transitions are reported as a generic "phase_transition" step.
+func diffPhaseTransitionStep(prevPhase, currPhase string) *VerificationStep {
+	if prevPhase == currPhase || currPhase == "" {
+		return nil
+	}
+	if currPhase == eav1alpha1.PhaseAssessing &&
+		(prevPhase == eav1alpha1.PhaseStabilizing || prevPhase == "" || prevPhase == eav1alpha1.PhasePending) {
+		return &VerificationStep{
+			Step:    "stabilization_elapsed",
+			Message: "Stabilization window elapsed",
+			Data: map[string]any{
+				"step_status": StepStatusCompleted,
+				"detail":      "Stabilization window elapsed",
+			},
+		}
+	}
+
+	status := StepStatusCompleted
+	if currPhase == eav1alpha1.PhaseFailed {
+		status = StepStatusFailed
+	}
+	step := &VerificationStep{
+		Step:    "phase_transition",
+		Message: fmt.Sprintf("EA phase: %s", currPhase),
+		Data: map[string]any{
+			"phase":       currPhase,
+			"step_status": status,
+			"detail":      fmt.Sprintf("EA phase: %s", currPhase),
+		},
+	}
+	if prevPhase != "" {
+		step.Data["previous_phase"] = prevPhase
+	}
+	return step
+}
+
+// diffSpecHashStep reports when the post-remediation spec hash was just
+// computed (HashComputed transitioned false -> true).
+func diffSpecHashStep(prevC, currC eav1alpha1.EAComponents) *VerificationStep {
+	if prevC.HashComputed || !currC.HashComputed {
+		return nil
+	}
+	detail := "Spec hash comparison completed"
+	if currC.PostRemediationSpecHash != "" {
+		short := currC.PostRemediationSpecHash
+		if len(short) > 12 {
+			short = short[:12]
+		}
+		detail = fmt.Sprintf("Spec hash computed (%s)", short)
+	}
+	data := map[string]any{
+		"step_status": StepStatusCompleted,
+		"detail":      detail,
+	}
+	if currC.PostRemediationSpecHash != "" {
+		data["post_remediation_spec_hash"] = currC.PostRemediationSpecHash
+	}
+	return &VerificationStep{Step: "spec_hash_computed", Message: detail, Data: data}
+}
+
+// diffAlertCheckInProgressStep reports an alert-decay retry as an in-progress
+// alert_check step. Only emitted when not yet completed (!currC.AlertAssessed)
+// so that in the rare case both this and diffAlertCheckCompletedStep would
+// fire in the same diff, only the completed event is emitted.
+func diffAlertCheckInProgressStep(prevC, currC eav1alpha1.EAComponents, signalName string) *VerificationStep {
+	if prevC.AlertDecayRetries == currC.AlertDecayRetries || currC.AlertDecayRetries <= 0 || currC.AlertAssessed {
+		return nil
+	}
+	detail := fmt.Sprintf("Waiting for alert to clear (retry %d)", currC.AlertDecayRetries)
+	if signalName != "" {
+		detail = fmt.Sprintf("Waiting for %s to clear (retry %d)", signalName, currC.AlertDecayRetries)
+	}
+	return &VerificationStep{
+		Step:    "alert_check",
+		Message: detail,
+		Data: map[string]any{
+			"step_status": StepStatusInProgress,
+			"detail":      detail,
+			"retry_count": currC.AlertDecayRetries,
+		},
+	}
+}
+
+// diffAlertCheckCompletedStep reports alert resolution check completion
+// (AlertAssessed transitioned false -> true).
+func diffAlertCheckCompletedStep(prevC, currC eav1alpha1.EAComponents) *VerificationStep {
+	if prevC.AlertAssessed || !currC.AlertAssessed {
+		return nil
+	}
+	detail := "Alert resolution check completed"
+	data := map[string]any{"step_status": StepStatusCompleted, "detail": detail}
+	if currC.AlertScore != nil {
+		data["score"] = *currC.AlertScore
+	}
+	return &VerificationStep{Step: "alert_check", Message: detail, Data: data}
+}
+
+// diffHealthCheckStep reports health check completion (HealthAssessed
+// transitioned false -> true).
+func diffHealthCheckStep(prevC, currC eav1alpha1.EAComponents) *VerificationStep {
+	if prevC.HealthAssessed || !currC.HealthAssessed {
+		return nil
+	}
+	detail := "Health check completed"
+	data := map[string]any{"step_status": StepStatusCompleted, "detail": detail}
+	if currC.HealthScore != nil {
+		data["score"] = *currC.HealthScore
+	}
+	return &VerificationStep{Step: "health_check", Message: detail, Data: data}
+}
+
+// diffMetricsCheckStep reports metrics comparison completion (MetricsAssessed
+// transitioned false -> true).
+func diffMetricsCheckStep(prevC, currC eav1alpha1.EAComponents) *VerificationStep {
+	if prevC.MetricsAssessed || !currC.MetricsAssessed {
+		return nil
+	}
+	detail := "Metrics comparison completed"
+	data := map[string]any{"step_status": StepStatusCompleted, "detail": detail}
+	if currC.MetricsScore != nil {
+		data["score"] = *currC.MetricsScore
+	}
+	return &VerificationStep{Step: "metrics_check", Message: detail, Data: data}
 }

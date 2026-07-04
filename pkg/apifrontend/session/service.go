@@ -88,7 +88,7 @@ type CRDSessionService struct {
 
 	mu             sync.RWMutex
 	crdIndex       map[string]string        // sessionID -> CRD name
-	pendingConfigs map[string]*CreateConfig  // sessionID -> deferred CreateConfig; cleaned on Delete(). Since #1293, MaterializeCRD is deprecated so entries persist until session deletion (bounded by active session count).
+	pendingConfigs map[string]*CreateConfig // sessionID -> deferred CreateConfig; cleaned on Delete(). Since #1293, MaterializeCRD is deprecated so entries persist until session deletion (bounded by active session count).
 }
 
 // NewCRDSessionService creates a new CRDSessionService. The delegate should
@@ -504,51 +504,19 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 		return fmt.Errorf("kaSessionID is required for IS CRD initialization")
 	}
 
-	rrRef := v1alpha1.ObjectRef{Namespace: rrNamespace, Name: rrName}
-
-	var existingList v1alpha1.InvestigationSessionList
-	if err := s.client.List(ctx, &existingList,
-		client.InNamespace(s.namespace),
-		client.MatchingFields{FieldIndexRRName: rrName},
-	); err != nil {
-		return fmt.Errorf("list sessions for RR %s/%s: %w", rrNamespace, rrName, err)
+	alreadyOwned, err := s.rejectIfActiveForOtherUser(ctx, rrNamespace, rrName, username)
+	if err != nil {
+		return err
 	}
-	for i := range existingList.Items {
-		existing := &existingList.Items[i]
-		if !IsTerminal(existing.Status.Phase) {
-			if existing.Spec.UserIdentity.Username == username {
-				return nil
-			}
-			return fmt.Errorf("session_active: an active investigation session already exists for RR %s/%s",
-				rrNamespace, rrName)
-		}
+	if alreadyOwned {
+		return nil
 	}
 
 	crdName := kaSessionID
 	if !validCRDName.MatchString(crdName) {
 		crdName = fmt.Sprintf("isess-%d", time.Now().UnixNano())
 	}
-
-	crd := &v1alpha1.InvestigationSession{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      crdName,
-			Namespace: s.namespace,
-			Labels: map[string]string{
-				LabelManagedBy: "kubernaut-apifrontend",
-				LabelUser:      sanitizeLabelValue(username),
-				LabelRRName:    sanitizeLabelValue(rrName),
-			},
-		},
-		Spec: v1alpha1.InvestigationSessionSpec{
-			RemediationRequestRef: rrRef,
-			A2ATaskID:             kaSessionID,
-			UserIdentity: v1alpha1.SessionUser{
-				Username: username,
-				Groups:   groups,
-			},
-			JoinMode: v1alpha1.SessionJoinModeTakeover,
-		},
-	}
+	crd := buildTakeoverCRD(s.namespace, crdName, rrNamespace, rrName, kaSessionID, username, groups)
 
 	if rrNamespace == s.namespace {
 		setRROwnerReference(ctx, s.client, s.logger, crd, rrNamespace, rrName)
@@ -573,19 +541,12 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 	s.mu.Unlock()
 
 	s.incSessionGauge(string(v1alpha1.SessionPhaseActive))
-
-	if s.auditor != nil {
-		s.auditor.Emit(ctx, &audit.Event{
-			Type:   audit.EventSessionCreated,
-			UserID: username,
-			Detail: map[string]string{
-				"session_id":    kaSessionID,
-				"join_mode":     string(v1alpha1.SessionJoinModeTakeover),
-				"user_identity": username,
-				"rr_ref":        rrNamespace + "/" + rrName,
-			},
-		})
-	}
+	s.emitSessionCreatedAudit(ctx, username, map[string]string{
+		"session_id":    kaSessionID,
+		"join_mode":     string(v1alpha1.SessionJoinModeTakeover),
+		"user_identity": username,
+		"rr_ref":        rrNamespace + "/" + rrName,
+	})
 
 	s.logger.Info("IS CRD initialized for takeover",
 		"crd_name", crdName,
@@ -593,6 +554,71 @@ func (s *CRDSessionService) InitializeSessionByRR(ctx context.Context, rrNamespa
 		"user", username,
 	)
 	return nil
+}
+
+// rejectIfActiveForOtherUser lists existing InvestigationSessions for rrName.
+// Returns (true, nil) if a non-terminal one already belongs to username
+// (idempotent takeover — caller should stop and return success), (false,
+// err) if a non-terminal one belongs to a different user, and (false, nil)
+// if none exist or all are terminal (caller should proceed to create one).
+func (s *CRDSessionService) rejectIfActiveForOtherUser(ctx context.Context, rrNamespace, rrName, username string) (bool, error) {
+	var existingList v1alpha1.InvestigationSessionList
+	if err := s.client.List(ctx, &existingList,
+		client.InNamespace(s.namespace),
+		client.MatchingFields{FieldIndexRRName: rrName},
+	); err != nil {
+		return false, fmt.Errorf("list sessions for RR %s/%s: %w", rrNamespace, rrName, err)
+	}
+	for i := range existingList.Items {
+		existing := &existingList.Items[i]
+		if IsTerminal(existing.Status.Phase) {
+			continue
+		}
+		if existing.Spec.UserIdentity.Username == username {
+			return true, nil
+		}
+		return false, fmt.Errorf("session_active: an active investigation session already exists for RR %s/%s",
+			rrNamespace, rrName)
+	}
+	return false, nil
+}
+
+// buildTakeoverCRD constructs the InvestigationSession CRD used for a
+// dynamic takeover (JoinMode=Takeover), keyed by the KA session ID.
+func buildTakeoverCRD(namespace, crdName, rrNamespace, rrName, kaSessionID, username string, groups []string) *v1alpha1.InvestigationSession {
+	return &v1alpha1.InvestigationSession{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      crdName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				LabelManagedBy: "kubernaut-apifrontend",
+				LabelUser:      sanitizeLabelValue(username),
+				LabelRRName:    sanitizeLabelValue(rrName),
+			},
+		},
+		Spec: v1alpha1.InvestigationSessionSpec{
+			RemediationRequestRef: v1alpha1.ObjectRef{Namespace: rrNamespace, Name: rrName},
+			A2ATaskID:             kaSessionID,
+			UserIdentity: v1alpha1.SessionUser{
+				Username: username,
+				Groups:   groups,
+			},
+			JoinMode: v1alpha1.SessionJoinModeTakeover,
+		},
+	}
+}
+
+// emitSessionCreatedAudit emits an EventSessionCreated audit event when an
+// auditor is configured. No-op otherwise.
+func (s *CRDSessionService) emitSessionCreatedAudit(ctx context.Context, username string, detail map[string]string) {
+	if s.auditor == nil {
+		return
+	}
+	s.auditor.Emit(ctx, &audit.Event{
+		Type:   audit.EventSessionCreated,
+		UserID: username,
+		Detail: detail,
+	})
 }
 
 // IsMaterialized returns true if the session's CRD has been created in K8s.
@@ -641,45 +667,12 @@ func (s *CRDSessionService) CreateInvestigationSession(ctx context.Context, cfg 
 
 	crdName := fmt.Sprintf("is-%s", cfg.RRName)
 
-	var existing v1alpha1.InvestigationSession
-	err := s.getReader().Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: crdName}, &existing)
-	if err == nil {
-		if !IsTerminal(existing.Status.Phase) {
-			if existing.Spec.UserIdentity.Username == cfg.Username {
-				return crdName, nil
-			}
-			return "", fmt.Errorf("session_active: an active investigation session already exists for RR %s/%s",
-				cfg.RRNamespace, cfg.RRName)
-		}
-		if delErr := s.client.Delete(ctx, &existing); delErr != nil && !apierrors.IsNotFound(delErr) {
-			return "", fmt.Errorf("delete terminal IS %s: %w", crdName, delErr)
-		}
-	} else if !apierrors.IsNotFound(err) {
-		return "", fmt.Errorf("get IS %s: %w", crdName, err)
+	done, result, err := s.reconcileExistingIS(ctx, crdName, cfg)
+	if done {
+		return result, err
 	}
 
-	rrRef := v1alpha1.ObjectRef{Namespace: cfg.RRNamespace, Name: cfg.RRName}
-	crd := &v1alpha1.InvestigationSession{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      crdName,
-			Namespace: s.namespace,
-			Labels: map[string]string{
-				LabelManagedBy: "kubernaut-apifrontend",
-				LabelUser:      sanitizeLabelValue(cfg.Username),
-				LabelRRName:    sanitizeLabelValue(cfg.RRName),
-			},
-		},
-		Spec: v1alpha1.InvestigationSessionSpec{
-			RemediationRequestRef: rrRef,
-			A2ATaskID:             cfg.TaskID,
-			UserIdentity: v1alpha1.SessionUser{
-				Username: cfg.Username,
-				Groups:   cfg.Groups,
-			},
-			JoinMode: cfg.JoinMode,
-		},
-	}
-
+	crd := buildInvestigationSessionCRD(s.namespace, crdName, cfg)
 	if cfg.RRNamespace == s.namespace {
 		setRROwnerReference(ctx, s.client, s.logger, crd, cfg.RRNamespace, cfg.RRName)
 	}
@@ -695,18 +688,12 @@ func (s *CRDSessionService) CreateInvestigationSession(ctx context.Context, cfg 
 	s.crdIndex[cfg.TaskID] = crdName
 	s.mu.Unlock()
 
-	if s.auditor != nil {
-		s.auditor.Emit(ctx, &audit.Event{
-			Type:   audit.EventSessionCreated,
-			UserID: cfg.Username,
-			Detail: map[string]string{
-				"crd_name":  crdName,
-				"task_id":   cfg.TaskID,
-				"join_mode": string(cfg.JoinMode),
-				"rr_ref":    cfg.RRNamespace + "/" + cfg.RRName,
-			},
-		})
-	}
+	s.emitSessionCreatedAudit(ctx, cfg.Username, map[string]string{
+		"crd_name":  crdName,
+		"task_id":   cfg.TaskID,
+		"join_mode": string(cfg.JoinMode),
+		"rr_ref":    cfg.RRNamespace + "/" + cfg.RRName,
+	})
 
 	s.logger.Info("IS CRD created",
 		"crd_name", crdName,
@@ -715,6 +702,60 @@ func (s *CRDSessionService) CreateInvestigationSession(ctx context.Context, cfg 
 		"user", cfg.Username,
 	)
 	return crdName, nil
+}
+
+// reconcileExistingIS looks up an existing IS CRD named crdName. If found and
+// still active for cfg.Username, or found and belonging to a different
+// active user, it returns done=true with the appropriate (result, err) for
+// the caller to return immediately. If found but terminal, it deletes it and
+// returns done=false so the caller proceeds to create a fresh one. If not
+// found, also returns done=false.
+func (s *CRDSessionService) reconcileExistingIS(ctx context.Context, crdName string, cfg CreateISConfig) (done bool, result string, err error) {
+	var existing v1alpha1.InvestigationSession
+	getErr := s.getReader().Get(ctx, types.NamespacedName{Namespace: s.namespace, Name: crdName}, &existing)
+	if apierrors.IsNotFound(getErr) {
+		return false, "", nil
+	}
+	if getErr != nil {
+		return true, "", fmt.Errorf("get IS %s: %w", crdName, getErr)
+	}
+
+	if !IsTerminal(existing.Status.Phase) {
+		if existing.Spec.UserIdentity.Username == cfg.Username {
+			return true, crdName, nil
+		}
+		return true, "", fmt.Errorf("session_active: an active investigation session already exists for RR %s/%s",
+			cfg.RRNamespace, cfg.RRName)
+	}
+	if delErr := s.client.Delete(ctx, &existing); delErr != nil && !apierrors.IsNotFound(delErr) {
+		return true, "", fmt.Errorf("delete terminal IS %s: %w", crdName, delErr)
+	}
+	return false, "", nil
+}
+
+// buildInvestigationSessionCRD constructs the InvestigationSession CRD for
+// the pure CRD-driven coordination model (spec.status.phase left unset).
+func buildInvestigationSessionCRD(namespace, crdName string, cfg CreateISConfig) *v1alpha1.InvestigationSession {
+	return &v1alpha1.InvestigationSession{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      crdName,
+			Namespace: namespace,
+			Labels: map[string]string{
+				LabelManagedBy: "kubernaut-apifrontend",
+				LabelUser:      sanitizeLabelValue(cfg.Username),
+				LabelRRName:    sanitizeLabelValue(cfg.RRName),
+			},
+		},
+		Spec: v1alpha1.InvestigationSessionSpec{
+			RemediationRequestRef: v1alpha1.ObjectRef{Namespace: cfg.RRNamespace, Name: cfg.RRName},
+			A2ATaskID:             cfg.TaskID,
+			UserIdentity: v1alpha1.SessionUser{
+				Username: cfg.Username,
+				Groups:   cfg.Groups,
+			},
+			JoinMode: cfg.JoinMode,
+		},
+	}
 }
 
 // UpdateISCorrelation writes the KA session ID to status.kaCorrelationID
