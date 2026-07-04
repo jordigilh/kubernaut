@@ -105,16 +105,23 @@ var _ = Describe("kubernaut_await_session", func() {
 
 			go func() {
 				defer GinkgoRecover()
+				// Use an independent context rather than the closure-captured
+				// spec-level ctx: this goroutine can still be running (e.g.
+				// during the trailing Create below) after HandleAwaitSession
+				// returns and the spec completes, at which point the next
+				// spec's BeforeEach reassigns the shared ctx variable — a
+				// real data race under -race.
+				bgCtx := context.Background()
 				time.Sleep(200 * time.Millisecond)
 				var updated aiav1alpha1.AIAnalysis
-				Expect(tc.Get(ctx, crclient.ObjectKey{Namespace: "default", Name: "aa-watch"}, &updated)).To(Succeed())
+				Expect(tc.Get(bgCtx, crclient.ObjectKey{Namespace: "default", Name: "aa-watch"}, &updated)).To(Succeed())
 				updated.Status.KASession = &aiav1alpha1.KASession{ID: "session-via-watch"}
-				Expect(tc.Status().Update(ctx, &updated)).To(Succeed())
+				Expect(tc.Status().Update(bgCtx, &updated)).To(Succeed())
 
 				// Unrelated AIAnalysis events (different RR name) must be
 				// ignored by the watch loop rather than mistakenly matched.
 				other := newTypedAIAnalysis("default", "aa-watch-other", "rr-watch-other", "session-should-be-ignored")
-				Expect(tc.Create(ctx, other)).To(Succeed())
+				Expect(tc.Create(bgCtx, other)).To(Succeed())
 			}()
 
 			result, err := tools.HandleAwaitSession(ctx, tc, tools.AwaitSessionArgs{
