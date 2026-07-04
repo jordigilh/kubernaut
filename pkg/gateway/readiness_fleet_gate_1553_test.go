@@ -22,6 +22,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,10 +36,27 @@ import (
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 )
 
-// fakeProber1553 is a minimal readiness.Prober test double.
-type fakeProber1553 struct{ err error }
+// fakeProber1553 is a minimal readiness.Prober test double. Guarded by a
+// mutex because readiness.Gate probes it from a background goroutine
+// (started by gate.Start) while UT-GW-1553-003 mutates err from the test
+// goroutine to simulate the Fleet dependency recovering mid-test — without
+// the lock, `go test -race` correctly flags this as a data race.
+type fakeProber1553 struct {
+	mu  sync.Mutex
+	err error
+}
 
-func (f *fakeProber1553) Probe(_ context.Context) error { return f.err }
+func (f *fakeProber1553) Probe(_ context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.err
+}
+
+func (f *fakeProber1553) setErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.err = err
+}
 
 // BR-INTEGRATION-065 / #1553: Gateway readiness must fail closed
 // (pod-wide NotReady) when a configured Fleet dependency (MCP Gateway or
@@ -107,7 +125,7 @@ var _ = Describe("BR-INTEGRATION-065: Readiness Fleet Dependency Gate (#1553)", 
 		handler.ServeHTTP(w, req)
 		Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
 
-		prober.err = nil
+		prober.setErr(nil)
 
 		Eventually(func() int {
 			req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
