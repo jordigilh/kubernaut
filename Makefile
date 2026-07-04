@@ -517,21 +517,23 @@ test-fuzz: ## Run all fuzz targets' seed + regression corpora as regular tests (
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🐛 Fuzz Corpus Regression -- all services (seed + saved crashers, no new fuzzing)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@pkgs=$$(grep -rl '^func Fuzz' --include='*_test.go' . | xargs -n1 dirname | sort -u); \
-	if [ -z "$$pkgs" ]; then \
+	@files=$$(grep -rl '^func Fuzz' --include='*_test.go' .); \
+	if [ -z "$$files" ]; then \
 		echo "No fuzz targets found"; \
 		exit 0; \
 	fi; \
+	pkgs=$$(echo "$$files" | xargs -n1 dirname | sort -u); \
 	echo "Packages: $$pkgs"; \
 	go test $$pkgs -run '^Fuzz' -v
 
 .PHONY: test-fuzz-%
 test-fuzz-%: ## Run fuzz corpus regression for one service's fuzz targets, if any (no-op otherwise): make test-fuzz-gateway. Wired into CI's per-service unit-tests job.
-	@pkgs=$$(grep -rl '^func Fuzz' --include='*_test.go' ./pkg/$* 2>/dev/null | xargs -n1 dirname | sort -u); \
-	if [ -z "$$pkgs" ]; then \
+	@files=$$(grep -rl '^func Fuzz' --include='*_test.go' ./pkg/$* 2>/dev/null); \
+	if [ -z "$$files" ]; then \
 		echo "🐛 No fuzz targets in pkg/$* -- skipping"; \
 		exit 0; \
 	fi; \
+	pkgs=$$(echo "$$files" | xargs -n1 dirname | sort -u); \
 	echo "🐛 Fuzz Corpus Regression ($*): $$pkgs"; \
 	go test $$pkgs -run '^Fuzz' -v
 
