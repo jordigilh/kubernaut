@@ -44,7 +44,9 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		defer cancel()
 
 		By("Connecting to Kuadrant MCP gateway")
-		c, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient, err := fleetAuthenticatedHTTPClient()
+		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
+		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway")
 		defer c.Close()
 
@@ -72,7 +74,9 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		defer cancel()
 
 		By("Connecting to Kuadrant MCP gateway")
-		c, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient, err := fleetAuthenticatedHTTPClient()
+		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
+		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred())
 		defer c.Close()
 
@@ -113,7 +117,9 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		defer cancel()
 
 		By("Connecting to Kuadrant MCP gateway")
-		c, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient, err := fleetAuthenticatedHTTPClient()
+		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
+		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred())
 		defer c.Close()
 

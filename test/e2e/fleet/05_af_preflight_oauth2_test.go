@@ -18,12 +18,14 @@ package fleet
 
 import (
 	"context"
+	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,7 +49,8 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 
 		By("Verifying MCP gateway is reachable via NodePort")
 		mcpCtx := context.Background()
-		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient := &http.Client{Transport: testauth.NewStaticTokenTransport(token)}
+		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred(), "MCP gateway must be reachable via NodePort")
 		defer mcpClient.Close()
 

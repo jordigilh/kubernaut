@@ -40,7 +40,9 @@ import (
 var _ = Describe("E2E-FLEET-KUA: Kuadrant MCP Gateway Pipeline", Label("fleet"), func() {
 	It("E2E-FLEET-KUA-001 [CM-6]: Kuadrant broker responds to MCP initialize and exposes tools with correct prefix", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient, err := fleetAuthenticatedHTTPClient()
+		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
+		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred(), "should connect to Kuadrant MCP gateway via NodePort")
 		defer mcpClient.Close()
 

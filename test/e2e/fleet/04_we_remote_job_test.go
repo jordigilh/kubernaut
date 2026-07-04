@@ -40,7 +40,9 @@ import (
 var _ = Describe("E2E-FLEET-005 [AC-3]: WE dispatches remote Job via MCP gateway to loopback cluster (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should discover job-creation tools via MCP gateway and verify tool availability", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient, err := fleetAuthenticatedHTTPClient()
+		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
+		mcpClient, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway via NodePort")
 		defer mcpClient.Close()
 

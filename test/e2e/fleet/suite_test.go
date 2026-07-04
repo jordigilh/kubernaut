@@ -206,6 +206,47 @@ func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableSt
 	return statusCode, respBody
 }
 
+// fleetKeycloakNodePort is this suite's Keycloak NodePort (DD-TEST-001, same
+// dedicated port as the FMC E2E lane -- see keycloakHostPortFleet in
+// test/infrastructure/fleet_e2e.go, which is unexported and so can't be
+// referenced directly from this package).
+const fleetKeycloakNodePort = 30557
+
+// fleetAuthenticatedHTTPClient fetches a Keycloak client_credentials token
+// (kubernaut-fleet-read / kube-mcp-server-audience -- the same identity
+// FMC, SP, and every other fleet-aware production service use) and returns
+// an *http.Client that injects it as "Authorization: Bearer <token>" on
+// every outbound request.
+//
+// Required because kube-mcp-server's RequireOAuth resource-server check
+// gates the mcp-gateway broker's *per-client* upstream session negotiation
+// on tools/call (not just its own tools/list discovery, which the broker
+// serves from its aggregated catalog using its own static
+// BrokerCredentialToken and therefore succeeds even for an unauthenticated
+// caller). A raw mcpclient.New(ctx, mcpGatewayURL) with no WithHTTPClient
+// option sends no Authorization header at all, so any tools/call it makes
+// fails with "rejected by transport: sending \"tools/call\": Internal Server
+// Error" (jsonrpc2 -32005) once the target registration is backed by the
+// RequireOAuth-protected remote kube-mcp-server (AllRegistrationsRemote) --
+// confirmed by reproducing the exact broker/router error via a raw MCP
+// tools/call through mcp-gateway-istio with and without a client-supplied
+// token (2026-07-04 RCA). The token has a 3600s lifespan
+// (keycloak-realm-fleet.json accessTokenLifespan) -- comfortably longer than
+// any single test or this suite's ~20 minute runtime -- so fetching once per
+// client construction (no refresh) is sufficient; mirrors
+// probeAuthenticatedResourcesList's bearerTokenTransport in
+// test/infrastructure/fleet_e2e.go, which proved the same pattern during
+// SynchronizedBeforeSuite's readiness probe.
+func fleetAuthenticatedHTTPClient() (*http.Client, error) {
+	cfg := infrastructure.DefaultKeycloakFleetReadConfig(fleetKeycloakNodePort)
+	cfg.Scopes = []string{"kube-mcp-server-audience"}
+	token, err := infrastructure.GetKeycloakClientCredentialsToken(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("acquire Keycloak client_credentials token: %w", err)
+	}
+	return &http.Client{Transport: testauth.NewStaticTokenTransport(token)}, nil
+}
+
 // newFleetMCPClient creates an MCP client with auto-discovered tool prefix.
 // Kuadrant uses "loopback_cluster_" (from MCPServerRegistration spec.prefix),
 // not the EAIGW "{clusterID}__" convention. DiscoverToolPrefix queries
@@ -220,9 +261,14 @@ func newFleetMCPClient(ctx context.Context, clusterID string) (*mcpclient.Client
 		retryInterval = 5 * time.Second
 	)
 
+	authClient, err := fleetAuthenticatedHTTPClient()
+	if err != nil {
+		return nil, fmt.Errorf("build authenticated MCP HTTP client for %q: %w", clusterID, err)
+	}
+
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		c, err := mcpclient.New(ctx, mcpGatewayURL)
+		c, err := mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		if err != nil {
 			lastErr = fmt.Errorf("connect to MCP gateway (attempt %d/%d): %w", attempt+1, maxRetries+1, err)
 			time.Sleep(retryInterval)
@@ -242,7 +288,7 @@ func newFleetMCPClient(ctx context.Context, clusterID string) (*mcpclient.Client
 		}
 		c.Close()
 
-		finalClient, err := mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithClusterID(clusterID), mcpclient.WithToolPrefix(prefix))
+		finalClient, err := mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithClusterID(clusterID), mcpclient.WithToolPrefix(prefix), mcpclient.WithHTTPClient(authClient))
 		if err != nil {
 			lastErr = fmt.Errorf("create final MCP client for %q (attempt %d/%d): %w", clusterID, attempt+1, maxRetries+1, err)
 			time.Sleep(retryInterval)
