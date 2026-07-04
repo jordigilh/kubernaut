@@ -220,11 +220,33 @@ var defaultSanitizer = NewSanitizer()
 // IMPORTANT: Pattern order matters! Container patterns (generatorURL, annotations)
 // must come FIRST to prevent sub-patterns from corrupting larger structures.
 func DefaultRules() []*Rule {
+	rules := make([]*Rule, 0, 28)
+	// PRIORITY: container patterns must be processed first since they match
+	// larger structures (e.g. the annotations object) that may contain
+	// sub-patterns matched by later rules.
+	rules = append(rules, containerPatternRules()...)
+	rules = append(rules, passwordRules()...)
+	rules = append(rules, apiKeyRules()...)
+	rules = append(rules, tokenRules()...)
+	rules = append(rules, secretRules()...)
+	rules = append(rules, authorizationHeaderRules()...)
+	rules = append(rules, cloudCredentialRules()...)
+	rules = append(rules, databaseURLRules()...)
+	rules = append(rules, certificateAndKeyRules()...)
+	rules = append(rules, k8sSecretRules()...)
+	// Duplicated container patterns (generator-url/annotations-json) are kept
+	// intentionally: the sanitizer applies rules by name-dedup semantics and
+	// historical order, matching the pre-refactor rule list exactly.
+	rules = append(rules, containerPatternRules()...)
+	rules = append(rules, piiRules()...)
+	return rules
+}
+
+// containerPatternRules redacts larger container structures (Prometheus/
+// Alertmanager generator URLs, webhook annotations) that may embed
+// sub-patterns matched by more specific rules below.
+func containerPatternRules() []*Rule {
 	return []*Rule{
-		// ========================================
-		// PRIORITY: Container patterns (process first to prevent corruption)
-		// These patterns match larger structures that may contain sub-patterns
-		// ========================================
 		{
 			Name:        "generator-url",
 			Pattern:     regexp.MustCompile(`(?i)"generatorURL?"\s*:\s*"([^"]+)"`),
@@ -237,10 +259,13 @@ func DefaultRules() []*Rule {
 			Replacement: `"annotations":` + RedactedPlaceholder,
 			Description: "Redact webhook annotations",
 		},
+	}
+}
 
-		// ========================================
-		// Password Patterns
-		// ========================================
+// passwordRules redacts password fields in JSON, key=value/key: value plain
+// text, and basic-auth URL credentials.
+func passwordRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "password-json",
 			Pattern:     regexp.MustCompile(`(?i)"(password|passwd|pwd)"\s*:\s*"([^"]+)"`),
@@ -259,10 +284,13 @@ func DefaultRules() []*Rule {
 			Replacement: `://${1}:` + RedactedPlaceholder + `@`,
 			Description: "Redact passwords in URLs",
 		},
+	}
+}
 
-		// ========================================
-		// API Key Patterns
-		// ========================================
+// apiKeyRules redacts generic API key fields plus well-known provider key
+// formats (OpenAI).
+func apiKeyRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "api-key-json",
 			Pattern:     regexp.MustCompile(`(?i)"(api[_-]?key|apikey)"\s*:\s*"([^"]+)"`),
@@ -281,10 +309,13 @@ func DefaultRules() []*Rule {
 			Replacement: RedactedPlaceholder,
 			Description: "Redact OpenAI API keys",
 		},
+	}
+}
 
-		// ========================================
-		// Token Patterns
-		// ========================================
+// tokenRules redacts Bearer tokens, well-known provider token formats
+// (GitHub), and generic "token"/"access_token" fields.
+func tokenRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "bearer-token",
 			Pattern:     regexp.MustCompile(`(?i)Bearer\s+([A-Za-z0-9\-_\.]+)`),
@@ -309,10 +340,12 @@ func DefaultRules() []*Rule {
 			Replacement: `${1}: ` + RedactedPlaceholder,
 			Description: "Redact generic tokens",
 		},
+	}
+}
 
-		// ========================================
-		// Secret Patterns
-		// ========================================
+// secretRules redacts generic "secret"/"client_secret" fields.
+func secretRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "secret-json",
 			Pattern:     regexp.MustCompile(`(?i)"(secret|client_secret)"\s*:\s*"([^"]+)"`),
@@ -325,20 +358,24 @@ func DefaultRules() []*Rule {
 			Replacement: `${1}: ` + RedactedPlaceholder,
 			Description: "Redact secrets",
 		},
+	}
+}
 
-		// ========================================
-		// Authorization Headers
-		// ========================================
+// authorizationHeaderRules redacts the value of Authorization headers.
+func authorizationHeaderRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "authorization-header",
 			Pattern:     regexp.MustCompile(`(?i)(authorization)\s*:\s*["']?([^\s"',}]+)["']?`),
 			Replacement: `${1}: ` + RedactedPlaceholder,
 			Description: "Redact authorization headers",
 		},
+	}
+}
 
-		// ========================================
-		// Cloud Provider Credentials
-		// ========================================
+// cloudCredentialRules redacts AWS access/secret key environment variables.
+func cloudCredentialRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "aws-access-key",
 			Pattern:     regexp.MustCompile(`(?i)(AWS_ACCESS_KEY_ID|aws_access_key)\s*[:=]\s*["']?([A-Z0-9]{20})["']?`),
@@ -351,10 +388,13 @@ func DefaultRules() []*Rule {
 			Replacement: `${1}=` + RedactedPlaceholder,
 			Description: "Redact AWS secret keys",
 		},
+	}
+}
 
-		// ========================================
-		// Database Connection Strings
-		// ========================================
+// databaseURLRules redacts basic-auth credentials embedded in database
+// connection strings (PostgreSQL, MySQL, MongoDB, Redis).
+func databaseURLRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "postgresql-url",
 			Pattern:     regexp.MustCompile(`postgresql://([^:]+):([^@]+)@`),
@@ -379,10 +419,12 @@ func DefaultRules() []*Rule {
 			Replacement: `redis://${1}:` + RedactedPlaceholder + `@`,
 			Description: "Redact Redis URLs",
 		},
+	}
+}
 
-		// ========================================
-		// Certificates and Keys
-		// ========================================
+// certificateAndKeyRules redacts PEM-encoded certificates and private keys.
+func certificateAndKeyRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "pem-certificate",
 			Pattern:     regexp.MustCompile(`-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----`),
@@ -395,40 +437,26 @@ func DefaultRules() []*Rule {
 			Replacement: RedactedPlaceholder,
 			Description: "Redact private keys",
 		},
+	}
+}
 
-		// ========================================
-		// Kubernetes Secrets
-		// ========================================
+// k8sSecretRules redacts base64-looking values under common Kubernetes
+// Secret data keys (username/password/token/key/secret/credential).
+func k8sSecretRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "k8s-secret-data",
 			Pattern:     regexp.MustCompile(`(?m)^\s*(username|password|token|key|secret|credential):\s*([A-Za-z0-9+/=]{8,})\s*$`),
 			Replacement: `  ${1}: ` + RedactedPlaceholder,
 			Description: "Redact Kubernetes secret data (base64)",
 		},
+	}
+}
 
-		// ========================================
-		// Prometheus/Alertmanager URLs (may contain internal info)
-		// ========================================
-		{
-			Name:        "generator-url",
-			Pattern:     regexp.MustCompile(`(?i)"generatorURL?"\s*:\s*"([^"]+)"`),
-			Replacement: `"generatorURL":"` + RedactedPlaceholder + `"`,
-			Description: "Redact Prometheus/Alertmanager generator URLs",
-		},
-
-		// ========================================
-		// Webhook Annotations (may contain sensitive data)
-		// ========================================
-		{
-			Name:        "annotations-json",
-			Pattern:     regexp.MustCompile(`(?i)"annotations"\s*:\s*\{[^}]*\}`),
-			Replacement: `"annotations":` + RedactedPlaceholder,
-			Description: "Redact webhook annotations",
-		},
-
-		// ========================================
-		// PII Patterns (BR-GATEWAY-042)
-		// ========================================
+// piiRules redacts personally identifiable information (BR-GATEWAY-042):
+// email addresses and IPv4 addresses.
+func piiRules() []*Rule {
+	return []*Rule{
 		{
 			Name:        "email-address",
 			Pattern:     regexp.MustCompile(`\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Z|a-z]{2,}\b`),
