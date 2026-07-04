@@ -154,7 +154,8 @@ type KubeMCPServerAuthConfig struct {
 	RemoteBridge *RemoteClusterBridgeConfig
 
 	// AllRegistrationsRemote, when true (requires RemoteBridge to be
-	// non-nil), makes ALL THREE registrations (loopback-cluster, prod-east,
+	// non-nil), makes ALL THREE registrations (the first one renamed
+	// "remote-cluster" instead of "loopback-cluster", plus prod-east,
 	// prod-west) target the remote bridge instead of only "prod-east" --
 	// and skips deploying a local kube-mcp-server entirely
 	// (deployKubeMCPServerAndRegister). This is the "fleet" full-pipeline
@@ -261,10 +262,10 @@ func (c KubeMCPServerAuthConfig) tomlString() string {
 // NodePort mapping (31975 for Kuadrant MCP) -- already present in
 // kind-fullpipeline-config.yaml.
 //
-// The loopback pattern is used: the K8s MCP Server connects to the same cluster
-// where it runs, but kubernaut treats it as a remote cluster with clusterID
-// "loopback-cluster". This validates the full remote code path without needing
-// a second Kind cluster.
+// Unlike the FMC E2E lanes' loopback pattern, this suite backs EVERY
+// registration (including the one named "remote-cluster") with a genuinely
+// separate second Kind cluster (AllRegistrationsRemote, DD-TEST-013) so no
+// fleet-routed reconciliation can silently fall back to the primary cluster.
 //
 // Total additional memory over fullpipeline: ~388 MB
 // (Istio ~250 MB + Kuadrant ~60 MB + kube-mcp-server ~16 MB + Valkey ~30 MB + FMC ~32 MB).
@@ -275,7 +276,7 @@ func (c KubeMCPServerAuthConfig) tomlString() string {
 const keycloakHostPortFleet = 30557
 
 // SetupFleetE2EInfrastructure returns remoteKubeconfigPath, the second Kind
-// cluster's kubeconfig (DD-TEST-013) backing loopback-cluster/prod-east/
+// cluster's kubeconfig (DD-TEST-013) backing remote-cluster/prod-east/
 // prod-west (AllRegistrationsRemote) -- callers (suite_test.go) must
 // populate a remote K8s client from it and tear that cluster down alongside
 // the primary one.
@@ -318,8 +319,9 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// Backs EVERY registration (AllRegistrationsRemote) with a genuinely
 	// separate Kubernetes control plane -- unlike the FMC E2E lane, which
 	// only bridges "prod-east" for isolation testing, this suite's whole
-	// point is that "loopback-cluster" (the identity nearly every fleet
-	// test targets) is no longer the same physical cluster.
+	// point is that "remote-cluster" (the identity nearly every fleet
+	// test targets) is a genuinely separate physical cluster, not the
+	// primary one.
 	_, _ = fmt.Fprintln(writer, "\n🌍 Provisioning remote cluster (ALL registrations remote, DD-TEST-013)...")
 	remoteClusterName := clusterName + "-remote"
 	remoteKubeconfigPath = filepath.Join(filepath.Dir(kubeconfigPath), remoteClusterName+"-config")
@@ -382,21 +384,29 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	}
 	kubeMCPAuthConfig.BrokerCredentialToken = brokerCredToken
 
+	// ── OAuth2 credentials Secret for every fleet-aware service ──────────
+	// Must exist BEFORE DeployFleetInfra: its Phase 5/5b/5c patch Gateway,
+	// RemediationOrchestrator, and SignalProcessing Deployments to mount
+	// this Secret as a volume (patchDeploymentAddFleetOAuth2Volume). If the
+	// Secret doesn't exist yet, the resulting Pod gets stuck in
+	// ContainerCreating (missing volume source) and the rollout-status wait
+	// times out -- see fleetOAuth2SecretName's doc comment.
+	_, _ = fmt.Fprintln(writer, "\n🔑 Creating shared fleet OAuth2 credentials Secret...")
+	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, afRemediateNS, "", err
+	}
+
 	if deployErr := DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage, kubeMCPAuthConfig, fmcOAuth2Config, writer); deployErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("fleet infra deployment failed: %w", deployErr)
 	}
 
-	// ── OAuth2 wiring for every fleet-aware service ──────────────────────
+	// ── OAuth2 wiring for the remaining fleet-aware services ─────────────
 	// RequireOAuth=true now gates the ONE remote kube-mcp-server every
-	// registration shares (AllRegistrationsRemote), so AF/EM/SP/WE (which
-	// previously had no fleet config in this suite at all) and GW/RO/SP
-	// (whose existing patches above only set enabled/endpoint fields) all
-	// need a valid Bearer token to get past it -- see
-	// fleetOAuth2SecretName's doc comment.
+	// registration shares (AllRegistrationsRemote), so AF/EM/WE (which
+	// previously had no fleet config in this suite at all) also need a
+	// valid Bearer token to get past it -- see fleetOAuth2SecretName's doc
+	// comment. GW/RO/SP were already wired above (inside DeployFleetInfra).
 	_, _ = fmt.Fprintln(writer, "\n🔑 Wiring fleet OAuth2 credentials into AF/EM/WE (GW/RO/SP already wired above)...")
-	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, seededUUIDs, afRemediateNS, "", err
-	}
 	if err := patchAPIFrontendConfigForFleet(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", err
 	}
@@ -415,15 +425,15 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 			Scopes:        fmcOAuth2Config.Scopes,
 		})
 	}
-	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, 31975, "loopback_cluster_", writer); readyErr != nil {
+	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, 31975, "remote_cluster_", writer); readyErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ Fleet E2E Infrastructure READY")
 	_, _ = fmt.Fprintln(writer, "  MCP Gateway:  http://localhost:31975/mcp")
-	_, _ = fmt.Fprintln(writer, "  Loopback cluster ID: loopback-cluster (genuinely remote, DD-TEST-013)")
-	_, _ = fmt.Fprintln(writer, "  Loopback tool prefix: loopback_cluster_")
+	_, _ = fmt.Fprintln(writer, "  Remote cluster ID: remote-cluster (genuinely remote, DD-TEST-013)")
+	_, _ = fmt.Fprintln(writer, "  Remote tool prefix: remote_cluster_")
 	_, _ = fmt.Fprintf(writer, "  Remote kubeconfig: %s\n", remoteKubeconfigPath)
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
@@ -506,7 +516,7 @@ data:
       backend: fleetmetadatacache
       mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
       mcpGatewayType: kuadrant
-`+fleetOAuth2YAMLBlock(6)+`
+`+fleetOAuth2YAMLBlock(6, fleetTLSCAFile("/etc/gateway"))+`
 `, namespace)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, gatewayConfigPatch); err != nil {
@@ -602,7 +612,7 @@ fleet:
   endpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
   namespace: "%s"
-`, namespace) + fleetOAuth2YAMLBlock(2)
+`, namespace) + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/signalprocessing"))
 	if err := appendYAMLBlockToConfigMap(ctx, kubeconfigPath, namespace, "signalprocessing-config", "config.yaml", fleetBlock, writer); err != nil {
 		return fmt.Errorf("signalprocessing-config fleet patch failed: %w", err)
 	}
@@ -659,32 +669,59 @@ stringData:
 	return nil
 }
 
+// fleetTLSCAMountDir is the directory every fleet-aware service mounts
+// deployFleetOAuth2Secret's neighboring "inter-service-ca" ConfigMap into,
+// derived from that service's own /etc/<service> base path (e.g.
+// "/etc/gateway/tls-ca"). fleetTLSCAFile appends the ConfigMap's "ca.crt"
+// key name, giving the exact path each cmd/*/main.go wires into
+// FleetOAuth2Config.TLSCAFile / ReloadableOAuth2Config.TlsCaFile.
+func fleetTLSCAMountDir(basePath string) string {
+	return basePath + "/tls-ca"
+}
+
+func fleetTLSCAFile(basePath string) string {
+	return fleetTLSCAMountDir(basePath) + "/ca.crt"
+}
+
 // fleetOAuth2YAMLBlock renders the "oauth2:" sub-block every fleet-aware
 // service's config nests under its own "fleet:" key (see
 // deployFleetOAuth2Secret). indent is the number of leading spaces for the
 // "oauth2:" line itself; nested lines are indented two spaces further,
-// matching this repo's two-space YAML convention.
-func fleetOAuth2YAMLBlock(indent int) string {
+// matching this repo's two-space YAML convention. tlsCAFile must match the
+// path patchDeploymentAddFleetOAuth2Volume mounts the inter-service-ca
+// ConfigMap at (fleetTLSCAFile(basePath)) -- without it, the OAuth2
+// token-fetch HTTP client falls back to the system CA trust store and
+// cannot verify Keycloak's self-signed cert (root cause of "tls: failed to
+// verify certificate: x509: certificate signed by unknown authority"
+// against https://keycloak:8443, which silently disabled remote owner
+// resolution/MCP reads for every one of these services).
+func fleetOAuth2YAMLBlock(indent int, tlsCAFile string) string {
 	pad := strings.Repeat(" ", indent)
 	return fmt.Sprintf(`%[1]soauth2:
 %[1]s  enabled: true
 %[1]s  tokenURL: %[2]q
 %[1]s  credentialsSecretRef: %[3]q
+%[1]s  tlsCAFile: %[4]q
 %[1]s  scopes:
 %[1]s    - "kube-mcp-server-audience"
-`, pad, fleetKeycloakTokenURL, fleetOAuth2SecretName)
+`, pad, fleetKeycloakTokenURL, fleetOAuth2SecretName, tlsCAFile)
 }
 
 // patchDeploymentAddFleetOAuth2Volume strategic-merge-patches an existing
 // Deployment to mount deployFleetOAuth2Secret's Secret into containerName at
 // mountPath (matching the basePath each service's cmd/*/main.go derives from
 // cfg.Fleet.OAuth2.CredentialsSecretRef, e.g.
-// "/etc/remediationorchestrator/fleet-oauth2-creds"). This patch changes
-// spec.template, so Kubernetes rolls the Deployment automatically -- callers
-// should NOT also issue an explicit `rollout restart` (that would trigger a
-// redundant second rollout) and should call this AFTER any ConfigMap content
-// patch, so the one resulting rollout picks up both changes together.
+// "/etc/remediationorchestrator/fleet-oauth2-creds"), plus the
+// "inter-service-ca" ConfigMap (Keycloak's self-signed CA, see
+// interservice_tls.go) at fleetTLSCAMountDir(basePath) so the token-fetch
+// HTTP client (fleetOAuth2YAMLBlock's tlsCAFile) can verify Keycloak's TLS
+// certificate. This patch changes spec.template, so Kubernetes rolls the
+// Deployment automatically -- callers should NOT also issue an explicit
+// `rollout restart` (that would trigger a redundant second rollout) and
+// should call this AFTER any ConfigMap content patch, so the one resulting
+// rollout picks up both changes together.
 func patchDeploymentAddFleetOAuth2Volume(ctx context.Context, namespace, kubeconfigPath, deploymentName, containerName, mountPath string, writer io.Writer) error {
+	tlsCAMountDir := fleetTLSCAMountDir(filepath.Dir(mountPath))
 	patch := map[string]interface{}{
 		"spec": map[string]interface{}{
 			"template": map[string]interface{}{
@@ -696,6 +733,12 @@ func patchDeploymentAddFleetOAuth2Volume(ctx context.Context, namespace, kubecon
 								"secretName": fleetOAuth2SecretName,
 							},
 						},
+						{
+							"name": "fleet-tls-ca",
+							"configMap": map[string]interface{}{
+								"name": "inter-service-ca",
+							},
+						},
 					},
 					"containers": []map[string]interface{}{
 						{
@@ -704,6 +747,11 @@ func patchDeploymentAddFleetOAuth2Volume(ctx context.Context, namespace, kubecon
 								{
 									"name":      "fleet-oauth2",
 									"mountPath": mountPath,
+									"readOnly":  true,
+								},
+								{
+									"name":      "fleet-tls-ca",
+									"mountPath": tlsCAMountDir,
 									"readOnly":  true,
 								},
 							},
@@ -777,12 +825,53 @@ func appendYAMLBlockToConfigMap(ctx context.Context, kubeconfigPath, namespace, 
 // preflight/kubectl-tool paths never exercised the remote-cluster wiring
 // this suite exists to prove (BR-INTEGRATION-054).
 func patchAPIFrontendConfigForFleet(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// cmd/apifrontend/backend_deps.go's buildFleetReaderDeps starts a
+	// registry.ClusterRegistry (BR-FLEET-054, list_clusters/multi-cluster
+	// kubectl routing) that watches MCPServerRegistration CRs cluster-wide
+	// via an informer; without this RBAC grant the informer never syncs
+	// ("mcpserverregistrations.mcp.kuadrant.io is forbidden ... at the
+	// cluster scope"), clusterRegistry.Start returns an error, and AF exits
+	// at startup. Mirrors patchSignalProcessingConfigForFleet's identical
+	// grant for the same reason.
+	rbacManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apifrontend-fleet-cluster-registry
+  labels:
+    app: apifrontend
+    component: fleet
+rules:
+- apiGroups: ["mcp.kuadrant.io"]
+  resources: ["mcpserverregistrations"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apifrontend-fleet-cluster-registry
+  labels:
+    app: apifrontend
+    component: fleet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apifrontend-fleet-cluster-registry
+subjects:
+- kind: ServiceAccount
+  name: apifrontend
+  namespace: ` + namespace + `
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, rbacManifest); err != nil {
+		return fmt.Errorf("apifrontend-fleet-cluster-registry RBAC creation failed: %w", err)
+	}
+
 	fleetBlock := `
 fleet:
   enabled: true
   mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
-` + fleetOAuth2YAMLBlock(2)
+` + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/apifrontend"))
 	if err := appendYAMLBlockToConfigMap(ctx, kubeconfigPath, namespace, "apifrontend-config", "config.yaml", fleetBlock, writer); err != nil {
 		return fmt.Errorf("apifrontend-config fleet patch failed: %w", err)
 	}
@@ -799,12 +888,50 @@ fleet:
 // buildFleetReaderFactory (cmd/effectivenessmonitor/main.go) was never
 // exercised here).
 func patchEffectivenessMonitorConfigForFleet(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// buildFleetReaderFactory (cmd/effectivenessmonitor/main.go) starts a
+	// registry.ClusterRegistry exactly like AF's buildFleetReaderDeps --
+	// see patchAPIFrontendConfigForFleet's doc comment for why this RBAC
+	// grant is required (ClusterRegistry.Start returns an error, which is
+	// fatal at startup, without it).
+	rbacManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: effectivenessmonitor-fleet-cluster-registry
+  labels:
+    app: effectivenessmonitor-controller
+    component: fleet
+rules:
+- apiGroups: ["mcp.kuadrant.io"]
+  resources: ["mcpserverregistrations"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: effectivenessmonitor-fleet-cluster-registry
+  labels:
+    app: effectivenessmonitor-controller
+    component: fleet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: effectivenessmonitor-fleet-cluster-registry
+subjects:
+- kind: ServiceAccount
+  name: effectivenessmonitor-controller
+  namespace: ` + namespace + `
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, rbacManifest); err != nil {
+		return fmt.Errorf("effectivenessmonitor-fleet-cluster-registry RBAC creation failed: %w", err)
+	}
+
 	fleetBlock := `
 fleet:
   enabled: true
   mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
-` + fleetOAuth2YAMLBlock(2)
+` + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/effectivenessmonitor"))
 	if err := appendYAMLBlockToConfigMap(ctx, kubeconfigPath, namespace, "effectivenessmonitor-config", "effectivenessmonitor.yaml", fleetBlock, writer); err != nil {
 		return fmt.Errorf("effectivenessmonitor-config fleet patch failed: %w", err)
 	}
@@ -826,7 +953,7 @@ func patchWorkflowExecutionConfigForFleet(ctx context.Context, namespace, kubeco
 	fleetBlock := `
 fleet:
   endpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
-` + fleetOAuth2YAMLBlock(2)
+` + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/workflowexecution"))
 	if err := appendYAMLBlockToConfigMap(ctx, kubeconfigPath, namespace, "workflowexecution-config", "workflowexecution.yaml", fleetBlock, writer); err != nil {
 		return fmt.Errorf("workflowexecution-config fleet patch failed: %w", err)
 	}
@@ -1681,9 +1808,10 @@ stringData:
 	// (DD-TEST-013, Spike S19); otherwise it shares the loopback HTTPRoute
 	// like every other registration -- the original, unmodified behavior
 	// for any caller that leaves RemoteBridge nil. When AllRegistrationsRemote
-	// is also set (the "fleet" suite), loopback-cluster and prod-west route
+	// is also set (the "fleet" suite), the first registration (renamed
+	// "remote-cluster", see loopbackClusterName below) and prod-west route
 	// through the same remote HTTPRoute too, instead of only prod-east --
-	// every fleet test hardcodes "loopback-cluster" as its target identity
+	// every fleet test hardcodes "remote-cluster" as its target identity
 	// (not "prod-east"), so that name must be the one backed by the remote
 	// cluster for the suite to exercise genuinely remote reads end-to-end.
 	loopbackRouteName := "kube-mcp-server-route"
@@ -1747,11 +1875,25 @@ spec:
 `, namespace)
 	}
 
+	// The first registration is named/prefixed "loopback-cluster" /
+	// "loopback_cluster_" everywhere EXCEPT when AllRegistrationsRemote is
+	// set (the "fleet" suite): there, it is backed by the genuinely remote
+	// bridge cluster (loopbackRouteName above), so it is renamed
+	// "remote-cluster" / "remote_cluster_" to avoid implying it's the local
+	// loopback cluster it named for every other caller of this shared
+	// function (FMC E2E lanes).
+	loopbackClusterName := "loopback-cluster"
+	loopbackClusterPrefix := "loopback_cluster_"
+	if authConfig.AllRegistrationsRemote {
+		loopbackClusterName = "remote-cluster"
+		loopbackClusterPrefix = "remote_cluster_"
+	}
+
 	routeManifest := fmt.Sprintf(`%[2]s%[5]s%[8]s---
 apiVersion: mcp.kuadrant.io/v1alpha1
 kind: MCPServerRegistration
 metadata:
-  name: loopback-cluster
+  name: %[9]s
   namespace: %[1]s
   labels:
     kubernaut.ai/managed: "true"
@@ -1759,7 +1901,7 @@ metadata:
     # cluster rule (input.cluster.labels.environment) via ClusterRegistry.
     environment: "production"
 spec:
-  prefix: "loopback_cluster_"
+  prefix: %[10]q
 %[3]s  targetRef:
     group: gateway.networking.k8s.io
     kind: HTTPRoute
@@ -1795,12 +1937,12 @@ spec:
     kind: HTTPRoute
     name: %[7]s
     namespace: %[1]s
-`, namespace, brokerCredSecretManifest, brokerCredRefYAML, prodEastRouteName, remoteRouteManifest, loopbackRouteName, prodWestRouteName, localRouteManifest)
+`, namespace, brokerCredSecretManifest, brokerCredRefYAML, prodEastRouteName, remoteRouteManifest, loopbackRouteName, prodWestRouteName, localRouteManifest, loopbackClusterName, loopbackClusterPrefix)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, routeManifest); err != nil {
 		return fmt.Errorf("httpRoute/MCPServerRegistration creation failed: %w", err)
 	}
-	_, _ = fmt.Fprintln(writer, "    ✅ MCPServerRegistrations created (loopback-cluster, prod-east, prod-west)")
+	_, _ = fmt.Fprintf(writer, "    ✅ MCPServerRegistrations created (%s, prod-east, prod-west)\n", loopbackClusterName)
 	return nil
 }
 
@@ -2110,7 +2252,7 @@ fleet:
   endpoint: "http://fleetmetadatacache-service.%[1]s.svc.cluster.local:8080"
   mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
-`, namespace) + fleetOAuth2YAMLBlock(2)
+`, namespace) + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/remediationorchestrator"))
 	patchedConfig := string(currentConfig) + fleetBlock
 
 	patchPayload, err := json.Marshal(map[string]interface{}{

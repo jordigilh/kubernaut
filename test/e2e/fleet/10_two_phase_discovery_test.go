@@ -39,12 +39,14 @@ import (
 // FedRAMP: CM-6 (Configuration Settings), AC-3 (Access Enforcement)
 var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), func() {
 
-	It("E2E-FLEET-DISC-001 [CM-6]: ListClusters discovers loopback-cluster via discover_tools meta-tool", func() {
+	It("E2E-FLEET-DISC-001 [CM-6]: ListClusters discovers remote-cluster via discover_tools meta-tool", func() {
 		mcpCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 
 		By("Connecting to Kuadrant MCP gateway")
-		c, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient, err := fleetAuthenticatedHTTPClient()
+		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
+		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway")
 		defer c.Close()
 
@@ -61,18 +63,20 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 			for _, cl := range clusters {
 				names = append(names, cl.Name)
 			}
-			g.Expect(names).To(ContainElement("loopback-cluster"),
-				"CM-6: loopback-cluster must be discoverable via discover_tools")
+			g.Expect(names).To(ContainElement("remote-cluster"),
+				"CM-6: remote-cluster must be discoverable via discover_tools")
 		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
 	})
 
-	It("E2E-FLEET-DISC-002 [AC-3]: ToolsForCluster returns scoped tools for loopback-cluster via select_tools", func() {
+	It("E2E-FLEET-DISC-002 [AC-3]: ToolsForCluster returns scoped tools for remote-cluster via select_tools", func() {
 		mcpCtx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 
 		By("Connecting to Kuadrant MCP gateway")
-		c, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient, err := fleetAuthenticatedHTTPClient()
+		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
+		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred())
 		defer c.Close()
 
@@ -83,19 +87,19 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		By("Calling ToolsForCluster (wraps select_tools + ListTools)")
 		var tools []mcpclient.ToolDefinition
 		Eventually(func(g Gomega) {
-			tools, err = discoverer.ToolsForCluster(mcpCtx, "loopback-cluster")
+			tools, err = discoverer.ToolsForCluster(mcpCtx, "remote-cluster")
 			g.Expect(err).ToNot(HaveOccurred(), "ToolsForCluster must succeed")
 			names := make([]string, 0, len(tools))
 			for _, t := range tools {
 				names = append(names, t.Name)
 			}
-			g.Expect(names).To(ContainElement("loopback_cluster_namespaces_list"),
-				"AC-3: scoped tools must include namespaces_list for loopback-cluster")
+			g.Expect(names).To(ContainElement("remote_cluster_namespaces_list"),
+				"AC-3: scoped tools must include namespaces_list for remote-cluster")
 		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
-		By("Verifying tool names use the loopback_cluster_ prefix")
+		By("Verifying tool names use the remote_cluster_ prefix")
 		for _, tool := range tools {
-			Expect(tool.Name).To(HavePrefix("loopback_cluster_"),
+			Expect(tool.Name).To(HavePrefix("remote_cluster_"),
 				"AC-3: all scoped tools must carry the cluster prefix")
 		}
 
@@ -104,7 +108,7 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		for _, tool := range tools {
 			toolNames = append(toolNames, tool.Name)
 		}
-		Expect(toolNames).To(ContainElement("loopback_cluster_namespaces_list"),
+		Expect(toolNames).To(ContainElement("remote_cluster_namespaces_list"),
 			"kube-mcp-server must expose namespaces_list through the gateway")
 	})
 
@@ -113,7 +117,9 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 		defer cancel()
 
 		By("Connecting to Kuadrant MCP gateway")
-		c, err := mcpclient.New(mcpCtx, mcpGatewayURL)
+		authClient, err := fleetAuthenticatedHTTPClient()
+		Expect(err).ToNot(HaveOccurred(), "should acquire Keycloak token for MCP gateway")
+		c, err := mcpclient.New(mcpCtx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		Expect(err).ToNot(HaveOccurred())
 		defer c.Close()
 
@@ -129,26 +135,37 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 			for _, cl := range clusters {
 				names = append(names, cl.Name)
 			}
-			g.Expect(names).To(ContainElement("loopback-cluster"),
-				"discover_tools must return loopback-cluster")
+			g.Expect(names).To(ContainElement("remote-cluster"),
+				"discover_tools must return remote-cluster")
 		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 
-		By("Phase 2: ToolsForCluster — scope session to loopback-cluster")
-		tools, err := discoverer.ToolsForCluster(mcpCtx, "loopback-cluster")
+		By("Phase 2: ToolsForCluster — scope session to remote-cluster")
+		tools, err := discoverer.ToolsForCluster(mcpCtx, "remote-cluster")
 		Expect(err).ToNot(HaveOccurred())
 		scopedNames := make([]string, 0, len(tools))
 		for _, t := range tools {
 			scopedNames = append(scopedNames, t.Name)
 		}
-		Expect(scopedNames).To(ContainElement("loopback_cluster_namespaces_list"),
+		Expect(scopedNames).To(ContainElement("remote_cluster_namespaces_list"),
 			"scoped tools must include namespaces_list")
 
 		By("Phase 3: Call a discovered tool — namespaces_list via the scoped session")
-		result, err := c.Session().CallTool(mcpCtx, &mcp.CallToolParams{
-			Name: "loopback_cluster_namespaces_list",
-		})
-		Expect(err).ToNot(HaveOccurred(),
-			"AC-3: tool call through two-phase discovery must succeed end-to-end")
+		// Unlike Phase 1/2 above, this was previously a single unretried call
+		// -- kube-mcp-server negotiates its session with the remote cluster
+		// lazily on first use, so this exact call is where a CI run observed
+		// "authorization required" during the thundering-herd race at suite
+		// start (12 parallel processes all opening fresh sessions within the
+		// same ~150ms window). Eventually here mirrors Phase 1/2's existing
+		// retry budget instead of leaving this call as the one unprotected
+		// step in an otherwise-retried journey.
+		var result *mcp.CallToolResult
+		Eventually(func(g Gomega) {
+			result, err = c.Session().CallTool(mcpCtx, &mcp.CallToolParams{
+				Name: "remote_cluster_namespaces_list",
+			})
+			g.Expect(err).ToNot(HaveOccurred(),
+				"AC-3: tool call through two-phase discovery must succeed end-to-end")
+		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 		Expect(len(result.Content)).To(BeNumerically(">=", 1),
 			"tool call response must contain at least one content block with namespace data")
 		Expect(result.IsError).To(BeFalse(),

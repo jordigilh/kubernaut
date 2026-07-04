@@ -21,6 +21,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 )
@@ -308,6 +309,42 @@ var _ = Describe("FleetConfig.ValidateFullFederation — GW/RO dual-capability r
 			MCPGatewayType:     fleet.GatewayEAIGW,
 		}
 		Expect(cfg.ValidateFullFederation()).ToNot(HaveOccurred())
+	})
+})
+
+// Root cause of the "tls: failed to verify certificate: x509: certificate
+// signed by unknown authority" failures observed against an in-cluster
+// Keycloak/Dex OIDC provider from GW/RO/SP/WE/EM/AF: FleetOAuth2Config had
+// no way to name a CA bundle for the token-fetch HTTP client, unlike FMC's
+// own (separate) OAuth2Config.TlsCaFile. This Describe block locks in the
+// field's presence and YAML round-trip so a future refactor cannot silently
+// drop it again.
+var _ = Describe("FleetOAuth2Config.TLSCAFile (BR-INTEGRATION-065)", func() {
+	It("UT-FLEET-CFG-050 [SC-8]: TLSCAFile is settable and defaults to empty (system CA trust)", func() {
+		cfg := fleet.FleetOAuth2Config{
+			Enabled:  true,
+			TokenURL: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+		}
+		Expect(cfg.TLSCAFile).To(BeEmpty(),
+			"zero-value TLSCAFile must fall back to the system CA trust store")
+
+		cfg.TLSCAFile = "/etc/gateway/tls-ca/ca.crt"
+		Expect(cfg.TLSCAFile).To(Equal("/etc/gateway/tls-ca/ca.crt"))
+	})
+
+	It("UT-FLEET-CFG-051 [SC-8]: TLSCAFile survives a YAML round-trip via the tlsCAFile key", func() {
+		cfg := fleet.FleetOAuth2Config{
+			Enabled:   true,
+			TokenURL:  "https://keycloak:8443/token",
+			TLSCAFile: "/etc/gateway/tls-ca/ca.crt",
+		}
+		data, err := yaml.Marshal(cfg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("tlsCAFile: /etc/gateway/tls-ca/ca.crt"))
+
+		var roundTripped fleet.FleetOAuth2Config
+		Expect(yaml.Unmarshal(data, &roundTripped)).To(Succeed())
+		Expect(roundTripped.TLSCAFile).To(Equal(cfg.TLSCAFile))
 	})
 })
 

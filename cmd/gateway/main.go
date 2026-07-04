@@ -325,6 +325,7 @@ func buildFleetOAuth2Option(serverCfg *config.ServerConfig, fleetLog logr.Logger
 		ClientIDPath:     basePath + "/client-id",
 		ClientSecretPath: basePath + "/client-secret",
 		Scopes:           fleetclient.DefaultFleetScopes(serverCfg.Fleet.OAuth2.Scopes),
+		TlsCaFile:        serverCfg.Fleet.OAuth2.TLSCAFile,
 	}
 	return fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)
 }

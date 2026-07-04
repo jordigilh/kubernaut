@@ -33,7 +33,7 @@ import (
 var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes to fleet-aware workflow (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should route alert with cluster_id to a workflow that respects cluster scope", func() {
 		payload := buildPrometheusAlertWithCluster("FleetRouting", namespace, "critical",
-			"Deployment", "memory-eater", "loopback-cluster")
+			"Deployment", "memory-eater", "remote-cluster")
 
 		gatewayURL := "http://localhost:30080"
 		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
@@ -44,19 +44,19 @@ var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes 
 
 		rrName := response["remediationRequestName"].(string)
 
-		By("Verifying RR has clusterID=loopback-cluster and enters workflow processing (AC-6)")
+		By("Verifying RR has clusterID=remote-cluster and enters workflow processing (AC-6)")
 		Eventually(func(g Gomega) {
 			var rr remediationv1.RemediationRequest
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{
 				Name: rrName, Namespace: namespace,
 			}, &rr)).To(Succeed())
-			g.Expect(rr.Spec.ClusterID).To(Equal("loopback-cluster"),
+			g.Expect(rr.Spec.ClusterID).To(Equal("remote-cluster"),
 				"AC-6: RR must carry cluster identity for scoped workflow routing")
 			g.Expect(rr.Status.OverallPhase).ToNot(BeEmpty(),
 				"RR should enter workflow processing via RO")
 		}, timeout, interval).Should(Succeed())
 
-		By("Verifying WFE carries clusterID=loopback-cluster (AC-3)")
+		By("Verifying WFE carries clusterID=remote-cluster (AC-3)")
 		Eventually(func(g Gomega) {
 			var rr remediationv1.RemediationRequest
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{
@@ -77,7 +77,7 @@ var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes 
 			}
 			g.Expect(owned).ToNot(BeNil(),
 				"RO should have created a WFE owned by this RR")
-			g.Expect(owned.Spec.ClusterID).To(Equal("loopback-cluster"),
+			g.Expect(owned.Spec.ClusterID).To(Equal("remote-cluster"),
 				"AC-3: WFE must carry ClusterID for remote cluster execution routing")
 		}, timeout, interval).Should(Succeed())
 	})

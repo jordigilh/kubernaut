@@ -429,6 +429,7 @@ func buildClientFactory(ctx context.Context, cfg *weconfig.Config, mgr ctrl.Mana
 			ClientSecretPath: basePath + "/client-secret",
 			Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
 			TokenTimeout:     10 * time.Second,
+			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
 		}
 		fleetOpts = append(fleetOpts,
 			fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),

@@ -23,7 +23,7 @@ limitations under the License.
 //
 //	Alert → GW → SP(MCP enrich) → AA(MCP investigate) → WE(MCP dispatch) → EM → NT
 //
-// Every registered cluster identity (loopback-cluster, prod-east, prod-west)
+// Every registered cluster identity (remote-cluster, prod-east, prod-west)
 // is backed by the SAME remote bridge to the remote cluster's kube-mcp-server
 // (KubeMCPServerAuthConfig.AllRegistrationsRemote, test/infrastructure/fleet_e2e.go)
 // -- unlike the "loopback" pattern this suite used before, there is no local
@@ -31,7 +31,7 @@ limitations under the License.
 // primary cluster. kube-mcp-server runs in passthrough mode with a real RFC
 // 8693 Standard Token Exchange against Keycloak (mirrors the FMC E2E lane;
 // Keycloak replaces DEX here because DEX has no Standard Token Exchange,
-// Spike S17/S20). Tool names use the `loopback_cluster_` prefix from
+// Spike S17/S20). Tool names use the `remote_cluster_` prefix from
 // MCPServerRegistration.
 //
 // Because every fleet cluster identity is now remote, any K8s object a test
@@ -69,6 +69,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -110,7 +112,7 @@ var (
 	apiReader client.Reader
 
 	// remoteK8sClient targets the second Kind cluster (DD-TEST-013) that
-	// backs loopback-cluster/prod-east/prod-west (AllRegistrationsRemote,
+	// backs remote-cluster/prod-east/prod-west (AllRegistrationsRemote,
 	// see test/infrastructure/fleet_e2e.go). Kubernaut's own CRDs
 	// (RemediationRequest, SignalProcessing, etc.) are reconciled by
 	// controllers running in the PRIMARY cluster and stay on k8sClient;
@@ -167,7 +169,7 @@ func postWithFleetAuth(url, contentType string, body io.Reader) (*http.Response,
 // resource created/labeled by a test immediately before posting an alert is
 // only guaranteed to be visible to FMC's scope-check endpoint after the next
 // full sync tick. Because syncAll() iterates every registered cluster
-// (loopback-cluster, prod-east, prod-west) x 6 resource kinds sequentially,
+// (remote-cluster, prod-east, prod-west) x 6 resource kinds sequentially,
 // a single cycle can itself take non-trivial wall time, so worst-case
 // staleness exceeds the nominal 10s interval. 45s gives ~2 sync cycles of
 // margin; a 15s window (the previous value) was measured insufficient and
@@ -204,8 +206,49 @@ func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableSt
 	return statusCode, respBody
 }
 
+// fleetKeycloakNodePort is this suite's Keycloak NodePort (DD-TEST-001, same
+// dedicated port as the FMC E2E lane -- see keycloakHostPortFleet in
+// test/infrastructure/fleet_e2e.go, which is unexported and so can't be
+// referenced directly from this package).
+const fleetKeycloakNodePort = 30557
+
+// fleetAuthenticatedHTTPClient fetches a Keycloak client_credentials token
+// (kubernaut-fleet-read / kube-mcp-server-audience -- the same identity
+// FMC, SP, and every other fleet-aware production service use) and returns
+// an *http.Client that injects it as "Authorization: Bearer <token>" on
+// every outbound request.
+//
+// Required because kube-mcp-server's RequireOAuth resource-server check
+// gates the mcp-gateway broker's *per-client* upstream session negotiation
+// on tools/call (not just its own tools/list discovery, which the broker
+// serves from its aggregated catalog using its own static
+// BrokerCredentialToken and therefore succeeds even for an unauthenticated
+// caller). A raw mcpclient.New(ctx, mcpGatewayURL) with no WithHTTPClient
+// option sends no Authorization header at all, so any tools/call it makes
+// fails with "rejected by transport: sending \"tools/call\": Internal Server
+// Error" (jsonrpc2 -32005) once the target registration is backed by the
+// RequireOAuth-protected remote kube-mcp-server (AllRegistrationsRemote) --
+// confirmed by reproducing the exact broker/router error via a raw MCP
+// tools/call through mcp-gateway-istio with and without a client-supplied
+// token (2026-07-04 RCA). The token has a 3600s lifespan
+// (keycloak-realm-fleet.json accessTokenLifespan) -- comfortably longer than
+// any single test or this suite's ~20 minute runtime -- so fetching once per
+// client construction (no refresh) is sufficient; mirrors
+// probeAuthenticatedResourcesList's bearerTokenTransport in
+// test/infrastructure/fleet_e2e.go, which proved the same pattern during
+// SynchronizedBeforeSuite's readiness probe.
+func fleetAuthenticatedHTTPClient() (*http.Client, error) {
+	cfg := infrastructure.DefaultKeycloakFleetReadConfig(fleetKeycloakNodePort)
+	cfg.Scopes = []string{"kube-mcp-server-audience"}
+	token, err := infrastructure.GetKeycloakClientCredentialsToken(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("acquire Keycloak client_credentials token: %w", err)
+	}
+	return &http.Client{Transport: testauth.NewStaticTokenTransport(token)}, nil
+}
+
 // newFleetMCPClient creates an MCP client with auto-discovered tool prefix.
-// Kuadrant uses "loopback_cluster_" (from MCPServerRegistration spec.prefix),
+// Kuadrant uses "remote_cluster_" (from MCPServerRegistration spec.prefix),
 // not the EAIGW "{clusterID}__" convention. DiscoverToolPrefix queries
 // tools/list and extracts the correct prefix for the given cluster.
 //
@@ -218,9 +261,14 @@ func newFleetMCPClient(ctx context.Context, clusterID string) (*mcpclient.Client
 		retryInterval = 5 * time.Second
 	)
 
+	authClient, err := fleetAuthenticatedHTTPClient()
+	if err != nil {
+		return nil, fmt.Errorf("build authenticated MCP HTTP client for %q: %w", clusterID, err)
+	}
+
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		c, err := mcpclient.New(ctx, mcpGatewayURL)
+		c, err := mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithHTTPClient(authClient))
 		if err != nil {
 			lastErr = fmt.Errorf("connect to MCP gateway (attempt %d/%d): %w", attempt+1, maxRetries+1, err)
 			time.Sleep(retryInterval)
@@ -240,9 +288,61 @@ func newFleetMCPClient(ctx context.Context, clusterID string) (*mcpclient.Client
 		}
 		c.Close()
 
-		return mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithClusterID(clusterID), mcpclient.WithToolPrefix(prefix))
+		finalClient, err := mcpclient.New(ctx, mcpGatewayURL, mcpclient.WithClusterID(clusterID), mcpclient.WithToolPrefix(prefix), mcpclient.WithHTTPClient(authClient))
+		if err != nil {
+			lastErr = fmt.Errorf("create final MCP client for %q (attempt %d/%d): %w", clusterID, attempt+1, maxRetries+1, err)
+			time.Sleep(retryInterval)
+			continue
+		}
+
+		// warmUpFleetMCPSession's own probeAuthenticatedResourcesList (mirrored
+		// below) proved the *broker's* route/AuthPolicy had converged once,
+		// globally, during SynchronizedBeforeSuite (WaitForFleetReady). It did
+		// not prove that THIS brand-new session (the one just created above)
+		// can complete its own first real call: kube-mcp-server negotiates a
+		// session with the remote cluster lazily, on first use, per client --
+		// see mcp-gateway broker logs from a 2026-07-04 CI run, where 7 specs
+		// across 12 parallel processes all opened their first fresh session
+		// within the same ~150ms window right after SynchronizedBeforeSuite
+		// returned, and several got "failed to create client: transport
+		// error: authorization required" even though the readiness probe's
+		// own (single, earlier, non-concurrent) session had already
+		// succeeded. Absorb that thundering-herd race here, once per test
+		// client, instead of leaving every call site to retry independently.
+		if err := warmUpFleetMCPSession(ctx, finalClient); err != nil {
+			finalClient.Close()
+			lastErr = fmt.Errorf("warm up MCP session for %q (attempt %d/%d): %w", clusterID, attempt+1, maxRetries+1, err)
+			GinkgoWriter.Printf("  Waiting for broker session warm-up (attempt %d/%d): %v\n", attempt+1, maxRetries+1, err)
+			time.Sleep(retryInterval)
+			continue
+		}
+
+		return finalClient, nil
 	}
 	return nil, fmt.Errorf("broker sync timeout after %d attempts: %w", maxRetries+1, lastErr)
+}
+
+// warmUpFleetMCPSession performs one cheap, real resources_list call
+// (Pods, cluster-wide) on a freshly created client to force kube-mcp-server's
+// lazy per-session negotiation with the remote cluster to complete before the
+// caller's actual test assertions run. Retries internally for up to 15s --
+// the race window observed in CI closed within ~1s once the burst of
+// concurrent session negotiations settled, so this budget is deliberately
+// short relative to newFleetMCPClient's own 90s broker-sync retry loop.
+func warmUpFleetMCPSession(ctx context.Context, c *mcpclient.Client) error {
+	deadline := time.Now().Add(15 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(schema.GroupVersionKind{Version: "v1", Kind: "PodList"})
+		if err := c.List(ctx, list); err != nil {
+			lastErr = err
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return fmt.Errorf("session warm-up did not succeed within 15s: %w", lastErr)
 }
 
 func TestFleetE2E(t *testing.T) {
@@ -336,7 +436,7 @@ var _ = SynchronizedBeforeSuite(
 			Expect(labelNSErr).ToNot(HaveOccurred(), "Failed to label namespace %s: %s", ns, string(labelNSOut))
 		}
 
-		// The shared "memory-eater" fixture (referenced by clusterID=loopback-cluster/
+		// The shared "memory-eater" fixture (referenced by clusterID=remote-cluster/
 		// prod-east/prod-west across 01_signal_ingestion_test.go and
 		// 03_ro_clusterid_routing_test.go) must live on the REMOTE cluster now that
 		// AllRegistrationsRemote backs every registered cluster identity with the
@@ -410,7 +510,7 @@ var _ = SynchronizedBeforeSuite(
 		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Creating remote cluster's Kubernetes client (DD-TEST-013: backs loopback-cluster/prod-east/prod-west)")
+		By("Creating remote cluster's Kubernetes client (DD-TEST-013: backs remote-cluster/prod-east/prod-west)")
 		remoteCfg, remoteCfgErr := clientcmd.BuildConfigFromFlags("", remoteKubeconfigPath)
 		Expect(remoteCfgErr).ToNot(HaveOccurred(), "failed to build remote cluster kubeconfig")
 		remoteK8sClient, err = client.New(remoteCfg, client.Options{Scheme: scheme.Scheme})
@@ -468,7 +568,7 @@ var _ = SynchronizedAfterSuite(
 			GinkgoWriter.Println("CLUSTER PRESERVED FOR DEBUGGING")
 			GinkgoWriter.Printf("   To access: export KUBECONFIG=%s\n", kubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", clusterName)
-			GinkgoWriter.Printf("   Remote cluster (DD-TEST-013, backs loopback-cluster/prod-east/prod-west): export KUBECONFIG=%s\n", remoteKubeconfigPath)
+			GinkgoWriter.Printf("   Remote cluster (DD-TEST-013, backs remote-cluster/prod-east/prod-west): export KUBECONFIG=%s\n", remoteKubeconfigPath)
 			GinkgoWriter.Printf("   To delete: kind delete cluster --name %s\n", remoteClusterName)
 			return
 		}

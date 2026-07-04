@@ -33,7 +33,7 @@ import (
 var _ = Describe("E2E-FLEET-007 [SI-4]: AA investigation with fleet context uses MCP-backed K8s reader (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should read deployment status from remote cluster via MCP gateway for investigation context", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "loopback-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway for fleet investigation")
 		defer mcpClient.Close()
 
@@ -64,7 +64,7 @@ var _ = Describe("E2E-FLEET-007 [SI-4]: AA investigation with fleet context uses
 
 	It("should read pod events from remote cluster for root cause analysis", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "loopback-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
 		Expect(err).ToNot(HaveOccurred())
 		defer mcpClient.Close()
 

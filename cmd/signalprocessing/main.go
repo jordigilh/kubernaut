@@ -273,6 +273,7 @@ func buildFleetOAuth2Options(cfg *config.Config) []fleetclient.Option {
 		ClientSecretPath: basePath + "/client-secret",
 		Scopes:           fleetclient.DefaultFleetScopes(cfg.Fleet.OAuth2.Scopes),
 		TokenTimeout:     10 * time.Second,
+		TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
 	}
 	setupLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
 		"tokenURL", cfg.Fleet.OAuth2.TokenURL,

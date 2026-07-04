@@ -32,7 +32,7 @@ import (
 // Authority: Issue #54, ADR-068
 // FedRAMP: SI-4 (information system monitoring -- remote enrichment)
 var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway populates KubernetesContext without degraded mode (BR-INTEGRATION-054)", Label("fleet"), func() {
-	It("enriches a SignalProcessing CR targeting a remote-cluster resource via loopback MCP gateway", func() {
+	It("enriches a SignalProcessing CR targeting a resource on the remote cluster via MCP gateway", func() {
 		// Issue #54 flakiness fix: real Kubernetes Pods get a generated name
 		// suffix (e.g. "coredns-66bc5c9577-dmj24"), so hardcoding "coredns" as
 		// the target Pod name never resolves and the k8s-enricher permanently
@@ -40,7 +40,7 @@ var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway pop
 		// mode"). Discover an actual running CoreDNS pod name instead.
 		//
 		// Discovered on the REMOTE cluster (DD-TEST-013): ClusterID:
-		// "loopback-cluster" below now resolves through AllRegistrationsRemote's
+		// "remote-cluster" below now resolves through AllRegistrationsRemote's
 		// bridge, so the enricher reads kube-system from the remote cluster,
 		// not the primary one -- their CoreDNS pod names differ.
 		var podList corev1.PodList
@@ -69,7 +69,7 @@ var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway pop
 					Severity:     "high",
 					Type:         "alert",
 					TargetType:   "kubernetes",
-					ClusterID:    "loopback-cluster",
+					ClusterID:    "remote-cluster",
 					ReceivedTime: metav1.Now(),
 					TargetResource: signalprocessingv1.ResourceIdentifier{
 						Kind:      "Pod",
@@ -81,7 +81,7 @@ var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway pop
 		}
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
-		By("Waiting for KubernetesContext enrichment via MCP gateway (remote cluster loopback)")
+		By("Waiting for KubernetesContext enrichment via MCP gateway (remote cluster)")
 		Eventually(func() bool {
 			var updated signalprocessingv1.SignalProcessing
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(sp), &updated); err != nil {
