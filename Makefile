@@ -506,6 +506,33 @@ build-all-services: $(addprefix build-,$(SERVICES)) ## Build all Go services
 .PHONY: build-all
 build-all: build-all-services ## Build all services (alias)
 
+##@ Fuzz Testing
+# Native Go fuzz tests (func FuzzXxx(f *testing.F)) are NOT executed by the
+# ginkgo-based test-unit-* targets above -- ginkgo's runner only runs Ginkgo
+# specs and silently skips other Test/Fuzz functions in the same package.
+# These targets close that gap. See AGENTS.md "Exception: Go Native Fuzz Tests".
+
+.PHONY: test-fuzz
+test-fuzz: ## Run all fuzz targets' seed + regression corpora as regular tests (fast, CI-gated, no new fuzzing)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🐛 Fuzz Corpus Regression (seed + saved crashers, no new fuzzing)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@pkgs=$$(grep -rl '^func Fuzz' --include='*_test.go' . | xargs -n1 dirname | sort -u); \
+	if [ -z "$$pkgs" ]; then \
+		echo "No fuzz targets found"; \
+		exit 0; \
+	fi; \
+	echo "Packages: $$pkgs"; \
+	go test $$pkgs -run '^Fuzz' -v
+
+.PHONY: fuzz
+fuzz: ## Run one fuzz target with a time budget: make fuzz PKG=./pkg/apifrontend/validate/ TARGET=FuzzRRID TIME=30s
+	@if [ -z "$(PKG)" ] || [ -z "$(TARGET)" ]; then \
+		echo "Usage: make fuzz PKG=./pkg/apifrontend/validate/ TARGET=FuzzRRID [TIME=30s]"; \
+		exit 1; \
+	fi
+	go test $(PKG) -run='^$$' -fuzz=$(TARGET) -fuzztime=$(or $(TIME),30s)
+
 ##@ Docker Pattern Targets
 
 .PHONY: docker-build-%
