@@ -956,6 +956,11 @@ rules:
 - apiGroups: [""]
   resources: ["pods"]
   verbs: ["get", "list"]
+- apiGroups: [""]
+  # Issue #1542: crashloop-config-fix-v1 patches the offending ConfigMap key
+  # back to a known-good value as part of the real (non-simulated) fix.
+  resources: ["configmaps"]
+  verbs: ["get", "list", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

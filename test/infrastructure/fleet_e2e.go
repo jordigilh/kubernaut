@@ -342,6 +342,36 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("remote cluster provisioning failed: %w", remoteErr)
 	}
 
+	// Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) run
+	// their Job on the REMOTE cluster when RemediationRequest.ClusterID is
+	// set, via WE's mcpClientFactory routing. The "kubernaut-workflows"
+	// namespace only pre-existed on the hub cluster; without it, both the
+	// SA creation below and the Job itself would fail with "namespace not found".
+	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #1542)...\n", ExecutionNamespace)
+	if err := createTestNamespace(ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", ExecutionNamespace, err)
+	}
+
+	// Without this, the Job pod's serviceAccountName: workflow-job-executor
+	// reference would fail to resolve on the remote cluster (SA only
+	// pre-existed on the hub).
+	_, _ = fmt.Fprintln(writer, "🔐 Creating workflow-job-executor SA + RBAC on the remote cluster (Issue #1542)...")
+	if err := createWorkflowJobExecutorRBAC(remoteKubeconfigPath, ExecutionNamespace, writer); err != nil {
+		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to create workflow-job-executor RBAC on remote cluster: %w", err)
+	}
+
+	// Issue #1542: the WE Job executor dispatches the Job to the remote
+	// cluster's API server via kube-mcp-server passthrough, authenticated as
+	// the exchanged Keycloak identity (keycloak:service-account-kubernaut-fleet-read).
+	// applyExchangedIdentityRBAC (above, inside SetupRemoteClusterForFMC) only
+	// grants read-only "view" access -- the FMC-only lane must stay read-only,
+	// so this ADDITIONAL grant is fleet-suite-only and strictly additive
+	// (batch/jobs create/delete, nothing else).
+	_, _ = fmt.Fprintln(writer, "🔐 Granting batch/jobs write access to the exchanged fleet identity (Issue #1542, fleet-only)...")
+	if err := applyExchangedIdentityWriteRBAC(ctx, remoteKubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to grant exchanged identity write RBAC on remote cluster: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🌐 FLEET PHASE: Deploying Kuadrant MCP Gateway infrastructure...")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
