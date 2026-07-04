@@ -38,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -75,6 +76,10 @@ type backendDeps struct {
 	// fleetResilientClient is the underlying MCP Gateway connection; closed
 	// on shutdown by run() when non-nil.
 	fleetResilientClient *mcpclient.ResilientClient
+	// fleetReadinessGate is the #1553 pod-wide readiness gate for Fleet
+	// dependencies (ADR-068, BR-FLEET-054); nil when fleet is disabled.
+	// Stopped on shutdown by stopBackendDeps.
+	fleetReadinessGate *readiness.Gate
 }
 
 // FleetResilientClient returns the MCP Gateway connection backing
@@ -83,6 +88,18 @@ type backendDeps struct {
 // closing.
 func (d *backendDeps) FleetResilientClient() *mcpclient.ResilientClient {
 	return d.fleetResilientClient
+}
+
+// FleetReady reports whether Fleet dependencies (MCP Gateway, cluster
+// registry) are reachable, for composition into the /readyz ReadyChecker
+// chain (#1553, ADR-068). Always true when Fleet is disabled (nil gate) —
+// matches the existing "no dependency, no gate" convention used across all
+// 7 fail-closed readiness rollout services.
+func (d *backendDeps) FleetReady() bool {
+	if d.fleetReadinessGate == nil {
+		return true
+	}
+	return d.fleetReadinessGate.Ready()
 }
 
 // K8sClient returns the pod service-account scoped dynamic K8s client,
@@ -436,14 +453,22 @@ func buildTriageSeverityConfig(cfg *config.Config) severity.Config {
 	return severityCfg
 }
 
+// fleetReadinessProbeInterval controls how often the #1553 Fleet readiness
+// gate re-probes its dependencies once started (mirrors GW/RO/EM/SP/WE).
+const fleetReadinessProbeInterval = 15 * time.Second
+
 // buildFleetReaderDeps wires BR-FLEET-054 multi-cluster kubectl routing when
 // fleet federation is enabled: connects to the MCP Gateway, discovers
 // managed clusters via ClusterRegistry, and adapts the resulting
 // fleet.ReaderFactory (client.Reader) into a tools.ResourceReaderFactory
 // (dynamic-style ResourceReader) for kubectl_get/kubectl_list/list_clusters.
-// A connectivity failure degrades gracefully to single-cluster mode (mirrors
-// GW's registerAdapters contract, cmd/gateway/main.go:246-284) rather than
-// blocking AF startup — Fleet MCP Gateway connections are lazy/async.
+// A connectivity failure degrades gracefully to single-cluster mode for the
+// tool-routing surface (mirrors GW's registerAdapters contract,
+// cmd/gateway/main.go:246-284) rather than blocking AF startup — Fleet MCP
+// Gateway connections are lazy/async. #1553/ADR-068: it also wires a
+// readiness.Gate (deps.fleetReadinessGate, consumed via deps.FleetReady())
+// so that unreachability is surfaced as pod-wide /readyz=NotReady instead
+// of only this log line, closing the fail-open gap for AF.
 func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backendDeps, logger logr.Logger) error {
 	if !cfg.Fleet.Enabled || cfg.Fleet.MCPGatewayEndpoint == "" {
 		return nil
@@ -473,8 +498,16 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 	resilienceCfg := mcpclient.DefaultResilienceConfig()
 	mcpFleetClient, err := mcpclient.NewResilient(ctx, cfg.Fleet.MCPGatewayEndpoint, resilienceCfg, fleetLog, opts...)
 	if err != nil {
-		logger.Error(err, "Fleet MCP Gateway connection failed, remote cluster routing disabled",
+		// #1553: keep (don't discard) the disconnected client — the fleet
+		// readiness gate attaches an MCPClientProber to it so the periodic
+		// probe keeps retrying and the "fleet" readyz check correctly
+		// reports NotReady until reconnect, instead of the client being
+		// silently lost with no path back to healthy short of a restart.
+		logger.Error(err, "Fleet MCP Gateway connection failed at startup; readiness will report NotReady "+
+			"and keep retrying in the background; remote cluster routing disabled until reconnect",
 			"endpoint", cfg.Fleet.MCPGatewayEndpoint)
+		deps.fleetResilientClient = mcpFleetClient
+		deps.fleetReadinessGate = wireFleetReadinessGate(ctx, mcpFleetClient, nil, logger)
 		return nil
 	}
 	deps.fleetResilientClient = mcpFleetClient
@@ -497,10 +530,34 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 	readerFactory := mcpclient.NewMCPReaderFactoryWithProvider(
 		deps.k8sTypedClient, mcpFleetClient.SessionProvider(), registry.NewToolPrefixAdapter(clusterRegistry))
 	deps.FleetReaderFactory = adaptFleetReaderFactory(readerFactory)
+	deps.fleetReadinessGate = wireFleetReadinessGate(ctx, mcpFleetClient, clusterRegistry, logger)
 
 	logger.Info("Fleet MCP Gateway connected, multi-cluster kubectl routing enabled",
 		"endpoint", cfg.Fleet.MCPGatewayEndpoint, "gatewayType", cfg.Fleet.MCPGatewayType)
 	return nil
+}
+
+// wireFleetReadinessGate builds and starts the #1553 Fleet dependency
+// readiness gate (ADR-068, BR-FLEET-054): once Fleet is enabled, AF's
+// pod-wide readyz must fail closed when the MCP Gateway or cluster
+// registry becomes unreachable, instead of the previous fail-open
+// behavior of only logging an error. AF has no scope-checker dependency
+// (unlike GW/RO), so its gate carries an MCPClientProber and, when
+// available, a ClusterRegistryProber. fleetClient is always non-nil when
+// called (buildFleetReaderDeps only calls this after Fleet.Enabled +
+// endpoint checks); clusterRegistry may be nil (initial connection
+// failure). The caller (buildFleetReaderDeps) stores the returned Gate on
+// deps.fleetReadinessGate; stopBackendDeps must Stop() it on shutdown.
+func wireFleetReadinessGate(ctx context.Context, fleetClient *mcpclient.ResilientClient, clusterRegistry registry.ClusterRegistry, logger logr.Logger) *readiness.Gate {
+	probers := []readiness.Prober{&readiness.MCPClientProber{Client: fleetClient}}
+	if clusterRegistry != nil {
+		probers = append(probers, &readiness.ClusterRegistryProber{Registry: clusterRegistry})
+	}
+
+	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), probers...)
+	gate.Start(ctx)
+	logger.Info("Fleet readiness gate started", "prober_count", len(probers), "ready", gate.Ready())
+	return gate
 }
 
 // adaptFleetReaderFactory adapts a fleet.ReaderFactory (client.Reader) into a

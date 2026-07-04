@@ -101,6 +101,9 @@ func TestBuildFleetReaderDeps_Enabled_WiresReaderFactoryAndClusterRegistry(t *te
 	if fc := deps.FleetResilientClient(); fc != nil {
 		defer func() { _ = fc.Close() }()
 	}
+	if deps.fleetReadinessGate != nil {
+		defer deps.fleetReadinessGate.Stop()
+	}
 
 	if deps.FleetReaderFactory == nil {
 		t.Error("IT-AF-054-005: FleetReaderFactory must be wired from Config.Fleet when fleet is enabled — " +
@@ -110,13 +113,25 @@ func TestBuildFleetReaderDeps_Enabled_WiresReaderFactoryAndClusterRegistry(t *te
 		t.Error("IT-AF-054-005: FleetClusterRegistry must be wired from Config.Fleet when fleet is enabled — " +
 			"this is the field AgentConfig needs to register the list_clusters tool (BR-FLEET-054)")
 	}
+	if !deps.FleetReady() {
+		t.Error("IT-FLEET-READY-AF-001b: FleetReady() must report true immediately when the MCP Gateway is reachable")
+	}
 }
 
 // TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully pins
 // the fail-open contract for an unreachable Fleet MCP Gateway endpoint
 // (mirrors GW's TestRegisterAdapters_FleetEnabledUnreachable): a connectivity
 // failure must never error out of buildFleetReaderDeps or block AF startup
-// indefinitely — it degrades to single-cluster mode instead.
+// indefinitely — the tool-routing surface (FleetReaderFactory) degrades to
+// single-cluster mode instead.
+//
+// #1553 [readiness gate Wave 5]: unlike the pre-#1553 contract, the
+// resilient client is now kept (not discarded) on an initial connection
+// failure, and a readiness.Gate is still constructed around it, so
+// deps.FleetReady() correctly reports NotReady (and the periodic probe
+// keeps retrying) instead of the client being silently lost with no path
+// back to healthy short of a restart. Mirrors the identical change made to
+// GW/RO/EM/SP/WE in Waves 2-4.
 func TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully(t *testing.T) {
 	t.Parallel()
 
@@ -132,9 +147,23 @@ func TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully(t *t
 	defer cancel()
 
 	err := buildFleetReaderDeps(ctx, cfg, deps, logr.Discard())
+	if fc := deps.FleetResilientClient(); fc != nil {
+		t.Cleanup(func() { _ = fc.Close() })
+	}
 	if err != nil {
 		t.Fatalf("unexpected error for an unreachable Fleet MCP Gateway endpoint: %v", err)
 	}
+	if deps.FleetReaderFactory != nil {
+		t.Error("IT-AF-054-005: FleetReaderFactory must remain nil when the Fleet MCP Gateway is unreachable")
+	}
+	if deps.FleetResilientClient() == nil {
+		t.Fatal("IT-AF-1553-001: *mcpclient.ResilientClient must be kept (not discarded) when the Fleet " +
+			"MCP Gateway is unreachable so the readiness gate's periodic probe can keep retrying it (#1553)")
+	}
+	if deps.FleetReady() {
+		t.Error("IT-AF-1553-001: FleetReady() must report false when the initial connection failed")
+	}
+	t.Cleanup(deps.fleetReadinessGate.Stop)
 }
 
 // stubFleetClusterRegistry is a minimal registry.ClusterRegistry for testing

@@ -36,6 +36,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	amtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
@@ -187,8 +188,14 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 	resilienceCfg := fleetclient.DefaultResilienceConfig()
 	resilientClient, err := fleetclient.NewResilient(ctx, endpoint, resilienceCfg, fleetLog, opts...)
 	if err != nil {
-		fleetLog.Error(err, "failed to connect to MCP Gateway — fleet tools unavailable")
-		return nil, nil
+		// #1553: keep (don't discard) the disconnected client — the fleet
+		// readiness gate attaches an MCPClientProber to it so the periodic
+		// probe keeps retrying and the "fleet" readyz check correctly
+		// reports NotReady until reconnect, instead of the client being
+		// silently lost with no path back to healthy short of a restart.
+		fleetLog.Error(err, "failed to connect to MCP Gateway at startup; readiness will report NotReady "+
+			"and keep retrying in the background; fleet tools unavailable until reconnect")
+		return resilientClient, nil
 	}
 
 	session := resilientClient.Session()
@@ -212,6 +219,32 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 	fleetLog.Info("registered fleet discovery tools",
 		"tools", toolNames, "endpoint", endpoint, "gatewayType", gatewayType)
 	return resilientClient, toolNames
+}
+
+// fleetReadinessProbeInterval controls how often the #1553 Fleet readiness
+// gate re-probes its dependencies once started (mirrors GW/RO/EM/SP/WE/AF).
+const fleetReadinessProbeInterval = 15 * time.Second
+
+// wireFleetReadinessGate builds and starts the #1553 Fleet dependency
+// readiness gate (ADR-068 decision #11, BR-INTEGRATION-054): once fleet
+// mode is configured, KA's pod-wide readyz must fail closed when the MCP
+// Gateway becomes unreachable, instead of the previous fail-open behavior
+// of only logging an error. KA has no scope-checker or cluster-registry
+// dependency (unlike GW/RO/SP), so its gate only ever carries an
+// MCPClientProber. Returns nil when fleetClient is nil (registerFleetTools
+// only returns a non-nil client when fleet mode is configured). The
+// caller registers the returned Gate's Ready method into readinessHandler
+// and must Stop() it on shutdown.
+func wireFleetReadinessGate(ctx context.Context, fleetClient *fleetclient.ResilientClient, logger logr.Logger) *readiness.Gate {
+	if fleetClient == nil {
+		return nil
+	}
+
+	prober := &readiness.MCPClientProber{Client: fleetClient}
+	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), prober)
+	gate.Start(ctx)
+	logger.Info("Fleet readiness gate started", "ready", gate.Ready())
+	return gate
 }
 
 func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger, auditStore audit.AuditStore) {
