@@ -54,6 +54,12 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, reader client.Re
 	switch targetKind {
 	case "Deployment", "ReplicaSet", "StatefulSet", "DaemonSet":
 		podList = &corev1.PodList{}
+		// Fleet reads route through the MCP client, which (unlike the cached
+		// controller-runtime client) requires GVK to be set explicitly on the
+		// object before Get/List — it has no scheme to infer it from (#1542
+		// follow-up: cross-cluster health assessment was failing with
+		// "list object GVK Kind must be set before calling List").
+		podList.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("PodList"))
 		err := reader.List(ctx, podList,
 			client.InNamespace(targetNs),
 			client.MatchingLabels{"app": targetName},
@@ -66,6 +72,7 @@ func (r *Reconciler) getTargetHealthStatus(ctx context.Context, reader client.Re
 
 	case "Pod":
 		pod := &corev1.Pod{}
+		pod.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Pod"))
 		err := reader.Get(ctx, client.ObjectKey{Name: targetName, Namespace: targetNs}, pod)
 		if err != nil {
 			logger.V(1).Info("Target pod not found", "name", targetName, "error", err)
@@ -101,6 +108,8 @@ func (r *Reconciler) listActivePodNames(ctx context.Context, reader client.Reade
 	}
 
 	podList := &corev1.PodList{}
+	// See getTargetHealthStatus: fleet (MCP client) reads require explicit GVK.
+	podList.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("PodList"))
 	if err := reader.List(ctx, podList,
 		client.InNamespace(target.Namespace),
 		client.MatchingLabels{"app": target.Name},
@@ -272,6 +281,8 @@ func (r *Reconciler) resolveConfigMapHashes(
 
 	for _, cmName := range refs {
 		cm := &corev1.ConfigMap{}
+		// See getTargetHealthStatus: fleet (MCP client) reads require explicit GVK.
+		cm.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("ConfigMap"))
 		key := client.ObjectKey{Name: cmName, Namespace: target.Namespace}
 		if err := cmReader.Get(ctx, key, cm); err != nil {
 			// All fetch errors (404, 403, transient) use sentinel to ensure deterministic
