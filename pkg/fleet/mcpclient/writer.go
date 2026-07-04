@@ -69,7 +69,11 @@ func (w *WriterClient) resolveToolName(tool string) string {
 }
 
 // Create implements client.Writer. It serializes the object to JSON and sends
-// it to the remote cluster via the MCP create_resource tool.
+// it to the remote cluster via the MCP resources_create_or_update tool.
+//
+// The tool argument MUST be named "resource" per the upstream K8s MCP Server
+// contract (github.com/containers/kubernetes-mcp-server); the tool call fails
+// with "missing argument resource" otherwise.
 func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...client.CreateOption) error {
 	manifest, err := objectToJSON(obj)
 	if err != nil {
@@ -80,11 +84,14 @@ func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...clien
 	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
 		Name: toolName,
 		Arguments: map[string]any{
-			"manifest": manifest,
+			"resource": manifest,
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("call %s: %w", toolName, err)
+	}
+	if result.IsError {
+		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
 	text := ExtractText(result)
@@ -113,18 +120,25 @@ func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...clien
 		args["namespace"] = ns
 	}
 
-	_, err := w.session.CallTool(ctx, &mcp.CallToolParams{
+	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      toolName,
 		Arguments: args,
 	})
 	if err != nil {
 		return fmt.Errorf("call %s: %w", toolName, err)
 	}
+	if result.IsError {
+		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
+	}
 	return nil
 }
 
 // Update implements client.Writer. It serializes the object and sends it to
-// the remote cluster via the MCP update_resource tool.
+// the remote cluster via the MCP resources_create_or_update tool.
+//
+// The tool argument MUST be named "resource" per the upstream K8s MCP Server
+// contract (github.com/containers/kubernetes-mcp-server); the tool call fails
+// with "missing argument resource" otherwise.
 func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...client.UpdateOption) error {
 	manifest, err := objectToJSON(obj)
 	if err != nil {
@@ -135,11 +149,14 @@ func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...clien
 	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
 		Name: toolName,
 		Arguments: map[string]any{
-			"manifest": manifest,
+			"resource": manifest,
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("call %s: %w", toolName, err)
+	}
+	if result.IsError {
+		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
 	text := ExtractText(result)
