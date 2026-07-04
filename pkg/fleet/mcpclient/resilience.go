@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"golang.org/x/sync/singleflight"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -67,6 +68,14 @@ type ResilientClient struct {
 
 	client atomic.Pointer[Client]
 	ready  atomic.Bool
+
+	// reconnectGroup deduplicates concurrent reconnect() calls (e.g. a
+	// periodic readiness prober racing the lazy reconnect-on-error path in
+	// Get/List) into a single in-flight handshake, matching the existing
+	// singleflight convention in discovery_tools.go. Without this, two
+	// concurrent reconnects each create a fresh client and Store() it,
+	// leaking the loser's connection.
+	reconnectGroup singleflight.Group
 }
 
 // NewResilient creates a ResilientClient that connects with backoff and auto-reconnects.
@@ -211,7 +220,19 @@ func (rc *ResilientClient) Reconnect(ctx context.Context) error {
 	return rc.reconnect(ctx)
 }
 
+// reconnectGroupKey is a constant singleflight key: a ResilientClient always
+// reconnects to the same endpoint, so there is only one dedup dimension per
+// instance (unlike discovery_tools.go's per-cluster keying).
+const reconnectGroupKey = "reconnect"
+
 func (rc *ResilientClient) reconnect(ctx context.Context) error {
+	_, err, _ := rc.reconnectGroup.Do(reconnectGroupKey, func() (any, error) {
+		return nil, rc.doReconnect(ctx)
+	})
+	return err
+}
+
+func (rc *ResilientClient) doReconnect(ctx context.Context) error {
 	rc.ready.Store(false)
 
 	old := rc.client.Load()

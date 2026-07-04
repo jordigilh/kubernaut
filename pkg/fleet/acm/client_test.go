@@ -216,6 +216,48 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			"acm.Client must implement scope.ScopeChecker to be usable by the factory")
 	})
 
+	Describe("Ping [readiness gate Wave 0]", func() {
+		It("UT-ACM-054-009: succeeds when ACM Search responds 200 with no GraphQL errors", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0}]}}`))
+			}))
+			client = acm.NewClient(server.URL)
+
+			Expect(client.Ping(context.Background())).To(Succeed())
+		})
+
+		It("UT-ACM-054-010: returns an error (does not swallow it) when the endpoint is unreachable", func() {
+			client = acm.NewClient("http://127.0.0.1:1")
+			err := client.Ping(context.Background())
+			Expect(err).To(HaveOccurred(),
+				"unlike IsManagedResource, Ping must surface the transport error for the readiness gate")
+		})
+
+		It("UT-ACM-054-011: returns an error when ACM Search responds with a non-200 status", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			client = acm.NewClient(server.URL)
+
+			err := client.Ping(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("503"))
+		})
+
+		It("UT-ACM-054-012: returns an error when ACM Search responds with GraphQL errors", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"errors":[{"message":"unauthorized"}]}`))
+			}))
+			client = acm.NewClient(server.URL)
+
+			err := client.Ping(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unauthorized"))
+		})
+	})
+
 	Describe("UT-ACM-TLS [SC-8]: TLS transport security", func() {
 		It("UT-ACM-TLS-001 [SC-8]: should connect to TLS server when CA cert is provided via WithHTTPClient", func() {
 			server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
