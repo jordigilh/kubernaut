@@ -2,7 +2,6 @@
 
 **AIOps Platform for Intelligent Kubernetes Remediation**
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/jordigilh/kubernaut)](https://goreportcard.com/report/github.com/jordigilh/kubernaut)
 [![Go Reference](https://pkg.go.dev/badge/github.com/jordigilh/kubernaut.svg)](https://pkg.go.dev/github.com/jordigilh/kubernaut)
 [![Go Version](https://img.shields.io/badge/Go-1.26-blue.svg)](https://golang.org/dl/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-v1.32+-blue.svg)](https://kubernetes.io/)
