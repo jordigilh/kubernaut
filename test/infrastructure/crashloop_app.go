@@ -68,7 +68,10 @@ const (
 // DeployCrashLoopConfigApp deploys a minimal busybox Deployment that reads
 // APP_MODE from a ConfigMap and exits 1 immediately when the value is not
 // CrashLoopAppGoodValue. Starting with CrashLoopAppBadValue guarantees a
-// deterministic, fast CrashLoopBackOff (no memory pressure or timing races).
+// deterministic, fast CrashLoopBackOff (no timing races). The container
+// carries small explicit resource requests/limits so it runs as Burstable
+// (not BestEffort) QoS -- see the inline comment on the manifest below for
+// why that matters on the shared FullPipeline/Fleet Kind node.
 //
 // Parameters:
 //   - targetNamespace: Namespace with kubernaut.ai/managed=true label
@@ -116,6 +119,22 @@ spec:
         envFrom:
         - configMapRef:
             name: %[2]s
+        # BestEffort (no resources block) pods are the kernel OOM-killer's
+        # first target under node memory pressure and can collaterally starve
+        # or destabilize scheduling for unrelated pods sharing the node (CI
+        # run 28717432528 RCA: this fixture's addition alongside the existing
+        # BestEffort memory-eater fixtures raised FullPipeline's total
+        # unprotected-pod count enough that an unrelated WorkflowExecution Job
+        # container was OOM-killed, exit 137, mid-run). This app needs
+        # negligible memory (busybox sh + sleep) -- these limits are a no-op
+        # for its own behavior but move it out of BestEffort QoS.
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "32Mi"
+            cpu: "50m"
         command: ["sh", "-c"]
         args:
           - |
