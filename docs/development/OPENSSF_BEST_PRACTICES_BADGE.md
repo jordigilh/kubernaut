@@ -94,8 +94,12 @@ A few notes for reviewers:
   targets the **Passing** tier rather than Silver/Gold. Those tiers require a two-person review
   process and multiple unaffiliated contributors that a solo maintainer cannot satisfy.
 - **Supply-chain security** — releases are signed with Sigstore/Cosign (keyless) and carry SLSA
-  provenance + SBOM attestations. The repo also holds a weekly-recomputed
-  [OpenSSF Scorecard](https://scorecard.dev) badge (see README).
+  provenance + SBOM attestations (see `SECURITY.md`).
+  <!-- NOTE: an OpenSSF Scorecard workflow + badge exists on the security/ci-hardening-scorecard
+       branch but is not yet merged to main as of 2026-07-04. Add "The repo also holds a
+       weekly-recomputed [OpenSSF Scorecard](https://scorecard.dev) badge (see README)." back to
+       this bullet, and re-save the general-comments field on bestpractices.dev, once merged and
+       the badge is confirmed live. -->
 - **Compliance alignment, not certification** — the audit-trace design is built to align with
   SOC2 Trust Service Criteria and FedRAMP control families. **No certification is held or
   claimed.** The internal mapping is documented under
