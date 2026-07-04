@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,13 +26,13 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/config"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
-	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ---------------------------------------------------------------------------
@@ -426,8 +427,15 @@ func TestBuildAuthMiddleware_ReturnsReadyChecker(t *testing.T) {
 	}
 }
 
+// TestBuildAuthMiddleware_NoAuth_ReadyAlwaysTrue pins MED-03's intent (TokenReview
+// mode readiness is always true, since it has no JWKS cache to be unhealthy) while
+// deterministically exercising the "kubeconfig available" branch of
+// buildTokenReviewFallback (AF-CRIT-1) via the getK8sConfigFunc test seam — a real
+// rest.Config Host is sufficient because kubernetes.NewForConfig never dials the
+// network, so no live cluster is required. Not run in parallel: it mutates the
+// package-level getK8sConfigFunc.
 func TestBuildAuthMiddleware_NoAuth_ReadyAlwaysTrue(t *testing.T) {
-	t.Parallel()
+	withFakeK8sConfig(t, &rest.Config{Host: "https://fake-test-cluster.invalid"}, nil)
 
 	cfg := &config.Config{}
 	reg := metrics.NewRegistry()
@@ -440,6 +448,70 @@ func TestBuildAuthMiddleware_NoAuth_ReadyAlwaysTrue(t *testing.T) {
 	}
 	if !readyFn() {
 		t.Error("MED-03: auth readiness should always be true when no JWT providers are configured")
+	}
+}
+
+// withFakeK8sConfig overrides the package-level getK8sConfigFunc seam for the
+// duration of t, restoring the original on cleanup. Callers must not run in
+// parallel with other tests that also override this global.
+func withFakeK8sConfig(t *testing.T, cfg *rest.Config, err error) {
+	t.Helper()
+	orig := getK8sConfigFunc
+	getK8sConfigFunc = func() (*rest.Config, error) { return cfg, err }
+	t.Cleanup(func() { getK8sConfigFunc = orig })
+}
+
+// TestBuildAuthMiddleware_NoAuth_KubeconfigUnavailable_FailsClosed pins AF-CRIT-1:
+// when no JWT/OIDC issuer is configured AND kubeconfig cannot be resolved, the
+// middleware must deny all requests and report not-ready, rather than silently
+// allowing unauthenticated traffic. Not run in parallel: it mutates
+// getK8sConfigFunc.
+func TestBuildAuthMiddleware_NoAuth_KubeconfigUnavailable_FailsClosed(t *testing.T) {
+	withFakeK8sConfig(t, nil, fmt.Errorf("no kubeconfig available in this environment"))
+
+	cfg := &config.Config{}
+	reg := metrics.NewRegistry()
+	mw, readyFn := buildAuthMiddleware(cfg, reg, nil, logr.Discard())
+	if mw == nil {
+		t.Fatal("AF-CRIT-1: deny-all middleware must not be nil")
+	}
+	if readyFn == nil {
+		t.Fatal("AF-CRIT-1: not-ready checker must not be nil")
+	}
+	if readyFn() {
+		t.Error("AF-CRIT-1: auth readiness must be false when kubeconfig is unavailable (fail closed)")
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/mcp", http.NoBody)
+	mw(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("AF-CRIT-1: deny-all middleware must not invoke the wrapped handler")
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("AF-CRIT-1: expected 503 from deny-all middleware, got %d", rec.Code)
+	}
+}
+
+// TestBuildAuthMiddleware_NoAuth_K8sClientCreationFails_FailsClosed pins AF-CRIT-1's
+// second guard: kubeconfig resolves but is unusable by kubernetes.NewForConfig (here,
+// malformed TLS client-certificate PEM data), which must also fail closed.
+func TestBuildAuthMiddleware_NoAuth_K8sClientCreationFails_FailsClosed(t *testing.T) {
+	withFakeK8sConfig(t, &rest.Config{
+		Host: "https://fake-test-cluster.invalid",
+		TLSClientConfig: rest.TLSClientConfig{
+			CertData: []byte("not-a-valid-cert"),
+			KeyData:  []byte("not-a-valid-key"),
+		},
+	}, nil)
+
+	cfg := &config.Config{}
+	reg := metrics.NewRegistry()
+	mw, readyFn := buildAuthMiddleware(cfg, reg, nil, logr.Discard())
+	if mw == nil {
+		t.Fatal("AF-CRIT-1: deny-all middleware must not be nil")
+	}
+	if readyFn() {
+		t.Error("AF-CRIT-1: auth readiness must be false when the Kubernetes client cannot be constructed (fail closed)")
 	}
 }
 
@@ -552,10 +624,10 @@ func testBackendDeps() *backendDeps {
 
 func testHandlerDeps(overrides ...func(*handlerDeps)) *handlerDeps {
 	d := &handlerDeps{
-		Cfg:      &config.Config{},
-		Backends: testBackendDeps(),
+		Cfg:        &config.Config{},
+		Backends:   testBackendDeps(),
 		MetricsReg: metrics.NewRegistry(),
-		Logger:   logr.Discard(),
+		Logger:     logr.Discard(),
 	}
 	for _, fn := range overrides {
 		fn(d)
@@ -893,7 +965,7 @@ func (m *mockPoolSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*m
 	return nil, nil
 }
 func (m *mockPoolSession) Ping(_ context.Context, _ *mcp.PingParams) error { return nil }
-func (m *mockPoolSession) Close() error { return nil }
+func (m *mockPoolSession) Close() error                                    { return nil }
 
 // ---------------------------------------------------------------------------
 // IT-AF-1234-W12: WithDownstreamDuration wired on SDKMCPClient
