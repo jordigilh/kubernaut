@@ -69,6 +69,13 @@ var _ = Describe("FederatedScopeChecker (BR-INTEGRATION-065)", func() {
 		fc = fleet.NewFederatedScopeChecker(local, remote, logr.Discard())
 	})
 
+	// Readiness gate Wave 2 (#1553): GW's readiness wiring needs to reach the
+	// remote scope-check backend (fmc.HTTPClient/acm.Client) to build a
+	// ScopeCheckerProber. Remote() exposes it without leaking the field.
+	It("UT-FLEET-FED-CHK-001 [readiness gate Wave 2]: Remote returns the configured remote checker", func() {
+		Expect(fc.Remote()).To(BeIdenticalTo(remote))
+	})
+
 	It("UT-FLEET-USI-001 [SI-10]: FederatedScopeChecker implements ScopeChecker interface", func() {
 		var checker scope.ScopeChecker = fc
 		Expect(checker).ToNot(BeNil())

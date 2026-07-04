@@ -84,6 +84,15 @@ func NewFederatedScopeChecker(localChecker scope.ScopeChecker, remoteChecker sco
 	return f
 }
 
+// Remote returns the remote (backend-specific) scope.ScopeChecker used for
+// non-empty ClusterID checks. Exposed so callers (e.g. the readiness gate,
+// #1553) can probe the remote backend's reachability via a type assertion
+// to readiness.Pinger without FederatedScopeChecker depending on that
+// package.
+func (f *FederatedScopeChecker) Remote() scope.ScopeChecker {
+	return f.remote
+}
+
 // IsManagedResource implements scope.ScopeChecker.
 // Routes by ClusterID: empty -> local checker, non-empty -> hierarchical remote check.
 //

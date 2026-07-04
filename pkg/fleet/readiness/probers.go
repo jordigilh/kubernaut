@@ -19,7 +19,17 @@ package readiness
 import (
 	"context"
 	"fmt"
+	"time"
 )
+
+// DefaultProbeTimeout bounds how long a single MCPClientProber.Probe call
+// may block on a Reconnect attempt. mcpclient.ResilientClient.Reconnect
+// retries with its own exponential backoff for up to
+// ResilienceConfig.MaxElapsedTime (5 minutes by default) against an
+// unreachable MCP Gateway; without this bound, every probe cycle of a
+// periodic Gate (including the synchronous first probe in Gate.Start)
+// would stall for that entire duration whenever Fleet is unreachable.
+const DefaultProbeTimeout = 10 * time.Second
 
 // MCPClient is the subset of mcpclient.ResilientClient needed by
 // MCPClientProber. Defined locally (not imported) to avoid a readiness ->
@@ -36,6 +46,9 @@ type MCPClient interface {
 // waiting for the next lazy reconnect-on-error inside Get/List.
 type MCPClientProber struct {
 	Client MCPClient
+	// Timeout bounds each Reconnect attempt (see DefaultProbeTimeout for
+	// why this is necessary). Defaults to DefaultProbeTimeout when <= 0.
+	Timeout time.Duration
 }
 
 var _ Prober = (*MCPClientProber)(nil)
@@ -45,7 +58,13 @@ func (p *MCPClientProber) Probe(ctx context.Context) error {
 	if p.Client.Ready() {
 		return nil
 	}
-	if err := p.Client.Reconnect(ctx); err != nil {
+	timeout := p.Timeout
+	if timeout <= 0 {
+		timeout = DefaultProbeTimeout
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := p.Client.Reconnect(probeCtx); err != nil {
 		return fmt.Errorf("MCP Gateway unreachable: %w", err)
 	}
 	return nil

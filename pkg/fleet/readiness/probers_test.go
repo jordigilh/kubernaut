@@ -19,6 +19,7 @@ package readiness_test
 import (
 	"context"
 	"errors"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -31,12 +32,22 @@ type fakeMCPClient struct {
 	ready        bool
 	reconnectErr error
 	reconnectN   int
+	// blockUntilCtxDone makes Reconnect ignore reconnectErr and instead
+	// block until ctx is cancelled, returning ctx.Err() — simulating
+	// ResilientClient.Reconnect's real behavior of retrying with
+	// exponential backoff for up to ResilienceConfig.MaxElapsedTime (5
+	// minutes by default) against an unreachable MCP Gateway.
+	blockUntilCtxDone bool
 }
 
 func (f *fakeMCPClient) Ready() bool { return f.ready }
 
-func (f *fakeMCPClient) Reconnect(_ context.Context) error {
+func (f *fakeMCPClient) Reconnect(ctx context.Context) error {
 	f.reconnectN++
+	if f.blockUntilCtxDone {
+		<-ctx.Done()
+		return ctx.Err()
+	}
 	if f.reconnectErr == nil {
 		f.ready = true
 	}
@@ -64,6 +75,48 @@ var _ = Describe("MCPClientProber", func() {
 		err := p.Probe(context.Background())
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("connection refused"))
+	})
+
+	// UT-FLEET-READY-018 [readiness gate Wave 2]: without a bound,
+	// ResilientClient.Reconnect can retry with exponential backoff for up
+	// to ResilienceConfig.MaxElapsedTime (5 minutes by default) against an
+	// unreachable MCP Gateway. Since Gate.Start probes synchronously and
+	// the periodic loop probes sequentially on a ticker, an unbounded
+	// Reconnect call would stall GW's startup (and every later probe
+	// cycle) for minutes instead of failing the readiness check quickly.
+	It("UT-FLEET-READY-018: Probe bounds the Reconnect call so a hanging MCP Gateway cannot stall the probe loop", func() {
+		c := &fakeMCPClient{ready: false, blockUntilCtxDone: true}
+		p := &readiness.MCPClientProber{Client: c, Timeout: 50 * time.Millisecond}
+
+		start := time.Now()
+		err := p.Probe(context.Background())
+		elapsed := time.Since(start)
+
+		Expect(err).To(HaveOccurred())
+		Expect(elapsed).To(BeNumerically("<", 500*time.Millisecond),
+			"Probe must bound Reconnect to its configured Timeout instead of blocking indefinitely")
+	})
+
+	It("UT-FLEET-READY-019: Probe applies a bound (DefaultProbeTimeout) even when Timeout is unset, without overriding a caller's tighter deadline", func() {
+		c := &fakeMCPClient{ready: false, blockUntilCtxDone: true}
+		p := &readiness.MCPClientProber{Client: c}
+		Expect(p.Timeout).To(BeZero())
+		Expect(readiness.DefaultProbeTimeout).To(BeNumerically(">", 0))
+
+		// A caller-supplied context that has already expired must still
+		// short-circuit Reconnect immediately — proves Probe layers its
+		// own timeout via context.WithTimeout(ctx, ...) rather than
+		// replacing ctx outright.
+		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+		defer cancel()
+		time.Sleep(2 * time.Millisecond)
+
+		start := time.Now()
+		err := p.Probe(ctx)
+		elapsed := time.Since(start)
+
+		Expect(err).To(HaveOccurred())
+		Expect(elapsed).To(BeNumerically("<", 200*time.Millisecond))
 	})
 })
 
