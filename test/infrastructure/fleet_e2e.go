@@ -382,21 +382,29 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	}
 	kubeMCPAuthConfig.BrokerCredentialToken = brokerCredToken
 
+	// ── OAuth2 credentials Secret for every fleet-aware service ──────────
+	// Must exist BEFORE DeployFleetInfra: its Phase 5/5b/5c patch Gateway,
+	// RemediationOrchestrator, and SignalProcessing Deployments to mount
+	// this Secret as a volume (patchDeploymentAddFleetOAuth2Volume). If the
+	// Secret doesn't exist yet, the resulting Pod gets stuck in
+	// ContainerCreating (missing volume source) and the rollout-status wait
+	// times out -- see fleetOAuth2SecretName's doc comment.
+	_, _ = fmt.Fprintln(writer, "\n🔑 Creating shared fleet OAuth2 credentials Secret...")
+	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return builtImages, seededUUIDs, afRemediateNS, "", err
+	}
+
 	if deployErr := DeployFleetInfra(ctx, namespace, kubeconfigPath, fmcImage, kubeMCPAuthConfig, fmcOAuth2Config, writer); deployErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("fleet infra deployment failed: %w", deployErr)
 	}
 
-	// ── OAuth2 wiring for every fleet-aware service ──────────────────────
+	// ── OAuth2 wiring for the remaining fleet-aware services ─────────────
 	// RequireOAuth=true now gates the ONE remote kube-mcp-server every
-	// registration shares (AllRegistrationsRemote), so AF/EM/SP/WE (which
-	// previously had no fleet config in this suite at all) and GW/RO/SP
-	// (whose existing patches above only set enabled/endpoint fields) all
-	// need a valid Bearer token to get past it -- see
-	// fleetOAuth2SecretName's doc comment.
+	// registration shares (AllRegistrationsRemote), so AF/EM/WE (which
+	// previously had no fleet config in this suite at all) also need a
+	// valid Bearer token to get past it -- see fleetOAuth2SecretName's doc
+	// comment. GW/RO/SP were already wired above (inside DeployFleetInfra).
 	_, _ = fmt.Fprintln(writer, "\n🔑 Wiring fleet OAuth2 credentials into AF/EM/WE (GW/RO/SP already wired above)...")
-	if err := deployFleetOAuth2Secret(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return builtImages, seededUUIDs, afRemediateNS, "", err
-	}
 	if err := patchAPIFrontendConfigForFleet(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", err
 	}
