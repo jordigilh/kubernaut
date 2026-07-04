@@ -78,6 +78,31 @@ Estimated time: with the automation links doing most of the work, this should be
 review-and-click session (6 pages) plus a few minutes to answer the 5 self-certify criteria
 yourself, rather than a manual copy-paste research project.
 
+### "Other general comments about the project"
+
+This is a free-text field on the project's Basics page (not a scored criterion), added manually.
+It accepts Markdown. Text used:
+
+```markdown
+**Kubernaut** is an AIOps platform for automated, policy-governed Kubernetes remediation —
+combining LLM-driven root-cause analysis with deterministic safety guardrails (RBAC-scoped
+actions, dry-run preview, human approval gates) before executing any cluster-changing operation.
+
+A few notes for reviewers:
+
+- **Solo maintainer** — the project is currently maintained by a single person, which is why it
+  targets the **Passing** tier rather than Silver/Gold. Those tiers require a two-person review
+  process and multiple unaffiliated contributors that a solo maintainer cannot satisfy.
+- **Supply-chain security** — releases are signed with Sigstore/Cosign (keyless) and carry SLSA
+  provenance + SBOM attestations. The repo also holds a weekly-recomputed
+  [OpenSSF Scorecard](https://scorecard.dev) badge (see README).
+- **Compliance alignment, not certification** — the audit-trace design is built to align with
+  SOC2 Trust Service Criteria and FedRAMP control families. **No certification is held or
+  claimed.** The internal mapping is documented under
+  [`docs/architecture/decisions/`](https://github.com/jordigilh/kubernaut/tree/main/docs/architecture/decisions)
+  for teams building their own compliance case.
+```
+
 ---
 
 
