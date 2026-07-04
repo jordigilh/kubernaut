@@ -804,13 +804,14 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			Expect(finalEA.Status.Components.HealthScore).ToNot(BeNil(),
 				"HealthScore should not be nil when HealthAssessed=true")
 		}
+		// Issue #1542: promoted from a soft (log-only) check to a hard assertion.
 		// With the increased stabilization window (10s), the pod should have recovered
-		// from OOMKill by the time EM assesses health, yielding a positive score.
-		if finalEA.Status.Components.HealthScore != nil && *finalEA.Status.Components.HealthScore > 0 {
-			GinkgoWriter.Printf("  ✅ Health > 0 (%.2f): pod recovered after remediation\n", *finalEA.Status.Components.HealthScore)
-		} else {
-			GinkgoWriter.Printf("  ⚠️  Health = 0: pod may not have recovered yet (check stabilization window)\n")
-		}
+		// from OOMKill by the time EM assesses health, yielding a positive score. A
+		// HealthScore of 0 here means the remediation did not actually recover the
+		// workload and must fail the test, not just print a warning.
+		Expect(*finalEA.Status.Components.HealthScore).To(BeNumerically(">", 0),
+			"HealthScore must be > 0 — the target pod must have genuinely recovered after remediation")
+		GinkgoWriter.Printf("  ✅ Health > 0 (%.2f): pod recovered after remediation\n", *finalEA.Status.Components.HealthScore)
 
 		// Log hash comparison diagnostics for spec drift detection
 		if finalEA.Status.Components.PostRemediationSpecHash != "" && finalEA.Status.Components.CurrentSpecHash != "" {
