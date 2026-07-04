@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	canonicalhash "github.com/jordigilh/kubernaut/pkg/shared/hash"
 )
 
 // gvkStrictReader wraps a delegate client.Reader and rejects Get/List calls
@@ -129,7 +130,14 @@ var _ = Describe("target_resources: fleet (GVK-strict) reader compatibility", fu
 				},
 			},
 		}, eav1.TargetResource{Kind: "Deployment", Name: "crashloop-app", Namespace: "target-ns"})
-		Expect(hashes).To(HaveKey("crashloop-app-config"))
+		// resolveConfigMapHashes falls back to a sentinel hash on ANY Get error
+		// (by design, to keep drift detection deterministic), so a bare
+		// HaveKey assertion would pass even if the GVK-strict Get failed.
+		// Assert the real ConfigMap data hash to actually distinguish a
+		// successful strict-reader Get from the sentinel fallback path.
+		wantHash, err := canonicalhash.ConfigMapDataHash(map[string]string{"key": "value"}, nil)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(hashes).To(HaveKeyWithValue("crashloop-app-config", wantHash))
 	})
 })
 
