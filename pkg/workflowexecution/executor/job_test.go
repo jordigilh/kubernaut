@@ -301,28 +301,18 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(envByName).To(HaveKeyWithValue("TMPDIR", "/tmp"))
 		})
 
-		// BR-FLEET-054: regression for a cross-cluster Job dispatch failure
-		// where the built Job's TypeMeta (apiVersion/kind) was left unset.
-		// The local controller-runtime fake/real client tolerates this (it
-		// infers the GVK from the scheme), but the MCP remote writer
-		// serializes the object with runtime.DefaultUnstructuredConverter,
-		// which drops empty apiVersion/kind (omitempty), causing the real
-		// K8s MCP Server to reject the manifest with "Object 'Kind' is
-		// missing". See Issue #1542 E2E-FLEET-014 CI failure.
-		It("UT-WE-054-JOB-018 [BR-FLEET-054]: should set TypeMeta (Kind/APIVersion) on the Job before Create", func() {
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			spy := &gvkCapturingClient{ExecutorClient: fakeClient}
-			factory := &mockClientFactory{client: spy}
-			je := executor.NewJobExecutorWithFactory(factory)
-			wfe := newTestWFE("wfe-gvk-test", "default/deployment/nginx", "")
-
-			_, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
-			Expect(err).ToNot(HaveOccurred())
-
-			Expect(spy.createdGVK.Kind).To(Equal("Job"),
-				"Job must carry an explicit Kind so remote MCP clients can decode the manifest")
-			Expect(spy.createdGVK.GroupVersion().String()).To(Equal(batchv1.SchemeGroupVersion.String()))
-		})
+		// BR-FLEET-054 history: this previously asserted that buildJob() set
+		// TypeMeta explicitly, working around pkg/fleet/mcpclient's remote
+		// writer needing apiVersion/kind on the wire (Issue #1542
+		// E2E-FLEET-014 CI failure: "Object 'Kind' is missing"). That
+		// workaround was removed once mcpclient itself was hardened to infer
+		// GVK for built-in types like batchv1.Job from a runtime.Scheme (see
+		// pkg/fleet/mcpclient/gvk.go's ensureGVK) -- buildJob() no longer
+		// needs to set it, and the "Create succeeds + wire manifest carries
+		// kind=Job" contract is now proven at the mcpclient layer itself
+		// (UT-FLEET-GVK-005), which is a stronger proof since it asserts the
+		// actual serialized wire format rather than a pre-Create in-memory
+		// GVK.
 	})
 
 	Describe("GetStatus", func() {

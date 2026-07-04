@@ -335,16 +335,6 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 	activeDeadlineSeconds := activeDeadlineSecondsFor(wfe)
 
 	return &batchv1.Job{
-		// BR-FLEET-054: the MCP remote writer serializes this object via
-		// runtime.DefaultUnstructuredConverter, which omits apiVersion/kind
-		// (json:"...,omitempty" on TypeMeta) unless explicitly set here. The
-		// real K8s MCP Server's resources_create_or_update tool requires
-		// "kind" to decode the manifest ("Object 'Kind' is missing"). This is
-		// a no-op for the local controller-runtime client path.
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: batchv1.SchemeGroupVersion.String(),
-			Kind:       "Job",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
 			Namespace: namespace,
