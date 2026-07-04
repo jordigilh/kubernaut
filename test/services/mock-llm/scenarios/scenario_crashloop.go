@@ -25,8 +25,14 @@ func crashloopConfig() MockScenarioConfig {
 		Rationale:    "Configuration regression introduced in recent deployment revision; rollback to last known good revision is the safest approach with medium risk tolerance",
 		RootCause:    "Container failing due to invalid configuration directive introduced in recent deployment update",
 		ResourceKind: "Deployment", ResourceNS: "staging", ResourceName: "worker",
-		APIVersion:   "apps/v1",
-		Parameters:   map[string]string{"NAMESPACE": "staging", "DEPLOYMENT_NAME": "worker"},
+		APIVersion: "apps/v1",
+		Parameters: map[string]string{
+			"NAMESPACE":       "staging",
+			"DEPLOYMENT_NAME": "worker",
+			"CONFIGMAP_NAME":  "crashloop-app-config",
+			"CONFIGMAP_KEY":   "APP_MODE",
+			"CONFIGMAP_VALUE": "healthy",
+		},
 		Contributing: []string{"invalid_configuration_directive", "recent_deployment_update", "application_fails_validation_on_startup"},
 		Alternatives: []MockAlternativeWorkflow{
 			{WorkflowName: "generic-restart-v1", WorkflowID: uuid.DeterministicUUID("generic-restart-v1"), Confidence: 0.60, Rationale: "Restart-only approach would be faster but doesn't address the root cause (bad configuration)"},

@@ -111,8 +111,8 @@ var _ = Describe("WE Fleet Executor Integration (BR-FLEET-054)", func() {
 					found = true
 					var args map[string]interface{}
 					Expect(json.Unmarshal(call.Arguments, &args)).To(Succeed())
-					Expect(args).To(HaveKey("manifest"),
-						"Create must send manifest argument to resources_create_or_update")
+					Expect(args).To(HaveKey("resource"),
+						"Create must send resource argument to resources_create_or_update")
 					break
 				}
 			}

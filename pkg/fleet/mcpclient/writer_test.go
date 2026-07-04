@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
@@ -88,7 +89,7 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 					found = true
 					var args map[string]interface{}
 					Expect(json.Unmarshal(call.Arguments, &args)).To(Succeed())
-					Expect(args).To(HaveKey("manifest"))
+					Expect(args).To(HaveKey("resource"))
 					break
 				}
 			}
@@ -139,8 +140,8 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 			var args map[string]interface{}
 			Expect(json.Unmarshal(createCall.Arguments, &args)).To(Succeed())
 
-			manifestStr, ok := args["manifest"].(string)
-			Expect(ok).To(BeTrue(), "manifest must be a JSON string")
+			manifestStr, ok := args["resource"].(string)
+			Expect(ok).To(BeTrue(), "resource must be a JSON string")
 
 			var manifest map[string]interface{}
 			Expect(json.Unmarshal([]byte(manifestStr), &manifest)).To(Succeed())
@@ -170,6 +171,78 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 
 			err = writer.Create(ctx, obj)
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("sends the manifest under the 'resource' argument key required by the upstream K8s MCP Server", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "prod-east")
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-arg-key-check", Namespace: "kubernaut-workflows"},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			Expect(writer.Create(ctx, job)).To(Succeed())
+
+			calls := gw.CallLog()
+			var found bool
+			for _, call := range calls {
+				if call.ToolName == "prod-east__resources_create_or_update" {
+					found = true
+					var args map[string]interface{}
+					Expect(json.Unmarshal(call.Arguments, &args)).To(Succeed())
+					// The upstream K8s MCP Server (github.com/containers/kubernetes-mcp-server)
+					// requires the argument key "resource", not "manifest". Sending the wrong
+					// key causes the real server to reject the call with
+					// "missing argument resource" (isError: true).
+					Expect(args).To(HaveKey("resource"))
+					Expect(args).ToNot(HaveKey("manifest"))
+					break
+				}
+			}
+			Expect(found).To(BeTrue())
+		})
+
+		It("returns a Go error when the MCP server reports isError:true (BR-INTEGRATION-054 regression)", func() {
+			// Regression test for a bug where WriterClient.Create silently treated
+			// isError:true tool results as success, because it never checked
+			// result.IsError before calling populateFromResponse. This caused the
+			// WorkflowExecution controller to believe a remote Job was created when
+			// the K8s MCP Server had actually rejected the request.
+			gw = mockgw.NewMockGateway(mockgw.WithTool(
+				mcpclient.ToolCreateOrUpdate,
+				"Create or update a Kubernetes resource",
+				json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string"}},"required":["resource"]}`),
+				func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: "failed to create or update resources, missing argument resource"}},
+						IsError: true,
+					}, nil
+				},
+			))
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			// clusterID is empty so resolveToolName leaves the tool name unprefixed,
+			// matching the WithTool registration above.
+			writer := mcpclient.NewWriterFromSession(parentClient.Session(), "")
+
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-error-check", Namespace: "kubernaut-workflows"},
+			}
+			job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
+
+			err = writer.Create(ctx, job)
+			Expect(err).To(HaveOccurred(),
+				"Create must surface isError:true tool results as a Go error instead of silently succeeding")
+			Expect(err.Error()).To(ContainSubstring("missing argument resource"))
 		})
 	})
 
@@ -251,10 +324,10 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 					found = true
 					var args map[string]interface{}
 					Expect(json.Unmarshal(call.Arguments, &args)).To(Succeed())
-					Expect(args).To(HaveKey("manifest"))
+					Expect(args).To(HaveKey("resource"))
 
-					manifestStr, ok := args["manifest"].(string)
-					Expect(ok).To(BeTrue(), "manifest must be a JSON string")
+					manifestStr, ok := args["resource"].(string)
+					Expect(ok).To(BeTrue(), "resource must be a JSON string")
 
 					var manifest map[string]interface{}
 					Expect(json.Unmarshal([]byte(manifestStr), &manifest)).To(Succeed())
