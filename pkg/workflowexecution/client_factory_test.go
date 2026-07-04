@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
@@ -182,6 +183,52 @@ var _ = Describe("ClientFactory (BR-FLEET-054)", func() {
 			Expect(result.Get(ctx, client.ObjectKeyFromObject(job), &fetched)).To(Succeed())
 			Expect(fetched.Name).To(Equal("local-job"),
 				"empty ClusterID must use local K8s client, not MCP")
+		})
+	})
+
+	// Regression (Issue #1542): the MCP remote client's Get/Delete require an
+	// explicit GVK on the object (it has no scheme/RESTMapper to infer one,
+	// unlike the local controller-runtime client). JobExecutor.GetStatus,
+	// IsCompleted and Cleanup previously called Get on a bare batchv1.Job{}
+	// without setting it, so every Running-phase reconcile of a cross-cluster
+	// (fleet) Job execution failed with "object GVK Kind must be set before
+	// calling Get" -- discovered by E2E-FLEET-014 (crashloop-config-fix-v1
+	// real cross-cluster fix), which was the first E2E to poll a Job's status
+	// through the MCP client to completion rather than a no-op simulation.
+	Describe("UT-WE-054-005: JobExecutor Job-status polling over the MCP remote client", func() {
+		It("does not fail with 'GVK Kind must be set' when GetStatus/IsCompleted poll a remote-cluster Job", func() {
+			gw := mockgw.NewMockGateway(mockgw.WithMultiCluster("remote-cluster"))
+			defer gw.Close()
+
+			parentClient, err := mcpclient.New(ctx, gw.URL())
+			Expect(err).ToNot(HaveOccurred())
+			defer parentClient.Close()
+
+			scheme := runtime.NewScheme()
+			Expect(batchv1.AddToScheme(scheme)).To(Succeed())
+			localClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			factory := executor.NewMCPClientFactory(localClient, parentClient.Session())
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			targetResource := "kubernaut-system/deployment/crashloop-app"
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "we-remote", Namespace: "kubernaut-system"},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					ClusterID:      "remote-cluster",
+					TargetResource: targetResource,
+				},
+			}
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: "wfe-remote-job"}
+
+			result, err := je.GetStatus(ctx, wfe, "kubernaut-workflows")
+			Expect(err).ToNot(HaveOccurred(),
+				"GetStatus must set the Job GVK before calling Get on the MCP remote client")
+			Expect(result).ToNot(BeNil())
+
+			_, err = je.IsCompleted(ctx, "remote-cluster", targetResource, "kubernaut-workflows")
+			Expect(err).ToNot(HaveOccurred(),
+				"IsCompleted must set the Job GVK before calling Get on the MCP remote client")
 		})
 	})
 })
