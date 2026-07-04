@@ -823,6 +823,47 @@ func appendYAMLBlockToConfigMap(ctx context.Context, kubeconfigPath, namespace, 
 // preflight/kubectl-tool paths never exercised the remote-cluster wiring
 // this suite exists to prove (BR-INTEGRATION-054).
 func patchAPIFrontendConfigForFleet(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// cmd/apifrontend/backend_deps.go's buildFleetReaderDeps starts a
+	// registry.ClusterRegistry (BR-FLEET-054, list_clusters/multi-cluster
+	// kubectl routing) that watches MCPServerRegistration CRs cluster-wide
+	// via an informer; without this RBAC grant the informer never syncs
+	// ("mcpserverregistrations.mcp.kuadrant.io is forbidden ... at the
+	// cluster scope"), clusterRegistry.Start returns an error, and AF exits
+	// at startup. Mirrors patchSignalProcessingConfigForFleet's identical
+	// grant for the same reason.
+	rbacManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: apifrontend-fleet-cluster-registry
+  labels:
+    app: apifrontend
+    component: fleet
+rules:
+- apiGroups: ["mcp.kuadrant.io"]
+  resources: ["mcpserverregistrations"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: apifrontend-fleet-cluster-registry
+  labels:
+    app: apifrontend
+    component: fleet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: apifrontend-fleet-cluster-registry
+subjects:
+- kind: ServiceAccount
+  name: apifrontend
+  namespace: ` + namespace + `
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, rbacManifest); err != nil {
+		return fmt.Errorf("apifrontend-fleet-cluster-registry RBAC creation failed: %w", err)
+	}
+
 	fleetBlock := `
 fleet:
   enabled: true
@@ -845,6 +886,44 @@ fleet:
 // buildFleetReaderFactory (cmd/effectivenessmonitor/main.go) was never
 // exercised here).
 func patchEffectivenessMonitorConfigForFleet(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	// buildFleetReaderFactory (cmd/effectivenessmonitor/main.go) starts a
+	// registry.ClusterRegistry exactly like AF's buildFleetReaderDeps --
+	// see patchAPIFrontendConfigForFleet's doc comment for why this RBAC
+	// grant is required (ClusterRegistry.Start returns an error, which is
+	// fatal at startup, without it).
+	rbacManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: effectivenessmonitor-fleet-cluster-registry
+  labels:
+    app: effectivenessmonitor-controller
+    component: fleet
+rules:
+- apiGroups: ["mcp.kuadrant.io"]
+  resources: ["mcpserverregistrations"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: effectivenessmonitor-fleet-cluster-registry
+  labels:
+    app: effectivenessmonitor-controller
+    component: fleet
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: effectivenessmonitor-fleet-cluster-registry
+subjects:
+- kind: ServiceAccount
+  name: effectivenessmonitor-controller
+  namespace: ` + namespace + `
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, rbacManifest); err != nil {
+		return fmt.Errorf("effectivenessmonitor-fleet-cluster-registry RBAC creation failed: %w", err)
+	}
+
 	fleetBlock := `
 fleet:
   enabled: true
