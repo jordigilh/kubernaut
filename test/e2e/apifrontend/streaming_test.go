@@ -177,19 +177,38 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 			"IS CRD must transition to Disconnected after SSE disconnect (BR-SESS-003, SI-4)")
 	})
 
+})
+
+// TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01 lives in its own Serial-decorated
+// Describe, separate from the "Investigation Streaming (G3)" Ordered
+// container above. trackSSEConnection (router.go) tracks EVERY /a2a/invoke,
+// /mcp, /a2a/status, AND /debug/slow-sse request -- not just ones with
+// Accept: text/event-stream -- for the full handler duration, and rejects
+// ANY of them with 503 while the tracker is at capacity. This test
+// deliberately saturates that shared, process-wide tracker for its entire
+// ~100s+ connection fill/verify/drain window. Since apifrontend E2E tests
+// run with --procs > 1 (true parallel Ginkgo OS processes sharing the same
+// deployed apifrontend + ConnectionTracker), any /a2a/invoke, /mcp, or
+// /a2a/status request from an unrelated spec in ANY other process that
+// lands during that window is collaterally rejected with a
+// legitimate-looking 503 (observed: TC-E2E-A2A-T13 failing with "Expected
+// 503 to equal 200" in CI run 28716461373, overlapping this spec's fill
+// window). Serial is Ginkgo's authoritative mechanism for this exact class
+// of problem: it guarantees no other spec runs on any parallel process
+// while this one executes (https://onsi.github.io/ginkgo/#serial-specs),
+// eliminating the collateral-rejection window at its source instead of
+// just reducing the odds of collision. Note Serial cannot be applied to a
+// single It nested in a non-Serial Ordered container (Ginkgo rejects that
+// combination at tree-construction time), which is why this is a
+// standalone Describe rather than a fourth It above.
+var _ = Describe("Investigation Streaming (G3) - Connection Cap Enforcement", Serial, Label("e2e", "phase3", "g3"), func() {
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		// trackSSEConnection (router.go) tracks EVERY /a2a/invoke, /mcp,
-		// /a2a/status, AND /debug/slow-sse request -- not just ones with
-		// Accept: text/event-stream -- for the full handler duration. Since
-		// apifrontend E2E tests run with --procs > 1 (true parallel Ginkgo OS
-		// processes sharing the same deployed apifrontend + ConnectionTracker),
-		// any concurrently running spec in ANY other process can transiently
-		// hold a slot. Assuming a zero baseline (as this test previously did)
-		// makes it flaky under CI load. Instead, sample the current baseline
-		// and fill only the remaining headroom, requiring a generous minimum
-		// margin so legitimate concurrent E2E traffic can't plausibly collide
-		// with this test's own fill loop. The deterministic cap-enforcement
-		// LOGIC itself is proven race-free at the unit tier
+		// Sample the current baseline and fill only the remaining headroom,
+		// requiring a generous minimum margin so any residual concurrent
+		// E2E traffic (e.g. specs already in flight when this Serial spec
+		// is scheduled) can't plausibly collide with this test's own fill
+		// loop. The deterministic cap-enforcement LOGIC itself is proven
+		// race-free at the unit tier
 		// (UT-AF-STREAM04-001/002 in pkg/apifrontend/streaming/tracker_test.go)
 		// and the router-wiring of the 503 response is proven at the
 		// integration tier (IT-AF-SSE-CAP-001 in
