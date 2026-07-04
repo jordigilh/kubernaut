@@ -17,7 +17,6 @@ package launcher
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -94,8 +93,15 @@ func WithReinvocation(svc adksession.Service, appName string) StreamingExecutorO
 // Stream lifecycle is logged (not audited) because a2a.stream_opened/closed lack
 // OpenAPI payload schemas in data-storage-v1.yaml. The A2A task lifecycle is
 // already audited by buildBeforeExecuteCallback / buildAfterExecuteCallback.
-// ErrLLMCapacity is returned when the LLM semaphore is full.
-var ErrLLMCapacity = fmt.Errorf("LLM concurrency limit reached — request rejected (SC-5)")
+// ErrLLMCapacity is returned when the LLM semaphore is full. Wrapped as a
+// typed a2a.Error (reason SERVER_ERROR, JSON-RPC code -32000) rather than a
+// bare error so it survives a2a-go's ToJSONRPCError conversion as a
+// meaningful, retryable rejection instead of falling through to the generic
+// -32603 "internal error" default reserved for unclassified server bugs
+// (issue #1544). The retryable/reason detail lets API consumers distinguish
+// "server is busy, retry" from an actual defect without parsing the message.
+var ErrLLMCapacity = a2a.NewError(a2a.ErrServerError, "LLM concurrency limit reached — request rejected (SC-5)").
+	WithDetails(map[string]any{"retryable": true, "reason": "llm_concurrency_exhausted"})
 
 func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
 	ctx = logr.NewContext(ctx, s.logger)

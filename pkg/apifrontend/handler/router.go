@@ -56,8 +56,13 @@ func (c *RouterConfig) validate() error {
 const defaultMaxPayloadBytes int64 = 1 << 20 // 1MB
 
 // registerDebugEndpoints is overridden by debug_e2e.go (//go:build e2e) to
-// register /debug/panic for deterministic panic recovery testing (G17).
-var registerDebugEndpoints = func(_ *http.ServeMux) {}
+// register /debug/panic for deterministic panic recovery testing (G17) and
+// /debug/slow-sse, an LLM-free connection-cap test double (issue #1544) that
+// lets TC-E2E-SSE-CAP-01 occupy real ConnectionTracker slots without driving
+// concurrent LLM/agent traffic. tracker is passed through so the debug SSE
+// endpoint can be wired via the same trackSSEConnection middleware as the
+// production streaming endpoints, exercising identical cap-enforcement logic.
+var registerDebugEndpoints = func(_ *http.ServeMux, _ *streaming.ConnectionTracker) {}
 
 // NewRouter creates an HTTP handler with all routes registered.
 // Routes are organized into two tiers:
@@ -80,7 +85,7 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 	mux.Handle("GET /metrics", cfg.MetricsRegistry.Handler())
 	mux.Handle("GET /.well-known/agent-card.json", cfg.AgentCardHandler)
 
-	registerDebugEndpoints(mux)
+	registerDebugEndpoints(mux, cfg.SSETracker)
 
 	innerA2A := writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.A2AHandler)))
 	innerMCP := writeDeadlineMiddleware(maxBodyMiddleware(maxBytes, trackSSEConnection(cfg.SSETracker, cfg.MCPHandler)))

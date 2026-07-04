@@ -3,6 +3,7 @@ package launcher_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -474,6 +475,21 @@ var _ = Describe("LLM Semaphore Wiring (SC-5)", func() {
 		Expect(err).To(MatchError(launcher.ErrLLMCapacity))
 		Expect(inner.executeCalled).To(BeFalse(),
 			"inner executor must NOT be called when semaphore rejects")
+	})
+
+	It("UT-AF-RATE-W03: ErrLLMCapacity is a typed a2a.Error (SERVER_ERROR), not a bare error (#1544)", func() {
+		// Regression test: a plain fmt.Errorf here falls through a2a-go's
+		// ToJSONRPCError default case and surfaces to API/A2A clients as an
+		// opaque "-32603 internal error" indistinguishable from an actual
+		// server bug. Wrapping as a2a.ErrServerError classifies it as a
+		// meaningful -32000 SERVER_ERROR with a retryable detail instead.
+		var a2aErr *a2a.Error
+		Expect(errors.As(launcher.ErrLLMCapacity, &a2aErr)).To(BeTrue(),
+			"ErrLLMCapacity must be a *a2a.Error so a2a-go classifies it correctly")
+		Expect(a2aErr.Unwrap()).To(Equal(a2a.ErrServerError),
+			"must map to SERVER_ERROR (-32000), not the ErrInternalError (-32603) default")
+		Expect(a2aErr.Details).To(HaveKeyWithValue("retryable", true))
+		Expect(a2aErr.Details).To(HaveKeyWithValue("reason", "llm_concurrency_exhausted"))
 	})
 
 	It("IT-AF-RATE-W02b: Execute acquires and releases semaphore on success", func() {
