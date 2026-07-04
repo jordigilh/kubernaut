@@ -40,9 +40,16 @@ Don't confuse the two — both are now in progress for this repo, but they work 
    "Badges" / embed section with the exact markdown to paste into the README, in the form:
    `[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/<id>/badge)](https://www.bestpractices.dev/projects/<id>)`.
    Send me that snippet (or the project ID) once you have it and I'll add it to the README badge row.
-7. Optional follow-up: once "passing" is earned, the site lets you continue to the "Silver" and
-   "Gold" tiers, which add stricter criteria (two-person code review, reproducible builds, etc.) —
-   not necessary for the badge itself, only pursue if you want to go further.
+7. **Do not pursue Silver/Gold as a solo maintainer** — verified against the live criteria list
+   (`bestpractices.dev/en/criteria`): Gold *requires* (MUST) `two_person_review` (≥50% of changes
+   reviewed by someone other than the author), `contributors_unassociated` (≥2 unaffiliated
+   significant contributors), and `bus_factor` ≥ 2 — none of which a solo maintainer can satisfy
+   without recruiting collaborators, and there's no N/A escape hatch for `two_person_review` or
+   `contributors_unassociated`. Silver only has `bus_factor` as a SHOULD (not required) plus an
+   `access_continuity` criterion (a documented succession/emergency-access plan), so Silver is
+   *technically* reachable solo if you write that plan — but there's no need to chase it now.
+   **Passing is the right target and has zero structural solo-maintainer blockers** — confirmed
+   by reading the full criteria list; none of the above three appear before Gold.
 
 Estimated time: most of the ~50 criteria below already have drafted answers, so this should be a
 30–60 minute copy-paste session rather than a research project.
