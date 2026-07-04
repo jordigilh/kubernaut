@@ -144,6 +144,14 @@ budget tracking using real Vertex AI.
 
 ## Files
 
+The spike's runnable Python scripts (`01_create_spec.py` through
+`05_deepagents_validation.py`, `kubernaut-rca-investigator.yaml`,
+`requirements.txt`) were removed after this spike concluded: this README
+captures every finding, and the pinned `pyagentspec[langgraph]` dependency
+tree had accumulated known vulnerabilities (transitively, via `langchain-core`)
+with no ongoing purpose to justify keeping it in the repository. The scripts
+originally covered:
+
 | File | Purpose |
 |---|---|
 | `01_create_spec.py` | Creates OAS Agent and serializes to YAML |
