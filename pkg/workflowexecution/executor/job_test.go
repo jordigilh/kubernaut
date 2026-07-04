@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -57,6 +58,22 @@ type recordingClientFactory struct {
 func (r *recordingClientFactory) ClientFor(_ context.Context, clusterID string) (executor.ExecutorClient, error) {
 	r.lastClusterID = clusterID
 	return r.client, nil
+}
+
+// gvkCapturingClient wraps a delegate ExecutorClient and records the
+// GroupVersionKind of the object passed to Create, so tests can assert the
+// executor set TypeMeta before handing the object to the client (BR-FLEET-054:
+// the MCP remote writer needs an explicit "kind" to decode the manifest,
+// unlike the local controller-runtime client which infers it from the
+// scheme).
+type gvkCapturingClient struct {
+	executor.ExecutorClient
+	createdGVK schema.GroupVersionKind
+}
+
+func (g *gvkCapturingClient) Create(ctx context.Context, obj client.Object, opts ...client.CreateOption) error {
+	g.createdGVK = obj.GetObjectKind().GroupVersionKind()
+	return g.ExecutorClient.Create(ctx, obj, opts...)
 }
 
 func newTestScheme() *runtime.Scheme {
@@ -282,6 +299,29 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			}
 			Expect(envByName).To(HaveKeyWithValue("HOME", "/tmp"))
 			Expect(envByName).To(HaveKeyWithValue("TMPDIR", "/tmp"))
+		})
+
+		// BR-FLEET-054: regression for a cross-cluster Job dispatch failure
+		// where the built Job's TypeMeta (apiVersion/kind) was left unset.
+		// The local controller-runtime fake/real client tolerates this (it
+		// infers the GVK from the scheme), but the MCP remote writer
+		// serializes the object with runtime.DefaultUnstructuredConverter,
+		// which drops empty apiVersion/kind (omitempty), causing the real
+		// K8s MCP Server to reject the manifest with "Object 'Kind' is
+		// missing". See Issue #1542 E2E-FLEET-014 CI failure.
+		It("UT-WE-054-JOB-018 [BR-FLEET-054]: should set TypeMeta (Kind/APIVersion) on the Job before Create", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			spy := &gvkCapturingClient{ExecutorClient: fakeClient}
+			factory := &mockClientFactory{client: spy}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-gvk-test", "default/deployment/nginx", "")
+
+			_, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(spy.createdGVK.Kind).To(Equal("Job"),
+				"Job must carry an explicit Kind so remote MCP clients can decode the manifest")
+			Expect(spy.createdGVK.GroupVersion().String()).To(Equal(batchv1.SchemeGroupVersion.String()))
 		})
 	})
 
