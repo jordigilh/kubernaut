@@ -36,6 +36,18 @@
       "description": "Kubernetes securityContext (pod or container level)",
       "type": "object"
     },
+    "fleetOAuth2": {
+      "description": "OAuth2 client credentials for MCP Gateway authentication (ADR-068)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "tokenURL": { "type": "string", "default": "" },
+        "credentialsSecretRef": { "type": "string", "default": "", "description": "K8s Secret with keys: client-id, client-secret" },
+        "scopes": { "type": "array", "items": { "type": "string" }, "default": [] },
+        "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying tokenURL's TLS certificate; defaults to the shared inter-service CA when empty" }
+      }
+    },
     "serviceConfig": {
       "description": "Kubernetes Service configuration",
       "type": "object",
@@ -343,12 +355,16 @@
         "tolerations": { "$ref": "#/definitions/tolerations" },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068)",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003)",
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false },
             "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
-            "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" }
+            "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for federated scope checks" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant" },
+            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate; defaults to the shared inter-service CA when empty" },
+            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         }
       }
@@ -515,6 +531,17 @@
             "existingConfigMap": { "type": "string", "default": "" }
           }
         },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-054/BR-FLEET-003, ADR-068)",
+          "additionalProperties": false,
+          "properties": {
+            "endpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster resource reads" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant; required to evaluate the cluster classification dimension" },
+            "namespace": { "type": "string", "default": "", "description": "Restricts the ClusterRegistry CRD watch; empty watches all namespaces" },
+            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
+          }
+        },
         "resources": { "$ref": "#/definitions/resources" },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
@@ -627,12 +654,16 @@
         "tolerations": { "$ref": "#/definitions/tolerations" },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068)",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003)",
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false },
             "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
-            "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" }
+            "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for reading remote resource specs (spec hash)" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant" },
+            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate; defaults to the shared inter-service CA when empty" },
+            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         }
       }
@@ -770,6 +801,18 @@
                 "validityWindow": { "type": "string", "default": "120s", "description": "Time window for assessment validity" }
               }
             }
+          }
+        },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068)",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant" },
+            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate; defaults to the shared inter-service CA when empty" },
+            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
@@ -1075,6 +1118,18 @@
           }
         },
         "logging": { "$ref": "#/definitions/serviceLogging" },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068)",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant" },
+            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate; defaults to the shared inter-service CA when empty" },
+            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
+          }
+        },
         "config": {
           "type": "object",
           "additionalProperties": false,

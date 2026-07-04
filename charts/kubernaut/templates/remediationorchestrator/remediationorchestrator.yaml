@@ -1,3 +1,11 @@
+{{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
+{{- if not .Values.remediationorchestrator.fleet.oauth2.tokenURL }}
+{{- fail "remediationorchestrator.fleet.oauth2.tokenURL is required when remediationorchestrator.fleet.oauth2.enabled=true" }}
+{{- end }}
+{{- if not .Values.remediationorchestrator.fleet.oauth2.credentialsSecretRef }}
+{{- fail "remediationorchestrator.fleet.oauth2.credentialsSecretRef is required when remediationorchestrator.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -63,6 +71,24 @@ data:
       endpoint: {{ .Values.remediationorchestrator.fleet.endpoint | quote }}
       {{- else if eq (default "fleetmetadatacache" .Values.remediationorchestrator.fleet.backend) "fleetmetadatacache" }}
       endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
+      {{- end }}
+      mcpGatewayEndpoint: {{ .Values.remediationorchestrator.fleet.mcpGatewayEndpoint | quote }}
+      {{- if .Values.remediationorchestrator.fleet.mcpGatewayType }}
+      mcpGatewayType: {{ .Values.remediationorchestrator.fleet.mcpGatewayType | quote }}
+      {{- end }}
+      tlsCAFile: {{ .Values.remediationorchestrator.fleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      {{- if .Values.remediationorchestrator.fleet.oauth2.enabled }}
+      oauth2:
+        enabled: true
+        tokenURL: {{ .Values.remediationorchestrator.fleet.oauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ .Values.remediationorchestrator.fleet.oauth2.credentialsSecretRef | quote }}
+        {{- if .Values.remediationorchestrator.fleet.oauth2.scopes }}
+        scopes:
+          {{- range .Values.remediationorchestrator.fleet.oauth2.scopes }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- end }}
+        tlsCAFile: {{ .Values.remediationorchestrator.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- end }}
     {{- end }}
 ---
@@ -266,6 +292,11 @@ spec:
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
+            {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
+            - name: oauth2-credentials
+              mountPath: "/etc/remediationorchestrator/{{ .Values.remediationorchestrator.fleet.oauth2.credentialsSecretRef }}"
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.remediationorchestrator.resources | nindent 12 }}
       volumes:
@@ -276,6 +307,11 @@ spec:
           configMap:
             name: inter-service-ca
             optional: true
+        {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
+        - name: oauth2-credentials
+          secret:
+            secretName: {{ .Values.remediationorchestrator.fleet.oauth2.credentialsSecretRef }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
