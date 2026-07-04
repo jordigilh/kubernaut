@@ -41,6 +41,13 @@ import (
 // An explicit GVK (Kind != "") always wins -- this only fills in what's
 // missing, it never overrides a caller's choice (relevant for APIVersion
 // disambiguation across API groups, e.g. Route in multiple groups).
+//
+// Ambiguity handling mirrors sigs.k8s.io/controller-runtime/pkg/client/apiutil.GVKForObject
+// (the same resolver the cached controller-runtime client uses): when a Go
+// type is registered under more than one GVK, this refuses to guess and
+// returns an error instead of silently picking one -- a wrong guess would
+// silently reach the wrong cluster resource. Callers that hit this must set
+// the GVK explicitly before calling.
 func ensureGVK(obj runtime.Object, scheme *runtime.Scheme) (schema.GroupVersionKind, error) {
 	gvk := obj.GetObjectKind().GroupVersionKind()
 	if gvk.Kind != "" {
@@ -52,15 +59,16 @@ func ensureGVK(obj runtime.Object, scheme *runtime.Scheme) (schema.GroupVersionK
 		return schema.GroupVersionKind{}, fmt.Errorf(
 			"object GVK Kind must be set before calling this method (scheme could not infer it for %T: %w)", obj, err)
 	}
-	if len(gvks) == 0 {
+	switch len(gvks) {
+	case 0:
 		return schema.GroupVersionKind{}, fmt.Errorf(
 			"object GVK Kind must be set before calling this method (scheme has no registered kind for %T)", obj)
+	case 1:
+		resolved := gvks[0]
+		obj.GetObjectKind().SetGroupVersionKind(resolved)
+		return resolved, nil
+	default:
+		return schema.GroupVersionKind{}, fmt.Errorf(
+			"object GVK Kind must be set before calling this method (scheme has multiple registered kinds for %T: %v; refusing to guess)", obj, gvks)
 	}
-
-	// Multiple registered GVKs (e.g. an internal + external version) are rare
-	// for the built-in types this client exchanges; take the first and let
-	// the caller override via explicit SetGroupVersionKind if ambiguous.
-	resolved := gvks[0]
-	obj.GetObjectKind().SetGroupVersionKind(resolved)
-	return resolved, nil
 }

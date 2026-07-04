@@ -26,6 +26,8 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
@@ -164,6 +166,46 @@ var _ = Describe("GVK inference (Issue #1542 follow-up)", func() {
 			}
 
 			err = writer.Delete(ctx, job)
+			Expect(err).ToNot(HaveOccurred())
+		})
+	})
+
+	Describe("Ambiguous scheme registration (matches apiutil.GVKForObject's fail-closed contract)", func() {
+		It("UT-FLEET-GVK-007: Get fails closed (does not silently guess) when the scheme has multiple GVKs for the Go type and the caller set none", func() {
+			ambiguousScheme := runtime.NewScheme()
+			ambiguousScheme.AddKnownTypeWithName(corev1.SchemeGroupVersion.WithKind("Pod"), &corev1.Pod{})
+			ambiguousScheme.AddKnownTypeWithName(schema.GroupVersionKind{Group: "legacy.example.com", Version: "v1", Kind: "Pod"}, &corev1.Pod{})
+
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("prod-east"), mcpclient.WithScheme(ambiguousScheme))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			pod := &corev1.Pod{}
+			err = c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, pod)
+			Expect(err).To(HaveOccurred(),
+				"an ambiguous scheme must never be silently resolved to an arbitrary candidate GVK")
+			Expect(err.Error()).To(ContainSubstring("multiple"))
+
+			// No tool call should have been made -- we must fail before ever
+			// reaching the wire, exactly like apiutil.GVKForObject does for
+			// the cached controller-runtime client.
+			Expect(gw.CallLog()).To(BeEmpty())
+		})
+
+		It("UT-FLEET-GVK-008: Get succeeds when the caller's explicit GVK disambiguates a multi-GVK scheme", func() {
+			ambiguousScheme := runtime.NewScheme()
+			ambiguousScheme.AddKnownTypeWithName(corev1.SchemeGroupVersion.WithKind("Pod"), &corev1.Pod{})
+			ambiguousScheme.AddKnownTypeWithName(schema.GroupVersionKind{Group: "legacy.example.com", Version: "v1", Kind: "Pod"}, &corev1.Pod{})
+
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("prod-east"))
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("prod-east"), mcpclient.WithScheme(ambiguousScheme))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			pod := &corev1.Pod{}
+			pod.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Pod"))
+			err = c.Get(ctx, client.ObjectKey{Namespace: "default", Name: "nginx"}, pod)
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
