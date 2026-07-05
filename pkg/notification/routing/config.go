@@ -266,8 +266,11 @@ func (c *Config) Validate() error {
 	}
 
 	// Build a set of valid receiver names
-	receiverNames := make(map[string]bool)
-	for _, r := range c.Receivers {
+	receiverNames := make(map[string]bool, len(c.Receivers))
+	for i, r := range c.Receivers {
+		if r == nil {
+			return fmt.Errorf("receivers[%d] is empty", i)
+		}
 		if r.Name == "" {
 			return fmt.Errorf("receiver name cannot be empty")
 		}
@@ -319,7 +322,13 @@ func (c *Config) ValidateCredentialRefs() error {
 
 // validateRouteReceivers recursively validates that all route receivers exist.
 func (c *Config) validateRouteReceivers(route *Route, receiverNames map[string]bool) error {
+	if route == nil {
+		return nil
+	}
 	for _, childRoute := range route.Routes {
+		if childRoute == nil {
+			return fmt.Errorf("route has an empty child route")
+		}
 		if childRoute.Receiver != "" && !receiverNames[childRoute.Receiver] {
 			return fmt.Errorf("receiver '%s' not found in receivers list", childRoute.Receiver)
 		}
@@ -332,8 +341,11 @@ func (c *Config) validateRouteReceivers(route *Route, receiverNames map[string]b
 
 // buildReceiverMap builds the internal receiver lookup map.
 func (c *Config) buildReceiverMap() {
-	c.receiverMap = make(map[string]*Receiver)
+	c.receiverMap = make(map[string]*Receiver, len(c.Receivers))
 	for _, r := range c.Receivers {
+		if r == nil {
+			continue
+		}
 		c.receiverMap[r.Name] = r
 	}
 }

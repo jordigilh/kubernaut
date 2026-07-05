@@ -12,6 +12,9 @@ on:
       - 'api/**/*_types.go'
       - 'pkg/shared/types/**'
 
+permissions:
+  contents: read
+
 jobs:
   dispatch:
     name: Notify kubernaut-docs

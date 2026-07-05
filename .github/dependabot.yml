@@ -38,7 +38,15 @@ updates:
           - "*"
 
   - package-ecosystem: docker
-    directory: /build
+    # NOTE: "directory: /build" (previous config) only matched a Dockerfile
+    # directly under /build, never recursed into subdirectories. Use
+    # "directories" (plural, globbing) to recursively cover every Dockerfile
+    # location in the repo.
+    directories:
+      - "/docker"
+      - "/cmd/**"
+      - "/test/**"
+      - "/docs/architecture/spikes/**"
     schedule:
       interval: weekly
       day: monday

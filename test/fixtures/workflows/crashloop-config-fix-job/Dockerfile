@@ -12,7 +12,7 @@
 # regressions in the LLM -> KA -> AIAnalysis -> WFE -> Job parameter pipeline are caught.
 #
 # Build: podman build -t quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec .
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:b217fa65d8c21058887b18f005f587e47a17dd1281a5196ac88d01724a273dbd
 
 # Install kubectl for Kubernetes API access
 ARG TARGETARCH
