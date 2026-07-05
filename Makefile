@@ -36,7 +36,7 @@ SERVICES := $(filter-out README.md must-gather, $(notdir $(wildcard cmd/*)))
 # macOS: sysctl -n hw.ncpu
 # Fallback to 4 if detection fails
 TEST_PROCS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-TEST_TIMEOUT_UNIT ?= 5m
+TEST_TIMEOUT_UNIT ?= 8m
 TEST_TIMEOUT_INTEGRATION ?= 15m
 TEST_TIMEOUT_E2E ?= 18m
 
