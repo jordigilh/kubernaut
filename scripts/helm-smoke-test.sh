@@ -360,6 +360,8 @@ cleanup_port_forward() {
 # succeed before deploying the chart, instead of finding out via CrashLoopBackOff
 # once every app pod hits the same problem. Best-effort: never fails the run,
 # it only buys the network more time to stabilize before deploying real pods.
+# Bounded to ~150s total so a genuinely broken cluster still fails fast via
+# the existing pod-readiness checks instead of hanging here indefinitely.
 wait_for_cluster_network_ready() {
   if [[ "$PLATFORM" != "kind" ]]; then
     return 0
@@ -373,30 +375,31 @@ wait_for_cluster_network_ready() {
   fi
 
   echo "# Waiting for in-cluster pod networking to reach the API server (kube-proxy/CNI warm-up)..."
-  local attempt phase
-  for attempt in $(seq 1 20); do
-    kubectl delete pod netcheck -n default --ignore-not-found --force --grace-period=0 >/dev/null 2>&1 || true
-    kubectl run netcheck -n default --image="$probe_image" --restart=Never \
-      --command -- kubectl get --raw=/healthz --request-timeout=3s >/dev/null 2>&1 || true
+  kubectl delete pod netcheck -n default --ignore-not-found --force --grace-period=0 >/dev/null 2>&1 || true
 
-    phase=""
-    local waited=0
-    while [[ "$waited" -lt 8 ]]; do
-      phase=$(kubectl get pod netcheck -n default -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-      [[ "$phase" == "Succeeded" || "$phase" == "Failed" ]] && break
-      sleep 1
-      waited=$((waited + 1))
-    done
+  # Retry INSIDE a single long-lived pod rather than creating/destroying many
+  # short-lived pods and polling from the host: pod scheduling + container
+  # start + kubectl binary startup overhead (1-3s per attempt) otherwise
+  # dominates a short host-side polling window and makes the gate measure
+  # pod-creation noise instead of actual network reachability.
+  kubectl run netcheck -n default --image="$probe_image" --restart=Never \
+    --command -- /bin/sh -c '
+      i=0
+      while [ "$i" -lt 60 ]; do
+        if kubectl get --raw=/healthz --request-timeout=3s >/dev/null 2>&1; then
+          exit 0
+        fi
+        i=$((i + 1))
+        sleep 2
+      done
+      exit 1
+    ' >/dev/null 2>&1
 
-    if [[ "$phase" == "Succeeded" ]]; then
-      echo "# In-cluster networking is ready (attempt ${attempt}/20)"
-      kubectl delete pod netcheck -n default --ignore-not-found --force --grace-period=0 >/dev/null 2>&1 || true
-      return 0
-    fi
-    sleep 2
-  done
-
-  echo "# WARNING: in-cluster networking did not confirm ready after 20 attempts; proceeding anyway"
+  if kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/netcheck -n default --timeout=150s >/dev/null 2>&1; then
+    echo "# In-cluster networking is ready"
+  else
+    echo "# WARNING: in-cluster networking did not confirm ready within the wait budget; proceeding anyway"
+  fi
   kubectl delete pod netcheck -n default --ignore-not-found --force --grace-period=0 >/dev/null 2>&1 || true
   return 0
 }
