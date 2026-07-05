@@ -1,25 +1,30 @@
 name: CI Pipeline
 
-# 4-Stage CI Pipeline with Registry-Aware Image Reuse
+# 4-Stage CI Pipeline with Artifact-Based Image Handoff (no registry push)
 #
 # Stage 1: Lint, License Scan & Unit Tests (parallel: 1 lint + 1 license scan + 13 unit test jobs) ~1-2 min
-# Stage 2: Build & Push Images
+# Stage 2: Build Images
 #   - 2a: Go service images (parallel matrix: 12 services × 2 arches) ~5 min
 #        amd64: full multi-stage Dockerfile (native, coverage-instrumented)
-#        arm64: native Go cross-compile + scratch runtime Dockerfile (no QEMU)
+#        arm64: native Go cross-compile + scratch runtime Dockerfile (no QEMU),
+#        build-validation only, not consumed downstream
 #   - 2a-infra: infra images (parallel matrix: 2 images — db-migrate, mock-llm, amd64 only) ~5 min
-#   - 2b: Multi-arch manifests (single job, loop over 12 Go services) ~1 min
 # Stage 3: Integration Tests (parallel matrix: 12 services) ~15 min
 # Stage 4: E2E Tests (parallel jobs: 13 services, when enabled) ~30 min each
 #
-# CI/CD Optimization (Registry-Aware):
-#   - All images pushed to ghcr.io after unit tests pass
-#   - arm64 images built via native Go cross-compile in same matrix (no QEMU)
-#   - Multi-arch manifests enable transparent arch-aware pulls (Issue #1500)
-#   - Integration tests pull dependency images (DataStorage, KA, Mock LLM) from registry
-#   - E2E tests pull service images from registry
-#   - Automatic fallback to local build if registry pull fails
-#   - Saves ~60% disk space and ~30% build time in CI
+# CI/CD Optimization (Artifact-Based, No Registry):
+#   - Images are built, scanned locally with Trivy, `docker save`d and handed
+#     to downstream jobs as short-lived workflow artifacts (2-day retention)
+#   - Downstream jobs `podman load` (IT/E2E) or `kind load image-archive`
+#     (Helm smoke) the artifacts directly -- no ghcr.io push/pull anywhere
+#   - This makes the whole pipeline work unmodified for fork PRs, whose
+#     GITHUB_TOKEN is read-only and cannot push to ghcr.io (see #1573 CI triage)
+#   - Cosign signing / SBOM generation are NOT done here -- ephemeral CI
+#     images are never deployed; signing/SBOM apply only to release.yml's
+#     Quay.io artifacts
+#   - Automatic fallback to local build if an artifact wasn't loaded
+#   - Saves ~60% disk space and ~30% build time in CI vs. building fresh
+#     in every downstream job
 #
 # Trigger Strategy (merge-gate pattern):
 #   - CI skips draft PRs (types filter excludes draft events)
@@ -61,10 +66,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Least-privilege default for every job. Jobs that need to push/pull ghcr.io
-# images, sign with Cosign, or comment on PRs declare their own elevated
-# job-level `permissions:` block below, which fully replaces (not merges
-# with) this default for that job.
+# Least-privilege default for every job. No job in this workflow needs
+# ghcr.io push/pull or Cosign OIDC signing (see artifact-based image handoff
+# above); jobs that comment on PRs declare their own elevated job-level
+# `permissions:` block below, which fully replaces (not merges with) this
+# default for that job.
 permissions:
   contents: read
 
@@ -72,11 +78,6 @@ env:
   # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
   # This ensures all Kind commands (create, load, etc.) use Podman as the provider
   KIND_EXPERIMENTAL_PROVIDER: podman
-  
-  # Image registry configuration for E2E tests
-  # NOTE: ghcr.io is for CI/CD ONLY (ephemeral images, 14-day cleanup)
-  # Production releases use Quay.io (separate workflow)
-  IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
 
 jobs:
   # ========================================
@@ -351,29 +352,30 @@ jobs:
           if-no-files-found: ignore
 
   # ========================================
-  # STAGE 2: BUILD & PUSH IMAGES (ghcr.io)
-  # Matrix job: Build 12 Go service images for amd64 + arm64 and push to
-  # GitHub Container Registry.
+  # STAGE 2: BUILD IMAGES (artifact-based, no registry push)
+  # Matrix job: Build 12 Go service images for amd64 + arm64, scan them
+  # locally with Trivy, and hand them to downstream jobs as workflow
+  # artifacts (docker save + actions/upload-artifact).
   #   - amd64: full multi-stage Dockerfile (native on runner, coverage-instrumented)
-  #   - arm64: native Go cross-compile + scratch runtime Dockerfile (no QEMU)
-  # Purpose: Integration & E2E tests pull from registry (saves ~60% disk space)
-  # Retention: Images auto-cleanup after 14 days (GitHub policy)
-  # Production: NOT used for production (Quay.io for production releases)
-  # Authority: Issue #1500
+  #   - arm64: native Go cross-compile + scratch runtime Dockerfile (no QEMU),
+  #     build-validation only -- no downstream job consumes the arm64 artifact.
+  # Purpose: Integration & E2E tests load the amd64 artifact directly, no
+  # registry round-trip. This removes the ghcr.io push entirely from the CI
+  # pipeline, so it works unmodified for fork PRs (read-only GITHUB_TOKEN).
+  # Cosign signing and SBOM generation are intentionally NOT done here --
+  # they only apply to real release artifacts (see release.yml, Quay.io).
+  # Retention: Artifacts auto-expire after 2 days (see retention-days below).
+  # Authority: Issue #1500; DD follow-up to #1573 CI investigation
   # ========================================
 
-  build-and-push-images:
-    name: "Build & Push (${{ matrix.service }}/${{ matrix.arch }})"
+  build-images:
+    name: "Build (${{ matrix.service }}/${{ matrix.arch }})"
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
-      packages: write  # Required for ghcr.io push
-      id-token: write  # Required for Cosign keyless signing (GitHub OIDC)
-    env:
-      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     strategy:
@@ -452,16 +454,6 @@ jobs:
           export PATH="${{ github.workspace }}/bin:$PATH"
           make generate
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
       - name: Generate image tag
         id: tag
         run: |
@@ -471,34 +463,20 @@ jobs:
             echo "tag=main-${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Compute image reference
-        id: image-ref
-        run: |
-          TAG=${{ steps.tag.outputs.tag }}
-          if [ "${{ matrix.arch }}" == "arm64" ]; then
-            echo "full_tag=${TAG}-arm64" >> $GITHUB_OUTPUT
-          else
-            echo "full_tag=${TAG}" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Build and push amd64 image
+      - name: Build amd64 image
         if: matrix.arch == 'amd64'
         run: |
-          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}"
-          
+          IMAGE="localhost/${{ matrix.service }}:${{ steps.tag.outputs.tag }}"
+
           echo "🔨 Building ${{ matrix.service }} image (amd64, multi-stage)..."
           echo "   Image: ${IMAGE}"
           echo "   Dockerfile: ${{ matrix.dockerfile }}"
-          
+
           docker build \
             --build-arg GOFLAGS=-cover \
             -t "${IMAGE}" \
             -f ${{ matrix.dockerfile }} \
             .
-          
-          echo "📤 Pushing to ghcr.io..."
-          docker push "${IMAGE}"
-          echo "✅ Image pushed successfully!"
 
       - name: Cross-compile binary for arm64 (native, no QEMU)
         if: matrix.arch == 'arm64'
@@ -506,53 +484,56 @@ jobs:
           echo "Cross-compiling ${{ matrix.service }} for arm64 (native)..."
           make cross-build-${{ matrix.service }} IMAGE_ARCH=arm64
 
-      - name: Build and push arm64 runtime image
+      - name: Build arm64 runtime image
         if: matrix.arch == 'arm64'
         env:
           IMAGE_TAG: ${{ steps.tag.outputs.tag }}
           IMAGE_ARCH: arm64
           CONTAINER_TOOL: docker
+          IMAGE_REGISTRY: localhost
         run: |
-          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}"
+          IMAGE="localhost/${{ matrix.service }}:${{ steps.tag.outputs.tag }}"
           echo "Building runtime image ${IMAGE} (no QEMU)..."
           make image-runtime-${{ matrix.service }}
-          echo "📤 Pushing ${IMAGE}..."
-          docker push "${IMAGE}"
-          echo "✅ Image pushed successfully!"
 
-      - name: Cosign sign image (keyless)
+      - name: Compute local image reference
+        id: image-ref
         run: |
-          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}"
-          echo "Signing ${IMAGE} (keyless, GitHub OIDC)..."
-          cosign sign --yes "${IMAGE}"
-
-      - name: Verify image signature (self-check)
-        run: |
-          IMAGE="${IMAGE_REGISTRY}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}"
-          cosign verify \
-            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/\.github/workflows/ci-pipeline\.yml@.*$" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${IMAGE}"
+          # image-runtime-% (arm64 path) always appends -$(IMAGE_ARCH) to the tag;
+          # the amd64 `docker build` step above does not. Match each arch's
+          # actual local tag here rather than changing the shared Makefile target.
+          if [ "${{ matrix.arch }}" == "arm64" ]; then
+            echo "image=localhost/${{ matrix.service }}:${{ steps.tag.outputs.tag }}-arm64" >> $GITHUB_OUTPUT
+          else
+            echo "image=localhost/${{ matrix.service }}:${{ steps.tag.outputs.tag }}" >> $GITHUB_OUTPUT
+          fi
 
       - name: Scan image for CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}
+          image-ref: ${{ steps.image-ref.outputs.image }}
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
-      - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+      - name: Save image to tarball
+        run: |
+          mkdir -p /tmp/image-artifact
+          TARBALL="/tmp/image-artifact/${{ matrix.service }}-${{ matrix.arch }}.tar"
+          echo "💾 Saving ${{ steps.image-ref.outputs.image }} -> ${TARBALL}..."
+          docker save -o "${TARBALL}" "${{ steps.image-ref.outputs.image }}"
+          ls -lh "${TARBALL}"
+
+      - name: Upload image artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ steps.image-ref.outputs.full_tag }}
-          format: cyclonedx-json
-          output-file: sbom-${{ matrix.service }}-${{ matrix.arch }}.cdx.json
-          artifact-name: sbom-${{ matrix.service }}-${{ matrix.arch }}
+          name: image-${{ matrix.service }}-${{ matrix.arch }}
+          path: /tmp/image-artifact/${{ matrix.service }}-${{ matrix.arch }}.tar
+          retention-days: 2
 
   # ========================================
-  # STAGE 2a-infra: BUILD & PUSH INFRA IMAGES (ghcr.io)
+  # STAGE 2a-infra: BUILD INFRA IMAGES (artifact-based, no registry push)
   # Matrix job: Build infrastructure and test fixture images.
   # Separated from service images so downstream jobs can depend on
   # service images without waiting for infra builds (and vice versa).
@@ -566,8 +547,6 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
-      packages: write  # Required for ghcr.io push
-      id-token: write  # Required for Cosign keyless signing (GitHub OIDC)
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
     strategy:
@@ -615,16 +594,6 @@ jobs:
           export PATH="${{ github.workspace }}/bin:$PATH"
           make generate
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
       - name: Generate image tag
         id: tag
         run: |
@@ -634,127 +603,57 @@ jobs:
             echo "tag=main-${{ github.sha }}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Build and push ${{ matrix.service }} image
+      - name: Build ${{ matrix.service }} image
         run: |
-          IMAGE_NAME=ghcr.io/${{ github.repository_owner }}/kubernaut/${{ matrix.image_name }}
-          IMAGE_TAG=${{ steps.tag.outputs.tag }}
+          IMAGE="localhost/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}"
           CONTEXT=${{ matrix.context || '.' }}
-          
+
           echo "🔨 Building ${{ matrix.service }} image..."
-          echo "   Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+          echo "   Image: ${IMAGE}"
           echo "   Dockerfile: ${{ matrix.dockerfile }}"
           echo "   Context: ${CONTEXT}"
-          
+
           docker build \
             --build-arg GOFLAGS=-cover \
-            -t ${IMAGE_NAME}:${IMAGE_TAG} \
+            -t "${IMAGE}" \
             -f ${{ matrix.dockerfile }} \
             ${CONTEXT}
-          
-          echo "📤 Pushing to ghcr.io..."
-          docker push ${IMAGE_NAME}:${IMAGE_TAG}
-          
-          echo "✅ Image pushed successfully!"
-
-      - name: Cosign sign image (keyless)
-        run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/kubernaut/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}"
-          echo "Signing ${IMAGE} (keyless, GitHub OIDC)..."
-          cosign sign --yes "${IMAGE}"
-
-      - name: Verify image signature (self-check)
-        run: |
-          IMAGE="ghcr.io/${{ github.repository_owner }}/kubernaut/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}"
-          cosign verify \
-            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/\.github/workflows/ci-pipeline\.yml@.*$" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "${IMAGE}"
 
       - name: Scan image for CVEs (trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/kubernaut/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
+          image-ref: localhost/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
           format: table
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
 
-      - name: Generate SBOM (CycloneDX)
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
-        with:
-          image: ghcr.io/${{ github.repository_owner }}/kubernaut/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
-          format: cyclonedx-json
-          output-file: sbom-${{ matrix.image_name }}.cdx.json
-          artifact-name: sbom-${{ matrix.image_name }}
-
-  # ========================================
-  # STAGE 2b: MULTI-ARCH MANIFESTS (ghcr.io)
-  # Creates manifest lists so docker/podman pull resolves the correct
-  # arch automatically. Only covers the 12 Go services that have both
-  # amd64 and arm64 images. Single job with loop (fast API calls only).
-  # Authority: Issue #1500
-  # ========================================
-
-  create-ci-manifests:
-    name: "Multi-Arch Manifests"
-    needs: [detect-changes, build-and-push-images]
-    if: needs.detect-changes.outputs.code_changed == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: write
-      id-token: write  # Required for Cosign keyless signing (GitHub OIDC)
-    steps:
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Create and push multi-arch manifests
-        env:
-          IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+      - name: Save image to tarball
         run: |
-          SERVICES="datastorage gateway aianalysis authwebhook notification remediationorchestrator signalprocessing workflowexecution effectivenessmonitor kubernautagent apifrontend fleetmetadatacache"
+          mkdir -p /tmp/image-artifact
+          IMAGE="localhost/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}"
+          TARBALL="/tmp/image-artifact/${{ matrix.image_name }}-amd64.tar"
+          echo "💾 Saving ${IMAGE} -> ${TARBALL}..."
+          docker save -o "${TARBALL}" "${IMAGE}"
+          ls -lh "${TARBALL}"
 
-          for svc in ${SERVICES}; do
-            BASE="${IMAGE_REGISTRY}/${svc}"
-            echo "Creating manifest: ${BASE}:${IMAGE_TAG} [amd64 + arm64]..."
-
-            docker manifest create "${BASE}:${IMAGE_TAG}" \
-              "${BASE}:${IMAGE_TAG}" \
-              "${BASE}:${IMAGE_TAG}-arm64"
-
-            docker manifest push "${BASE}:${IMAGE_TAG}"
-            echo "  pushed ${svc}"
-
-            echo "Signing manifest list ${BASE}:${IMAGE_TAG} (keyless, GitHub OIDC)..."
-            cosign sign --yes "${BASE}:${IMAGE_TAG}"
-
-            cosign verify \
-              --certificate-identity-regexp "^https://github.com/${{ github.repository }}/\.github/workflows/ci-pipeline\.yml@.*$" \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-              "${BASE}:${IMAGE_TAG}"
-            echo "  signed + verified ${svc} manifest list"
-          done
-
-          echo ""
-          echo "All 12 multi-arch manifests created, pushed, and signed."
+      - name: Upload image artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: image-${{ matrix.image_name }}-amd64
+          path: /tmp/image-artifact/${{ matrix.image_name }}-amd64.tar
+          retention-days: 2
 
   # ========================================
   # STAGE 3: INTEGRATION TESTS
-  # Waits for BOTH unit-tests AND build-and-push-images to complete
+  # Waits for BOTH unit-tests AND build-images to complete
   # Matrix strategy: 10 services (all Go, same pattern: envtest + Podman)
-  # 
+  #
   # CI/CD Optimization:
-  #   - Pulls dependency images from ghcr.io (DataStorage, KA, Mock LLM)
-  #   - Fallback to local build if registry pull fails
-  #   - Saves ~60% disk space and ~30% build time
+  #   - Loads dependency images (DataStorage, KA, Mock LLM) from workflow
+  #     artifacts produced by build-images/build-infra-images (no registry)
+  #   - Fallback to local build if a needed image wasn't loaded
+  #   - Saves ~60% disk space and ~30% build time vs. building fresh
   #
   # DESIGN DECISION: No smart path detection at this level
   # - All integration tests run for ANY change (after images are built)
@@ -766,13 +665,12 @@ jobs:
 
   integration-tests:
     name: Integration (${{ matrix.service }})
-    needs: [detect-changes, unit-tests, build-and-push-images, build-infra-images]
+    needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     env:
-      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
-      IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+      KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
     strategy:
       fail-fast: false
       matrix:
@@ -844,6 +742,8 @@ jobs:
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@f9589b9f2b9dddf8532b432bb8315f2820ab9971 # release-0.23
           echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
+      - name: Load pre-built images (artifact-based, no registry)
+        uses: ./.github/actions/load-ci-images
       - name: Run ${{ matrix.service }} integration tests
         run: |
           make test-integration-${{ matrix.service }} 2>&1 | tee integration-${{ matrix.service }}.log
@@ -931,11 +831,12 @@ jobs:
   #     remediationorchestrator, notification, gateway, datastorage,
   #     effectivenessmonitor, kubernautagent
   #   - 1 full pipeline E2E
-  # 
+  #
   # Image Strategy:
-  #   - E2E tests attempt registry pull first (fast path, ~30% time savings)
-  #   - Fallback to local build on 403/failure (with coverage instrumentation)
-  #   - BuildImageForKind() handles this automatically via IMAGE_REGISTRY + IMAGE_TAG
+  #   - Pre-built images are loaded from workflow artifacts (build-images /
+  #     build-infra-images), no registry involved
+  #   - BuildImageForKind() picks them up via KUBERNAUT_CI_ARTIFACT_TAG,
+  #     falling back to a local build if an image wasn't loaded
   #
   # DESIGN DECISION: Runs after integration tests pass
   # - E2E tests are slower (30 min each) and more resource-intensive
@@ -945,20 +846,18 @@ jobs:
 
   e2e-tests:
     name: E2E (${{ matrix.service }})
-    needs: [detect-changes, unit-tests, build-and-push-images, build-infra-images]
+    needs: [detect-changes, unit-tests, build-images, build-infra-images]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
-      packages: read  # Required to pull pre-built service images from ghcr.io
     env:
-      # E2E Image Strategy: Pull from registry first, fallback to local build
-      # - BuildImageForKind() attempts registry pull if IMAGE_REGISTRY + IMAGE_TAG set
-      # - Falls back to local build on 403/failure (with coverage instrumentation)
-      # - Ensures fastest possible E2E execution when registry is accessible
-      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
-      IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+      # E2E Image Strategy: Use artifact-loaded images, fallback to local build.
+      # BuildImageForKind() checks KUBERNAUT_CI_ARTIFACT_TAG first (see
+      # test/infrastructure/e2e_images.go); falls back to local build+cover
+      # if a given service's image wasn't loaded (non-fatal, just slower).
+      KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
       E2E_COVERAGE: true  # Enable coverage instrumentation for local builds (GOFLAGS=-cover)
     strategy:
       fail-fast: false
@@ -1055,9 +954,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y podman
-      - name: Login to GitHub Container Registry (for image pulls)
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Load pre-built images (artifact-based, no registry)
+        uses: ./.github/actions/load-ci-images
       - name: Install Kind v0.30.0
         run: |
           KIND_VERSION="v0.30.0"
@@ -1210,23 +1108,22 @@ jobs:
   #   1. CRD freshness: `make manifests` + diff against charts/kubernaut/crds/
   #   2. values.schema.json: `helm lint --strict` validates schema consistency
   #
-  # Image strategy: Pull pre-built images from ghcr.io (no local builds).
+  # Image strategy: Load pre-built images from workflow artifacts (no
+  # registry, no pull secret) and `kind load` them directly into the cluster.
   # Authority: docs/testing/342/TEST_PLAN.md
   # ========================================
 
   helm-smoke-test:
     name: Helm Smoke Tests (Kind)
-    needs: [detect-changes, build-and-push-images, build-infra-images, unit-tests]
+    needs: [detect-changes, build-images, build-infra-images, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: read  # Required to pull pre-built service images from ghcr.io
     env:
       KIND_CLUSTER_NAME: helm-smoke
-      IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
-      IMAGE_TAG: ${{ needs.build-and-push-images.outputs.tag }}
+      IMAGE_TAG: ${{ needs.build-images.outputs.tag }}
 
     steps:
       - name: Checkout
@@ -1292,17 +1189,32 @@ jobs:
           kubectl cluster-info
           kubectl get nodes -o wide
 
+      - name: Download pre-built image artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: image-*-amd64
+          path: /tmp/ci-images
+          merge-multiple: true
+
+      - name: Load images directly into Kind (no registry, no pull secret)
+        run: |
+          shopt -s nullglob
+          tars=(/tmp/ci-images/*.tar)
+          if [ ${#tars[@]} -eq 0 ]; then
+            echo "::error::No image tarballs found in /tmp/ci-images"
+            exit 1
+          fi
+          for tar in "${tars[@]}"; do
+            echo "📦 Loading $(basename "$tar") into Kind cluster ${KIND_CLUSTER_NAME}..."
+            kind load image-archive "$tar" --name "$KIND_CLUSTER_NAME"
+          done
+
       - name: Run smoke tests
-        env:
-          PULL_SECRET_SERVER: ghcr.io
-          PULL_SECRET_USER: ${{ github.actor }}
-          PULL_SECRET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           scripts/helm-smoke-test.sh \
             --platform kind \
             --image-tag "${IMAGE_TAG}" \
-            --registry "${IMAGE_REGISTRY}" \
-            --pull-secret ghcr-creds \
+            --registry localhost \
             --chart-path charts/kubernaut/
 
       - name: Collect Kind node logs on failure
@@ -1336,7 +1248,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, build-and-push-images, build-infra-images, create-ci-manifests, integration-tests, e2e-tests, helm-smoke-test]
+    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, integration-tests, e2e-tests, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1491,19 +1403,18 @@ jobs:
           echo "  Lint (Go):        ${{ needs.lint-go.result }}"
           echo "  Unit Tests (13):  ${{ needs.unit-tests.result }} (includes per-service fuzz corpus regression)"
           echo ""
-          echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
-          echo "  Go Services (12×2 arch):    ${{ needs.build-and-push-images.result }}"
+          echo "STAGE 2 - Build Images (Parallel Matrix, artifact-based):"
+          echo "  Go Services (12×2 arch):    ${{ needs.build-images.result }}"
           echo "  Infra Images (2, amd64):    ${{ needs.build-infra-images.result }}"
-          echo "  Multi-Arch Manifests:       ${{ needs.create-ci-manifests.result }}"
-          echo "  Registry: ghcr.io (CI/CD ephemeral images, 14-day retention)"
+          echo "  Distribution: workflow artifacts (no registry push, 2-day retention)"
           echo ""
           echo "STAGE 3 - Integration Tests (Parallel Matrix):"
           echo "  All Services (12 services): ${{ needs.integration-tests.result }}"
-          echo "  Image Strategy: Pull from ghcr.io (DataStorage, KA, Mock LLM)"
+          echo "  Image Strategy: Load from workflow artifacts (DataStorage, KA, Mock LLM)"
           echo ""
           echo "STAGE 4 - E2E Tests (Parallel Matrix):"
           echo "  All Services (13 services): ${{ needs.e2e-tests.result }}"
-          echo "  Image Strategy: Pull from ghcr.io (all service images)"
+          echo "  Image Strategy: Load from workflow artifacts (all service images)"
           echo ""
           echo "Helm Smoke Tests (parallel with Stage 3+4):"
           echo "  Smoke Tests (Kind):  ${{ needs.helm-smoke-test.result }}"
@@ -1518,12 +1429,12 @@ jobs:
           echo "Optimizations:"
           echo "  ✅ Stage 1: All parallel (1 lint + 13 unit tests)"
           echo "  ✅ No redundant builds (code compiled once in image builds)"
-          echo "  ✅ Parallel image builds & push to ghcr.io (matrix: 12 services × 2 arches + 2 infra)"
-          echo "  ✅ Integration tests reuse registry images (saves ~60% disk, ~30% time)"
+          echo "  ✅ Parallel image builds, handed off as artifacts (matrix: 12 services × 2 arches + 2 infra)"
+          echo "  ✅ Integration tests reuse artifact-loaded images (saves ~60% disk, ~30% time)"
           echo "  ✅ Parallel integration tests (matrix: 12 services)"
-          echo "  ✅ E2E tests reuse registry images (saves ~60% disk, ~30% time)"
+          echo "  ✅ E2E tests reuse artifact-loaded images (saves ~60% disk, ~30% time)"
           echo "  ✅ Parallel E2E tests (matrix: 13 services)"
-          echo "  ✅ Automatic fallback to local build if registry pull fails"
+          echo "  ✅ Automatic fallback to local build if an image artifact is missing"
           echo "═══════════════════════════════════════════════════════════"
 
           # Check for lint failure (non-blocking, but report)
@@ -1543,15 +1454,15 @@ jobs:
             exit 1
           fi
 
-          # Check for image build & push failure (critical for integration + E2E)
-          if [ "${{ needs.build-and-push-images.result }}" == "failure" ]; then
+          # Check for image build failure (critical for integration + E2E)
+          if [ "${{ needs.build-images.result }}" == "failure" ]; then
             echo ""
             echo "❌ Image builds failed - check individual service builds in the matrix"
             echo "   Services: datastorage, gateway, aianalysis, authwebhook, notification,"
             echo "             remediationorchestrator, signalprocessing, workflowexecution,"
             echo "             kubernautagent, mock-llm"
             exit 1
-          elif [ "${{ needs.build-and-push-images.result }}" == "cancelled" ]; then
+          elif [ "${{ needs.build-images.result }}" == "cancelled" ]; then
             echo ""
             echo "⚠️  Image builds cancelled"
             exit 1
@@ -1628,8 +1539,8 @@ jobs:
   merge-gate:
     name: Merge Gate
     if: always()
-    needs: [detect-changes, lint-go, license-scan, unit-tests, build-and-push-images,
-            build-infra-images, create-ci-manifests,
+    needs: [detect-changes, lint-go, license-scan, unit-tests, build-images,
+            build-infra-images,
             integration-tests, e2e-tests, helm-smoke-test, summary]
     runs-on: ubuntu-latest
     steps:
@@ -1646,9 +1557,8 @@ jobs:
           echo "  lint-go:              ${{ needs.lint-go.result }}"
           echo "  license-scan:         ${{ needs.license-scan.result }}"
           echo "  unit-tests:           ${{ needs.unit-tests.result }}"
-          echo "  build-and-push:       ${{ needs.build-and-push-images.result }}"
+          echo "  build-images:         ${{ needs.build-images.result }}"
           echo "  build-infra:          ${{ needs.build-infra-images.result }}"
-          echo "  multi-arch-manifests: ${{ needs.create-ci-manifests.result }}"
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"
           echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"
           echo "  helm-smoke-test:      ${{ needs.helm-smoke-test.result }}"
