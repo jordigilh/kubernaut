@@ -117,6 +117,20 @@ type ContainerInstance struct {
 func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*ContainerInstance, error) {
 	_, _ = fmt.Fprintf(writer, "🚀 Starting container: %s\n", cfg.Name)
 
+	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
+	// this service under the agreed-upon fixed tag (artifact-based CI mode,
+	// no registry involved). Mirrors BuildImageForKind's equivalent E2E check.
+	if artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG"); artifactTag != "" && cfg.BuildContext != "" {
+		serviceName := extractServiceNameFromImage(cfg.Image)
+		prebuiltImage := fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
+		if checkCmd := exec.Command("podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
+			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", prebuiltImage)
+			cfg.Image = prebuiltImage
+			cfg.BuildContext = ""
+			cfg.BuildDockerfile = ""
+		}
+	}
+
 	// Step 0: Try registry pull if configured (CI/CD optimization)
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
