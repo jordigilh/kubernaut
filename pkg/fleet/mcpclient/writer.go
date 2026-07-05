@@ -42,10 +42,13 @@ type WriterClient struct {
 	session    *mcp.ClientSession
 	clusterID  string
 	toolPrefix string
+	scheme     *runtime.Scheme
 }
 
 // NewWriterFromSession creates a WriterClient from an existing MCP session.
-// Options (optional): WithToolPrefix sets the gateway-specific tool prefix.
+// Options (optional): WithToolPrefix sets the gateway-specific tool prefix;
+// WithScheme sets the GVK-inference scheme (see ensureGVK), defaulting to
+// clientgoscheme.Scheme.
 // Panics if session is nil (fail-fast, same contract as NewFromSession).
 func NewWriterFromSession(session *mcp.ClientSession, clusterID string, opts ...Option) *WriterClient {
 	if session == nil {
@@ -55,7 +58,7 @@ func NewWriterFromSession(session *mcp.ClientSession, clusterID string, opts ...
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	return &WriterClient{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
+	return &WriterClient{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme()}
 }
 
 func (w *WriterClient) resolveToolName(tool string) string {
@@ -75,6 +78,10 @@ func (w *WriterClient) resolveToolName(tool string) string {
 // contract (github.com/containers/kubernetes-mcp-server); the tool call fails
 // with "missing argument resource" otherwise.
 func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...client.CreateOption) error {
+	if _, err := ensureGVK(obj, w.scheme); err != nil {
+		return err
+	}
+
 	manifest, err := objectToJSON(obj)
 	if err != nil {
 		return fmt.Errorf("serialize object for Create: %w", err)
@@ -105,9 +112,9 @@ func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...clien
 // Delete implements client.Writer. It sends a delete request to the remote
 // cluster via the MCP delete_resource tool.
 func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...client.DeleteOption) error {
-	gvk := obj.GetObjectKind().GroupVersionKind()
-	if gvk.Kind == "" {
-		return fmt.Errorf("object GVK Kind must be set before calling Delete")
+	gvk, err := ensureGVK(obj, w.scheme)
+	if err != nil {
+		return err
 	}
 
 	toolName := w.resolveToolName(ToolDelete)
@@ -140,6 +147,10 @@ func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...clien
 // contract (github.com/containers/kubernetes-mcp-server); the tool call fails
 // with "missing argument resource" otherwise.
 func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...client.UpdateOption) error {
+	if _, err := ensureGVK(obj, w.scheme); err != nil {
+		return err
+	}
+
 	manifest, err := objectToJSON(obj)
 	if err != nil {
 		return fmt.Errorf("serialize object for Update: %w", err)

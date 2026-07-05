@@ -15,7 +15,11 @@ limitations under the License.
 */
 package scenarios
 
-import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
+import (
+	"strings"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
+)
 
 func oomkilledConfig() MockScenarioConfig {
 	return MockScenarioConfig{
@@ -33,5 +37,35 @@ func oomkilledConfig() MockScenarioConfig {
 		},
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
+	}
+}
+
+// oomkilledScenario matches explicit OOM signal names at high confidence and
+// falls back to the generic Kubernetes "BackOff" crash-loop reason at lower
+// confidence. "BackOff" alone is ambiguous -- it fires for ANY crash-looping
+// container regardless of root cause (OOM vs. config error) -- so the
+// fallback must not outrank a genuine crashloop-app match (see
+// crashloopScenario, which requires positive "crashloop" evidence for the
+// same "backoff" signal). Issue #1542 follow-up.
+func oomkilledScenario() *configScenario {
+	cfg := oomkilledConfig()
+	highConfidencePatterns := []string{"memoryexceedslimit", "memoryexceeds", "oomkilled", "oomkill"}
+	return &configScenario{
+		config: cfg,
+		matchFunc: func(ctx *DetectionContext) (bool, float64) {
+			signal := extractSignal(ctx)
+			if signal == "" {
+				return false, 0
+			}
+			for _, p := range highConfidencePatterns {
+				if strings.Contains(signal, p) {
+					return true, 0.8
+				}
+			}
+			if strings.Contains(signal, "backoff") {
+				return true, 0.5
+			}
+			return false, 0
+		},
 	}
 }

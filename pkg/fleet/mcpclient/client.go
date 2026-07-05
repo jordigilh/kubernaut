@@ -31,6 +31,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -54,6 +55,7 @@ type Client struct {
 	reconnect       func(context.Context) error
 	clusterID       string
 	toolPrefix      string
+	scheme          *runtime.Scheme
 	mu              sync.Mutex
 	closed          bool
 }
@@ -82,7 +84,7 @@ func New(ctx context.Context, endpoint string, opts ...Option) (*Client, error) 
 		return nil, fmt.Errorf("connect to MCP Gateway at %s: %w", endpoint, err)
 	}
 
-	return &Client{session: session, clusterID: cfg.clusterID, toolPrefix: cfg.toolPrefix}, nil
+	return &Client{session: session, clusterID: cfg.clusterID, toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme()}, nil
 }
 
 // NewFromSession creates a Client from an existing MCP session, skipping the
@@ -102,7 +104,7 @@ func NewFromSession(session *mcp.ClientSession, clusterID string, opts ...Option
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	return &Client{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
+	return &Client{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme()}
 }
 
 // NewFromSessionProvider creates a Client that lazily resolves the MCP session
@@ -123,24 +125,27 @@ func NewFromSessionProvider(provider SessionProvider, clusterID string, opts ...
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	return &Client{sessionProvider: provider, reconnect: cfg.reconnect, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
+	return &Client{
+		sessionProvider: provider, reconnect: cfg.reconnect, clusterID: clusterID,
+		toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme(),
+	}
 }
 
 // Get implements client.Reader. It retrieves a single Kubernetes resource from
 // the bound remote cluster via MCP Gateway and populates obj in place.
 //
-// The GVK must be set on the object before calling (same contract as controller-runtime).
-// The apiVersion is derived from the GVK and sent as a mandatory parameter to the
-// K8s MCP Server.
+// GVK is inferred from the client's scheme (see ensureGVK) when the caller
+// didn't set one explicitly; the apiVersion is derived from the resolved GVK
+// and sent as a mandatory parameter to the K8s MCP Server.
 //
 // Supported object types:
 //   - *unstructured.Unstructured: full object populated
 //   - *metav1.PartialObjectMetadata: metadata fields populated (ownerReferences, labels, etc.)
 //   - Typed objects (e.g. *corev1.Pod): populated via JSON round-trip
 func (c *Client) Get(ctx context.Context, key client.ObjectKey, obj client.Object, _ ...client.GetOption) error {
-	gvk := obj.GetObjectKind().GroupVersionKind()
-	if gvk.Kind == "" {
-		return fmt.Errorf("object GVK Kind must be set before calling Get")
+	gvk, err := ensureGVK(obj, c.scheme)
+	if err != nil {
+		return err
 	}
 
 	fetched, err := c.getResource(ctx, gvk.Kind, gvk.GroupVersion().String(), key.Namespace, key.Name)
@@ -154,9 +159,10 @@ func (c *Client) Get(ctx context.Context, key client.ObjectKey, obj client.Objec
 // List implements client.Reader. It retrieves Kubernetes resources of a given
 // kind from the bound remote cluster via MCP Gateway.
 //
-// The GVK must be set on the list object before calling. The Kind typically has
-// a "List" suffix (e.g. "PodList"); the suffix is stripped to derive the item
-// kind for the MCP tool call. The apiVersion is derived from the GVK.
+// GVK is inferred from the client's scheme (see ensureGVK) when the caller
+// didn't set one explicitly. The Kind typically has a "List" suffix (e.g.
+// "PodList"); the suffix is stripped to derive the item kind for the MCP tool
+// call. The apiVersion is derived from the resolved GVK.
 //
 // Supported list types:
 //   - *unstructured.UnstructuredList: items populated directly
@@ -169,9 +175,9 @@ func (c *Client) List(ctx context.Context, list client.ObjectList, opts ...clien
 		o.ApplyToList(&listOpts)
 	}
 
-	gvk := list.GetObjectKind().GroupVersionKind()
-	if gvk.Kind == "" {
-		return fmt.Errorf("list object GVK Kind must be set before calling List")
+	gvk, err := ensureGVK(list, c.scheme)
+	if err != nil {
+		return err
 	}
 	itemKind := strings.TrimSuffix(gvk.Kind, "List")
 	apiVersion := gvk.GroupVersion().String()

@@ -364,7 +364,7 @@ subjects:
 
 // applyExchangedIdentityWriteRBAC grants the same exchanged identity
 // (keycloak:service-account-kubernaut-fleet-read, see applyExchangedIdentityRBAC)
-// an ADDITIONAL, strictly minimal write grant: create/delete on batch/jobs.
+// an ADDITIONAL, strictly minimal write grant on batch/jobs.
 //
 // Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) require
 // WE's Job executor to create a K8s Job on the remote cluster when
@@ -372,6 +372,13 @@ subjects:
 // forwards the caller's exchanged token as-is, so the identity itself must
 // carry the write permission -- the "view" ClusterRole from
 // applyExchangedIdentityRBAC is read-only by design.
+//
+// kube-mcp-server's create-or-update tool issues a "patch" (server-side
+// apply) against the remote API server regardless of whether the object
+// already exists, so "patch" (and "update", for non-SSA fallbacks) must be
+// granted alongside "create" -- a bare "create" grant is insufficient and
+// fails with "cannot patch resource jobs" (see CI runs 28718786969,
+// E2E-FLEET-014).
 //
 // This is a SEPARATE function (not a change to applyExchangedIdentityRBAC)
 // and is wired ONLY into the fleet suite's SetupFleetE2EInfrastructure so the
@@ -389,7 +396,7 @@ metadata:
 rules:
 - apiGroups: ["batch"]
   resources: ["jobs"]
-  verbs: ["create", "get", "list", "watch", "delete"]
+  verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

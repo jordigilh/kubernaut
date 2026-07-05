@@ -15,7 +15,11 @@ limitations under the License.
 */
 package scenarios
 
-import "github.com/jordigilh/kubernaut/pkg/shared/uuid"
+import (
+	"strings"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/uuid"
+)
 
 func crashloopConfig() MockScenarioConfig {
 	return MockScenarioConfig{
@@ -40,5 +44,36 @@ func crashloopConfig() MockScenarioConfig {
 		InvestigationOutcome: "actionable",
 		IsActionable:         BoolPtr(true),
 		ExecutionEngine:      "job",
+	}
+}
+
+// crashloopScenario matches the explicit "crashloop" signal name at high
+// confidence. The generic Kubernetes "BackOff" reason is ambiguous -- it is
+// shared by any crash-looping container, including OOM-induced restarts --
+// so it only matches "backoff" when broader investigation content confirms a
+// config-driven crashloop (the resource name contains "crashloop", as with
+// the crashloop-app fixture). This prevents the mandatory
+// CONFIGMAP_NAME/KEY/VALUE parameters required by crashloop-config-fix-v1's
+// real remediation script (BR-WE-014, Issue #1542) from being applied to
+// unrelated scenarios (e.g. memory-eater OOM tests) where no such ConfigMap
+// exists, which previously caused the Job to fail fast ("configmap not
+// found"). See root cause: fullpipeline CI runs 28717432528/28718786969.
+func crashloopScenario() *configScenario {
+	cfg := crashloopConfig()
+	return &configScenario{
+		config: cfg,
+		matchFunc: func(ctx *DetectionContext) (bool, float64) {
+			signal := extractSignal(ctx)
+			if signal == "" {
+				return false, 0
+			}
+			if strings.Contains(signal, "crashloop") {
+				return true, 0.8
+			}
+			if strings.Contains(signal, "backoff") && strings.Contains(ctx.AllText, "crashloop") {
+				return true, 0.8
+			}
+			return false, 0
+		},
 	}
 }

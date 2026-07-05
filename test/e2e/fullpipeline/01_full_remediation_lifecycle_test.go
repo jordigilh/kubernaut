@@ -338,6 +338,53 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		}, timeout, interval).Should(Succeed(), "K8s Job should complete successfully")
 
 		// ================================================================
+		// Step 7b: Scale memory-eater back up now that the real fix (memory
+		// limit patch) has been applied, and verify it recovers.
+		//
+		// Issue #1542 follow-up: Step 3 scaled memory-eater to 0 replicas to
+		// prevent an RR storm while the pipeline ran. oomkill-increase-memory-v1
+		// is a real fix that patches the Deployment's memory limit but does not
+		// touch replicas (production workloads are never scaled to 0 by the
+		// remediation itself). With 0 replicas, EM's health check finds no pods
+		// and reports "target resource not found"/"0/1 pods ready" regardless
+		// of whether the fix was applied correctly. Scale back up as soon as
+		// the Job succeeds (before waiting on WE's phase transition, which
+		// races EM's fixed-duration stabilization window that starts the
+		// instant WE completes) to give the new pod the maximum possible head
+		// start to become Ready before EM's one-shot health check fires.
+		// ================================================================
+		By("Step 7b: Scaling memory-eater back up and verifying recovery under the new memory limit")
+		dep = &appsv1.Deployment{}
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: "memory-eater", Namespace: testNamespace}, dep)).To(Succeed())
+		one := int32(1)
+		dep.Spec.Replicas = &one
+		Expect(k8sClient.Update(ctx, dep)).To(Succeed())
+		GinkgoWriter.Println("  ✅ Scaled memory-eater back to 1 replica (real fix applied, safe to resume)")
+
+		Eventually(func(g Gomega) {
+			pods := &corev1.PodList{}
+			g.Expect(apiReader.List(ctx, pods, client.InNamespace(testNamespace),
+				client.MatchingLabels{"app": "memory-eater"})).To(Succeed())
+			g.Expect(pods.Items).NotTo(BeEmpty(), "memory-eater pod should exist after scale-up")
+			for _, pod := range pods.Items {
+				g.Expect(pod.Status.Phase).To(Equal(corev1.PodRunning),
+					"pod %s must be Running after the memory limit fix", pod.Name)
+				// Check container Ready (not just pod Phase) to match exactly what
+				// EM's health scorer inspects (ComputePodHealthStats), so this wait
+				// doesn't return "recovered" before EM would also consider it so.
+				ready := false
+				for _, cs := range pod.Status.ContainerStatuses {
+					g.Expect(cs.State.Waiting).To(Or(BeNil(), Not(HaveField("Reason", Equal("CrashLoopBackOff")))),
+						"pod %s must not remain in CrashLoopBackOff after the memory limit fix", pod.Name)
+					if cs.Ready {
+						ready = true
+					}
+				}
+				g.Expect(ready).To(BeTrue(), "pod %s container must be Ready after the memory limit fix", pod.Name)
+			}
+		}, timeout, interval).Should(Succeed(), "memory-eater should recover to steady Running state under the new memory limit")
+
+		// ================================================================
 		// Step 8: Verify WorkflowExecution reached Completed phase
 		// ================================================================
 		By("Step 8: Waiting for WorkflowExecution to complete")
