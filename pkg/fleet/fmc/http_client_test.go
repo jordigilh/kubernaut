@@ -126,4 +126,34 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 		var checker scope.ScopeChecker = fmc.NewHTTPClient("http://localhost:8080")
 		Expect(checker).ToNot(BeNil())
 	})
+
+	Describe("Ping [readiness gate Wave 0]", func() {
+		It("UT-FMC-HC-008: succeeds when /healthz responds 200", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				Expect(r.URL.Path).To(Equal(fmc.HealthzPath))
+				w.WriteHeader(http.StatusOK)
+			}))
+			client = fmc.NewHTTPClient(server.URL)
+
+			Expect(client.Ping(context.Background())).To(Succeed())
+		})
+
+		It("UT-FMC-HC-009: returns an error (does not swallow it) when the endpoint is unreachable", func() {
+			client = fmc.NewHTTPClient("http://127.0.0.1:1")
+			err := client.Ping(context.Background())
+			Expect(err).To(HaveOccurred(),
+				"unlike IsManagedResource, Ping must surface the transport error for the readiness gate")
+		})
+
+		It("UT-FMC-HC-010: returns an error when /healthz responds with a non-200 status", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			client = fmc.NewHTTPClient(server.URL)
+
+			err := client.Ping(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("503"))
+		})
+	})
 })

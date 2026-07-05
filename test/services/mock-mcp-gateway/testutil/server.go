@@ -273,20 +273,30 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 		}, nil
 	})
 
+	// NOTE: the argument key MUST be "resource" to match the upstream K8s MCP
+	// Server contract (github.com/containers/kubernetes-mcp-server). Using any
+	// other key masks client bugs that only surface against the real server.
 	createResourceName := prefix + "resources_create_or_update"
 	gw.server.AddTool(&mcp.Tool{
 		Name:        createResourceName,
 		Description: fmt.Sprintf("Create a Kubernetes resource on cluster %s", cluster),
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"manifest":{"type":"string"}},"required":["manifest"]}`),
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"resource":{"type":"string"}},"required":["resource"]}`),
 	}, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		gw.recordCall(req.Params.Name, req.Params.Arguments)
 		var args struct {
-			Manifest string `json:"manifest"`
+			Resource string `json:"resource"`
 		}
 		_ = json.Unmarshal(req.Params.Arguments, &args)
 
+		if args.Resource == "" {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "failed to create or update resources, missing argument resource"}},
+				IsError: true,
+			}, nil
+		}
+
 		return &mcp.CallToolResult{
-			Content: []mcp.Content{&mcp.TextContent{Text: args.Manifest}},
+			Content: []mcp.Content{&mcp.TextContent{Text: args.Resource}},
 		}, nil
 	})
 

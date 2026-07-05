@@ -61,6 +61,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default for every job. Jobs that need to push/pull ghcr.io
+# images, sign with Cosign, or comment on PRs declare their own elevated
+# job-level `permissions:` block below, which fully replaces (not merges
+# with) this default for that job.
+permissions:
+  contents: read
+
 env:
   # CRITICAL: Kind must use Podman (we don't have Docker in our CI)
   # This ensures all Kind commands (create, load, etc.) use Podman as the provider
@@ -84,8 +91,8 @@ jobs:
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dorny/paths-filter@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: filter
         with:
           # Note: dorny/paths-filter uses picomatch globs. Negation patterns
@@ -127,20 +134,20 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
 
       - name: Cache generated code
         id: gen-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
@@ -172,7 +179,7 @@ jobs:
         run: make validate-embed
 
       - name: Lint Go code
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.9.0
           args: --timeout=10m --new-from-merge-base=origin/${{ github.base_ref }} --whole-files cmd/... pkg/... internal/... test/...
@@ -190,18 +197,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
 
       - name: Install go-licenses
-        run: go install github.com/google/go-licenses@latest
+        run: go install github.com/google/go-licenses@v1.6.0
 
       - name: Check licenses
         run: |
@@ -226,7 +233,7 @@ jobs:
 
       - name: Upload license report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: license-report
           path: licenses.csv
@@ -257,19 +264,19 @@ jobs:
           - shared-packages  # pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
 
       - name: Cache generated code
         id: gen-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
@@ -293,6 +300,19 @@ jobs:
           export PATH="${{ github.workspace }}/bin:$PATH"
           make test-unit-${{ matrix.service }}
 
+      - name: Run fuzz corpus regression (this service's fuzz targets, if any)
+        # ginkgo's runner (used by test-unit-* above) only executes Ginkgo
+        # specs and silently skips func FuzzXxx(f *testing.F) functions in the
+        # same package. This reuses the checkout/generate already done above
+        # (no extra job/setup) to run each service's fuzz seed + saved-crasher
+        # corpus as a plain `go test` -- catches regressions like the
+        # nil-pointer panic found in pkg/notification/routing.ParseConfig.
+        # No-op for services with no fuzz targets. Does NOT do new fuzzing
+        # (needs a time budget); see `make fuzz`.
+        run: |
+          export PATH="${{ github.workspace }}/bin:$PATH"
+          make test-fuzz-${{ matrix.service }}
+
       - name: Calculate and save coverage
         if: always()
         run: |
@@ -313,7 +333,7 @@ jobs:
       
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-unit-${{ matrix.service }}
           path: coverage-reports/unit-${{ matrix.service }}.txt
@@ -321,7 +341,7 @@ jobs:
 
       - name: Upload full coverage profile
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-profile-unit-${{ matrix.service }}
           path: |
@@ -402,19 +422,19 @@ jobs:
             dockerfile: docker/workflowexecution-controller.Dockerfile
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
 
       - name: Cache generated code
         id: gen-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
@@ -433,14 +453,14 @@ jobs:
           make generate
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.8.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Generate image tag
         id: tag
@@ -565,19 +585,19 @@ jobs:
             context: .
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
 
       - name: Cache generated code
         id: gen-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
@@ -596,14 +616,14 @@ jobs:
           make generate
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.8.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Generate image tag
         id: tag
@@ -687,14 +707,14 @@ jobs:
       id-token: write  # Required for Cosign keyless signing (GitHub OIDC)
     steps:
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3.8.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Create and push multi-arch manifests
         env:
@@ -795,15 +815,15 @@ jobs:
             service_name: "API Frontend"
             timeout: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
       - name: Cache generated code
         id: gen-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
@@ -822,7 +842,7 @@ jobs:
           sudo apt-get install -y podman
       - name: Setup envtest (K8s test binaries)
         run: |
-          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@f9589b9f2b9dddf8532b432bb8315f2820ab9971 # release-0.23
           echo "KUBEBUILDER_ASSETS=$($(go env GOPATH)/bin/setup-envtest use -p path)" >> $GITHUB_ENV
       - name: Run ${{ matrix.service }} integration tests
         run: |
@@ -831,7 +851,7 @@ jobs:
       
       - name: Upload integration test log on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: integration-log-${{ matrix.service }}-${{ github.run_id }}
           path: integration-${{ matrix.service }}.log
@@ -858,7 +878,7 @@ jobs:
       
       - name: Upload integration coverage report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-integration-${{ matrix.service }}
           path: coverage-reports/integration-${{ matrix.service }}.txt
@@ -866,7 +886,7 @@ jobs:
 
       - name: Upload full integration coverage profile
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-profile-integration-${{ matrix.service }}
           path: coverage_integration_${{ matrix.service }}.out
@@ -893,7 +913,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure() || cancelled()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: must-gather-logs-integration-${{ matrix.service }}-${{ github.run_id }}
           path: must-gather-*.tar.gz
@@ -929,6 +949,9 @@ jobs:
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: ${{ matrix.timeout }}
+    permissions:
+      contents: read
+      packages: read  # Required to pull pre-built service images from ghcr.io
     env:
       # E2E Image Strategy: Pull from registry first, fallback to local build
       # - BuildImageForKind() attempts registry pull if IMAGE_REGISTRY + IMAGE_TAG set
@@ -988,7 +1011,7 @@ jobs:
             service_name: "Fleet Metadata Cache (EAIGW)"
             timeout: 20
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
@@ -1010,12 +1033,12 @@ jobs:
           echo "Disk after cleanup:"
           df -h /
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
       - name: Cache generated code
         id: gen-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
             api/*/v1alpha1/zz_generated.deepcopy.go
@@ -1044,9 +1067,9 @@ jobs:
           kind version
       - name: Install Helm (fleet/fleetmetadatacache-kuadrant/fleetmetadatacache-eaigw E2E deploy Istio/Kuadrant/Envoy AI Gateway via helm)
         if: matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-kuadrant' || matrix.service == 'fleetmetadatacache-eaigw'
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm version
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: latest
       - name: Install Tekton CLI (tkn)
         run: |
           TKN_VERSION="0.40.0"
@@ -1102,7 +1125,7 @@ jobs:
       
       - name: Upload E2E coverage report
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-e2e-${{ matrix.service }}
           path: coverage-reports/e2e-${{ matrix.service }}.txt
@@ -1110,7 +1133,7 @@ jobs:
 
       - name: Upload full E2E coverage profile
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-profile-e2e-${{ matrix.service }}
           path: coverage_e2e_${{ matrix.service }}.out
@@ -1160,7 +1183,7 @@ jobs:
           fi
       - name: Upload must-gather logs as artifacts
         if: failure() || cancelled()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: must-gather-logs-e2e-${{ matrix.service }}-${{ github.run_id }}
           path: must-gather-e2e-*.tar.gz
@@ -1197,6 +1220,9 @@ jobs:
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read  # Required to pull pre-built service images from ghcr.io
     env:
       KIND_CLUSTER_NAME: helm-smoke
       IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut
@@ -1204,12 +1230,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: recursive
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
@@ -1229,9 +1255,9 @@ jobs:
           echo "PASS: Chart CRDs match generated CRDs"
 
       - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm version
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: latest
 
       - name: values.schema.json validation
         run: |
@@ -1286,7 +1312,7 @@ jobs:
 
       - name: Upload must-gather and Kind logs
         if: failure() || cancelled()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: helm-smoke-must-gather-${{ github.run_id }}
           path: |
@@ -1318,11 +1344,11 @@ jobs:
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Download coverage summary reports
         if: always()
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: coverage-*
           path: coverage-reports
@@ -1331,7 +1357,7 @@ jobs:
 
       - name: Download full coverage profiles
         if: always()
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: coverage-profile-*
           path: coverage-profiles
@@ -1450,7 +1476,7 @@ jobs:
 
       - name: Post coverage report to PR
         if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
         with:
           header: coverage-report
           path: coverage-summary.md
@@ -1463,7 +1489,7 @@ jobs:
           echo ""
           echo "STAGE 1 - Lint & Unit Tests (All Parallel):"
           echo "  Lint (Go):        ${{ needs.lint-go.result }}"
-          echo "  Unit Tests (13):  ${{ needs.unit-tests.result }}"
+          echo "  Unit Tests (13):  ${{ needs.unit-tests.result }} (includes per-service fuzz corpus regression)"
           echo ""
           echo "STAGE 2 - Build & Push Images (Parallel Matrix):"
           echo "  Go Services (12×2 arch):    ${{ needs.build-and-push-images.result }}"

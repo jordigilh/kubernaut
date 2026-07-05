@@ -390,6 +390,32 @@ WORKFLOW, AI, INTEGRATION, SECURITY, PLATFORM, API, STORAGE, MONITORING, SAFETY,
 - **Test identification**: Test Scenario IDs (`UT-WF-197-001`, `IT-GW-045-010`) or BR references
 - **Test plans**: Create formal test plan BEFORE implementation using the [IEEE 829-2008 hybrid template](docs/testing/TEST_PLAN_TEMPLATE.md)
 
+### Exception: Go Native Fuzz Tests
+
+Native Go fuzzing (`func FuzzXxx(f *testing.F)`) is the **sole, narrowly-scoped exception**
+to the Ginkgo/Gomega mandate above. This is a language/toolchain constraint, not a style
+choice:
+
+- Go's built-in fuzzing engine (`go test -fuzz=`) only recognizes the exact stdlib signature
+  `func FuzzXxx(f *testing.F)`. No third-party framework, including Ginkgo, can hook into it.
+- OpenSSF Scorecard's `Fuzzing` check performs exact regex matching for this same signature
+  in `*_test.go` files -- there is no Ginkgo-detectable equivalent for Go.
+- Fuzz tests are not business-logic behavior specs (no Given/When/Then, no business-outcome
+  assertion). Their only contract is "the function under test must not panic on adversarial
+  byte/string input" -- a distinct testing tier (adversarial-input robustness) from the BDD
+  unit/integration/E2E pyramid.
+
+Rules for this exception:
+
+- Fuzz functions live in dedicated `*_fuzz_test.go` files, never mixed into a Ginkgo spec file.
+- Target only functions that parse/deserialize untrusted external input (webhook payloads,
+  auth tokens, request bodies) -- not general business logic, which still requires Ginkgo
+  coverage for its actual behavior separately.
+- The fuzz body must not assert business outcomes; it should only call the target function
+  and let a panic (if any) fail the test, e.g. `_, _ = target.Parse(ctx, rawData)`.
+- Seed corpus entries (`f.Add(...)`) should include at least one valid, one malformed, and
+  one edge-case (empty/null) payload.
+
 ### Coverage Targets
 
 | Tier | Target | Metric | Rationale |
@@ -581,7 +607,7 @@ A 13-dimension quality gate applied before declaring a service or feature produc
 | 3 | **Unit Tests** | 100% pass rate, 100% coverage on business logic |
 | 4 | **Integration Tests** | 100% pass rate, all wiring points + FedRAMP controls assessed |
 | 5 | **Wiring Verification** | CHECKPOINT W passes for all components |
-| 6 | **BDD Framework** | Zero standard `testing.T` usage in business tests |
+| 6 | **BDD Framework** | Zero standard `testing.T` usage in business tests (native Go fuzz tests are the sole exception -- see [Exception: Go Native Fuzz Tests](#exception-go-native-fuzz-tests)) |
 | 7 | **Test ID Assignment** | All tests have scenario IDs or BR references |
 | 8 | **SOC2/FedRAMP Compliance** | All audit events mapped to controls, reconstruction proven |
 | 9 | **100 Go Mistakes** | Zero violations from [anti-pattern checklist](#go-anti-pattern-checklist) |

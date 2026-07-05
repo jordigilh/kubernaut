@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: test-container
-        image: nginx:1.21
+        image: nginx:1.31
         ports:
         - containerPort: 80
         resources:

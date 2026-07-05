@@ -177,24 +177,61 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 			"IS CRD must transition to Disconnected after SSE disconnect (BR-SESS-003, SI-4)")
 	})
 
+})
+
+// TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01 lives in its own Serial-decorated
+// Describe, separate from the "Investigation Streaming (G3)" Ordered
+// container above. trackSSEConnection (router.go) tracks EVERY /a2a/invoke,
+// /mcp, /a2a/status, AND /debug/slow-sse request -- not just ones with
+// Accept: text/event-stream -- for the full handler duration, and rejects
+// ANY of them with 503 while the tracker is at capacity. This test
+// deliberately saturates that shared, process-wide tracker for its entire
+// ~100s+ connection fill/verify/drain window. Since apifrontend E2E tests
+// run with --procs > 1 (true parallel Ginkgo OS processes sharing the same
+// deployed apifrontend + ConnectionTracker), any /a2a/invoke, /mcp, or
+// /a2a/status request from an unrelated spec in ANY other process that
+// lands during that window is collaterally rejected with a
+// legitimate-looking 503 (observed: TC-E2E-A2A-T13 failing with "Expected
+// 503 to equal 200" in CI run 28716461373, overlapping this spec's fill
+// window). Serial is Ginkgo's authoritative mechanism for this exact class
+// of problem: it guarantees no other spec runs on any parallel process
+// while this one executes (https://onsi.github.io/ginkgo/#serial-specs),
+// eliminating the collateral-rejection window at its source instead of
+// just reducing the odds of collision. Note Serial cannot be applied to a
+// single It nested in a non-Serial Ordered container (Ginkgo rejects that
+// combination at tree-construction time), which is why this is a
+// standalone Describe rather than a fourth It above.
+var _ = Describe("Investigation Streaming (G3) - Connection Cap Enforcement", Serial, Label("e2e", "phase3", "g3"), func() {
 	It("TC-E2E-STREAM-04 / TC-E2E-SSE-CAP-01: Connection cap enforcement", func() {
-		// trackSSEConnection (router.go) tracks EVERY /a2a/invoke, /mcp, and
-		// /a2a/status request -- not just ones with Accept: text/event-stream
-		// -- for the full handler duration. Since apifrontend E2E tests run
-		// with --procs > 1 (true parallel Ginkgo OS processes sharing the
-		// same deployed apifrontend + ConnectionTracker), any concurrently
-		// running spec in ANY other process can transiently hold a slot.
-		// Assuming a zero baseline (as this test previously did) makes it
-		// flaky under CI load. Instead, sample the current baseline and fill
-		// only the remaining headroom, requiring a generous minimum margin
-		// so legitimate concurrent E2E traffic can't plausibly collide with
-		// this test's own fill loop. The deterministic cap-enforcement LOGIC
-		// itself is proven race-free at the unit tier (UT-AF-STREAM04-001/002
-		// in pkg/apifrontend/streaming/tracker_test.go) and the router-wiring
-		// of the 503 response is proven at the integration tier
-		// (IT-AF-SSE-CAP-001 in test/integration/apifrontend/router_http_test.go)
-		// against an isolated tracker -- this E2E test is a smoke-level
-		// confirmation against the real deployed cap, not the sole proof.
+		// Sample the current baseline and fill only the remaining headroom,
+		// requiring a generous minimum margin so any residual concurrent
+		// E2E traffic (e.g. specs already in flight when this Serial spec
+		// is scheduled) can't plausibly collide with this test's own fill
+		// loop. The deterministic cap-enforcement LOGIC itself is proven
+		// race-free at the unit tier
+		// (UT-AF-STREAM04-001/002 in pkg/apifrontend/streaming/tracker_test.go)
+		// and the router-wiring of the 503 response is proven at the
+		// integration tier (IT-AF-SSE-CAP-001 in
+		// test/integration/apifrontend/router_http_test.go) against an
+		// isolated tracker -- this E2E test is a smoke-level confirmation
+		// against the real deployed cap, not the sole proof.
+		//
+		// Fill/overflow requests deliberately hit the E2E-only /debug/slow-sse
+		// endpoint (registered in pkg/apifrontend/handler/debug_e2e.go, gated
+		// behind the `e2e` build tag) rather than /a2a/invoke. It is wired
+		// through the identical trackSSEConnection middleware as the
+		// production streaming endpoints -- exercising the exact same
+		// ConnectionTracker cap-enforcement path -- but never invokes the
+		// agent/LLM pipeline. Driving real kubernaut_remediate calls here
+		// previously saturated the process-global LLM concurrency semaphore
+		// (SC-5, MaxLLMConcurrency default 10) for several seconds after this
+		// test "completed" (a2a-go runs executors in a detached context, so
+		// an HTTP disconnect doesn't synchronously release that semaphore),
+		// causing unrelated specs running immediately after this one
+		// (TC-E2E-A2A-T04/T05) to be legitimately rejected by that gate and
+		// surface as opaque "-32603 internal error" (issue #1544). Using an
+		// LLM-free connection holder removes that coupling entirely instead
+		// of just reducing its probability.
 		maxStr := getEnvOrDefault("AF_E2E_MAX_SSE", "50")
 		maxSSE := 50
 		var parsed int
@@ -212,82 +249,101 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 
 		slotsToFill := maxSSE - baseline
 
-		type slotResult struct {
-			idx    int
-			status int
-			err    error
-		}
-		var mu sync.Mutex
-		cancels := make([]context.CancelFunc, slotsToFill)
-		ready := make(chan slotResult, 1)
-		var wg sync.WaitGroup
+		var (
+			mu      sync.Mutex
+			cancels []context.CancelFunc
+			wg      sync.WaitGroup
+		)
 
-		// Establish SSE connections sequentially to avoid a race where all
-		// goroutines hit the server simultaneously and some are rejected
-		// before prior connections are fully registered in the semaphore.
-		for i := 0; i < slotsToFill; i++ {
-			wg.Add(1)
-			go func(idx int) {
-				defer wg.Done()
-				sctx, scancel := context.WithCancel(context.Background())
-				mu.Lock()
-				cancels[idx] = scancel
-				mu.Unlock()
+		// probeSSE issues a single /debug/slow-sse request. On 200, the
+		// connection is left open (drained in a background goroutine so it
+		// keeps occupying its cap slot) and the returned cancel func
+		// releases it later; on any other status, the response body is
+		// drained/closed immediately and cancel is nil.
+		probeSSE := func() (status int, body string, cancel context.CancelFunc, err error) {
+			sctx, scancel := context.WithCancel(context.Background())
+			req, rerr := http.NewRequestWithContext(sctx, http.MethodPost, baseURL+"/debug/slow-sse", nil)
+			if rerr != nil {
+				scancel()
+				return -1, "", nil, rerr
+			}
+			req.Header.Set("Accept", "text/event-stream")
 
-				body := a2aMessageStream(fmt.Sprintf("stream-cap-%d", idx),
-					fmt.Sprintf("Create a remediation request for deployment cap%d-slow-disconnect-test in default namespace", idx))
-				req, rerr := http.NewRequestWithContext(sctx, http.MethodPost, baseURL+"/a2a/invoke", strings.NewReader(body))
-				if rerr != nil {
-					ready <- slotResult{idx: idx, status: -1, err: rerr}
-					scancel()
-					return
-				}
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Accept", "text/event-stream")
-				req.Header.Set("Authorization", "Bearer "+sreToken)
-
-				resp, derr := httpClient.Do(req)
-				if derr != nil {
-					ready <- slotResult{idx: idx, status: -1, err: derr}
-					scancel()
-					return
-				}
-				if resp.StatusCode != http.StatusOK {
-					body, _ := io.ReadAll(resp.Body)
-					_ = resp.Body.Close()
-					ready <- slotResult{idx: idx, status: resp.StatusCode, err: fmt.Errorf("body: %s", body)}
-					scancel()
-					return
-				}
-
-				ready <- slotResult{idx: idx, status: resp.StatusCode}
-				_, _ = io.Copy(io.Discard, resp.Body)
+			resp, derr := httpClient.Do(req)
+			if derr != nil {
+				scancel()
+				return -1, "", nil, derr
+			}
+			if resp.StatusCode != http.StatusOK {
+				b, _ := io.ReadAll(resp.Body)
 				_ = resp.Body.Close()
 				scancel()
-			}(i)
+				return resp.StatusCode, string(b), nil, nil
+			}
 
-			// Wait for this connection to be established before launching the
-			// next one. The goroutine stays alive (blocked on io.Copy) keeping
-			// the SSE slot occupied.
-			sr := <-ready
-			Expect(sr.status).To(Equal(http.StatusOK),
-				"SSE slot %d (goroutine %d) should connect within cap; err=%v", i, sr.idx, sr.err)
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}()
+			return http.StatusOK, "", scancel, nil
 		}
 
-		extraReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/a2a/invoke",
-			strings.NewReader(a2aMessageStream("stream-cap-overflow", "ping")))
-		Expect(err).NotTo(HaveOccurred())
-		extraReq.Header.Set("Content-Type", "application/json")
-		extraReq.Header.Set("Accept", "text/event-stream")
-		extraReq.Header.Set("Authorization", "Bearer "+sreToken)
+		// Establish SSE connections sequentially to avoid a race where all
+		// requests hit the server simultaneously and some are rejected
+		// before prior connections are fully registered in the semaphore.
+		for i := 0; i < slotsToFill; i++ {
+			status, _, cancel, ferr := probeSSE()
+			Expect(status).To(Equal(http.StatusOK),
+				"SSE fill connection %d should connect within cap; err=%v", i, ferr)
+			mu.Lock()
+			cancels = append(cancels, cancel)
+			mu.Unlock()
+		}
 
-		exResp, exErr := httpClient.Do(extraReq)
-		Expect(exErr).NotTo(HaveOccurred())
-		defer func() { _ = exResp.Body.Close() }()
-		Expect(exResp.StatusCode).To(Equal(http.StatusServiceUnavailable))
-		extraBody, rerr := io.ReadAll(exResp.Body)
-		Expect(rerr).NotTo(HaveOccurred())
-		Expect(strings.ToLower(string(extraBody))).To(ContainSubstring("too many concurrent connections"))
+		// Cap enforcement: concurrent E2E traffic in other Ginkgo processes
+		// (--procs > 1, shared ConnectionTracker) can release slots between
+		// the baseline sample above and now, so a single "extra" probe can
+		// transiently land in freed headroom rather than proving the cap.
+		// Instead of asserting on one probe, keep adding filler connections
+		// -- which occupy the same shared cap regardless of which spec
+		// created them -- until the cap is genuinely observed, bounded by a
+		// generous ceiling so a real enforcement regression still fails
+		// deterministically instead of hanging.
+		const (
+			maxCapProbeAttempts = 200
+			capProbeBudget      = 120 * time.Second
+			capProbeInterval    = 250 * time.Millisecond
+		)
+		var (
+			capEnforced bool
+			lastStatus  int
+			lastBody    string
+		)
+		deadline := time.Now().Add(capProbeBudget)
+		attempt := 0
+		for attempt < maxCapProbeAttempts && time.Now().Before(deadline) {
+			attempt++
+			status, body, cancel, ferr := probeSSE()
+			Expect(ferr).NotTo(HaveOccurred(), "cap probe attempt %d failed", attempt)
+			lastStatus, lastBody = status, body
+
+			if status == http.StatusServiceUnavailable {
+				capEnforced = true
+				break
+			}
+			Expect(status).To(Equal(http.StatusOK),
+				"unexpected status while probing for cap enforcement (attempt %d): %d body=%s", attempt, status, body)
+			mu.Lock()
+			cancels = append(cancels, cancel)
+			mu.Unlock()
+			time.Sleep(capProbeInterval)
+		}
+		Expect(capEnforced).To(BeTrue(),
+			"cap was never enforced after %d attempts (budget %s); last status=%d body=%s",
+			attempt, capProbeBudget, lastStatus, lastBody)
+		Expect(strings.ToLower(lastBody)).To(ContainSubstring("too many concurrent connections"))
 
 		mu.Lock()
 		for _, c := range cancels {
@@ -419,7 +475,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		GinkgoWriter.Printf("Turn 1: %d artifacts, %d statuses\n", len(arts1), len(statuses1))
 
 		// AU-6: Verify SSE events are produced (stream lifecycle visible)
-		Expect(len(arts1) + len(statuses1)).To(BeNumerically(">", 0),
+		Expect(len(arts1)+len(statuses1)).To(BeNumerically(">", 0),
 			"AU-6: streaming must produce at least one SSE event (artifact or status)")
 
 		hasTerminal := false

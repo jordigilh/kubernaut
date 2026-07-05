@@ -20,6 +20,9 @@ import (
 	"context"
 	"net/http"
 	"time"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 )
 
 // Option configures an MCPResourceClient.
@@ -31,6 +34,28 @@ type clientConfig struct {
 	clusterID  string
 	toolPrefix string
 	reconnect  func(context.Context) error
+	scheme     *runtime.Scheme
+}
+
+// WithScheme sets the runtime.Scheme used to infer GroupVersionKind for
+// typed objects that don't already carry one (see ensureGVK). Defaults to
+// clientgoscheme.Scheme (all built-in K8s types: core/v1, apps/v1, batch/v1,
+// etc.) when not set, which covers every type this package's callers
+// currently exchange with the K8s MCP Server. Pass a custom scheme (e.g. one
+// with Tekton or Kubernaut CRDs registered) if a caller needs GVK inference
+// for non-built-in types.
+func WithScheme(scheme *runtime.Scheme) Option {
+	return func(cfg *clientConfig) {
+		cfg.scheme = scheme
+	}
+}
+
+// resolvedScheme returns cfg.scheme, defaulting to clientgoscheme.Scheme.
+func (cfg *clientConfig) resolvedScheme() *runtime.Scheme {
+	if cfg.scheme != nil {
+		return cfg.scheme
+	}
+	return clientgoscheme.Scheme
 }
 
 // WithClusterID binds the client to a specific remote cluster. The cluster ID

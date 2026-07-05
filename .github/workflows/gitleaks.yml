@@ -1,0 +1,67 @@
+name: Gitleaks secret scan
+
+# Scans the full git history for hardcoded secrets using the open-source
+# gitleaks CLI (MIT-licensed), installed directly from a checksum-verified
+# release binary. Deliberately NOT using the official gitleaks/gitleaks-action
+# wrapper: that action carries its own commercial EULA and requires a
+# (free but manually-provisioned) license key for organization-owned repos.
+# Known-fake credentials in test fixtures/docs are pre-triaged in
+# .gitleaks.toml so only genuinely new findings fail the job.
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 * * 3' # weekly, Wednesday 05:17 UTC
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GITLEAKS_VERSION: '8.30.1'
+  GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+
+jobs:
+  scan:
+    name: Scan for secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write # to upload SARIF results
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          fetch-depth: 0 # gitleaks needs full history, not a shallow clone
+          persist-credentials: false
+
+      - name: Install gitleaks (pinned release, checksum-verified)
+        run: |
+          curl -sSL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          chmod +x gitleaks
+
+      - name: Run gitleaks (uses .gitleaks.toml allowlist)
+        run: ./gitleaks detect --source . --report-format sarif --report-path results.sarif --redact || true
+
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@54f647b7e1bb85c95cddabcd46b0c578ec92bc1a # v4.36.3
+        with:
+          sarif_file: results.sarif
+
+      - name: Fail if leaks found
+        run: |
+          count=$(jq '.runs[0].results | length' results.sarif)
+          if [ "$count" -gt 0 ]; then
+            echo "::error::gitleaks detected $count potential secret(s) not covered by .gitleaks.toml -- review the Security tab (code scanning alerts)"
+            exit 1
+          fi
+          echo "No uncategorized secrets detected."

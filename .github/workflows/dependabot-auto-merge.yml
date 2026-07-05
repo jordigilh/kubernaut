@@ -5,17 +5,19 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   auto-merge:
     if: github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write       # Required to merge the PR
+      pull-requests: write  # Required to enable auto-merge
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 

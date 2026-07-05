@@ -30,6 +30,10 @@ import (
 const (
 	ScopeCheckPath = "/api/v1/scope/check"
 	ClustersPath   = "/api/v1/clusters"
+	// HealthzPath is FMC's liveness/health endpoint, served on the same API
+	// mux as ScopeCheckPath. Used by HTTPClient.Ping (readiness gate Wave 0)
+	// to probe reachability without depending on scope-check semantics.
+	HealthzPath = "/healthz"
 )
 
 // Handler serves the FMC REST API for federated scope checks and cluster listing.

@@ -118,7 +118,12 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 		return nil, fmt.Errorf("get client for cluster %q: %w", wfe.Spec.ClusterID, err)
 	}
 
+	// BR-FLEET-054: the MCP remote client requires an explicit GVK on Get
+	// (it has no scheme/RESTMapper to infer one from the Go type, unlike the
+	// local controller-runtime client). Setting it is a no-op for the local
+	// path.
 	var job batchv1.Job
+	job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
 	if err := c.Get(ctx, client.ObjectKey{
 		Name:      wfe.Status.ExecutionRef.Name,
 		Namespace: namespace,
@@ -251,6 +256,7 @@ func (j *JobExecutor) IsCompleted(ctx context.Context, clusterID string, targetR
 
 	jobName := ExecutionResourceName(targetResource)
 	var job batchv1.Job
+	job.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
 	if err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &job); err != nil {
 		return false, err
 	}
@@ -282,6 +288,7 @@ func (j *JobExecutor) Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha
 	jobName := ExecutionResourceName(wfe.Spec.TargetResource)
 
 	var existing batchv1.Job
+	existing.SetGroupVersionKind(batchv1.SchemeGroupVersion.WithKind("Job"))
 	if err := c.Get(ctx, client.ObjectKey{Name: jobName, Namespace: namespace}, &existing); err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			return nil // Already gone

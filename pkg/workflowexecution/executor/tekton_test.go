@@ -85,6 +85,26 @@ var _ = Describe("UT-WE-054-TEK: TektonExecutor", func() {
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(Equal("kubernaut-runner"))
 		})
 
+		// BR-FLEET-054: regression sibling to UT-WE-054-JOB-018. The MCP
+		// remote writer serializes objects via
+		// runtime.DefaultUnstructuredConverter, which drops empty
+		// apiVersion/kind (omitempty), causing the real K8s MCP Server to
+		// reject the manifest with "Object 'Kind' is missing".
+		It("UT-WE-054-TEK-010 [BR-FLEET-054]: should set TypeMeta (Kind/APIVersion) on the PipelineRun before Create", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			spy := &gvkCapturingClient{ExecutorClient: fakeClient}
+			factory := &mockClientFactory{client: spy}
+			te := executor.NewTektonExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-tekton-gvk", "default/deployment/frontend", "")
+
+			_, err := te.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(spy.createdGVK.Kind).To(Equal("PipelineRun"),
+				"PipelineRun must carry an explicit Kind so remote MCP clients can decode the manifest")
+			Expect(spy.createdGVK.GroupVersion().String()).To(Equal(tektonv1.SchemeGroupVersion.String()))
+		})
+
 		It("UT-WE-054-TEK-003: should add workspace bindings for dependencies", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}

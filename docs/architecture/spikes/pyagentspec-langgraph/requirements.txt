@@ -1,1 +1,0 @@
-pyagentspec[langgraph]==26.1.0

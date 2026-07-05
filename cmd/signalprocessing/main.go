@@ -40,6 +40,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/go-logr/logr"
 	zaplog "go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
@@ -64,6 +65,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/version"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
@@ -287,9 +289,15 @@ func buildFleetOAuth2Options(cfg *config.Config) []fleetclient.Option {
 // wireFleetMCPClient connects to the optional Fleet MCP Gateway
 // (BR-INTEGRATION-054) when cfg.Fleet.Endpoint is configured, and wires its
 // reader factory into k8sEnricher for remote cluster enrichment. Returns
-// nil when fleet is not configured or the connection fails; both are
-// non-fatal because enrichment falls back to local-cluster-only mode.
-func wireFleetMCPClient(ctx context.Context, cfg *config.Config, mgr ctrl.Manager, k8sEnricher *enricher.K8sEnricher) *fleetclient.ResilientClient {
+// nil when fleet is not configured. On a connection failure, enrichment
+// falls back to local-cluster-only mode (non-fatal), but #1553: the
+// (disconnected) client is still returned rather than discarded, so
+// wireFleetReadinessGate can attach an MCPClientProber that keeps
+// retrying via the periodic probe — this is what allows /readyz to
+// recover once Fleet comes back, instead of requiring a pod restart
+// (mirrors GW/RO/EM's identical Wave 2/3 change). localClient is
+// pre-built by the caller (independently testable with a fake).
+func wireFleetMCPClient(ctx context.Context, cfg *config.Config, localClient client.Client, k8sEnricher *enricher.K8sEnricher) *fleetclient.ResilientClient {
 	if cfg.Fleet.Endpoint == "" {
 		return nil
 	}
@@ -305,12 +313,13 @@ func wireFleetMCPClient(ctx context.Context, cfg *config.Config, mgr ctrl.Manage
 		ctrl.Log.WithName("fleet-client"), fleetOpts...,
 	)
 	if fleetErr != nil {
-		setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed, remote enrichment disabled",
+		setupLog.Error(fleetErr, "Fleet MCP Gateway connection failed at startup; readiness will report "+
+			"NotReady and keep retrying in the background; remote enrichment disabled until reconnect",
 			"endpoint", cfg.Fleet.Endpoint)
-		return nil
+		return fleetResilientClient
 	}
 
-	readerFactory := fleetclient.NewMCPReaderFactory(mgr.GetClient(), fleetResilientClient.Session())
+	readerFactory := fleetclient.NewMCPReaderFactory(localClient, fleetResilientClient.Session())
 	k8sEnricher.SetReaderFactory(readerFactory)
 	setupLog.Info("Fleet MCP Gateway connected, remote enrichment enabled",
 		"endpoint", cfg.Fleet.Endpoint)
@@ -323,17 +332,21 @@ func wireFleetMCPClient(ctx context.Context, cfg *config.Config, mgr ctrl.Manage
 // cfg.Fleet.MCPGatewayType is configured (BR-FLEET-003 / #1511),
 // independent of the MCP protocol client, wiring resolved
 // ClusterInfo.Labels into k8sEnricher for the `cluster` Rego classification
-// dimension. Returns nil when fleet cluster registry is not configured or
-// setup fails; both are non-fatal because cluster classification is simply
-// disabled.
-func wireClusterRegistry(ctx context.Context, cfg *config.Config, mgr ctrl.Manager, k8sEnricher *enricher.K8sEnricher) fleetregistry.ClusterRegistry {
-	if cfg.Fleet.MCPGatewayType == "" {
-		return nil
-	}
-
-	dynClient, dynErr := dynamic.NewForConfig(mgr.GetConfig())
-	if dynErr != nil {
-		setupLog.Error(dynErr, "Failed to create dynamic Kubernetes client for cluster registry, cluster classification disabled")
+// dimension. Returns nil when fleet cluster registry is not configured, no
+// dynamic client is available, or construction fails outright (no object
+// to retain). On a Start failure, #1553: the constructed registry is still
+// returned (not discarded) so wireFleetReadinessGate can attach a
+// ClusterRegistryProber — Ready() faithfully stays false until an operator
+// restarts the pod (ClusterRegistry.Ready() is a one-shot flag with no
+// internal retry, see pkg/fleet/readiness/probers.go's ClusterRegistry
+// doc), which is still strictly better than silently not gating readiness
+// on this dependency at all. Cluster classification enrichment itself
+// remains disabled in this case (SetClusterRegistry is not called), same
+// as before #1553. dynClient is pre-built by the caller (independently
+// testable with a fake; nil is treated the same as a construction
+// failure).
+func wireClusterRegistry(ctx context.Context, cfg *config.Config, dynClient dynamic.Interface, k8sEnricher *enricher.K8sEnricher) fleetregistry.ClusterRegistry {
+	if cfg.Fleet.MCPGatewayType == "" || dynClient == nil {
 		return nil
 	}
 
@@ -351,8 +364,10 @@ func wireClusterRegistry(ctx context.Context, cfg *config.Config, mgr ctrl.Manag
 	}
 
 	if startErr := clusterRegistry.Start(ctx); startErr != nil {
-		setupLog.Error(startErr, "Failed to start cluster registry, cluster classification disabled")
-		return nil
+		setupLog.Error(startErr, "Failed to start cluster registry at startup; cluster classification "+
+			"disabled and readiness will report NotReady until a pod restart",
+			"gatewayType", cfg.Fleet.MCPGatewayType)
+		return clusterRegistry
 	}
 
 	k8sEnricher.SetClusterRegistry(clusterRegistry)
@@ -393,8 +408,15 @@ func wireSignalProcessingEnrichment(ctx context.Context, cfg *config.Config, mgr
 		"enrichmentTimeout", cfg.Enrichment.Timeout,
 		"cacheTTL", cfg.Enrichment.CacheTTL)
 
-	fleetResilientClient := wireFleetMCPClient(ctx, cfg, mgr, k8sEnricher)
-	clusterRegistry := wireClusterRegistry(ctx, cfg, mgr, k8sEnricher)
+	fleetResilientClient := wireFleetMCPClient(ctx, cfg, mgr.GetClient(), k8sEnricher)
+
+	var dynClient dynamic.Interface
+	if dyn, dynErr := dynamic.NewForConfig(mgr.GetConfig()); dynErr != nil {
+		setupLog.Error(dynErr, "K8s dynamic client unavailable, fleet cluster registry disabled")
+	} else {
+		dynClient = dyn
+	}
+	clusterRegistry := wireClusterRegistry(ctx, cfg, dynClient, k8sEnricher)
 
 	return &signalProcessingEnrichment{
 		metrics:         spMetrics,
@@ -404,17 +426,61 @@ func wireSignalProcessingEnrichment(ctx context.Context, cfg *config.Config, mgr
 	}
 }
 
+// fleetReadinessProbeInterval controls how often the Fleet readiness gate
+// re-probes its dependencies once started (mirrors cmd/gateway/main.go,
+// cmd/remediationorchestrator/main.go, cmd/effectivenessmonitor/main.go).
+const fleetReadinessProbeInterval = 15 * time.Second
+
+// wireFleetReadinessGate builds and starts the Fleet dependency readiness
+// gate (#1553, ADR-068, BR-INTEGRATION-054/BR-FLEET-003): once either the
+// Fleet MCP Gateway client or the cluster registry is wired, SP's
+// pod-wide readyz must fail closed when that dependency is unreachable,
+// instead of the previous fail-open behavior of only logging an error.
+// Unlike GW/RO/EM, SP has no single "Fleet enabled" flag — the MCP client
+// and cluster registry are independent, optional features (confirmed via
+// preflight: cfg.Fleet.Endpoint and cfg.Fleet.MCPGatewayType gate them
+// separately) — so gating is simply "did wireFleetMCPClient /
+// wireClusterRegistry actually produce an object". Returns nil when
+// neither dependency is configured. The caller registers the returned
+// Gate's Check method via mgr.AddReadyzCheck and must Stop() it on
+// shutdown.
+func wireFleetReadinessGate(
+	ctx context.Context,
+	fleetClient *fleetclient.ResilientClient,
+	clusterRegistry fleetregistry.ClusterRegistry,
+	logger logr.Logger,
+) *readiness.Gate {
+	var probers []readiness.Prober
+	if fleetClient != nil {
+		probers = append(probers, &readiness.MCPClientProber{Client: fleetClient})
+	}
+	if clusterRegistry != nil {
+		probers = append(probers, &readiness.ClusterRegistryProber{Registry: clusterRegistry})
+	}
+	if len(probers) == 0 {
+		return nil
+	}
+
+	gate := readiness.NewGate(fleetReadinessProbeInterval, logger.WithName("fleet-readiness"), probers...)
+	gate.Start(ctx)
+	logger.Info("Fleet readiness gate started", "prober_count", len(probers), "ready", gate.Ready())
+	return gate
+}
+
 // setupSignalProcessingReconciler creates the atomic status manager
 // (DD-PERF-001, SP-CACHE-001) and audit manager (Phase 3 refactoring,
 // 2026-01-22), wires the SignalProcessingReconciler into mgr, and
-// registers the healthz/readyz checks. Exits the process on any failure,
-// matching main()'s original fail-fast behavior.
+// registers the healthz/readyz checks (including the #1553 Fleet
+// readiness gate, a nil-safe no-op when neither Fleet dependency is
+// configured). Exits the process on any failure, matching main()'s
+// original fail-fast behavior.
 func setupSignalProcessingReconciler(
 	mgr ctrl.Manager,
 	auditClient *spaudit.AuditClient,
 	policyEvaluator *evaluator.Evaluator,
 	signalModeClassifier *classifier.SignalModeClassifier,
 	enrichment *signalProcessingEnrichment,
+	fleetGate *readiness.Gate,
 ) {
 	statusManager := spstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	setupLog.Info("SignalProcessing status manager initialized (DD-PERF-001 + SP-CACHE-001)")
@@ -444,6 +510,12 @@ func setupSignalProcessingReconciler(
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
+	}
+	if fleetGate != nil {
+		if err := mgr.AddReadyzCheck("fleet", fleetGate.Check); err != nil {
+			setupLog.Error(err, "unable to register fleet readiness check")
+			os.Exit(1)
+		}
 	}
 }
 
@@ -529,7 +601,15 @@ func main() {
 	signalModeClassifier := buildSignalModeClassifier()
 	enrichment := wireSignalProcessingEnrichment(ctx, cfg, mgr)
 
-	setupSignalProcessingReconciler(mgr, auditClient, policyEvaluator, signalModeClassifier, enrichment)
+	// #1553 / ADR-068 / BR-INTEGRATION-054 / BR-FLEET-003: fail closed on
+	// Fleet dependency unreachability via readyz (pod-wide), instead of the
+	// previous fail-open behavior of only logging an error.
+	fleetGate := wireFleetReadinessGate(ctx, enrichment.fleetClient, enrichment.clusterRegistry, setupLog)
+	if fleetGate != nil {
+		defer fleetGate.Stop()
+	}
+
+	setupSignalProcessingReconciler(mgr, auditClient, policyEvaluator, signalModeClassifier, enrichment, fleetGate)
 
 	cleanupHotReload := configureSignalProcessingTLSAndHotReload(ctx, cfg, configFile, atomicLevel)
 	defer cleanupHotReload()

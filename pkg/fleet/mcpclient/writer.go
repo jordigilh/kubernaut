@@ -42,10 +42,13 @@ type WriterClient struct {
 	session    *mcp.ClientSession
 	clusterID  string
 	toolPrefix string
+	scheme     *runtime.Scheme
 }
 
 // NewWriterFromSession creates a WriterClient from an existing MCP session.
-// Options (optional): WithToolPrefix sets the gateway-specific tool prefix.
+// Options (optional): WithToolPrefix sets the gateway-specific tool prefix;
+// WithScheme sets the GVK-inference scheme (see ensureGVK), defaulting to
+// clientgoscheme.Scheme.
 // Panics if session is nil (fail-fast, same contract as NewFromSession).
 func NewWriterFromSession(session *mcp.ClientSession, clusterID string, opts ...Option) *WriterClient {
 	if session == nil {
@@ -55,7 +58,7 @@ func NewWriterFromSession(session *mcp.ClientSession, clusterID string, opts ...
 	for _, opt := range opts {
 		opt(cfg)
 	}
-	return &WriterClient{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix}
+	return &WriterClient{session: session, clusterID: clusterID, toolPrefix: cfg.toolPrefix, scheme: cfg.resolvedScheme()}
 }
 
 func (w *WriterClient) resolveToolName(tool string) string {
@@ -69,8 +72,16 @@ func (w *WriterClient) resolveToolName(tool string) string {
 }
 
 // Create implements client.Writer. It serializes the object to JSON and sends
-// it to the remote cluster via the MCP create_resource tool.
+// it to the remote cluster via the MCP resources_create_or_update tool.
+//
+// The tool argument MUST be named "resource" per the upstream K8s MCP Server
+// contract (github.com/containers/kubernetes-mcp-server); the tool call fails
+// with "missing argument resource" otherwise.
 func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...client.CreateOption) error {
+	if _, err := ensureGVK(obj, w.scheme); err != nil {
+		return err
+	}
+
 	manifest, err := objectToJSON(obj)
 	if err != nil {
 		return fmt.Errorf("serialize object for Create: %w", err)
@@ -80,11 +91,14 @@ func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...clien
 	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
 		Name: toolName,
 		Arguments: map[string]any{
-			"manifest": manifest,
+			"resource": manifest,
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("call %s: %w", toolName, err)
+	}
+	if result.IsError {
+		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
 	text := ExtractText(result)
@@ -98,9 +112,9 @@ func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...clien
 // Delete implements client.Writer. It sends a delete request to the remote
 // cluster via the MCP delete_resource tool.
 func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...client.DeleteOption) error {
-	gvk := obj.GetObjectKind().GroupVersionKind()
-	if gvk.Kind == "" {
-		return fmt.Errorf("object GVK Kind must be set before calling Delete")
+	gvk, err := ensureGVK(obj, w.scheme)
+	if err != nil {
+		return err
 	}
 
 	toolName := w.resolveToolName(ToolDelete)
@@ -113,19 +127,30 @@ func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...clien
 		args["namespace"] = ns
 	}
 
-	_, err := w.session.CallTool(ctx, &mcp.CallToolParams{
+	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
 		Name:      toolName,
 		Arguments: args,
 	})
 	if err != nil {
 		return fmt.Errorf("call %s: %w", toolName, err)
 	}
+	if result.IsError {
+		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
+	}
 	return nil
 }
 
 // Update implements client.Writer. It serializes the object and sends it to
-// the remote cluster via the MCP update_resource tool.
+// the remote cluster via the MCP resources_create_or_update tool.
+//
+// The tool argument MUST be named "resource" per the upstream K8s MCP Server
+// contract (github.com/containers/kubernetes-mcp-server); the tool call fails
+// with "missing argument resource" otherwise.
 func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...client.UpdateOption) error {
+	if _, err := ensureGVK(obj, w.scheme); err != nil {
+		return err
+	}
+
 	manifest, err := objectToJSON(obj)
 	if err != nil {
 		return fmt.Errorf("serialize object for Update: %w", err)
@@ -135,11 +160,14 @@ func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...clien
 	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
 		Name: toolName,
 		Arguments: map[string]any{
-			"manifest": manifest,
+			"resource": manifest,
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("call %s: %w", toolName, err)
+	}
+	if result.IsError {
+		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
 	text := ExtractText(result)

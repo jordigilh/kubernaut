@@ -223,6 +223,9 @@ func stopBackendDeps(deps *backendDeps, logger logr.Logger) {
 	for _, w := range deps.CAWatchers {
 		w.watcher.Stop()
 	}
+	if deps.fleetReadinessGate != nil {
+		deps.fleetReadinessGate.Stop()
+	}
 	if fc := deps.FleetResilientClient(); fc != nil {
 		logger.Info("Closing fleet MCP Gateway connection")
 		if err := fc.Close(); err != nil {

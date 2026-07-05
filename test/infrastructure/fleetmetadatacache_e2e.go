@@ -361,3 +361,62 @@ subjects:
 	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (view)")
 	return nil
 }
+
+// applyExchangedIdentityWriteRBAC grants the same exchanged identity
+// (keycloak:service-account-kubernaut-fleet-read, see applyExchangedIdentityRBAC)
+// an ADDITIONAL, strictly minimal write grant on batch/jobs.
+//
+// Issue #1542: job-backend workflows (e.g. crashloop-config-fix-v1) require
+// WE's Job executor to create a K8s Job on the remote cluster when
+// RemediationRequest.ClusterID is set. In passthrough auth mode, kube-mcp-server
+// forwards the caller's exchanged token as-is, so the identity itself must
+// carry the write permission -- the "view" ClusterRole from
+// applyExchangedIdentityRBAC is read-only by design.
+//
+// kube-mcp-server's create-or-update tool issues a "patch" (server-side
+// apply) against the remote API server regardless of whether the object
+// already exists, so "patch" (and "update", for non-SSA fallbacks) must be
+// granted alongside "create" -- a bare "create" grant is insufficient and
+// fails with "cannot patch resource jobs" (see CI runs 28718786969,
+// E2E-FLEET-014).
+//
+// This is a SEPARATE function (not a change to applyExchangedIdentityRBAC)
+// and is wired ONLY into the fleet suite's SetupFleetE2EInfrastructure so the
+// FMC-only E2E lane (test/e2e/fleetmetadatacache) remains read-only, matching
+// its BR-FLEET-0xx read-path scope.
+func applyExchangedIdentityWriteRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
+	rbacManifest := `---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fleet-exchanged-identity-job-write
+  labels:
+    app: workflowexecution
+    component: fleet-e2e
+rules:
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["create", "get", "list", "watch", "delete", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fleet-exchanged-identity-job-write-binding
+  labels:
+    app: workflowexecution
+    component: fleet-e2e
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fleet-exchanged-identity-job-write
+subjects:
+- kind: User
+  name: "keycloak:service-account-kubernaut-fleet-read"
+  apiGroup: rbac.authorization.k8s.io
+`
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, rbacManifest); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ RBAC created for keycloak:service-account-kubernaut-fleet-read (batch/jobs write, Issue #1542)")
+	return nil
+}

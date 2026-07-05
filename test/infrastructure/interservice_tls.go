@@ -189,10 +189,15 @@ data:
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
 		},
 		{
-			// Keycloak replaces Dex in the FMC E2E lane only (Spike S17/S18);
-			// the "fleet" full-pipeline suite still uses Dex. Generating both
-			// leaf certs unconditionally here is harmless (unused certs cost
-			// nothing) and keeps GenerateInterServiceTLS's signature stable.
+			// Keycloak replaces Dex for the FMC E2E lane (Spike S17/S18) and the
+			// "fleet" full-pipeline suite's default path (DD-TEST-014); other
+			// lanes (kubernautagent E2E/IT, signalprocessing's lightweight
+			// fleet infra test) still use Dex directly, since Keycloak's fleet
+			// realm only supports client_credentials + token exchange today,
+			// not the ROPC/password grant + persona groups those lanes need.
+			// Generating both leaf certs unconditionally here is harmless
+			// (unused certs cost nothing) and keeps GenerateInterServiceTLS's
+			// signature stable.
 			name:       "keycloak",
 			secretName: "keycloak-tls",
 			dnsNames: []string{
