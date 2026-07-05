@@ -517,7 +517,7 @@ test-fuzz: ## Run all fuzz targets' seed + regression corpora as regular tests (
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🐛 Fuzz Corpus Regression -- all services (seed + saved crashers, no new fuzzing)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@files=$$(grep -rl '^func Fuzz' --include='*_test.go' .); \
+	@files=$$(grep -rl '^func Fuzz' --include='*_test.go' . || true); \
 	if [ -z "$$files" ]; then \
 		echo "No fuzz targets found"; \
 		exit 0; \
@@ -528,7 +528,7 @@ test-fuzz: ## Run all fuzz targets' seed + regression corpora as regular tests (
 
 .PHONY: test-fuzz-%
 test-fuzz-%: ## Run fuzz corpus regression for one service's fuzz targets, if any (no-op otherwise): make test-fuzz-gateway. Wired into CI's per-service unit-tests job.
-	@files=$$(grep -rl '^func Fuzz' --include='*_test.go' ./pkg/$* 2>/dev/null); \
+	@files=$$(grep -rl '^func Fuzz' --include='*_test.go' ./pkg/$* 2>/dev/null || true); \
 	if [ -z "$$files" ]; then \
 		echo "🐛 No fuzz targets in pkg/$* -- skipping"; \
 		exit 0; \
