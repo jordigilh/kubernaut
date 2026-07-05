@@ -42,12 +42,43 @@ type E2EImageConfig struct {
 	EnableCoverage   bool   // Enable Go coverage instrumentation (--build-arg GOFLAGS=-cover)
 }
 
-// IsRunningInCICD returns true if running in CI/CD environment (GitHub Actions).
-// Detection: IMAGE_REGISTRY environment variable is set (indicates GHCR push/pull workflow).
-//
-// Authority: CI/CD optimization - enables registry-based image distribution
+// IsRunningInCICD returns true if running in CI/CD environment with registry
+// pull/push mode (IMAGE_REGISTRY set). Deliberately excludes artifact-based
+// mode (KUBERNAUT_CI_ARTIFACT_TAG): callers of this function (e.g.
+// ShouldSkipImageExportAndPrune) assume Kind can pull images directly from a
+// registry and skip local export/load, which does NOT hold for artifact mode
+// -- those images are local-only and still need explicit `kind load`.
 func IsRunningInCICD() bool {
 	return os.Getenv("IMAGE_REGISTRY") != ""
+}
+
+// resolvePrebuiltCIArtifact checks whether a CI job has already loaded a
+// pre-built image for serviceName into the local Podman store under the
+// fixed tag advertised via KUBERNAUT_CI_ARTIFACT_TAG. When present, callers
+// should use it directly instead of building or pulling from a registry.
+//
+// This exists because BuildImageForKind's local-build cache-hit check keys
+// on a per-invocation randomly generated tag (see generateInfrastructureImageTag),
+// which a CI-loaded artifact can never match. KUBERNAUT_CI_ARTIFACT_TAG gives
+// CI a stable, predictable tag both the workflow's `podman load` step and this
+// code agree on ahead of time.
+//
+// Authority: CI/CD artifact-based image handoff (no ghcr.io push in ci-pipeline.yml)
+func resolvePrebuiltCIArtifact(serviceName string, writer io.Writer) (string, bool) {
+	artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG")
+	if artifactTag == "" {
+		return "", false
+	}
+
+	localImageName := fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
+	checkCmd := exec.Command("podman", "image", "exists", localImageName)
+	if checkCmd.Run() != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  KUBERNAUT_CI_ARTIFACT_TAG set but no pre-loaded image found for %s (falling back)\n", serviceName)
+		return "", false
+	}
+
+	_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", localImageName)
+	return localImageName, true
 }
 
 // ShouldSkipImageExportAndPrune returns true if image export and Podman prune should be skipped.
@@ -153,6 +184,13 @@ func PullImageFromRegistry(serviceName string, writer io.Writer) (string, error)
 //	imageName, err := BuildImageForKind(cfg, writer)
 //	// Builds locally as before
 func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
+	// CI/CD Optimization: Use a CI-loaded artifact if one was already
+	// podman-loaded for this service under the agreed-upon fixed tag.
+	// Skip build entirely - the image is already local.
+	if prebuilt, ok := resolvePrebuiltCIArtifact(cfg.ServiceName, writer); ok {
+		return prebuilt, nil
+	}
+
 	// CI/CD Optimization: Use registry reference directly if configured
 	// Skip pull + load - let Kind pull from registry on-demand
 	registry := os.Getenv("IMAGE_REGISTRY")

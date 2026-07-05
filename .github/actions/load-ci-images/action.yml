@@ -1,0 +1,42 @@
+name: Load CI Images
+description: >
+  Downloads amd64 service + infra image artifacts built earlier in this
+  workflow run and loads them into the local Podman store. Replaces the
+  ghcr.io push/pull round-trip so PRs from forks (read-only GITHUB_TOKEN)
+  can still exercise Integration/E2E/Helm smoke tests. Images are loaded
+  under localhost/<service>:<tag> -- callers should set
+  KUBERNAUT_CI_ARTIFACT_TAG=<tag> so test/infrastructure code picks them
+  up without rebuilding.
+
+inputs:
+  path:
+    description: Directory to download the image tarballs into.
+    required: false
+    default: /tmp/ci-images
+
+runs:
+  using: composite
+  steps:
+    - name: Download amd64 image artifacts
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+      with:
+        pattern: image-*-amd64
+        path: ${{ inputs.path }}
+        merge-multiple: true
+
+    - name: Load images into Podman
+      shell: bash
+      run: |
+        shopt -s nullglob
+        tars=("${{ inputs.path }}"/*.tar)
+        if [ ${#tars[@]} -eq 0 ]; then
+          echo "::error::No image tarballs found in ${{ inputs.path }} -- did the build jobs run and upload artifacts?"
+          exit 1
+        fi
+        for tar in "${tars[@]}"; do
+          echo "📦 Loading $(basename "$tar")..."
+          podman load -i "$tar"
+        done
+        echo ""
+        echo "✅ Loaded images:"
+        podman images --filter "reference=localhost/*"
