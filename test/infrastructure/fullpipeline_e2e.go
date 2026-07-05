@@ -1076,7 +1076,23 @@ spec:
       - name: memory-eater
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
         imagePullPolicy: IfNotPresent
-        args: ["40Mi", "1", "60Mi", "1", "0"]
+        # Positional args: initial_memory initial_duration target_memory target_duration hold_duration
+        # Consumes 40Mi for 1s, then grows to 60Mi over 1s. With memLimit < 60Mi
+        # (the default 50Mi caller), the OOM-kill happens during the growth
+        # phase, before hold_duration is ever reached, so hold_duration has no
+        # effect on triggering the initial OOMKill.
+        #
+        # Issue #1542 follow-up (E2E-FP-118-001): hold_duration was previously
+        # "0", which -- once a real fix (e.g. oomkill-increase-memory-v1) lifts
+        # memLimit above 60Mi -- makes the process exit successfully right
+        # after reaching target memory (~2s lifecycle), so the container
+        # perpetually restart-loops even though the underlying OOM is fixed.
+        # EM's one-shot post-remediation health check then samples the pod at
+        # an arbitrary point in that restart cycle, making "HealthScore > 0"
+        # racy independent of whether remediation worked. A large
+        # hold_duration lets the fixed pod actually reach and stay in a
+        # stable Ready state, matching real-world workload behavior.
+        args: ["40Mi", "1", "60Mi", "1", "999999"]
         resources:
           limits:
             memory: "%s"
