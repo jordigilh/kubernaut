@@ -1050,30 +1050,40 @@ func DeployMemoryEater(ctx context.Context, targetNamespace, kubeconfigPath stri
 // Different limits produce a different spec_hash, isolating the deployment from
 // ineffective chain detection triggered by other tests with the same spec.
 func DeployMemoryEaterWithLimits(ctx context.Context, targetNamespace, kubeconfigPath, memLimit, memRequest string, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "  🐛 Deploying memory-eater in namespace %s...\n", targetNamespace)
+	return DeployMemoryEaterNamed(ctx, "memory-eater", targetNamespace, kubeconfigPath, memLimit, memRequest, writer)
+}
+
+// DeployMemoryEaterNamed deploys a memory-eater Deployment under a caller-chosen
+// name/label, instead of the hardcoded "memory-eater" used by
+// DeployMemoryEaterWithLimits. This lets a test stand up its own dedicated
+// instance without colliding with a shared "memory-eater" fixture that other,
+// unrelated tests may already depend on existing in the same namespace (e.g.
+// the fleet suite's signal-routing tests -- see E2E-FLEET-015).
+func DeployMemoryEaterNamed(ctx context.Context, name, targetNamespace, kubeconfigPath, memLimit, memRequest string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "  🐛 Deploying %s in namespace %s...\n", name, targetNamespace)
 
 	manifest := fmt.Sprintf(`apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: memory-eater
-  namespace: %s
+  name: %[1]s
+  namespace: %[2]s
   labels:
-    app: memory-eater
+    app: %[1]s
     kubernaut.ai/managed: "true"
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: memory-eater
+      app: %[1]s
   template:
     metadata:
       labels:
-        app: memory-eater
+        app: %[1]s
         kubernaut.ai/managed: "true"
     spec:
       automountServiceAccountToken: false
       containers:
-      - name: memory-eater
+      - name: %[1]s
         image: us-central1-docker.pkg.dev/genuine-flight-317411/devel/memory-eater:1.0
         imagePullPolicy: IfNotPresent
         # Positional args: initial_memory initial_duration target_memory target_duration hold_duration
@@ -1095,10 +1105,10 @@ spec:
         args: ["40Mi", "1", "60Mi", "1", "999999"]
         resources:
           limits:
-            memory: "%s"
+            memory: "%[3]s"
           requests:
-            memory: "%s"
-`, targetNamespace, memLimit, memRequest)
+            memory: "%[4]s"
+`, name, targetNamespace, memLimit, memRequest)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
