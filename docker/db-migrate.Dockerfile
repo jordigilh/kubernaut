@@ -16,7 +16,7 @@ ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:1.26 AS goose-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:1.26@sha256:ad1d5e19331fc80c28a6193c1f8489af93b8f54d06766f174de6d4ce1ec6a191 AS goose-builder
 USER root
 ARG TARGETARCH
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
@@ -28,7 +28,7 @@ RUN GOMODCACHE=$(mktemp -d) && \
     go get golang.org/x/net@v0.56.0 && \
     go build -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS production
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:b217fa65d8c21058887b18f005f587e47a17dd1281a5196ac88d01724a273dbd AS production
 
 ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown

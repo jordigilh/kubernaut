@@ -506,6 +506,45 @@ build-all-services: $(addprefix build-,$(SERVICES)) ## Build all Go services
 .PHONY: build-all
 build-all: build-all-services ## Build all services (alias)
 
+##@ Fuzz Testing
+# Native Go fuzz tests (func FuzzXxx(f *testing.F)) are NOT executed by the
+# ginkgo-based test-unit-* targets above -- ginkgo's runner only runs Ginkgo
+# specs and silently skips other Test/Fuzz functions in the same package.
+# These targets close that gap. See AGENTS.md "Exception: Go Native Fuzz Tests".
+
+.PHONY: test-fuzz
+test-fuzz: ## Run all fuzz targets' seed + regression corpora as regular tests (fast, no new fuzzing; local convenience -- CI runs this per-service, see test-fuzz-%)
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@echo "🐛 Fuzz Corpus Regression -- all services (seed + saved crashers, no new fuzzing)"
+	@echo "════════════════════════════════════════════════════════════════════════"
+	@files=$$(grep -rl '^func Fuzz' --include='*_test.go' . || true); \
+	if [ -z "$$files" ]; then \
+		echo "No fuzz targets found"; \
+		exit 0; \
+	fi; \
+	pkgs=$$(echo "$$files" | xargs -n1 dirname | sort -u); \
+	echo "Packages: $$pkgs"; \
+	go test $$pkgs -run '^Fuzz' -v
+
+.PHONY: test-fuzz-%
+test-fuzz-%: ## Run fuzz corpus regression for one service's fuzz targets, if any (no-op otherwise): make test-fuzz-gateway. Wired into CI's per-service unit-tests job.
+	@files=$$(grep -rl '^func Fuzz' --include='*_test.go' ./pkg/$* 2>/dev/null || true); \
+	if [ -z "$$files" ]; then \
+		echo "🐛 No fuzz targets in pkg/$* -- skipping"; \
+		exit 0; \
+	fi; \
+	pkgs=$$(echo "$$files" | xargs -n1 dirname | sort -u); \
+	echo "🐛 Fuzz Corpus Regression ($*): $$pkgs"; \
+	go test $$pkgs -run '^Fuzz' -v
+
+.PHONY: fuzz
+fuzz: ## Run one fuzz target with a time budget: make fuzz PKG=./pkg/apifrontend/validate/ TARGET=FuzzRRID TIME=30s
+	@if [ -z "$(PKG)" ] || [ -z "$(TARGET)" ]; then \
+		echo "Usage: make fuzz PKG=./pkg/apifrontend/validate/ TARGET=FuzzRRID [TIME=30s]"; \
+		exit 1; \
+	fi
+	go test $(PKG) -run='^$$' -fuzz=$(TARGET) -fuzztime=$(or $(TIME),30s)
+
 ##@ Docker Pattern Targets
 
 .PHONY: docker-build-%

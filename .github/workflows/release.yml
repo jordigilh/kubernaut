@@ -21,11 +21,15 @@ on:
   push:
     tags: ['v*']
 
+
+# Least-privilege default for every job. All image push/pull in this workflow
+# goes to Quay.io via QUAY_ROBOT_* secrets, not GITHUB_TOKEN, so no job needs
+# a `packages` scope. Only sign-and-attest (Cosign OIDC + SLSA provenance) and
+# release (gh release create/upload) need elevated GITHUB_TOKEN scopes; they
+# declare their own job-level `permissions:` below, which fully replaces
+# (not merges with) this default for that job.
 permissions:
-  contents: write
-  id-token: write       # Cosign keyless signing via GitHub OIDC
-  attestations: write   # SLSA build provenance attestation
-  packages: write       # OCI artifact push (Cosign signatures, attestations)
+  contents: read
 
 env:
   IMAGE_REGISTRY: quay.io/kubernaut-ai
@@ -106,12 +110,12 @@ jobs:
           - db-migrate
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
@@ -182,12 +186,12 @@ jobs:
           - fleetmetadatacache
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
@@ -259,12 +263,12 @@ jobs:
           - db-migrate
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
@@ -451,12 +455,12 @@ jobs:
       KIND_CLUSTER_NAME: helm-smoke-release
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: recursive
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.4'
           cache: true
@@ -476,9 +480,9 @@ jobs:
           kind version
 
       - name: Install Helm
-        run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          helm version
+        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+        with:
+          version: latest
 
       - name: Create Kind cluster
         run: |
@@ -525,7 +529,7 @@ jobs:
 
       - name: Upload diagnostics
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: helm-smoke-diagnostics-${{ github.run_id }}
           path: /tmp/kind-smoke-logs/
@@ -556,7 +560,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Login to Quay.io
         run: |
@@ -603,6 +607,10 @@ jobs:
     needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write       # Cosign keyless signing + SLSA provenance via GitHub OIDC
+      attestations: write   # SLSA build provenance attestation
     strategy:
       fail-fast: false
       matrix:
@@ -623,10 +631,10 @@ jobs:
           - db-migrate
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v4.1.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Login to Quay.io (Cosign)
         run: |
@@ -670,14 +678,31 @@ jobs:
           echo "  Signed ${SVC} manifest list"
 
       - name: SLSA build provenance attestation
-        uses: actions/attest-build-provenance@v4
+        id: attest
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
         with:
           subject-name: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}
           subject-digest: ${{ steps.digests.outputs.manifest }}
           push-to-registry: true
 
+      - name: Stage provenance bundle for release upload
+        # Scorecard's Signed-Releases check looks for signature/provenance files
+        # attached directly to GitHub Release assets — registry-level attestation
+        # (push-to-registry above) isn't visible to it. Renaming and uploading the
+        # bundle as an artifact here lets the release job attach it alongside SBOMs.
+        run: |
+          cp "${{ steps.attest.outputs.bundle-path }}" \
+             "provenance-${{ matrix.service }}.sigstore.json"
+
+      - name: Upload provenance bundle artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: provenance-${{ matrix.service }}
+          path: provenance-${{ matrix.service }}.sigstore.json
+          retention-days: 1
+
       - name: Download SBOM artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: sbom-${{ matrix.service }}-*
           path: sboms/
@@ -716,7 +741,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Update Chart.yaml with release version
         env:
@@ -756,17 +781,26 @@ jobs:
     needs: [prepare, helm-smoke-test, create-manifests, helm-publish, security-scan-amd64, security-scan-arm64, sign-and-attest]
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write  # Required for gh release create/upload
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
       - name: Download all SBOM artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: sbom-*
           path: sboms/
+          merge-multiple: true
+
+      - name: Download all provenance bundle artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: provenance-*
+          path: provenance/
           merge-multiple: true
 
       - name: Create GitHub Release
@@ -817,3 +851,22 @@ jobs:
             fi
           done
           echo "Attached ${SBOM_COUNT} SBOMs to release ${TAG}"
+
+      - name: Attach SLSA provenance bundles to release
+        # Authority: OpenSSF Scorecard "Signed-Releases" check — requires
+        # signature/provenance files attached to the release itself, not just
+        # pushed to the image registry (see sign-and-attest job).
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          echo "Attaching SLSA provenance bundles to release ${TAG}..."
+          PROVENANCE_COUNT=0
+          for bundle in provenance/*.sigstore.json; do
+            if [ -f "$bundle" ]; then
+              echo "  Uploading $(basename "$bundle")..."
+              gh release upload "${TAG}" "$bundle" --clobber
+              PROVENANCE_COUNT=$((PROVENANCE_COUNT + 1))
+            fi
+          done
+          echo "Attached ${PROVENANCE_COUNT} provenance bundles to release ${TAG}"

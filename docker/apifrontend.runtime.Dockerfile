@@ -3,7 +3,7 @@
 # Prerequisites: make cross-build-apifrontend IMAGE_ARCH=arm64
 # Usage: make image-runtime-apifrontend IMAGE_ARCH=arm64
 
-ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest
+ARG BASE_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:b217fa65d8c21058887b18f005f587e47a17dd1281a5196ac88d01724a273dbd
 ARG BINARY=bin/apifrontend-arm64
 
 FROM --platform=linux/amd64 ${BASE_IMAGE} AS certs

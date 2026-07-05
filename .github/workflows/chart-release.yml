@@ -15,16 +15,18 @@ on:
     tags: ['chart-v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   publish:
     name: Publish Helm Chart
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write  # Required to create the GitHub Release
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Extract versions
         id: versions
