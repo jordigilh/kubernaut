@@ -149,10 +149,35 @@ spec:
 
               CA_BUNDLE=$(base64 < "$CA_FILE" | tr -d '\n')
 
+              # Issue #1542 follow-up: freshly-created pods can briefly be unable to
+              # reach the in-cluster API server ClusterIP while kube-proxy/CNI finish
+              # wiring up routes (observed with kindest/node:v1.36.1 in CI). kubectl's
+              # own discovery-client retry is slow (~30s per poll, ~2min before giving
+              # up), so a single failed attempt burns most of this init container's
+              # CrashLoopBackOff budget. Poll with a short per-attempt timeout and fast
+              # retry cadence so we converge quickly once networking is up, instead of
+              # relying on Kubernetes' growing CrashLoopBackOff delay between restarts.
+              echo "==> Waiting for API server connectivity..."
+              API_READY=false
+              i=0
+              while [ "$i" -lt 30 ]; do
+                if kubectl get --raw=/healthz --request-timeout=3s >/dev/null 2>&1; then
+                  API_READY=true
+                  break
+                fi
+                i=$((i + 1))
+                sleep 2
+              done
+              if [ "$API_READY" != "true" ]; then
+                echo "ERROR: API server not reachable after 60s of retries"
+                exit 1
+              fi
+              echo "==> API server reachable"
+
               patch_webhooks() {
                 KIND="$1"
                 NAME="$2"
-                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
+                COUNT=$(kubectl get "$KIND" "$NAME" --request-timeout=10s -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
                 PATCH="["
                 i=0
                 while [ "$i" -lt "$COUNT" ]; do
@@ -162,7 +187,7 @@ spec:
                 done
                 PATCH="${PATCH}]"
                 echo "  Patching $NAME ($COUNT webhooks)..."
-                kubectl patch "$KIND" "$NAME" --type='json' -p "$PATCH"
+                kubectl patch "$KIND" "$NAME" --request-timeout=10s --type='json' -p "$PATCH"
               }
 
               echo "==> Init-container: patching webhook caBundle (#377 self-healing)..."
