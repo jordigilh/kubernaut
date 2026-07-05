@@ -460,7 +460,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Generate image tag
         id: tag
@@ -623,7 +623,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Generate image tag
         id: tag
@@ -714,7 +714,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Create and push multi-arch manifests
         env:
@@ -1067,7 +1067,7 @@ jobs:
           kind version
       - name: Install Helm (fleet/fleetmetadatacache-kuadrant/fleetmetadatacache-eaigw E2E deploy Istio/Kuadrant/Envoy AI Gateway via helm)
         if: matrix.service == 'fleet' || matrix.service == 'fleetmetadatacache-kuadrant' || matrix.service == 'fleetmetadatacache-eaigw'
-        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: latest
       - name: Install Tekton CLI (tkn)
@@ -1255,7 +1255,7 @@ jobs:
           echo "PASS: Chart CRDs match generated CRDs"
 
       - name: Install Helm
-        uses: azure/setup-helm@dda3372f752e03dde6b3237bc9431cdc2f7a02a2 # v5.0.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: latest
 
@@ -1476,7 +1476,7 @@ jobs:
 
       - name: Post coverage report to PR
         if: github.event_name == 'pull_request'
-        uses: marocchino/sticky-pull-request-comment@d4d6b0936434b21bc8345ad45a440c5f7d2c40ff # v3
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
         with:
           header: coverage-report
           path: coverage-summary.md
