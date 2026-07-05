@@ -473,7 +473,7 @@ jobs:
 
       - name: Install Kind
         run: |
-          KIND_VERSION="v0.30.0"
+          KIND_VERSION="v0.32.0"
           curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
