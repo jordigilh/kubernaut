@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/jordigilh/kubernaut/internal/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
@@ -46,6 +47,7 @@ import (
 	fmcconfig "github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
 )
 
@@ -278,7 +280,11 @@ func main() {
 		"mcpEndpoint", cfg.MCPGateway.Endpoint,
 		"gatewayType", cfg.MCPGateway.GatewayType,
 		"apiAddr", cfg.Server.APIAddr,
-		"metricsAddr", cfg.Server.MetricsAddr)
+		"metricsAddr", cfg.Server.MetricsAddr,
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildDate", version.BuildDate,
+	)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

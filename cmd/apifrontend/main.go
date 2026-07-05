@@ -239,7 +239,8 @@ func startServers(rs *routerAndServers, cfg *config.Config, logger logr.Logger) 
 	go startServer(rs.MetricsServer, "metrics", logger)
 
 	logger.Info("kubernaut-apifrontend started",
-		"addr", rs.Addr, "tls", rs.TLSEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20)
+		"addr", rs.Addr, "tls", rs.TLSEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20,
+		"version", Version, "gitCommit", GitCommit, "buildDate", BuildDate)
 }
 
 // buildHandlerDepsParams bundles the inputs buildHandlerDeps needs to
