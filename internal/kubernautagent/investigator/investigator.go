@@ -70,23 +70,37 @@ type LoopResult interface {
 	loopResult()
 }
 
-// SubmitResult is returned when the LLM calls the generic submit_result tool (RCA phase).
-type SubmitResult struct{ Content string }
+// SubmitResult is returned when the LLM calls the generic submit_result tool
+// (RCA phase). Reasoning carries the winning turn's thinking block, when the
+// LLM's reasoning capability was enabled (BR-AI-086 AC6) — nil otherwise.
+type SubmitResult struct {
+	Content   string
+	Reasoning *llm.ReasoningBlock
+}
 
 func (*SubmitResult) loopResult() {}
 
 // SubmitWithWorkflowResult is returned when the LLM calls submit_result_with_workflow.
-type SubmitWithWorkflowResult struct{ Content string }
+type SubmitWithWorkflowResult struct {
+	Content   string
+	Reasoning *llm.ReasoningBlock
+}
 
 func (*SubmitWithWorkflowResult) loopResult() {}
 
 // SubmitNoWorkflowResult is returned when the LLM calls submit_result_no_workflow.
-type SubmitNoWorkflowResult struct{ Content string }
+type SubmitNoWorkflowResult struct {
+	Content   string
+	Reasoning *llm.ReasoningBlock
+}
 
 func (*SubmitNoWorkflowResult) loopResult() {}
 
 // TextResult is returned when the LLM responds with plain text (no tool call).
-type TextResult struct{ Content string }
+type TextResult struct {
+	Content   string
+	Reasoning *llm.ReasoningBlock
+}
 
 func (*TextResult) loopResult() {}
 
@@ -108,15 +122,18 @@ type CancelledResult struct {
 
 func (*CancelledResult) loopResult() {}
 
-// sentinelResult maps a sentinel tool call to its LoopResult type.
-func sentinelResult(tc llm.ToolCall) LoopResult {
+// sentinelResult maps a sentinel tool call to its LoopResult type, attaching
+// the reasoning block (if any) from the turn whose response produced tc, so
+// reasoning captured at the LLM-client layer (BR-AI-086 AC1-3) reaches the
+// InvestigationResult that gets built from the sentinel's Content.
+func sentinelResult(tc llm.ToolCall, reasoning *llm.ReasoningBlock) LoopResult {
 	switch tc.Name {
 	case SubmitResultToolName:
-		return &SubmitResult{Content: tc.Arguments}
+		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning}
 	case SubmitResultWithWorkflowToolName:
-		return &SubmitWithWorkflowResult{Content: tc.Arguments}
+		return &SubmitWithWorkflowResult{Content: tc.Arguments, Reasoning: reasoning}
 	case SubmitResultNoWorkflowToolName:
-		return &SubmitNoWorkflowResult{Content: tc.Arguments}
+		return &SubmitNoWorkflowResult{Content: tc.Arguments, Reasoning: reasoning}
 	default:
 		return nil
 	}
@@ -639,6 +656,15 @@ func (inv *Investigator) mergeAndFinalizeWorkflowResult(ctx context.Context, p m
 	}
 	if len(rcaResult.Warnings) > 0 {
 		workflowResult.Warnings = append(rcaResult.Warnings, workflowResult.Warnings...)
+	}
+	// BR-AI-086 AC6: RCA reasoning is Phase-1-specific by definition (it
+	// explains the root cause analysis, not the workflow selection), so it
+	// is copied by reference here — not routed through Phase1Data/the Phase
+	// 3 prompt template, which would leak Phase 1's raw reasoning text into
+	// Phase 3's LLM context and violate the phase-isolation invariant
+	// (IT-KA-1578-002).
+	if workflowResult.Reasoning == nil && rcaResult.Reasoning != nil {
+		workflowResult.Reasoning = rcaResult.Reasoning
 	}
 
 	MergePhase1Fallbacks(workflowResult, p1Ctx)

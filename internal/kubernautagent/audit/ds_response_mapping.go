@@ -81,6 +81,12 @@ func dataStringSlice(d map[string]interface{}, key string) []string {
 
 const previewMaxLen = 500
 
+// maxReasoningPayloadLen bounds reasoning text stored in Data-Storage audit
+// payloads (BR-AI-086 AC6). Mirrors the investigator package's
+// maxReasoningAuditChars: a defense-in-depth cap applied again at this
+// consuming boundary regardless of whether the producer already truncated.
+const maxReasoningPayloadLen = 40000
+
 func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
@@ -90,6 +96,17 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return string(runes[:maxLen])
+}
+
+// reasoningPayloadFields renders reasoning text/redacted into the OptString/
+// OptBool pair shared by LLMResponsePayload and
+// IncidentResponseDataRootCauseAnalysis, applying the audit size guard.
+func reasoningPayloadFields(text string, redacted bool) (ogenclient.OptString, ogenclient.OptBool) {
+	var t ogenclient.OptString
+	t.SetTo(truncate(text, maxReasoningPayloadLen))
+	var r ogenclient.OptBool
+	r.SetTo(redacted)
+	return t, r
 }
 
 func toJxRaw(s string) jx.Raw {
@@ -130,6 +147,14 @@ type investigationResultJSON struct {
 	RemediationTarget    *remediationTargetJSON `json:"remediation_target"`
 	CausalChain          []string               `json:"causal_chain"`
 	DueDiligence         *dueDiligenceJSON      `json:"due_diligence"`
+	Reasoning            *reasoningJSON         `json:"reasoning"`
+}
+
+// reasoningJSON mirrors katypes.ReasoningSummary (BR-AI-086 AC6): visible
+// text + a redacted flag only, never an opaque replay signature.
+type reasoningJSON struct {
+	Text     string `json:"text"`
+	Redacted bool   `json:"redacted"`
 }
 
 type dueDiligenceJSON struct {
@@ -186,6 +211,10 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 	}
 	if ir.DueDiligence != nil {
 		data.RootCauseAnalysis.DueDiligence.SetTo(toDueDiligenceResponse(ir.DueDiligence))
+	}
+	if ir.Reasoning != nil {
+		data.RootCauseAnalysis.Reasoning, data.RootCauseAnalysis.ReasoningRedacted = reasoningPayloadFields(
+			ir.Reasoning.Text, ir.Reasoning.Redacted)
 	}
 
 	if ir.WorkflowID != "" {

@@ -217,6 +217,12 @@ func FinalizeWorkflowResult(result *katypes.InvestigationResult, signal katypes.
 	if result.RemediationTarget.APIVersion == "" && rcaResult != nil && rcaResult.RemediationTarget.APIVersion != "" {
 		result.RemediationTarget.APIVersion = rcaResult.RemediationTarget.APIVersion
 	}
+	// BR-AI-086 AC6 / IT-KA-1578-002: RCA reasoning is Phase-1-specific
+	// forensic metadata (mirrors mergeAndFinalizeWorkflowResult's autonomous
+	// path). Copied by reference, never fed back into a Phase 3 prompt.
+	if result.Reasoning == nil && rcaResult != nil && rcaResult.Reasoning != nil {
+		result.Reasoning = rcaResult.Reasoning
+	}
 	InjectTargetResourceParameters(result)
 }
 

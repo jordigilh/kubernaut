@@ -86,6 +86,10 @@ func buildLLMResponsePayload(event *AuditEvent) ogenclient.AuditEventRequestEven
 	if tc := dataInt(event.Data, "tool_call_count"); tc > 0 {
 		payload.ToolCallCount.SetTo(tc)
 	}
+	if _, hasReasoning := event.Data["reasoning_text"]; hasReasoning {
+		payload.ReasoningText, payload.ReasoningRedacted = reasoningPayloadFields(
+			dataString(event.Data, "reasoning_text"), dataBool(event.Data, "reasoning_redacted"))
+	}
 	return ogenclient.NewLLMResponsePayloadAuditEventRequestEventData(payload)
 }
 
