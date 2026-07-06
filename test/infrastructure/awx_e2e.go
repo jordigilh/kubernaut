@@ -661,7 +661,13 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 					}
 				}
 			}
-			return nil, fmt.Errorf("failed to create project: HTTP %d (and could not find existing)", projectStatus)
+			// The "already exists" write may not yet be visible to a subsequent
+			// read (AWX task-queue/DB replication lag right after pod readiness,
+			// same class of race as the admin-401 issue above). Retry instead of
+			// failing hard on the first lookup miss.
+			_, _ = fmt.Fprintf(writer, "   ⚠️  Project lookup by name did not find it yet (attempt %d/6), retrying in 10s...\n", attempt+1)
+			time.Sleep(10 * time.Second)
+			continue
 		}
 		if projectStatus >= 500 || projectStatus == http.StatusUnauthorized || projectStatus == http.StatusForbidden {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Project creation returned HTTP %d (attempt %d/6), retrying in 10s...\n", projectStatus, attempt+1)
@@ -671,7 +677,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		return nil, fmt.Errorf("failed to create project: HTTP %d", projectStatus)
 	}
 	if !projectCreated {
-		return nil, fmt.Errorf("failed to create project after 6 attempts: HTTP %d", projectStatus)
+		return nil, fmt.Errorf("failed to create project after 6 attempts: HTTP %d (and could not find existing)", projectStatus)
 	}
 	cfg.ProjectID = int(projectResult["id"].(float64))
 	_, _ = fmt.Fprintf(writer, "   ✅ Project ID: %d\n", cfg.ProjectID)

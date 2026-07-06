@@ -370,6 +370,15 @@ full_cleanup() {
 # ---------------------------------------------------------------------------
 # Platform-specific install flags
 # ---------------------------------------------------------------------------
+# Note: networkPolicies.apiServerCIDR(s)/apiServerPort are intentionally NOT
+# set here. The chart auto-discovers the kube-apiserver's real backend
+# endpoint IP(s)/port via `lookup` against the live "kubernetes" Endpoints
+# object during a real helm install/upgrade (see
+# kubernaut.np.apiServerPeers/apiServerPort in _helpers.tpl) -- this smoke
+# test exercises that auto-discovery path rather than working around it.
+# See PR #1571 for the investigation trail that led here (round 3 initially
+# discovered the endpoint in bash and passed it via --set; that approach was
+# superseded once the chart learned to discover it itself).
 common_install_flags() {
   local flags=""
   flags+=" --set global.image.tag=${IMAGE_TAG}"

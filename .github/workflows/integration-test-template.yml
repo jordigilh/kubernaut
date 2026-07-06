@@ -54,13 +54,13 @@ jobs:
           sudo apt-get install -y podman
           podman --version
 
-      - name: Install Kind v0.30.0
+      - name: Install Kind v0.32.0
         if: inputs.infrastructure == 'kind'
         run: |
-          # Install Kind v0.30.0 (required by integration test infrastructure)
+          # Install Kind v0.32.0 (required by integration test infrastructure)
           # Authority: test/infrastructure/kind_cluster_helpers.go (version validation)
           # Uses GitHub releases URL (kind.sigs.k8s.io/dl/ returns HTML, not binary)
-          KIND_VERSION="v0.30.0"
+          KIND_VERSION="v0.32.0"
           echo "Installing Kind version: ${KIND_VERSION}"
           curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind

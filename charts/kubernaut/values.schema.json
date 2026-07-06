@@ -177,6 +177,54 @@
           "items": { "$ref": "#/definitions/toleration" },
           "default": [],
           "description": "Pod tolerations"
+        },
+        "fleet": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mcpGatewayEndpoint": {
+              "type": "string",
+              "default": "",
+              "description": "Shared MCP Gateway endpoint URL, used as the fallback when a service's own fleet.mcpGatewayEndpoint is unset"
+            },
+            "mcpGatewayType": {
+              "type": "string",
+              "default": "",
+              "description": "Shared MCP Gateway type (eaigw or kuadrant), used as the fallback when a service's own fleet.mcpGatewayType is unset"
+            },
+            "tlsCAFile": {
+              "type": "string",
+              "default": "",
+              "description": "Shared CA bundle path for verifying the MCP Gateway's TLS certificate, used as the fallback when a service's own fleet.tlsCAFile is unset"
+            },
+            "oauth2": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "tokenURL": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Shared OAuth2 token URL for MCP Gateway authentication, used as the fallback when a service's own fleet.oauth2.tokenURL is unset"
+                },
+                "credentialsSecretRef": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Shared Secret name (keys: client-id, client-secret) for MCP Gateway OAuth2, used as the fallback when a service's own fleet.oauth2.credentialsSecretRef is unset"
+                },
+                "scopes": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "default": [],
+                  "description": "Shared OAuth2 scopes for MCP Gateway authentication, used as the fallback when a service's own fleet.oauth2.scopes is unset"
+                },
+                "tlsCAFile": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Shared CA bundle path for verifying tokenURL's TLS certificate, used as the fallback when a service's own fleet.oauth2.tlsCAFile is unset"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -212,7 +260,7 @@
                 "name": {
                   "type": "string",
                   "default": "",
-                  "description": "Name of the Issuer or ClusterIssuer (required when tls.mode=cert-manager)"
+                  "description": "Name of the Issuer or ClusterIssuer. Usually left empty when tls.mode=cert-manager: auto-selected via `lookup` if exactly one exists in the cluster. Set explicitly for helm template/GitOps rendering or when multiple issuers exist."
                 },
                 "kind": {
                   "type": "string",
@@ -361,9 +409,9 @@
             "enabled": { "type": "boolean", "default": false },
             "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
             "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for federated scope checks" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant" },
-            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate; defaults to the shared inter-service CA when empty" },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for federated scope checks. Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
+            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         }
@@ -537,7 +585,7 @@
           "additionalProperties": false,
           "properties": {
             "endpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster resource reads" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant; required to evaluate the cluster classification dimension" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant; required to evaluate the cluster classification dimension. Falls back to global.fleet.mcpGatewayType when unset" },
             "namespace": { "type": "string", "default": "", "description": "Restricts the ClusterRegistry CRD watch; empty watches all namespaces" },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
@@ -660,9 +708,9 @@
             "enabled": { "type": "boolean", "default": false },
             "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
             "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for reading remote resource specs (spec hash)" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant" },
-            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate; defaults to the shared inter-service CA when empty" },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for reading remote resource specs (spec hash). Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
+            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         }
@@ -809,9 +857,9 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant" },
-            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate; defaults to the shared inter-service CA when empty" },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads. Optional; falls back to global.fleet.mcpGatewayEndpoint when unset" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
+            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         },
@@ -925,25 +973,6 @@
                     }
                   }
                 }
-              }
-            }
-          }
-        },
-        "fleet": {
-          "type": "object",
-          "description": "Multi-cluster fleet configuration (ADR-065)",
-          "additionalProperties": false,
-          "properties": {
-            "endpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL" },
-            "oauth2": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": { "type": "boolean", "default": false },
-                "tokenURL": { "type": "string", "default": "" },
-                "clientID": { "type": "string", "default": "" },
-                "clientSecretFile": { "type": "string", "default": "" },
-                "credentialsSecretRef": { "type": "string", "default": "", "description": "K8s Secret with keys: client-id, client-secret" }
               }
             }
           }
@@ -1085,7 +1114,7 @@
         },
         "syncInterval": { "type": "string", "default": "30s" },
         "keyTTL": { "type": "string", "default": "45s" },
-        "mcpGatewayEndpoint": { "type": "string", "default": "" },
+        "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "Required when fleetmetadatacache.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
         "gatewayType": { "type": "string", "enum": ["eaigw", "kuadrant"], "default": "eaigw", "description": "MCP Gateway type: eaigw (Envoy AI Gateway) or kuadrant (Kuadrant MCP Gateway)" },
         "valkeyAddr": { "type": "string", "default": "" },
         "namespace": { "type": "string", "default": "kubernaut-system" },
@@ -1124,9 +1153,9 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant" },
-            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate; defaults to the shared inter-service CA when empty" },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads. Optional; falls back to global.fleet.mcpGatewayEndpoint when unset" },
+            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
+            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         },
@@ -1314,7 +1343,18 @@
         "apiServerCIDR": {
           "type": "string",
           "default": "",
-          "description": "K8s API server CIDR (e.g., 10.96.0.1/32)"
+          "description": "K8s API server real backend endpoint IP as a /32 CIDR (e.g., 10.89.0.2/32) -- NOT the 'kubernetes' Service ClusterIP, which most CNIs ignore for NetworkPolicy egress. Usually left empty: auto-discovered via `lookup` during a real helm install/upgrade. Set explicitly only for helm template/GitOps rendering, restricted-RBAC installers, or to override discovery. Use for single-control-plane clusters; use apiServerCIDRs for HA."
+        },
+        "apiServerCIDRs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Additional K8s API server backend endpoint IPs as /32 CIDRs, for HA clusters with multiple control-plane nodes. Merged with apiServerCIDR. Usually left empty (see apiServerCIDR)."
+        },
+        "apiServerPort": {
+          "type": "integer",
+          "default": 0,
+          "description": "Port the K8s API server's real backend endpoint(s) listen on (commonly 6443), not necessarily the 'kubernetes' Service's port (443). 0 means auto-discover via `lookup` (falls back to 443 if unavailable)."
         },
         "monitoring": {
           "type": "object",
