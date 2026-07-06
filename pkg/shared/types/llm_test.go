@@ -375,3 +375,76 @@ var _ = Describe("UT-SH-1488-015: LLMHeaderDef validation", func() {
 		Expect(types.LLMHeaderDef{Name: "X-C", FilePath: "/f"}.ValidateSource()).To(Succeed())
 	})
 })
+
+var _ = Describe("UT-SH-AI-086-001: LLMReasoningConfig — BR-AI-086 AC2/AC5", func() {
+	It("should leave Reasoning nil by default when omitted from YAML (disabled by default per AC2)", func() {
+		input := `
+provider: anthropic
+model: claude-sonnet-4-6
+apiKeyFile: "/etc/credentials/anthropic_key"
+`
+		var cfg types.LLMConfig
+		Expect(yaml.Unmarshal([]byte(input), &cfg)).To(Succeed())
+		Expect(cfg.Reasoning).To(BeNil())
+	})
+
+	It("should deserialize reasoning fields on LLMConfig from YAML", func() {
+		input := `
+provider: anthropic
+model: claude-sonnet-4-6
+apiKeyFile: "/etc/credentials/anthropic_key"
+reasoning:
+  enabled: true
+  budgetTokens: 2048
+  capabilityOverride: force_on
+`
+		var cfg types.LLMConfig
+		Expect(yaml.Unmarshal([]byte(input), &cfg)).To(Succeed())
+		Expect(cfg.Reasoning).NotTo(BeNil())
+		Expect(cfg.Reasoning.Enabled).To(BeTrue())
+		Expect(cfg.Reasoning.BudgetTokens).To(Equal(2048))
+		Expect(cfg.Reasoning.CapabilityOverride).To(Equal("force_on"))
+	})
+
+	It("should deserialize reasoning fields on a per-phase LLMOverride from YAML", func() {
+		input := `
+provider: openai_compatible
+model: llama3
+endpoint: "http://llm-gateway:8080/v1"
+phaseModels:
+  rca:
+    model: deepseek-reasoner
+    reasoning:
+      enabled: true
+      capabilityOverride: auto
+`
+		var cfg types.LLMConfig
+		Expect(yaml.Unmarshal([]byte(input), &cfg)).To(Succeed())
+		Expect(cfg.PhaseModels).To(HaveKey("rca"))
+		rcaReasoning := cfg.PhaseModels["rca"].Reasoning
+		Expect(rcaReasoning).NotTo(BeNil())
+		Expect(rcaReasoning.Enabled).To(BeTrue())
+		Expect(rcaReasoning.CapabilityOverride).To(Equal("auto"))
+	})
+
+	It("should round-trip Reasoning through YAML marshal/unmarshal unchanged", func() {
+		original := types.LLMConfig{
+			Provider: "anthropic",
+			Model:    "claude-sonnet-4-6",
+			Reasoning: &types.LLMReasoningConfig{
+				Enabled:            true,
+				BudgetTokens:       1024,
+				CapabilityOverride: "force_off",
+			},
+		}
+
+		data, err := yaml.Marshal(&original)
+		Expect(err).NotTo(HaveOccurred())
+
+		var restored types.LLMConfig
+		Expect(yaml.Unmarshal(data, &restored)).To(Succeed())
+
+		Expect(restored.Reasoning).NotTo(BeNil())
+		Expect(*restored.Reasoning).To(Equal(*original.Reasoning))
+	})
+})

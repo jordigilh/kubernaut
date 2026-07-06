@@ -79,11 +79,31 @@ type ChatResponse struct {
 
 // Message represents a single conversation message.
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	ToolName   string     `json:"tool_name,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	Role       string          `json:"role"`
+	Content    string          `json:"content"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+	ToolName   string          `json:"tool_name,omitempty"`
+	ToolCalls  []ToolCall      `json:"tool_calls,omitempty"`
+	Reasoning  *ReasoningBlock `json:"reasoning,omitempty"`
+}
+
+// ReasoningBlock captures a provider's reasoning/thinking output for a single
+// assistant message, kept provider-agnostic so business logic in
+// internal/kubernautagent/investigator/* never sees provider-specific wire
+// formats (DD-HAPI-019). Nil means no reasoning was requested or returned.
+// Authority: BR-AI-086 AC1.
+type ReasoningBlock struct {
+	// Text is the visible reasoning content (Anthropic thinking, DeepSeek
+	// reasoning_content, vLLM reasoning). Empty when Redacted is true.
+	Text string `json:"text,omitempty"`
+	// Signature is an opaque, provider-specific value (Anthropic thinking
+	// signature, encrypted payload) that must be replayed verbatim on the
+	// next turn without inspection or modification.
+	Signature string `json:"signature,omitempty"`
+	// Redacted marks an opaque reasoning block whose visible text was
+	// withheld by the provider (Anthropic redacted_thinking) but which must
+	// still be replayed on subsequent turns.
+	Redacted bool `json:"redacted,omitempty"`
 }
 
 // ToolDefinition describes a tool available to the LLM.
@@ -109,8 +129,19 @@ type TokenUsage struct {
 
 // ChatOptions holds optional parameters for the LLM call.
 type ChatOptions struct {
-	Temperature  *float64        `json:"temperature,omitempty"`
-	MaxTokens    int             `json:"max_tokens,omitempty"`
-	JSONMode     bool            `json:"json_mode,omitempty"`
-	OutputSchema json.RawMessage `json:"output_schema,omitempty"`
+	Temperature  *float64          `json:"temperature,omitempty"`
+	MaxTokens    int               `json:"max_tokens,omitempty"`
+	JSONMode     bool              `json:"json_mode,omitempty"`
+	OutputSchema json.RawMessage   `json:"output_schema,omitempty"`
+	Reasoning    *ReasoningRequest `json:"reasoning,omitempty"`
+}
+
+// ReasoningRequest opts into provider reasoning/thinking output for a single
+// chat call. Nil (or Enabled: false) means no reasoning is requested — the
+// safe default for every provider/model (BR-AI-086 AC2). Resolved once at
+// LLM-client-construction time from operator config, never threaded
+// per-call from business logic (DD-HAPI-019).
+type ReasoningRequest struct {
+	Enabled      bool `json:"enabled,omitempty"`
+	BudgetTokens int  `json:"budget_tokens,omitempty"`
 }

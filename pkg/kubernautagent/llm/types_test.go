@@ -98,4 +98,89 @@ var _ = Describe("LLM Types — #433", func() {
 			Expect(respRestored.Usage.TotalTokens).To(Equal(1800))
 		})
 	})
+
+	Describe("UT-KA-1578-001: provider-agnostic reasoning fields — BR-AI-086 AC1/AC2", func() {
+		It("should default Message.Reasoning and ChatOptions.Reasoning to nil and omit them from JSON", func() {
+			msg := llm.Message{Role: "assistant", Content: "plain conclusion, no deliberation captured"}
+			opts := llm.ChatOptions{MaxTokens: 100}
+
+			Expect(msg.Reasoning).To(BeNil())
+			Expect(opts.Reasoning).To(BeNil())
+
+			msgData, err := json.Marshal(msg)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(msgData)).NotTo(ContainSubstring("reasoning"))
+
+			optsData, err := json.Marshal(opts)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(optsData)).NotTo(ContainSubstring("reasoning"))
+		})
+
+		It("should round-trip a populated ReasoningBlock on Message, including opaque signature and redaction", func() {
+			original := llm.Message{
+				Role:    "assistant",
+				Content: "The pod is OOMKilled because of a memory leak.",
+				Reasoning: &llm.ReasoningBlock{
+					Text:      "Let me check the memory usage pattern over time...",
+					Signature: "opaque-provider-signature-bytes",
+					Redacted:  false,
+				},
+			}
+
+			data, err := json.Marshal(original)
+			Expect(err).NotTo(HaveOccurred())
+
+			var restored llm.Message
+			err = json.Unmarshal(data, &restored)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(restored.Reasoning).NotTo(BeNil())
+			Expect(restored.Reasoning.Text).To(Equal("Let me check the memory usage pattern over time..."))
+			Expect(restored.Reasoning.Signature).To(Equal("opaque-provider-signature-bytes"))
+			Expect(restored.Reasoning.Redacted).To(BeFalse())
+		})
+
+		It("should round-trip a redacted ReasoningBlock with empty visible text (Anthropic redacted_thinking)", func() {
+			original := llm.Message{
+				Role:    "assistant",
+				Content: "conclusion only",
+				Reasoning: &llm.ReasoningBlock{
+					Signature: "encrypted-redacted-payload",
+					Redacted:  true,
+				},
+			}
+
+			data, err := json.Marshal(original)
+			Expect(err).NotTo(HaveOccurred())
+
+			var restored llm.Message
+			err = json.Unmarshal(data, &restored)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(restored.Reasoning).NotTo(BeNil())
+			Expect(restored.Reasoning.Text).To(BeEmpty())
+			Expect(restored.Reasoning.Redacted).To(BeTrue())
+		})
+
+		It("should round-trip a ReasoningRequest on ChatOptions with Enabled and BudgetTokens", func() {
+			original := llm.ChatOptions{
+				MaxTokens: 4096,
+				Reasoning: &llm.ReasoningRequest{
+					Enabled:      true,
+					BudgetTokens: 2048,
+				},
+			}
+
+			data, err := json.Marshal(original)
+			Expect(err).NotTo(HaveOccurred())
+
+			var restored llm.ChatOptions
+			err = json.Unmarshal(data, &restored)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(restored.Reasoning).NotTo(BeNil())
+			Expect(restored.Reasoning.Enabled).To(BeTrue())
+			Expect(restored.Reasoning.BudgetTokens).To(Equal(2048))
+		})
+	})
 })
