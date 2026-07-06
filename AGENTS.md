@@ -160,13 +160,25 @@ Minimal implementation to make tests pass:
 
 ### REFACTOR Phase
 
-Enhance the implementation with production-quality logic:
+Enhance the implementation with production-quality logic, keeping the RED-phase tests green
+throughout as a safety net:
 
-- Apply the [Go Anti-Pattern Checklist](#go-anti-pattern-checklist)
+- Apply the [Go Anti-Pattern Checklist](#go-anti-pattern-checklist) -- and fix what it finds,
+  not just run it
 - Optimize algorithms and data structures
 - Improve error messages and observability
-- Validate build success across entire codebase after refactoring
+- Eliminate duplication or awkward structure left behind by GREEN's minimal implementation
 - NEVER create new types or components in REFACTOR -- enhance existing only
+
+**REFACTOR is content, not validation.** Running `go build ./...` and confirming the test
+suite still passes (see [Post-Refactor Validation](#post-refactor-validation-mandatory)) is a
+*mandatory precondition* for calling REFACTOR complete -- it proves the improvements above were
+behavior-preserving. It is not itself a REFACTOR bullet, and "confirm build/lint/tests pass" is
+never a sufficient description of what REFACTOR did.
+
+**REFACTOR is legitimately `N/A`** when GREEN left no code behind to improve -- e.g. a pure
+deletion, or a milestone that only adds plain data-type fields with no logic. Mark it `N/A` with
+a one-line reason rather than filling the slot with the validation step above.
 
 ### The Pyramid Invariant
 
@@ -206,7 +218,7 @@ RED:   Write IT test calling component through production entry point -> fails
        Write UT test for component logic -> fails
 GREEN: Wire component in production code -> IT passes
        Implement component logic -> UT passes
-REFACTOR: Clean up
+REFACTOR: Clean up (name what's being cleaned up; N/A if GREEN left nothing to clean)
 ```
 
 ### Detection Commands
@@ -667,6 +679,7 @@ Forbidden patterns with detection rules.
 | **UT-Only GREEN** | Declaring GREEN when only UT passes | IT must also pass |
 | **Pending Tests** | Using `XIt` or `Skip()` | Implement or remove |
 | **Refactor Without Build** | Refactoring without checking build | Run `go build ./...` after ANY refactor |
+| **REFACTOR-as-Validation** | REFACTOR step names only "confirm build/lint/tests pass," with no concrete code-quality change | Name the actual improvement (dedup, error handling, structure, naming); build/test is the safety net proving it's safe, not the improvement itself |
 
 ### Post-Refactor Validation (Mandatory)
 
