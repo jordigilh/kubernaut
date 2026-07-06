@@ -14,8 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package anthropicfamily implements llm.Client for Claude models hosted on
-// Google Vertex AI using the official Anthropic Go SDK.
+// Package anthropicfamily implements llm.Client for Claude models across
+// the Anthropic model family's auth modes, using the official Anthropic Go
+// SDK: Google Vertex AI (New) and the native Anthropic API (NewWithAPIKey).
+// Bedrock auth mode is planned separately (issue #1582, DD-LLM-006).
 //
 // The SDK's vertex package handles all Vertex-specific protocol differences
 // automatically: anthropic_version in the request body, model removal from
@@ -23,6 +25,13 @@ limitations under the License.
 //
 // Structured output (output_config) is NOT supported on Vertex AI per
 // official Anthropic docs — this adapter does not attempt to set it.
+//
+// Model-aware reasoning/thinking token support (BR-AI-086) is shared across
+// all auth modes: buildParams/mapResponse/convertAssistantMessage are auth
+// mode-agnostic. Thinking-tier detection (adaptive vs. manual-budget-only)
+// reuses adk-anthropic-go/converters.ThinkingConfigToAnthropic — the same
+// logic the API Frontend uses — rather than an independently-maintained
+// second copy (DD-LLM-005).
 //
 // Reference: https://docs.anthropic.com/en/api/claude-on-vertex-ai
 // Reference: https://github.com/anthropics/anthropic-sdk-go
@@ -37,12 +46,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Alcova-AI/adk-anthropic-go/converters"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/go-logr/logr"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -122,6 +133,37 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 	}
 
 	sdk := anthropic.NewClient(buildSDKOptions(o, vertexOpt, tokenSource)...)
+	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
+}
+
+// NewWithAPIKey creates a Client for Claude via the native Anthropic API
+// (api.anthropic.com), authenticating with a static API key rather than
+// GCP Vertex AI credentials. Distinct from New (Vertex-only) so that
+// Vertex's required project/location parameters are never mistakenly
+// requested for this auth mode.
+func NewWithAPIKey(apiKey, model string, opts ...Option) (*Client, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("anthropicfamily: apiKey is required")
+	}
+
+	o := &clientOpts{logger: logr.Discard()}
+	for _, fn := range opts {
+		fn(o)
+	}
+
+	sdkOpts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if o.httpTimeout > 0 {
+		sdkOpts = append(sdkOpts, option.WithRequestTimeout(o.httpTimeout))
+	}
+	if o.baseTransport != nil {
+		sdkOpts = append(sdkOpts, option.WithHTTPClient(&http.Client{
+			Transport: o.baseTransport,
+			Timeout:   o.httpTimeout,
+		}))
+	}
+	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
+
+	sdk := anthropic.NewClient(sdkOpts...)
 	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
 }
 
@@ -219,7 +261,27 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 		params.Tools = buildAnthropicTools(req.Tools, c.logger)
 	}
 
+	if req.Options.Reasoning != nil && req.Options.Reasoning.Enabled {
+		params.Thinking = resolveThinkingParam(req.Options.Reasoning, anthropic.Model(c.model))
+	}
+
 	return params
+}
+
+// resolveThinkingParam maps a KA ReasoningRequest to the Anthropic thinking
+// parameter, delegating model-tier detection (adaptive-capable vs
+// manual-budget-only) to adk-anthropic-go/converters — the same logic AF
+// uses, avoiding a second, independently-maintained tier-detection table
+// (DD-LLM-005). An explicit BudgetTokens always wins with a manual budget
+// regardless of tier; omitting it lets the per-tier default apply (adaptive
+// on adaptive-capable models, a high-effort manual budget otherwise).
+func resolveThinkingParam(r *llm.ReasoningRequest, model anthropic.Model) anthropic.ThinkingConfigParamUnion {
+	cfg := &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevelHigh}
+	if r.BudgetTokens > 0 {
+		budget := int32(r.BudgetTokens)
+		cfg = &genai.ThinkingConfig{ThinkingBudget: &budget}
+	}
+	return converters.ThinkingConfigToAnthropic(cfg, model).Thinking
 }
 
 // convertMessagesToAnthropic translates Kubernaut's role-tagged message
@@ -266,11 +328,20 @@ func convertMessagesToAnthropic(messages []llm.Message) ([]anthropic.TextBlockPa
 }
 
 // convertAssistantMessage builds the Anthropic assistant message for a
-// single Kubernaut assistant-role message (text and/or tool_use blocks).
-// Returns ok=false when there is nothing to emit (no content, no tool calls).
+// single Kubernaut assistant-role message (thinking, text, and/or tool_use
+// blocks). Returns ok=false when there is nothing to emit (no content, no
+// tool calls, no reasoning).
+//
+// A reasoning block, when present, is always placed FIRST in the content
+// array — the Anthropic API requires the thinking/redacted_thinking block
+// that preceded a tool_use to be replayed before it on the next turn (same
+// failure class as issue #1299: orphaned content blocks on replay).
 func convertAssistantMessage(m llm.Message) (anthropic.MessageParam, bool) {
+	var parts []anthropic.ContentBlockParamUnion
+	if m.Reasoning != nil {
+		parts = append(parts, reasoningToContentBlock(m.Reasoning))
+	}
 	if len(m.ToolCalls) > 0 {
-		var parts []anthropic.ContentBlockParamUnion
 		if m.Content != "" {
 			parts = append(parts, anthropic.NewTextBlock(m.Content))
 		}
@@ -286,9 +357,31 @@ func convertAssistantMessage(m llm.Message) (anthropic.MessageParam, bool) {
 		return anthropic.NewAssistantMessage(parts...), true
 	}
 	if m.Content != "" {
-		return anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)), true
+		parts = append(parts, anthropic.NewTextBlock(m.Content))
+		return anthropic.NewAssistantMessage(parts...), true
+	}
+	if len(parts) > 0 {
+		return anthropic.NewAssistantMessage(parts...), true
 	}
 	return anthropic.MessageParam{}, false
+}
+
+// reasoningToContentBlock converts a captured ReasoningBlock back into the
+// Anthropic content block union used for replay: a visible ThinkingBlockParam
+// when not redacted, or an opaque RedactedThinkingBlockParam otherwise. Both
+// must be replayed byte-for-byte — never inspected or modified.
+func reasoningToContentBlock(r *llm.ReasoningBlock) anthropic.ContentBlockParamUnion {
+	if r.Redacted {
+		return anthropic.ContentBlockParamUnion{
+			OfRedactedThinking: &anthropic.RedactedThinkingBlockParam{Data: r.Signature},
+		}
+	}
+	return anthropic.ContentBlockParamUnion{
+		OfThinking: &anthropic.ThinkingBlockParam{
+			Signature: r.Signature,
+			Thinking:  r.Text,
+		},
+	}
 }
 
 // buildAnthropicTools translates Kubernaut's provider-agnostic tool
@@ -350,6 +443,18 @@ func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
 				Name:      tu.Name,
 				Arguments: string(tu.Input),
 			})
+		case "thinking":
+			tb := block.AsThinking()
+			resp.Message.Reasoning = &llm.ReasoningBlock{
+				Text:      tb.Thinking,
+				Signature: tb.Signature,
+			}
+		case "redacted_thinking":
+			rtb := block.AsRedactedThinking()
+			resp.Message.Reasoning = &llm.ReasoningBlock{
+				Signature: rtb.Data,
+				Redacted:  true,
+			}
 		}
 	}
 	resp.Message.Content = strings.Join(textParts, "")
