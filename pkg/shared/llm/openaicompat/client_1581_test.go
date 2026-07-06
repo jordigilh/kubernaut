@@ -177,6 +177,42 @@ var _ = Describe("openaicompat.Client — #1581", func() {
 			Expect(finalToolCalls[0].Name).To(Equal("look"))
 			Expect(finalToolCalls[0].Arguments).To(Equal(`{"x":1}`))
 		})
+
+		It("UT-KA-1581-017: resolves multiple concurrent tool calls in ascending index order, regardless of chunk arrival order", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				flusher, _ := w.(http.Flusher)
+				// Index 1's fragment arrives before index 0's — the final
+				// resolved order must still be [0, 1], not arrival order.
+				chunks := []string{
+					`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_b","function":{"name":"second","arguments":"{}"}}]}}]}`,
+					`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"first","arguments":"{}"}}]}}]}`,
+					`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+				}
+				for _, c := range chunks {
+					_, _ = w.Write([]byte("data: " + c + "\n\n"))
+					if flusher != nil {
+						flusher.Flush()
+					}
+				}
+				_, _ = w.Write([]byte("data: [DONE]\n\n"))
+			}))
+			client := openaicompat.New("gpt-4o", server.URL, "test-key")
+
+			var finalToolCalls []openaicompat.ToolCall
+			err := client.StreamChat(context.Background(), openaicompat.Request{
+				Messages: []openaicompat.Message{{Role: "user", Content: "hi"}},
+			}, func(ev openaicompat.StreamEvent) bool {
+				if ev.Done && ev.Final != nil {
+					finalToolCalls = ev.Final.Message.ToolCalls
+				}
+				return true
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(finalToolCalls).To(HaveLen(2))
+			Expect(finalToolCalls[0].Name).To(Equal("first"))
+			Expect(finalToolCalls[1].Name).To(Equal("second"))
+		})
 	})
 
 	Describe("reasoning capture — AC3: always capture when the wire response includes it", func() {

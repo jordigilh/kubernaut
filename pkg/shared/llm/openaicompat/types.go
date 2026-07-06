@@ -90,6 +90,20 @@ type Response struct {
 	Usage        TokenUsage
 }
 
+// Wire-protocol finish_reason values, as defined by the OpenAI Chat
+// Completions API and mirrored by every compatible provider. Response.
+// FinishReason is passed through verbatim from the wire (unnormalized) so
+// each consumer (AF, KA) maps it to its own canonical type; these constants
+// are the single source of truth for the literal values both consumers
+// switch on, replacing what were previously two independently-typed copies
+// of the same magic strings.
+const (
+	FinishReasonStop          = "stop"
+	FinishReasonLength        = "length"
+	FinishReasonToolCalls     = "tool_calls"
+	FinishReasonContentFilter = "content_filter"
+)
+
 // StreamEvent represents a single unit of streamed output. Delta carries an
 // incremental text fragment; Done marks the terminal event, at which point
 // Final holds the fully-accumulated Response (mirroring the non-streaming

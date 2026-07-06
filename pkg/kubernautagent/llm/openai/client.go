@@ -227,11 +227,11 @@ func convertToolCalls(calls []openaicompat.ToolCall) []llm.ToolCall {
 // finish_reason string to Kubernaut's canonical FinishReason constants.
 func normalizeFinishReason(raw string) string {
 	switch raw {
-	case "stop":
+	case openaicompat.FinishReasonStop:
 		return llm.FinishReasonStop
-	case "length":
+	case openaicompat.FinishReasonLength:
 		return llm.FinishReasonLength
-	case "tool_calls":
+	case openaicompat.FinishReasonToolCalls:
 		return llm.FinishReasonToolCalls
 	default:
 		if raw != "" {

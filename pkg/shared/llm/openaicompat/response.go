@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -222,7 +223,11 @@ func accumulateToolCallDeltas(toolCalls []chatChunkToolCall, accumulators map[in
 }
 
 // buildFinishResponse builds the terminal Response once a choice reports a
-// finish_reason, resolving all accumulated tool calls.
+// finish_reason, resolving all accumulated tool calls in ascending index
+// order. Indices come from the provider's own per-tool-call "index" field
+// and are not guaranteed to be contiguous from zero (a provider could, in
+// principle, skip or reorder indices across chunks), so tool calls are
+// collected by sorted key rather than assumed to span [0, len(accumulators)).
 func buildFinishResponse(finishReason *string, accumulators map[int]*toolCallAccumulator, reasoning string) *Response {
 	resp := &Response{
 		Message: Message{Role: "assistant", Reasoning: reasoning},
@@ -230,11 +235,15 @@ func buildFinishResponse(finishReason *string, accumulators map[int]*toolCallAcc
 	if finishReason != nil {
 		resp.FinishReason = *finishReason
 	}
-	for i := 0; i < len(accumulators); i++ {
-		acc, ok := accumulators[i]
-		if !ok {
-			continue
-		}
+
+	indices := make([]int, 0, len(accumulators))
+	for i := range accumulators {
+		indices = append(indices, i)
+	}
+	sort.Ints(indices)
+
+	for _, i := range indices {
+		acc := accumulators[i]
 		resp.Message.ToolCalls = append(resp.Message.ToolCalls, ToolCall{
 			ID:        acc.id,
 			Name:      acc.name,

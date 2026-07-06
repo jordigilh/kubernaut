@@ -287,13 +287,13 @@ func parseFunctionCall(tc openaicompat.ToolCall) *genai.Part {
 
 func mapFinishReason(reason string) genai.FinishReason {
 	switch reason {
-	case "stop":
+	case openaicompat.FinishReasonStop:
 		return genai.FinishReasonStop
-	case "length":
+	case openaicompat.FinishReasonLength:
 		return genai.FinishReasonMaxTokens
-	case "tool_calls":
+	case openaicompat.FinishReasonToolCalls:
 		return genai.FinishReasonStop
-	case "content_filter":
+	case openaicompat.FinishReasonContentFilter:
 		return genai.FinishReasonSafety
 	case "":
 		return genai.FinishReasonUnspecified
