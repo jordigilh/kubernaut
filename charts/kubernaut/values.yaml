@@ -9,6 +9,36 @@ global:
   imagePullSecrets: []
   nodeSelector: {}
   tolerations: []
+  # -- Shared MCP Gateway configuration, used by every fleet-integration-
+  # capable service (gateway, signalprocessing, remediationorchestrator,
+  # effectivenessmonitor, apifrontend, fleetmetadatacache). All of these
+  # point at the *same* physical MCP Gateway instance, so in practice they
+  # share one endpoint/type/CA/OAuth2 client -- set it once here instead of
+  # duplicating it per service. Each service's own `fleet.*` (or, for
+  # fleetmetadatacache, top-level equivalents) still takes precedence when
+  # set, for the rare case a service needs a different value. Per-service
+  # `fleet.enabled` / `fleet.oauth2.enabled` (fleet integration on/off)
+  # remains independent and is NOT controlled here.
+  fleet:
+    # -- Shared MCP Gateway endpoint URL, used as the fallback when a
+    # service's own fleet.mcpGatewayEndpoint is unset.
+    mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
+    # -- Shared MCP Gateway type ("eaigw" or "kuadrant"), used as the
+    # fallback when a service's own fleet.mcpGatewayType is unset.
+    mcpGatewayType: ""
+    # -- Shared CA bundle path for verifying the MCP Gateway's TLS
+    # certificate, used as the fallback when a service's own
+    # fleet.tlsCAFile is unset. Defaults to the shared inter-service CA
+    # (/etc/tls-ca/ca.crt) when left empty everywhere.
+    tlsCAFile: ""
+    oauth2:
+      tokenURL: ""
+      credentialsSecretRef: ""
+      scopes: []
+      # -- Path to a CA bundle for verifying tokenURL's TLS certificate.
+      # Defaults to the shared inter-service CA (/etc/tls-ca/ca.crt) when
+      # left empty, same as each service's own oauth2.tlsCAFile fallback.
+      tlsCAFile: ""
 
 nameOverride: ""
 fullnameOverride: ""
@@ -26,7 +56,13 @@ tls:
   mode: hook  # "hook", "cert-manager", or "manual"
   certManager:
     issuerRef:
-      name: ""    # required when tls.mode=cert-manager (e.g., "letsencrypt-prod" or "selfsigned-issuer")
+      # -- Usually safe to leave empty when tls.mode=cert-manager: during a
+      # real `helm install`/`upgrade`, the chart auto-selects the cluster's
+      # Issuer/ClusterIssuer via `lookup` if exactly one exists. Set this
+      # explicitly (e.g., "letsencrypt-prod" or "selfsigned-issuer") if you
+      # render via `helm template` for GitOps (ArgoCD, Flux), have multiple
+      # issuers, or want to pin a specific one.
+      name: ""
       kind: ClusterIssuer
       group: cert-manager.io
   # Issue #753: Inter-service TLS is always enabled (mandatory).
@@ -108,13 +144,16 @@ gateway:
     backend: ""
     # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
     endpoint: ""
-    # -- MCP Gateway endpoint URL for federated scope checks. Required when fleet.enabled=true.
+    # -- MCP Gateway endpoint URL for federated scope checks. Required when
+    # fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    # -- MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP Gateway).
+    # -- MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP
+    # Gateway). Falls back to global.fleet.mcpGatewayType when unset.
     mcpGatewayType: ""
     # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate when it
-    # presents one not signed by a public/system CA. Defaults to the shared
-    # inter-service CA already mounted at /etc/tls-ca/ca.crt when left empty.
+    # presents one not signed by a public/system CA. Falls back to
+    # global.fleet.tlsCAFile, then to the shared inter-service CA already mounted
+    # at /etc/tls-ca/ca.crt, when unset.
     tlsCAFile: ""
     # -- OAuth2 client credentials for MCP Gateway authentication.
     oauth2:
@@ -254,7 +293,7 @@ signalprocessing:
   # informer (see the RBAC grant below).
   fleet:
     endpoint: ""       # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    mcpGatewayType: "" # "eaigw" or "kuadrant"
+    mcpGatewayType: "" # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
     namespace: ""      # restricts the ClusterRegistry CRD watch; empty watches all namespaces
     oauth2:
       enabled: false
@@ -324,13 +363,16 @@ remediationorchestrator:
     backend: ""
     # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
     endpoint: ""
-    # -- MCP Gateway endpoint URL for reading remote resource specs (spec hash). Required when fleet.enabled=true.
+    # -- MCP Gateway endpoint URL for reading remote resource specs (spec hash).
+    # Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    # -- MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP Gateway).
+    # -- MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP
+    # Gateway). Falls back to global.fleet.mcpGatewayType when unset.
     mcpGatewayType: ""
     # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate when it
-    # presents one not signed by a public/system CA. Defaults to the shared
-    # inter-service CA already mounted at /etc/tls-ca/ca.crt when left empty.
+    # presents one not signed by a public/system CA. Falls back to
+    # global.fleet.tlsCAFile, then to the shared inter-service CA already
+    # mounted at /etc/tls-ca/ca.crt, when unset.
     tlsCAFile: ""
     # -- OAuth2 client credentials for MCP Gateway authentication.
     oauth2:
@@ -426,10 +468,12 @@ effectivenessmonitor:
   # CRs directly via a ClusterRegistry informer (see the RBAC grant below).
   fleet:
     enabled: false
+    # -- Optional: falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    mcpGatewayType: ""      # "eaigw" or "kuadrant"
-    # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Defaults
-    # to the shared inter-service CA already mounted at /etc/tls-ca/ca.crt when left empty.
+    mcpGatewayType: ""      # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
+    # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls
+    # back to global.fleet.tlsCAFile, then to the shared inter-service CA already
+    # mounted at /etc/tls-ca/ca.crt, when unset.
     tlsCAFile: ""
     oauth2:
       enabled: false
@@ -537,18 +581,6 @@ kubernautAgent:
     #   model: "gpt-4o-mini"
     #   endpoint: ""
     #   apiKey: ""
-  # -- Multi-cluster fleet configuration (ADR-065).
-  # When enabled, KA discovers remote cluster tools via the MCP Gateway's
-  # tools/list and registers them as BridgeTools alongside local K8s tools.
-  # Requires an external MCP Gateway (Envoy AI Gateway) to be deployed separately.
-  fleet:
-    # -- MCP Gateway endpoint URL. Empty disables fleet integration.
-    endpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080"
-    # -- OAuth2 client credentials for MCP Gateway authentication.
-    oauth2:
-      enabled: false
-      tokenURL: ""              # e.g., "https://dex.kubernaut-system.svc/token"
-      credentialsSecretRef: ""  # K8s Secret with keys: client-id, client-secret
 
 # -- AuthWebhook admission controller
 authwebhook:
@@ -634,6 +666,9 @@ fleetmetadatacache:
     pullPolicy: IfNotPresent
   syncInterval: "30s"
   keyTTL: "45s"
+  # -- Required when fleetmetadatacache.enabled=true (this service's entire
+  # purpose is polling remote clusters via the MCP Gateway); falls back to
+  # global.fleet.mcpGatewayEndpoint when unset.
   mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
   gatewayType: "eaigw"  # MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP Gateway)
   valkeyAddr: ""  # e.g., "valkey:6379" — uses shared Valkey instance
@@ -692,7 +727,40 @@ monitoring:
 # -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
 networkPolicies:
   enabled: true
+  # -- Usually safe to leave empty: during a real `helm install`/`upgrade`,
+  # the chart auto-discovers the kube-apiserver's real backend endpoint
+  # IP(s) via `lookup` against the live "kubernetes" Endpoints object, so
+  # most users never need to set this. Set it explicitly only if:
+  #   (a) you render manifests via `helm template` for GitOps (ArgoCD,
+  #       Flux) -- `lookup` has no live cluster access in that mode, or
+  #   (b) the Helm installer ServiceAccount lacks permission to read
+  #       Endpoints in the default namespace, or
+  #   (c) auto-discovery picks the wrong address for some other reason.
+  # CAUTION if setting manually: on most CNIs (kindnetd, Calico, Cilium,
+  # etc.) NetworkPolicy ipBlock rules are evaluated against the post-DNAT
+  # destination, so this must be the kube-apiserver's real backend endpoint
+  # IP (see `kubectl get endpoints kubernetes -o wide`), NOT the
+  # "kubernetes" Service's ClusterIP -- the ClusterIP is silently ignored by
+  # most implementations. See PR #1571 for the investigation trail. Use
+  # this field for single-control-plane clusters; use apiServerCIDRs below
+  # for HA (setting either disables auto-discovery for both).
   apiServerCIDR: ""
+  # -- Additional API server backend endpoint IPs as /32 CIDRs, for HA
+  # clusters (the norm for real production deployments) where the
+  # "kubernetes" Service fronts multiple control-plane nodes -- every
+  # backend IP needs its own allow rule. Merged with apiServerCIDR above.
+  # Only needed in the same cases as apiServerCIDR above (auto-discovery
+  # already collects every backend address, not just one). If setting
+  # manually, populate from all addresses in `kubectl get endpoints
+  # kubernetes -o jsonpath='{.subsets[0].addresses[*].ip}'`.
+  apiServerCIDRs: []
+  # -- Port the kube-apiserver's real backend endpoint(s) listen on (commonly
+  # 6443, not the "kubernetes" Service's port 443). 0 means "auto": use the
+  # port from the same live Endpoints lookup as apiServerCIDR (falling back
+  # to 443 only if that's unavailable too, e.g. `helm template`/GitOps).
+  # Assumes all control-plane nodes listen on the same port, which holds for
+  # standard kubeadm HA setups.
+  apiServerPort: 0
   monitoring:
     namespace: ""
     prometheusPort: 9090
@@ -747,10 +815,12 @@ apifrontend:
   # ClusterRegistry informer (see the RBAC grant below).
   fleet:
     enabled: false
+    # -- Optional: falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    mcpGatewayType: ""      # "eaigw" or "kuadrant"
-    # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Defaults
-    # to the shared inter-service CA already mounted at /etc/tls-ca/ca.crt when left empty.
+    mcpGatewayType: ""      # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
+    # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls
+    # back to global.fleet.tlsCAFile, then to the shared inter-service CA already
+    # mounted at /etc/tls-ca/ca.crt, when unset.
     tlsCAFile: ""
     oauth2:
       enabled: false

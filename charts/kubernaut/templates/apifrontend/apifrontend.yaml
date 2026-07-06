@@ -1,10 +1,12 @@
 {{- if .Values.apifrontend.enabled }}
+{{- $apifrontendOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.apifrontend.fleet.oauth2) | fromYaml }}
+{{- $apifrontendFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.apifrontend.fleet) | fromYaml }}
 {{- if and .Values.apifrontend.fleet.enabled .Values.apifrontend.fleet.oauth2.enabled }}
-{{- if not .Values.apifrontend.fleet.oauth2.tokenURL }}
-{{- fail "apifrontend.fleet.oauth2.tokenURL is required when apifrontend.fleet.oauth2.enabled=true" }}
+{{- if not $apifrontendOauth2.tokenURL }}
+{{- fail "apifrontend.fleet.oauth2.tokenURL is required when apifrontend.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
-{{- if not .Values.apifrontend.fleet.oauth2.credentialsSecretRef }}
-{{- fail "apifrontend.fleet.oauth2.credentialsSecretRef is required when apifrontend.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- if not $apifrontendOauth2.credentialsSecretRef }}
+{{- fail "apifrontend.fleet.oauth2.credentialsSecretRef is required when apifrontend.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
 {{- end }}
 {{- end }}
 ---
@@ -76,7 +78,7 @@ rules:
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]
     verbs: ["create"]
-  {{- if eq .Values.apifrontend.fleet.mcpGatewayType "kuadrant" }}
+  {{- if eq $apifrontendFleet.mcpGatewayType "kuadrant" }}
   # BR-FLEET-054: AF's ClusterRegistry watches MCPServerRegistration CRs
   # directly via a dynamic informer when the Kuadrant MCP Gateway is used.
   - apiGroups: ["mcp.kuadrant.io"]
@@ -189,23 +191,23 @@ data:
     {{- if .Values.apifrontend.fleet.enabled }}
     fleet:
       enabled: true
-      mcpGatewayEndpoint: {{ .Values.apifrontend.fleet.mcpGatewayEndpoint | quote }}
-      {{- if .Values.apifrontend.fleet.mcpGatewayType }}
-      mcpGatewayType: {{ .Values.apifrontend.fleet.mcpGatewayType | quote }}
+      mcpGatewayEndpoint: {{ $apifrontendFleet.mcpGatewayEndpoint | quote }}
+      {{- if $apifrontendFleet.mcpGatewayType }}
+      mcpGatewayType: {{ $apifrontendFleet.mcpGatewayType | quote }}
       {{- end }}
-      tlsCAFile: {{ .Values.apifrontend.fleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      tlsCAFile: {{ $apifrontendFleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- if .Values.apifrontend.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
-        tokenURL: {{ .Values.apifrontend.fleet.oauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ .Values.apifrontend.fleet.oauth2.credentialsSecretRef | quote }}
-        {{- if .Values.apifrontend.fleet.oauth2.scopes }}
+        tokenURL: {{ $apifrontendOauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ $apifrontendOauth2.credentialsSecretRef | quote }}
+        {{- if $apifrontendOauth2.scopes }}
         scopes:
-          {{- range .Values.apifrontend.fleet.oauth2.scopes }}
+          {{- range $apifrontendOauth2.scopes }}
           - {{ . | quote }}
           {{- end }}
         {{- end }}
-        tlsCAFile: {{ .Values.apifrontend.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+        tlsCAFile: {{ $apifrontendOauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- end }}
     {{- end }}
 ---
@@ -291,7 +293,7 @@ spec:
               readOnly: true
             {{- if .Values.apifrontend.fleet.oauth2.enabled }}
             - name: oauth2-credentials
-              mountPath: "/etc/apifrontend/{{ .Values.apifrontend.fleet.oauth2.credentialsSecretRef }}"
+              mountPath: "/etc/apifrontend/{{ $apifrontendOauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
             {{- end }}
@@ -336,7 +338,7 @@ spec:
         {{- if .Values.apifrontend.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
-            secretName: {{ .Values.apifrontend.fleet.oauth2.credentialsSecretRef }}
+            secretName: {{ $apifrontendOauth2.credentialsSecretRef }}
         {{- end }}
         {{- end }}
 ---
