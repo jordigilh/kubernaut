@@ -26,18 +26,29 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 )
 
+// TP-783: Close() behavior across every llm.Client implementation. The
+// langchaingo.Adapter-specific sub-tests that lived here (UT-KA-783-CL-001/
+// 003/004) were retired along with the langchaingo package itself (#1581
+// completion of #1578's deprecation); anthropicfamily.Client and
+// kaopenai.Client — both native, non-langchaingo implementations — replace
+// its Close() coverage below.
 var _ = Describe("llm.Client Close() — TP-783 (#783)", func() {
 
-	Describe("UT-KA-783-CL-006: anthropicfamily.Client.Close is no-op", func() {
-		It("should return nil (Anthropic SDK has no closeable resources)", func() {
-			var client llm.Client = (*anthropicfamily.Client)(nil)
-			// Compile-time check is sufficient; we cannot construct a real
-			// client without GCP credentials. The interface satisfaction
-			// proves Close() exists on the type.
-			_ = client
+	Describe("UT-KA-783-CL-006: anthropicfamily.Client.Close is a no-op", func() {
+		It("should return nil for a client constructed via the native API-key auth mode", func() {
+			client, err := anthropicfamily.NewWithAPIKey("sk-ant-fake-key", "claude-sonnet-4-6")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client.Close()).To(Succeed())
+		})
+	})
+
+	Describe("UT-KA-783-CL-007: kaopenai.Client.Close is a no-op", func() {
+		It("should return nil for the shared-core-backed OpenAI-compatible wrapper", func() {
+			client := kaopenai.New("gpt-4o", "https://example.invalid", "fake-key")
+			Expect(client.Close()).To(Succeed())
 		})
 	})
 
@@ -60,51 +71,6 @@ var _ = Describe("llm.Client Close() — TP-783 (#783)", func() {
 			}}
 			ic := llm.NewInstrumentedClient(inner)
 			Expect(ic.Close()).To(MatchError(ContainSubstring("close failed")))
-		})
-	})
-
-	Describe("UT-KA-783-CL-001: Adapter.Close calls inner model Close if present", func() {
-		It("should call the model's Close when the model implements Close() error", func() {
-			// langchaingo.Adapter requires a real provider to construct,
-			// so we test the pattern via InstrumentedClient wrapping.
-			// The Adapter's Close method uses type-assertion on model;
-			// we validate the interface satisfaction here.
-			var _ llm.Client = (*langchaingo.Adapter)(nil)
-		})
-	})
-
-	Describe("UT-KA-783-CL-003: Adapter.Close calls closeFn if set", func() {
-		It("should invoke the WithCloser function during Close", func() {
-			var closerCalled atomic.Bool
-			adapter, err := langchaingo.New("openai", "http://localhost:11434", "test-model", "test-key",
-				langchaingo.WithCloser(func() error {
-					closerCalled.Store(true)
-					return nil
-				}),
-			)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(adapter.Close()).To(Succeed())
-			Expect(closerCalled.Load()).To(BeTrue(),
-				"Adapter.Close must call the closeFn provided via WithCloser")
-		})
-	})
-
-	Describe("UT-KA-783-CL-004: Adapter.Close is idempotent", func() {
-		It("should not panic on double close", func() {
-			adapter, err := langchaingo.New("openai", "http://localhost:11434", "test-model", "test-key")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(adapter.Close()).To(Succeed())
-			Expect(func() { _ = adapter.Close() }).NotTo(Panic(),
-				"Double close must not panic")
-		})
-	})
-
-	Describe("UT-KA-783-CL-002: Adapter.Close no-op when model lacks Close", func() {
-		It("should return nil when the underlying model does not implement Close", func() {
-			adapter, err := langchaingo.New("openai", "http://localhost:11434", "test-model", "test-key")
-			Expect(err).NotTo(HaveOccurred())
-			// openai model does not implement Close() error
-			Expect(adapter.Close()).To(Succeed())
 		})
 	})
 })

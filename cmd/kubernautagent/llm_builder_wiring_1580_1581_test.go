@@ -45,7 +45,7 @@ func TestBuildLLMClientFromConfig_AnthropicNative_Wiring(t *testing.T) {
 		t.Fatal("buildLLMClientFromConfig(anthropic) returned nil client")
 	}
 	if _, ok := client.(*anthropicfamily.Client); !ok {
-		t.Fatalf("expected *anthropicfamily.Client, got %T — provider %q must dispatch to the native constructor, not langchaingo",
+		t.Fatalf("expected *anthropicfamily.Client, got %T — provider %q must dispatch to the native constructor",
 			client, types.LLMProviderAnthropic)
 	}
 }
@@ -88,27 +88,30 @@ func TestBuildLLMClientFromConfig_OpenAICompat_Wiring(t *testing.T) {
 			t.Fatalf("buildLLMClientFromConfig(%s) returned nil client", provider)
 		}
 		if _, ok := client.(*kaopenai.Client); !ok {
-			t.Fatalf("provider %q: expected *kaopenai.Client, got %T — must dispatch to the shared-core wrapper, not langchaingo",
+			t.Fatalf("provider %q: expected *kaopenai.Client, got %T — must dispatch to the shared-core wrapper",
 				provider, client)
 		}
 	}
 }
 
-// UT-KA-1581-002b: an unrecognized provider (Gemini native, not yet migrated
-// off langchaingo) still falls through to the default branch, proving the
-// new cases above are additive and do not regress the fallback path.
-func TestBuildLLMClientFromConfig_UnmigratedProvider_FallsThroughToDefault(t *testing.T) {
+// UT-KA-1581-002b: an unrecognized provider (Gemini native, never had a
+// langchaingo case either) still falls through to the default branch and
+// gets an explicit error, proving the new anthropic/openai cases above are
+// additive and the removed-langchaingo default path fails loudly rather
+// than silently.
+func TestBuildLLMClientFromConfig_UnsupportedProvider_ReturnsError(t *testing.T) {
 	cfg := types.LLMConfig{
 		Provider: types.LLMProviderGemini,
 		Model:    "gemini-not-yet-migrated",
 	}
 
+	// Gemini has no dedicated case in buildLLMClientFromConfig (only
+	// anthropic/openai/openai-compatible are wired) and langchaingo has been
+	// fully removed (#1580/#1581 M4), so the default case must return an
+	// explicit "unsupported LLM provider" error rather than silently falling
+	// through to a removed dependency.
 	_, err := buildLLMClientFromConfig(context.Background(), cfg)
-	// langchaingo has no "gemini" case (only "openai"/"ollama"/"azure"/
-	// "vertex"/"anthropic"/"bedrock"/"huggingface"/"mistral") — the point of
-	// this test is that Gemini reaches langchaingo.New and fails there
-	// ("unsupported LLM provider"), not that this call succeeds.
 	if err == nil {
-		t.Fatal("expected an error for gemini via the (pre-existing, unrelated) langchaingo fallback path")
+		t.Fatal("expected an error for gemini: no langchaingo fallback exists anymore")
 	}
 }

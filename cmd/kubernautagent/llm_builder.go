@@ -31,7 +31,6 @@ import (
 	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -70,12 +69,7 @@ func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Cli
 	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
 		return buildOpenAICompatClient(cfg)
 	default:
-		providerOpts, err := buildLLMProviderOpts(cfg)
-		if err != nil {
-			return nil, err
-		}
-		return langchaingo.New(cfg.Provider, cfg.Endpoint, cfg.Model, cfg.APIKey,
-			providerOpts...)
+		return nil, fmt.Errorf("unsupported LLM provider: %q", cfg.Provider)
 	}
 }
 
@@ -127,49 +121,6 @@ func buildOpenAICompatClient(cfg types.LLMConfig) (llm.Client, error) {
 	}
 
 	return kaopenai.New(cfg.Model, cfg.Endpoint, cfg.APIKey, opts...), nil
-}
-
-// buildLLMProviderOpts returns provider-specific LangChainGo options.
-func buildLLMProviderOpts(cfg types.LLMConfig) ([]langchaingo.Option, error) {
-	var opts []langchaingo.Option
-	if cfg.AzureAPIVersion != "" {
-		opts = append(opts, langchaingo.WithAzureAPIVersion(cfg.AzureAPIVersion))
-	}
-	if cfg.VertexProject != "" {
-		opts = append(opts, langchaingo.WithVertexProject(cfg.VertexProject))
-	}
-	if cfg.VertexLocation != "" {
-		opts = append(opts, langchaingo.WithVertexLocation(cfg.VertexLocation))
-	}
-	if cfg.BedrockRegion != "" {
-		opts = append(opts, langchaingo.WithBedrockRegion(cfg.BedrockRegion))
-	}
-
-	const defaultLLMClientTimeout = 120 * time.Second
-
-	timeout := defaultLLMClientTimeout
-	if cfg.TimeoutSeconds > 0 {
-		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
-	}
-
-	customTransport, err := buildTransportChain(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("llm transport chain: %w", err)
-	}
-	httpClient := &http.Client{Timeout: timeout}
-	if customTransport != nil {
-		httpClient.Transport = customTransport
-	}
-	opts = append(opts, langchaingo.WithHTTPClient(httpClient))
-	if customTransport != nil {
-		opts = append(opts, langchaingo.WithCloser(func() error {
-			if t, ok := customTransport.(interface{ CloseIdleConnections() }); ok {
-				t.CloseIdleConnections()
-			}
-			return nil
-		}))
-	}
-	return opts, nil
 }
 
 // buildTransportChain composes the HTTP transport stack from the merged config,
