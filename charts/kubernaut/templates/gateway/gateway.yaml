@@ -1,9 +1,16 @@
-{{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
-{{- if not .Values.gateway.fleet.oauth2.tokenURL }}
-{{- fail "gateway.fleet.oauth2.tokenURL is required when gateway.fleet.oauth2.enabled=true" }}
+{{- $gatewayOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.gateway.fleet.oauth2) | fromYaml }}
+{{- $gatewayFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.gateway.fleet) | fromYaml }}
+{{- if .Values.gateway.fleet.enabled }}
+{{- if not $gatewayFleet.mcpGatewayEndpoint }}
+{{- fail "gateway.fleet.mcpGatewayEndpoint is required when gateway.fleet.enabled=true (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
 {{- end }}
-{{- if not .Values.gateway.fleet.oauth2.credentialsSecretRef }}
-{{- fail "gateway.fleet.oauth2.credentialsSecretRef is required when gateway.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- if .Values.gateway.fleet.oauth2.enabled }}
+{{- if not $gatewayOauth2.tokenURL }}
+{{- fail "gateway.fleet.oauth2.tokenURL is required when gateway.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
+{{- end }}
+{{- if not $gatewayOauth2.credentialsSecretRef }}
+{{- fail "gateway.fleet.oauth2.credentialsSecretRef is required when gateway.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
+{{- end }}
 {{- end }}
 {{- end }}
 ---
@@ -70,23 +77,23 @@ data:
       {{- else if eq (default "fleetmetadatacache" .Values.gateway.fleet.backend) "fleetmetadatacache" }}
       endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
       {{- end }}
-      mcpGatewayEndpoint: {{ .Values.gateway.fleet.mcpGatewayEndpoint | quote }}
-      {{- if .Values.gateway.fleet.mcpGatewayType }}
-      mcpGatewayType: {{ .Values.gateway.fleet.mcpGatewayType | quote }}
+      mcpGatewayEndpoint: {{ $gatewayFleet.mcpGatewayEndpoint | quote }}
+      {{- if $gatewayFleet.mcpGatewayType }}
+      mcpGatewayType: {{ $gatewayFleet.mcpGatewayType | quote }}
       {{- end }}
-      tlsCAFile: {{ .Values.gateway.fleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      tlsCAFile: {{ $gatewayFleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- if .Values.gateway.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
-        tokenURL: {{ .Values.gateway.fleet.oauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ .Values.gateway.fleet.oauth2.credentialsSecretRef | quote }}
-        {{- if .Values.gateway.fleet.oauth2.scopes }}
+        tokenURL: {{ $gatewayOauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ $gatewayOauth2.credentialsSecretRef | quote }}
+        {{- if $gatewayOauth2.scopes }}
         scopes:
-          {{- range .Values.gateway.fleet.oauth2.scopes }}
+          {{- range $gatewayOauth2.scopes }}
           - {{ . | quote }}
           {{- end }}
         {{- end }}
-        tlsCAFile: {{ .Values.gateway.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+        tlsCAFile: {{ $gatewayOauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- end }}
     {{- end }}
 ---
@@ -220,7 +227,7 @@ spec:
               readOnly: true
             {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
             - name: oauth2-credentials
-              mountPath: "/etc/gateway/{{ .Values.gateway.fleet.oauth2.credentialsSecretRef }}"
+              mountPath: "/etc/gateway/{{ $gatewayOauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
           livenessProbe:
@@ -252,7 +259,7 @@ spec:
         {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
-            secretName: {{ .Values.gateway.fleet.oauth2.credentialsSecretRef }}
+            secretName: {{ $gatewayOauth2.credentialsSecretRef }}
         {{- end }}
 ---
 apiVersion: v1

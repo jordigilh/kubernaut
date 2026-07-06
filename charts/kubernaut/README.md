@@ -317,6 +317,17 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `global.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `global.nodeSelector` | Global node selector | `{}` |
 | `global.tolerations` | Global tolerations | `[]` |
+| `global.fleet.mcpGatewayEndpoint` | Shared MCP Gateway endpoint URL, used as fallback when a service's own `fleet.mcpGatewayEndpoint` is unset | `""` |
+| `global.fleet.mcpGatewayType` | Shared MCP Gateway type (`eaigw` or `kuadrant`), used as fallback when a service's own `fleet.mcpGatewayType` is unset | `""` |
+| `global.fleet.tlsCAFile` | Shared CA bundle for verifying the MCP Gateway's TLS cert, used as fallback when a service's own `fleet.tlsCAFile` is unset | `""` |
+| `global.fleet.oauth2.tokenURL` | Shared MCP Gateway OAuth2 token URL, used as fallback when a service's own `fleet.oauth2.tokenURL` is unset | `""` |
+| `global.fleet.oauth2.credentialsSecretRef` | Shared MCP Gateway OAuth2 credentials Secret (keys: `client-id`, `client-secret`), used as fallback | `""` |
+| `global.fleet.oauth2.scopes` | Shared MCP Gateway OAuth2 scopes, used as fallback | `[]` |
+| `global.fleet.oauth2.tlsCAFile` | Shared CA bundle for verifying `tokenURL`'s TLS cert, used as fallback | `""` |
+
+Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remediationorchestrator`, `effectivenessmonitor`, `apifrontend`, `fleetmetadatacache`) points at the same physical MCP Gateway instance, so set its endpoint, type, CA bundle, and OAuth2 credentials once here instead of duplicating them per service. Each service's own `fleet.mcpGatewayEndpoint` / `fleet.mcpGatewayType` / `fleet.tlsCAFile` / `fleet.oauth2.*` (or, for `fleetmetadatacache`, top-level equivalents) still takes precedence when set. Per-service `fleet.enabled` / `fleet.oauth2.enabled` (fleet integration on/off) remains independent per service and is not controlled by these globals.
+
+`gateway.fleet.mcpGatewayEndpoint`, `remediationorchestrator.fleet.mcpGatewayEndpoint`, and `fleetmetadatacache.mcpGatewayEndpoint` are required (directly or via the global fallback) when their respective `fleet.enabled` / `fleetmetadatacache.enabled` is `true` — `helm install`/`upgrade` fails fast with a remediation message if neither is set. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
 
 ### Demo Content
 

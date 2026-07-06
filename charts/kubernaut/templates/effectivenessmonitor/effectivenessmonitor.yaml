@@ -1,10 +1,12 @@
 {{- include "kubernaut.monitoring.validate" . -}}
+{{- $effectivenessmonitorOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.effectivenessmonitor.fleet.oauth2) | fromYaml }}
+{{- $effectivenessmonitorFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.effectivenessmonitor.fleet) | fromYaml }}
 {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
-{{- if not .Values.effectivenessmonitor.fleet.oauth2.tokenURL }}
-{{- fail "effectivenessmonitor.fleet.oauth2.tokenURL is required when effectivenessmonitor.fleet.oauth2.enabled=true" }}
+{{- if not $effectivenessmonitorOauth2.tokenURL }}
+{{- fail "effectivenessmonitor.fleet.oauth2.tokenURL is required when effectivenessmonitor.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
-{{- if not .Values.effectivenessmonitor.fleet.oauth2.credentialsSecretRef }}
-{{- fail "effectivenessmonitor.fleet.oauth2.credentialsSecretRef is required when effectivenessmonitor.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- if not $effectivenessmonitorOauth2.credentialsSecretRef }}
+{{- fail "effectivenessmonitor.fleet.oauth2.credentialsSecretRef is required when effectivenessmonitor.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
 {{- end }}
 {{- end }}
 ---
@@ -48,23 +50,23 @@ data:
     {{- if .Values.effectivenessmonitor.fleet.enabled }}
     fleet:
       enabled: true
-      mcpGatewayEndpoint: {{ .Values.effectivenessmonitor.fleet.mcpGatewayEndpoint | quote }}
-      {{- if .Values.effectivenessmonitor.fleet.mcpGatewayType }}
-      mcpGatewayType: {{ .Values.effectivenessmonitor.fleet.mcpGatewayType | quote }}
+      mcpGatewayEndpoint: {{ $effectivenessmonitorFleet.mcpGatewayEndpoint | quote }}
+      {{- if $effectivenessmonitorFleet.mcpGatewayType }}
+      mcpGatewayType: {{ $effectivenessmonitorFleet.mcpGatewayType | quote }}
       {{- end }}
-      tlsCAFile: {{ .Values.effectivenessmonitor.fleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      tlsCAFile: {{ $effectivenessmonitorFleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- if .Values.effectivenessmonitor.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
-        tokenURL: {{ .Values.effectivenessmonitor.fleet.oauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ .Values.effectivenessmonitor.fleet.oauth2.credentialsSecretRef | quote }}
-        {{- if .Values.effectivenessmonitor.fleet.oauth2.scopes }}
+        tokenURL: {{ $effectivenessmonitorOauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ $effectivenessmonitorOauth2.credentialsSecretRef | quote }}
+        {{- if $effectivenessmonitorOauth2.scopes }}
         scopes:
-          {{- range .Values.effectivenessmonitor.fleet.oauth2.scopes }}
+          {{- range $effectivenessmonitorOauth2.scopes }}
           - {{ . | quote }}
           {{- end }}
         {{- end }}
-        tlsCAFile: {{ .Values.effectivenessmonitor.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+        tlsCAFile: {{ $effectivenessmonitorOauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- end }}
     {{- end }}
 {{/* DEPRECATED v1.4 (Issue #848): OCP service-ca inject-cabundle ConfigMap.
@@ -138,7 +140,7 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if eq .Values.effectivenessmonitor.fleet.mcpGatewayType "kuadrant" }}
+  {{- if eq $effectivenessmonitorFleet.mcpGatewayType "kuadrant" }}
   # BR-FLEET-054: EM's ClusterRegistry watches MCPServerRegistration CRs
   # directly via a dynamic informer when the Kuadrant MCP Gateway is used.
   - apiGroups: ["mcp.kuadrant.io"]
@@ -279,7 +281,7 @@ spec:
               readOnly: true
             {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
             - name: oauth2-credentials
-              mountPath: "/etc/effectivenessmonitor/{{ .Values.effectivenessmonitor.fleet.oauth2.credentialsSecretRef }}"
+              mountPath: "/etc/effectivenessmonitor/{{ $effectivenessmonitorOauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
           resources:
@@ -300,7 +302,7 @@ spec:
         {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
-            secretName: {{ .Values.effectivenessmonitor.fleet.oauth2.credentialsSecretRef }}
+            secretName: {{ $effectivenessmonitorOauth2.credentialsSecretRef }}
         {{- end }}
 {{/* DEPRECATED v1.4 (Issue #848): OCP monitoring RBAC block. Removed in v1.5. */}}
 {{- if include "kubernaut.monitoring.ocpRbac" . }}

@@ -1,9 +1,11 @@
+{{- $signalprocessingOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.signalprocessing.fleet.oauth2) | fromYaml }}
+{{- $signalprocessingFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.signalprocessing.fleet) | fromYaml }}
 {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
-{{- if not .Values.signalprocessing.fleet.oauth2.tokenURL }}
-{{- fail "signalprocessing.fleet.oauth2.tokenURL is required when signalprocessing.fleet.oauth2.enabled=true" }}
+{{- if not $signalprocessingOauth2.tokenURL }}
+{{- fail "signalprocessing.fleet.oauth2.tokenURL is required when signalprocessing.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
-{{- if not .Values.signalprocessing.fleet.oauth2.credentialsSecretRef }}
-{{- fail "signalprocessing.fleet.oauth2.credentialsSecretRef is required when signalprocessing.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- if not $signalprocessingOauth2.credentialsSecretRef }}
+{{- fail "signalprocessing.fleet.oauth2.credentialsSecretRef is required when signalprocessing.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
 {{- end }}
 {{- end }}
 {{- if not .Values.signalprocessing.policies.existingConfigMap }}
@@ -74,8 +76,8 @@ data:
     {{- if .Values.signalprocessing.fleet.endpoint }}
     fleet:
       endpoint: {{ .Values.signalprocessing.fleet.endpoint | quote }}
-      {{- if .Values.signalprocessing.fleet.mcpGatewayType }}
-      mcpGatewayType: {{ .Values.signalprocessing.fleet.mcpGatewayType | quote }}
+      {{- if $signalprocessingFleet.mcpGatewayType }}
+      mcpGatewayType: {{ $signalprocessingFleet.mcpGatewayType | quote }}
       {{- end }}
       {{- if .Values.signalprocessing.fleet.namespace }}
       namespace: {{ .Values.signalprocessing.fleet.namespace | quote }}
@@ -83,15 +85,15 @@ data:
       {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
-        tokenURL: {{ .Values.signalprocessing.fleet.oauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ .Values.signalprocessing.fleet.oauth2.credentialsSecretRef | quote }}
-        {{- if .Values.signalprocessing.fleet.oauth2.scopes }}
+        tokenURL: {{ $signalprocessingOauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ $signalprocessingOauth2.credentialsSecretRef | quote }}
+        {{- if $signalprocessingOauth2.scopes }}
         scopes:
-          {{- range .Values.signalprocessing.fleet.oauth2.scopes }}
+          {{- range $signalprocessingOauth2.scopes }}
           - {{ . | quote }}
           {{- end }}
         {{- end }}
-        tlsCAFile: {{ .Values.signalprocessing.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+        tlsCAFile: {{ $signalprocessingOauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- end }}
     {{- end }}
 ---
@@ -138,7 +140,7 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if eq .Values.signalprocessing.fleet.mcpGatewayType "kuadrant" }}
+  {{- if eq $signalprocessingFleet.mcpGatewayType "kuadrant" }}
   # BR-FLEET-003 (#1511): SP's ClusterRegistry watches MCPServerRegistration
   # CRs directly via a dynamic informer to evaluate the `cluster`
   # classification dimension when the Kuadrant MCP Gateway is used.
@@ -242,7 +244,7 @@ spec:
               readOnly: true
             {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
             - name: oauth2-credentials
-              mountPath: "/etc/signalprocessing/{{ .Values.signalprocessing.fleet.oauth2.credentialsSecretRef }}"
+              mountPath: "/etc/signalprocessing/{{ $signalprocessingOauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
           resources:
@@ -264,7 +266,7 @@ spec:
         {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
-            secretName: {{ .Values.signalprocessing.fleet.oauth2.credentialsSecretRef }}
+            secretName: {{ $signalprocessingOauth2.credentialsSecretRef }}
         {{- end }}
 ---
 apiVersion: v1
