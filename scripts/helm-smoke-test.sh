@@ -384,6 +384,23 @@ common_install_flags() {
   flags+=" --set monitoring.alertManager.enabled=false"
   if [[ "$PLATFORM" == "kind" ]]; then
     flags+=" --set global.image.pullPolicy=IfNotPresent"
+    # Issue #1542 follow-up, round 3: networkPolicies.enabled defaults to
+    # true, but kubernaut.np.apiServerEgress (the rule that allows egress to
+    # the Kubernetes API server) is a no-op unless apiServerCIDR is set —
+    # this smoke test's template-rendering tests already assumed
+    # 10.96.0.1/32 (Kind's default "kubernetes" Service ClusterIP) but this
+    # value was never actually wired into the real `helm install` used
+    # against the live cluster. That gap went unnoticed because Kind's
+    # default CNI (kindnetd) only started enforcing NetworkPolicy objects as
+    # of kind v0.24.0; bumping to v0.32.0 here made the gap bite for real.
+    # See PR #1571 investigation for the full root-cause trail (initially
+    # misdiagnosed as a kube-proxy/CNI warm-up race). NOTE: every other
+    # NetworkPolicy-protected service has this same gap and is currently
+    # only unaffected because their controller-runtime managers appear to
+    # establish their one persistent API connection early enough to avoid
+    # being blocked — this is not something to rely on; the same
+    # apiServerCIDR gap likely needs addressing chart-wide as a follow-up.
+    flags+=" --set networkPolicies.apiServerCIDR=10.96.0.1/32"
   fi
   echo "$flags"
 }
