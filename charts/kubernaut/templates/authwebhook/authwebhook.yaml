@@ -149,40 +149,32 @@ spec:
 
               CA_BUNDLE=$(base64 < "$CA_FILE" | tr -d '\n')
 
-              # Issue #1542 follow-up: freshly-created pods can briefly be unable to
-              # reach the in-cluster API server ClusterIP while kube-proxy/CNI finish
-              # wiring up routes (observed with kindest/node:v1.36.1 in CI). kubectl's
-              # own discovery-client retry is slow (~30s per poll, ~2min before giving
-              # up), so a single failed attempt burns most of this init container's
-              # CrashLoopBackOff budget. Poll with a short per-attempt timeout and fast
-              # retry cadence so we converge quickly once networking is up, instead of
-              # relying on Kubernetes' growing CrashLoopBackOff delay between restarts.
-              echo "==> Waiting for API server connectivity..."
-              API_READY=false
-              LAST_ERR=""
-              i=0
-              while [ "$i" -lt 30 ]; do
-                LAST_ERR=$(kubectl get --raw=/healthz --request-timeout=3s 2>&1) && {
-                  API_READY=true
-                  break
-                }
-                i=$((i + 1))
-                sleep 2
-              done
-              if [ "$API_READY" != "true" ]; then
-                # Diagnostic: surface the actual kubectl error (auth/RBAC vs.
-                # network vs. timeout) instead of masking it — a bare "not
-                # reachable" message was indistinguishable from a permissions
-                # error and cost a full CI round-trip to even start narrowing down.
-                echo "ERROR: API server not reachable after 60s of retries. Last error: ${LAST_ERR}"
-                exit 1
-              fi
-              echo "==> API server reachable"
+              # Issue #1542 follow-up: this init container's failures were
+              # initially misdiagnosed as kube-proxy/CNI warm-up races (retry
+              # loops were added and, later, a whole-cluster network-readiness
+              # gate). Instrumenting the retries surfaced the real error:
+              # "The connection to the server localhost:8080 was refused" —
+              # i.e. kubectl's ambient in-cluster config auto-detection was
+              # failing in this image, not the cluster network (verified: all
+              # 12 other pods and kube-proxy/CNI/apiserver logs were healthy
+              # the whole time). Configure the in-cluster API server
+              # explicitly from the mounted service account on every
+              # invocation instead of relying on kubectl auto-detection, and
+              # avoid writing a kubeconfig file since this container's root
+              # filesystem is read-only.
+              KUBE_SA="/var/run/secrets/kubernetes.io/serviceaccount"
+              KUBE_TOKEN=$(cat "${KUBE_SA}/token")
+              kube() {
+                kubectl --server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}" \
+                  --certificate-authority="${KUBE_SA}/ca.crt" \
+                  --token="${KUBE_TOKEN}" \
+                  "$@"
+              }
 
               patch_webhooks() {
                 KIND="$1"
                 NAME="$2"
-                COUNT=$(kubectl get "$KIND" "$NAME" --request-timeout=10s -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
+                COUNT=$(kube get "$KIND" "$NAME" --request-timeout=10s -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
                 PATCH="["
                 i=0
                 while [ "$i" -lt "$COUNT" ]; do
@@ -192,7 +184,7 @@ spec:
                 done
                 PATCH="${PATCH}]"
                 echo "  Patching $NAME ($COUNT webhooks)..."
-                kubectl patch "$KIND" "$NAME" --request-timeout=10s --type='json' -p "$PATCH"
+                kube patch "$KIND" "$NAME" --request-timeout=10s --type='json' -p "$PATCH"
               }
 
               echo "==> Init-container: patching webhook caBundle (#377 self-healing)..."

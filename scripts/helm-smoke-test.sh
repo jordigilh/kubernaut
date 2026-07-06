@@ -346,74 +346,6 @@ cleanup_port_forward() {
 }
 
 # ---------------------------------------------------------------------------
-# Cluster network readiness gate
-# ---------------------------------------------------------------------------
-# Issue #1542 follow-up: on a freshly-created Kind cluster, pods can briefly be
-# unable to reach the in-cluster API server ClusterIP while kube-proxy/CNI
-# finish wiring up routes (observed with kindest/node:v1.36.1 in CI: kube-proxy
-# and the API server report ready almost immediately, but pod-to-ClusterIP
-# routing can still take 1-3 minutes to stabilize). This job creates a bare
-# Kind cluster with no other workloads deployed first, so the full chart's 13
-# pods land in that window. Run a real in-cluster probe pod (not just a host
-# `kubectl` check, which talks to the API server's exposed port directly and
-# doesn't exercise the same pod-network-namespace path) and wait for it to
-# succeed before deploying the chart, instead of finding out via CrashLoopBackOff
-# once every app pod hits the same problem. Best-effort: never fails the run,
-# it only buys the network more time to stabilize before deploying real pods.
-# Bounded to ~150s total so a genuinely broken cluster still fails fast via
-# the existing pod-readiness checks instead of hanging here indefinitely.
-wait_for_cluster_network_ready() {
-  if [[ "$PLATFORM" != "kind" ]]; then
-    return 0
-  fi
-
-  local probe_image
-  probe_image=$(grep -A5 'tlsCerts:' "$CHART_PATH/values.yaml" | grep 'image:' | awk '{print $2}' | head -1)
-  if [[ -z "$probe_image" ]]; then
-    echo "# WARNING: could not determine probe image, skipping cluster network readiness gate"
-    return 0
-  fi
-
-  echo "# Waiting for in-cluster pod networking to reach the API server (kube-proxy/CNI warm-up)..."
-  kubectl delete pod netcheck -n default --ignore-not-found --force --grace-period=0 >/dev/null 2>&1 || true
-
-  # Retry INSIDE a single long-lived pod rather than creating/destroying many
-  # short-lived pods and polling from the host: pod scheduling + container
-  # start + kubectl binary startup overhead (1-3s per attempt) otherwise
-  # dominates a short host-side polling window and makes the gate measure
-  # pod-creation noise instead of actual network reachability.
-  kubectl run netcheck -n default --image="$probe_image" --restart=Never \
-    --command -- /bin/sh -c '
-      i=0
-      err=""
-      while [ "$i" -lt 60 ]; do
-        err=$(kubectl get --raw=/healthz --request-timeout=3s 2>&1) && exit 0
-        i=$((i + 1))
-        sleep 2
-      done
-      echo "netcheck: /healthz still unreachable after ${i} attempts, last error: ${err}"
-      exit 1
-    ' >/dev/null 2>&1
-
-  local wait_result=0
-  kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/netcheck -n default --timeout=150s >/dev/null 2>&1 || wait_result=$?
-
-  # Diagnostic: capture the probe's own output regardless of outcome, so a
-  # failure is self-explanatory from this job's log alone instead of requiring
-  # a must-gather round-trip to learn *why* /healthz was unreachable.
-  echo "# netcheck probe output:"
-  kubectl logs pod/netcheck -n default 2>&1 | sed 's/^/#   /' || true
-
-  if [[ "$wait_result" -eq 0 ]]; then
-    echo "# In-cluster networking is ready"
-  else
-    echo "# WARNING: in-cluster networking did not confirm ready within the wait budget; proceeding anyway"
-  fi
-  kubectl delete pod netcheck -n default --ignore-not-found --force --grace-period=0 >/dev/null 2>&1 || true
-  return 0
-}
-
-# ---------------------------------------------------------------------------
 # Cleanup helper
 # ---------------------------------------------------------------------------
 full_cleanup() {
@@ -1635,10 +1567,6 @@ main() {
 
   # Template tests run first (no cluster required)
   run_template_tests
-
-  # Give a freshly-created Kind cluster's CNI/kube-proxy a chance to finish
-  # wiring up pod-to-ClusterIP routing before we deploy any real workloads.
-  wait_for_cluster_network_ready
 
   # Always start clean
   full_cleanup
