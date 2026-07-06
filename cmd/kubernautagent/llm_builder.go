@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -64,6 +65,10 @@ func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Cli
 			cfg.Model, []byte(cfg.APIKey),
 			cfg.VertexProject, cfg.VertexLocation,
 			vertexOpts...)
+	case types.LLMProviderAnthropic:
+		return buildAnthropicNativeClient(cfg)
+	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
+		return buildOpenAICompatClient(cfg)
 	default:
 		providerOpts, err := buildLLMProviderOpts(cfg)
 		if err != nil {
@@ -72,6 +77,56 @@ func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Cli
 		return langchaingo.New(cfg.Provider, cfg.Endpoint, cfg.Model, cfg.APIKey,
 			providerOpts...)
 	}
+}
+
+// buildAnthropicNativeClient constructs an anthropicfamily.Client for the
+// native Anthropic API (api.anthropic.com), issue #1580. Distinct from the
+// LLMProviderVertexAI case above: no GCP project/location is required or
+// consulted.
+func buildAnthropicNativeClient(cfg types.LLMConfig) (llm.Client, error) {
+	var opts []anthropicfamily.Option
+	timeout := 120 * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	opts = append(opts, anthropicfamily.WithHTTPTimeout(timeout))
+
+	chain, err := buildTransportChain(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("anthropic transport chain: %w", err)
+	}
+	if chain != nil {
+		opts = append(opts, anthropicfamily.WithBaseTransport(chain))
+	}
+
+	return anthropicfamily.NewWithAPIKey(cfg.APIKey, cfg.Model, opts...)
+}
+
+// buildOpenAICompatClient constructs the shared-core-backed kaopenai.Client
+// for any OpenAI-Chat-Completions-compatible endpoint (OpenAI itself, Azure
+// OpenAI, Ollama, vLLM, LlamaStack, Mistral, HuggingFace TGI, DeepSeek —
+// issue #1581, DD-LLM-005).
+func buildOpenAICompatClient(cfg types.LLMConfig) (llm.Client, error) {
+	timeout := 120 * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	httpClient := &http.Client{Timeout: timeout}
+
+	chain, err := buildTransportChain(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("openai transport chain: %w", err)
+	}
+	if chain != nil {
+		httpClient.Transport = chain
+	}
+
+	opts := []kaopenai.Option{kaopenai.WithHTTPClient(httpClient)}
+	if cfg.Reasoning != nil && cfg.Reasoning.CapabilityOverride != "" {
+		opts = append(opts, kaopenai.WithCapabilityOverride(cfg.Reasoning.CapabilityOverride))
+	}
+
+	return kaopenai.New(cfg.Model, cfg.Endpoint, cfg.APIKey, opts...), nil
 }
 
 // buildLLMProviderOpts returns provider-specific LangChainGo options.
