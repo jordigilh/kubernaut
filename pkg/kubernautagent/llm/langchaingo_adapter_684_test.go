@@ -31,7 +31,7 @@ var _ = Describe("Vertex AI + Claude Adapter — #684", func() {
 
 	Describe("Bug 2: Provider alias recognition", func() {
 
-		It("UT-KA-684-101: vertex_ai is no longer routed through langchaingo (uses vertexanthropic package)", func() {
+		It("UT-KA-684-101: vertex_ai is no longer routed through langchaingo (uses anthropicfamily package)", func() {
 			adapter, err := langchaingo.New("vertex_ai", "http://localhost:9999", "claude-sonnet-4-6", "")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unsupported"))

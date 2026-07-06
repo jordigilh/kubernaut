@@ -177,7 +177,7 @@ YAML path: `ai`
 | `bedrock`, `huggingface`, `anthropic`, `openai`, `vertex`, `vertex_ai` | No | Satisfies `LLMRuntimeConfig.Validate` without `endpoint`. |
 | Any other provider | Yes | Validation error if `endpoint` empty. |
 
-`vertex` uses the LangChain / Google AI style integration; `vertex_ai` selects the Anthropic-on-Vertex client path in code (`vertexanthropic`).
+`vertex` uses the LangChain / Google AI style integration; `vertex_ai` selects the Anthropic-on-Vertex client path in code (`anthropicfamily`).
 
 ### 5.2 API key resolution (runtime)
 

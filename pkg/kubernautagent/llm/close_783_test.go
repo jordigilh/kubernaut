@@ -25,15 +25,15 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 )
 
 var _ = Describe("llm.Client Close() — TP-783 (#783)", func() {
 
-	Describe("UT-KA-783-CL-006: vertexanthropic.Client.Close is no-op", func() {
+	Describe("UT-KA-783-CL-006: anthropicfamily.Client.Close is no-op", func() {
 		It("should return nil (Anthropic SDK has no closeable resources)", func() {
-			var client llm.Client = (*vertexanthropic.Client)(nil)
+			var client llm.Client = (*anthropicfamily.Client)(nil)
 			// Compile-time check is sufficient; we cannot construct a real
 			// client without GCP credentials. The interface satisfaction
 			// proves Close() exists on the type.

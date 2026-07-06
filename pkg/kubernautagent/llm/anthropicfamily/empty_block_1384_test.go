@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package vertexanthropic_test
+package anthropicfamily_test
 
 import (
 	"context"
@@ -29,15 +29,15 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
 )
 
-var _ = Describe("Fix #1384 Bug B — vertexanthropic empty text block guard (SI-10)", func() {
+var _ = Describe("Fix #1384 Bug B — anthropicfamily empty text block guard (SI-10)", func() {
 
 	var (
 		server    *httptest.Server
 		tokenSrv  *httptest.Server
-		client    *vertexanthropic.Client
+		client    *anthropicfamily.Client
 		fakeCreds []byte
 	)
 
@@ -50,9 +50,9 @@ var _ = Describe("Fix #1384 Bug B — vertexanthropic empty text block guard (SI
 
 		server = httptest.NewServer(handler)
 		var err error
-		client, err = vertexanthropic.New(context.Background(),
+		client, err = anthropicfamily.New(context.Background(),
 			"claude-sonnet-4-6", fakeCreds, "my-project", "us-central1",
-			vertexanthropic.WithSDKOptions(
+			anthropicfamily.WithSDKOptions(
 				option.WithBaseURL(server.URL),
 			),
 		)

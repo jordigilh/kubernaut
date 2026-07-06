@@ -30,9 +30,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
@@ -45,22 +45,22 @@ import (
 func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Client, error) {
 	switch cfg.Provider {
 	case types.LLMProviderVertexAI:
-		var vertexOpts []vertexanthropic.Option
+		var vertexOpts []anthropicfamily.Option
 		timeout := 120 * time.Second
 		if cfg.TimeoutSeconds > 0 {
 			timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 		}
-		vertexOpts = append(vertexOpts, vertexanthropic.WithHTTPTimeout(timeout))
+		vertexOpts = append(vertexOpts, anthropicfamily.WithHTTPTimeout(timeout))
 
 		chain, err := buildTransportChain(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("vertex_ai transport chain: %w", err)
 		}
 		if chain != nil {
-			vertexOpts = append(vertexOpts, vertexanthropic.WithBaseTransport(chain))
+			vertexOpts = append(vertexOpts, anthropicfamily.WithBaseTransport(chain))
 		}
 
-		return vertexanthropic.New(ctx,
+		return anthropicfamily.New(ctx,
 			cfg.Model, []byte(cfg.APIKey),
 			cfg.VertexProject, cfg.VertexLocation,
 			vertexOpts...)

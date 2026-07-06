@@ -106,7 +106,7 @@ var _ = Describe("Fix #1384 Bug B — Integration Tests (AU-6, SI-10, CP-10)", f
 			By("asserting zero empty text blocks in the messages array")
 			for i, msg := range capturedRunner.receivedMessages {
 				Expect(msg.Content).NotTo(BeEmpty(),
-					"message[%d] (role=%s) has empty Content — would create empty NewTextBlock in vertexanthropic (SI-10)", i, msg.Role)
+					"message[%d] (role=%s) has empty Content — would create empty NewTextBlock in anthropicfamily (SI-10)", i, msg.Role)
 			}
 
 			By("asserting correct message count after filtering")

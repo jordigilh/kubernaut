@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package vertexanthropic_test
+package anthropicfamily_test
 
 import (
 	"context"
@@ -36,7 +36,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
 )
 
 // generateFakeServiceAccountJSON builds a GCP service account credential blob
@@ -71,7 +71,7 @@ func generateFakeServiceAccountJSONWithTokenURL(tokenURL string) []byte {
 	return b
 }
 
-var _ = Describe("vertexanthropic.Client — #684 #686", func() {
+var _ = Describe("anthropicfamily.Client — #684 #686", func() {
 
 	Describe("New() constructor validation", func() {
 		var (
@@ -96,7 +96,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 		})
 
 		It("UT-VA-686-001: returns error when project is empty", func() {
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", nil, "", "us-central1")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("project"))
@@ -104,14 +104,14 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 		})
 
 		It("UT-VA-686-002: defaults location to us-central1 when empty", func() {
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", nil, "my-project", "")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
 		})
 
 		It("UT-VA-686-003: returns error for malformed credentials JSON", func() {
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", []byte(`not-json`), "my-project", "us-central1")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("invalid credentials JSON"))
@@ -119,21 +119,21 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 		})
 
 		It("UT-VA-686-004: accepts valid service account credentials JSON", func() {
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", fakeCreds, "my-project", "us-central1")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
 		})
 
 		It("UT-VA-686-005: accepts empty credentials (ambient ADC)", func() {
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", nil, "my-project", "us-central1")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
 		})
 
 		It("UT-VA-686-006: whitespace-only credentials treated as empty (ambient ADC)", func() {
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", []byte("   \n  "), "my-project", "us-central1")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
@@ -147,7 +147,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 				"token_url": "https://sts.googleapis.com/v1/token",
 				"credential_source": {"url": "https://attacker.example.com/token"}
 			}`)
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", externalAccountJSON, "my-project", "us-central1")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unsupported credential type"))
@@ -157,7 +157,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 
 		It("UT-VA-686-009: rejects credentials with unknown type field", func() {
 			unknownJSON := []byte(`{"type": "weird_unknown_type", "token": "x"}`)
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", unknownJSON, "my-project", "us-central1")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unsupported credential type"))
@@ -165,7 +165,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 		})
 
 		It("UT-VA-686-007: implements llm.Client interface", func() {
-			client, err := vertexanthropic.New(context.Background(),
+			client, err := anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", nil, "my-project", "us-central1")
 			Expect(err).NotTo(HaveOccurred())
 			var _ llm.Client = client
@@ -176,7 +176,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 		var (
 			server     *httptest.Server
 			tokenSrv   *httptest.Server
-			client     *vertexanthropic.Client
+			client     *anthropicfamily.Client
 			fakeCreds  []byte
 			makeClient func(http.HandlerFunc)
 		)
@@ -194,9 +194,9 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 
 			server = httptest.NewServer(handler)
 			var err error
-			client, err = vertexanthropic.New(context.Background(),
+			client, err = anthropicfamily.New(context.Background(),
 				"claude-sonnet-4-6", fakeCreds, "my-project", "us-central1",
-				vertexanthropic.WithSDKOptions(
+				anthropicfamily.WithSDKOptions(
 					option.WithBaseURL(server.URL),
 				),
 			)
@@ -469,7 +469,7 @@ var _ = Describe("vertexanthropic.Client — #684 #686", func() {
 				Messages: []llm.Message{{Role: "user", Content: "hello"}},
 			})
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("vertexanthropic"))
+			Expect(err.Error()).To(ContainSubstring("anthropicfamily"))
 		})
 	})
 })

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package vertexanthropic implements llm.Client for Claude models hosted on
+// Package anthropicfamily implements llm.Client for Claude models hosted on
 // Google Vertex AI using the official Anthropic Go SDK.
 //
 // The SDK's vertex package handles all Vertex-specific protocol differences
@@ -26,7 +26,7 @@ limitations under the License.
 //
 // Reference: https://docs.anthropic.com/en/api/claude-on-vertex-ai
 // Reference: https://github.com/anthropics/anthropic-sdk-go
-package vertexanthropic
+package anthropicfamily
 
 import (
 	"bytes"
@@ -105,7 +105,7 @@ type Client struct {
 //   - GCP OAuth2 Bearer token transport
 func New(ctx context.Context, model string, credentialsJSON []byte, project, location string, opts ...Option) (*Client, error) {
 	if project == "" {
-		return nil, fmt.Errorf("vertexanthropic: project is required (vertex_project config)")
+		return nil, fmt.Errorf("anthropicfamily: project is required (vertex_project config)")
 	}
 	if location == "" {
 		location = "us-central1"
@@ -142,7 +142,7 @@ func resolveVertexAuth(ctx context.Context, credentialsJSON []byte, project, loc
 		"https://www.googleapis.com/auth/cloud-platform",
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
+		return nil, nil, fmt.Errorf("anthropicfamily: invalid credentials JSON: %w", err)
 	}
 	return vertex.WithCredentials(ctx, location, project, creds), creds.TokenSource, nil
 }
@@ -192,7 +192,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 
 	msg, err := c.sdk.Messages.New(ctx, params)
 	if err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: %w", err)
+		return llm.ChatResponse{}, fmt.Errorf("anthropicfamily: %w", err)
 	}
 
 	return c.mapResponse(msg), nil
@@ -316,7 +316,7 @@ func parseInputSchema(raw json.RawMessage, logger logr.Logger) anthropic.ToolInp
 		Required   []string `json:"required"`
 	}
 	if err := json.Unmarshal(raw, &s); err != nil {
-		logger.Info("vertexanthropic: malformed tool parameter schema, using empty schema",
+		logger.Info("anthropicfamily: malformed tool parameter schema, using empty schema",
 			"error", err.Error())
 	}
 	return anthropic.ToolInputSchemaParam{
@@ -393,11 +393,11 @@ func validateCredentialType(jsonData []byte) (google.CredentialsType, error) {
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal(jsonData, &f); err != nil {
-		return "", fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
+		return "", fmt.Errorf("anthropicfamily: invalid credentials JSON: %w", err)
 	}
 	ct := google.CredentialsType(f.Type)
 	if !allowedCredentialTypes[ct] {
-		return "", fmt.Errorf("vertexanthropic: unsupported credential type %q; only service_account and authorized_user are accepted", f.Type)
+		return "", fmt.Errorf("anthropicfamily: unsupported credential type %q; only service_account and authorized_user are accepted", f.Type)
 	}
 	return ct, nil
 }
@@ -408,7 +408,7 @@ func validateCredentialType(jsonData []byte) (google.CredentialsType, error) {
 func safeWithGoogleAuth(ctx context.Context, location, project string) (opt option.RequestOption, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("vertexanthropic: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide explicit credentials JSON: %v", r)
+			err = fmt.Errorf("anthropicfamily: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide explicit credentials JSON: %v", r)
 		}
 	}()
 	opt = vertex.WithGoogleAuth(ctx, location, project,
@@ -426,7 +426,7 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 	for stream.Next() {
 		event := stream.Current()
 		if err := acc.Accumulate(event); err != nil {
-			return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: accumulate error: %w", err)
+			return llm.ChatResponse{}, fmt.Errorf("anthropicfamily: accumulate error: %w", err)
 		}
 		if delta, ok := extractTextDelta(event); ok && delta != "" {
 			if err := callback(llm.ChatStreamEvent{Delta: delta}); err != nil {
@@ -435,7 +435,7 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: stream error: %w", err)
+		return llm.ChatResponse{}, fmt.Errorf("anthropicfamily: stream error: %w", err)
 	}
 	_ = callback(llm.ChatStreamEvent{Done: true})
 	return c.mapResponse(&acc), nil
