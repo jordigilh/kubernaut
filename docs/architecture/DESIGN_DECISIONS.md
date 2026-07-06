@@ -115,6 +115,9 @@
 | DD-FLEET-003 | Full Federation Validation (`ValidateFullFederation`, GW/RO dual-capability requirement) | ✅ Approved & Implemented | 2026-07-04 | [DD-FLEET-003-full-federation-validation.md](decisions/DD-FLEET-003-full-federation-validation.md) |
 | DD-AUDIT-008 | Audit Event Builder Registry Pattern (buildEventData decomposition) | ✅ Approved & Implemented | 2026-07-01 | [DD-AUDIT-008-audit-event-builder-registry-pattern.md](decisions/DD-AUDIT-008-audit-event-builder-registry-pattern.md) |
 | DD-TEST-014 | Fleet E2E Remote-Cluster-Only Topology (`AllRegistrationsRemote`, Keycloak adoption, `remote-cluster` rename) | ✅ Approved & Implemented | 2026-07-04 | [DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md](decisions/DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md) |
+| DD-LLM-004 | Remove langchaingo, Generalize Anthropic-Family Client, Extract Shared OpenAI-Compatible Core | 📋 Proposed | 2026-07-06 | [DD-LLM-004-langchaingo-removal-generalized-clients.md](decisions/DD-LLM-004-langchaingo-removal-generalized-clients.md) |
+| DD-LLM-005 | Model-Aware Reasoning/Thinking Token Support | 📋 Proposed | 2026-07-06 | [DD-LLM-005-model-aware-reasoning-support.md](decisions/DD-LLM-005-model-aware-reasoning-support.md) |
+| DD-LLM-006 | AWS Bedrock Provider Support via Dual-Client Routing | 📋 Proposed | 2026-07-06 | [DD-LLM-006-bedrock-dual-client-routing.md](decisions/DD-LLM-006-bedrock-dual-client-routing.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
