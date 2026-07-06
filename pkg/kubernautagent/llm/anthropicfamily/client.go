@@ -122,10 +122,7 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 		location = "us-central1"
 	}
 
-	o := &clientOpts{logger: logr.Discard()}
-	for _, fn := range opts {
-		fn(o)
-	}
+	o := newClientOpts(opts...)
 
 	vertexOpt, tokenSource, err := resolveVertexAuth(ctx, credentialsJSON, project, location)
 	if err != nil {
@@ -146,25 +143,23 @@ func NewWithAPIKey(apiKey, model string, opts ...Option) (*Client, error) {
 		return nil, fmt.Errorf("anthropicfamily: apiKey is required")
 	}
 
-	o := &clientOpts{logger: logr.Discard()}
-	for _, fn := range opts {
-		fn(o)
-	}
-
-	sdkOpts := []option.RequestOption{option.WithAPIKey(apiKey)}
-	if o.httpTimeout > 0 {
-		sdkOpts = append(sdkOpts, option.WithRequestTimeout(o.httpTimeout))
-	}
-	if o.baseTransport != nil {
-		sdkOpts = append(sdkOpts, option.WithHTTPClient(&http.Client{
-			Transport: o.baseTransport,
-			Timeout:   o.httpTimeout,
-		}))
-	}
+	o := newClientOpts(opts...)
+	sdkOpts := applyHTTPOptions([]option.RequestOption{option.WithAPIKey(apiKey)}, o, nil)
 	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
 
 	sdk := anthropic.NewClient(sdkOpts...)
 	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
+}
+
+// newClientOpts applies functional Options over a clientOpts pre-populated
+// with defaults, shared by every auth-mode constructor (New, NewWithAPIKey,
+// and — per DD-LLM-006 — the planned Bedrock constructor).
+func newClientOpts(opts ...Option) *clientOpts {
+	o := &clientOpts{logger: logr.Discard()}
+	for _, fn := range opts {
+		fn(o)
+	}
+	return o
 }
 
 // resolveVertexAuth resolves the Vertex AI SDK request option and OAuth2
@@ -210,21 +205,34 @@ func resolveADCAuth(ctx context.Context, project, location string) (option.Reque
 // custom transport (#1342 enterprise mTLS), and any extra caller-supplied
 // SDK options.
 func buildSDKOptions(o *clientOpts, vertexOpt option.RequestOption, tokenSource oauth2.TokenSource) []option.RequestOption {
-	sdkOpts := []option.RequestOption{vertexOpt}
+	sdkOpts := applyHTTPOptions([]option.RequestOption{vertexOpt}, o, tokenSource)
+	return append(sdkOpts, o.extraSDKOpts...)
+}
+
+// applyHTTPOptions appends the request-timeout and custom-transport SDK
+// options shared across every anthropicfamily auth-mode constructor.
+//
+// When tokenSource is non-nil (Vertex auth), a caller-supplied baseTransport
+// is wrapped with OAuth2 Bearer token injection (#1342 enterprise mTLS).
+// When tokenSource is nil (native API-key auth, and — per DD-LLM-006 — the
+// planned Bedrock SigV4 auth), baseTransport is used as-is: authentication
+// for those modes is carried by a request header or signature, not a
+// Vertex-style bearer-token transport.
+func applyHTTPOptions(sdkOpts []option.RequestOption, o *clientOpts, tokenSource oauth2.TokenSource) []option.RequestOption {
 	if o.httpTimeout > 0 {
 		sdkOpts = append(sdkOpts, option.WithRequestTimeout(o.httpTimeout))
 	}
-	if o.baseTransport != nil && tokenSource != nil {
-		oauthClient := &http.Client{
-			Transport: &oauth2.Transport{
-				Base:   o.baseTransport,
-				Source: tokenSource,
-			},
-			Timeout: o.httpTimeout,
-		}
-		sdkOpts = append(sdkOpts, option.WithHTTPClient(oauthClient))
+	if o.baseTransport == nil {
+		return sdkOpts
 	}
-	return append(sdkOpts, o.extraSDKOpts...)
+	transport := o.baseTransport
+	if tokenSource != nil {
+		transport = &oauth2.Transport{Base: o.baseTransport, Source: tokenSource}
+	}
+	return append(sdkOpts, option.WithHTTPClient(&http.Client{
+		Transport: transport,
+		Timeout:   o.httpTimeout,
+	}))
 }
 
 // Chat translates a Kubernaut ChatRequest to the Anthropic Messages API,
