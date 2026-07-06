@@ -385,17 +385,26 @@ wait_for_cluster_network_ready() {
   kubectl run netcheck -n default --image="$probe_image" --restart=Never \
     --command -- /bin/sh -c '
       i=0
+      err=""
       while [ "$i" -lt 60 ]; do
-        if kubectl get --raw=/healthz --request-timeout=3s >/dev/null 2>&1; then
-          exit 0
-        fi
+        err=$(kubectl get --raw=/healthz --request-timeout=3s 2>&1) && exit 0
         i=$((i + 1))
         sleep 2
       done
+      echo "netcheck: /healthz still unreachable after ${i} attempts, last error: ${err}"
       exit 1
     ' >/dev/null 2>&1
 
-  if kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/netcheck -n default --timeout=150s >/dev/null 2>&1; then
+  local wait_result=0
+  kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/netcheck -n default --timeout=150s >/dev/null 2>&1 || wait_result=$?
+
+  # Diagnostic: capture the probe's own output regardless of outcome, so a
+  # failure is self-explanatory from this job's log alone instead of requiring
+  # a must-gather round-trip to learn *why* /healthz was unreachable.
+  echo "# netcheck probe output:"
+  kubectl logs pod/netcheck -n default 2>&1 | sed 's/^/#   /' || true
+
+  if [[ "$wait_result" -eq 0 ]]; then
     echo "# In-cluster networking is ready"
   else
     echo "# WARNING: in-cluster networking did not confirm ready within the wait budget; proceeding anyway"

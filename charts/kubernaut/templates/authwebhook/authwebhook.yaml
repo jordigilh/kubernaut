@@ -159,17 +159,22 @@ spec:
               # relying on Kubernetes' growing CrashLoopBackOff delay between restarts.
               echo "==> Waiting for API server connectivity..."
               API_READY=false
+              LAST_ERR=""
               i=0
               while [ "$i" -lt 30 ]; do
-                if kubectl get --raw=/healthz --request-timeout=3s >/dev/null 2>&1; then
+                LAST_ERR=$(kubectl get --raw=/healthz --request-timeout=3s 2>&1) && {
                   API_READY=true
                   break
-                fi
+                }
                 i=$((i + 1))
                 sleep 2
               done
               if [ "$API_READY" != "true" ]; then
-                echo "ERROR: API server not reachable after 60s of retries"
+                # Diagnostic: surface the actual kubectl error (auth/RBAC vs.
+                # network vs. timeout) instead of masking it — a bare "not
+                # reachable" message was indistinguishable from a permissions
+                # error and cost a full CI round-trip to even start narrowing down.
+                echo "ERROR: API server not reachable after 60s of retries. Last error: ${LAST_ERR}"
                 exit 1
               fi
               echo "==> API server reachable"
