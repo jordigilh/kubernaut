@@ -37,14 +37,14 @@ RUN if [ "${GOFLAGS}" = "-cover" ]; then \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOFLAGS=${GOFLAGS} go build \
 	-mod=mod \
 	-tags e2e \
-	-ldflags="-X main.Version=${APP_VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildDate=${BUILD_DATE}" \
+	-ldflags="-X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o apifrontend \
 	./cmd/apifrontend; \
 	else \
 	echo "Building production binary with FIPS (boringcrypto)..."; \
 	CGO_ENABLED=0 GOOS=${GOOS} GOARCH=${GOARCH} GOEXPERIMENT=boringcrypto go build \
 	-mod=mod \
-	-ldflags="-s -w -X main.Version=${APP_VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildDate=${BUILD_DATE}" \
+	-ldflags="-s -w -X github.com/jordigilh/kubernaut/internal/version.Version=${APP_VERSION} -X github.com/jordigilh/kubernaut/internal/version.GitCommit=${GIT_COMMIT} -X github.com/jordigilh/kubernaut/internal/version.BuildDate=${BUILD_DATE}" \
 	-o apifrontend \
 	./cmd/apifrontend; \
 	fi

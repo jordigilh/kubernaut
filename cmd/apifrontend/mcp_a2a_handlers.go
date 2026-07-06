@@ -10,6 +10,8 @@ import (
 	"google.golang.org/adk/model"
 	adksession "google.golang.org/adk/session"
 
+	"github.com/jordigilh/kubernaut/internal/version"
+
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
@@ -56,7 +58,7 @@ func buildMCPHandler(d *handlerDeps) (http.Handler, func() bool, error) {
 	}
 	h, err := handler.NewMCPHandler(handler.MCPConfig{
 		ServerName:     "kubernaut-apifrontend",
-		ServerVersion:  version(),
+		ServerVersion:  version.Version,
 		Enabled:        d.Cfg.MCP.Enabled,
 		Bridge:         bridgeCfg,
 		Auditor:        d.Auditor,

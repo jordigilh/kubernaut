@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/jordigilh/kubernaut/internal/version"
 	agentpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/agent"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -243,7 +244,7 @@ func startServers(rs *routerAndServers, cfg *config.Config, logger logr.Logger) 
 
 	logger.Info("kubernaut-apifrontend started",
 		"addr", rs.Addr, "tls", rs.TLSEnabled, "mcp_enabled", cfg.MCP.Enabled, "tools", 20,
-		"version", Version, "gitCommit", GitCommit, "buildDate", BuildDate)
+		"version", version.Version, "gitCommit", version.GitCommit, "buildDate", version.BuildDate)
 }
 
 // buildHandlerDepsParams bundles the inputs buildHandlerDeps needs to
@@ -304,7 +305,7 @@ func buildCardAndA2AHandler(ctx context.Context, cfg *config.Config, hDeps *hand
 		Name:        "Kubernaut Agent",
 		Description: "Kubernaut AI-driven remediation agent",
 		URL:         cfg.AgentCard.URL,
-		Version:     version(),
+		Version:     version.Version,
 		Skills:      handler.DefaultAgentSkills(cfg.Interactive.Enabled),
 	})
 	if err != nil {
@@ -839,15 +840,6 @@ type handlerDeps struct {
 }
 
 // Build-time metadata set via -ldflags.
-var (
-	Version   = "v0.1.0-dev"
-	GitCommit = "unknown"
-	BuildDate = "unknown"
-)
-
-func version() string {
-	return Version
-}
 
 // bearerTokenTransport wraps an http.RoundTripper to inject an Authorization
 // header with a bearer token read from a file (e.g. ServiceAccount token).
