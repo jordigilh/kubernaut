@@ -510,7 +510,7 @@ Usage: {{ include "kubernaut.np.apiServerEgress" . | nindent 4 }}
 {{- define "kubernaut.np.apiServerEgress" -}}
 {{- if .Values.networkPolicies.apiServerCIDR }}
 - ports:
-    - port: 443
+    - port: {{ .Values.networkPolicies.apiServerPort | default 443 }}
       protocol: TCP
   to:
     - ipBlock:

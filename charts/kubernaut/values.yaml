@@ -692,7 +692,16 @@ monitoring:
 # -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
 networkPolicies:
   enabled: true
+  # -- CAUTION: on most CNIs (kindnetd, Calico, Cilium, etc.) NetworkPolicy
+  # ipBlock rules are evaluated against the post-DNAT destination, so this
+  # must be the kube-apiserver's real backend endpoint IP (see
+  # `kubectl get endpoints kubernetes -o wide`), NOT the "kubernetes"
+  # Service's ClusterIP -- the ClusterIP is silently ignored by most
+  # implementations. See PR #1571 for the investigation trail.
   apiServerCIDR: ""
+  # -- Port the kube-apiserver's real backend endpoint listens on (commonly
+  # 6443), not necessarily the "kubernetes" Service's port (443).
+  apiServerPort: 443
   monitoring:
     namespace: ""
     prometheusPort: 9090

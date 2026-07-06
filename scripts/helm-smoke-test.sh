@@ -37,6 +37,11 @@ PF_PID=""
 POLICY_AA_FILE=""
 POLICY_SP_FILE=""
 
+# Real kube-apiserver backend endpoint (populated by discover_api_server_endpoint
+# for kind only), used to wire networkPolicies.apiServerCIDR/apiServerPort.
+API_SERVER_CIDR=""
+API_SERVER_PORT=""
+
 # ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
@@ -368,6 +373,40 @@ full_cleanup() {
 }
 
 # ---------------------------------------------------------------------------
+# Discover the kube-apiserver's real backend endpoint (kind only)
+# ---------------------------------------------------------------------------
+# Issue #1542 follow-up, round 3: NetworkPolicies are now enforced by Kind's
+# CNI (kindnetd, as of kind v0.24.0+), but kubernaut.np.apiServerEgress is a
+# no-op unless networkPolicies.apiServerCIDR is set -- so authwebhook's
+# patch-cabundle init container (and, latently, every other
+# NetworkPolicy-protected controller) has no egress path to the API server.
+#
+# Round 3a naively pointed apiServerCIDR at the "kubernetes" Service's
+# ClusterIP (10.96.0.1/32) -- this is a well-documented dead end: ipBlock
+# egress rules are evaluated against the post-DNAT destination on most CNIs
+# (kindnetd, Calico, Cilium all confirmed), so the ClusterIP is silently
+# never matched. The API server's *real* backend endpoint IP:port (from
+# `kubectl get endpoints kubernetes`) must be used instead. That endpoint is
+# only known once the cluster exists, so it can't be a chart default -- this
+# smoke test discovers it dynamically after cluster creation.
+discover_api_server_endpoint() {
+  [[ "$PLATFORM" == "kind" ]] || return 0
+
+  local ip port
+  ip=$(kubectl get endpoints kubernetes -n default -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)
+  port=$(kubectl get endpoints kubernetes -n default -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || true)
+
+  if [[ -z "$ip" || -z "$port" ]]; then
+    echo "# WARNING: could not discover kube-apiserver endpoint; NetworkPolicy egress to the API server will not be allowed (pods behind default-deny NetworkPolicies will fail)"
+    return 0
+  fi
+
+  API_SERVER_CIDR="${ip}/32"
+  API_SERVER_PORT="$port"
+  echo "# Discovered kube-apiserver endpoint: ${API_SERVER_CIDR}:${API_SERVER_PORT}"
+}
+
+# ---------------------------------------------------------------------------
 # Platform-specific install flags
 # ---------------------------------------------------------------------------
 common_install_flags() {
@@ -384,23 +423,10 @@ common_install_flags() {
   flags+=" --set monitoring.alertManager.enabled=false"
   if [[ "$PLATFORM" == "kind" ]]; then
     flags+=" --set global.image.pullPolicy=IfNotPresent"
-    # Issue #1542 follow-up, round 3: networkPolicies.enabled defaults to
-    # true, but kubernaut.np.apiServerEgress (the rule that allows egress to
-    # the Kubernetes API server) is a no-op unless apiServerCIDR is set —
-    # this smoke test's template-rendering tests already assumed
-    # 10.96.0.1/32 (Kind's default "kubernetes" Service ClusterIP) but this
-    # value was never actually wired into the real `helm install` used
-    # against the live cluster. That gap went unnoticed because Kind's
-    # default CNI (kindnetd) only started enforcing NetworkPolicy objects as
-    # of kind v0.24.0; bumping to v0.32.0 here made the gap bite for real.
-    # See PR #1571 investigation for the full root-cause trail (initially
-    # misdiagnosed as a kube-proxy/CNI warm-up race). NOTE: every other
-    # NetworkPolicy-protected service has this same gap and is currently
-    # only unaffected because their controller-runtime managers appear to
-    # establish their one persistent API connection early enough to avoid
-    # being blocked — this is not something to rely on; the same
-    # apiServerCIDR gap likely needs addressing chart-wide as a follow-up.
-    flags+=" --set networkPolicies.apiServerCIDR=10.96.0.1/32"
+    if [[ -n "$API_SERVER_CIDR" ]]; then
+      flags+=" --set networkPolicies.apiServerCIDR=${API_SERVER_CIDR}"
+      flags+=" --set networkPolicies.apiServerPort=${API_SERVER_PORT}"
+    fi
   fi
   echo "$flags"
 }
@@ -1584,6 +1610,8 @@ main() {
 
   # Template tests run first (no cluster required)
   run_template_tests
+
+  discover_api_server_endpoint
 
   # Always start clean
   full_cleanup
