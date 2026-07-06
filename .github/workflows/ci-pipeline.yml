@@ -183,7 +183,7 @@ jobs:
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: v2.9.0
-          args: --timeout=10m --new-from-merge-base=origin/${{ github.base_ref }} --whole-files cmd/... pkg/... internal/... test/...
+          args: --timeout=10m cmd/... pkg/... internal/... test/...
 
       - name: Dependency vulnerability scan (govulncheck)
         run: |

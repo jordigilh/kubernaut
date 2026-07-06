@@ -106,6 +106,18 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 	baseImageName := "localhost/mock-llm:latest"
 	uniqueImageName := GenerateInfraImageName("mock-llm", serviceName)
 
+	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
+	// this service under the agreed-upon fixed tag (artifact-based CI mode,
+	// no registry involved). Mirrors StartGenericContainer's equivalent
+	// check (container_management.go).
+	if artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG"); artifactTag != "" {
+		prebuiltImage := fmt.Sprintf("localhost/mock-llm:%s", artifactTag)
+		if checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
+			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", prebuiltImage)
+			return prebuiltImage, nil
+		}
+	}
+
 	// DEBUG: Show environment variable status
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
