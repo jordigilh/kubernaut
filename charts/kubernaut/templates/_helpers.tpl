@@ -504,17 +504,46 @@ Usage: {{ include "kubernaut.np.dnsEgress" . | nindent 4 }}
 {{- end }}
 
 {{/*
-K8s API server egress rule: allow TCP 443 to configured CIDR.
+Merged, de-duplicated list of API server backend endpoint ipBlock peers, one
+per control-plane node. Most real clusters run multiple control-plane nodes
+for HA, each a distinct backend endpoint behind the "kubernetes" Service --
+ipBlock rules are evaluated against the post-DNAT destination on most CNIs,
+so every backend IP needs its own allow entry, not just one. apiServerCIDR
+(singular) and apiServerCIDRs (list) are merged so single-endpoint callers
+can keep using the simpler singular field. Renders as a raw (unindented)
+list of `- ipBlock: {cidr: ...}` entries usable under either an egress `to:`
+or ingress `from:` key -- shared because NetworkPolicyPeer is identical for
+both. Empty output (no trailing newline) if no CIDR is configured.
+Usage: {{ include "kubernaut.np.apiServerPeers" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.apiServerPeers" -}}
+{{- $cidrs := list -}}
+{{- if .Values.networkPolicies.apiServerCIDR -}}
+{{- $cidrs = append $cidrs .Values.networkPolicies.apiServerCIDR -}}
+{{- end -}}
+{{- if .Values.networkPolicies.apiServerCIDRs -}}
+{{- $cidrs = concat $cidrs .Values.networkPolicies.apiServerCIDRs -}}
+{{- end -}}
+{{- $lines := list -}}
+{{- range (uniq $cidrs) -}}
+{{- $lines = append $lines (printf "- ipBlock:\n    cidr: %s" .) -}}
+{{- end -}}
+{{- join "\n" $lines -}}
+{{- end }}
+
+{{/*
+K8s API server egress rule: allow TCP to the configured API server backend
+endpoint CIDR(s). See kubernaut.np.apiServerPeers for the CIDR merge logic.
 Usage: {{ include "kubernaut.np.apiServerEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.apiServerEgress" -}}
-{{- if .Values.networkPolicies.apiServerCIDR }}
+{{- $peers := include "kubernaut.np.apiServerPeers" . -}}
+{{- if $peers }}
 - ports:
     - port: {{ .Values.networkPolicies.apiServerPort | default 443 }}
       protocol: TCP
   to:
-    - ipBlock:
-        cidr: {{ .Values.networkPolicies.apiServerCIDR }}
+    {{- $peers | nindent 4 }}
 {{- end }}
 {{- end }}
 

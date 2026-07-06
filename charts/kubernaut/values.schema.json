@@ -1314,12 +1314,18 @@
         "apiServerCIDR": {
           "type": "string",
           "default": "",
-          "description": "K8s API server real backend endpoint IP as a /32 CIDR (e.g., 10.89.0.2/32) -- NOT the 'kubernetes' Service ClusterIP, which most CNIs ignore for NetworkPolicy egress. See `kubectl get endpoints kubernetes -o wide`."
+          "description": "K8s API server real backend endpoint IP as a /32 CIDR (e.g., 10.89.0.2/32) -- NOT the 'kubernetes' Service ClusterIP, which most CNIs ignore for NetworkPolicy egress. See `kubectl get endpoints kubernetes -o wide`. Use for single-control-plane clusters; use apiServerCIDRs for HA."
+        },
+        "apiServerCIDRs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Additional K8s API server backend endpoint IPs as /32 CIDRs, for HA clusters with multiple control-plane nodes. Merged with apiServerCIDR."
         },
         "apiServerPort": {
           "type": "integer",
           "default": 443,
-          "description": "Port the K8s API server's real backend endpoint listens on (commonly 6443), not necessarily the 'kubernetes' Service's port (443)"
+          "description": "Port the K8s API server's real backend endpoint(s) listen on (commonly 6443), not necessarily the 'kubernetes' Service's port (443)"
         },
         "monitoring": {
           "type": "object",

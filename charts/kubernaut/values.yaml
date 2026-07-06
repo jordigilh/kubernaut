@@ -697,10 +697,20 @@ networkPolicies:
   # must be the kube-apiserver's real backend endpoint IP (see
   # `kubectl get endpoints kubernetes -o wide`), NOT the "kubernetes"
   # Service's ClusterIP -- the ClusterIP is silently ignored by most
-  # implementations. See PR #1571 for the investigation trail.
+  # implementations. See PR #1571 for the investigation trail. Use this
+  # field for single-control-plane clusters; use apiServerCIDRs below for HA.
   apiServerCIDR: ""
-  # -- Port the kube-apiserver's real backend endpoint listens on (commonly
-  # 6443), not necessarily the "kubernetes" Service's port (443).
+  # -- Additional API server backend endpoint IPs as /32 CIDRs, for HA
+  # clusters (the norm for real production deployments) where the
+  # "kubernetes" Service fronts multiple control-plane nodes -- every
+  # backend IP needs its own allow rule. Merged with apiServerCIDR above.
+  # Populate from all addresses in `kubectl get endpoints kubernetes -o
+  # jsonpath='{.subsets[0].addresses[*].ip}'`.
+  apiServerCIDRs: []
+  # -- Port the kube-apiserver's real backend endpoint(s) listen on (commonly
+  # 6443), not necessarily the "kubernetes" Service's port (443). Assumes all
+  # control-plane nodes listen on the same port, which holds for standard
+  # kubeadm HA setups.
   apiServerPort: 443
   monitoring:
     namespace: ""

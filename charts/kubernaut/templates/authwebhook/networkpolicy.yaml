@@ -15,13 +15,13 @@ spec:
     - Ingress
     - Egress
   ingress:
-    {{- if .Values.networkPolicies.apiServerCIDR }}
+    {{- $peers := include "kubernaut.np.apiServerPeers" . }}
+    {{- if $peers }}
     - ports:
         - port: 9443
           protocol: TCP
       from:
-        - ipBlock:
-            cidr: {{ .Values.networkPolicies.apiServerCIDR }}
+        {{- $peers | nindent 8 }}
     {{- end }}
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}

@@ -37,9 +37,11 @@ PF_PID=""
 POLICY_AA_FILE=""
 POLICY_SP_FILE=""
 
-# Real kube-apiserver backend endpoint (populated by discover_api_server_endpoint
-# for kind only), used to wire networkPolicies.apiServerCIDR/apiServerPort.
-API_SERVER_CIDR=""
+# Real kube-apiserver backend endpoint(s) (populated by
+# discover_api_server_endpoint for kind only), used to wire
+# networkPolicies.apiServerCIDRs/apiServerPort. An array because HA clusters
+# have one backend IP per control-plane node.
+API_SERVER_CIDRS=()
 API_SERVER_PORT=""
 
 # ---------------------------------------------------------------------------
@@ -373,11 +375,11 @@ full_cleanup() {
 }
 
 # ---------------------------------------------------------------------------
-# Discover the kube-apiserver's real backend endpoint (kind only)
+# Discover the kube-apiserver's real backend endpoint(s) (kind only)
 # ---------------------------------------------------------------------------
 # Issue #1542 follow-up, round 3: NetworkPolicies are now enforced by Kind's
 # CNI (kindnetd, as of kind v0.24.0+), but kubernaut.np.apiServerEgress is a
-# no-op unless networkPolicies.apiServerCIDR is set -- so authwebhook's
+# no-op unless networkPolicies.apiServerCIDR(s) is set -- so authwebhook's
 # patch-cabundle init container (and, latently, every other
 # NetworkPolicy-protected controller) has no egress path to the API server.
 #
@@ -389,21 +391,31 @@ full_cleanup() {
 # `kubectl get endpoints kubernetes`) must be used instead. That endpoint is
 # only known once the cluster exists, so it can't be a chart default -- this
 # smoke test discovers it dynamically after cluster creation.
+#
+# The chart is generic (not Kind-specific) and must work against any real
+# Kubernetes distribution, where multiple control-plane nodes (HA) is the
+# norm -- each is a distinct backend IP behind the "kubernetes" Service, so
+# ALL addresses are collected here, not just the first (Kind's single-node
+# smoke test cluster happens to only ever have one, but the discovery logic
+# itself must not assume that).
 discover_api_server_endpoint() {
   [[ "$PLATFORM" == "kind" ]] || return 0
 
-  local ip port
-  ip=$(kubectl get endpoints kubernetes -n default -o jsonpath='{.subsets[0].addresses[0].ip}' 2>/dev/null || true)
+  local ips port
+  ips=$(kubectl get endpoints kubernetes -n default -o jsonpath='{.subsets[0].addresses[*].ip}' 2>/dev/null || true)
   port=$(kubectl get endpoints kubernetes -n default -o jsonpath='{.subsets[0].ports[0].port}' 2>/dev/null || true)
 
-  if [[ -z "$ip" || -z "$port" ]]; then
+  if [[ -z "$ips" || -z "$port" ]]; then
     echo "# WARNING: could not discover kube-apiserver endpoint; NetworkPolicy egress to the API server will not be allowed (pods behind default-deny NetworkPolicies will fail)"
     return 0
   fi
 
-  API_SERVER_CIDR="${ip}/32"
+  local ip
+  for ip in $ips; do
+    API_SERVER_CIDRS+=("${ip}/32")
+  done
   API_SERVER_PORT="$port"
-  echo "# Discovered kube-apiserver endpoint: ${API_SERVER_CIDR}:${API_SERVER_PORT}"
+  echo "# Discovered kube-apiserver endpoint(s): ${API_SERVER_CIDRS[*]} (port ${API_SERVER_PORT})"
 }
 
 # ---------------------------------------------------------------------------
@@ -423,9 +435,12 @@ common_install_flags() {
   flags+=" --set monitoring.alertManager.enabled=false"
   if [[ "$PLATFORM" == "kind" ]]; then
     flags+=" --set global.image.pullPolicy=IfNotPresent"
-    if [[ -n "$API_SERVER_CIDR" ]]; then
-      flags+=" --set networkPolicies.apiServerCIDR=${API_SERVER_CIDR}"
+    if [[ "${#API_SERVER_CIDRS[@]}" -gt 0 ]]; then
       flags+=" --set networkPolicies.apiServerPort=${API_SERVER_PORT}"
+      local i
+      for i in "${!API_SERVER_CIDRS[@]}"; do
+        flags+=" --set networkPolicies.apiServerCIDRs[${i}]=${API_SERVER_CIDRS[$i]}"
+      done
     fi
   fi
   echo "$flags"
