@@ -1386,6 +1386,15 @@ jobs:
             echo "   (Non-blocking in V1.5 rollout; will become blocking after Phase 9)"
           fi
 
+      - name: Publish coverage report to job summary
+        # Works for every PR (fork or same-repo) and every event type: writing
+        # to GITHUB_STEP_SUMMARY needs no token permissions at all, unlike the
+        # sticky PR comment below. This is the primary, permission-agnostic
+        # place contributors should look -- linked directly from the "Test
+        # Suite Summary" entry on the PR's Checks tab even for forks.
+        if: always()
+        run: cat coverage-summary.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Post coverage report to PR
         # Fork PRs get a read-only GITHUB_TOKEN on `pull_request` events -- a
         # GitHub security restriction that cannot be elevated via the
@@ -1393,9 +1402,10 @@ jobs:
         # https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target).
         # Posting the sticky comment there fails with "403 Resource not
         # accessible by integration" and would fail this job (and Merge Gate
-        # with it) for every external contributor PR. Skip for forks instead;
-        # the coverage report is still printed in the step above and visible
-        # in the job logs.
+        # with it) for every external contributor PR. Skip for forks instead
+        # -- the job summary step above already gives them the full report
+        # regardless of token permissions; this step is just the inline-PR-
+        # comment convenience for same-repo PRs.
         if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
         with:
