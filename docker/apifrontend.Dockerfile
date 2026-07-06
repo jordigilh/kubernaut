@@ -11,7 +11,7 @@
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi10/go-toolset:10.1@sha256:0a1242b10a483946adcf3e35e18f5a19996869468f73deff2c5ce451ce0fa6bc AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:85871d8ad1657b23575ebbb732ac672b5545b1c31c044bf6511d5772566a66e9 AS builder
 
 ARG TARGETARCH
 ARG GOOS=linux
