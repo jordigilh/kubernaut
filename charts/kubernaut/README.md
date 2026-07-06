@@ -424,14 +424,16 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | Parameter | Description | Default |
 |---|---|---|
 | `tls.mode` | `hook` (self-signed), `cert-manager` (production), or `manual` | `hook` |
-| `tls.certManager.issuerRef.name` | Issuer name (required when mode=cert-manager) | `""` |
+| `tls.certManager.issuerRef.name` | Issuer/ClusterIssuer name. When mode=cert-manager and left empty, auto-selected via `lookup` if exactly one exists in the cluster (real `helm install`/`upgrade` only); required if rendering via `helm template`/GitOps or if multiple issuers exist | `""` |
 
 ### NetworkPolicies
 
 | Parameter | Description | Default |
 |---|---|---|
 | `networkPolicies.enabled` | Enable default-deny NetworkPolicies for all services | `true` |
-| `networkPolicies.apiServerCIDR` | K8s API server CIDR (e.g., `10.96.0.1/32`) | `""` |
+| `networkPolicies.apiServerCIDR` | K8s API server real backend endpoint CIDR (e.g., `10.89.0.2/32` -- NOT the `kubernetes` Service ClusterIP). Usually left empty: auto-discovered via `lookup` on a real `helm install`/`upgrade`; required if rendering via `helm template`/GitOps | `""` |
+| `networkPolicies.apiServerCIDRs` | Additional API server backend endpoint CIDRs for HA (multiple control-plane nodes). Merged with `apiServerCIDR`; usually left empty (see above) | `[]` |
+| `networkPolicies.apiServerPort` | API server backend endpoint port (commonly 6443). `0` = auto-discover alongside the CIDR | `0` |
 | `networkPolicies.monitoring.namespace` | Namespace for Prometheus metrics scraping ingress | `""` |
 | `networkPolicies.monitoring.prometheusPort` | Prometheus port (9090 vanilla, 9091 OCP) | `9090` |
 | `networkPolicies.monitoring.alertManagerPort` | AlertManager port (9093 vanilla, 9094 OCP) | `9093` |
@@ -444,17 +446,26 @@ When enabled, each service gets a NetworkPolicy with:
 - **Egress**: most services restrict egress to DNS, K8s API, and known peers; **Kubernaut Agent uses an ingress-only policy** (unrestricted egress) because it must reach arbitrary LLM providers, MCP servers, and tool endpoints
 - **Datastorage**: allows egress to PostgreSQL, Valkey, and external container registries (configurable CIDR for OCI bundle validation)
 
-Example:
+Example (API server CIDR/port are auto-discovered here; only set them explicitly for `helm template`/GitOps rendering, see [NetworkPolicy API Server Discovery](#networkpolicy-api-server-discovery)):
 
 ```bash
 helm install kubernaut charts/kubernaut \
   --set networkPolicies.enabled=true \
-  --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
   --set networkPolicies.monitoring.namespace=monitoring \
   --set "networkPolicies.gateway.ingressNamespaces[0]=monitoring"
 ```
 
 On OpenShift, the `values-ocp.yaml` overlay sets monitoring ports to 9091/9094.
+
+#### NetworkPolicy API Server Discovery
+
+During a real `helm install`/`upgrade`, the chart auto-discovers the kube-apiserver's real backend endpoint IP(s) and port via `lookup` against the live `kubernetes` Endpoints object, so `networkPolicies.apiServerCIDR(s)`/`apiServerPort` usually don't need to be set. Set them explicitly if:
+
+- **You render via `helm template` for GitOps (ArgoCD, Flux).** These tools render manifests via `helm template` internally, not a live install/upgrade, so `lookup` always returns empty -- auto-discovery never applies.
+- **The Helm installer ServiceAccount lacks permission to read `Endpoints` in the `default` namespace.** The chart fails with a clear error in this case rather than silently omitting the rule.
+- **Auto-discovery picks the wrong address**, or you want to pin a specific one.
+
+If neither an override nor discovery succeeds, `helm install`/`upgrade` fails with remediation instructions (see `kubectl get endpoints kubernetes -o wide` to find the real address manually). Use `apiServerCIDR` for single-control-plane clusters; use `apiServerCIDRs` (a list) for HA clusters with multiple control-plane nodes -- auto-discovery already collects every backend address automatically.
 
 ### Common Controller Parameters
 

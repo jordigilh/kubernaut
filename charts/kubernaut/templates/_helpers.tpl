@@ -15,6 +15,60 @@ Create a default fully qualified app name.
 {{- end }}
 
 {{/*
+Whether we have real cluster access for `lookup`-based auto-discovery of
+values that would otherwise require an explicit override. During
+`helm template` / `helm install --dry-run=client` -- and for GitOps
+controllers (ArgoCD, Flux) that render manifests via `helm template`
+internally rather than a live install/upgrade -- `lookup` always returns
+empty, so those callers MUST set the relevant override value(s) explicitly;
+auto-discovery only works for a real `helm install`/`upgrade` against a live
+cluster. Mirrors the canary in templates/infrastructure/secrets.yaml.
+Usage: {{ if eq (include "kubernaut.hasClusterAccess" .) "true" }}...{{ end }}
+*/}}
+{{- define "kubernaut.hasClusterAccess" -}}
+{{- if lookup "v1" "Namespace" "" "kube-system" -}}true{{- end -}}
+{{- end }}
+
+{{/*
+cert-manager Issuer/ClusterIssuer name for tls.mode=cert-manager.
+
+Precedence: explicit tls.certManager.issuerRef.name always wins (the only
+path available during `helm template` / GitOps rendering, since `lookup`
+has no live cluster access there). Otherwise, during a real
+`helm install`/`upgrade`, auto-select it if exactly one
+Issuer/ClusterIssuer (per tls.certManager.issuerRef.kind) exists in the
+cluster -- most clusters only run one. Fails loudly with remediation
+instructions if the name can't be determined either way: zero found (no
+cert-manager issuer provisioned), 2+ found (ambiguous -- picking the wrong
+CA silently would be a security-relevant mistake, never guess), or no live
+cluster access (helm template/GitOps must set this explicitly).
+Usage: {{ include "kubernaut.tls.issuerName" . }}
+*/}}
+{{- define "kubernaut.tls.issuerName" -}}
+{{- if .Values.tls.certManager.issuerRef.name -}}
+{{- .Values.tls.certManager.issuerRef.name -}}
+{{- else if eq (include "kubernaut.hasClusterAccess" .) "true" -}}
+{{- $kind := .Values.tls.certManager.issuerRef.kind -}}
+{{- $apiVersion := printf "%s/v1" .Values.tls.certManager.issuerRef.group -}}
+{{- $ns := "" -}}
+{{- if eq $kind "Issuer" -}}{{- $ns = .Release.Namespace -}}{{- end -}}
+{{- $result := lookup $apiVersion $kind $ns "" -}}
+{{- $issuers := ($result.items | default list) -}}
+{{- if eq (len $issuers) 1 -}}
+{{- (index $issuers 0).metadata.name -}}
+{{- else if eq (len $issuers) 0 -}}
+{{- fail (printf "tls.mode=cert-manager but no %s was found and tls.certManager.issuerRef.name is not set. Install cert-manager and create a %s, or set tls.certManager.issuerRef.name explicitly (e.g. \"letsencrypt-prod\" or \"selfsigned-issuer\")." $kind $kind) -}}
+{{- else -}}
+{{- $names := list -}}
+{{- range $issuers -}}{{- $names = append $names .metadata.name -}}{{- end -}}
+{{- fail (printf "tls.mode=cert-manager but tls.certManager.issuerRef.name is not set and multiple %ss exist, so auto-selection is ambiguous. Set tls.certManager.issuerRef.name to one of: %s" $kind (join ", " $names)) -}}
+{{- end -}}
+{{- else -}}
+{{- fail "tls.certManager.issuerRef.name is required when tls.mode=cert-manager and rendering without live cluster access (helm template / GitOps via ArgoCD or Flux always renders this way) -- auto-discovery only works during a real helm install/upgrade." -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Common labels applied to every resource.
 */}}
 {{- define "kubernaut.labels" -}}
@@ -508,12 +562,25 @@ Merged, de-duplicated list of API server backend endpoint ipBlock peers, one
 per control-plane node. Most real clusters run multiple control-plane nodes
 for HA, each a distinct backend endpoint behind the "kubernetes" Service --
 ipBlock rules are evaluated against the post-DNAT destination on most CNIs,
-so every backend IP needs its own allow entry, not just one. apiServerCIDR
-(singular) and apiServerCIDRs (list) are merged so single-endpoint callers
-can keep using the simpler singular field. Renders as a raw (unindented)
-list of `- ipBlock: {cidr: ...}` entries usable under either an egress `to:`
-or ingress `from:` key -- shared because NetworkPolicyPeer is identical for
-both. Empty output (no trailing newline) if no CIDR is configured.
+so every backend IP needs its own allow entry, not just one (see PR #1571
+investigation trail).
+
+Precedence: explicit networkPolicies.apiServerCIDR (singular) and/or
+apiServerCIDRs (list) always win when set, merged together -- this is the
+only path available during `helm template` / GitOps rendering (ArgoCD,
+Flux), since `lookup` has no live cluster access there. Otherwise, during a
+real `helm install`/`upgrade`, auto-discover every backend address from the
+live "kubernetes" Endpoints object so most users never need to set this at
+all. If neither an override nor discovery succeeds (e.g. the installer
+ServiceAccount lacks permission to read Endpoints), fail loudly with
+remediation instructions rather than silently omitting the rule -- pods
+would otherwise crash-loop against a default-deny NetworkPolicy with no
+indication why.
+
+Renders as a raw (unindented) list of `- ipBlock: {cidr: ...}` entries
+usable under either an egress `to:` or ingress `from:` key -- shared because
+NetworkPolicyPeer is identical for both. Empty output if apiServerCIDR(s) is
+deliberately left unset AND there's no live cluster access (helm template).
 Usage: {{ include "kubernaut.np.apiServerPeers" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.apiServerPeers" -}}
@@ -524,6 +591,21 @@ Usage: {{ include "kubernaut.np.apiServerPeers" . | nindent 4 }}
 {{- if .Values.networkPolicies.apiServerCIDRs -}}
 {{- $cidrs = concat $cidrs .Values.networkPolicies.apiServerCIDRs -}}
 {{- end -}}
+{{- if not $cidrs -}}
+{{- if eq (include "kubernaut.hasClusterAccess" .) "true" -}}
+{{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" -}}
+{{- if $ep -}}
+{{- range ($ep.subsets | default list) -}}
+{{- range (.addresses | default list) -}}
+{{- $cidrs = append $cidrs (printf "%s/32" .ip) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not $cidrs -}}
+{{- fail "networkPolicies.enabled=true but could not auto-discover the kube-apiserver endpoint (`lookup \"v1\" \"Endpoints\" \"default\" \"kubernetes\"` returned no addresses -- possible causes: the Helm installer ServiceAccount lacks permission to read Endpoints in the default namespace, or this is an unusual cluster). Set networkPolicies.apiServerCIDR (single control-plane) or networkPolicies.apiServerCIDRs (HA, one entry per control-plane node) explicitly -- see `kubectl get endpoints kubernetes -o wide`." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 {{- $lines := list -}}
 {{- range (uniq $cidrs) -}}
 {{- $lines = append $lines (printf "- ipBlock:\n    cidr: %s" .) -}}
@@ -532,15 +614,45 @@ Usage: {{ include "kubernaut.np.apiServerPeers" . | nindent 4 }}
 {{- end }}
 
 {{/*
+Port the API server's backend endpoint(s) listen on (commonly 6443, not the
+"kubernetes" Service's port 443). Precedence: explicit
+networkPolicies.apiServerPort (nonzero) always wins; otherwise, when no
+apiServerCIDR(s) override is set either, auto-discovered from the same live
+Endpoints lookup as kubernaut.np.apiServerPeers; otherwise defaults to 443
+(only correct if the real backend happens to also listen on 443).
+Usage: {{ include "kubernaut.np.apiServerPort" . }}
+*/}}
+{{- define "kubernaut.np.apiServerPort" -}}
+{{- $port := 0 -}}
+{{- if .Values.networkPolicies.apiServerPort -}}
+{{- $port = .Values.networkPolicies.apiServerPort -}}
+{{- else if and (not .Values.networkPolicies.apiServerCIDR) (not .Values.networkPolicies.apiServerCIDRs) (eq (include "kubernaut.hasClusterAccess" .) "true") -}}
+{{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" -}}
+{{- if $ep -}}
+{{- $subsets := $ep.subsets | default list -}}
+{{- if gt (len $subsets) 0 -}}
+{{- $ports := (index $subsets 0).ports | default list -}}
+{{- if gt (len $ports) 0 -}}
+{{- $port = (index $ports 0).port -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not $port -}}{{- $port = 443 -}}{{- end -}}
+{{- $port -}}
+{{- end }}
+
+{{/*
 K8s API server egress rule: allow TCP to the configured API server backend
-endpoint CIDR(s). See kubernaut.np.apiServerPeers for the CIDR merge logic.
+endpoint CIDR(s). See kubernaut.np.apiServerPeers for the CIDR discovery
+logic.
 Usage: {{ include "kubernaut.np.apiServerEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.apiServerEgress" -}}
 {{- $peers := include "kubernaut.np.apiServerPeers" . -}}
 {{- if $peers }}
 - ports:
-    - port: {{ .Values.networkPolicies.apiServerPort | default 443 }}
+    - port: {{ include "kubernaut.np.apiServerPort" . }}
       protocol: TCP
   to:
     {{- $peers | nindent 4 }}
