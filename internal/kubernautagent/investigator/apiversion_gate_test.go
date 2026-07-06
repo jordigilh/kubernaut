@@ -693,4 +693,43 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 				"UT-KA-1044-023: warning must include conflicting group names")
 		})
 	})
+
+	Describe("UT-KA-1044-024: gate retry preserves the retry turn's reasoning (BR-AI-086 AC6, #1578)", func() {
+		It("should carry the gate-retry turn's Reasoning onto the accepted result, not lose it", func() {
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{
+					Role:    "assistant",
+					Content: `{"rca_summary":"Subscription etcd needs restart","confidence":0.85,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}}`,
+					Reasoning: &llm.ReasoningBlock{
+						Text: "initial turn: identified Subscription but omitted api_version",
+					},
+				}},
+				// Gate retry: LLM provides api_version, with its own reasoning
+				// block for this turn.
+				{Message: llm.Message{
+					Role:    "assistant",
+					Content: `{"rca_summary":"Subscription etcd needs restart","confidence":0.85,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator","api_version":"operators.coreos.com/v1alpha1"}}`,
+					Reasoning: &llm.ReasoningBlock{
+						Text: "retry turn: disambiguated to the operators.coreos.com API group based on the correction prompt",
+					},
+				}},
+				gateWfToolResp(`{"workflow_id":"restart-sub","confidence":0.9,"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator","api_version":"operators.coreos.com/v1alpha1"}}`),
+			}
+
+			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: enricher, AuditStore: auditStore, Logger: logger,
+				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+			})
+
+			result, err := inv.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Reasoning).NotTo(BeNil(),
+				"UT-KA-1044-024: the accepted gate-retry result must carry a Reasoning block, not lose it")
+			Expect(result.Reasoning.Text).To(Equal("retry turn: disambiguated to the operators.coreos.com API group based on the correction prompt"),
+				"UT-KA-1044-024: Reasoning must reflect the winning (retry) turn, not the original pre-gate turn")
+		})
+	})
 })

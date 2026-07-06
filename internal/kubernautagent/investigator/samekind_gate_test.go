@@ -283,6 +283,38 @@ var _ = Describe("Issue #847: sameKindValidationGate", func() {
 		})
 	})
 
+	Describe("UT-KA-847-011: gate retry preserves the retry turn's reasoning (BR-AI-086 AC6, #1578)", func() {
+		It("should carry the gate-retry turn's Reasoning onto the accepted result, not the original turn's", func() {
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{
+					Role:    "assistant",
+					Content: `{"rca_summary":"Node under disk pressure","confidence":0.85,"remediation_target":{"kind":"Node","name":"worker-1"}}`,
+					Reasoning: &llm.ReasoningBlock{
+						Text: "initial turn: assumed Node itself was at fault",
+					},
+				}},
+				// Gate retry: LLM re-evaluates and targets the child Pod, with its
+				// own reasoning block for this turn.
+				{Message: llm.Message{
+					Role:    "assistant",
+					Content: `{"rca_summary":"Pod filled ephemeral storage causing node DiskPressure","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}}`,
+					Reasoning: &llm.ReasoningBlock{
+						Text: "retry turn: re-examined evidence and found the child Pod's ephemeral storage usage was the actual root cause",
+					},
+				}},
+				gateWfToolResp(`{"workflow_id":"evict-pod","confidence":0.9,"remediation_target":{"kind":"Pod","name":"log-spammer","namespace":"default"}}`),
+			}
+
+			result, err := newInv().Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.Reasoning).NotTo(BeNil(),
+				"UT-KA-847-011: the accepted gate-retry result must carry a Reasoning block, not lose it")
+			Expect(result.Reasoning.Text).To(Equal("retry turn: re-examined evidence and found the child Pod's ephemeral storage usage was the actual root cause"),
+				"UT-KA-847-011: Reasoning must reflect the winning (retry) turn, not the original pre-gate turn")
+		})
+	})
+
 	Describe("UT-KA-847-010: correction message names the offending kind", func() {
 		It("should include the target kind in the correction message sent to the LLM (BR-AI-847)", func() {
 			mockClient.responses = []llm.ChatResponse{
