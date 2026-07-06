@@ -236,6 +236,20 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	imageTag := generateInfrastructureImageTag("datastorage", serviceName)
 	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
 
+	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
+	// this service under the agreed-upon fixed tag (artifact-based CI mode,
+	// no registry involved). Mirrors StartGenericContainer's equivalent
+	// check (container_management.go) — without it, every suite that calls
+	// StartDSBootstrap unconditionally re-runs a --no-cache local build even
+	// though CI already built and loaded this exact image.
+	if artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG"); artifactTag != "" {
+		prebuiltImage := fmt.Sprintf("localhost/datastorage:%s", artifactTag)
+		if checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
+			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", prebuiltImage)
+			return prebuiltImage, nil
+		}
+	}
+
 	// DEBUG: Show environment variable status
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
