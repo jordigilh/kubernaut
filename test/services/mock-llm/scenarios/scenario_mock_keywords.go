@@ -61,6 +61,30 @@ func problemResolvedConfig() MockScenarioConfig {
 	}
 }
 
+// reasoningCaptureConfig simulates a DeepSeek/vLLM-style OpenAI-compatible
+// reasoning model for KA's openaicompat reasoning-capture E2E test
+// (E2E-KA-AUDIT-001, BR-AI-086 AC6, #1578): the response carries a
+// reasoning_content field alongside the submit_result_with_workflow tool
+// call, proving the full pipeline (capture -> InvestigationResult ->
+// audit trail -> DataStorage, correlation_id-reconstructable per SOC2
+// CC8.1) without requiring a real reasoning-capable provider.
+func reasoningCaptureConfig() MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName: "mock_reasoning_capture", SignalName: "MOCK_REASONING_CAPTURE", Severity: "critical",
+		WorkflowName: "oomkill-increase-memory-v1", WorkflowID: uuid.DeterministicUUID("oomkill-increase-memory-v1"),
+		WorkflowTitle: "OOMKill Recovery - Increase Memory Limits", Confidence: 0.92,
+		Rationale:    "Sustained memory climb over 6h rules out a transient spike; increasing limits addresses the sustained leak",
+		RootCause:    "Container exceeded memory limits due to a sustained memory leak",
+		ResourceKind: "Deployment", ResourceNS: "production", ResourceName: "api-server",
+		APIVersion: "apps/v1",
+		Parameters: map[string]string{"MEMORY_LIMIT_NEW": "512Mi"}, ExecutionEngine: "job",
+		Contributing:         []string{"memory_leak", "insufficient_memory_limits"},
+		InvestigationOutcome: "actionable",
+		IsActionable:         BoolPtr(true),
+		ReasoningText:        "Weighed a transient traffic spike against a sustained leak: memory climbed steadily over 6h with no correlated traffic increase, which rules out a spike and points to a leak. Increasing the memory limit is the safe immediate mitigation while the leak itself would need a code-level fix.",
+	}
+}
+
 func problemResolvedContradictionConfig() MockScenarioConfig {
 	return MockScenarioConfig{
 		ScenarioName: "problem_resolved_contradiction", SignalName: "MOCK_PROBLEM_RESOLVED_CONTRADICTION", Severity: "info",

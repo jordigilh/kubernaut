@@ -88,6 +88,32 @@ var _ = Describe("Response Builders", func() {
 		})
 	})
 
+	// UT-MOCK-003: reasoning_content simulation (E2E-KA-AUDIT-001, BR-AI-086
+	// AC6, #1578) — MockScenarioConfig.ReasoningText, when set, must surface
+	// as the OpenAI-protocol reasoning_content field on both response
+	// shapes, and must be entirely absent (not an empty string) when unset.
+	Describe("UT-MOCK-003: reasoning_content simulation", func() {
+		It("UT-MOCK-003-001: BuildTextResponse includes reasoning_content when ReasoningText is set", func() {
+			cfg.ReasoningText = "weighed leak vs spike before concluding"
+			resp := response.BuildTextResponse("mock-model", cfg)
+			Expect(resp.Choices[0].Message.ReasoningContent).To(Equal(cfg.ReasoningText))
+		})
+
+		It("UT-MOCK-003-002: BuildToolCallResponse includes reasoning_content when ReasoningText is set", func() {
+			cfg.ReasoningText = "weighed leak vs spike before concluding"
+			resp := response.BuildToolCallResponse("mock-model", "search_workflow_catalog", cfg)
+			Expect(resp.Choices[0].Message.ReasoningContent).To(Equal(cfg.ReasoningText))
+		})
+
+		It("UT-MOCK-003-003: reasoning_content is omitted from the marshaled JSON when ReasoningText is unset", func() {
+			resp := response.BuildTextResponse("mock-model", cfg)
+			b, err := json.Marshal(resp)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(b)).NotTo(ContainSubstring("reasoning_content"),
+				"reasoning_content must be omitted (omitempty), not serialized as an empty string")
+		})
+	})
+
 	Describe("UT-MOCK-002: Ollama response builder", func() {
 		It("UT-MOCK-002-001: should produce Ollama response with done=true", func() {
 			resp := response.BuildOllamaResponse("mock-model", cfg)

@@ -912,6 +912,8 @@ data:
       llm:
         provider: "openai"
         apiKeyFile: "/etc/kubernautagent/llm-runtime/api-key"
+        reasoning:
+          enabled: true
       alignmentCheck:
         enabled: true
         timeout: "10s"

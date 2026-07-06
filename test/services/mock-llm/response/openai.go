@@ -41,8 +41,9 @@ func BuildToolCallResponse(model, toolName string, cfg scenarios.MockScenarioCon
 			{
 				Index: 0,
 				Message: openai.Message{
-					Role:    "assistant",
-					Content: content,
+					Role:             "assistant",
+					Content:          content,
+					ReasoningContent: cfg.ReasoningText,
 					ToolCalls: []openai.ToolCall{
 						{
 							ID:   randomCallID(),
@@ -110,8 +111,9 @@ func BuildTextResponse(model string, cfg scenarios.MockScenarioConfig) openai.Ch
 			{
 				Index: 0,
 				Message: openai.Message{
-					Role:    "assistant",
-					Content: &text,
+					Role:             "assistant",
+					Content:          &text,
+					ReasoningContent: cfg.ReasoningText,
 				},
 				FinishReason: "stop",
 			},
