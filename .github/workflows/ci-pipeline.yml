@@ -1387,7 +1387,16 @@ jobs:
           fi
 
       - name: Post coverage report to PR
-        if: github.event_name == 'pull_request'
+        # Fork PRs get a read-only GITHUB_TOKEN on `pull_request` events -- a
+        # GitHub security restriction that cannot be elevated via the
+        # `permissions:` block above (see
+        # https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target).
+        # Posting the sticky comment there fails with "403 Resource not
+        # accessible by integration" and would fail this job (and Merge Gate
+        # with it) for every external contributor PR. Skip for forks instead;
+        # the coverage report is still printed in the step above and visible
+        # in the job logs.
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3
         with:
           header: coverage-report
