@@ -1,0 +1,247 @@
+{{/*
+BR-PLATFORM-006 (Kubernaut Operator parity): standalone web console (A2A chat UI).
+Ported from the Operator's ConsoleDeployment/ConsoleService/ConsoleNginxConfigMap
+(kubernaut-operator/internal/resources/console.go). Opt-in — disabled by default,
+since it requires a pre-existing OIDC client Secret and an OIDC issuer configured
+on APIFrontend.
+*/}}
+{{- if .Values.console.enabled }}
+{{- if not .Values.console.auth.secretName }}
+{{- fail "console.auth.secretName is required when console.enabled=true (Secret must contain keys: client-id, client-secret, cookie-secret)" }}
+{{- end }}
+{{- if not (include "kubernaut.console.issuerURL" .) }}
+{{- fail "console.enabled=true requires an OIDC issuer: set apifrontend.config.auth.issuerURL or apifrontend.config.auth.jwtProviders[0].issuerURL" }}
+{{- end }}
+{{- if not .Values.console.ingress.host }}
+{{- fail "console.ingress.host is required when console.enabled=true (the browser-facing hostname is needed for the oauth2-proxy OIDC redirect URL, even if you manage external access with your own Ingress/Route instead of console.ingress.enabled)" }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: console-nginx
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: console
+    {{- include "kubernaut.labels" . | nindent 4 }}
+data:
+  http.conf: |
+    limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
+    limit_req_zone $binary_remote_addr zone=mcp:10m rate=10r/s;
+
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
+    gzip_min_length 256;
+    gzip_vary on;
+  server.conf: |
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+    proxy_ssl_trusted_certificate /etc/tls-ca/ca.crt;
+    proxy_ssl_verify on;
+    proxy_ssl_server_name on;
+
+    location /a2a/ {
+      limit_req zone=api burst=50 nodelay;
+      proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+      proxy_http_version 1.1;
+      proxy_set_header Connection "";
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header Authorization "Bearer $http_x_forwarded_access_token";
+      proxy_buffering off;
+      proxy_cache off;
+      proxy_read_timeout 3600s;
+      proxy_send_timeout 3600s;
+      send_timeout 3600s;
+      keepalive_timeout 3600s;
+    }
+
+    location = /mcp {
+      limit_req zone=mcp burst=20 nodelay;
+      proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header Authorization "Bearer $http_x_forwarded_access_token";
+      proxy_set_header Mcp-Session-Id $http_mcp_session_id;
+      proxy_read_timeout 30s;
+      proxy_hide_header Access-Control-Expose-Headers;
+      add_header Access-Control-Expose-Headers "Mcp-Session-Id" always;
+    }
+
+    location /.well-known/ {
+      proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+      proxy_http_version 1.1;
+      proxy_set_header Host $host;
+    }
+
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|eot)$ {
+      expires 1y;
+      add_header Cache-Control "public, immutable";
+      try_files $uri =404;
+    }
+
+    location / {
+      add_header Cache-Control "no-cache, must-revalidate";
+      try_files $uri $uri/ /index.html;
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: console
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: console
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.console.replicas }}
+  selector:
+    matchLabels:
+      app: console
+  template:
+    metadata:
+      labels:
+        app: console
+    spec:
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.console | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.console | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.console "global" .Values.global) | nindent 6 }}
+      containers:
+        - name: oauth2-proxy
+          image: {{ .Values.console.oauth2Proxy.image | quote }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          args:
+            - --provider=oidc
+            - --oidc-issuer-url={{ include "kubernaut.console.issuerURL" . }}
+            - --redirect-url=https://{{ .Values.console.ingress.host }}/oauth2/callback
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://localhost:8080
+            - --pass-access-token=true
+            - --skip-provider-button=true
+            - --cookie-name=_kubernaut_console
+            - --cookie-secure=true
+            - --cookie-samesite=lax
+            - --email-domain=*
+            - --scope=openid email profile
+            - --skip-jwt-bearer-tokens=true
+            - --cookie-refresh=25m
+            - --ssl-insecure-skip-verify=true
+            - --ping-path=/oauth2/ping
+          env:
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.console.auth.secretName }}
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.console.auth.secretName }}
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.console.auth.secretName }}
+                  key: cookie-secret
+          ports:
+            - name: http
+              containerPort: 4180
+              protocol: TCP
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.console | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /oauth2/ping
+              port: 4180
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /oauth2/ping
+              port: 4180
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+        - name: console
+          image: {{ include "kubernaut.image" (dict "service" "kubernaut-console" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          ports:
+            - name: static
+              containerPort: 8080
+              protocol: TCP
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.console | nindent 12 }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.console.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-tmp
+              mountPath: /tmp
+            - name: nginx-config
+              mountPath: /opt/app-root/etc/nginx.d/kubernaut-http.conf
+              subPath: http.conf
+              readOnly: true
+            - name: nginx-config
+              mountPath: /opt/app-root/etc/nginx.default.d/kubernaut-server.conf
+              subPath: server.conf
+              readOnly: true
+            - name: tls-ca
+              mountPath: /etc/tls-ca
+              readOnly: true
+      volumes:
+        - name: nginx-tmp
+          emptyDir: {}
+        - name: nginx-config
+          configMap:
+            name: console-nginx
+        - name: tls-ca
+          configMap:
+            name: inter-service-ca
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: console
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: console
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app: console
+  ports:
+    - name: http
+      port: 4180
+      targetPort: http
+      protocol: TCP
+{{- end }}

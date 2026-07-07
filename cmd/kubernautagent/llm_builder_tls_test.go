@@ -17,73 +17,61 @@ limitations under the License.
 package main
 
 import (
-	"testing"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 )
 
-func TestBuildTransportChain_TLSCaFile(t *testing.T) {
-	caPath := generateTestCACert(t, "Test CA")
+var _ = Describe("buildTransportChain — TLS wiring", func() {
+	It("returns a non-nil transport when tlsCaFile is set", func() {
+		caPath := generateTestCACert(GinkgoTB(), "Test CA")
 
-	cfg := kaconfig.DefaultConfig()
-	cfg.AI.LLM.TLSCaFile = caPath
+		cfg := kaconfig.DefaultConfig()
+		cfg.AI.LLM.TLSCaFile = caPath
 
-	merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
+		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 
-	transport, err := buildTransportChain(merged)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if transport == nil {
-		t.Fatal("expected non-nil transport when tlsCaFile is set, got nil")
-	}
-}
+		transport, err := buildTransportChain(merged)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(transport).NotTo(BeNil())
+	})
 
-func TestBuildTransportChain_NoTLSCaFile(t *testing.T) {
-	cfg := kaconfig.DefaultConfig()
+	It("returns a nil transport when no custom TLS config is set", func() {
+		cfg := kaconfig.DefaultConfig()
 
-	merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
+		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 
-	transport, err := buildTransportChain(merged)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if transport != nil {
-		t.Fatalf("expected nil transport when no custom config, got %T", transport)
-	}
-}
+		transport, err := buildTransportChain(merged)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(transport).To(BeNil())
+	})
 
-// UT-KA-1342-030: buildTransportChain returns error for invalid CA file (fail-hard per SC-8)
-func TestBuildTransportChain_InvalidCaFile(t *testing.T) {
-	cfg := kaconfig.DefaultConfig()
-	cfg.AI.LLM.TLSCaFile = "/nonexistent/ca.crt"
+	// UT-KA-1342-030: buildTransportChain returns error for invalid CA file (fail-hard per SC-8)
+	It("returns an error for an invalid CA file (fail-hard per SC-8)", func() {
+		cfg := kaconfig.DefaultConfig()
+		cfg.AI.LLM.TLSCaFile = "/nonexistent/ca.crt"
 
-	merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
+		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 
-	_, err := buildTransportChain(merged)
-	if err == nil {
-		t.Fatal("expected error for invalid CA file, got nil")
-	}
-}
+		_, err := buildTransportChain(merged)
+		Expect(err).To(HaveOccurred())
+	})
 
-// UT-KA-1342-020: buildTransportChain passes WithClientCert when cert fields are set
-func TestBuildTransportChain_mTLS(t *testing.T) {
-	caPath := generateTestCACert(t, "Test CA")
+	// UT-KA-1342-020: buildTransportChain passes WithClientCert when cert fields are set
+	It("builds a non-nil transport for a full mTLS config (ca + cert + key)", func() {
+		caPath := generateTestCACert(GinkgoTB(), "Test CA")
+		certPath, keyPath := generateTestClientCert(GinkgoTB(), caPath)
 
-	certPath, keyPath := generateTestClientCert(t, caPath)
+		cfg := kaconfig.DefaultConfig()
+		cfg.AI.LLM.TLSCaFile = caPath
+		cfg.AI.LLM.TLSCertFile = certPath
+		cfg.AI.LLM.TLSKeyFile = keyPath
 
-	cfg := kaconfig.DefaultConfig()
-	cfg.AI.LLM.TLSCaFile = caPath
-	cfg.AI.LLM.TLSCertFile = certPath
-	cfg.AI.LLM.TLSKeyFile = keyPath
+		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 
-	merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
-
-	chain, err := buildTransportChain(merged)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if chain == nil {
-		t.Fatal("expected non-nil transport for mTLS config")
-	}
-}
+		chain, err := buildTransportChain(merged)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(chain).NotTo(BeNil())
+	})
+})

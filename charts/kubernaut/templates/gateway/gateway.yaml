@@ -82,6 +82,12 @@ data:
       mcpGatewayType: {{ $gatewayFleet.mcpGatewayType | quote }}
       {{- end }}
       tlsCAFile: {{ $gatewayFleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). NOT YET FUNCTIONAL: no
+           FleetConfig field consumes tokenPath until Issue #1556 lands the Go-side support.
+           Rendered ahead of time so enabling it later is a values-only change. */}}
+      {{- if .Values.gateway.fleet.tokenSecretRef }}
+      tokenPath: "/etc/gateway/{{ .Values.gateway.fleet.tokenSecretRef }}/token"
+      {{- end }}
       {{- if .Values.gateway.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
@@ -230,6 +236,11 @@ spec:
               mountPath: "/etc/gateway/{{ $gatewayOauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
+            {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.tokenSecretRef }}
+            - name: fleet-acm-token
+              mountPath: "/etc/gateway/{{ .Values.gateway.fleet.tokenSecretRef }}"
+              readOnly: true
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -261,6 +272,11 @@ spec:
           secret:
             secretName: {{ $gatewayOauth2.credentialsSecretRef }}
         {{- end }}
+        {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.tokenSecretRef }}
+        - name: fleet-acm-token
+          secret:
+            secretName: {{ .Values.gateway.fleet.tokenSecretRef }}
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
@@ -270,9 +286,6 @@ metadata:
   labels:
     app: gateway
     {{- include "kubernaut.labels" . | nindent 4 }}
-  annotations:
-    # DEPRECATED v1.4 (Issue #848): OCP service-ca annotation. Removed in v1.5.
-    service.beta.openshift.io/serving-cert-secret-name: gateway-tls
 spec:
   type: {{ .Values.gateway.service.type }}
   selector:

@@ -1,0 +1,3 @@
+{{/* jobName override: matches the Kubernaut Operator's "kubernautagent" (no hyphen) job label
+     convention, so PromQL queries/dashboards are portable across OCP/non-OCP installs. */}}
+{{ include "kubernaut.serviceMonitor" (dict "root" . "service" "kubernaut-agent" "jobName" "kubernautagent") }}

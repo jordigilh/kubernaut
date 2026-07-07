@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 
@@ -50,105 +52,6 @@ import (
 // so any future change to that behavior is a deliberate, reviewed decision.
 // ============================================================================
 
-func TestBuildToolRegistry_NoIntegrationsConfigured_OnlyRegistersBaselineTool(t *testing.T) {
-	cfg := &kaconfig.Config{}
-
-	reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
-
-	all := reg.All()
-	if len(all) != 1 {
-		t.Fatalf("BR-SECURITY-AC6: expected exactly 1 baseline tool (least privilege) when no integrations "+
-			"are configured, got %d: %v", len(all), toolNames(all))
-	}
-	if _, err := reg.Get("todo_write"); err != nil {
-		t.Fatalf("expected the baseline todo_write tool to always be registered: %v", err)
-	}
-}
-
-func TestBuildToolRegistry_PrometheusNotConfigured_DoesNotRegisterPrometheusTools(t *testing.T) {
-	cfg := &kaconfig.Config{}
-
-	reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
-
-	for _, name := range promtools.AllToolNames {
-		if _, err := reg.Get(name); err == nil {
-			t.Errorf("BR-SECURITY-AC6: tool %q must not be registered when Prometheus is not configured", name)
-		}
-	}
-}
-
-func TestBuildToolRegistry_PrometheusConfigured_RegistersAllPrometheusTools(t *testing.T) {
-	cfg := &kaconfig.Config{}
-	cfg.Integrations.Tools.Prometheus.URL = "http://localhost:9090"
-
-	reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
-
-	for _, name := range promtools.AllToolNames {
-		if _, err := reg.Get(name); err != nil {
-			t.Errorf("BR-SECURITY-AC6: expected Prometheus tool %q to be registered when Prometheus.URL is set: %v", name, err)
-		}
-	}
-}
-
-func TestBuildToolRegistry_PrometheusWithValidTLSCaFile_RegistersToolsOverSecureTransport(t *testing.T) {
-	caPath := generateTestCACert(t, "Prometheus Test CA")
-	cfg := &kaconfig.Config{}
-	cfg.Integrations.Tools.Prometheus.URL = "https://prometheus.example.com"
-	cfg.Integrations.Tools.Prometheus.TLSCaFile = caPath
-
-	reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
-
-	for _, name := range promtools.AllToolNames {
-		if _, err := reg.Get(name); err != nil {
-			t.Errorf("SC-8: expected Prometheus tool %q to be registered when a valid TLSCaFile is configured: %v", name, err)
-		}
-	}
-}
-
-func TestBuildToolRegistry_PrometheusWithInvalidTLSCaFile_FailsOpenToDefaultTransportButStillRegistersTools(t *testing.T) {
-	cfg := &kaconfig.Config{}
-	cfg.Integrations.Tools.Prometheus.URL = "https://prometheus.example.com"
-	cfg.Integrations.Tools.Prometheus.TLSCaFile = "/nonexistent/ca.crt"
-
-	reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
-
-	// SC-8 characterization: a broken CA bundle degrades to the default
-	// transport (logged, not fatal) rather than refusing to register the
-	// tool set. This test locks in that documented behavior.
-	for _, name := range promtools.AllToolNames {
-		if _, err := reg.Get(name); err != nil {
-			t.Errorf("expected Prometheus tool %q to still be registered despite invalid TLSCaFile (fail-open transport, not fail-closed registration): %v", name, err)
-		}
-	}
-}
-
-func TestBuildToolRegistry_AlertmanagerConfigured_RegistersAllAlertmanagerTools(t *testing.T) {
-	cfg := &kaconfig.Config{}
-	cfg.Integrations.Tools.Alertmanager.URL = "http://localhost:9093"
-
-	reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
-
-	for _, name := range amtools.AllToolNames {
-		if _, err := reg.Get(name); err != nil {
-			t.Errorf("BR-SECURITY-AC6: expected Alertmanager tool %q to be registered when Alertmanager.URL is set: %v", name, err)
-		}
-	}
-}
-
-func TestBuildToolRegistry_AlertmanagerWithInvalidTLSCaFile_FailsOpenToDefaultTransportButStillRegistersTools(t *testing.T) {
-	cfg := &kaconfig.Config{}
-	cfg.Integrations.Tools.Alertmanager.URL = "https://alertmanager.example.com"
-	cfg.Integrations.Tools.Alertmanager.TLSCaFile = "/nonexistent/ca.crt"
-
-	reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
-
-	for _, name := range amtools.AllToolNames {
-		if _, err := reg.Get(name); err != nil {
-			t.Errorf("expected Alertmanager tool %q to still be registered despite invalid TLSCaFile (fail-open transport, not fail-closed registration): %v", name, err)
-		}
-	}
-}
-
 func toolNames(all []tools.Tool) []string {
 	names := make([]string, 0, len(all))
 	for _, tl := range all {
@@ -156,6 +59,97 @@ func toolNames(all []tools.Tool) []string {
 	}
 	return names
 }
+
+var _ = Describe("buildToolRegistry", func() {
+	It("BR-SECURITY-AC6: registers only the baseline tool (least privilege) when no integrations are configured", func() {
+		cfg := &kaconfig.Config{}
+
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+
+		all := reg.All()
+		Expect(all).To(HaveLen(1), "expected exactly 1 baseline tool (least privilege), got %v", toolNames(all))
+		_, err := reg.Get("todo_write")
+		Expect(err).NotTo(HaveOccurred(), "expected the baseline todo_write tool to always be registered")
+	})
+
+	It("BR-SECURITY-AC6: does not register Prometheus tools when Prometheus is not configured", func() {
+		cfg := &kaconfig.Config{}
+
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+
+		for _, name := range promtools.AllToolNames {
+			_, err := reg.Get(name)
+			Expect(err).To(HaveOccurred(), "tool %q must not be registered when Prometheus is not configured", name)
+		}
+	})
+
+	It("BR-SECURITY-AC6: registers all Prometheus tools when Prometheus.URL is set", func() {
+		cfg := &kaconfig.Config{}
+		cfg.Integrations.Tools.Prometheus.URL = "http://localhost:9090"
+
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+
+		for _, name := range promtools.AllToolNames {
+			_, err := reg.Get(name)
+			Expect(err).NotTo(HaveOccurred(), "expected Prometheus tool %q to be registered when Prometheus.URL is set", name)
+		}
+	})
+
+	It("SC-8: registers Prometheus tools over a secure transport when a valid TLSCaFile is configured", func() {
+		caPath := generateTestCACert(GinkgoTB(), "Prometheus Test CA")
+		cfg := &kaconfig.Config{}
+		cfg.Integrations.Tools.Prometheus.URL = "https://prometheus.example.com"
+		cfg.Integrations.Tools.Prometheus.TLSCaFile = caPath
+
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+
+		for _, name := range promtools.AllToolNames {
+			_, err := reg.Get(name)
+			Expect(err).NotTo(HaveOccurred(), "expected Prometheus tool %q to be registered when a valid TLSCaFile is configured", name)
+		}
+	})
+
+	// SC-8 characterization: a broken CA bundle degrades to the default
+	// transport (logged, not fatal) rather than refusing to register the
+	// tool set. This test locks in that documented behavior.
+	It("SC-8: still registers Prometheus tools (fail-open transport, not fail-closed registration) despite an invalid TLSCaFile", func() {
+		cfg := &kaconfig.Config{}
+		cfg.Integrations.Tools.Prometheus.URL = "https://prometheus.example.com"
+		cfg.Integrations.Tools.Prometheus.TLSCaFile = "/nonexistent/ca.crt"
+
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+
+		for _, name := range promtools.AllToolNames {
+			_, err := reg.Get(name)
+			Expect(err).NotTo(HaveOccurred(), "expected Prometheus tool %q to still be registered despite invalid TLSCaFile", name)
+		}
+	})
+
+	It("BR-SECURITY-AC6: registers all Alertmanager tools when Alertmanager.URL is set", func() {
+		cfg := &kaconfig.Config{}
+		cfg.Integrations.Tools.Alertmanager.URL = "http://localhost:9093"
+
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+
+		for _, name := range amtools.AllToolNames {
+			_, err := reg.Get(name)
+			Expect(err).NotTo(HaveOccurred(), "expected Alertmanager tool %q to be registered when Alertmanager.URL is set", name)
+		}
+	})
+
+	It("still registers Alertmanager tools (fail-open transport, not fail-closed registration) despite an invalid TLSCaFile", func() {
+		cfg := &kaconfig.Config{}
+		cfg.Integrations.Tools.Alertmanager.URL = "https://alertmanager.example.com"
+		cfg.Integrations.Tools.Alertmanager.TLSCaFile = "/nonexistent/ca.crt"
+
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+
+		for _, name := range amtools.AllToolNames {
+			_, err := reg.Get(name)
+			Expect(err).NotTo(HaveOccurred(), "expected Alertmanager tool %q to still be registered despite invalid TLSCaFile", name)
+		}
+	})
+})
 
 // ============================================================================
 // dsCatalogFetcher.FetchValidator — characterization tests (RED phase, Wave 5).
@@ -210,7 +204,7 @@ func workflowJSON(workflowID, content string) map[string]interface{} {
 	}
 }
 
-func newDSCatalogFetcherForTest(t *testing.T, handler http.Handler) *dsCatalogFetcher {
+func newDSCatalogFetcherForTest(t testing.TB, handler http.Handler) *dsCatalogFetcher {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -222,109 +216,80 @@ func newDSCatalogFetcherForTest(t *testing.T, handler http.Handler) *dsCatalogFe
 	return newDSCatalogFetcher(&dsClients{ogenClient: ogenC}, logr.Discard())
 }
 
-func TestFetchValidator_EmptyCatalog_FailsClosed(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"workflows": []interface{}{}})
-	})
-
-	f := newDSCatalogFetcherForTest(t, mux)
-	validator, err := f.FetchValidator(context.Background())
-
-	if err == nil {
-		t.Fatal("BR-SECURITY-SI10: expected an error when the workflow catalog is empty (fail-closed, no implicit allow-all)")
-	}
-	if validator != nil {
-		t.Fatal("expected a nil validator on empty catalog")
-	}
-}
-
-func TestFetchValidator_ListWorkflowsFails_ReturnsWrappedError(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	})
-
-	f := newDSCatalogFetcherForTest(t, mux)
-	validator, err := f.FetchValidator(context.Background())
-
-	if err == nil {
-		t.Fatal("expected an error when the DataStorage ListWorkflows call fails")
-	}
-	if validator != nil {
-		t.Fatal("expected a nil validator when ListWorkflows fails")
-	}
-}
-
-func TestFetchValidator_ValidCatalog_BuildsAllowlistWithCatalogMetadata(t *testing.T) {
-	const wfID = "550e8400-e29b-41d4-a716-446655440000"
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"workflows": []interface{}{workflowJSON(wfID, validWorkflowSchemaYAML)},
+var _ = Describe("dsCatalogFetcher.FetchValidator", func() {
+	It("BR-SECURITY-SI10: fails closed when the workflow catalog is empty", func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{"workflows": []interface{}{}})
 		})
+
+		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
+		validator, err := f.FetchValidator(context.Background())
+
+		Expect(err).To(HaveOccurred(), "expected an error when the workflow catalog is empty (fail-closed, no implicit allow-all)")
+		Expect(validator).To(BeNil())
 	})
 
-	f := newDSCatalogFetcherForTest(t, mux)
-	validator, err := f.FetchValidator(context.Background())
-	if err != nil {
-		t.Fatalf("expected no error building the validator from a valid catalog: %v", err)
-	}
-	if validator == nil {
-		t.Fatal("expected a non-nil validator")
-	}
-
-	meta, ok := validator.GetWorkflowMeta(wfID)
-	if !ok {
-		t.Fatalf("BR-SECURITY-AC6: expected workflow %q to be part of the allowlist", wfID)
-	}
-	if meta.ExecutionEngine != "tekton" {
-		t.Errorf("expected ExecutionEngine=tekton, got %q", meta.ExecutionEngine)
-	}
-	if meta.Version != "1.0.0" {
-		t.Errorf("expected Version=1.0.0, got %q", meta.Version)
-	}
-	if meta.ServiceAccountName != "workflow-runner" {
-		t.Errorf("expected ServiceAccountName=workflow-runner, got %q", meta.ServiceAccountName)
-	}
-	if meta.ExecutionBundleDigest != "sha256:aaa" {
-		t.Errorf("expected ExecutionBundleDigest=sha256:aaa, got %q", meta.ExecutionBundleDigest)
-	}
-	if len(meta.Parameters) != 1 || meta.Parameters[0].Name != "TARGET_NAMESPACE" {
-		t.Errorf("expected the schema's TARGET_NAMESPACE parameter to be present, got %+v", meta.Parameters)
-	}
-}
-
-func TestFetchValidator_MalformedSchemaContent_StripsParametersFailClosed(t *testing.T) {
-	const wfID = "550e8400-e29b-41d4-a716-446655440001"
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			// Content is not a valid RemediationWorkflow CRD envelope (missing
-			// apiVersion/kind/metadata.name) — dsschema.Parser.Parse must fail.
-			"workflows": []interface{}{workflowJSON(wfID, "not: a-valid-workflow-schema")},
+	It("returns a wrapped error when the DataStorage ListWorkflows call fails", func() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
 		})
+
+		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
+		validator, err := f.FetchValidator(context.Background())
+
+		Expect(err).To(HaveOccurred(), "expected an error when the DataStorage ListWorkflows call fails")
+		Expect(validator).To(BeNil())
 	})
 
-	f := newDSCatalogFetcherForTest(t, mux)
-	validator, err := f.FetchValidator(context.Background())
-	if err != nil {
-		t.Fatalf("BR-SECURITY-SI10: a single workflow's malformed schema must not fail the whole catalog fetch: %v", err)
-	}
+	It("builds an allowlist with catalog metadata from a valid catalog", func() {
+		const wfID = "550e8400-e29b-41d4-a716-446655440000"
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"workflows": []interface{}{workflowJSON(wfID, validWorkflowSchemaYAML)},
+			})
+		})
 
-	meta, ok := validator.GetWorkflowMeta(wfID)
-	if !ok {
-		t.Fatalf("expected workflow %q to still be present in the allowlist (identity is not affected by schema parse failure)", wfID)
-	}
-	if len(meta.Parameters) != 0 {
-		t.Errorf("BR-SECURITY-SI10: expected Parameters to be stripped (fail-closed) when schema Content fails to parse, got %+v", meta.Parameters)
-	}
-	// Non-parameter metadata (sourced from the catalog entry itself, not the
-	// parsed schema body) must still be populated.
-	if meta.ExecutionEngine != "tekton" {
-		t.Errorf("expected ExecutionEngine to still be populated from the catalog entry, got %q", meta.ExecutionEngine)
-	}
-}
+		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
+		validator, err := f.FetchValidator(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(validator).NotTo(BeNil())
+
+		meta, ok := validator.GetWorkflowMeta(wfID)
+		Expect(ok).To(BeTrue(), "BR-SECURITY-AC6: expected workflow %q to be part of the allowlist", wfID)
+		Expect(meta.ExecutionEngine).To(Equal("tekton"))
+		Expect(meta.Version).To(Equal("1.0.0"))
+		Expect(meta.ServiceAccountName).To(Equal("workflow-runner"))
+		Expect(meta.ExecutionBundleDigest).To(Equal("sha256:aaa"))
+		Expect(meta.Parameters).To(HaveLen(1))
+		Expect(meta.Parameters[0].Name).To(Equal("TARGET_NAMESPACE"))
+	})
+
+	It("strips parameters (fail-closed) when a workflow's schema content is malformed, but keeps it in the allowlist", func() {
+		const wfID = "550e8400-e29b-41d4-a716-446655440001"
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				// Content is not a valid RemediationWorkflow CRD envelope (missing
+				// apiVersion/kind/metadata.name) — dsschema.Parser.Parse must fail.
+				"workflows": []interface{}{workflowJSON(wfID, "not: a-valid-workflow-schema")},
+			})
+		})
+
+		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
+		validator, err := f.FetchValidator(context.Background())
+		Expect(err).NotTo(HaveOccurred(), "BR-SECURITY-SI10: a single workflow's malformed schema must not fail the whole catalog fetch")
+
+		meta, ok := validator.GetWorkflowMeta(wfID)
+		Expect(ok).To(BeTrue(), "expected workflow %q to still be present in the allowlist (identity is not affected by schema parse failure)", wfID)
+		Expect(meta.Parameters).To(BeEmpty(), "BR-SECURITY-SI10: expected Parameters to be stripped (fail-closed) when schema Content fails to parse")
+		// Non-parameter metadata (sourced from the catalog entry itself, not the
+		// parsed schema body) must still be populated.
+		Expect(meta.ExecutionEngine).To(Equal("tekton"), "expected ExecutionEngine to still be populated from the catalog entry")
+	})
+})

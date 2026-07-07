@@ -241,6 +241,38 @@ spec:
         {{- include "kubernaut.podSecurityContext" .Values.workflowexecution | nindent 8 }}
       {{- include "kubernaut.affinity" .Values.workflowexecution | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.workflowexecution "global" .Values.global) | nindent 6 }}
+      {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
+      # BR-PLATFORM-005 (Kubernaut Operator parity): combine the inter-service CA
+      # with the AAP/AWX private CA into one bundle, since TLS_CA_FILE accepts a
+      # single file. Gracefully skips the inter-service CA half when TLS is
+      # disabled (inter-service-ca ConfigMap absent/empty).
+      initContainers:
+        - name: build-ca-bundle
+          image: {{ .Values.hooks.tlsCerts.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.workflowexecution | nindent 12 }}
+          command: ["sh", "-c"]
+          args:
+            - |
+              { [ -s /etc/tls-ca/ca.crt ] && cat /etc/tls-ca/ca.crt; cat /etc/aap-ca/aap-ca.crt; } > /etc/combined-ca/ca-bundle.crt
+          volumeMounts:
+            - name: tls-ca
+              mountPath: /etc/tls-ca
+              readOnly: true
+            - name: aap-ca
+              mountPath: /etc/aap-ca
+              readOnly: true
+            - name: combined-ca
+              mountPath: /etc/combined-ca
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+      {{- end }}
       containers:
         - name: workflowexecution-controller
           image: {{ include "kubernaut.image" (dict "service" "workflowexecution" "global" .Values.global "appVersion" .Chart.AppVersion) }}
@@ -274,7 +306,11 @@ spec:
             failureThreshold: 6
           env:
             - name: TLS_CA_FILE
+              {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
+              value: "/etc/combined-ca/ca-bundle.crt"
+              {{- else }}
               value: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}
+              {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/config
@@ -282,6 +318,11 @@ spec:
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
+            {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
+            - name: combined-ca
+              mountPath: /etc/combined-ca
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.workflowexecution.resources | nindent 12 }}
       volumes:
@@ -292,6 +333,17 @@ spec:
           configMap:
             name: inter-service-ca
             optional: true
+        {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
+        - name: aap-ca
+          secret:
+            secretName: {{ .Values.workflowexecution.config.ansible.caCertSecretRef.name }}
+            items:
+              - key: {{ .Values.workflowexecution.config.ansible.caCertSecretRef.key | default "ca.crt" }}
+                path: aap-ca.crt
+        - name: combined-ca
+          emptyDir:
+            sizeLimit: 1Mi
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

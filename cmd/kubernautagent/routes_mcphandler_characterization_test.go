@@ -21,13 +21,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/logr/funcr"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/client-go/rest"
 
@@ -69,7 +70,7 @@ func (c *jsonLogCapture) capture(obj string) {
 	c.lines = append(c.lines, obj)
 }
 
-func (c *jsonLogCapture) findByMessage(t *testing.T, msg string) map[string]interface{} {
+func (c *jsonLogCapture) findByMessage(t testing.TB, msg string) map[string]interface{} {
 	t.Helper()
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -86,11 +87,11 @@ func (c *jsonLogCapture) findByMessage(t *testing.T, msg string) map[string]inte
 	return nil
 }
 
-func newMCPTestAgentMetrics(_ *testing.T) *kametrics.Metrics {
+func newMCPTestAgentMetrics() *kametrics.Metrics {
 	return kametrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 }
 
-func newMCPTestAutoMgr(_ *testing.T) *session.Manager {
+func newMCPTestAutoMgr() *session.Manager {
 	return session.NewManager(session.NewStore(time.Hour), logr.Discard(), nil, nil)
 }
 
@@ -98,7 +99,7 @@ func newMCPTestAutoMgr(_ *testing.T) *session.Manager {
 // request is made against it synchronously by buildMCPHandler (only the
 // disconnect-triggered background reconstruction path calls DS), so an empty
 // 200 handler is sufficient.
-func newMCPTestDSClients(t *testing.T) *dsClients {
+func newMCPTestDSClients(t testing.TB) *dsClients {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -127,7 +128,7 @@ func validMCPInteractiveConfig() *kaconfig.Config {
 // unreachable rest.Config host (per preflight spike: ctrlclient.New makes no
 // network call at construction; ReconcileOrphanedLeases fails fast/fail-open
 // against a refused connection).
-func validMCPHandlerParams(t *testing.T) mcpHandlerParams {
+func validMCPHandlerParams(t testing.TB) mcpHandlerParams {
 	t.Helper()
 	return mcpHandlerParams{
 		cfg:          validMCPInteractiveConfig(),
@@ -135,64 +136,97 @@ func validMCPHandlerParams(t *testing.T) mcpHandlerParams {
 		ds:           newMCPTestDSClients(t),
 		inv:          &investigator.Investigator{},
 		enricher:     &enrichment.Enricher{},
-		autoMgr:      newMCPTestAutoMgr(t),
+		autoMgr:      newMCPTestAutoMgr(),
 		authMw:       &auth.Middleware{},
-		agentMetrics: newMCPTestAgentMetrics(t),
+		agentMetrics: newMCPTestAgentMetrics(),
 		auditStore:   audit.NopAuditStore{},
 		logger:       logr.Discard(),
 	}
 }
 
-func TestBuildMCPHandler_FullyWired(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
+var _ = Describe("buildMCPHandler — construction-path characterization", func() {
+	var (
+		ctx    context.Context
+		cancel context.CancelFunc
+	)
 
-	handler, drainer := buildMCPHandler(ctx, validMCPHandlerParams(t))
+	BeforeEach(func() {
+		ctx, cancel = context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+	})
 
-	if handler == nil {
-		t.Fatal("expected non-nil http.Handler for fully-wired params")
-	}
-	if drainer == nil {
-		t.Fatal("expected non-nil session drainer for fully-wired params")
-	}
-}
+	It("returns a non-nil handler and drainer for fully-wired params", func() {
+		handler, drainer := buildMCPHandler(ctx, validMCPHandlerParams(GinkgoTB()))
 
-// TestBuildMCPHandler_NilDS_DegradesGracefully proves the bug fix for a
-// production panic discovered during Wave 5 Phase 0b coverage-gate testing:
-// the ContextReconstructor branch was correctly nil-guarded (falls back to
-// noopReconstructor when ds == nil), but the workflow-catalog querier a few
-// lines later dereferenced ds unconditionally, so a nil ds (DataStorage
-// integration disabled/unreachable at startup) crashed the whole MCP
-// interactive-mode handler construction instead of degrading like every
-// other DS-optional dependency in this function (see also buildToolRegistry
-// and readinessHandler, which both guard `ds != nil` the same way).
-//
-// BR-INTERACTIVE-001 / AU-3: MCP interactive mode must remain available
-// (investigate/select-workflow/complete-no-action) even when DataStorage is
-// unavailable; workflow-catalog-dependent lookups must fail with a clear,
-// per-call error rather than taking down the whole handler at construction.
-func TestBuildMCPHandler_NilDS_DegradesGracefully(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
+		Expect(handler).NotTo(BeNil(), "expected non-nil http.Handler for fully-wired params")
+		Expect(drainer).NotTo(BeNil(), "expected non-nil session drainer for fully-wired params")
+	})
 
-	capture := &jsonLogCapture{}
-	logger := funcr.NewJSON(capture.capture, funcr.Options{})
+	// TestBuildMCPHandler_NilDS_DegradesGracefully proves the bug fix for a
+	// production panic discovered during Wave 5 Phase 0b coverage-gate testing:
+	// the ContextReconstructor branch was correctly nil-guarded (falls back to
+	// noopReconstructor when ds == nil), but the workflow-catalog querier a few
+	// lines later dereferenced ds unconditionally, so a nil ds (DataStorage
+	// integration disabled/unreachable at startup) crashed the whole MCP
+	// interactive-mode handler construction instead of degrading like every
+	// other DS-optional dependency in this function (see also buildToolRegistry
+	// and readinessHandler, which both guard `ds != nil` the same way).
+	//
+	// BR-INTERACTIVE-001 / AU-3: MCP interactive mode must remain available
+	// (investigate/select-workflow/complete-no-action) even when DataStorage is
+	// unavailable; workflow-catalog-dependent lookups must fail with a clear,
+	// per-call error rather than taking down the whole handler at construction.
+	It("degrades gracefully (non-nil handler, logged warning) when ds is nil", func() {
+		capture := &jsonLogCapture{}
+		logger := funcr.NewJSON(capture.capture, funcr.Options{})
 
-	p := validMCPHandlerParams(t)
-	p.ds = nil
-	p.logger = logger
+		p := validMCPHandlerParams(GinkgoTB())
+		p.ds = nil
+		p.logger = logger
 
-	handler, drainer := buildMCPHandler(ctx, p)
+		handler, drainer := buildMCPHandler(ctx, p)
 
-	if handler == nil {
-		t.Fatal("expected non-nil http.Handler when ds is nil (DS-optional degradation, not a hard dependency)")
-	}
-	if drainer == nil {
-		t.Fatal("expected non-nil session drainer when ds is nil")
-	}
+		Expect(handler).NotTo(BeNil(), "expected non-nil http.Handler when ds is nil (DS-optional degradation, not a hard dependency)")
+		Expect(drainer).NotTo(BeNil(), "expected non-nil session drainer when ds is nil")
 
-	capture.findByMessage(t, "MCP interactive mode: DS unavailable — workflow catalog lookups disabled")
-}
+		capture.findByMessage(GinkgoTB(), "MCP interactive mode: DS unavailable — workflow catalog lookups disabled")
+	})
+
+	It("disables enrichment in select-workflow when enricher is nil", func() {
+		capture := &jsonLogCapture{}
+		logger := funcr.NewJSON(capture.capture, funcr.Options{})
+
+		p := validMCPHandlerParams(GinkgoTB())
+		p.enricher = nil
+		p.logger = logger
+
+		handler, drainer := buildMCPHandler(ctx, p)
+
+		Expect(handler).NotTo(BeNil(), "expected non-nil http.Handler when enricher is nil")
+		Expect(drainer).NotTo(BeNil(), "expected non-nil session drainer when enricher is nil")
+
+		fields := capture.findByMessage(GinkgoTB(), "MCP interactive mode fully wired")
+		Expect(fields["enrichment_in_select_workflow"]).To(BeFalse(),
+			"expected enrichment_in_select_workflow=false when enricher is nil")
+	})
+
+	It("returns a nil handler and drainer when controller-runtime client construction fails", func() {
+		p := validMCPHandlerParams(GinkgoTB())
+		// A CAFile that cannot be read fails rest.HTTPClientFor synchronously
+		// (confirmed via preflight spike), without any network round-trip.
+		p.infra = &k8sInfra{kubeConfig: &rest.Config{
+			Host: "https://127.0.0.1:1",
+			TLSClientConfig: rest.TLSClientConfig{
+				CAFile: "/nonexistent/path/to/definitely-does-not-exist-kubernaut-test.pem",
+			},
+		}}
+
+		handler, drainer := buildMCPHandler(ctx, p)
+
+		Expect(handler).To(BeNil(), "expected nil handler when controller-runtime client construction fails")
+		Expect(drainer).To(BeNil(), "expected nil session drainer when controller-runtime client construction fails")
+	})
+})
 
 // TestNoopWorkflowQuerier_ReturnsDescriptiveError proves the noop fallback
 // used when ds is nil surfaces a clear, actionable error through the same
@@ -201,62 +235,12 @@ func TestBuildMCPHandler_NilDS_DegradesGracefully(t *testing.T) {
 // and returns it as a normal tool error to the LLM/client), rather than a nil
 // pointer panic or a silently-empty result that would look like "workflow not
 // found" instead of "DataStorage unavailable".
-func TestNoopWorkflowQuerier_ReturnsDescriptiveError(t *testing.T) {
-	q := &noopWorkflowQuerier{}
+var _ = Describe("noopWorkflowQuerier", func() {
+	It("returns a descriptive error explaining DataStorage is unavailable", func() {
+		q := &noopWorkflowQuerier{}
 
-	if _, err := q.ResolveWorkflowCatalogMetadata(context.Background(), "wf-123"); err == nil {
-		t.Fatal("expected ResolveWorkflowCatalogMetadata to return an error when DS is unavailable")
-	} else if got := err.Error(); !strings.Contains(got, "DataStorage") && !strings.Contains(got, "unavailable") {
-		t.Errorf("expected error to explain DS is unavailable, got %q", got)
-	}
-}
-
-func TestBuildMCPHandler_NilEnricher_DisablesEnrichmentInSelectWorkflow(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	capture := &jsonLogCapture{}
-	logger := funcr.NewJSON(capture.capture, funcr.Options{})
-
-	p := validMCPHandlerParams(t)
-	p.enricher = nil
-	p.logger = logger
-
-	handler, drainer := buildMCPHandler(ctx, p)
-
-	if handler == nil {
-		t.Fatal("expected non-nil http.Handler when enricher is nil")
-	}
-	if drainer == nil {
-		t.Fatal("expected non-nil session drainer when enricher is nil")
-	}
-
-	fields := capture.findByMessage(t, "MCP interactive mode fully wired")
-	if enrichmentEnabled, ok := fields["enrichment_in_select_workflow"].(bool); !ok || enrichmentEnabled {
-		t.Errorf("expected enrichment_in_select_workflow=false when enricher is nil, got %v", fields["enrichment_in_select_workflow"])
-	}
-}
-
-func TestBuildMCPHandler_ControllerClientConstructionFails(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	p := validMCPHandlerParams(t)
-	// A CAFile that cannot be read fails rest.HTTPClientFor synchronously
-	// (confirmed via preflight spike), without any network round-trip.
-	p.infra = &k8sInfra{kubeConfig: &rest.Config{
-		Host: "https://127.0.0.1:1",
-		TLSClientConfig: rest.TLSClientConfig{
-			CAFile: "/nonexistent/path/to/definitely-does-not-exist-kubernaut-test.pem",
-		},
-	}}
-
-	handler, drainer := buildMCPHandler(ctx, p)
-
-	if handler != nil {
-		t.Errorf("expected nil handler when controller-runtime client construction fails, got %v", handler)
-	}
-	if drainer != nil {
-		t.Errorf("expected nil session drainer when controller-runtime client construction fails, got %v", drainer)
-	}
-}
+		_, err := q.ResolveWorkflowCatalogMetadata(context.Background(), "wf-123")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(Or(ContainSubstring("DataStorage"), ContainSubstring("unavailable")))
+	})
+})

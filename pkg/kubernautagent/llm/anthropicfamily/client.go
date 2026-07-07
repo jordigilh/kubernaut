@@ -33,6 +33,13 @@ limitations under the License.
 // logic the API Frontend uses — rather than an independently-maintained
 // second copy (DD-LLM-005).
 //
+// This package is deliberately NOT shared with the API Frontend's Anthropic
+// path (which uses adk-anthropic-go's full model.LLM wrapper for Google
+// ADK compatibility): KA is framework-isolated by design (DD-HAPI-019-001)
+// while AF's entire agent loop is ADK-based. Only framework-independent
+// protocol logic (like the converters import above) is reused; the model
+// wrapper layers stay separate on purpose. See DD-LLM-007.
+//
 // Reference: https://docs.anthropic.com/en/api/claude-on-vertex-ai
 // Reference: https://github.com/anthropics/anthropic-sdk-go
 package anthropicfamily
@@ -62,10 +69,11 @@ import (
 type Option func(*clientOpts)
 
 type clientOpts struct {
-	extraSDKOpts  []option.RequestOption
-	logger        logr.Logger
-	httpTimeout   time.Duration
-	baseTransport http.RoundTripper
+	extraSDKOpts     []option.RequestOption
+	logger           logr.Logger
+	httpTimeout      time.Duration
+	baseTransport    http.RoundTripper
+	defaultReasoning *llm.ReasoningRequest
 }
 
 // WithSDKOptions injects additional Anthropic SDK request options (e.g. base URL
@@ -95,12 +103,27 @@ func WithBaseTransport(rt http.RoundTripper) Option {
 	return func(o *clientOpts) { o.baseTransport = rt }
 }
 
+// WithReasoning resolves the operator's reasoning/thinking configuration
+// ONCE at client-construction time, per the documented contract on
+// llm.ReasoningRequest ("resolved once at LLM-client-construction time from
+// operator config, never threaded per-call from business logic",
+// DD-HAPI-019). Chat/StreamChat apply this default whenever the caller's
+// per-call req.Options.Reasoning is nil; an explicit per-call value (set or
+// unset) still wins, preserving test/override flexibility (#1578 fix: prior
+// to this, no production call site ever set Options.Reasoning, making
+// ai.llm.reasoning.enabled a structural no-op for every real Anthropic
+// call — see cmd/kubernautagent/llm_builder.go for the config wiring).
+func WithReasoning(r llm.ReasoningRequest) Option {
+	return func(o *clientOpts) { o.defaultReasoning = &r }
+}
+
 // Client implements llm.Client for Claude on Vertex AI using the official
 // Anthropic Go SDK with the vertex middleware.
 type Client struct {
-	sdk    anthropic.Client
-	model  string
-	logger logr.Logger
+	sdk              anthropic.Client
+	model            string
+	logger           logr.Logger
+	defaultReasoning *llm.ReasoningRequest
 }
 
 // New creates a Client for Claude on Vertex AI.
@@ -130,7 +153,7 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 	}
 
 	sdk := anthropic.NewClient(buildSDKOptions(o, vertexOpt, tokenSource)...)
-	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
+	return &Client{sdk: sdk, model: model, logger: o.logger, defaultReasoning: o.defaultReasoning}, nil
 }
 
 // NewWithAPIKey creates a Client for Claude via the native Anthropic API
@@ -148,7 +171,7 @@ func NewWithAPIKey(apiKey, model string, opts ...Option) (*Client, error) {
 	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
 
 	sdk := anthropic.NewClient(sdkOpts...)
-	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
+	return &Client{sdk: sdk, model: model, logger: o.logger, defaultReasoning: o.defaultReasoning}, nil
 }
 
 // newClientOpts applies functional Options over a clientOpts pre-populated
@@ -269,8 +292,12 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 		params.Tools = buildAnthropicTools(req.Tools, c.logger)
 	}
 
-	if req.Options.Reasoning != nil && req.Options.Reasoning.Enabled {
-		params.Thinking = resolveThinkingParam(req.Options.Reasoning, anthropic.Model(c.model))
+	reasoning := req.Options.Reasoning
+	if reasoning == nil {
+		reasoning = c.defaultReasoning
+	}
+	if reasoning != nil && reasoning.Enabled {
+		params.Thinking = resolveThinkingParam(reasoning, anthropic.Model(c.model))
 	}
 
 	return params

@@ -19,4 +19,11 @@ spec:
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- if .Values.workflowexecution.config.ansible }}
+    # BR-PLATFORM-005 (Kubernaut Operator parity): allow HTTPS egress to the
+    # configured AWX/AAP endpoint (apiURL), which may be outside the cluster.
+    - ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
 {{- end }}

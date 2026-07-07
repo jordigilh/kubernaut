@@ -273,45 +273,30 @@ Return the PostgreSQL database name.
 {{- end }}
 
 {{/*
-Return the PostgreSQL variant ("upstream" or "ocp").
+Return the env var name for the PostgreSQL user.
+Secret keys are always POSTGRES_*; kept as a helper for a single source of truth
+across postgresql.yaml/valkey.yaml/datastorage.yaml.
 */}}
-{{- define "kubernaut.postgresql.variant" -}}
-{{- .Values.postgresql.variant | default "upstream" -}}
-{{- end }}
+{{- define "kubernaut.postgresql.envVarUser" -}}POSTGRES_USER{{- end -}}
 
 {{/*
-Return the env var name for the PostgreSQL user, by variant.
-Secret keys are always POSTGRES_*; env var names differ per image.
+Return the env var name for the PostgreSQL password.
 */}}
-{{- define "kubernaut.postgresql.envVarUser" -}}
-{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_USER{{- else -}}POSTGRES_USER{{- end -}}
-{{- end }}
+{{- define "kubernaut.postgresql.envVarPassword" -}}POSTGRES_PASSWORD{{- end -}}
 
 {{/*
-Return the env var name for the PostgreSQL password, by variant.
+Return the env var name for the PostgreSQL database.
 */}}
-{{- define "kubernaut.postgresql.envVarPassword" -}}
-{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_PASSWORD{{- else -}}POSTGRES_PASSWORD{{- end -}}
-{{- end }}
-
-{{/*
-Return the env var name for the PostgreSQL database, by variant.
-*/}}
-{{- define "kubernaut.postgresql.envVarDatabase" -}}
-{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_DATABASE{{- else -}}POSTGRES_DB{{- end -}}
-{{- end }}
+{{- define "kubernaut.postgresql.envVarDatabase" -}}POSTGRES_DB{{- end -}}
 
 {{/*
 Return the data directory mount path for the PostgreSQL volume.
-Issue #464: Use a single image-agnostic path so switching between upstream
-(postgres:16-alpine) and OCP (rhel10/postgresql-16) images does not change
-the data directory and silently lose data.
+Issue #464: Use a single image-agnostic path.
 */}}
 {{- define "kubernaut.postgresql.dataDir" -}}/var/lib/kubernaut-pg/data{{- end -}}
 
 {{/*
 Return the Valkey data directory mount path.
-upstream: /data   ocp: /var/lib/valkey/data
 */}}
 {{- define "kubernaut.valkey.dataDir" -}}
 /data
@@ -450,15 +435,6 @@ Usage: {{ include "kubernaut.podSecurityContext" .Values.gateway | nindent 6 }}
 {{/* ===== Unified Monitoring Helpers (Issue #463) ===== */}}
 
 {{/*
-Whether the cluster is OCP (presence of route.openshift.io/v1 API).
-DEPRECATED v1.4 (Issue #848): OCP auto-detection will be removed in v1.5.
-Use the Kubernaut Operator for OpenShift deployments.
-*/}}
-{{- define "kubernaut.monitoring.isOCP" -}}
-{{- if .Capabilities.APIVersions.Has "route.openshift.io/v1" -}}true{{- end -}}
-{{- end -}}
-
-{{/*
 Whether Prometheus integration is enabled.
 */}}
 {{- define "kubernaut.monitoring.prometheus.enabled" -}}
@@ -466,14 +442,10 @@ Whether Prometheus integration is enabled.
 {{- end -}}
 
 {{/*
-Resolved Prometheus URL. On OCP, defaults to Thanos querier when empty.
+Resolved Prometheus URL.
 */}}
 {{- define "kubernaut.monitoring.prometheus.url" -}}
-{{- if .Values.monitoring.prometheus.url -}}
 {{- .Values.monitoring.prometheus.url -}}
-{{- else if include "kubernaut.monitoring.isOCP" . -}}
-https://prometheus-k8s.openshift-monitoring.svc:9091
-{{- end -}}
 {{- end -}}
 
 {{/*
@@ -484,51 +456,29 @@ Whether AlertManager integration is enabled.
 {{- end -}}
 
 {{/*
-Resolved AlertManager URL. On OCP, defaults to alertmanager-main when empty.
+Resolved AlertManager URL.
 */}}
 {{- define "kubernaut.monitoring.alertManager.url" -}}
-{{- if .Values.monitoring.alertManager.url -}}
 {{- .Values.monitoring.alertManager.url -}}
-{{- else if include "kubernaut.monitoring.isOCP" . -}}
-https://alertmanager-main.openshift-monitoring.svc:9094
-{{- end -}}
 {{- end -}}
 
 {{/*
-Resolved Prometheus TLS CA file path. On OCP, defaults to service-serving CA.
+Resolved Prometheus TLS CA file path.
 */}}
 {{- define "kubernaut.monitoring.prometheus.tlsCaFile" -}}
-{{- if .Values.monitoring.prometheus.tlsCaFile -}}
 {{- .Values.monitoring.prometheus.tlsCaFile -}}
-{{- else if include "kubernaut.monitoring.isOCP" . -}}
-/etc/ssl/certs/service-ca.crt
-{{- end -}}
 {{- end -}}
 
 {{/*
-Resolved AlertManager TLS CA file path. On OCP, defaults to service-serving CA.
+Resolved AlertManager TLS CA file path.
 */}}
 {{- define "kubernaut.monitoring.alertManager.tlsCaFile" -}}
-{{- if .Values.monitoring.alertManager.tlsCaFile -}}
 {{- .Values.monitoring.alertManager.tlsCaFile -}}
-{{- else if include "kubernaut.monitoring.isOCP" . -}}
-/etc/ssl/certs/service-ca.crt
-{{- end -}}
-{{- end -}}
-
-{{/*
-Whether OCP monitoring RBAC should be created.
-True when monitoring is enabled and cluster is OCP.
-DEPRECATED v1.4 (Issue #848): OCP RBAC helpers will be removed in v1.5.
-Use the Kubernaut Operator for OpenShift deployments.
-*/}}
-{{- define "kubernaut.monitoring.ocpRbac" -}}
-{{- if and (or (include "kubernaut.monitoring.prometheus.enabled" .) (include "kubernaut.monitoring.alertManager.enabled" .)) (include "kubernaut.monitoring.isOCP" .) -}}true{{- end -}}
 {{- end -}}
 
 {{/*
 Whether TLS CA trust is needed for monitoring connections.
-True when any monitoring TLS CA file is configured (explicitly or via OCP defaults).
+True when any monitoring TLS CA file is explicitly configured.
 */}}
 {{- define "kubernaut.monitoring.tlsEnabled" -}}
 {{- if or (include "kubernaut.monitoring.prometheus.tlsCaFile" .) (include "kubernaut.monitoring.alertManager.tlsCaFile" .) -}}true{{- end -}}
@@ -540,12 +490,67 @@ Invoked once from the EM template to catch misconfig at render time.
 */}}
 {{- define "kubernaut.monitoring.validate" -}}
 {{- if and (include "kubernaut.monitoring.prometheus.enabled" .) (not (include "kubernaut.monitoring.prometheus.url" .)) -}}
-{{- fail "monitoring.prometheus.enabled=true but no URL resolvable. Set monitoring.prometheus.url or deploy on OCP for auto-detection." -}}
+{{- fail "monitoring.prometheus.enabled=true but no URL resolvable. Set monitoring.prometheus.url." -}}
 {{- end -}}
 {{- if and (include "kubernaut.monitoring.alertManager.enabled" .) (not (include "kubernaut.monitoring.alertManager.url" .)) -}}
-{{- fail "monitoring.alertManager.enabled=true but no URL resolvable. Set monitoring.alertManager.url or deploy on OCP for auto-detection." -}}
+{{- fail "monitoring.alertManager.enabled=true but no URL resolvable. Set monitoring.alertManager.url." -}}
 {{- end -}}
 {{- end -}}
+
+{{/* ===== ServiceMonitor / PrometheusRule / HPA helpers (BR-PLATFORM-003, Issue #1589) ===== */}}
+
+{{/*
+Whether the Prometheus Operator CRDs (monitoring.coreos.com/v1) are present on the target
+cluster. Always false under `helm template`/`helm lint` (no live cluster, .Capabilities reflects
+only what --api-versions passes in). Used to gate ServiceMonitor/PrometheusRule rendering so
+enabling monitoring.serviceMonitor/prometheusRule without the CRDs installed renders nothing
+instead of failing with "no matches for kind".
+*/}}
+{{- define "kubernaut.monitoring.crdsPresent" -}}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Render a ServiceMonitor for one Kubernaut service, gated on monitoring.serviceMonitor.enabled +
+CRD presence. Mirrors the Kubernaut Operator's componentServiceMonitor helper
+(kubernaut-operator/internal/resources/monitoring.go) for parity.
+Usage: {{ include "kubernaut.serviceMonitor" (dict "root" . "service" "gateway") }}
+- "appLabel": the Service's `app` label to select on, when it differs from "service"
+  (several controllers use a "-controller" suffixed app label, e.g. aianalysis-controller).
+- "jobName": the "job" relabel value, when it differs from "service" (none currently do).
+*/}}
+{{- define "kubernaut.serviceMonitor" -}}
+{{- $root := .root -}}
+{{- $service := .service -}}
+{{- $appLabel := .appLabel | default .service -}}
+{{- $job := .jobName | default .service -}}
+{{- if and $root.Values.monitoring.serviceMonitor.enabled (include "kubernaut.monitoring.crdsPresent" $root) }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $service }}-monitor
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" $root | nindent 4 }}
+    app: {{ $appLabel }}
+spec:
+  jobLabel: app.kubernetes.io/name
+  selector:
+    matchLabels:
+      app: {{ $appLabel }}
+  namespaceSelector:
+    matchNames:
+      - {{ $root.Release.Namespace }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      relabelings:
+        - sourceLabels: ["__address__"]
+          targetLabel: job
+          replacement: {{ $job }}
+{{- end -}}
+{{- end }}
 
 {{/* ===== Kubernaut Agent TLS Helpers (delegating to monitoring) ===== */}}
 
@@ -564,7 +569,8 @@ Delegates to unified monitoring TLS detection.
 
 {{/*
 Name of the ConfigMap containing the CA certificate for Kubernaut Agent.
-On OCP, uses chart-created service-CA ConfigMap with auto-injection annotation.
+BYO (Issue #848 v1.5): the chart no longer creates this ConfigMap — operators must
+pre-create it with real CA data when monitoring.prometheus/alertManager.tlsCaFile is set.
 */}}
 {{- define "kubernaut.agent.tlsCaConfigMapName" -}}
 kubernaut-agent-service-ca
@@ -745,4 +751,29 @@ Usage: {{ include "kubernaut.np.metricsIngress" . | nindent 4 }}
         matchLabels:
           kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoring.namespace }}
 {{- end }}
+{{- end }}
+
+{{/* ===== Console helpers (BR-PLATFORM-006, Kubernaut Operator parity) ===== */}}
+
+{{/*
+Derive the OIDC issuer URL for the console's oauth2-proxy from APIFrontend's auth
+config. Mirrors the Kubernaut Operator's KubernautSpec.ConsoleIssuerURL(): the first
+jwtProviders entry takes precedence over the single-provider issuerURL shortcut.
+Usage: {{ include "kubernaut.console.issuerURL" . }}
+*/}}
+{{- define "kubernaut.console.issuerURL" -}}
+{{- $providers := .Values.apifrontend.config.auth.jwtProviders | default list -}}
+{{- if gt (len $providers) 0 -}}
+{{- (first $providers).issuerURL -}}
+{{- else -}}
+{{- .Values.apifrontend.config.auth.issuerURL -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+In-cluster APIFrontend URL the console's nginx sidecar reverse-proxies to.
+Usage: {{ include "kubernaut.console.apifrontendURL" . }}
+*/}}
+{{- define "kubernaut.console.apifrontendURL" -}}
+{{- printf "https://apifrontend.%s.svc:%v" .Release.Namespace (.Values.apifrontend.config.server.httpPort | default 8443) -}}
 {{- end }}

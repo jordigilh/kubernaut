@@ -1,0 +1,37 @@
+{{/*
+  DataStorage HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589).
+  Ported from the Kubernaut Operator's DataStorageHPA (kubernaut-operator/internal/resources/hpa.go).
+  autoscaling/v2 is a stable core API — no CRD gate needed (unlike ServiceMonitor/PrometheusRule).
+*/}}
+{{- if .Values.datastorage.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: datastorage
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app: datastorage
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: datastorage
+  minReplicas: {{ .Values.datastorage.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.datastorage.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.datastorage.autoscaling.cpuTarget }}
+    {{- if gt (.Values.datastorage.autoscaling.memoryTarget | int) 0 }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.datastorage.autoscaling.memoryTarget }}
+    {{- end }}
+{{- end }}

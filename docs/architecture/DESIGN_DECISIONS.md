@@ -118,6 +118,7 @@
 | DD-LLM-004 | Remove langchaingo, Generalize Anthropic-Family Client, Extract Shared OpenAI-Compatible Core | 📋 Proposed | 2026-07-06 | [DD-LLM-004-langchaingo-removal-generalized-clients.md](decisions/DD-LLM-004-langchaingo-removal-generalized-clients.md) |
 | DD-LLM-005 | Model-Aware Reasoning/Thinking Token Support | 📋 Proposed | 2026-07-06 | [DD-LLM-005-model-aware-reasoning-support.md](decisions/DD-LLM-005-model-aware-reasoning-support.md) |
 | DD-LLM-006 | AWS Bedrock Provider Support via Dual-Client Routing | 📋 Proposed | 2026-07-06 | [DD-LLM-006-bedrock-dual-client-routing.md](decisions/DD-LLM-006-bedrock-dual-client-routing.md) |
+| DD-LLM-007 | AF and KA Intentionally Do Not Share an Anthropic Client | ✅ Approved | 2026-07-06 | [DD-LLM-007-af-ka-anthropic-client-divergence.md](decisions/DD-LLM-007-af-ka-anthropic-client-divergence.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 

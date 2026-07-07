@@ -7,6 +7,10 @@ metadata:
   labels:
     app: kubernaut-agent
     {{- include "kubernaut.labels" . | nindent 4 }}
+# BR-PLATFORM-005: kubernaut-agent is the highest-risk component (LLM-driven,
+# broadest investigative RBAC). Disable the default long-lived (~1yr) SA token
+# automount; the Deployment instead mounts a short-TTL projected token below.
+automountServiceAccountToken: false
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -94,6 +98,17 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list"]
+  # ── KubeVirt (BR-PLATFORM-005: VM-backed workload investigation) ──────────
+  - apiGroups: ["kubevirt.io"]
+    resources: ["virtualmachines", "virtualmachineinstances", "virtualmachineinstancemigrations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cdi.kubevirt.io"]
+    resources: ["datavolumes"]
+    verbs: ["get", "list", "watch"]
+  # ── Scheduling (BR-PLATFORM-005: priority/preemption investigation) ──────
+  - apiGroups: ["scheduling.k8s.io"]
+    resources: ["priorityclasses"]
+    verbs: ["get", "list", "watch"]
   # #1288: Impersonation RBAC removed — KA uses its own SA for all K8s API
   # calls. User identity is passed in MCP tool arguments for audit only.
 ---
@@ -303,22 +318,6 @@ data:
 {{- end }}
 {{- end }}
 {{- end }}
-{{/* DEPRECATED v1.4 (Issue #848): OCP service-ca inject-cabundle ConfigMap.
-     Will be removed in v1.5 — use the Kubernaut Operator for OCP. */}}
-{{- if include "kubernaut.agent.tlsEnabled" . }}
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: kubernaut-agent-service-ca
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: kubernaut-agent
-    {{- include "kubernaut.labels" . | nindent 4 }}
-  annotations:
-    service.beta.openshift.io/inject-cabundle: "true"
-data: {}
-{{- end }}
 {{- if .Values.kubernautAgent.llm.oauth2.enabled }}
 {{- if not .Values.kubernautAgent.llm.oauth2.tokenURL }}
 {{- fail "kubernautAgent.llm.oauth2.tokenURL is required when oauth2.enabled=true" }}
@@ -421,6 +420,11 @@ spec:
             - name: tls-ca
               mountPath: /etc/tls-ca
               readOnly: true
+            # BR-PLATFORM-005: short-TTL projected token, replacing the SA's
+            # disabled default automount (see ServiceAccount above).
+            - name: sa-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /healthz
@@ -455,6 +459,11 @@ spec:
             secretName: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
 {{- end }}
         {{- if include "kubernaut.agent.tlsEnabled" . }}
+        {{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap
+             (it previously relied on an OCP-only service-ca auto-injection annotation, which
+             never populated real CA data on non-OCP clusters). When monitoring.prometheus.tlsCaFile
+             or monitoring.alertManager.tlsCaFile is set, pre-create a ConfigMap named
+             kubernaut-agent-service-ca in this namespace containing the CA bundle. */}}
         - name: service-ca
           configMap:
             name: {{ include "kubernaut.agent.tlsCaConfigMapName" . }}
@@ -470,6 +479,25 @@ spec:
           configMap:
             name: inter-service-ca
             optional: true
+        # BR-PLATFORM-005: 1-hour TTL projected token replacing the default
+        # (much longer-lived) automounted SA token for this high-risk component.
+        - name: sa-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+                  audience: https://kubernetes.default.svc
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
 ---
 apiVersion: v1
 kind: Service
@@ -493,21 +521,3 @@ spec:
       targetPort: 9090
   selector:
     app: kubernaut-agent
-{{/* DEPRECATED v1.4 (Issue #848): OCP monitoring RBAC. Removed in v1.5. */}}
-{{- if include "kubernaut.monitoring.ocpRbac" . }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: kubernaut-agent-monitoring-view
-  labels:
-    {{- include "kubernaut.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-monitoring-view
-subjects:
-  - kind: ServiceAccount
-    name: kubernaut-agent-sa
-    namespace: {{ .Release.Namespace }}
-{{- end }}

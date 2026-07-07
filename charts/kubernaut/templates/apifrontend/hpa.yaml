@@ -1,0 +1,37 @@
+{{/*
+  APIFrontend HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589).
+  Ported from the Kubernaut Operator's APIFrontendHPA (kubernaut-operator/internal/resources/hpa.go).
+  autoscaling/v2 is a stable core API — no CRD gate needed (unlike ServiceMonitor/PrometheusRule).
+*/}}
+{{- if .Values.apifrontend.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: apifrontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app: apifrontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: apifrontend
+  minReplicas: {{ .Values.apifrontend.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.apifrontend.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.apifrontend.autoscaling.cpuTarget }}
+    {{- if gt (.Values.apifrontend.autoscaling.memoryTarget | int) 0 }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.apifrontend.autoscaling.memoryTarget }}
+    {{- end }}
+{{- end }}

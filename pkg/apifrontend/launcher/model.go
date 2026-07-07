@@ -41,6 +41,17 @@ import (
 // NewModelFromConfig constructs an ADK model.LLM from the AF LLM configuration.
 // It builds the appropriate transport chain (TLS CA, OAuth2, custom headers,
 // circuit breaker) and creates the provider-specific model client.
+//
+// The Anthropic/Vertex cases below use adk-anthropic-go's model.LLM wrapper
+// rather than kubernautagent's anthropicfamily.Client: AF's launcher is
+// entirely ADK-based (session/event/tool semantics all speak ADK's
+// model.LLM contract), while anthropicfamily implements KA's own,
+// deliberately framework-independent llm.Client interface (DD-HAPI-019-001).
+// This is an intentional architectural boundary, not an inconsistency to
+// converge — see DD-LLM-007. Note neither case below threads cfg.Reasoning:
+// AF has no reasoning/thinking-token support today (unlike its OpenAI-
+// compatible path, which gained it for free via the shared openaicompat
+// core, DD-LLM-004) — tracked as a gap in DD-LLM-007, not fixed by it.
 func NewModelFromConfig(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
 	switch cfg.Provider {
 	case types.LLMProviderVertexAI:

@@ -5,11 +5,10 @@
 #
 # Usage:
 #   ./scripts/helm-smoke-test.sh --platform kind --image-tag 1.0.1-rc1-arm64 --chart-path charts/kubernaut/
-#   ./scripts/helm-smoke-test.sh --platform ocp  --image-tag 1.0.1-rc1-amd64 --chart-path charts/kubernaut/
 #
-# Flows executed per platform:
+# This chart targets non-OCP (vanilla Kubernetes) deployments (Issue #1589); for OpenShift,
+# use the Kubernaut Operator instead. Flows executed:
 #   Kind: Flow A (production lifecycle with hook TLS) + Flow B (dev quick start)
-#   OCP:  Flow A (production lifecycle with cert-manager TLS)
 
 set -uo pipefail
 
@@ -23,7 +22,6 @@ PULL_SECRET=""
 CHART_PATH="charts/kubernaut/"
 NAMESPACE="kubernaut-system"
 TIMEOUT_PODS="300s"
-CERT_MANAGER_ISSUER="selfsigned-issuer"
 
 # TAP state
 TAP_COUNT=0
@@ -50,10 +48,10 @@ while [[ $# -gt 0 ]]; do
     --namespace)  NAMESPACE="$2";  shift 2 ;;
     --timeout)    TIMEOUT_PODS="$2"; shift 2 ;;
     -h|--help)
-      echo "Usage: $0 --platform kind|ocp --image-tag TAG --chart-path PATH [--registry REGISTRY] [--pull-secret NAME]"
+      echo "Usage: $0 --platform kind --image-tag TAG --chart-path PATH [--registry REGISTRY] [--pull-secret NAME]"
       echo ""
       echo "Options:"
-      echo "  --platform    Target platform: kind or ocp (default: kind)"
+      echo "  --platform    Target platform: kind (default: kind)"
       echo "  --image-tag   Container image tag (required)"
       echo "  --registry    Container image registry (overrides global.image.registry)"
       echo "  --pull-secret Kubernetes docker-registry secret name for private registries"
@@ -398,11 +396,7 @@ common_install_flags() {
 }
 
 tls_flags() {
-  if [[ "$PLATFORM" == "ocp" ]]; then
-    echo "--set tls.mode=cert-manager --set tls.certManager.issuerRef.name=${CERT_MANAGER_ISSUER}"
-  else
-    echo "--set tls.mode=hook"
-  fi
+  echo "--set tls.mode=hook"
 }
 
 setup_policy_files() {
@@ -705,42 +699,6 @@ run_tls_001() {
   fi
 }
 
-run_tls_002() {
-  local cert_ready
-  cert_ready=$(kubectl get certificate authwebhook-cert -n "$NAMESPACE" \
-    -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
-  if [[ "$cert_ready" == "True" ]]; then
-    tap_ok "ST-CHART-TLS-002a: Certificate authwebhook-cert Ready=True"
-  else
-    tap_not_ok "ST-CHART-TLS-002a: Certificate authwebhook-cert Ready=True" "status: ${cert_ready}"
-  fi
-
-  assert_resource_exists secret authwebhook-tls "$NAMESPACE" \
-    "ST-CHART-TLS-002b: authwebhook-tls Secret provisioned by cert-manager"
-}
-
-run_tls_003() {
-  local desc_delete="ST-CHART-TLS-003a: Delete authwebhook-tls Secret"
-  assert_exit_code "$desc_delete" kubectl delete secret authwebhook-tls -n "$NAMESPACE"
-
-  local flags
-  flags="$(common_install_flags) $(tls_flags)"
-
-  # shellcheck disable=SC2046
-  if helm upgrade kubernaut "$CHART_PATH" \
-    --namespace "$NAMESPACE" \
-    $(production_secret_flags) \
-    $flags \
-    --timeout 5m >/dev/null 2>&1; then
-    tap_ok "ST-CHART-TLS-003b: helm upgrade regenerates certificate"
-  else
-    tap_not_ok "ST-CHART-TLS-003b: helm upgrade regenerates certificate" "helm upgrade failed"
-  fi
-
-  assert_resource_exists secret authwebhook-tls "$NAMESPACE" \
-    "ST-CHART-TLS-003c: authwebhook-tls Secret exists after recovery"
-}
-
 # Issue #753: Inter-service TLS assertions (mandatory TLS).
 run_tls_interservice() {
   local pass=true
@@ -837,6 +795,285 @@ run_upg_001() {
   fi
 
   assert_pods_ready 13 "ST-CHART-UPG-001d: 13 pods healthy after upgrade"
+}
+
+# BR-PLATFORM-004 / DD-018: a second `helm install` on a cluster that already has a
+# Kubernaut release must fail fast with the single-install guard's message, before any
+# resources are applied — not with Helm's generic ownership-conflict error. Requires a
+# live cluster (the guard's `lookup` is a no-op under `helm template`).
+run_guard_001() {
+  local desc="ST-CHART-GUARD-001: Second helm install on a different namespace is blocked by the single-install guard"
+  local guard_ns="kubernaut-guard-test"
+  local guard_release="kubernaut-guard-test"
+
+  kubectl create namespace "$guard_ns" >/dev/null 2>&1 || true
+
+  # Mirror run_pre_003: the guard must be reached (and be the *only* failure) before any
+  # unrelated required-value check (e.g. missing secrets) short-circuits template rendering.
+  local test_password="smoke-guard-test-pass"
+  kubectl create secret generic kubernaut-pg-credentials \
+    --from-literal=POSTGRES_USER=slm_user \
+    --from-literal=POSTGRES_PASSWORD="$test_password" \
+    --from-literal=POSTGRES_DB=action_history \
+    --from-literal="db-secrets.yaml=$(printf 'username: slm_user\npassword: %s' "$test_password")" \
+    -n "$guard_ns" >/dev/null 2>&1
+  kubectl create secret generic kubernaut-valkey-credentials \
+    --from-literal="valkey-secrets.yaml=password: \"${test_password}\"" \
+    -n "$guard_ns" >/dev/null 2>&1
+  kubectl create secret generic kubernaut-llm-credentials \
+    --from-literal=OPENAI_API_KEY=sk-smoke-test-placeholder \
+    -n "$guard_ns" >/dev/null 2>&1 # pre-commit:allow-sensitive
+
+  local flags
+  flags="$(common_install_flags) $(tls_flags)"
+
+  local output
+  # shellcheck disable=SC2046
+  output=$(helm install "$guard_release" "$CHART_PATH" \
+    --namespace "$guard_ns" \
+    $(production_secret_flags) \
+    $flags \
+    --timeout 1m 2>&1)
+  local exit_code=$?
+
+  if [[ $exit_code -ne 0 ]] && grep -q "Kubernaut only supports one installation per cluster" <<< "$output"; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "expected guard failure message; exit=${exit_code} output=${output:0:300}"
+  fi
+
+  if ! helm list -n "$guard_ns" --short 2>/dev/null | grep -q "^${guard_release}$"; then
+    tap_ok "ST-CHART-GUARD-001b: blocked install leaves no registered release (zero side effects)"
+  else
+    tap_not_ok "ST-CHART-GUARD-001b: blocked install leaves no registered release (zero side effects)" \
+      "release was registered despite guard failure"
+    helm uninstall "$guard_release" -n "$guard_ns" --no-hooks --timeout 1m >/dev/null 2>&1 || true
+  fi
+
+  kubectl delete namespace "$guard_ns" --ignore-not-found --timeout=60s >/dev/null 2>&1 || true
+}
+
+# BR-PLATFORM-006: the ST-CHART-CONSOLE-* template tests only prove the chart *renders*
+# the console correctly — they use a fake, unreachable issuer ("issuer.example.com") and
+# never observe a live Pod. That leaves the console's actual wiring point (does
+# oauth2-proxy's OIDC discovery succeed and the container reach Ready?) with zero
+# integration coverage, violating the pyramid invariant (IT proves wiring). This deploys
+# a minimal, in-cluster Dex OIDC provider so run_console_live_001 can validate that
+# wiring against a real (if lightweight) issuer instead of a placeholder URL.
+#
+# The `console` (nginx/SPA) container's image is built and published from a separate
+# repository and is intentionally not available in this repo's CI — only the
+# oauth2-proxy sidecar's readiness is asserted; the console container's ErrImagePull
+# is expected and out of scope here.
+DEX_ISSUER_URL=""
+DEX_CLIENT_SECRET="smoke-test-dex-secret"
+
+deploy_dex() {
+  local desc="ST-CHART-CONSOLE-LIVE-000: Deploy Dex OIDC provider for live console validation"
+  DEX_ISSUER_URL="http://dex.${NAMESPACE}.svc.cluster.local:5556/dex"
+  # Pinned by digest (not tag) for reproducibility. This is the multi-arch manifest-list
+  # digest for dexidp/dex:v2.45.1-alpine — container runtimes resolve the correct per-arch
+  # (amd64/arm64/...) image from it automatically, so this works unchanged in CI (amd64)
+  # and on Apple Silicon dev machines (arm64). To bump the version, resolve the new tag's
+  # index digest with: skopeo inspect docker://docker.io/dexidp/dex:<new-tag> | jq -r .Digest
+  local dex_image="docker.io/dexidp/dex@sha256:8499afd690c437f52301efd2b05b2455da5bd2dfc20332cd697dc9937f808462"
+
+  # Preload into Kind via podman, mirroring the image-loading pattern already used
+  # by CI (podman save | kind load image-archive) rather than `docker pull` (which
+  # preload_hook_image uses but which is not guaranteed to exist on podman-only runners).
+  if podman pull "$dex_image" >/dev/null 2>&1; then
+    podman save "$dex_image" | kind load image-archive /dev/stdin --name "${KIND_CLUSTER_NAME:-kind}" >/dev/null 2>&1 || true
+  fi
+
+  kubectl apply -n "$NAMESPACE" -f - >/dev/null 2>&1 <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dex-config
+data:
+  config.yaml: |
+    issuer: ${DEX_ISSUER_URL}
+    storage:
+      type: memory
+    web:
+      http: 0.0.0.0:5556
+    staticClients:
+    - id: kubernaut-console
+      secret: ${DEX_CLIENT_SECRET}
+      redirectURIs:
+      - 'https://console.smoke-test.local/oauth2/callback'
+      name: 'Kubernaut Console'
+    enablePasswordDB: true
+    staticPasswords:
+    - email: "tester@example.com"
+      hash: "\$2a\$10\$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+      username: "tester"
+      userID: "08a8684b-db88-4b73-90a9-3cd1661f5466"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dex
+  labels:
+    app: dex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dex
+  template:
+    metadata:
+      labels:
+        app: dex
+    spec:
+      containers:
+      - name: dex
+        image: ${dex_image}
+        args: ["dex", "serve", "/etc/dex/config.yaml"]
+        ports:
+        - containerPort: 5556
+        volumeMounts:
+        - name: config
+          mountPath: /etc/dex
+        readinessProbe:
+          httpGet:
+            path: /dex/healthz
+            port: 5556
+          initialDelaySeconds: 2
+          periodSeconds: 3
+      volumes:
+      - name: config
+        configMap:
+          name: dex-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dex
+spec:
+  selector:
+    app: dex
+  ports:
+  - port: 5556
+    targetPort: 5556
+EOF
+
+  if ! kubectl rollout status deployment/dex -n "$NAMESPACE" --timeout=60s >/dev/null 2>&1; then
+    tap_not_ok "$desc" "Dex deployment did not become ready within 60s"
+    return 1
+  fi
+
+  kubectl create secret generic console-oauth-creds -n "$NAMESPACE" \
+    --from-literal=client-id=kubernaut-console \
+    --from-literal=client-secret="$DEX_CLIENT_SECRET" \
+    --from-literal=cookie-secret="$(openssl rand -hex 16)" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null 2>&1
+
+  tap_ok "$desc"
+}
+
+run_console_live_001() {
+  local desc="ST-CHART-CONSOLE-LIVE-001: BR-PLATFORM-006 — console's oauth2-proxy reaches Ready via real OIDC discovery"
+
+  if ! deploy_dex; then
+    tap_not_ok "$desc" "prerequisite Dex deployment failed"
+    return 1
+  fi
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set console.enabled=true \
+    --set console.auth.secretName=console-oauth-creds \
+    --set console.ingress.enabled=false \
+    --set console.ingress.host=console.smoke-test.local \
+    --set apifrontend.config.auth.issuerURL="$DEX_ISSUER_URL" \
+    --set apifrontend.config.auth.audience="$DEX_ISSUER_URL" \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "helm upgrade to enable console failed"
+    return 1
+  fi
+
+  local ready="" restarts="" attempt
+  for attempt in $(seq 1 15); do
+    ready=$(kubectl get pod -n "$NAMESPACE" -l app=console \
+      -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="oauth2-proxy")].ready}' 2>/dev/null || echo "")
+    restarts=$(kubectl get pod -n "$NAMESPACE" -l app=console \
+      -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="oauth2-proxy")].restartCount}' 2>/dev/null || echo "0")
+    [[ "$ready" == "true" ]] && break
+    sleep 4
+  done
+
+  local logs
+  logs=$(kubectl logs -n "$NAMESPACE" -l app=console -c oauth2-proxy --tail=50 2>/dev/null || echo "")
+
+  if [[ "$ready" == "true" && "${restarts:-0}" -eq 0 ]] && \
+     grep -q "OAuthProxy configured for OpenID Connect Client ID: kubernaut-console" <<< "$logs"; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "oauth2-proxy not Ready/stable via real OIDC discovery (ready=${ready:-unknown}, restarts=${restarts:-unknown})"
+  fi
+}
+
+# BR-PLATFORM-003: the ST-CHART-HPA-* template tests only prove the chart *renders* a
+# correct HorizontalPodAutoscaler manifest — they never observe a live object. Since
+# autoscaling/v2 is a stable core API already present in every Kind node (unlike
+# ServiceMonitor/PrometheusRule, which need the Prometheus Operator CRDs), this asserts
+# the real, in-cluster HPA objects that a `helm upgrade --set *.autoscaling.enabled=true`
+# produces, closing the wiring-verification gap called out in BR-PLATFORM-003's own
+# non-goals section (live counterpart to ST-CHART-HPA-001/ST-CHART-MON-001/002).
+run_mon_003() {
+  local desc="ST-CHART-MON-003: BR-PLATFORM-003 — DataStorage/APIFrontend HorizontalPodAutoscaler is a real, correctly-configured autoscaling/v2 object"
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set datastorage.autoscaling.enabled=true \
+    --set datastorage.autoscaling.minReplicas=1 \
+    --set datastorage.autoscaling.maxReplicas=3 \
+    --set apifrontend.autoscaling.enabled=true \
+    --set apifrontend.autoscaling.minReplicas=1 \
+    --set apifrontend.autoscaling.maxReplicas=4 \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "helm upgrade to enable autoscaling failed"
+    return 1
+  fi
+
+  local ds_min ds_max ds_target_kind ds_target_name
+  ds_min=$(kubectl get hpa datastorage -n "$NAMESPACE" -o jsonpath='{.spec.minReplicas}' 2>/dev/null || echo "")
+  ds_max=$(kubectl get hpa datastorage -n "$NAMESPACE" -o jsonpath='{.spec.maxReplicas}' 2>/dev/null || echo "")
+  ds_target_kind=$(kubectl get hpa datastorage -n "$NAMESPACE" -o jsonpath='{.spec.scaleTargetRef.kind}' 2>/dev/null || echo "")
+  ds_target_name=$(kubectl get hpa datastorage -n "$NAMESPACE" -o jsonpath='{.spec.scaleTargetRef.name}' 2>/dev/null || echo "")
+
+  if [[ "$ds_min" == "1" && "$ds_max" == "3" && "$ds_target_kind" == "Deployment" && "$ds_target_name" == "datastorage" ]]; then
+    tap_ok "ST-CHART-MON-003a: DataStorage HorizontalPodAutoscaler is live with configured min/maxReplicas + scaleTargetRef"
+  else
+    tap_not_ok "ST-CHART-MON-003a: DataStorage HPA live state" \
+      "min=${ds_min:-unset} max=${ds_max:-unset} targetKind=${ds_target_kind:-unset} targetName=${ds_target_name:-unset}"
+  fi
+
+  local af_min af_max af_target_name
+  af_min=$(kubectl get hpa apifrontend -n "$NAMESPACE" -o jsonpath='{.spec.minReplicas}' 2>/dev/null || echo "")
+  af_max=$(kubectl get hpa apifrontend -n "$NAMESPACE" -o jsonpath='{.spec.maxReplicas}' 2>/dev/null || echo "")
+  af_target_name=$(kubectl get hpa apifrontend -n "$NAMESPACE" -o jsonpath='{.spec.scaleTargetRef.name}' 2>/dev/null || echo "")
+
+  if [[ "$af_min" == "1" && "$af_max" == "4" && "$af_target_name" == "apifrontend" ]]; then
+    tap_ok "ST-CHART-MON-003b: APIFrontend HorizontalPodAutoscaler is live with configured min/maxReplicas"
+  else
+    tap_not_ok "ST-CHART-MON-003b: APIFrontend HPA live state" \
+      "min=${af_min:-unset} max=${af_max:-unset} targetName=${af_target_name:-unset}"
+  fi
+
+  # HPA .status.currentMetrics requires metrics-server, which isn't guaranteed to be
+  # installed in the smoke-test Kind cluster; asserting the live *spec* (real object +
+  # values wiring) proves the wiring point without depending on metrics-server.
+
+  # Revert so the release returns to its documented default (autoscaling disabled) for
+  # the rest of the test run; uninstall would remove the HPAs regardless, but this keeps
+  # the release's rendered state consistent with defaults for as long as it's still up.
+  helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set datastorage.autoscaling.enabled=false \
+    --set apifrontend.autoscaling.enabled=false \
+    --timeout 2m >/dev/null 2>&1 || true
 }
 
 run_uninst_001() {
@@ -1017,21 +1254,18 @@ flow_a_production() {
   run_verify_003 || flow_failed=true
   run_verify_policies || flow_failed=true
 
-  if [[ "$PLATFORM" == "kind" ]]; then
-    run_tls_001
-    run_tls_interservice
-  else
-    run_tls_002
-    run_tls_interservice
-  fi
+  run_tls_001
+  run_tls_interservice
 
   run_upg_001 || flow_failed=true
 
-  if [[ "$PLATFORM" == "ocp" ]]; then
-    run_tls_003
-  fi
-
   run_edge_001
+  run_guard_001
+  run_mon_003 || flow_failed=true
+
+  if [[ "$PLATFORM" == "kind" ]]; then
+    run_console_live_001 || flow_failed=true
+  fi
 
   if $flow_failed; then
     must_gather "$NAMESPACE" "flow-a-verification-failure"
@@ -1246,17 +1480,18 @@ run_template_tests() {
 
   echo "# --- Template Tests: NetworkPolicy (Issue #285) ---"
 
-  # ST-NP-001: Default renders 12 NetworkPolicies (enabled by default)
-  # Count: 12 after removing orphaned legacy HAPI NP in v1.4.
+  # ST-NP-001: Default renders 13 NetworkPolicies (enabled by default)
+  # Count: 12 after removing orphaned legacy HAPI NP in v1.4, +1 for APIFrontend
+  # (BR-PLATFORM-005, Issue #1589 follow-up).
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
   local np_count
   np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
-  if [[ "$np_count" -eq 12 ]]; then
-    tap_ok "ST-NP-001: default renders 12 NetworkPolicies (enabled by default)"
+  if [[ "$np_count" -eq 13 ]]; then
+    tap_ok "ST-NP-001: default renders 13 NetworkPolicies (enabled by default)"
   else
-    tap_not_ok "ST-NP-001: default should render 12 NetworkPolicies" \
+    tap_not_ok "ST-NP-001: default should render 13 NetworkPolicies" \
       "Found ${np_count}"
   fi
 
@@ -1295,7 +1530,7 @@ for d in docs:
     fi
   done < <(grep -A1 "kind: NetworkPolicy" <<< "$output" | grep "name:" | awk '{print $2}')
   if [[ "$np_without_dns" -eq 0 ]]; then
-    tap_ok "ST-NP-003: all 12 NetworkPolicies include DNS egress (port 53)"
+    tap_ok "ST-NP-003: all 13 NetworkPolicies include DNS egress (port 53)"
   else
     tap_not_ok "ST-NP-003: DNS egress in all policies" \
       "${np_without_dns} policies missing DNS egress"
@@ -1318,7 +1553,7 @@ for d in docs:
 
   # ST-NP-005: PostgreSQL/Valkey conditional on their enabled flags (F-7)
   # postgresql.host is required when postgresql.enabled=false (migration-job validation).
-  # Count: 10 = 12 total - PG - VK after removing legacy HAPI NP.
+  # Count: 11 = 13 total - PG - VK (13 total after adding APIFrontend NetworkPolicy).
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=true \
@@ -1328,11 +1563,11 @@ for d in docs:
     --set valkey.enabled=false \
     --set valkey.host=external-valkey.example.com 2>&1)
   np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
-  if [[ "$np_count" -eq 10 ]]; then
-    tap_ok "ST-NP-005: postgresql/valkey disabled = 10 NetworkPolicies (no PG/VK)"
+  if [[ "$np_count" -eq 11 ]]; then
+    tap_ok "ST-NP-005: postgresql/valkey disabled = 11 NetworkPolicies (no PG/VK)"
   else
     tap_not_ok "ST-NP-005: infra conditional rendering" \
-      "Expected 10 policies without PG/VK, got ${np_count}"
+      "Expected 11 policies without PG/VK, got ${np_count}"
   fi
 
   # ST-NP-006: helm lint passes with NetworkPolicies enabled
@@ -1474,21 +1709,6 @@ for d in docs:
       "Missing one or both monitoring endpoints in ConfigMaps"
   fi
 
-  # UT-MON-463-008: OCP auto-detection applies defaults
-  local mon_ocp
-  mon_ocp=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --api-versions route.openshift.io/v1 \
-    --set monitoring.prometheus.enabled=true \
-    --set monitoring.alertManager.enabled=true 2>&1)
-  if grep -q 'prometheusUrl: "https://prometheus-k8s.openshift-monitoring.svc:9091"' <<< "$mon_ocp" && \
-     grep -q 'alertManagerUrl: "https://alertmanager-main.openshift-monitoring.svc:9094"' <<< "$mon_ocp"; then
-    tap_ok "UT-MON-463-008: OCP auto-detection applies default URLs"
-  else
-    tap_not_ok "UT-MON-463-008: OCP auto-detection" \
-      "OCP-detected template does not contain expected OCP monitoring URLs"
-  fi
-
   # UT-MON-463-009: TLS CA volume mounted on both EM and KA when tlsCaFile set
   local mon_tls
   mon_tls=$(helm template test "$CHART_PATH" \
@@ -1502,19 +1722,6 @@ for d in docs:
   else
     tap_not_ok "UT-MON-463-009: TLS CA volume" \
       "service-ca volume or mount not found when tlsCaFile is set"
-  fi
-
-  # UT-MON-463-010: OCP RBAC created when monitoring enabled on OCP
-  local mon_rbac
-  mon_rbac=$(helm template test "$CHART_PATH" \
-    $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --api-versions route.openshift.io/v1 \
-    --set monitoring.prometheus.enabled=true 2>&1)
-  if grep -q "cluster-monitoring-view" <<< "$mon_rbac"; then
-    tap_ok "UT-MON-463-010: OCP RBAC ClusterRoleBinding for cluster-monitoring-view"
-  else
-    tap_not_ok "UT-MON-463-010: OCP RBAC" \
-      "cluster-monitoring-view ClusterRoleBinding not found on OCP with monitoring enabled"
   fi
 
   # UT-MON-463-013: helm lint passes with monitoring block
@@ -1606,6 +1813,409 @@ for d in docs:
   else
     tap_not_ok "HELM-LINT-INTERACTIVE: helm lint with interactive" \
       "helm lint failed with kubernautAgent.interactive.enabled=true"
+  fi
+
+  echo "# --- Template Tests: Operator parity + OCP removal (BR-PLATFORM-003/004, Issue #1589) ---"
+
+  # ST-CHART-MON-001: ServiceMonitor per service, gated on monitoring.serviceMonitor.enabled
+  # + monitoring.coreos.com/v1 CRD presence (simulated here via --api-versions).
+  local mon_sm_on
+  mon_sm_on=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --api-versions monitoring.coreos.com/v1 \
+    --set monitoring.serviceMonitor.enabled=true 2>&1)
+  local sm_count
+  sm_count=$(grep -c "^kind: ServiceMonitor$" <<< "$mon_sm_on")
+  if [[ "$sm_count" -eq 10 ]]; then
+    tap_ok "ST-CHART-MON-001a: 10 ServiceMonitors rendered when CRD present + enabled=true"
+  else
+    tap_not_ok "ST-CHART-MON-001a: ServiceMonitor count" "Expected 10 ServiceMonitors, found ${sm_count}"
+  fi
+  if ! grep -q "name: authwebhook-monitor" <<< "$mon_sm_on"; then
+    tap_ok "ST-CHART-MON-001b: authwebhook has no ServiceMonitor (metrics intentionally disabled)"
+  else
+    tap_not_ok "ST-CHART-MON-001b: authwebhook ServiceMonitor" "authwebhook unexpectedly has a ServiceMonitor"
+  fi
+
+  local mon_sm_off
+  mon_sm_off=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set monitoring.serviceMonitor.enabled=true 2>&1)
+  if ! grep -q "^kind: ServiceMonitor$" <<< "$mon_sm_off"; then
+    tap_ok "ST-CHART-MON-001c: ServiceMonitor is a no-op without the monitoring.coreos.com/v1 CRD"
+  else
+    tap_not_ok "ST-CHART-MON-001c: ServiceMonitor without CRD" \
+      "ServiceMonitor rendered despite monitoring.coreos.com/v1 CRD not being present"
+  fi
+
+  # ST-CHART-MON-002: DataStorage/APIFrontend PrometheusRule content spot-check, same CRD gate.
+  local mon_pr_on
+  mon_pr_on=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --api-versions monitoring.coreos.com/v1 \
+    --set monitoring.prometheusRule.enabled=true 2>&1)
+  if grep -q "DataStorageDown" <<< "$mon_pr_on" && grep -q "DataStorageDLQDepthHigh" <<< "$mon_pr_on"; then
+    tap_ok "ST-CHART-MON-002a: DataStorage PrometheusRule alert rules rendered"
+  else
+    tap_not_ok "ST-CHART-MON-002a: DataStorage PrometheusRule" "expected DataStorage alert rules not found"
+  fi
+  if grep -q "ApifrontendDown" <<< "$mon_pr_on" && grep -q "ApifrontendCircuitBreakerOpenKA" <<< "$mon_pr_on"; then
+    tap_ok "ST-CHART-MON-002b: APIFrontend PrometheusRule alert rules rendered"
+  else
+    tap_not_ok "ST-CHART-MON-002b: APIFrontend PrometheusRule" "expected APIFrontend alert rules not found"
+  fi
+
+  local mon_pr_off
+  mon_pr_off=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set monitoring.prometheusRule.enabled=true 2>&1)
+  if ! grep -q "DataStorageDown\|ApifrontendDown" <<< "$mon_pr_off"; then
+    tap_ok "ST-CHART-MON-002c: DataStorage/APIFrontend PrometheusRule is a no-op without the CRD"
+  else
+    tap_not_ok "ST-CHART-MON-002c: PrometheusRule without CRD" \
+      "DataStorage/APIFrontend alert rules rendered despite monitoring.coreos.com/v1 CRD not being present"
+  fi
+
+  # ST-CHART-ACM-001: ACM backend tokenSecretRef wiring (BR-PLATFORM-003, #1556 dependency).
+  # tokenSecretRef is optional (chart wiring is ahead of the Go-side #1556 fix) — no fail()
+  # guard is expected; backend=acm without a token must still render cleanly.
+  local acm_with_token
+  acm_with_token=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set gateway.fleet.enabled=true --set gateway.fleet.backend=acm \
+    --set gateway.fleet.mcpGatewayEndpoint=https://mcp.example.com \
+    --set gateway.fleet.tokenSecretRef=acm-token 2>&1)
+  if grep -q 'tokenPath: "/etc/gateway/acm-token/token"' <<< "$acm_with_token" && \
+     grep -q "fleet-acm-token" <<< "$acm_with_token"; then
+    tap_ok "ST-CHART-ACM-001a: gateway.fleet.tokenSecretRef renders tokenPath + Secret volume/mount"
+  else
+    tap_not_ok "ST-CHART-ACM-001a: ACM tokenSecretRef wiring" \
+      "tokenPath or fleet-acm-token volume/mount not found with backend=acm + tokenSecretRef set"
+  fi
+
+  local acm_without_token acm_without_token_exit
+  acm_without_token=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set gateway.fleet.enabled=true --set gateway.fleet.backend=acm \
+    --set gateway.fleet.mcpGatewayEndpoint=https://mcp.example.com 2>&1)
+  acm_without_token_exit=$?
+  if [[ "$acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$acm_without_token"; then
+    tap_ok "ST-CHART-ACM-001b: backend=acm without tokenSecretRef renders cleanly (unauthenticated, pending #1556)"
+  else
+    tap_not_ok "ST-CHART-ACM-001b: backend=acm without tokenSecretRef" \
+      "render failed, or fleet-acm-token volume unexpectedly present without tokenSecretRef set"
+  fi
+
+  # ST-CHART-ACM-002: same ACM backend tokenSecretRef wiring, ported to RemediationOrchestrator
+  # (BR-PLATFORM-003, #1556 dependency). Mirrors ST-CHART-ACM-001 — this wiring point had zero
+  # test coverage despite being identical in shape to Gateway's.
+  local ro_acm_with_token
+  ro_acm_with_token=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set remediationorchestrator.fleet.enabled=true --set remediationorchestrator.fleet.backend=acm \
+    --set remediationorchestrator.fleet.mcpGatewayEndpoint=https://mcp.example.com \
+    --set remediationorchestrator.fleet.tokenSecretRef=acm-token 2>&1)
+  if grep -q 'tokenPath: "/etc/remediationorchestrator/acm-token/token"' <<< "$ro_acm_with_token" && \
+     grep -q "fleet-acm-token" <<< "$ro_acm_with_token"; then
+    tap_ok "ST-CHART-ACM-002a: remediationorchestrator.fleet.tokenSecretRef renders tokenPath + Secret volume/mount"
+  else
+    tap_not_ok "ST-CHART-ACM-002a: RemediationOrchestrator ACM tokenSecretRef wiring" \
+      "tokenPath or fleet-acm-token volume/mount not found with backend=acm + tokenSecretRef set"
+  fi
+
+  local ro_acm_without_token ro_acm_without_token_exit
+  ro_acm_without_token=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set remediationorchestrator.fleet.enabled=true --set remediationorchestrator.fleet.backend=acm \
+    --set remediationorchestrator.fleet.mcpGatewayEndpoint=https://mcp.example.com 2>&1)
+  ro_acm_without_token_exit=$?
+  if [[ "$ro_acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$ro_acm_without_token"; then
+    tap_ok "ST-CHART-ACM-002b: RemediationOrchestrator backend=acm without tokenSecretRef renders cleanly (unauthenticated, pending #1556)"
+  else
+    tap_not_ok "ST-CHART-ACM-002b: RemediationOrchestrator backend=acm without tokenSecretRef" \
+      "render failed, or fleet-acm-token volume unexpectedly present without tokenSecretRef set"
+  fi
+
+  # ST-CHART-HPA-001: DataStorage/APIFrontend HorizontalPodAutoscaler template rendering
+  # (BR-PLATFORM-003). autoscaling/v2 is a stable core API, so — unlike ServiceMonitor/
+  # PrometheusRule — no CRD gate/`--api-versions` flag is needed to exercise this at the
+  # template level; the live counterpart (real object + kubectl-observed spec) is
+  # ST-CHART-MON-003 in flow_a_production.
+  local ds_hpa_off af_hpa_off
+  ds_hpa_off=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    -s templates/datastorage/hpa.yaml 2>&1)
+  af_hpa_off=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    -s templates/apifrontend/hpa.yaml 2>&1)
+  if ! grep -q "kind: HorizontalPodAutoscaler" <<< "$ds_hpa_off" && \
+     ! grep -q "kind: HorizontalPodAutoscaler" <<< "$af_hpa_off"; then
+    tap_ok "ST-CHART-HPA-001a: no HorizontalPodAutoscaler rendered by default (autoscaling.enabled=false)"
+  else
+    tap_not_ok "ST-CHART-HPA-001a: HPA default-disabled" \
+      "HorizontalPodAutoscaler rendered despite autoscaling.enabled defaulting to false"
+  fi
+
+  local ds_hpa_on af_hpa_on
+  ds_hpa_on=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set datastorage.autoscaling.enabled=true \
+    --set datastorage.autoscaling.minReplicas=2 \
+    --set datastorage.autoscaling.maxReplicas=6 \
+    --set datastorage.autoscaling.memoryTarget=0 \
+    -s templates/datastorage/hpa.yaml 2>&1)
+  af_hpa_on=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set apifrontend.autoscaling.enabled=true \
+    --set apifrontend.autoscaling.cpuTarget=60 \
+    -s templates/apifrontend/hpa.yaml 2>&1)
+  if grep -q "name: datastorage" <<< "$ds_hpa_on" && \
+     grep -q "minReplicas: 2" <<< "$ds_hpa_on" && grep -q "maxReplicas: 6" <<< "$ds_hpa_on"; then
+    tap_ok "ST-CHART-HPA-001b: DataStorage HPA renders with configured minReplicas/maxReplicas"
+  else
+    tap_not_ok "ST-CHART-HPA-001b: DataStorage HPA values wiring" \
+      "expected minReplicas: 2 / maxReplicas: 6 not found for DataStorage HPA"
+  fi
+  if grep -q "averageUtilization: 60" <<< "$af_hpa_on"; then
+    tap_ok "ST-CHART-HPA-001c: APIFrontend HPA renders with configured cpuTarget"
+  else
+    tap_not_ok "ST-CHART-HPA-001c: APIFrontend HPA cpuTarget wiring" \
+      "expected averageUtilization: 60 not found for APIFrontend HPA"
+  fi
+  if ! grep -q "name: memory" <<< "$ds_hpa_on"; then
+    tap_ok "ST-CHART-HPA-001d: DataStorage HPA omits the memory metric when memoryTarget=0"
+  else
+    tap_not_ok "ST-CHART-HPA-001d: DataStorage HPA memoryTarget=0" \
+      "memory resource metric unexpectedly present despite memoryTarget=0"
+  fi
+
+  # ST-CHART-ANSIBLE-CA-001: BR-PLATFORM-005 — Ansible/AWX private-CA support
+  # (Kubernaut Operator parity). caCertSecretRef combines the inter-service CA
+  # with the AAP CA into one bundle via a build-ca-bundle init container.
+  local ansible_ca_on
+  ansible_ca_on=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set workflowexecution.config.ansible.apiURL=https://awx.example.com \
+    --set workflowexecution.config.ansible.tokenSecretRef.name=awx-token \
+    --set workflowexecution.config.ansible.tokenSecretRef.key=token \
+    --set workflowexecution.config.ansible.caCertSecretRef.name=aap-ca-secret \
+    --set workflowexecution.config.ansible.caCertSecretRef.key=custom-ca.pem \
+    -s templates/workflowexecution/workflowexecution.yaml 2>&1)
+  if grep -q "name: build-ca-bundle" <<< "$ansible_ca_on" && \
+     grep -q 'value: "/etc/combined-ca/ca-bundle.crt"' <<< "$ansible_ca_on" && \
+     grep -q "secretName: aap-ca-secret" <<< "$ansible_ca_on"; then
+    tap_ok "ST-CHART-ANSIBLE-CA-001a: ansible.caCertSecretRef wires build-ca-bundle init container + combined TLS_CA_FILE"
+  else
+    tap_not_ok "ST-CHART-ANSIBLE-CA-001a: ansible.caCertSecretRef wiring" \
+      "build-ca-bundle init container or combined-ca TLS_CA_FILE override not found"
+  fi
+
+  local ansible_ca_off
+  ansible_ca_off=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set workflowexecution.config.ansible.apiURL=https://awx.example.com \
+    --set workflowexecution.config.ansible.tokenSecretRef.name=awx-token \
+    --set workflowexecution.config.ansible.tokenSecretRef.key=token \
+    -s templates/workflowexecution/workflowexecution.yaml 2>&1)
+  if ! grep -q "build-ca-bundle" <<< "$ansible_ca_off"; then
+    tap_ok "ST-CHART-ANSIBLE-CA-001b: no build-ca-bundle init container when caCertSecretRef unset"
+  else
+    tap_not_ok "ST-CHART-ANSIBLE-CA-001b: ansible without caCertSecretRef" \
+      "build-ca-bundle init container unexpectedly present"
+  fi
+
+  # ST-CHART-ANSIBLE-NP-001: BR-PLATFORM-005 — WorkflowExecution NetworkPolicy
+  # allows HTTPS egress to the (possibly external) AWX/AAP endpoint.
+  local ansible_np
+  ansible_np=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set workflowexecution.config.ansible.apiURL=https://awx.example.com \
+    --set workflowexecution.config.ansible.tokenSecretRef.name=awx-token \
+    --set workflowexecution.config.ansible.tokenSecretRef.key=token \
+    -s templates/workflowexecution/networkpolicy.yaml 2>&1)
+  if grep -A2 "port: 443" <<< "$ansible_np" | grep -q "protocol: TCP"; then
+    tap_ok "ST-CHART-ANSIBLE-NP-001: WorkflowExecution NetworkPolicy allows HTTPS egress when ansible configured"
+  else
+    tap_not_ok "ST-CHART-ANSIBLE-NP-001: WorkflowExecution NetworkPolicy" \
+      "expected port 443 egress rule not found when ansible configured"
+  fi
+
+  # ST-CHART-AF-NP-001: BR-PLATFORM-005 — APIFrontend NetworkPolicy (previously
+  # the only component in the mesh without one; Kubernaut Operator parity).
+  local af_np
+  af_np=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set "networkPolicies.apifrontend.ingressNamespaces[0]=ingress-nginx" \
+    --set apifrontend.config.auth.replayCache.enabled=true \
+    --set apifrontend.config.auth.issuerURL=https://issuer.example.com \
+    -s templates/apifrontend/networkpolicy.yaml 2>&1)
+  if grep -q "kind: NetworkPolicy" <<< "$af_np" && \
+     grep -q "kubernetes.io/metadata.name: ingress-nginx" <<< "$af_np" && \
+     grep -A5 "port: 6379" <<< "$af_np" | grep -q "app: valkey"; then
+    tap_ok "ST-CHART-AF-NP-001a: APIFrontend NetworkPolicy renders ingressNamespaces + Valkey egress"
+  else
+    tap_not_ok "ST-CHART-AF-NP-001a: APIFrontend NetworkPolicy" \
+      "expected NetworkPolicy content not found"
+  fi
+
+  local af_np_disabled
+  af_np_disabled=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set networkPolicies.apifrontend.enabled=false 2>&1)
+  if ! grep -q "test-kubernaut-apifrontend" <<< "$af_np_disabled"; then
+    tap_ok "ST-CHART-AF-NP-001b: networkPolicies.apifrontend.enabled=false omits the NetworkPolicy"
+  else
+    tap_not_ok "ST-CHART-AF-NP-001b: APIFrontend NetworkPolicy disable toggle" \
+      "NetworkPolicy rendered despite networkPolicies.apifrontend.enabled=false"
+  fi
+
+  local valkey_np
+  valkey_np=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set apifrontend.config.auth.replayCache.enabled=true \
+    -s templates/infrastructure/networkpolicy-valkey.yaml 2>&1)
+  if grep -q "app: apifrontend" <<< "$valkey_np"; then
+    tap_ok "ST-CHART-AF-NP-001c: Valkey NetworkPolicy allows APIFrontend ingress when replayCache enabled"
+  else
+    tap_not_ok "ST-CHART-AF-NP-001c: Valkey NetworkPolicy" \
+      "apifrontend podSelector not found in Valkey ingress despite replayCache.enabled=true"
+  fi
+
+  # ST-CHART-KA-SATOKEN-001: BR-PLATFORM-005 — kubernaut-agent (highest-risk,
+  # LLM-driven component) uses a short-TTL projected SA token instead of the
+  # default long-lived automount (Kubernaut Operator parity).
+  local ka_tpl
+  ka_tpl=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    -s templates/kubernaut-agent/kubernaut-agent.yaml 2>&1)
+  if grep -q "automountServiceAccountToken: false" <<< "$ka_tpl" && \
+     grep -q "expirationSeconds: 3600" <<< "$ka_tpl" && \
+     grep -q "mountPath: /var/run/secrets/kubernetes.io/serviceaccount" <<< "$ka_tpl"; then
+    tap_ok "ST-CHART-KA-SATOKEN-001: kubernaut-agent-sa disables automount + mounts short-TTL projected token"
+  else
+    tap_not_ok "ST-CHART-KA-SATOKEN-001: kubernaut-agent SA token hardening" \
+      "expected automount disable + projected sa-token volume not found"
+  fi
+
+  # ST-CHART-KA-RBAC-001: BR-PLATFORM-005 — generic (non-OCP) investigative RBAC
+  # parity: KubeVirt VM investigation + PriorityClass visibility.
+  if grep -q '"kubevirt.io"' <<< "$ka_tpl" && grep -q '"scheduling.k8s.io"' <<< "$ka_tpl" && \
+     grep -q '"priorityclasses"' <<< "$ka_tpl"; then
+    tap_ok "ST-CHART-KA-RBAC-001: kubernaut-agent ClusterRole includes kubevirt.io + priorityclasses read rules"
+  else
+    tap_not_ok "ST-CHART-KA-RBAC-001: kubernaut-agent RBAC parity" \
+      "kubevirt.io or scheduling.k8s.io/priorityclasses rules not found"
+  fi
+
+  # ST-CHART-CONSOLE-001a: BR-PLATFORM-006 — console disabled by default (opt-in),
+  # matching the Kubernaut Operator's ConsoleSpec.Enabled default of false.
+  local console_default
+  console_default=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
+  if ! grep -q "app: console" <<< "$console_default"; then
+    tap_ok "ST-CHART-CONSOLE-001a: console is disabled (not rendered) by default"
+  else
+    tap_not_ok "ST-CHART-CONSOLE-001a: console default-disabled" \
+      "console resources rendered despite console.enabled defaulting to false"
+  fi
+
+  # ST-CHART-CONSOLE-001b: fail-fast validation — console.enabled=true without
+  # console.auth.secretName must fail the render, not silently misconfigure OIDC.
+  local console_no_secret
+  console_no_secret=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set console.enabled=true 2>&1)
+  if grep -q "console.auth.secretName is required" <<< "$console_no_secret"; then
+    tap_ok "ST-CHART-CONSOLE-001b: console.enabled=true without auth.secretName fails fast"
+  else
+    tap_not_ok "ST-CHART-CONSOLE-001b: console auth.secretName validation" \
+      "expected fail-fast error not found"
+  fi
+
+  # ST-CHART-CONSOLE-001c: fail-fast validation — console.enabled=true without an
+  # OIDC issuer resolvable from APIFrontend's auth config must fail the render.
+  local console_no_issuer
+  console_no_issuer=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set console.enabled=true \
+    --set console.auth.secretName=console-oauth-creds \
+    --set console.ingress.host=console.apps.example.com 2>&1)
+  if grep -q "requires an OIDC issuer" <<< "$console_no_issuer"; then
+    tap_ok "ST-CHART-CONSOLE-001c: console.enabled=true without a resolvable OIDC issuer fails fast"
+  else
+    tap_not_ok "ST-CHART-CONSOLE-001c: console OIDC issuer validation" \
+      "expected fail-fast error not found"
+  fi
+
+  # ST-CHART-CONSOLE-001d: fail-fast validation — console.enabled=true without
+  # console.ingress.host must fail (oauth2-proxy redirect URL requires a hostname
+  # even when console.ingress.enabled=false, since it may be fronted by a
+  # user-managed Ingress/Route instead).
+  local console_no_host
+  console_no_host=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set console.enabled=true \
+    --set console.auth.secretName=console-oauth-creds \
+    --set apifrontend.config.auth.issuerURL=https://issuer.example.com 2>&1)
+  if grep -q "console.ingress.host is required" <<< "$console_no_host"; then
+    tap_ok "ST-CHART-CONSOLE-001d: console.enabled=true without ingress.host fails fast"
+  else
+    tap_not_ok "ST-CHART-CONSOLE-001d: console ingress.host validation" \
+      "expected fail-fast error not found"
+  fi
+
+  # ST-CHART-CONSOLE-002: full happy-path render — Deployment (oauth2-proxy +
+  # console containers), Service, nginx ConfigMap, Ingress, and NetworkPolicy all
+  # render with the required fields set (Kubernaut Operator parity, Issue #1589
+  # follow-up).
+  local console_full
+  console_full=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set console.enabled=true \
+    --set console.auth.secretName=console-oauth-creds \
+    --set console.ingress.host=console.apps.example.com \
+    --set apifrontend.config.auth.issuerURL=https://issuer.example.com 2>&1)
+  if grep -q "name: oauth2-proxy" <<< "$console_full" && \
+     grep -q "name: console" <<< "$console_full" && \
+     grep -q "kind: Ingress" <<< "$console_full" && \
+     grep -q "host: console.apps.example.com" <<< "$console_full" && \
+     grep -q "oidc-issuer-url=https://issuer.example.com" <<< "$console_full" && \
+     grep -q "redirect-url=https://console.apps.example.com/oauth2/callback" <<< "$console_full" && \
+     grep -q "name: test-kubernaut-console" <<< "$console_full"; then
+    tap_ok "ST-CHART-CONSOLE-002: console renders Deployment+Service+Ingress+NetworkPolicy end-to-end"
+  else
+    tap_not_ok "ST-CHART-CONSOLE-002: console full render" \
+      "expected console resources/content not found"
+  fi
+
+  # ST-CHART-CONSOLE-003: console.ingress.enabled=false omits the Ingress while
+  # the Deployment/Service still render (external access delegated to a
+  # user-managed Ingress/Route).
+  local console_no_ingress
+  console_no_ingress=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set console.enabled=true \
+    --set console.auth.secretName=console-oauth-creds \
+    --set console.ingress.host=console.apps.example.com \
+    --set console.ingress.enabled=false \
+    --set apifrontend.config.auth.issuerURL=https://issuer.example.com 2>&1)
+  if ! grep -q "kind: Ingress" <<< "$console_no_ingress" && grep -q "name: oauth2-proxy" <<< "$console_no_ingress"; then
+    tap_ok "ST-CHART-CONSOLE-003: console.ingress.enabled=false omits Ingress, keeps Deployment/Service"
+  else
+    tap_not_ok "ST-CHART-CONSOLE-003: console ingress disable toggle" \
+      "Ingress still rendered, or Deployment unexpectedly missing"
+  fi
+
+  # ST-CHART-OCP-REMOVED-001: Part B regression guard — no residual OCP-specific code paths.
+  # Excludes generic schema example strings and comments pointing OCP users to the Operator.
+  local ocp_hits
+  ocp_hits=$(grep -rlI "postgresql\.variant\|kubernaut\.monitoring\.isOCP\|kubernaut\.monitoring\.ocpRbac\|service\.beta\.openshift\.io\|cluster-monitoring-view\|values-ocp\.yaml" \
+    "${CHART_PATH}/templates" "${CHART_PATH}/values.yaml" "${CHART_PATH}/values.schema.json" 2>/dev/null || true)
+  if [[ -z "$ocp_hits" ]] && [[ ! -f "${CHART_PATH}/values-ocp.yaml" ]]; then
+    tap_ok "ST-CHART-OCP-REMOVED-001: no residual OCP-specific helpers/annotations/RBAC/values-ocp.yaml"
+  else
+    tap_not_ok "ST-CHART-OCP-REMOVED-001: OCP removal regression" \
+      "residual OCP-specific code found: ${ocp_hits}"
   fi
 }
 
