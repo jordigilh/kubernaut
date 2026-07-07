@@ -444,6 +444,14 @@ func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowE
 		payload.PipelinerunName.SetTo(wfe.Status.ExecutionRef.Name)
 	}
 
+	// BR-WE-019 AC10 / DD-WE-008 Wiring Point C: surface PodFailurePolicy-
+	// tolerated pod-failure retries in the audit trail. Omitted (rather than
+	// 0) when no tolerated failures occurred, preserving today's payload
+	// shape for the common case.
+	if wfe.Status.ExecutionStatus != nil && wfe.Status.ExecutionStatus.RetryCount > 0 {
+		payload.RetryCount.SetTo(int(wfe.Status.ExecutionStatus.RetryCount))
+	}
+
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
 		payload.Parameters.SetTo(api.WorkflowExecutionAuditPayloadParameters(wfe.Spec.Parameters))

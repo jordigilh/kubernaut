@@ -204,6 +204,201 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 		})
 	})
 
+	// ========================================
+	// DD-WE-008 / BR-WE-019: Real-Cluster Proof of PodFailurePolicy
+	// (Wiring Point B's actual GREEN gate -- envtest cannot exercise the
+	// kubelet/Job-controller pod-failure-policy evaluation loop; see
+	// DD-WE-008 Section 8)
+	// ========================================
+
+	Context("E2E-WE-019-001: PodFailurePolicy Tolerates OOM-Kill (exit 137)", func() {
+		It("should let the real Job controller Ignore exit-137 pod failures while the WFE stays Running (BR-WE-019)", func() {
+			// Business Outcome: transient OOM-kills during a remediation Job do not
+			// prematurely fail the whole remediation -- the Job controller keeps
+			// creating replacement Pods instead of counting the failure against
+			// backoffLimit.
+			//
+			// DD-WE-008 Section 8: job-oomkill unconditionally exits 137 on every
+			// attempt (no stateful retry-then-succeed logic) -- this test proves
+			// tolerance within a short observation window and deletes the WFE
+			// before ActiveDeadlineSeconds (30m) would otherwise eventually fail
+			// it, deliberately avoiding a 30-minute CI run.
+			testName := fmt.Sprintf("e2e-job-oomkill-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/job-oomkill-test-%s", uuid.New().String()[:8])
+
+			jobOomkillUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-oomkill"]
+			Expect(jobOomkillUUID).ToNot(BeEmpty(),
+				"test-job-oomkill UUID should have been captured during workflow registration")
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testName,
+					Namespace: controllerNamespace,
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID: jobOomkillUUID,
+						Version:    "v1.0.0",
+						// Spec seed -- resolveExecutionBundle overrides from DS catalog
+						// (job-oomkill:v1.0.0-exec, which unconditionally exits 137)
+						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
+							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"FAILURE_MESSAGE": "E2E-WE-019-001 simulated OOM-kill",
+					},
+				},
+			}
+
+			defer func() {
+				_ = deleteWFE(wfe)
+			}()
+
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for the WFE to transition to Running (Job created)")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 60*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+
+			By("Locating the created Job")
+			var jobList batchv1.JobList
+			Eventually(func() int {
+				err := k8sClient.List(ctx, &jobList,
+					client.InNamespace(infrastructure.ExecutionNamespace),
+					client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})
+				if err != nil {
+					return 0
+				}
+				return len(jobList.Items)
+			}, 30*time.Second, 2*time.Second).Should(Equal(1), "Expected exactly 1 Job for this WFE")
+			jobName := jobList.Items[0].Name
+
+			By("Verifying the real Job controller tolerates >= 2 exit-137 pod failures (PodFailurePolicy Ignore in effect)")
+			// NOT job.Status.Failed: k8s.io/api batch/v1's
+			// PodFailurePolicyActionIgnore doc comment states the counter
+			// towards .backoffLimit (job.Status.Failed itself) "is not
+			// incremented" for Ignore-action failures -- confirmed
+			// empirically via a real-cluster spike (DD-WE-008 Section 8),
+			// which is what first caught this test's original incorrect
+			// assertion. Instead, count "SuccessfulCreate" Events on the Job
+			// (one per Pod creation, including every Ignore-tolerated
+			// replacement) -- the same signal JobExecutor.GetStatus uses to
+			// compute BR-WE-019 AC10's RetryCount.
+			Eventually(func() int32 {
+				var events corev1.EventList
+				if err := k8sClient.List(ctx, &events, client.InNamespace(infrastructure.ExecutionNamespace)); err != nil {
+					return 0
+				}
+				var totalPodCreations int32
+				for _, evt := range events.Items {
+					if evt.InvolvedObject.Kind != "Job" || evt.InvolvedObject.Name != jobName || evt.Reason != "SuccessfulCreate" {
+						continue
+					}
+					count := evt.Count
+					if count == 0 {
+						count = 1
+					}
+					totalPodCreations += count
+				}
+				return totalPodCreations
+			}, 90*time.Second, 2*time.Second).Should(BeNumerically(">=", 3),
+				"BR-WE-019: PodFailurePolicy must Ignore exit-137 pod failures, allowing >= 3 pod-creation attempts (initial + >=2 tolerated replacements) within the observation window")
+
+			By("Verifying job.Status.Failed stays 0 throughout (Ignore-action failures are never counted there)")
+			var job batchv1.Job
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: jobName, Namespace: infrastructure.ExecutionNamespace}, &job)).To(Succeed())
+			Expect(job.Status.Failed).To(Equal(int32(0)),
+				"regression guard: confirms job.Status.Failed is NOT a viable retry-tolerance signal for Ignore-action failures")
+
+			By("Verifying the WFE is still Running (not Failed) despite the tolerated pod failures")
+			stillRunning, err := getWFE(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stillRunning.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseRunning),
+				"BR-WE-019: tolerated OOM-kill pod failures must not fail the WFE -- PodFailurePolicy Ignore must keep it Running")
+
+			GinkgoWriter.Printf("E2E-WE-019-001: real Job controller tolerated exit-137 pod failures, WFE remained Running\n")
+		})
+	})
+
+	Context("E2E-WE-019-002: PodFailurePolicy Does Not Weaken Fail-Fast for Genuine Failures", func() {
+		It("should let the real Job controller count exactly 1 genuine (non-tolerated) failure and reach Failed (BR-WE-019 regression guard)", func() {
+			// Business Outcome: Phase 4's unconditional PodFailurePolicy addition
+			// must not loosen today's fail-fast behavior for failure causes other
+			// than exit-137/DisruptionTarget -- backoffLimit: 0 still applies.
+			// Reuses the existing test-job-intentional-failure fixture (exit 1,
+			// no new image) per DD-WE-008 Section 8.
+			testName := fmt.Sprintf("e2e-job-genuine-failure-%s", uuid.New().String()[:8])
+			targetResource := fmt.Sprintf("default/deployment/job-genuine-fail-test-%s", uuid.New().String()[:8])
+
+			jobFailureUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-intentional-failure"]
+			Expect(jobFailureUUID).ToNot(BeEmpty(),
+				"test-job-intentional-failure UUID should have been captured during workflow registration")
+
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testName,
+					Namespace: controllerNamespace,
+				},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID: jobFailureUUID,
+						Version:    "v1.0.0",
+						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
+							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						"FAILURE_MESSAGE": "E2E-WE-019-002 genuine failure regression guard",
+					},
+				},
+			}
+
+			defer func() {
+				_ = deleteWFE(wfe)
+			}()
+
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for the WFE to reach Failed")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+
+			By("Verifying the Job recorded exactly 1 failure (fail-fast unchanged, BackoffLimit: 0)")
+			var jobList batchv1.JobList
+			Expect(k8sClient.List(ctx, &jobList,
+				client.InNamespace(infrastructure.ExecutionNamespace),
+				client.MatchingLabels{"kubernaut.ai/workflow-execution": wfe.Name})).To(Succeed())
+			Expect(jobList.Items).To(HaveLen(1), "Expected exactly 1 Job for this WFE")
+			Expect(jobList.Items[0].Status.Failed).To(Equal(int32(1)),
+				"BR-WE-019: PodFailurePolicy's unconditional addition must not weaken fail-fast for a genuine (non-tolerated) failure")
+
+			GinkgoWriter.Printf("E2E-WE-019-002: genuine failure still fails fast with exactly 1 recorded pod failure\n")
+		})
+	})
+
 	Context("E2E-WE-014-003: Job Status Sync", func() {
 		It("should sync WFE status with Job status accurately (BR-WE-014, BR-WE-003)", func() {
 			// Business Outcome: WFE status accurately reflects Job execution state

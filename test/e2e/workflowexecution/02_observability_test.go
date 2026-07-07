@@ -670,6 +670,22 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			By("Verifying " + weaudit.EventTypeFailed + " event includes complete failure details (ADR-034 v1.5)")
 			Expect(failedEvent).To(Not(BeNil()), "workflow.failed audit event must be present in Data Storage")
 
+			// BR-AUDIT-005: tightened from bare-existence to an exact count (Phase 5.3,
+			// DD-WE-008) -- a duplicate failed event would previously pass this test.
+			finalResp, err := auditClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
+				EventCategory: ogenclient.NewOptString(eventCategory),
+				CorrelationID: ogenclient.NewOptString(wfe.Spec.RemediationRequestRef.Name),
+			})
+			Expect(err).ToNot(HaveOccurred())
+			failedCount := 0
+			for i := range finalResp.Data {
+				if finalResp.Data[i].EventType == weaudit.EventTypeFailed {
+					failedCount++
+				}
+			}
+			Expect(failedCount).To(Equal(1),
+				"BR-AUDIT-005: exactly 1 workflow.failed event expected, not merely >= 1")
+
 			// V1.0 Maturity Requirement: Use validators.ValidateAuditEvent (P0 - MANDATORY)
 			// Per SERVICE_MATURITY_REQUIREMENTS.md v1.2.0: Tests MUST use testutil validators
 			By("Validating audit event structure with validators.ValidateAuditEvent")
@@ -779,6 +795,24 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				return totalCount
 			}, 60*time.Second).Should(BeNumerically(">=", 2),
 				"Expected at least 2 audit events")
+
+			// BR-AUDIT-005: tightened from a bare total-count floor to exact
+			// per-type counts (Phase 5.3, DD-WE-008) -- a duplicate started or
+			// terminal event would previously pass this test.
+			By("Verifying exactly 1 execution.started and exactly 1 terminal (completed/failed) event")
+			startedCount, terminalCount := 0, 0
+			for i := range auditEvents {
+				switch auditEvents[i].EventType {
+				case weaudit.EventTypeExecutionStarted:
+					startedCount++
+				case weaudit.EventTypeCompleted, weaudit.EventTypeFailed:
+					terminalCount++
+				}
+			}
+			Expect(startedCount).To(Equal(1),
+				"BR-AUDIT-005: exactly 1 execution.started event expected, not merely present")
+			Expect(terminalCount).To(Equal(1),
+				"BR-AUDIT-005: exactly 1 terminal (completed/failed) event expected, not merely present")
 
 			By("Validating workflowexecution.execution.started event payload fields (Gap #6, ADR-034 v1.5)")
 			var startedEvent *ogenclient.AuditEvent
