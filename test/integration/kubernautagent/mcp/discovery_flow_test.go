@@ -37,7 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -725,8 +725,7 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 
 	logrLogger := logr.Discard()
 
-	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
-	Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build against Mock LLM at %s", sharedMockLLMEndpoint)
+	llmAdapter := kaopenai.New("test-model", sharedMockLLMEndpoint, "test-key")
 	stack.LLMClient = llmAdapter
 
 	promptBuilder, buildErr := prompt.NewBuilder()
@@ -811,8 +810,9 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 }
 
 // newRealMCPTestStackWithDiscovery builds a test stack with select_workflow and
-// complete_no_action tools wired up, using the REAL investigator via langchaingo
-// against the shared Podman Mock LLM container. No stubbed runners.
+// complete_no_action tools wired up, using the REAL investigator via kaopenai
+// (shared openaicompat core, DD-LLM-005) against the shared Podman Mock LLM
+// container. No stubbed runners.
 func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string, opts realStackOpts, completer *discoveryHTTPCompleter) *realMCPTestStack {
 	stack := &realMCPTestStack{
 		K8sClient: k8sClient,
@@ -821,9 +821,8 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 
 	logrLogger := logr.Discard()
 
-	// Real LLM client via langchaingo -> Podman Mock LLM
-	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
-	Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build against Mock LLM at %s", sharedMockLLMEndpoint)
+	// Real LLM client (shared openaicompat core, DD-LLM-005) -> Podman Mock LLM
+	llmAdapter := kaopenai.New("test-model", sharedMockLLMEndpoint, "test-key")
 	stack.LLMClient = llmAdapter
 
 	promptBuilder, buildErr := prompt.NewBuilder()

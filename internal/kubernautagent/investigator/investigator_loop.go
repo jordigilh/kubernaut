@@ -108,7 +108,7 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		return nil, inv.handleTruncation(ctx, state, messages, resp, phase, correlationID), false, nil
 	}
 
-	return &TextResult{Content: resp.Message.Content}, messages, true, nil
+	return &TextResult{Content: resp.Message.Content, Reasoning: resp.Message.Reasoning}, messages, true, nil
 }
 
 // doLLMCall builds the per-turn chat request (using state.maxTokens for any
@@ -230,6 +230,15 @@ func (inv *Investigator) emitLLMResponseAudit(ctx context.Context, correlationID
 	respEvent.Data["analysis_content"] = resp.Message.Content
 	respEvent.Data["tool_call_count"] = len(resp.ToolCalls)
 	respEvent.Data["finish_reason"] = resp.FinishReason
+	// has_reasoning mirrors the has_analysis observability pattern above:
+	// an explicit boolean lets dashboards/alerts track the captured-vs-
+	// omitted reasoning rate without needing to special-case key presence
+	// (BR-AI-086 AC6).
+	respEvent.Data["has_reasoning"] = resp.Message.Reasoning != nil
+	if resp.Message.Reasoning != nil {
+		respEvent.Data["reasoning_text"] = truncateReasoning(resp.Message.Reasoning.Text)
+		respEvent.Data["reasoning_redacted"] = resp.Message.Reasoning.Redacted
+	}
 	audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.auditLog())
 }
 
@@ -242,7 +251,7 @@ func (inv *Investigator) emitLLMResponseAudit(ctx context.Context, correlationID
 // total tool-call budget is now exhausted.
 func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Message, resp llm.ChatResponse, turn int, phase string, correlationID string) (newMessages []llm.Message, sentinel LoopResult, budgetExhausted bool) {
 	for _, tc := range resp.ToolCalls {
-		if sr := sentinelResult(tc); sr != nil {
+		if sr := sentinelResult(tc, resp.Message.Reasoning); sr != nil {
 			inv.logger.Info("sentinel detected",
 				"tool", tc.Name,
 				"phase", phase,

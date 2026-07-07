@@ -35,26 +35,45 @@ func IsValidPhaseName(name string) bool {
 // KA internally decides which fields are hot-reloadable vs restart-only; the
 // type itself is agnostic to that split.
 type LLMConfig struct {
-	Provider        string                    `yaml:"provider"`
-	Model           string                    `yaml:"model"`
-	Endpoint        string                    `yaml:"endpoint,omitempty"`
-	APIKeyFile      string                    `yaml:"apiKeyFile,omitempty"`
-	VertexProject   string                    `yaml:"vertexProject,omitempty"`
-	VertexLocation  string                    `yaml:"vertexLocation,omitempty"`
-	AzureAPIVersion string                    `yaml:"azureApiVersion,omitempty"`
-	BedrockRegion   string                    `yaml:"bedrockRegion,omitempty"`
-	Temperature     *float64                  `yaml:"temperature,omitempty"`
-	MaxRetries      *int                      `yaml:"maxRetries,omitempty"`
-	TimeoutSeconds  int                       `yaml:"timeoutSeconds,omitempty"`
-	TLSCaFile       string                    `yaml:"tlsCaFile,omitempty"`
-	TLSCertFile     string                    `yaml:"tlsCertFile,omitempty"`
-	TLSKeyFile      string                    `yaml:"tlsKeyFile,omitempty"`
-	OAuth2          LLMOAuth2Config           `yaml:"oauth2,omitempty"`
-	CircuitBreaker  LLMCircuitBreaker         `yaml:"circuitBreaker,omitempty"`
-	CustomHeaders   []LLMHeaderDef            `yaml:"customHeaders,omitempty"`
-	PhaseModels     map[string]*LLMOverride   `yaml:"phaseModels,omitempty"`
+	Provider        string                  `yaml:"provider"`
+	Model           string                  `yaml:"model"`
+	Endpoint        string                  `yaml:"endpoint,omitempty"`
+	APIKeyFile      string                  `yaml:"apiKeyFile,omitempty"`
+	VertexProject   string                  `yaml:"vertexProject,omitempty"`
+	VertexLocation  string                  `yaml:"vertexLocation,omitempty"`
+	// AzureAPIVersion and BedrockRegion are parsed but currently NOT consumed
+	// by either AF's or KA's LLM client dispatch (#1600, #1582 respectively).
+	// The "azure" and "bedrock" Provider values are rejected at client
+	// construction until those issues land. Retained here (rather than
+	// removed) because both are the intended re-entry point once wired.
+	AzureAPIVersion string                  `yaml:"azureApiVersion,omitempty"`
+	BedrockRegion   string                  `yaml:"bedrockRegion,omitempty"`
+	Temperature     *float64                `yaml:"temperature,omitempty"`
+	MaxRetries      *int                    `yaml:"maxRetries,omitempty"`
+	TimeoutSeconds  int                     `yaml:"timeoutSeconds,omitempty"`
+	TLSCaFile       string                  `yaml:"tlsCaFile,omitempty"`
+	TLSCertFile     string                  `yaml:"tlsCertFile,omitempty"`
+	TLSKeyFile      string                  `yaml:"tlsKeyFile,omitempty"`
+	OAuth2          LLMOAuth2Config         `yaml:"oauth2,omitempty"`
+	CircuitBreaker  LLMCircuitBreaker       `yaml:"circuitBreaker,omitempty"`
+	CustomHeaders   []LLMHeaderDef          `yaml:"customHeaders,omitempty"`
+	PhaseModels     map[string]*LLMOverride `yaml:"phaseModels,omitempty"`
+	Reasoning       *LLMReasoningConfig     `yaml:"reasoning,omitempty"`
 	// Resolved at runtime from APIKeyFile. Not serialized.
 	APIKey string `yaml:"-"`
+}
+
+// LLMReasoningConfig opts into model-aware reasoning/thinking token support
+// (BR-AI-086). Nil, or Enabled: false, is the default for every
+// provider/model until an explicit operator opt-in (AC2).
+type LLMReasoningConfig struct {
+	Enabled      bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	BudgetTokens int  `yaml:"budgetTokens,omitempty" json:"budgetTokens,omitempty"`
+	// CapabilityOverride short-circuits vendor/model-name auto-detection for
+	// self-hosted/custom models served via the OpenAI-compatible client,
+	// which cannot be reliably identified by vendor enum alone (AC5).
+	// One of "auto" (default), "force_on", or "force_off".
+	CapabilityOverride string `yaml:"capabilityOverride,omitempty" json:"capabilityOverride,omitempty"`
 }
 
 // LLMOAuth2Config holds OAuth2 client credentials for auth-gated LLM gateways.
@@ -90,21 +109,23 @@ type LLMHeaderDef struct {
 // LLMOverride allows per-phase or per-component LLM configuration overrides.
 // Non-empty fields win over the base LLMConfig values.
 type LLMOverride struct {
-	Provider        string `yaml:"provider,omitempty"`
-	Endpoint        string `yaml:"endpoint,omitempty"`
-	Model           string `yaml:"model,omitempty"`
-	APIKeyFile      string `yaml:"apiKeyFile,omitempty"`
-	AzureAPIVersion string `yaml:"azureApiVersion,omitempty"`
-	VertexProject   string `yaml:"vertexProject,omitempty"`
-	VertexLocation  string `yaml:"vertexLocation,omitempty"`
-	BedrockRegion   string `yaml:"bedrockRegion,omitempty"`
+	Provider        string              `yaml:"provider,omitempty"`
+	Endpoint        string              `yaml:"endpoint,omitempty"`
+	Model           string              `yaml:"model,omitempty"`
+	APIKeyFile      string              `yaml:"apiKeyFile,omitempty"`
+	AzureAPIVersion string              `yaml:"azureApiVersion,omitempty"`
+	VertexProject   string              `yaml:"vertexProject,omitempty"`
+	VertexLocation  string              `yaml:"vertexLocation,omitempty"`
+	BedrockRegion   string              `yaml:"bedrockRegion,omitempty"`
+	Reasoning       *LLMReasoningConfig `yaml:"reasoning,omitempty"`
 }
 
 // IsEmpty reports whether all override fields are zero-valued.
 func (o *LLMOverride) IsEmpty() bool {
 	return o.Provider == "" && o.Endpoint == "" && o.Model == "" &&
 		o.APIKeyFile == "" && o.AzureAPIVersion == "" &&
-		o.VertexProject == "" && o.VertexLocation == "" && o.BedrockRegion == ""
+		o.VertexProject == "" && o.VertexLocation == "" && o.BedrockRegion == "" &&
+		o.Reasoning == nil
 }
 
 // DefaultLLMTimeoutSeconds is the fallback HTTP timeout for LLM requests.

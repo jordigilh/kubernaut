@@ -19153,6 +19153,13 @@ type IncidentResponseDataRootCauseAnalysis struct {
 	CausalChain []string `json:"causalChain"`
 	// Adversarial self-review across 8 dimensions (Issue.
 	DueDiligence OptIncidentResponseDataRootCauseAnalysisDueDiligence `json:"dueDiligence"`
+	// Visible LLM reasoning/thinking text that led to this root cause analysis, when the model's
+	// reasoning capability was enabled (BR-AI-086 AC6). Omitted when reasoning was not captured or
+	// requested (default-disabled behavior).
+	Reasoning OptString `json:"reasoning"`
+	// True when the provider redacted the reasoning content (e.g. Anthropic redacted_thinking) —
+	// reasoning occurred but its text could not be captured for audit.
+	ReasoningRedacted OptBool `json:"reasoningRedacted"`
 }
 
 // GetSummary returns the value of Summary.
@@ -19185,6 +19192,16 @@ func (s *IncidentResponseDataRootCauseAnalysis) GetDueDiligence() OptIncidentRes
 	return s.DueDiligence
 }
 
+// GetReasoning returns the value of Reasoning.
+func (s *IncidentResponseDataRootCauseAnalysis) GetReasoning() OptString {
+	return s.Reasoning
+}
+
+// GetReasoningRedacted returns the value of ReasoningRedacted.
+func (s *IncidentResponseDataRootCauseAnalysis) GetReasoningRedacted() OptBool {
+	return s.ReasoningRedacted
+}
+
 // SetSummary sets the value of Summary.
 func (s *IncidentResponseDataRootCauseAnalysis) SetSummary(val string) {
 	s.Summary = val
@@ -19213,6 +19230,16 @@ func (s *IncidentResponseDataRootCauseAnalysis) SetCausalChain(val []string) {
 // SetDueDiligence sets the value of DueDiligence.
 func (s *IncidentResponseDataRootCauseAnalysis) SetDueDiligence(val OptIncidentResponseDataRootCauseAnalysisDueDiligence) {
 	s.DueDiligence = val
+}
+
+// SetReasoning sets the value of Reasoning.
+func (s *IncidentResponseDataRootCauseAnalysis) SetReasoning(val OptString) {
+	s.Reasoning = val
+}
+
+// SetReasoningRedacted sets the value of ReasoningRedacted.
+func (s *IncidentResponseDataRootCauseAnalysis) SetReasoningRedacted(val OptBool) {
+	s.ReasoningRedacted = val
 }
 
 // Adversarial self-review across 8 dimensions (Issue.
@@ -19660,6 +19687,13 @@ type LLMResponsePayload struct {
 	TokensUsed OptInt `json:"tokens_used"`
 	// Number of tool calls made by LLM.
 	ToolCallCount OptInt `json:"tool_call_count"`
+	// Visible reasoning/thinking text the LLM produced for this turn, when its reasoning capability was
+	// enabled (BR-AI-086 AC6). Empty when reasoning_redacted is true. Omitted entirely when no reasoning
+	// was captured.
+	ReasoningText OptString `json:"reasoning_text"`
+	// True when the provider redacted the reasoning content for this turn (e.g. Anthropic
+	// redacted_thinking) — reasoning occurred but its text could not be captured for audit.
+	ReasoningRedacted OptBool `json:"reasoning_redacted"`
 }
 
 // GetEventType returns the value of EventType.
@@ -19707,6 +19741,16 @@ func (s *LLMResponsePayload) GetToolCallCount() OptInt {
 	return s.ToolCallCount
 }
 
+// GetReasoningText returns the value of ReasoningText.
+func (s *LLMResponsePayload) GetReasoningText() OptString {
+	return s.ReasoningText
+}
+
+// GetReasoningRedacted returns the value of ReasoningRedacted.
+func (s *LLMResponsePayload) GetReasoningRedacted() OptBool {
+	return s.ReasoningRedacted
+}
+
 // SetEventType sets the value of EventType.
 func (s *LLMResponsePayload) SetEventType(val LLMResponsePayloadEventType) {
 	s.EventType = val
@@ -19750,6 +19794,16 @@ func (s *LLMResponsePayload) SetTokensUsed(val OptInt) {
 // SetToolCallCount sets the value of ToolCallCount.
 func (s *LLMResponsePayload) SetToolCallCount(val OptInt) {
 	s.ToolCallCount = val
+}
+
+// SetReasoningText sets the value of ReasoningText.
+func (s *LLMResponsePayload) SetReasoningText(val OptString) {
+	s.ReasoningText = val
+}
+
+// SetReasoningRedacted sets the value of ReasoningRedacted.
+func (s *LLMResponsePayload) SetReasoningRedacted(val OptBool) {
+	s.ReasoningRedacted = val
 }
 
 // Event type for discriminator (matches parent event_type).

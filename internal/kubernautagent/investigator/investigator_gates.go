@@ -155,6 +155,13 @@ func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.I
 		return result
 	}
 
+	// The retry is a fresh submission on its own turn: its own Reasoning
+	// block (if any) is authoritative for the accepted result, mirroring
+	// runRCA's "winning turn" semantics (BR-AI-086 AC6, #1578). Without this,
+	// resp.Message.Reasoning from the retry call is silently discarded and
+	// the gate-accepted result loses reasoning captured by the LLM client.
+	retryResult.Reasoning = toReasoningSummary(resp.Message.Reasoning)
+
 	inv.logger.Info("same-kind validation gate: accepted retry result",
 		"original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name,
 		"retry_target", retryResult.RemediationTarget.Kind+"/"+retryResult.RemediationTarget.Name,
@@ -323,6 +330,12 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 	// pipeline should continue to workflow selection, not abort.
 	retryResult.HumanReviewNeeded = false
 	retryResult.HumanReviewReason = ""
+	// The retry is a fresh submission on its own turn: its own Reasoning
+	// block (if any) is authoritative for the accepted result, mirroring
+	// runRCA's "winning turn" semantics (BR-AI-086 AC6, #1578). Without this,
+	// resp.Message.Reasoning from the retry call is silently discarded and
+	// the gate-accepted result loses reasoning captured by the LLM client.
+	retryResult.Reasoning = toReasoningSummary(resp.Message.Reasoning)
 	inv.logger.Info("apiVersionValidationGate: retry provided api_version, accepted",
 		"kind", kind,
 		"api_version", retryResult.RemediationTarget.APIVersion,

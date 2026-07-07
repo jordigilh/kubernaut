@@ -113,11 +113,11 @@ YAML path: `ai`
 
 | YAML key | Type | Default | Validation | Description |
 |----------|------|---------|------------|-------------|
-| `provider` | string | `openai` | Used with `LLMRuntimeConfig.Validate` | Provider id (e.g. `openai`, `anthropic`, `bedrock`, `vertex`, `vertex_ai`). |
-| `azureApiVersion` | string | (empty) | None | Azure OpenAI API version when using Azure-backed LangChain adapter options. |
-| `vertexProject` | string | (empty) | None | GCP project for Vertex-related providers. |
-| `vertexLocation` | string | (empty) | None | GCP region for Vertex-related providers. |
-| `bedrockRegion` | string | (empty) | None | AWS region for Bedrock. |
+| `provider` | string | `openai` | Used with `LLMRuntimeConfig.Validate`; rejected at client construction (`os.Exit` at startup) unless one of `openai`, `anthropic`, `vertex_ai`, `openai_compatible` | Provider id. **`bedrock` and `azure` are NOT currently supported** (tracked in #1582, #1600 respectively — do not configure these). Mistral, Ollama, HuggingFace TGI, and self-hosted vLLM/LlamaStack are reached via `openai_compatible` + `endpoint`, not a dedicated provider string. |
+| `azureApiVersion` | string | (empty) | None | Reserved for future Azure OpenAI support (#1600). **Not currently consumed by any code path.** |
+| `vertexProject` | string | (empty) | None | GCP project for the `vertex_ai` provider. |
+| `vertexLocation` | string | (empty) | None | GCP region for the `vertex_ai` provider. |
+| `bedrockRegion` | string | (empty) | None | Reserved for future Bedrock support (#1582). **Not currently consumed by any code path.** |
 | `tlsCaFile` | string | (empty) | None | PEM CA for **LLM** HTTPS client trust when building a custom transport chain. Does not enable `TLS_CA_FILE` fallback for the LLM client. |
 | `oauth2.enabled` | bool | `false` | If true, `tokenURL` and `credentialsDir` required | Client-credentials OAuth2 for enterprise LLM gateways. |
 | `oauth2.tokenURL` | string | (empty) | Required if OAuth2 enabled | Token endpoint. |
@@ -172,12 +172,20 @@ YAML path: `ai`
 
 ### 5.1 Provider-specific notes
 
+**Supported today**: `openai`, `anthropic`, `vertex_ai`, `openai_compatible`.
+
+**Not currently supported** (accepted by `LLMRuntimeConfig.Validate` below but rejected at client construction, causing `os.Exit` at startup — do not configure): `bedrock` (tracked in #1582), `azure` (tracked in #1600). `vertex` (Google-native Gemini/PaLM via Vertex, distinct from the Anthropic-on-Vertex `vertex_ai` path below) was a `langchaingo`-only provider with no current replacement.
+
+**No dedicated provider string** — reached via `openai_compatible` + `endpoint` pointing at the provider's own OpenAI-Chat-Completions-compatible base URL instead: Mistral, Ollama, HuggingFace TGI, self-hosted vLLM/LlamaStack.
+
 | Provider strings | Endpoint required in runtime YAML? | Notes |
 |------------------|-----------------------------------|--------|
-| `bedrock`, `huggingface`, `anthropic`, `openai`, `vertex`, `vertex_ai` | No | Satisfies `LLMRuntimeConfig.Validate` without `endpoint`. |
-| Any other provider | Yes | Validation error if `endpoint` empty. |
+| `anthropic`, `vertex_ai` | No | SDK resolves the endpoint implicitly (native API default / GCP project+location). Satisfies `LLMRuntimeConfig.Validate` without `endpoint`. |
+| `openai` | Practically yes, though `LLMRuntimeConfig.Validate`'s `providersWithoutEndpointRequirement` map currently (incorrectly) allows an empty `endpoint` for this provider too — this is a known validation/runtime-behavior mismatch, not a documented feature; the underlying `openaicompat` client has no default base URL and will fail at request time, not at startup, if `endpoint` is empty. |
+| `openai_compatible` | Yes | Validation error if `endpoint` empty. |
+| `bedrock`, `huggingface`, `vertex` | No (per `providersWithoutEndpointRequirement`) | Stale legacy entries from the pre-#1598 `langchaingo` dispatch; these provider strings are rejected downstream regardless of endpoint. |
 
-`vertex` uses the LangChain / Google AI style integration; `vertex_ai` selects the Anthropic-on-Vertex client path in code (`vertexanthropic`).
+`vertex_ai` selects the Anthropic-on-Vertex client path in code (`anthropicfamily`).
 
 ### 5.2 API key resolution (runtime)
 
@@ -204,7 +212,7 @@ Top-level YAML (not nested under `runtime`/`ai` in file). Mapped by `LLMRuntimeC
 | `apiKey` | string | (empty) | If empty, resolved from credential files (section 5.2) | Inline key material (sensitive). |
 | `temperature` | float64 | `0` if omitted | None in `Validate` | Passed to `RuntimeParams`. **Omitted YAML fields decode as Go zero values** (`0`); they are **not** merged with `DefaultLLMRuntime()` in `LoadLLMRuntime`. |
 | `maxRetries` | int | `0` if omitted | None in `Validate` | Retry attempts = `maxAttempts = 1 + maxRetries`; if `maxAttempts < 1` it is clamped to `1` in chat helper. |
-| `timeoutSeconds` | int | `0` if omitted | None | If `<= 0`, per-chat wrapper does not add `context.WithTimeout` (relies on parent context). LangChain adapter may still use a **120s** default HTTP client timeout when a custom transport stack is built. |
+| `timeoutSeconds` | int | `0` if omitted | None | If `<= 0`, per-chat wrapper does not add `context.WithTimeout` (relies on parent context). The `anthropicfamily`/`openai` clients still use a **120s** default HTTP client timeout when a custom transport stack is built. |
 | `customHeaders` | array | `nil` | Each entry validated; see below | Extra outbound headers on LLM HTTP stack. |
 
 ### 6.1 `customHeaders[]`
@@ -245,12 +253,12 @@ When `enabled` is true and `llm` is nil, startup logs **error-level** diagnostic
 | `endpoint` | string | (empty) | Overrides runtime endpoint when non-empty. |
 | `model` | string | (empty) | Overrides runtime model when non-empty. |
 | `apiKey` | string | (empty) | Overrides runtime apiKey when non-empty (sensitive). Does not bypass separate credential-dir resolution unless set in YAML/runtime merge. |
-| `azureApiVersion` | string | (empty) | Overrides static Azure version when non-empty. |
+| `azureApiVersion` | string | (empty) | Reserved (#1600) — not currently consumed. |
 | `vertexProject` | string | (empty) | Overrides static Vertex project when non-empty. |
 | `vertexLocation` | string | (empty) | Overrides static Vertex location when non-empty. |
-| `bedrockRegion` | string | (empty) | Overrides static Bedrock region when non-empty. |
+| `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
 
-Overrides do not duplicate `tlsCaFile` here; TLS trust stays on `ai.llm.tlsCaFile` for LangChain transports.
+Overrides do not duplicate `tlsCaFile` here; TLS trust stays on `ai.llm.tlsCaFile` for the LLM client's transport chain.
 
 ### 7.2 Enforcement modes and circuit breaker
 
@@ -308,7 +316,7 @@ All fields strings. **Present in config schema only:** no reference to `integrat
 
 | Variable | Effect |
 |----------|--------|
-| `TLS_CA_FILE` | When set to a PEM file path, `DefaultBaseTransport` / `DefaultBaseTransportWithRetry` load a reloadable CA pool. Used by the **audit** HTTP client base and **Data Storage** client base **when no** `integrations.dataStorage.tls.caFile`. **Not** consulted for LangChain LLM client when `ai.llm.tlsCaFile` empty (that path uses `http.DefaultTransport`). |
+| `TLS_CA_FILE` | When set to a PEM file path, `DefaultBaseTransport` / `DefaultBaseTransportWithRetry` load a reloadable CA pool. Used by the **audit** HTTP client base and **Data Storage** client base **when no** `integrations.dataStorage.tls.caFile`. **Not** consulted for the LLM client when `ai.llm.tlsCaFile` is empty (that path uses `http.DefaultTransport`). |
 | Names referenced by `customHeaders[].secretKeyRef` | Required to be populated at startup for validation to pass. |
 
 Kubernetes additionally injects standard ServiceAccount projection paths independent of YAML.
@@ -360,7 +368,8 @@ Store in Kubernetes **Secrets** (or equivalent vault-backed mounts), never in pl
 | Audit always no-op despite `audit.enabled: true` | Same as above: **`integrations.dataStorage.url` empty** skips buffered audit wiring. Audit transport also ignores `integrations.dataStorage.tls.caFile` and uses **`TLS_CA_FILE`** only via `DefaultBaseTransport`. Mis-matched DS TLS trust manifests as failed audit batches or TLS errors. |
 | Prometheus tools missing | `integrations.tools.prometheus.url` empty. |
 | LLM TLS verify failures with private CA | Set **`ai.llm.tlsCaFile`**. Expecting **`TLS_CA_FILE`** alone **does not** fix LLM outbound trust. |
-| `vertex` vs `vertex_ai` wrong behavior | Provider selects different stacks (Gemini-focused LangChain path vs Claude-on-Anthropic Vertex SDK Path). Align provider string with the backend you deployed. |
+| `vertex` provider configured | `vertex` (Gemini-focused, `langchaingo`-only) has no replacement post-#1598 and is rejected at startup. Use `vertex_ai` (Claude-on-Anthropic-Vertex, via `anthropicfamily`) instead if that's the backend you deployed. |
+| `bedrock` or `azure` provider configured | Both rejected at startup (`os.Exit`) post-#1598 — see #1582 / #1600. Not yet supported; do not upgrade past this chart version until those land. |
 | Summarizer never runs | `ai.summarizer.threshold <= 0` disables it without validation error. |
 | Startup exit with alignment enabled | Process exits when `alignmentCheck` is enabled **and** a dedicated shadow LLM fails to construct when `alignmentCheck.llm` is configured; sharing primary client when `llm` nil does **not** exit. |
 | Custom header validation fails | `secretKeyRef` env unset at startup or multiple of `value`/`secretKeyRef`/`filePath` set.
@@ -371,7 +380,7 @@ Clients do **not** stack **`TLS_CA_FILE`** with YAML CA paths; each outbound cli
 
 | Client | YAML CA respected | Else |
 |--------|-------------------|------|
-| LLM LangChain HTTP | `ai.llm.tlsCaFile` → custom pool | `http.DefaultTransport` |
+| LLM client HTTP (`anthropicfamily`/`openai`) | `ai.llm.tlsCaFile` → custom pool | `http.DefaultTransport` |
 | DS ogen (`buildDSBaseTransport`) | `integrations.dataStorage.tls.caFile` → custom pool | `DefaultBaseTransportWithRetry` → **`TLS_CA_FILE`** |
 | Audit → DS (`buildAuditStore`) | **`integrations.dataStorage.tls.caFile` NOT used** (`DefaultBaseTransport` only) | **`TLS_CA_FILE`** if env set; else defaults |
 | Prometheus tools | `integrations.tools.prometheus.tlsCaFile` → custom stack + SA bearer | `http.Transport` defaults via nil `Transport` |

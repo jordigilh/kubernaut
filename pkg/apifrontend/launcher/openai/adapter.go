@@ -1,57 +1,67 @@
 // Package openai provides an in-house adapter implementing the ADK model.LLM
 // interface for OpenAI-compatible API endpoints (OpenAI, LlamaStack, vLLM, Ollama).
 //
-// The adapter uses net/http directly and accepts a custom *http.Client for
-// transport chain injection (TLS CA, OAuth2, custom headers, circuit breaker)
-// per Issue #1342.
+// This is a thin translation layer: all wire-protocol work (HTTP transport,
+// SSE streaming, tool-call accumulation, reasoning-content round-trip rules)
+// is delegated to pkg/shared/llm/openaicompat, shared with Kubernaut Agent's
+// equivalent wrapper (DD-LLM-005). This file only translates between ADK's
+// genai.Content/model.LLMRequest and the shared package's neutral types.
 package openai
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"iter"
 	"net/http"
 	"strings"
 
 	"google.golang.org/adk/model"
 	"google.golang.org/genai"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/llm/openaicompat"
 )
 
 // Model implements model.LLM for OpenAI-compatible endpoints.
 type Model struct {
-	name       string
-	endpoint   string
-	apiKey     string
-	httpClient *http.Client
+	name          string
+	client        *openaicompat.Client
+	reasoningMode openaicompat.ReasoningMode
 }
 
 // Option configures the Model.
-type Option func(*Model)
+type Option func(*modelOpts)
+
+type modelOpts struct {
+	httpClient *http.Client
+}
 
 // WithHTTPClient injects a custom HTTP client for transport chain support.
 func WithHTTPClient(c *http.Client) Option {
-	return func(m *Model) {
-		m.httpClient = c
+	return func(o *modelOpts) {
+		o.httpClient = c
 	}
 }
 
-// NewModel creates a new OpenAI-compatible model adapter.
+// NewModel creates a new OpenAI-compatible model adapter. The reasoning
+// round-trip mode is auto-detected from modelName (BR-AI-086, DD-LLM-005) —
+// unrecognized models default to no reasoning capture/replay, preserving
+// today's behavior exactly for every currently-configured model.
 func NewModel(modelName, endpoint, apiKey string, opts ...Option) *Model {
-	m := &Model{
-		name:     modelName,
-		endpoint: strings.TrimSuffix(endpoint, "/"),
-		apiKey:   apiKey,
-	}
+	o := &modelOpts{}
 	for _, opt := range opts {
-		opt(m)
+		opt(o)
 	}
-	if m.httpClient == nil {
-		m.httpClient = http.DefaultClient
+
+	var clientOpts []openaicompat.Option
+	if o.httpClient != nil {
+		clientOpts = append(clientOpts, openaicompat.WithHTTPClient(o.httpClient))
 	}
-	return m
+
+	return &Model{
+		name:          modelName,
+		client:        openaicompat.New(modelName, endpoint, apiKey, clientOpts...),
+		reasoningMode: openaicompat.DetectReasoningMode(modelName, ""),
+	}
 }
 
 // Name returns the model name.
@@ -59,88 +69,61 @@ func (m *Model) Name() string {
 	return m.name
 }
 
-// GenerateContent implements model.LLM. It converts the ADK LLMRequest to an
-// OpenAI chat completion request, sends it, and maps the response back.
+// GenerateContent implements model.LLM. It converts the ADK LLMRequest to the
+// shared package's Request, delegates to openaicompat.Client, and maps the
+// response back.
 func (m *Model) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
 	return func(yield func(*model.LLMResponse, error) bool) {
-		body := m.buildRequestBody(req, stream)
-
-		jsonBody, err := json.Marshal(body)
-		if err != nil {
-			yield(nil, fmt.Errorf("marshal request: %w", err))
-			return
-		}
-
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			m.endpoint+"/chat/completions", strings.NewReader(string(jsonBody)))
-		if err != nil {
-			yield(nil, fmt.Errorf("build request: %w", err))
-			return
-		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		if m.apiKey != "" {
-			httpReq.Header.Set("Authorization", "Bearer "+m.apiKey)
-		}
-
-		resp, err := m.httpClient.Do(httpReq)
-		if err != nil {
-			yield(nil, fmt.Errorf("send request: %w", err))
-			return
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			bodyBytes, _ := io.ReadAll(resp.Body)
-			yield(nil, fmt.Errorf("OpenAI API error (HTTP %d): %s", resp.StatusCode, string(bodyBytes)))
-			return
-		}
+		compatReq := m.buildRequest(req)
 
 		if stream {
-			m.handleStreamingResponse(resp.Body, yield)
-		} else {
-			m.handleNonStreamingResponse(resp.Body, yield)
+			_ = m.client.StreamChat(ctx, compatReq, func(ev openaicompat.StreamEvent) bool {
+				return yieldStreamEvent(ev, yield)
+			})
+			return
 		}
+
+		resp, err := m.client.Chat(ctx, compatReq)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		yield(convertResponse(resp), nil)
 	}
 }
 
-func (m *Model) buildRequestBody(req *model.LLMRequest, stream bool) map[string]any {
-	body := map[string]any{
-		"model":  m.name,
-		"stream": stream,
+func (m *Model) buildRequest(req *model.LLMRequest) openaicompat.Request {
+	compatReq := openaicompat.Request{
+		Model:         m.name,
+		ReasoningMode: m.reasoningMode,
 	}
-
-	var messages []map[string]any
 
 	if req.Config != nil && req.Config.SystemInstruction != nil {
 		for _, part := range req.Config.SystemInstruction.Parts {
 			if part.Text != "" {
-				messages = append(messages, map[string]any{
-					"role":    "system",
-					"content": part.Text,
+				compatReq.Messages = append(compatReq.Messages, openaicompat.Message{
+					Role: "system", Content: part.Text,
 				})
 			}
 		}
 	}
 
 	for _, content := range req.Contents {
-		msg := m.convertContent(content)
-		if msg != nil {
-			messages = append(messages, msg)
+		if msg, ok := convertContent(content); ok {
+			compatReq.Messages = append(compatReq.Messages, msg)
 		}
 	}
 
-	body["messages"] = messages
-
 	if req.Config != nil {
-		m.applyGenerationConfig(body, req.Config)
+		applyGenerationConfig(&compatReq, req.Config)
 	}
 
-	return body
+	return compatReq
 }
 
-func (m *Model) convertContent(content *genai.Content) map[string]any {
+func convertContent(content *genai.Content) (openaicompat.Message, bool) {
 	if content == nil || len(content.Parts) == 0 {
-		return nil
+		return openaicompat.Message{}, false
 	}
 
 	role := content.Role
@@ -151,9 +134,8 @@ func (m *Model) convertContent(content *genai.Content) map[string]any {
 		role = "assistant"
 	}
 
+	msg := openaicompat.Message{}
 	var textParts []string
-	var toolCalls []map[string]any
-	var toolCallID string
 
 	for _, part := range content.Parts {
 		if part.Text != "" {
@@ -161,76 +143,59 @@ func (m *Model) convertContent(content *genai.Content) map[string]any {
 		}
 		if part.FunctionCall != nil {
 			argsJSON, _ := json.Marshal(part.FunctionCall.Args)
-			toolCalls = append(toolCalls, map[string]any{
-				"id":   part.FunctionCall.ID,
-				"type": "function",
-				"function": map[string]any{
-					"name":      part.FunctionCall.Name,
-					"arguments": string(argsJSON),
-				},
+			msg.ToolCalls = append(msg.ToolCalls, openaicompat.ToolCall{
+				ID:        part.FunctionCall.ID,
+				Name:      part.FunctionCall.Name,
+				Arguments: string(argsJSON),
 			})
 		}
 		if part.FunctionResponse != nil {
 			role = "tool"
-			toolCallID = part.FunctionResponse.ID
+			msg.ToolCallID = part.FunctionResponse.ID
 			respJSON, _ := json.Marshal(part.FunctionResponse.Response)
 			textParts = append(textParts, string(respJSON))
 		}
 	}
 
-	msg := map[string]any{"role": role}
-
-	if len(textParts) > 0 {
-		msg["content"] = strings.Join(textParts, "")
-	}
-	if len(toolCalls) > 0 {
-		msg["tool_calls"] = toolCalls
-	}
-	if toolCallID != "" {
-		msg["tool_call_id"] = toolCallID
-	}
-
-	return msg
+	msg.Role = role
+	msg.Content = strings.Join(textParts, "")
+	return msg, true
 }
 
-func (m *Model) applyGenerationConfig(body map[string]any, cfg *genai.GenerateContentConfig) {
+func applyGenerationConfig(req *openaicompat.Request, cfg *genai.GenerateContentConfig) {
 	if cfg.Temperature != nil {
-		body["temperature"] = *cfg.Temperature
+		t := float64(*cfg.Temperature)
+		req.Temperature = &t
 	}
 	if cfg.TopP != nil {
-		body["top_p"] = *cfg.TopP
+		p := float64(*cfg.TopP)
+		req.TopP = &p
 	}
 	if cfg.MaxOutputTokens != 0 {
-		body["max_tokens"] = cfg.MaxOutputTokens
+		req.MaxTokens = int(cfg.MaxOutputTokens)
 	}
 	if len(cfg.StopSequences) > 0 {
-		body["stop"] = cfg.StopSequences
+		req.StopSequences = cfg.StopSequences
 	}
 
-	if len(cfg.Tools) > 0 {
-		var tools []map[string]any
-		for _, tool := range cfg.Tools {
-			for _, fn := range tool.FunctionDeclarations {
-				t := map[string]any{
-					"type": "function",
-					"function": map[string]any{
-						"name":        fn.Name,
-						"description": fn.Description,
-					},
-				}
-				if fn.Parameters != nil {
-					t["function"].(map[string]any)["parameters"] = convertSchema(fn.Parameters)
-				}
-				tools = append(tools, t)
+	for _, tool := range cfg.Tools {
+		for _, fn := range tool.FunctionDeclarations {
+			td := openaicompat.ToolDefinition{
+				Name:        fn.Name,
+				Description: fn.Description,
 			}
+			if fn.Parameters != nil {
+				if raw, err := json.Marshal(convertSchema(fn.Parameters)); err == nil {
+					td.Parameters = raw
+				}
+			}
+			req.Tools = append(req.Tools, td)
 		}
-		body["tools"] = tools
 	}
 
 	if cfg.ResponseSchema != nil {
-		body["response_format"] = map[string]any{
-			"type":        "json_schema",
-			"json_schema": convertSchema(cfg.ResponseSchema),
+		if raw, err := json.Marshal(convertSchema(cfg.ResponseSchema)); err == nil {
+			req.ResponseSchema = raw
 		}
 	}
 }
@@ -264,259 +229,74 @@ func convertSchema(s *genai.Schema) map[string]any {
 	return result
 }
 
-// chatCompletionResponse represents the OpenAI chat completion response.
-type chatCompletionResponse struct {
-	ID      string                 `json:"id"`
-	Object  string                 `json:"object"`
-	Model   string                 `json:"model"`
-	Choices []chatCompletionChoice `json:"choices"`
-	Usage   *chatCompletionUsage   `json:"usage,omitempty"`
-}
-
-type chatCompletionChoice struct {
-	Index        int                   `json:"index"`
-	Message      chatCompletionMessage `json:"message"`
-	FinishReason *string               `json:"finish_reason"`
-}
-
-type chatCompletionMessage struct {
-	Role      string         `json:"role"`
-	Content   *string        `json:"content"`
-	ToolCalls []chatToolCall `json:"tool_calls,omitempty"`
-}
-
-type chatToolCall struct {
-	ID       string         `json:"id"`
-	Type     string         `json:"type"`
-	Function chatToolCallFn `json:"function"`
-}
-
-type chatToolCallFn struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-}
-
-type chatCompletionUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
-}
-
-func (m *Model) handleNonStreamingResponse(body io.Reader, yield func(*model.LLMResponse, error) bool) {
-	var resp chatCompletionResponse
-	if err := json.NewDecoder(body).Decode(&resp); err != nil {
-		yield(nil, fmt.Errorf("decode response: %w", err))
-		return
-	}
-
-	llmResp := m.convertResponse(&resp)
-	yield(llmResp, nil)
-}
-
-func (m *Model) convertResponse(resp *chatCompletionResponse) *model.LLMResponse {
+// convertResponse translates a shared Response into the ADK LLMResponse.
+func convertResponse(resp *openaicompat.Response) *model.LLMResponse {
 	llmResp := &model.LLMResponse{
-		Content: &genai.Content{
-			Role: "model",
-		},
+		Content: &genai.Content{Role: "model"},
 	}
 
-	if len(resp.Choices) > 0 {
-		choice := resp.Choices[0]
-
-		if choice.Message.Content != nil && *choice.Message.Content != "" {
-			llmResp.Content.Parts = append(llmResp.Content.Parts, &genai.Part{
-				Text: *choice.Message.Content,
-			})
-		}
-
-		for _, tc := range choice.Message.ToolCalls {
-			llmResp.Content.Parts = append(llmResp.Content.Parts,
-				parseFunctionCall(tc.ID, tc.Function.Name, tc.Function.Arguments))
-		}
-
-		llmResp.FinishReason = mapFinishReason(choice.FinishReason)
+	if resp.Message.Content != "" {
+		llmResp.Content.Parts = append(llmResp.Content.Parts, &genai.Part{Text: resp.Message.Content})
 	}
+	for _, tc := range resp.Message.ToolCalls {
+		llmResp.Content.Parts = append(llmResp.Content.Parts, parseFunctionCall(tc))
+	}
+	llmResp.FinishReason = mapFinishReason(resp.FinishReason)
 
-	if resp.Usage != nil {
+	if resp.Usage != (openaicompat.TokenUsage{}) {
 		llmResp.UsageMetadata = &genai.GenerateContentResponseUsageMetadata{
 			PromptTokenCount:     int32(resp.Usage.PromptTokens),
 			CandidatesTokenCount: int32(resp.Usage.CompletionTokens),
 			TotalTokenCount:      int32(resp.Usage.TotalTokens),
 		}
 	}
-
 	return llmResp
 }
 
-// Streaming types
-type chatCompletionChunk struct {
-	ID      string                      `json:"id"`
-	Object  string                      `json:"object"`
-	Model   string                      `json:"model"`
-	Choices []chatCompletionChunkChoice `json:"choices"`
-}
-
-type chatCompletionChunkChoice struct {
-	Index        int                      `json:"index"`
-	Delta        chatCompletionChunkDelta `json:"delta"`
-	FinishReason *string                  `json:"finish_reason"`
-}
-
-type chatCompletionChunkDelta struct {
-	Role      string              `json:"role,omitempty"`
-	Content   string              `json:"content,omitempty"`
-	ToolCalls []chatChunkToolCall `json:"tool_calls,omitempty"`
-}
-
-type chatChunkToolCall struct {
-	Index    int             `json:"index"`
-	ID       string          `json:"id,omitempty"`
-	Type     string          `json:"type,omitempty"`
-	Function chatChunkToolFn `json:"function"`
-}
-
-type chatChunkToolFn struct {
-	Name      string `json:"name,omitempty"`
-	Arguments string `json:"arguments,omitempty"`
-}
-
-// toolCallAccumulator accumulates streaming tool call fragments.
-type toolCallAccumulator struct {
-	id   string
-	name string
-	args strings.Builder
-}
-
-func (m *Model) handleStreamingResponse(body io.Reader, yield func(*model.LLMResponse, error) bool) {
-	accumulators := make(map[int]*toolCallAccumulator)
-	scanner := bufio.NewScanner(body)
-
-	for scanner.Scan() {
-		data, ok := sseDataLine(scanner.Text())
-		if !ok {
-			continue
-		}
-		if data == "[DONE]" {
-			break
-		}
-
-		var chunk chatCompletionChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
-		if len(chunk.Choices) == 0 {
-			continue
-		}
-
-		if !processStreamChoice(chunk.Choices[0], accumulators, yield) {
-			return
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		yield(nil, fmt.Errorf("read SSE stream: %w", err))
-	}
-}
-
-// sseDataLine extracts the payload from an SSE "data: ..." line. ok is false
-// for lines that are not data lines (comments, blank keep-alives, etc.).
-func sseDataLine(line string) (data string, ok bool) {
-	if !strings.HasPrefix(line, "data: ") {
-		return "", false
-	}
-	return strings.TrimPrefix(line, "data: "), true
-}
-
-// processStreamChoice handles a single streamed choice: forwarding any
-// content delta, accumulating tool-call fragments, and (on FinishReason)
-// emitting the final response. Returns false if yield requested the stream
-// to stop.
-func processStreamChoice(choice chatCompletionChunkChoice, accumulators map[int]*toolCallAccumulator, yield func(*model.LLMResponse, error) bool) bool {
-	if choice.Delta.Content != "" {
-		resp := &model.LLMResponse{
-			Content: &genai.Content{
-				Role:  "model",
-				Parts: []*genai.Part{{Text: choice.Delta.Content}},
-			},
-		}
-		if !yield(resp, nil) {
+// yieldStreamEvent maps one shared StreamEvent to the ADK per-chunk callback
+// contract: a partial LLMResponse for each text delta, plus the accumulated
+// final LLMResponse (tool calls, finish reason) on Done. Returns false if
+// the ADK-side yield requested the stream to stop.
+func yieldStreamEvent(ev openaicompat.StreamEvent, yield func(*model.LLMResponse, error) bool) bool {
+	if ev.Delta != "" {
+		if !yield(&model.LLMResponse{
+			Content: &genai.Content{Role: "model", Parts: []*genai.Part{{Text: ev.Delta}}},
+		}, nil) {
 			return false
 		}
 	}
-
-	accumulateToolCallDeltas(choice.Delta.ToolCalls, accumulators)
-
-	if choice.FinishReason != nil {
-		return yield(buildFinishResponse(choice.FinishReason, accumulators), nil)
+	if ev.Done && ev.Final != nil {
+		resp := convertResponse(ev.Final)
+		resp.TurnComplete = true
+		return yield(resp, nil)
 	}
 	return true
 }
 
-// accumulateToolCallDeltas merges streamed tool-call fragments into their
-// per-index accumulator (OpenAI streams tool call id/name/arguments
-// incrementally across multiple chunks).
-func accumulateToolCallDeltas(toolCalls []chatChunkToolCall, accumulators map[int]*toolCallAccumulator) {
-	for _, tc := range toolCalls {
-		acc, exists := accumulators[tc.Index]
-		if !exists {
-			acc = &toolCallAccumulator{}
-			accumulators[tc.Index] = acc
-		}
-		if tc.ID != "" {
-			acc.id = tc.ID
-		}
-		if tc.Function.Name != "" {
-			acc.name = tc.Function.Name
-		}
-		acc.args.WriteString(tc.Function.Arguments)
-	}
-}
-
-// buildFinishResponse builds the terminal LLMResponse once a choice reports
-// a FinishReason, resolving all accumulated tool calls into function-call
-// parts.
-func buildFinishResponse(finishReason *string, accumulators map[int]*toolCallAccumulator) *model.LLMResponse {
-	resp := &model.LLMResponse{
-		Content: &genai.Content{
-			Role: "model",
-		},
-		FinishReason: mapFinishReason(finishReason),
-		TurnComplete: true,
-	}
-
-	for _, acc := range accumulators {
-		resp.Content.Parts = append(resp.Content.Parts,
-			parseFunctionCall(acc.id, acc.name, acc.args.String()))
-	}
-
-	return resp
-}
-
-func parseFunctionCall(id, name, argsJSON string) *genai.Part {
+func parseFunctionCall(tc openaicompat.ToolCall) *genai.Part {
 	var args map[string]any
-	_ = json.Unmarshal([]byte(argsJSON), &args)
+	_ = json.Unmarshal([]byte(tc.Arguments), &args)
 	return &genai.Part{
 		FunctionCall: &genai.FunctionCall{
-			ID:   id,
-			Name: name,
+			ID:   tc.ID,
+			Name: tc.Name,
 			Args: args,
 		},
 	}
 }
 
-func mapFinishReason(reason *string) genai.FinishReason {
-	if reason == nil {
-		return genai.FinishReasonUnspecified
-	}
-	switch *reason {
-	case "stop":
+func mapFinishReason(reason string) genai.FinishReason {
+	switch reason {
+	case openaicompat.FinishReasonStop:
 		return genai.FinishReasonStop
-	case "length":
+	case openaicompat.FinishReasonLength:
 		return genai.FinishReasonMaxTokens
-	case "tool_calls":
+	case openaicompat.FinishReasonToolCalls:
 		return genai.FinishReasonStop
-	case "content_filter":
+	case openaicompat.FinishReasonContentFilter:
 		return genai.FinishReasonSafety
+	case "":
+		return genai.FinishReasonUnspecified
 	default:
 		return genai.FinishReasonUnspecified
 	}

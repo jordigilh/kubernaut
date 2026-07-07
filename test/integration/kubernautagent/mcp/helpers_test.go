@@ -46,7 +46,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	sharedauth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -127,7 +127,7 @@ func itScopeResolver() investigator.ScopeResolver {
 
 // newRealMCPTestStack builds a fully production-wired MCP test stack using:
 // - envtest K8s client for real LeaseSessionManager
-// - Podman Mock LLM (mode=interactive) for real investigator.Investigator via langchaingo
+// - Podman Mock LLM (mode=interactive) for real investigator.Investigator via kaopenai
 // - Podman DataStorage for real DSContextReconstructor via ogenclient
 // - real TimeoutManager, SessionRateLimiter, SessionNotifier, DelegatingEventStore
 func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realStackOpts) *realMCPTestStack {
@@ -142,17 +142,15 @@ func newRealMCPTestStack(k8sClient client.Client, namespace string, opts realSta
 	if opts.customRunner != nil {
 		runner = opts.customRunner
 	} else {
-		// Real LLM client via langchaingo -> Podman Mock LLM (mode=interactive)
-		llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
-		Expect(err).ToNot(HaveOccurred(), "langchaingo adapter should build against Mock LLM at %s", sharedMockLLMEndpoint)
-		stack.LLMClient = llmAdapter
+		// Real LLM client (shared openaicompat core, DD-LLM-005) -> Podman Mock LLM (mode=interactive)
+		stack.LLMClient = kaopenai.New("test-model", sharedMockLLMEndpoint, "test-key")
 
 		// Real investigator.Investigator
 		promptBuilder, err := prompt.NewBuilder()
 		Expect(err).ToNot(HaveOccurred(), "prompt builder should build")
 
 		inv := investigator.New(investigator.Config{
-			Client:        llmAdapter,
+			Client:        stack.LLMClient,
 			Builder:       promptBuilder,
 			ResultParser:  parser.NewResultParser(),
 			AuditStore:    audit.NopAuditStore{},

@@ -183,6 +183,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	r.Register(mockKeywordScenario("parallel_tools", "mock_parallel_tools", parallelToolsConfig()))
 	r.Register(mockKeywordScenario("alertmanager_node_tools", "mock_alertmanager_node_tools", alertmanagerNodeToolsConfig()))
 	r.Register(mockKeywordScenario("ambiguous_kind", "mock_ambiguous_kind", ambiguousKindConfig()))
+	r.Register(mockKeywordScenario("mock_reasoning_capture", "mock_reasoning_capture", reasoningCaptureConfig()))
 
 	// Test signal scenario
 	r.Register(testSignalScenario())

@@ -113,6 +113,13 @@ type MockScenarioConfig struct {
 	// part (with thought=true) before the tool call or text response. This
 	// simulates Gemini's extended thinking mode for E2E reasoning tests.
 	ThoughtText string
+
+	// ReasoningText, when non-empty, is included as the OpenAI-protocol
+	// "reasoning_content" field (DeepSeek/vLLM-style extended-thinking
+	// convention) on the response message. This simulates a
+	// reasoning-capable OpenAI-compatible model for KA's openaicompat
+	// reasoning-capture E2E tests (BR-AI-086 AC6, issue #1578).
+	ReasoningText string
 }
 
 // BoolPtr is a helper for creating *bool literals in scenario configs.

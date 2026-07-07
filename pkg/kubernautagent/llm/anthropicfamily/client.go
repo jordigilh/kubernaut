@@ -14,8 +14,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package vertexanthropic implements llm.Client for Claude models hosted on
-// Google Vertex AI using the official Anthropic Go SDK.
+// Package anthropicfamily implements llm.Client for Claude models across
+// the Anthropic model family's auth modes, using the official Anthropic Go
+// SDK: Google Vertex AI (New) and the native Anthropic API (NewWithAPIKey).
+// Bedrock auth mode is planned separately (issue #1582, DD-LLM-006).
 //
 // The SDK's vertex package handles all Vertex-specific protocol differences
 // automatically: anthropic_version in the request body, model removal from
@@ -24,9 +26,16 @@ limitations under the License.
 // Structured output (output_config) is NOT supported on Vertex AI per
 // official Anthropic docs — this adapter does not attempt to set it.
 //
+// Model-aware reasoning/thinking token support (BR-AI-086) is shared across
+// all auth modes: buildParams/mapResponse/convertAssistantMessage are auth
+// mode-agnostic. Thinking-tier detection (adaptive vs. manual-budget-only)
+// reuses adk-anthropic-go/converters.ThinkingConfigToAnthropic — the same
+// logic the API Frontend uses — rather than an independently-maintained
+// second copy (DD-LLM-005).
+//
 // Reference: https://docs.anthropic.com/en/api/claude-on-vertex-ai
 // Reference: https://github.com/anthropics/anthropic-sdk-go
-package vertexanthropic
+package anthropicfamily
 
 import (
 	"bytes"
@@ -37,12 +46,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Alcova-AI/adk-anthropic-go/converters"
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/go-logr/logr"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -105,16 +116,13 @@ type Client struct {
 //   - GCP OAuth2 Bearer token transport
 func New(ctx context.Context, model string, credentialsJSON []byte, project, location string, opts ...Option) (*Client, error) {
 	if project == "" {
-		return nil, fmt.Errorf("vertexanthropic: project is required (vertex_project config)")
+		return nil, fmt.Errorf("anthropicfamily: project is required (vertex_project config)")
 	}
 	if location == "" {
 		location = "us-central1"
 	}
 
-	o := &clientOpts{logger: logr.Discard()}
-	for _, fn := range opts {
-		fn(o)
-	}
+	o := newClientOpts(opts...)
 
 	vertexOpt, tokenSource, err := resolveVertexAuth(ctx, credentialsJSON, project, location)
 	if err != nil {
@@ -123,6 +131,35 @@ func New(ctx context.Context, model string, credentialsJSON []byte, project, loc
 
 	sdk := anthropic.NewClient(buildSDKOptions(o, vertexOpt, tokenSource)...)
 	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
+}
+
+// NewWithAPIKey creates a Client for Claude via the native Anthropic API
+// (api.anthropic.com), authenticating with a static API key rather than
+// GCP Vertex AI credentials. Distinct from New (Vertex-only) so that
+// Vertex's required project/location parameters are never mistakenly
+// requested for this auth mode.
+func NewWithAPIKey(apiKey, model string, opts ...Option) (*Client, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("anthropicfamily: apiKey is required")
+	}
+
+	o := newClientOpts(opts...)
+	sdkOpts := applyHTTPOptions([]option.RequestOption{option.WithAPIKey(apiKey)}, o, nil)
+	sdkOpts = append(sdkOpts, o.extraSDKOpts...)
+
+	sdk := anthropic.NewClient(sdkOpts...)
+	return &Client{sdk: sdk, model: model, logger: o.logger}, nil
+}
+
+// newClientOpts applies functional Options over a clientOpts pre-populated
+// with defaults, shared by every auth-mode constructor (New, NewWithAPIKey,
+// and — per DD-LLM-006 — the planned Bedrock constructor).
+func newClientOpts(opts ...Option) *clientOpts {
+	o := &clientOpts{logger: logr.Discard()}
+	for _, fn := range opts {
+		fn(o)
+	}
+	return o
 }
 
 // resolveVertexAuth resolves the Vertex AI SDK request option and OAuth2
@@ -142,7 +179,7 @@ func resolveVertexAuth(ctx context.Context, credentialsJSON []byte, project, loc
 		"https://www.googleapis.com/auth/cloud-platform",
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
+		return nil, nil, fmt.Errorf("anthropicfamily: invalid credentials JSON: %w", err)
 	}
 	return vertex.WithCredentials(ctx, location, project, creds), creds.TokenSource, nil
 }
@@ -168,21 +205,34 @@ func resolveADCAuth(ctx context.Context, project, location string) (option.Reque
 // custom transport (#1342 enterprise mTLS), and any extra caller-supplied
 // SDK options.
 func buildSDKOptions(o *clientOpts, vertexOpt option.RequestOption, tokenSource oauth2.TokenSource) []option.RequestOption {
-	sdkOpts := []option.RequestOption{vertexOpt}
+	sdkOpts := applyHTTPOptions([]option.RequestOption{vertexOpt}, o, tokenSource)
+	return append(sdkOpts, o.extraSDKOpts...)
+}
+
+// applyHTTPOptions appends the request-timeout and custom-transport SDK
+// options shared across every anthropicfamily auth-mode constructor.
+//
+// When tokenSource is non-nil (Vertex auth), a caller-supplied baseTransport
+// is wrapped with OAuth2 Bearer token injection (#1342 enterprise mTLS).
+// When tokenSource is nil (native API-key auth, and — per DD-LLM-006 — the
+// planned Bedrock SigV4 auth), baseTransport is used as-is: authentication
+// for those modes is carried by a request header or signature, not a
+// Vertex-style bearer-token transport.
+func applyHTTPOptions(sdkOpts []option.RequestOption, o *clientOpts, tokenSource oauth2.TokenSource) []option.RequestOption {
 	if o.httpTimeout > 0 {
 		sdkOpts = append(sdkOpts, option.WithRequestTimeout(o.httpTimeout))
 	}
-	if o.baseTransport != nil && tokenSource != nil {
-		oauthClient := &http.Client{
-			Transport: &oauth2.Transport{
-				Base:   o.baseTransport,
-				Source: tokenSource,
-			},
-			Timeout: o.httpTimeout,
-		}
-		sdkOpts = append(sdkOpts, option.WithHTTPClient(oauthClient))
+	if o.baseTransport == nil {
+		return sdkOpts
 	}
-	return append(sdkOpts, o.extraSDKOpts...)
+	transport := o.baseTransport
+	if tokenSource != nil {
+		transport = &oauth2.Transport{Base: o.baseTransport, Source: tokenSource}
+	}
+	return append(sdkOpts, option.WithHTTPClient(&http.Client{
+		Transport: transport,
+		Timeout:   o.httpTimeout,
+	}))
 }
 
 // Chat translates a Kubernaut ChatRequest to the Anthropic Messages API,
@@ -192,7 +242,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 
 	msg, err := c.sdk.Messages.New(ctx, params)
 	if err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: %w", err)
+		return llm.ChatResponse{}, fmt.Errorf("anthropicfamily: %w", err)
 	}
 
 	return c.mapResponse(msg), nil
@@ -219,7 +269,27 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 		params.Tools = buildAnthropicTools(req.Tools, c.logger)
 	}
 
+	if req.Options.Reasoning != nil && req.Options.Reasoning.Enabled {
+		params.Thinking = resolveThinkingParam(req.Options.Reasoning, anthropic.Model(c.model))
+	}
+
 	return params
+}
+
+// resolveThinkingParam maps a KA ReasoningRequest to the Anthropic thinking
+// parameter, delegating model-tier detection (adaptive-capable vs
+// manual-budget-only) to adk-anthropic-go/converters — the same logic AF
+// uses, avoiding a second, independently-maintained tier-detection table
+// (DD-LLM-005). An explicit BudgetTokens always wins with a manual budget
+// regardless of tier; omitting it lets the per-tier default apply (adaptive
+// on adaptive-capable models, a high-effort manual budget otherwise).
+func resolveThinkingParam(r *llm.ReasoningRequest, model anthropic.Model) anthropic.ThinkingConfigParamUnion {
+	cfg := &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevelHigh}
+	if r.BudgetTokens > 0 {
+		budget := int32(r.BudgetTokens)
+		cfg = &genai.ThinkingConfig{ThinkingBudget: &budget}
+	}
+	return converters.ThinkingConfigToAnthropic(cfg, model).Thinking
 }
 
 // convertMessagesToAnthropic translates Kubernaut's role-tagged message
@@ -266,11 +336,20 @@ func convertMessagesToAnthropic(messages []llm.Message) ([]anthropic.TextBlockPa
 }
 
 // convertAssistantMessage builds the Anthropic assistant message for a
-// single Kubernaut assistant-role message (text and/or tool_use blocks).
-// Returns ok=false when there is nothing to emit (no content, no tool calls).
+// single Kubernaut assistant-role message (thinking, text, and/or tool_use
+// blocks). Returns ok=false when there is nothing to emit (no content, no
+// tool calls, no reasoning).
+//
+// A reasoning block, when present, is always placed FIRST in the content
+// array — the Anthropic API requires the thinking/redacted_thinking block
+// that preceded a tool_use to be replayed before it on the next turn (same
+// failure class as issue #1299: orphaned content blocks on replay).
 func convertAssistantMessage(m llm.Message) (anthropic.MessageParam, bool) {
+	var parts []anthropic.ContentBlockParamUnion
+	if m.Reasoning != nil {
+		parts = append(parts, reasoningToContentBlock(m.Reasoning))
+	}
 	if len(m.ToolCalls) > 0 {
-		var parts []anthropic.ContentBlockParamUnion
 		if m.Content != "" {
 			parts = append(parts, anthropic.NewTextBlock(m.Content))
 		}
@@ -286,9 +365,31 @@ func convertAssistantMessage(m llm.Message) (anthropic.MessageParam, bool) {
 		return anthropic.NewAssistantMessage(parts...), true
 	}
 	if m.Content != "" {
-		return anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)), true
+		parts = append(parts, anthropic.NewTextBlock(m.Content))
+		return anthropic.NewAssistantMessage(parts...), true
+	}
+	if len(parts) > 0 {
+		return anthropic.NewAssistantMessage(parts...), true
 	}
 	return anthropic.MessageParam{}, false
+}
+
+// reasoningToContentBlock converts a captured ReasoningBlock back into the
+// Anthropic content block union used for replay: a visible ThinkingBlockParam
+// when not redacted, or an opaque RedactedThinkingBlockParam otherwise. Both
+// must be replayed byte-for-byte — never inspected or modified.
+func reasoningToContentBlock(r *llm.ReasoningBlock) anthropic.ContentBlockParamUnion {
+	if r.Redacted {
+		return anthropic.ContentBlockParamUnion{
+			OfRedactedThinking: &anthropic.RedactedThinkingBlockParam{Data: r.Signature},
+		}
+	}
+	return anthropic.ContentBlockParamUnion{
+		OfThinking: &anthropic.ThinkingBlockParam{
+			Signature: r.Signature,
+			Thinking:  r.Text,
+		},
+	}
 }
 
 // buildAnthropicTools translates Kubernaut's provider-agnostic tool
@@ -316,7 +417,7 @@ func parseInputSchema(raw json.RawMessage, logger logr.Logger) anthropic.ToolInp
 		Required   []string `json:"required"`
 	}
 	if err := json.Unmarshal(raw, &s); err != nil {
-		logger.Info("vertexanthropic: malformed tool parameter schema, using empty schema",
+		logger.Info("anthropicfamily: malformed tool parameter schema, using empty schema",
 			"error", err.Error())
 	}
 	return anthropic.ToolInputSchemaParam{
@@ -350,6 +451,18 @@ func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
 				Name:      tu.Name,
 				Arguments: string(tu.Input),
 			})
+		case "thinking":
+			tb := block.AsThinking()
+			resp.Message.Reasoning = &llm.ReasoningBlock{
+				Text:      tb.Thinking,
+				Signature: tb.Signature,
+			}
+		case "redacted_thinking":
+			rtb := block.AsRedactedThinking()
+			resp.Message.Reasoning = &llm.ReasoningBlock{
+				Signature: rtb.Data,
+				Redacted:  true,
+			}
 		}
 	}
 	resp.Message.Content = strings.Join(textParts, "")
@@ -393,11 +506,11 @@ func validateCredentialType(jsonData []byte) (google.CredentialsType, error) {
 		Type string `json:"type"`
 	}
 	if err := json.Unmarshal(jsonData, &f); err != nil {
-		return "", fmt.Errorf("vertexanthropic: invalid credentials JSON: %w", err)
+		return "", fmt.Errorf("anthropicfamily: invalid credentials JSON: %w", err)
 	}
 	ct := google.CredentialsType(f.Type)
 	if !allowedCredentialTypes[ct] {
-		return "", fmt.Errorf("vertexanthropic: unsupported credential type %q; only service_account and authorized_user are accepted", f.Type)
+		return "", fmt.Errorf("anthropicfamily: unsupported credential type %q; only service_account and authorized_user are accepted", f.Type)
 	}
 	return ct, nil
 }
@@ -408,7 +521,7 @@ func validateCredentialType(jsonData []byte) (google.CredentialsType, error) {
 func safeWithGoogleAuth(ctx context.Context, location, project string) (opt option.RequestOption, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("vertexanthropic: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide explicit credentials JSON: %v", r)
+			err = fmt.Errorf("anthropicfamily: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide explicit credentials JSON: %v", r)
 		}
 	}()
 	opt = vertex.WithGoogleAuth(ctx, location, project,
@@ -426,7 +539,7 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 	for stream.Next() {
 		event := stream.Current()
 		if err := acc.Accumulate(event); err != nil {
-			return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: accumulate error: %w", err)
+			return llm.ChatResponse{}, fmt.Errorf("anthropicfamily: accumulate error: %w", err)
 		}
 		if delta, ok := extractTextDelta(event); ok && delta != "" {
 			if err := callback(llm.ChatStreamEvent{Delta: delta}); err != nil {
@@ -435,7 +548,7 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("vertexanthropic: stream error: %w", err)
+		return llm.ChatResponse{}, fmt.Errorf("anthropicfamily: stream error: %w", err)
 	}
 	_ = callback(llm.ChatStreamEvent{Done: true})
 	return c.mapResponse(&acc), nil

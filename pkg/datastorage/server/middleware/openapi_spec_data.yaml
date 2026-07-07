@@ -5840,6 +5840,12 @@ components:
                   type: string
                   description: Breakdown of factors that reduced confidence from 1.0
               additionalProperties: false
+            reasoning:
+              type: string
+              description: Visible LLM reasoning/thinking text that led to this root cause analysis, when the model's reasoning capability was enabled (BR-AI-086 AC6). Omitted when reasoning was not captured or requested (default-disabled behavior).
+            reasoningRedacted:
+              type: boolean
+              description: True when the provider redacted the reasoning content (e.g. Anthropic redacted_thinking) — reasoning occurred but its text could not be captured for audit.
           additionalProperties: false
         selectedWorkflow:
           type: object
@@ -5987,6 +5993,12 @@ components:
           minimum: 0
           default: 0
           description: Number of tool calls made by LLM
+        reasoning_text:
+          type: string
+          description: Visible reasoning/thinking text the LLM produced for this turn, when its reasoning capability was enabled (BR-AI-086 AC6). Empty when reasoning_redacted is true. Omitted entirely when no reasoning was captured.
+        reasoning_redacted:
+          type: boolean
+          description: True when the provider redacted the reasoning content for this turn (e.g. Anthropic redacted_thinking) — reasoning occurred but its text could not be captured for audit.
 
     LLMToolCallPayload:
       type: object

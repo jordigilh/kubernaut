@@ -88,7 +88,39 @@ func ResultToAuditJSON(r *katypes.InvestigationResult) map[string]interface{} {
 	if r.DueDiligence != nil {
 		m["due_diligence"] = dueDiligenceToAuditJSON(r.DueDiligence)
 	}
+	if r.Reasoning != nil {
+		m["reasoning"] = reasoningAuditFields(r.Reasoning.Text, r.Reasoning.Redacted)
+	}
 	return m
+}
+
+// maxReasoningAuditChars bounds reasoning text stored per audit record
+// (BR-AI-086 AC6). Adaptive thinking budgets default to ~10K tokens
+// (DD-LLM-005); this cap comfortably covers the default budget in full
+// while guarding audit storage against a runaway/misconfigured manual
+// budget on models that support much larger extended-thinking windows.
+const maxReasoningAuditChars = 40000
+
+const reasoningTruncatedMarker = "…[reasoning truncated for audit storage]…"
+
+// reasoningAuditFields renders reasoning text/redacted into the map shape
+// shared by ResultToAuditJSON and messagesToAuditFormat, applying the audit
+// size guard.
+func reasoningAuditFields(text string, redacted bool) map[string]interface{} {
+	return map[string]interface{}{
+		"text":     truncateReasoning(text),
+		"redacted": redacted,
+	}
+}
+
+// truncateReasoning rune-safely caps s at maxReasoningAuditChars, appending
+// a marker when truncation occurs.
+func truncateReasoning(s string) string {
+	runes := []rune(s)
+	if len(runes) <= maxReasoningAuditChars {
+		return s
+	}
+	return string(runes[:maxReasoningAuditChars]) + reasoningTruncatedMarker
 }
 
 // applyWorkflowIdentityFields sets the workflow-identity fields on m,
@@ -245,6 +277,9 @@ func messagesToAuditFormat(messages []llm.Message) []map[string]interface{} {
 		}
 		if len(m.ToolCalls) > 0 {
 			entry["tool_calls"] = m.ToolCalls
+		}
+		if m.Reasoning != nil {
+			entry["reasoning"] = reasoningAuditFields(m.Reasoning.Text, m.Reasoning.Redacted)
 		}
 		out[i] = entry
 	}

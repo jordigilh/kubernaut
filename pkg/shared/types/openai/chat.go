@@ -44,6 +44,10 @@ type Message struct {
 	Role      string     `json:"role"`
 	Content   *string    `json:"content"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+	// ReasoningContent simulates the DeepSeek/vLLM-style extended-thinking
+	// field returned by OpenAI-compatible reasoning models, for KA's
+	// openaicompat reasoning-capture E2E tests (BR-AI-086 AC6, #1578).
+	ReasoningContent string `json:"reasoning_content,omitempty"`
 }
 
 // ErrorResponse represents an OpenAI-compatible error response.

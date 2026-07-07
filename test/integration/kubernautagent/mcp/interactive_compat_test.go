@@ -34,7 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 )
 
 var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-007", Label("integration", "interactive", "compat"), func() {
@@ -46,9 +46,8 @@ var _ = Describe("Interactive Session Compatibility — COMPAT BR-INTERACTIVE-00
 
 			logrLogger := logr.Discard()
 
-			// Real LLM client via langchaingo -> Podman Mock LLM
-			llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
-			Expect(err).NotTo(HaveOccurred())
+			// Real LLM client (shared openaicompat core, DD-LLM-005) -> Podman Mock LLM
+			llmAdapter := kaopenai.New("test-model", sharedMockLLMEndpoint, "test-key")
 
 			promptBuilder, err := prompt.NewBuilder()
 			Expect(err).NotTo(HaveOccurred())

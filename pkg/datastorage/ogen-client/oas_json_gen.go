@@ -17982,6 +17982,18 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 					s.ToolCallCount.Encode(e)
 				}
 			}
+			{
+				if s.ReasoningText.Set {
+					e.FieldStart("reasoning_text")
+					s.ReasoningText.Encode(e)
+				}
+			}
+			{
+				if s.ReasoningRedacted.Set {
+					e.FieldStart("reasoning_redacted")
+					s.ReasoningRedacted.Encode(e)
+				}
+			}
 		}
 	case LLMToolCallPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -22970,6 +22982,18 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.ToolCallCount.Set {
 					e.FieldStart("tool_call_count")
 					s.ToolCallCount.Encode(e)
+				}
+			}
+			{
+				if s.ReasoningText.Set {
+					e.FieldStart("reasoning_text")
+					s.ReasoningText.Encode(e)
+				}
+			}
+			{
+				if s.ReasoningRedacted.Set {
+					e.FieldStart("reasoning_redacted")
+					s.ReasoningRedacted.Encode(e)
 				}
 			}
 		}
@@ -33306,15 +33330,29 @@ func (s *IncidentResponseDataRootCauseAnalysis) encodeFields(e *jx.Encoder) {
 			s.DueDiligence.Encode(e)
 		}
 	}
+	{
+		if s.Reasoning.Set {
+			e.FieldStart("reasoning")
+			s.Reasoning.Encode(e)
+		}
+	}
+	{
+		if s.ReasoningRedacted.Set {
+			e.FieldStart("reasoningRedacted")
+			s.ReasoningRedacted.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [6]string{
+var jsonFieldsNameOfIncidentResponseDataRootCauseAnalysis = [8]string{
 	0: "summary",
 	1: "severity",
 	2: "contributingFactors",
 	3: "remediationTarget",
 	4: "causalChain",
 	5: "dueDiligence",
+	6: "reasoning",
+	7: "reasoningRedacted",
 }
 
 // Decode decodes IncidentResponseDataRootCauseAnalysis from json.
@@ -33406,6 +33444,26 @@ func (s *IncidentResponseDataRootCauseAnalysis) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"dueDiligence\"")
+			}
+		case "reasoning":
+			if err := func() error {
+				s.Reasoning.Reset()
+				if err := s.Reasoning.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reasoning\"")
+			}
+		case "reasoningRedacted":
+			if err := func() error {
+				s.ReasoningRedacted.Reset()
+				if err := s.ReasoningRedacted.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reasoningRedacted\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -34323,18 +34381,32 @@ func (s *LLMResponsePayload) encodeFields(e *jx.Encoder) {
 			s.ToolCallCount.Encode(e)
 		}
 	}
+	{
+		if s.ReasoningText.Set {
+			e.FieldStart("reasoning_text")
+			s.ReasoningText.Encode(e)
+		}
+	}
+	{
+		if s.ReasoningRedacted.Set {
+			e.FieldStart("reasoning_redacted")
+			s.ReasoningRedacted.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfLLMResponsePayload = [9]string{
-	0: "event_type",
-	1: "event_id",
-	2: "incident_id",
-	3: "has_analysis",
-	4: "analysis_length",
-	5: "analysis_preview",
-	6: "analysis_full",
-	7: "tokens_used",
-	8: "tool_call_count",
+var jsonFieldsNameOfLLMResponsePayload = [11]string{
+	0:  "event_type",
+	1:  "event_id",
+	2:  "incident_id",
+	3:  "has_analysis",
+	4:  "analysis_length",
+	5:  "analysis_preview",
+	6:  "analysis_full",
+	7:  "tokens_used",
+	8:  "tool_call_count",
+	9:  "reasoning_text",
+	10: "reasoning_redacted",
 }
 
 // Decode decodes LLMResponsePayload from json.
@@ -34446,6 +34518,26 @@ func (s *LLMResponsePayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"tool_call_count\"")
+			}
+		case "reasoning_text":
+			if err := func() error {
+				s.ReasoningText.Reset()
+				if err := s.ReasoningText.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reasoning_text\"")
+			}
+		case "reasoning_redacted":
+			if err := func() error {
+				s.ReasoningRedacted.Reset()
+				if err := s.ReasoningRedacted.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reasoning_redacted\"")
 			}
 		default:
 			return d.Skip()

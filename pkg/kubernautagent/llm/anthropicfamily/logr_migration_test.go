@@ -14,24 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package vertexanthropic_test
+package anthropicfamily_test
 
 import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/vertexanthropic"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
 )
 
-var _ = Describe("Issue #885: UT-KA-885-005 — vertexanthropic WithLogger option", func() {
+var _ = Describe("Issue #885: UT-KA-885-005 — anthropicfamily WithLogger option", func() {
 
 	It("WithLogger option is accepted by New without error", func() {
 		logger := logr.Discard()
 
 		// This verifies the WithLogger option exists and compiles.
 		// New will fail due to missing credentials, but the option itself must be valid.
-		opt := vertexanthropic.WithLogger(logger)
+		opt := anthropicfamily.WithLogger(logger)
 		Expect(opt).NotTo(BeNil())
 	})
 })

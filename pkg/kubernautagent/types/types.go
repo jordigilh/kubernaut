@@ -37,6 +37,24 @@ const HumanReviewReasonAlignmentCheckFailed = "alignment_check_failed"
 // PhaseToolMap defines which tool names are available in each phase (I4).
 type PhaseToolMap map[Phase][]string
 
+// ReasoningSummary is the audit-safe subset of an LLM's reasoning/thinking
+// output for the RCA that produced an InvestigationResult (BR-AI-086 AC6).
+// Only the visible Text and a Redacted flag are carried here — the opaque,
+// provider-specific replay Signature (llm.ReasoningBlock.Signature) never
+// reaches this type by design: it has no forensic/reconstruction value
+// (SOC2 CC8.1 cares about decision provenance, not protocol replay tokens)
+// and would be a pure retention-cost liability (AU-11) with no compliance
+// upside. See DD-LLM-005/BR-AI-086 AC6 for the full rationale.
+type ReasoningSummary struct {
+	// Text is the visible reasoning content that led to this result. Empty
+	// when Redacted is true or when the provider returned no visible text.
+	Text string `json:"text,omitempty"`
+	// Redacted marks that the provider withheld the reasoning content
+	// (e.g. Anthropic redacted_thinking) — reasoning occurred, but its
+	// content could not be captured for audit.
+	Redacted bool `json:"redacted,omitempty"`
+}
+
 // InvestigationResult holds the final output of an investigation.
 // Fields align with the OpenAPI IncidentResponse schema in api/openapi.json.
 //
@@ -142,6 +160,12 @@ type InvestigationResult struct {
 	// instead of StatusCompleted. Set by the investigator when signal.Interactive=true
 	// and RCA completes (Phase 2+3 skipped).
 	InteractiveHold bool `json:"interactive_hold,omitempty"`
+
+	// Reasoning carries an audit-safe summary of the LLM's reasoning/
+	// thinking content that led to this RCA, when the model's reasoning
+	// capability was enabled (BR-AI-086 AC6). Nil when reasoning was not
+	// requested/returned — this is the default, unaffected behavior.
+	Reasoning *ReasoningSummary `json:"reasoning,omitempty"`
 }
 
 // TokenUsageSummary holds cumulative token counts. Mirrors

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package vertexanthropic_test
+package openaicompat_test
 
 import (
 	"testing"
@@ -23,7 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-func TestVertexAnthropicClient(t *testing.T) {
+func TestOpenAICompatClient(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Vertex AI Anthropic SDK Client — #684 #686")
+	RunSpecs(t, "Shared OpenAI-Compatible Client — #1581")
 }

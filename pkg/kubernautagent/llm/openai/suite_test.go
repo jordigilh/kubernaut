@@ -14,23 +14,16 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package llm_test
+package openai_test
 
 import (
-	"github.com/go-logr/logr"
+	"testing"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 )
 
-var _ = Describe("Issue #885: UT-KA-885-006 — langchaingo WithLogger option", func() {
-
-	It("WithLogger option is accepted by New without error", func() {
-		logger := logr.Discard()
-
-		// This verifies the WithLogger option exists and compiles.
-		opt := langchaingo.WithLogger(logger)
-		Expect(opt).NotTo(BeNil())
-	})
-})
+func TestKAOpenAIClient(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Kubernaut Agent OpenAI-Compatible Wrapper — #1581")
+}

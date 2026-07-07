@@ -37,7 +37,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
+	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
@@ -107,15 +107,13 @@ func newCapturingMCPStack(k8sClient client.Client, namespace string, opts realSt
 
 	logrLogger := logr.Discard()
 
-	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
-	Expect(err).ToNot(HaveOccurred())
-	stack.LLMClient = llmAdapter
+	stack.LLMClient = kaopenai.New("test-model", sharedMockLLMEndpoint, "test-key")
 
 	promptBuilder, buildErr := prompt.NewBuilder()
 	Expect(buildErr).ToNot(HaveOccurred())
 
 	inv := investigator.New(investigator.Config{
-		Client:        llmAdapter,
+		Client:        stack.LLMClient,
 		Builder:       promptBuilder,
 		ResultParser:  parser.NewResultParser(),
 		AuditStore:    audit.NopAuditStore{},
@@ -193,15 +191,13 @@ func newAutonomousMCPStack(k8sClient client.Client, namespace string, opts realS
 
 	logrLogger := logr.Discard()
 
-	llmAdapter, err := langchaingo.New("openai", sharedMockLLMEndpoint, "test-model", "test-key")
-	Expect(err).ToNot(HaveOccurred())
-	stack.LLMClient = llmAdapter
+	stack.LLMClient = kaopenai.New("test-model", sharedMockLLMEndpoint, "test-key")
 
 	promptBuilder, buildErr := prompt.NewBuilder()
 	Expect(buildErr).ToNot(HaveOccurred())
 
 	inv := investigator.New(investigator.Config{
-		Client:        llmAdapter,
+		Client:        stack.LLMClient,
 		Builder:       promptBuilder,
 		ResultParser:  parser.NewResultParser(),
 		AuditStore:    audit.NopAuditStore{},
