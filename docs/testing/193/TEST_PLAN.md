@@ -2,14 +2,17 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-193-v1.1
+**Test Plan Identifier**: TP-193-v1.2
 **Feature**: `EffectivenessMonitor.assessMetrics()`/`assessAlert()` produce meaningful,
 deterministic assessment signal for cluster-scoped `SignalTarget` kinds (`Node`,
 `PersistentVolume`) instead of unconditionally reporting "no metric data available."
 v1.1 adds: the `effectiveness.metrics.assessed` audit event's `metric_deltas` sub-object is
 populated for these same cluster-scoped targets (SOC2 CC8.1 / FedRAMP AU-3 audit-completeness
 gap fix), propagated full-pipeline through DataStorage and Kubernaut Agent.
-**Version**: 1.1
+v1.2 adds: pyramid-invariant closure — extends the pre-existing real-DataStorage,
+real-HTTP `IT-KA-433-ENR-008` to prove the v1.1 fields survive the actual EM->DS->KA
+wire (not just per-layer UT mapping in isolation).
+**Version**: 1.2
 **Created**: 2026-07-07
 **Author**: EffectivenessMonitor Team
 **Status**: Active
@@ -172,6 +175,7 @@ Tests assert on business outcomes (`MetricsAssessed`, `MetricsScore` direction, 
 | BR-EM-012 | Alert decay detection (interaction with now-reachable cluster-scoped metrics) | P2 | Unit | UT-EM-193-006, UT-EM-193-007 | Pending |
 | BR-AUDIT-005, BR-EM-003 | Audit `metric_deltas` completeness for cluster-scoped targets (SOC2 CC8.1, FedRAMP AU-2/AU-3) | P1 | Unit | UT-EM-193-008..010, UT-EM-AM-013..016, UT-RH-LOGIC-025/026, UT-KA-433W-014 | Done |
 | BR-AUDIT-005, BR-EM-003 | Audit `metric_deltas` completeness for cluster-scoped targets (SOC2 CC8.1, FedRAMP AU-2/AU-3) | P1 | Integration | IT-EM-193-001, IT-EM-193-002 (extended) | Done |
+| BR-HAPI-016 | Cluster-scoped/throughput `metric_deltas` fields survive the full EM->DS->KA production wire (not just isolated per-layer UT mapping) | P1 | Integration | IT-KA-433-ENR-008 (extended) | Done |
 
 ---
 
@@ -223,6 +227,25 @@ e.g. `UT-EM-269-NNN`, `IT-EM-MC-NNN`).
 | `UT-RH-LOGIC-026` | DataStorage `mapMetricDeltas` leaves cluster-scoped/throughput fields unset when absent (namespace-scoped, Phase A/B only) | Done |
 | `UT-KA-433W-014` | Kubernaut Agent `ds_adapter.go mapMetricDeltas` maps throughput + cluster-scoped fields into `enrichment.MetricDeltas`, and leaves them nil when absent | Done |
 | `UT-KA-433-HP-003` (extended) | `FormatMetricDeltas` renders throughput and cluster-scoped Node/PV pairs as human-readable LLM prompt text | Done |
+
+### Tier 2b: Integration Tests — Pyramid Invariant Closure (v1.2)
+
+**Testable code scope**: full EM->DataStorage->Kubernaut Agent wire (real PostgreSQL + real
+DataStorage HTTP server + real KA enrichment client, per `test/integration/kubernautagent/enrichment/suite_test.go`)
+
+The v1.1 UTs above (`UT-RH-LOGIC-025/026`, `UT-KA-433W-014`) each prove correct field mapping
+in isolation at their own layer, calling the real business-logic function directly with
+in-memory fixtures. Per the pyramid invariant ("a component with only UT coverage is
+prototyped, not implemented"), that is necessary but not sufficient: it does not prove the two
+layers are actually wired together end-to-end (DS's HTTP serialization of the new fields, and
+KA's HTTP client correctly deserializing them). `IT-KA-433-ENR-008` already existed as the
+authoritative real-DS, real-HTTP wiring proof for the Phase A `metric_deltas` fields
+(`cpu_before`/`after`, `memory_before`/`after`); it was extended to seed and assert the v1.1
+cluster-scoped + throughput fields through the same real wire.
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `IT-KA-433-ENR-008` (extended) | Cluster-scoped (Node/PV) + throughput `metric_deltas` fields seeded as a raw `audit_events` row survive a real HTTP round-trip through DataStorage's `CorrelateTier1Chain`/`mapMetricDeltas` and KA's `ds_adapter.go mapMetricDeltas` into `enrichment.MetricDeltas`, unchanged | Done |
 
 ### Tier Skip Rationale
 
@@ -377,3 +400,4 @@ None. The namespace-scoped path (`buildMetricQuerySpecs`, #639 golden-string sui
 |---------|------|---------|
 | 1.0 | 2026-07-07 | Initial test plan for issue #193 |
 | 1.1 | 2026-07-07 | Added audit `metric_deltas` extension coverage (DD-EM-005 v1.1 addendum): UT-EM-193-008..010, UT-EM-AM-013..016, UT-RH-LOGIC-025/026, UT-KA-433W-014, extended UT-KA-433-HP-003 and IT-EM-193-001/002. Closes a SOC2 CC8.1 / FedRAMP AU-3 audit-completeness gap for Node/PersistentVolume targets. |
+| 1.2 | 2026-07-07 | Pyramid invariant closure: extended the pre-existing real-DS `IT-KA-433-ENR-008` with the v1.1 cluster-scoped/throughput fields, proving they survive the real EM->DS->KA HTTP wire, not just isolated per-layer UT mapping. |

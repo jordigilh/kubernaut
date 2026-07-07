@@ -474,6 +474,23 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 						"cpu_after":     0.45,
 						"memory_before": 512.0,
 						"memory_after":  256.0,
+						// Cluster-scoped + throughput fields (Issue #193, DD-EM-005 v1.1):
+						// proves the full EM -> DS -> KA wiring for these fields, not just
+						// isolated per-layer unit coverage.
+						"throughput_before_rps":       120.0,
+						"throughput_after_rps":        150.0,
+						"node_not_ready_before":       1.0,
+						"node_not_ready_after":        0.0,
+						"node_memory_pressure_before": 1.0,
+						"node_memory_pressure_after":  0.0,
+						"node_disk_pressure_before":   0.0,
+						"node_disk_pressure_after":    0.0,
+						"pv_phase_failed_before":      1.0,
+						"pv_phase_failed_after":       0.0,
+						"pv_phase_pending_before":     0.0,
+						"pv_phase_pending_after":      0.0,
+						"pv_usage_ratio_before":       0.95,
+						"pv_usage_ratio_after":        0.60,
 					},
 				}, now.Add(3*time.Minute))
 
@@ -507,6 +524,24 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			Expect(*entry.MetricDeltas.CpuAfter).To(BeNumerically("~", 0.45, 0.001))
 			Expect(*entry.MetricDeltas.MemoryBefore).To(BeNumerically("~", 512.0, 0.1))
 			Expect(*entry.MetricDeltas.MemoryAfter).To(BeNumerically("~", 256.0, 0.1))
+
+			By("Asserting cluster-scoped + throughput MetricDeltas propagation (Issue #193, DD-EM-005 v1.1) -- proves the full EM->DS->KA wiring for these fields")
+			Expect(entry.MetricDeltas.ThroughputBeforeRps).ToNot(BeNil())
+			Expect(*entry.MetricDeltas.ThroughputBeforeRps).To(BeNumerically("~", 120.0, 0.001))
+			Expect(entry.MetricDeltas.ThroughputAfterRps).ToNot(BeNil())
+			Expect(*entry.MetricDeltas.ThroughputAfterRps).To(BeNumerically("~", 150.0, 0.001))
+			Expect(entry.MetricDeltas.NodeNotReadyBefore).ToNot(BeNil())
+			Expect(*entry.MetricDeltas.NodeNotReadyBefore).To(BeNumerically("~", 1.0, 0.001))
+			Expect(entry.MetricDeltas.NodeNotReadyAfter).ToNot(BeNil())
+			Expect(entry.MetricDeltas.NodeMemoryPressureBefore).ToNot(BeNil())
+			Expect(entry.MetricDeltas.NodeDiskPressureBefore).ToNot(BeNil())
+			Expect(entry.MetricDeltas.PvPhaseFailedBefore).ToNot(BeNil())
+			Expect(*entry.MetricDeltas.PvPhaseFailedBefore).To(BeNumerically("~", 1.0, 0.001))
+			Expect(entry.MetricDeltas.PvPhasePendingBefore).ToNot(BeNil())
+			Expect(entry.MetricDeltas.PvUsageRatioBefore).ToNot(BeNil())
+			Expect(*entry.MetricDeltas.PvUsageRatioBefore).To(BeNumerically("~", 0.95, 0.001))
+			Expect(entry.MetricDeltas.PvUsageRatioAfter).ToNot(BeNil())
+			Expect(*entry.MetricDeltas.PvUsageRatioAfter).To(BeNumerically("~", 0.60, 0.001))
 
 			By("Asserting SignalResolved propagation from alert.assessed")
 			Expect(entry.SignalResolved).To(HaveValue(BeTrue()))

@@ -1,6 +1,6 @@
 # DD-EM-005: Cluster-Scoped Metrics and Alert Assessment (Node, PersistentVolume)
 
-**Version**: 1.1
+**Version**: 1.2
 **Date**: 2026-07-07
 **Status**: ✅ APPROVED
 **Author**: EffectivenessMonitor Team
@@ -218,6 +218,7 @@ named-pair pattern already proven twice in this codebase (Phase A->B, and now th
 | SOC2 CC8.1 | Complete audit-trail reconstruction | `effectiveness.metrics.assessed` events for Node/PV targets now carry the same metric-level detail as namespace-scoped targets; proven end-to-end by `IT-EM-193-001/002` querying the audit trail back via `QueryAuditEvents` and asserting `metric_deltas` content |
 | FedRAMP AU-3 | Structured content of audit records | New fields follow the existing typed-sub-object OpenAPI schema pattern (`OptNilFloat64`), not an untyped/free-form extension |
 | FedRAMP AU-2 | Audit events capture the actions that were actually taken/observed | Fields are populated only when the corresponding PromQL query succeeds (`Available=true`); absent/failed queries leave the field unset rather than a misleading zero value |
+| BR-HAPI-016 | Audit data usably reaches LLM remediation-history context, not just the audit store | The v1.1 UTs (`UT-RH-LOGIC-025/026`, `UT-KA-433W-014`) proved per-layer mapping in isolation only; v1.2 closes the pyramid-invariant gap by extending the pre-existing real-DS `IT-KA-433-ENR-008` to prove these fields survive the actual EM->DS->KA HTTP wire |
 
 ### Wiring manifest (v1.1 addendum)
 
@@ -227,8 +228,8 @@ named-pair pattern already proven twice in this codebase (Phase A->B, and now th
 | `populateMetricsAssessResult` (+6 switch cases) | `assess_components.go` | UT-EM-193-008..010 |
 | `MetricsAssessedData` / `RecordMetricsAssessed` (+6 Opt-wraps) | `pkg/effectivenessmonitor/audit/manager.go` | UT-EM-AM-013..016 |
 | `emitMetricsEvent` (+6 passthrough) | `internal/controller/effectivenessmonitor/events.go` | IT-EM-193-001/002 (extended, asserts real audit-trail content via `QueryAuditEvents`) |
-| `mapMetricDeltas` (DataStorage, +6 + throughput) | `pkg/datastorage/server/remediation_history_logic.go` | UT-RH-LOGIC-025/026 |
-| `enrichment.MetricDeltas` DTO + `ds_adapter.go mapMetricDeltas` (+6 + throughput) | `internal/kubernautagent/enrichment/` | UT-KA-433W-014 |
+| `mapMetricDeltas` (DataStorage, +6 + throughput) | `pkg/datastorage/server/remediation_history_logic.go` | UT-RH-LOGIC-025/026; IT-KA-433-ENR-008 (extended, exercises this function via a real HTTP round-trip) |
+| `enrichment.MetricDeltas` DTO + `ds_adapter.go mapMetricDeltas` (+6 + throughput) | `internal/kubernautagent/enrichment/` | UT-KA-433W-014; IT-KA-433-ENR-008 (extended, real DS+HTTP wiring proof) |
 | `FormatMetricDeltas` (+6 + throughput rendering) | `internal/kubernautagent/prompt/history.go` | UT-KA-433-HP-003 (extended) |
 
 ---
@@ -253,3 +254,4 @@ named-pair pattern already proven twice in this codebase (Phase A->B, and now th
 |------|---------|---------|
 | 2026-07-07 | 1.0 | Initial decision: Kind-dispatch metric query builders + `AlertLabels` population for cluster-scoped (Node, PersistentVolume) targets. No new config/CRD surface. |
 | 2026-07-07 | 1.1 | Audit `metric_deltas` extension: 6 new field pairs for cluster-scoped Node/PersistentVolume metrics, wired full-pipeline (EM -> DataStorage -> Kubernaut Agent), closing a SOC2 CC8.1 / FedRAMP AU-3 audit-completeness gap. Opportunistic backfill of a pre-existing `throughput_before_rps`/`after_rps` propagation gap in the same files. |
+| 2026-07-07 | 1.2 | Pyramid invariant closure: v1.1's DataStorage/Kubernaut-Agent wiring points had only isolated per-layer UT coverage (`UT-RH-LOGIC-025/026`, `UT-KA-433W-014`), no IT proving the real EM->DS->KA wire. Extended the pre-existing real-DS `IT-KA-433-ENR-008` (already the authoritative wiring proof for Phase A `metric_deltas` fields) to also seed/assert the v1.1 fields, closing the gap without adding a new test suite. |
