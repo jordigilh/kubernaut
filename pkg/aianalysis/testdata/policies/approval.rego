@@ -31,6 +31,24 @@ has_remediation_target if {
     input.remediation_target.kind != ""
 }
 
+# #247: Infrastructure-provisioning action types always require approval,
+# regardless of the (LLM-reported) remediation_target kind.
+is_infrastructure_action if {
+    input.action_type == "ProvisionNode"
+}
+
+# ADR-055: Check if remediation target is a sensitive kind.
+# Added in REFACTOR (#247) to close a pre-existing divergence from the
+# integration fixture (test/integration/aianalysis/testdata/policies/approval.rego),
+# which already had this rule.
+is_sensitive_resource if {
+    input.remediation_target.kind == "Node"
+}
+
+is_sensitive_resource if {
+    input.remediation_target.kind == "StatefulSet"
+}
+
 has_warnings if {
     count(input.warnings) > 0
 }
@@ -62,6 +80,18 @@ require_approval if {
     not has_remediation_target
 }
 
+# #247: Infrastructure-provisioning actions always require approval
+require_approval if {
+    is_infrastructure_action
+}
+
+# ADR-055: Production + sensitive resource kind ALWAYS requires approval
+# (REFACTOR #247: closes pre-existing divergence from the integration fixture)
+require_approval if {
+    is_production
+    is_sensitive_resource
+}
+
 # Production + low confidence → require approval
 require_approval if {
     is_production
@@ -88,6 +118,18 @@ require_approval if {
 
 risk_factors contains {"score": 90, "reason": "Missing remediation target - cannot determine resource to remediate (BR-AI-085-005)"} if {
     not has_remediation_target
+}
+
+# #247: Highest score -- infrastructure-provisioning actions always require
+# approval, independent of environment/confidence, so the reason must be
+# unambiguous regardless of what other risk factors might also apply.
+risk_factors contains {"score": 95, "reason": "Infrastructure-provisioning action type requires manual approval (#247)"} if {
+    is_infrastructure_action
+}
+
+risk_factors contains {"score": 80, "reason": "Production environment with sensitive resource kind - requires manual approval"} if {
+    is_production
+    is_sensitive_resource
 }
 
 risk_factors contains {"score": 60, "reason": "Data quality issues detected in production environment"} if {
