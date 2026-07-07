@@ -18,56 +18,51 @@ package main
 
 import (
 	"context"
-	"testing"
 
 	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"k8s.io/client-go/rest"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
-// TestBuildMCPHandler_Guards is a characterization test for buildMCPHandler's
-// three required-dependency guard clauses (Issue #1520 Phase 2: pins behavior
-// before the mcpHandlerParams struct extraction, per AGENTS.md's TDD mandate
-// for zero-coverage refactor targets). Each case returns before touching the
-// network (ctrlclient.New), so no live cluster is needed.
-func TestBuildMCPHandler_Guards(t *testing.T) {
-	validInfra := &k8sInfra{kubeConfig: &rest.Config{}}
-	validAuthMw := &auth.Middleware{}
-	validInv := &investigator.Investigator{}
+// buildMCPHandler's three required-dependency guard clauses — characterization
+// tests (Issue #1520 Phase 2: pins behavior before the mcpHandlerParams struct
+// extraction, per AGENTS.md's TDD mandate for zero-coverage refactor
+// targets). Each case returns before touching the network (ctrlclient.New),
+// so no live cluster is needed.
+var _ = Describe("buildMCPHandler — required-dependency guards", func() {
+	var (
+		validInfra  *k8sInfra
+		validAuthMw *auth.Middleware
+		validInv    *investigator.Investigator
+	)
 
-	tests := []struct {
-		name   string
-		params mcpHandlerParams
-	}{
-		{
-			name:   "nil infra",
-			params: mcpHandlerParams{infra: nil, authMw: validAuthMw, inv: validInv, logger: logr.Discard()},
-		},
-		{
-			name:   "infra with nil kubeConfig",
-			params: mcpHandlerParams{infra: &k8sInfra{}, authMw: validAuthMw, inv: validInv, logger: logr.Discard()},
-		},
-		{
-			name:   "nil auth middleware (DD-AUTH-MCP-001)",
-			params: mcpHandlerParams{infra: validInfra, authMw: nil, inv: validInv, logger: logr.Discard()},
-		},
-		{
-			name:   "nil investigator (SEC-05)",
-			params: mcpHandlerParams{infra: validInfra, authMw: validAuthMw, inv: nil, logger: logr.Discard()},
-		},
-	}
+	BeforeEach(func() {
+		validInfra = &k8sInfra{kubeConfig: &rest.Config{}}
+		validAuthMw = &auth.Middleware{}
+		validInv = &investigator.Investigator{}
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			handler, drainer := buildMCPHandler(context.Background(), tt.params)
-			if handler != nil {
-				t.Errorf("expected nil handler, got %v", handler)
-			}
-			if drainer != nil {
-				t.Errorf("expected nil session drainer, got %v", drainer)
-			}
-		})
-	}
-}
+	DescribeTable("returns a nil handler and nil drainer when a required dependency is missing",
+		func(paramsFn func() mcpHandlerParams) {
+			handler, drainer := buildMCPHandler(context.Background(), paramsFn())
+			Expect(handler).To(BeNil())
+			Expect(drainer).To(BeNil())
+		},
+		Entry("nil infra", func() mcpHandlerParams {
+			return mcpHandlerParams{infra: nil, authMw: validAuthMw, inv: validInv, logger: logr.Discard()}
+		}),
+		Entry("infra with nil kubeConfig", func() mcpHandlerParams {
+			return mcpHandlerParams{infra: &k8sInfra{}, authMw: validAuthMw, inv: validInv, logger: logr.Discard()}
+		}),
+		Entry("nil auth middleware (DD-AUTH-MCP-001)", func() mcpHandlerParams {
+			return mcpHandlerParams{infra: validInfra, authMw: nil, inv: validInv, logger: logr.Discard()}
+		}),
+		Entry("nil investigator (SEC-05)", func() mcpHandlerParams {
+			return mcpHandlerParams{infra: validInfra, authMw: validAuthMw, inv: nil, logger: logr.Discard()}
+		}),
+	)
+})

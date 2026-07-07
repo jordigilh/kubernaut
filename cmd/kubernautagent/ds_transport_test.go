@@ -18,39 +18,31 @@ package main
 
 import (
 	"net/http"
-	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-func TestBuildDSBaseTransport_WithCAFile(t *testing.T) {
-	caPath := generateTestCACert(t, "DS Test CA")
+var _ = Describe("buildDSBaseTransport", func() {
+	It("returns a custom non-default transport when a valid CA file is set", func() {
+		caPath := generateTestCACert(GinkgoTB(), "DS Test CA")
 
-	transport, err := buildDSBaseTransport(caPath, types.LLMCircuitBreaker{})
-	if err != nil {
-		t.Fatalf("expected no error with valid CA file, got: %v", err)
-	}
-	if transport == nil {
-		t.Fatal("expected non-nil transport when caFile is set")
-	}
-	if transport == http.DefaultTransport {
-		t.Fatal("expected custom transport, got http.DefaultTransport")
-	}
-}
+		transport, err := buildDSBaseTransport(caPath, types.LLMCircuitBreaker{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(transport).NotTo(BeNil())
+		Expect(transport).NotTo(BeIdenticalTo(http.DefaultTransport))
+	})
 
-func TestBuildDSBaseTransport_EmptyCAFile(t *testing.T) {
-	transport, err := buildDSBaseTransport("", types.LLMCircuitBreaker{})
-	if err != nil {
-		t.Fatalf("expected no error with empty caFile, got: %v", err)
-	}
-	if transport == nil {
-		t.Fatal("expected non-nil transport (default fallback)")
-	}
-}
+	It("returns a non-nil default-fallback transport when caFile is empty", func() {
+		transport, err := buildDSBaseTransport("", types.LLMCircuitBreaker{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(transport).NotTo(BeNil())
+	})
 
-func TestBuildDSBaseTransport_InvalidCAFile(t *testing.T) {
-	_, err := buildDSBaseTransport("/nonexistent/ca.crt", types.LLMCircuitBreaker{})
-	if err == nil {
-		t.Fatal("expected error with invalid CA file path, got nil")
-	}
-}
+	It("returns an error for an invalid CA file path", func() {
+		_, err := buildDSBaseTransport("/nonexistent/ca.crt", types.LLMCircuitBreaker{})
+		Expect(err).To(HaveOccurred())
+	})
+})

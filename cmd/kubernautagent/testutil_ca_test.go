@@ -32,7 +32,11 @@ import (
 
 // generateTestCACert creates a self-signed CA certificate PEM file under
 // t.TempDir() and returns its path. The cert is valid for 24 hours.
-func generateTestCACert(t *testing.T, cn string) string {
+//
+// Accepts testing.TB (not *testing.T) so both plain `testing.T`-based tests
+// and Ginkgo specs (via GinkgoTB(), which implements testing.TB) can share
+// this fixture.
+func generateTestCACert(t testing.TB, cn string) string {
 	t.Helper()
 	caDir := t.TempDir()
 	caPath := filepath.Join(caDir, "ca.crt")
@@ -63,7 +67,7 @@ func generateTestCACert(t *testing.T, cn string) string {
 
 // generateTestClientCert creates a self-signed certificate and key pair
 // suitable for mTLS testing. Returns the cert and key file paths.
-func generateTestClientCert(t *testing.T, _ string) (certPath, keyPath string) {
+func generateTestClientCert(t testing.TB, _ string) (certPath, keyPath string) {
 	t.Helper()
 	dir := t.TempDir()
 	certPath = filepath.Join(dir, "client.crt")
