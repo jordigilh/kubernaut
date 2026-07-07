@@ -162,6 +162,16 @@ spec:
     bundle: "ghcr.io/your-org/kubernaut-workflows/restart-deployment:v1.0.0@sha256:abc123..."
     # DD-WE-005 v2.0: pre-created SA in kubernaut-workflows with workflow-appropriate RBAC; omit to use namespace default SA
     serviceAccountName: my-workflow-sa
+    # BR-WE-019 / DD-WE-008: Job engine only -- rejected at registration time for tekton/ansible.
+    # Optional; omit entirely for BestEffort QoS (today's default behavior). requests must not
+    # exceed limits per resource name.
+    # resources:
+    #   requests:
+    #     cpu: "100m"
+    #     memory: "128Mi"
+    #   limits:
+    #     cpu: "500m"
+    #     memory: "512Mi"
   parameters:
     - name: namespace
       type: string
@@ -494,6 +504,23 @@ Typical remediation workflows may need verbs such as:
 - Pods: get, list, delete
 - Nodes: get, list, patch, cordon, uncordon
 - ConfigMaps, Secrets: get, list (read-only)
+
+### Resource Requests/Limits (BR-WE-019 / DD-WE-008, Job engine only)
+
+For workflows running on the **Job engine**, `execution.resources` optionally declares CPU/memory
+`requests`/`limits` for the workflow container, resolved from the catalog once and applied to every
+Job Kubernaut creates for that workflow. Omit it entirely to keep today's BestEffort QoS behavior.
+
+- Engine-scoped: rejected at registration time (schema validation error) for `tekton`/`ansible` workflows
+- Each declared `requests.<name>` must not exceed the corresponding `limits.<name>`
+- Values are standard Kubernetes quantities (e.g. `"100m"`, `"512Mi"`)
+
+Separately, every Job-engine workflow's pod tolerates transient infrastructure failures --
+OOM-kill (exit 137) and node disruption -- via a `PodFailurePolicy` that `Ignore`s them while
+leaving `backoffLimit: 0`, so a genuinely failing (non-idempotent) remediation script still fails
+fast. This is unconditional platform behavior, not something workflow authors configure. Tolerated
+retries are surfaced in the workflow's `workflow.completed` audit event as `retry_count` when greater
+than zero (SOC2 CC8.1 / AU-3 audit completeness).
 
 ### Least Privilege Principle
 

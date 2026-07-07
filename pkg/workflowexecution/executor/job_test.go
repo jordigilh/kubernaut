@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -102,6 +103,27 @@ func newTestWFE(name, targetResource, clusterID string) *workflowexecutionv1alph
 		Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 			ServiceAccountName: "kubernaut-runner",
 		},
+	}
+}
+
+// newSuccessfulCreateEvent builds a "SuccessfulCreate" Event on a Job object,
+// matching what the real job-controller emits each time it creates a Pod
+// (initial attempt or PodFailurePolicy-Ignore replacement). Used to simulate
+// BR-WE-019 AC10's RetryCount computation without job.Status.Failed, which a
+// real-cluster spike (DD-WE-008 Section 8) confirmed is never incremented
+// for Ignore-action failures.
+func newSuccessfulCreateEvent(name, namespace, jobName, podName string, count int32) *corev1.Event {
+	return &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+		InvolvedObject: corev1.ObjectReference{
+			Kind:      "Job",
+			Name:      jobName,
+			Namespace: namespace,
+		},
+		Reason:  "SuccessfulCreate",
+		Message: fmt.Sprintf("Created pod: %s", podName),
+		Count:   count,
+		Type:    corev1.EventTypeNormal,
 	}
 }
 
@@ -227,6 +249,109 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(*containerSC.RunAsNonRoot).To(BeTrue())
 			Expect(containerSC.Capabilities).ToNot(BeNil())
 			Expect(containerSC.Capabilities.Drop).To(ConsistOf(corev1.Capability("ALL")))
+		})
+
+		// BR-WE-019 / DD-WE-008: the "workflow" container's resource requests
+		// and limits come from WFE.Status.Resources, resolved once during
+		// Pending from the DS catalog's execution.resources section.
+		It("UT-WE-054-JOB-021 [BR-WE-019]: should apply WFE.Status.Resources to the workflow container", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-resources", "default/deployment/nginx", "")
+			wfe.Status.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("128Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("256Mi"),
+				},
+			}
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			resources := job.Spec.Template.Spec.Containers[0].Resources
+			Expect(resources.Requests.Cpu().String()).To(Equal("100m"))
+			Expect(resources.Requests.Memory().String()).To(Equal("128Mi"))
+			Expect(resources.Limits.Cpu().String()).To(Equal("500m"))
+			Expect(resources.Limits.Memory().String()).To(Equal("256Mi"))
+		})
+
+		It("UT-WE-054-JOB-024 [BR-WE-019]: should leave the workflow container BestEffort when WFE.Status.Resources is nil (backward compat)", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-no-resources", "default/deployment/nginx", "")
+			Expect(wfe.Status.Resources).To(BeNil())
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			resources := job.Spec.Template.Spec.Containers[0].Resources
+			Expect(resources.Requests).To(BeEmpty(), "no requests when catalog declares no resources")
+			Expect(resources.Limits).To(BeEmpty(), "no limits when catalog declares no resources")
+		})
+
+		// BR-WE-019 / DD-WE-008 Wiring Point B: PodFailurePolicy tolerates
+		// OOM-kill (exit 137) and node-disruption pod failures without
+		// weakening fail-fast (BackoffLimit: 0) for any other failure cause.
+		It("UT-WE-054-JOB-022 [BR-WE-019]: should set PodFailurePolicy with Ignore rules for exit-137 and DisruptionTarget", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-podfailurepolicy", "default/deployment/nginx", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			Expect(job.Spec.PodFailurePolicy).ToNot(BeNil())
+			Expect(job.Spec.PodFailurePolicy.Rules).To(ContainElement(
+				And(
+					HaveField("Action", batchv1.PodFailurePolicyActionIgnore),
+					HaveField("OnPodConditions", ContainElement(
+						HaveField("Type", corev1.DisruptionTarget),
+					)),
+				),
+			))
+			Expect(job.Spec.PodFailurePolicy.Rules).To(ContainElement(
+				And(
+					HaveField("Action", batchv1.PodFailurePolicyActionIgnore),
+					HaveField("OnExitCodes", And(
+						HaveField("ContainerName", HaveValue(Equal("workflow"))),
+						HaveField("Operator", batchv1.PodFailurePolicyOnExitCodesOpIn),
+						HaveField("Values", ConsistOf(int32(137))),
+					)),
+				),
+			))
+		})
+
+		It("UT-WE-054-JOB-023 [BR-WE-019]: should keep BackoffLimit at 0 (fail-fast unchanged for non-tolerated failures)", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-backofflimit", "default/deployment/nginx", "")
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			Expect(job.Spec.BackoffLimit).ToNot(BeNil())
+			Expect(*job.Spec.BackoffLimit).To(Equal(int32(0)),
+				"BackoffLimit must remain 0 -- PodFailurePolicy grants tolerance for specific causes, not a general retry budget")
 		})
 
 		// BR-WORKFLOW-008: without pre-flight dependency validation (#1481), a Job
@@ -538,6 +663,120 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			_, err := je.GetStatus(ctx, wfe, namespace)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("no execution ref"))
+		})
+
+		// BR-WE-019 AC10 / DD-WE-008 Wiring Point C: PodFailurePolicy-tolerated
+		// pod failures observed on job.Status.Failed before the Job eventually
+		// succeeds must still surface in the audit trail as a retry count --
+		// buildStatusSummary must read Failed unconditionally, not only on the
+		// Failed branch.
+		It("UT-WE-054-JOB-025 [BR-WE-019 AC10]: should set RetryCount from SuccessfulCreate event count when the Job ultimately succeeded after tolerated failures", func() {
+			// job.Status.Failed is deliberately 0 here: k8s.io/api batch/v1's
+			// PodFailurePolicyActionIgnore never increments it for Ignore-action
+			// failures (confirmed via a real-cluster spike, DD-WE-008 Section 8).
+			// This is also a regression guard -- if the implementation reverted
+			// to reading job.Status.Failed, this test would observe RetryCount=0
+			// instead of the expected 2.
+			jobName := executor.ExecutionResourceName("default/deployment/retried")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Succeeded: 1,
+					Failed:    0,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobComplete,
+							Status:  corev1.ConditionTrue,
+							Message: "Job completed successfully",
+						},
+					},
+				},
+			}
+			// 3 "SuccessfulCreate" events on the Job (1 initial + 2
+			// Ignore-tolerated replacements) => RetryCount = 3 - 1 = 2.
+			events := []client.Object{
+				newSuccessfulCreateEvent("retried-create-1", namespace, jobName, "pod-a", 1),
+				newSuccessfulCreateEvent("retried-create-2", namespace, jobName, "pod-b", 1),
+				newSuccessfulCreateEvent("retried-create-3", namespace, jobName, "pod-c", 1),
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).WithObjects(events...).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-retried", "default/deployment/retried", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+			Expect(result.Summary).ToNot(BeNil())
+			Expect(result.Summary.RetryCount).To(Equal(int32(2)),
+				"BR-WE-019 AC10: tolerated pod failures before eventual success must be captured as RetryCount, computed from SuccessfulCreate events (not job.Status.Failed)")
+		})
+
+		It("UT-WE-054-JOB-026 [BR-WE-019 AC10]: should leave RetryCount at 0 when the Job succeeded with zero prior failures", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/clean-success")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Succeeded: 1,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobComplete,
+							Status:  corev1.ConditionTrue,
+							Message: "Job completed successfully",
+						},
+					},
+				},
+			}
+			// Exactly 1 "SuccessfulCreate" event (the initial, only attempt) =>
+			// RetryCount = 1 - 1 = 0.
+			events := []client.Object{
+				newSuccessfulCreateEvent("clean-success-create-1", namespace, jobName, "pod-a", 1),
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).WithObjects(events...).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-clean-success", "default/deployment/clean-success", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Summary).ToNot(BeNil())
+			Expect(result.Summary.RetryCount).To(Equal(int32(0)),
+				"no spurious retryCount for the common zero-failure success path")
+		})
+
+		It("UT-WE-054-JOB-027 [BR-WE-019 AC10]: should leave RetryCount at 0 when no SuccessfulCreate events exist at all (defensive fallback)", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/no-events")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Succeeded: 1,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobComplete,
+							Status:  corev1.ConditionTrue,
+							Message: "Job completed successfully",
+						},
+					},
+				},
+			}
+			// No Events registered at all (e.g. expired past --event-ttl) --
+			// must fail safe to 0, not error or panic.
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-no-events", "default/deployment/no-events", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Summary).ToNot(BeNil())
+			Expect(result.Summary.RetryCount).To(Equal(int32(0)),
+				"missing/expired Events must fail safe to 0, not error (best-effort boundary)")
 		})
 	})
 

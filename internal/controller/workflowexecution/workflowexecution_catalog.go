@@ -70,6 +70,11 @@ func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context
 
 	wfe.Status.ExecutionEngine = meta.ExecutionEngine
 	wfe.Status.ServiceAccountName = meta.ServiceAccountName
+	// BR-WE-019 / DD-WE-008: resolved once during Pending (this function is a
+	// no-op on subsequent reconciles per the idempotency guard above), applied
+	// to the Job's "workflow" container by resourcesFor(). nil when the
+	// catalog entry declares none (BestEffort QoS, unchanged behavior).
+	wfe.Status.Resources = meta.Resources
 
 	// WE-H1: In-memory spec mutation is acceptable here because ResolveWorkflowCatalogMetadata
 	// is called on every Pending-phase reconcile. If the controller requeues in Pending,

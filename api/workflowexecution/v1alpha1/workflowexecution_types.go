@@ -342,6 +342,14 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	DeduplicatedBy string `json:"deduplicatedBy,omitempty"`
 
+	// Resources declares the resolved CPU/memory requests and limits for the
+	// Job engine's "workflow" container, from the DS workflow catalog
+	// (BR-WE-019 / DD-WE-008). Set once during Pending phase via
+	// ResolveWorkflowCatalogMetadata; immutable thereafter. nil when the
+	// catalog entry declares no resources (BestEffort QoS, current behavior).
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
 	// Conditions provide detailed status information
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -471,6 +479,14 @@ type ExecutionStatusSummary struct {
 	// TotalTasks count (from pipeline spec)
 	// +optional
 	TotalTasks int `json:"totalTasks,omitempty"`
+
+	// RetryCount is the number of pod-failure attempts tolerated by
+	// PodFailurePolicy (BR-WE-019 AC10 / DD-WE-008) before the Job reached a
+	// terminal state. Captured unconditionally from job.Status.Failed
+	// (Job engine only); 0 when no pod failures occurred or for the Tekton
+	// engine (PipelineRun has no equivalent retry-tolerance mechanism).
+	// +optional
+	RetryCount int32 `json:"retryCount,omitempty"`
 }
 
 // ========================================

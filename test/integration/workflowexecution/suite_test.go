@@ -76,6 +76,10 @@ type configurableWorkflowQuerier struct {
 	BundleDigest       string
 	ServiceAccountName string
 	EngineConfig       json.RawMessage
+	// Resources configures the catalog-resolved Job container resource
+	// requirements returned by ResolveWorkflowCatalogMetadata (BR-WE-019 /
+	// DD-WE-008). nil by default (no resources -- BestEffort QoS).
+	Resources *corev1.ResourceRequirements
 }
 
 func (q *configurableWorkflowQuerier) getEngine() string {
@@ -107,6 +111,7 @@ func (q *configurableWorkflowQuerier) ResolveWorkflowCatalogMetadata(_ context.C
 		ExecutionBundleDigest: q.BundleDigest,
 		ServiceAccountName:    q.ServiceAccountName,
 		Dependencies:          q.Deps,
+		Resources:             q.Resources,
 	}, nil
 }
 
@@ -755,6 +760,71 @@ func simulateJobCompletion(job *batchv1.Job, succeeded bool) error {
 			},
 		)
 	}
+	return k8sClient.Status().Update(ctx, job)
+}
+
+// simulateJobCompletionWithRetries updates a Job to simulate PodFailurePolicy-
+// tolerated pod failures observed before the Job eventually succeeds
+// (job.Status.Succeeded: 1), reproducing the retry signature a real cluster
+// would leave behind for BR-WE-019 AC10 / DD-WE-008 Wiring Point C (audit
+// retry-count completeness).
+//
+// Deliberately does NOT set job.Status.Failed: a real-cluster spike
+// (DD-WE-008 Section 8) confirmed k8s.io/api batch/v1's
+// PodFailurePolicyActionIgnore never increments it for Ignore-action
+// failures. Instead, this creates retryCount+1 "SuccessfulCreate" Events on
+// the Job -- one per (initial + tolerated-replacement) Pod creation -- since
+// JobExecutor.GetStatus computes RetryCount from those Events, matching
+// exactly what a real job-controller leaves behind (verified empirically:
+// one Event per Pod creation, Count=1 each, well under the k8s
+// events-aggregator threshold).
+func simulateJobCompletionWithRetries(job *batchv1.Job, retryCount int32) error {
+	for i := int32(0); i < retryCount+1; i++ {
+		event := &corev1.Event{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: job.Name + "-create-",
+				Namespace:    job.Namespace,
+			},
+			InvolvedObject: corev1.ObjectReference{
+				Kind:      "Job",
+				Name:      job.Name,
+				Namespace: job.Namespace,
+				UID:       job.UID,
+			},
+			Reason:         "SuccessfulCreate",
+			Message:        fmt.Sprintf("Created pod: %s-simulated-%d", job.Name, i),
+			Type:           corev1.EventTypeNormal,
+			FirstTimestamp: metav1.Now(),
+			LastTimestamp:  metav1.Now(),
+			Count:          1,
+		}
+		if err := k8sClient.Create(ctx, event); err != nil {
+			return fmt.Errorf("failed to create synthetic SuccessfulCreate event %d: %w", i, err)
+		}
+	}
+
+	now := metav1.Now()
+	job.Status.StartTime = &now
+	job.Status.Succeeded = 1
+	job.Status.Active = 0
+	job.Status.CompletionTime = &now
+	// K8s requires JobSuccessCriteriaMet before JobComplete
+	job.Status.Conditions = append(job.Status.Conditions,
+		batchv1.JobCondition{
+			Type:               "SuccessCriteriaMet",
+			Status:             corev1.ConditionTrue,
+			LastTransitionTime: now,
+			Reason:             "JobSuccessCriteriaMet",
+			Message:            "Job completed successfully",
+		},
+		batchv1.JobCondition{
+			Type:               batchv1.JobComplete,
+			Status:             corev1.ConditionTrue,
+			LastTransitionTime: now,
+			Reason:             "Completed",
+			Message:            "Job completed successfully",
+		},
+	)
 	return k8sClient.Status().Update(ctx, job)
 }
 

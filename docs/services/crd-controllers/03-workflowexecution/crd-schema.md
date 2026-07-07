@@ -165,10 +165,20 @@ type WorkflowExecutionStatus struct {
     Duration string `json:"duration,omitempty"`
 
     // PipelineRunRef references the created Tekton PipelineRun
+    // NOTE: current code generalizes this to ExecutionRef (PipelineRun or Job)
     PipelineRunRef *corev1.LocalObjectReference `json:"pipelineRunRef,omitempty"`
 
-    // PipelineRunStatus mirrors key PipelineRun status fields
-    PipelineRunStatus *PipelineRunStatusSummary `json:"pipelineRunStatus,omitempty"`
+    // ExecutionStatus mirrors key execution resource status fields
+    // NOTE: current code generalizes this from the Tekton-only PipelineRunStatus
+    // field to support both the Tekton and Job execution engines
+    ExecutionStatus *ExecutionStatusSummary `json:"executionStatus,omitempty"`
+
+    // Resources declares the resolved CPU/memory requests and limits for the
+    // Job engine's "workflow" container, from the DS workflow catalog
+    // (BR-WE-019 / DD-WE-008). nil when the catalog entry declares no
+    // resources (BestEffort QoS, current behavior) or for the Tekton engine.
+    // +optional
+    Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
     // FailureReason explains why execution failed (if applicable)
     // DEPRECATED: Use FailureDetails for structured failure information
@@ -385,23 +395,33 @@ const (
     FailureReasonUnknown = "Unknown"
 )
 
-// PipelineRunStatusSummary captures key PipelineRun status fields
-// Lightweight summary to avoid duplicating full Tekton status
-type PipelineRunStatusSummary struct {
-    // Status from PipelineRun (Unknown, True, False)
+// ExecutionStatusSummary captures key execution resource status fields
+// Lightweight summary for both the Tekton PipelineRun and K8s Job backends
+// NOTE: renamed from PipelineRunStatusSummary when Job-engine support was
+// added; the name and field docs below reflect current code
+type ExecutionStatusSummary struct {
+    // Status from the execution resource (Unknown, True, False)
     Status string `json:"status"`
 
-    // Reason from PipelineRun (e.g., "Succeeded", "Failed", "Running")
+    // Reason from the execution resource (e.g., "Succeeded", "Failed", "Running")
     Reason string `json:"reason,omitempty"`
 
-    // Message from PipelineRun
+    // Message from the execution resource
     Message string `json:"message,omitempty"`
 
     // CompletedTasks count
     CompletedTasks int `json:"completedTasks,omitempty"`
 
-    // TotalTasks count (from pipeline spec)
+    // TotalTasks count (from pipeline spec, or 1 for the Job engine)
     TotalTasks int `json:"totalTasks,omitempty"`
+
+    // RetryCount is the number of pod-failure attempts tolerated by
+    // PodFailurePolicy (BR-WE-019 AC10 / DD-WE-008) before the Job reached a
+    // terminal state. Captured unconditionally from job.Status.Failed
+    // (Job engine only); 0 when no pod failures occurred or for the Tekton
+    // engine (PipelineRun has no equivalent retry-tolerance mechanism).
+    // +optional
+    RetryCount int32 `json:"retryCount,omitempty"`
 }
 
 //+kubebuilder:object:root=true

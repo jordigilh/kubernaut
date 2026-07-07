@@ -473,6 +473,63 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			Expect(meta.Dependencies.ConfigMaps).To(HaveLen(1))
 		})
 	})
+
+	// ========================================
+	// DD-WE-008 / BR-WE-019: Per-workflow Job resources (Wiring Point A)
+	// ========================================
+	Context("ResolveWorkflowCatalogMetadata — resources (DD-WE-008, BR-WE-019)", func() {
+		It("UT-WE-1572-001: should return Resources populated from schema content declaring execution.resources", func() {
+			content := buildTestSchemaWithResources(&models.ResourcesSchema{
+				Requests: map[string]string{"cpu": "100m", "memory": "128Mi"},
+				Limits:   map[string]string{"cpu": "500m", "memory": "256Mi"},
+			})
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine: "job",
+					Content:         content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.Resources).ToNot(BeNil())
+			Expect(meta.Resources.Requests.Cpu().String()).To(Equal("100m"))
+			Expect(meta.Resources.Limits.Memory().String()).To(Equal("256Mi"))
+		})
+
+		It("UT-WE-1572-002: should return Resources: nil when the catalog entry declares none", func() {
+			content := buildTestSchemaWithResources(nil)
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine: "job",
+					Content:         content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			meta, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).ToNot(HaveOccurred())
+			Expect(meta.Resources).To(BeNil())
+		})
+
+		It("UT-WE-1572-003: should propagate a resources parse/validation error from the schema parser", func() {
+			content := buildTestSchemaWithResources(&models.ResourcesSchema{
+				Requests: map[string]string{"cpu": "not-a-number"},
+			})
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{
+					ExecutionEngine: "job",
+					Content:         content,
+				},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			_, err := querier.ResolveWorkflowCatalogMetadata(ctx, uuid.New().String())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("execution.resources"))
+		})
+	})
 })
 
 // buildTestSchema builds a minimal valid workflow schema YAML with the given dependencies.
@@ -498,6 +555,20 @@ func buildTestSchemaWithEngineConfig(engine string, engineConfig map[string]inte
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 	crd.Spec.Execution.EngineConfig = engineConfig
+	crd.Spec.Parameters = []models.WorkflowParameter{
+		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target ns"},
+	}
+	return testutil.MarshalWorkflowCRD(crd)
+}
+
+// buildTestSchemaWithResources builds a minimal valid "job"-engine workflow
+// schema YAML with the given execution.resources declaration (DD-WE-008,
+// BR-WE-019). A nil resources argument omits the section entirely.
+func buildTestSchemaWithResources(resources *models.ResourcesSchema) string {
+	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
+	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
+	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.Resources = resources
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target ns"},
 	}

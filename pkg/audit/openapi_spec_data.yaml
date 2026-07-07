@@ -4480,6 +4480,12 @@ components:
             type: string
           description: Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.3 chain of custody.
 
+        # Retry Completeness (BR-WE-019 AC10 / DD-WE-008)
+        retry_count:
+          type: integer
+          description: Number of pod-failure attempts tolerated by PodFailurePolicy before the Job engine execution reached a terminal state (Job engine only). Present only when greater than 0. SOC2 CC8.1 / AU-3 audit completeness for tolerated transient failures.
+          example: 2
+
     # ========================================
     # Webhooks Audit Payloads
     # From: pkg/authwebhook/audit_types.go
