@@ -335,16 +335,33 @@ than discards) the `ResilientClient`/`ClusterRegistry` object on initial connect
 `Gate` has something to keep probing/retrying instead of the client being silently lost with no path
 back to healthy short of a pod restart.
 
-**Known limitation (tracked separately, not fixed by #1553): ACM backend auth gap (#1556).**
-`pkg/fleet/acm.Client` (`fleet.backend: "acm"`) has never actually sent the `Authorization: Bearer
-<token>` header the real ACM Search API (`stolostron/search-v2-api`) mandatorily requires — despite
-this being spec'd earlier in this ADR (`fleet.acm.tokenSecretRef`, see the ACM Search Production Setup
-Guide below). This is a pre-existing gap, not introduced by #1553. Before #1553, it was silently
-invisible: `IsManagedResource` fail-safe-swallows the resulting 401 into `(false, nil)`. **After
-#1553, any deployment with `fleet.backend: "acm"` will have `/readyz` permanently stuck at
-`NotReady`** (the new `ScopeCheckerProber`'s `Ping` call will always 401) until #1556 is fixed. No
-default deployment is affected (`backend` defaults to `""`, i.e. the FMC path), but operators who have
-configured the ACM backend per this ADR's own setup guide should track #1556.
+**Resolved: ACM backend auth gap (#1556).** `pkg/fleet/acm.Client` (`fleet.backend: "acm"`) never
+actually sent the `Authorization: Bearer <token>` header the real ACM Search API
+(`stolostron/search-v2-api`) mandatorily requires, despite this being spec'd earlier in this ADR
+(see the ACM Search Production Setup Guide below). This was a pre-existing gap, not introduced by
+#1553. Before #1553, it was silently invisible: `IsManagedResource` fail-safe-swallowed the
+resulting 401 into `(false, nil)`. After #1553 and before this fix, any deployment with
+`fleet.backend: "acm"` would have had `/readyz` permanently stuck at `NotReady` (the
+`ScopeCheckerProber`'s `Ping` call always 401'd).
+
+Fixed by composing `pkg/shared/auth.AuthTransport` (the same reusable OAuth2/bearer-token
+`http.RoundTripper` used elsewhere in Fleet) over the ACM client's HTTP transport in
+`pkg/fleet/scope_factory.go`, reading the token from `FleetConfig.TokenPath`.
+`FleetConfig.Validate()` now hard-requires `TokenPath` when `Backend == "acm"`, so a
+misconfigured deployment fails fast at startup instead of silently sending unauthenticated
+requests. A live-cluster spike against ACM 2.16.2 (2026-07-07) also surfaced and fixed a second,
+related defect: `acm.Client.Ping()` sent an empty search filter, which real ACM Search rejects
+with a GraphQL-level error (HTTP 200 with a populated `errors` array) — this alone would have kept
+`/readyz` stuck at `NotReady` even with correct auth. `Ping()` now sends a syntactically valid,
+always-satisfiable `kind=Namespace` filter. See `pkg/fleet/acm/client_test.go` (`UT-ACM-054-013`)
+and `test/integration/acm/acm_factory_test.go` (`IT-ACM-054-002` through `IT-ACM-054-004`).
+
+Both fixes were confirmed end-to-end against the live ACM 2.16.2 instance — not just the
+unit/integration mocked-server tests — by running `fleet.NewScopeChecker()` (the exact production
+factory GW/RO call at startup) from inside a cluster pod with a real bearer token and TLS CA,
+exercising `Ping()` and `IsManagedResource()` against the real Search API. See
+[`docs/spikes/multi-cluster-mcp-gateway/spike-acm-search/README.md`](../../spikes/multi-cluster-mcp-gateway/spike-acm-search/README.md#post-1556-fix-production-go-client-validation-2026-07-07)
+for the full method and results.
 
 ## Implementation Status
 
@@ -363,7 +380,7 @@ configured the ACM backend per this ADR's own setup guide should track #1556.
 | EM Fleet Routing | EM target-read routing via ReaderFactory (BR-FLEET-054) | Complete |
 | AF Fleet Routing | AF kubectl_get/kubectl_list ResourceReader abstraction + list_clusters tool (BR-FLEET-054) | Complete |
 | Fleet Readiness Gate | Fail-closed, pod-wide `/readyz` for runtime Fleet dependency unreachability across all 7 services (#1553) | Complete |
-| ACM bearer-token auth | `acm.Client` authentication per this ADR's `fleet.acm.tokenSecretRef` spec | Planned (#1556) |
+| ACM bearer-token auth | `acm.Client` authentication via `auth.AuthTransport` + `FleetConfig.TokenPath` (hard-required by `Validate()` when backend=acm) | Complete (#1556) |
 | GatewayDiscoverer | Two-phase tool discovery (`list_clusters`/`list_tools_for_cluster`) with Kuadrant and EAIGW implementations | Planned (v1.6) |
 | Rancher Adapter | Rancher v3 API adapter for cluster discovery and scope checks | Planned (v1.6) |
 | Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
@@ -828,7 +845,7 @@ query listClusters($input: [SearchInput]) {
 | **TLS** | The `search-search-api` Service uses TLS with certificates issued by `openshift-service-serving-signer`. For in-cluster access, inject the CA bundle via a ConfigMap with `service.beta.openshift.io/inject-cabundle: "true"` annotation and mount it into the Kubernaut pod. For cross-cluster, export the CA and mount it as a Secret. |
 | **Authentication** | ACM Search enforces K8s authentication. Kubernaut needs a bearer token from a ServiceAccount on the ACM hub, passed as `Authorization: Bearer <token>`. |
 | **Network policy** | Kubernaut pods (GW, RO) must reach the `search-search-api` Service on port 4010. If NetworkPolicies are enforced, add an egress rule from `kubernaut-system` to `open-cluster-management` namespace. |
-| **Kubernaut config** | `fleet.backend: "acm"`, `fleet.endpoint: "https://search-search-api.open-cluster-management.svc:4010"`. If cross-cluster: `fleet.acm.tokenSecretRef: "acm-search-token"`, `fleet.acm.caBundle: "/etc/kubernaut/acm-ca/ca.crt"`. |
+| **Kubernaut config** | `fleet.backend: "acm"`, `fleet.endpoint: "https://search-search-api.open-cluster-management.svc:4010"`, `fleet.tokenPath: "/etc/<service>/acm-search-token/token"` (mandatory; `Validate()` rejects backend=acm without it). Set via the Helm value `<service>.fleet.tokenSecretRef: "acm-search-token"`, which mounts the named Secret and renders `fleet.tokenPath` accordingly. If cross-cluster TLS: `fleet.tlsCAFile: "/etc/kubernaut/acm-ca/ca.crt"`. |
 
 #### ACM Search Production Setup Guide
 
@@ -1023,7 +1040,7 @@ data: {}
 ```
 
 Mount this ConfigMap in the Kubernaut pod and configure
-`fleet.acm.caBundle: "/etc/kubernaut/acm-ca/service-ca.crt"`.
+`fleet.tlsCAFile: "/etc/kubernaut/acm-ca/service-ca.crt"`.
 
 **Verification**
 

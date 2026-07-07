@@ -256,6 +256,49 @@ var _ = Describe("ACM Search GraphQL Client (BR-INTEGRATION-065, ADR-068)", func
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("unauthorized"))
 		})
+
+		// #1556 spike (2026-07-07, live ACM 2.16.2 on OCP): a real ACM Search
+		// backend rejects an empty/nil filter set with a GraphQL business error
+		// ("query input must contain a filter or keyword") — HTTP 200, but a
+		// non-empty errors array — REGARDLESS of authentication success. Ping's
+		// query must therefore carry a filter that is always syntactically valid
+		// and satisfiable on every real ACM hub (kind=Namespace is always
+		// indexed), or the readiness gate would permanently report the ACM
+		// backend as NotReady even when it is perfectly healthy.
+		It("UT-ACM-054-013 [SC-7]: Ping sends a non-empty filter, not an empty/nil filter set real ACM Search rejects", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				var req map[string]interface{}
+				_ = json.Unmarshal(body, &req)
+				vars, _ := req["variables"].(map[string]interface{})
+				inputs, _ := vars["input"].([]interface{})
+
+				hasFilter := false
+				if len(inputs) > 0 {
+					if input, ok := inputs[0].(map[string]interface{}); ok {
+						if filters, ok := input["filters"].([]interface{}); ok && len(filters) > 0 {
+							hasFilter = true
+						}
+					}
+				}
+
+				w.Header().Set("Content-Type", "application/json")
+				if !hasFilter {
+					// Mirrors real ACM Search v2.16.2's rejection of empty/nil
+					// filter sets, confirmed against a live cluster.
+					_, _ = w.Write([]byte(`{"errors":[{"message":"query input must contain a filter or keyword"}],"data":{"searchResult":[{"count":null}]}}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0}]}}`))
+			}))
+			client = acm.NewClient(server.URL)
+
+			err := client.Ping(context.Background())
+			Expect(err).ToNot(HaveOccurred(),
+				"SC-7: Ping must send a syntactically valid, always-satisfiable filter "+
+					"so a healthy, fully-authenticated ACM Search backend is correctly "+
+					"reported as ready, not rejected for an invalid query shape")
+		})
 	})
 
 	Describe("UT-ACM-TLS [SC-8]: TLS transport security", func() {

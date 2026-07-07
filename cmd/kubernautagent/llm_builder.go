@@ -116,6 +116,7 @@ func anthropicReasoningOptions(cfg types.LLMConfig) []anthropicfamily.Option {
 	return []anthropicfamily.Option{anthropicfamily.WithReasoning(llm.ReasoningRequest{
 		Enabled:      true,
 		BudgetTokens: cfg.Reasoning.BudgetTokens,
+		Effort:       cfg.Reasoning.Effort,
 	})}
 }
 
@@ -139,14 +140,15 @@ func buildOpenAICompatClient(cfg types.LLMConfig) (llm.Client, error) {
 	}
 
 	opts := []kaopenai.Option{kaopenai.WithHTTPClient(httpClient)}
-	// Only CapabilityOverride is threaded here — the OpenAI Chat Completions
-	// wire protocol has no request-side "enable reasoning" field (unlike
-	// Anthropic's "thinking" param, see anthropicReasoningOptions above).
-	// cfg.Reasoning.Enabled/BudgetTokens are intentionally NOT read: reasoning
-	// capture for this family is unconditional and model-driven (DeepSeek
-	// -reasoner-class models always emit reasoning_content; see
-	// openaicompat's AC3 "always capture" behavior). CapabilityOverride only
-	// controls DetectReasoningMode's replay-mode auto-detection.
+	// CapabilityOverride only controls DetectReasoningMode's replay-mode
+	// auto-detection — reasoning-content CAPTURE for this family is
+	// unconditional and model-driven (DeepSeek-reasoner-class models always
+	// emit reasoning_content; see openaicompat's AC3 "always capture"
+	// behavior), so Enabled/BudgetTokens are never read for that purpose.
+	// BudgetTokens has no OpenAI-Chat-Completions equivalent (no
+	// token-budget concept in "reasoning_effort") and stays Anthropic-only.
+	// Effort DOES have a real wire equivalent here (#1604's
+	// reasoning_effort request-side control) — see openaiReasoningOptions.
 	if cfg.Reasoning != nil && cfg.Reasoning.CapabilityOverride != "" {
 		opts = append(opts, kaopenai.WithCapabilityOverride(cfg.Reasoning.CapabilityOverride))
 	}
@@ -157,8 +159,25 @@ func buildOpenAICompatClient(cfg types.LLMConfig) (llm.Client, error) {
 	if cfg.AzureAPIVersion != "" {
 		opts = append(opts, kaopenai.WithAzureAPIVersion(cfg.AzureAPIVersion))
 	}
+	opts = append(opts, openaiReasoningOptions(cfg)...)
 
 	return kaopenai.New(cfg.Model, cfg.Endpoint, cfg.APIKey, opts...), nil
+}
+
+// openaiReasoningOptions maps the operator's ai.llm.reasoning.effort config
+// into a kaopenai.WithReasoning construction option (#1604), resolved once
+// here rather than threaded per-call from investigator business logic
+// (DD-HAPI-019), mirroring anthropicReasoningOptions above. Unlike that
+// function, BudgetTokens is not passed through: it has no
+// OpenAI-Chat-Completions wire equivalent.
+func openaiReasoningOptions(cfg types.LLMConfig) []kaopenai.Option {
+	if cfg.Reasoning == nil || !cfg.Reasoning.Enabled {
+		return nil
+	}
+	return []kaopenai.Option{kaopenai.WithReasoning(llm.ReasoningRequest{
+		Enabled: true,
+		Effort:  cfg.Reasoning.Effort,
+	})}
 }
 
 // buildTransportChain composes the HTTP transport stack from the merged config,

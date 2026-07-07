@@ -467,7 +467,7 @@ cluster's other known peers.
 | `gateway.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
 | `gateway.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
 | `gateway.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
-| `gateway.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Not yet functional** — pre-wires the Helm side ahead of [Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556), which adds the Go-side `FleetConfig` support to actually send it. | `""` |
+| `gateway.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — GW fails `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)). | `""` |
 
 ### RemediationOrchestrator
 
@@ -476,7 +476,7 @@ cluster's other known peers.
 | `remediationorchestrator.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
 | `remediationorchestrator.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
 | `remediationorchestrator.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
-| `remediationorchestrator.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Not yet functional** — pre-wires the Helm side ahead of [Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556), which adds the Go-side `FleetConfig` support to actually send it. | `""` |
+| `remediationorchestrator.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — RO fails `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)). | `""` |
 
 ### EffectivenessMonitor
 

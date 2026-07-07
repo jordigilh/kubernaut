@@ -108,4 +108,4 @@ subjects:
 #     service.beta.openshift.io/inject-cabundle: "true"
 # data: {}
 #
-# Mount it and set fleet.acm.caBundle to the injected CA path.
+# Mount it and set fleet.tlsCAFile to the injected CA path.

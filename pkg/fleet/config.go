@@ -66,7 +66,7 @@ type FleetConfig struct {
 
 	// Endpoint is the service address for the chosen backend.
 	// For fmc: HTTP URL (e.g., "http://fmc.kubernaut.svc:8080")
-	// For acm: GraphQL URL (e.g., "https://search-api.open-cluster-management.svc:4010")
+	// For acm: GraphQL URL (e.g., "https://search-search-api.open-cluster-management.svc:4010")
 	Endpoint string `yaml:"endpoint,omitempty"`
 
 	// MCPGatewayEndpoint is the MCP Gateway SSE endpoint for remote K8s reads.
@@ -83,6 +83,16 @@ type FleetConfig struct {
 	// instead of InsecureSkipVerify. Typically mounted from the service-ca operator.
 	// +optional
 	TLSCAFile string `yaml:"tlsCAFile,omitempty"`
+
+	// TokenPath is the absolute path to a file containing a bearer token for
+	// authenticating to the ACM Search GraphQL API (backend=acm). ACM Search
+	// mandatorily requires bearer-token auth (#1556); without this, the ACM
+	// client silently sent unauthenticated requests. Rendered by the Helm
+	// chart from fleet.tokenSecretRef as "/etc/<service>/<tokenSecretRef>/token"
+	// (a projected Kubernetes ServiceAccount token or similar auto-rotating
+	// credential). Required when Backend=="acm"; see Validate().
+	// +optional
+	TokenPath string `yaml:"tokenPath,omitempty"`
 
 	// OAuth2 holds optional OAuth2 credentials for MCP Gateway authentication.
 	OAuth2 FleetOAuth2Config `yaml:"oauth2,omitempty"`
@@ -133,6 +143,31 @@ type MCPGatewayConfig struct {
 // (they discover clusters directly via ClusterRegistry watching Backend
 // CRDs), so requiring Backend/Endpoint whenever Enabled=true would force an
 // unused dependency on every MCPGatewayEndpoint-only deployment.
+// validateBackend checks the Backend/Endpoint scope-check adapter fields.
+// Only called when backendConfigured (Backend or Endpoint is set); split out
+// of Validate to keep its cognitive complexity manageable.
+func (c FleetConfig) validateBackend() error {
+	backend := c.effectiveBackend()
+	endpoint := c.EffectiveEndpoint()
+
+	if !supportedBackends[backend] {
+		return fmt.Errorf("fleet: unsupported backend %q; must be one of: fleetmetadatacache, acm", backend)
+	}
+
+	if endpoint == "" {
+		return fmt.Errorf("fleet: endpoint must not be empty when fleet is enabled (backend=%s)", backend)
+	}
+
+	// #1556: ACM Search mandatorily requires bearer-token auth. Without this
+	// check, GW/RO could start with backend=acm and silently send every scope
+	// check unauthenticated instead of failing closed at startup.
+	if backend == BackendACM && c.TokenPath == "" {
+		return fmt.Errorf("fleet: tokenPath is required when backend=acm (ACM Search mandatorily requires bearer-token auth)")
+	}
+
+	return nil
+}
+
 func (c FleetConfig) Validate() error {
 	if !c.Enabled {
 		return nil
@@ -141,15 +176,8 @@ func (c FleetConfig) Validate() error {
 	backendConfigured := c.Backend != "" || c.Endpoint != ""
 
 	if backendConfigured {
-		backend := c.effectiveBackend()
-		endpoint := c.EffectiveEndpoint()
-
-		if !supportedBackends[backend] {
-			return fmt.Errorf("fleet: unsupported backend %q; must be one of: fleetmetadatacache, acm", backend)
-		}
-
-		if endpoint == "" {
-			return fmt.Errorf("fleet: endpoint must not be empty when fleet is enabled (backend=%s)", backend)
+		if err := c.validateBackend(); err != nil {
+			return err
 		}
 	}
 

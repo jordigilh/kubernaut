@@ -196,7 +196,52 @@ func buildRequestBody(model string, req Request, stream bool) map[string]any {
 			"json_schema": json.RawMessage(req.ResponseSchema),
 		}
 	}
+	applyEffort(body, req.Effort, req.EffortDialect)
 	return body
+}
+
+// applyEffort maps the canonical, provider-agnostic Effort value onto the
+// wire dialect the model actually speaks (#1604). A no-op — no field is
+// added at all — when Effort is empty (the provider's own vendor default
+// applies) or EffortDialect is EffortDialectNone (the model has no
+// recognized effort knob; never send a speculative field a bare-bones
+// server might reject, the same compatibility-floor principle as
+// DetectReasoningMode).
+func applyEffort(body map[string]any, effort string, dialect EffortDialect) {
+	if effort == "" {
+		return
+	}
+	switch dialect {
+	case EffortDialectOpenAI:
+		body["reasoning_effort"] = effort
+	case EffortDialectDeepSeek:
+		applyDeepSeekEffort(body, effort)
+	}
+}
+
+// deepSeekEffortTiers downscales the canonical 6-value vocabulary onto
+// DeepSeek's own 2-tier dialect, per DeepSeek's published compatibility
+// mapping (https://api-docs.deepseek.com/guides/thinking_mode): low/medium
+// map up to high (DeepSeek's floor), xhigh maps to max (DeepSeek's
+// ceiling). "none" is handled separately below — it disables thinking
+// entirely rather than mapping to a low tier.
+var deepSeekEffortTiers = map[string]string{
+	"minimal": "high",
+	"low":     "high",
+	"medium":  "high",
+	"high":    "high",
+	"xhigh":   "max",
+}
+
+func applyDeepSeekEffort(body map[string]any, effort string) {
+	if effort == "none" {
+		body["thinking"] = map[string]any{"type": "disabled"}
+		return
+	}
+	if wireEffort, ok := deepSeekEffortTiers[effort]; ok {
+		body["reasoning_effort"] = wireEffort
+		body["thinking"] = map[string]any{"type": "enabled"}
+	}
 }
 
 // buildMessages translates the shared Message list into the OpenAI wire

@@ -448,3 +448,128 @@ phaseModels:
 		Expect(*restored.Reasoning).To(Equal(*original.Reasoning))
 	})
 })
+
+var _ = Describe("UT-SH-AI-086-016: LLMReasoningConfig.Effort — unified cross-provider effort knob (#1604)", func() {
+	It("should deserialize the effort field from YAML", func() {
+		input := `
+provider: openai
+model: gpt-5
+endpoint: "https://api.openai.com/v1"
+apiKeyFile: "/etc/credentials/openai_key"
+reasoning:
+  enabled: true
+  effort: high
+`
+		var cfg types.LLMConfig
+		Expect(yaml.Unmarshal([]byte(input), &cfg)).To(Succeed())
+		Expect(cfg.Reasoning).NotTo(BeNil())
+		Expect(cfg.Reasoning.Effort).To(Equal("high"))
+	})
+
+	It("should default Effort to empty (vendor default applies) when omitted", func() {
+		input := `
+provider: openai
+model: gpt-5
+endpoint: "https://api.openai.com/v1"
+apiKeyFile: "/etc/credentials/openai_key"
+reasoning:
+  enabled: true
+`
+		var cfg types.LLMConfig
+		Expect(yaml.Unmarshal([]byte(input), &cfg)).To(Succeed())
+		Expect(cfg.Reasoning.Effort).To(BeEmpty())
+	})
+
+	DescribeTable("Validate should accept every canonical effort value for a non-Anthropic provider",
+		func(effort string) {
+			cfg := types.LLMConfig{
+				Provider:   types.LLMProviderOpenAI,
+				Model:      "gpt-5",
+				Endpoint:   "https://api.openai.com/v1",
+				APIKeyFile: "/etc/credentials/openai_key",
+				Reasoning:  &types.LLMReasoningConfig{Enabled: true, Effort: effort},
+			}
+			Expect(cfg.Validate("llm")).To(Succeed())
+		},
+		Entry("empty (vendor default)", ""),
+		Entry("none", "none"),
+		Entry("minimal", "minimal"),
+		Entry("low", "low"),
+		Entry("medium", "medium"),
+		Entry("high", "high"),
+		Entry("xhigh", "xhigh"),
+	)
+
+	It("should reject an unrecognized effort value", func() {
+		cfg := types.LLMConfig{
+			Provider:   types.LLMProviderOpenAI,
+			Model:      "gpt-5",
+			Endpoint:   "https://api.openai.com/v1",
+			APIKeyFile: "/etc/credentials/openai_key",
+			Reasoning:  &types.LLMReasoningConfig{Enabled: true, Effort: "extreme"},
+		}
+		err := cfg.Validate("llm")
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("effort"))
+	})
+
+	DescribeTable("Validate should fail closed on effort: none for Anthropic-family providers while enabled",
+		func(provider string) {
+			cfg := types.LLMConfig{
+				Provider:       provider,
+				Model:          "claude-sonnet-4-6",
+				APIKeyFile:     "/etc/credentials/anthropic_key",
+				VertexProject:  "my-project",
+				VertexLocation: "us-central1",
+				Reasoning:      &types.LLMReasoningConfig{Enabled: true, Effort: "none"},
+			}
+			err := cfg.Validate("llm")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("effort: none"))
+			Expect(err.Error()).To(ContainSubstring("enabled: false"))
+		},
+		Entry("anthropic (native)", types.LLMProviderAnthropic),
+		Entry("vertex_ai (Claude-on-Vertex)", types.LLMProviderVertexAI),
+	)
+
+	It("should accept effort: none for Anthropic when reasoning is disabled (no contradiction)", func() {
+		cfg := types.LLMConfig{
+			Provider:   types.LLMProviderAnthropic,
+			Model:      "claude-sonnet-4-6",
+			APIKeyFile: "/etc/credentials/anthropic_key",
+			Reasoning:  &types.LLMReasoningConfig{Enabled: false, Effort: "none"},
+		}
+		Expect(cfg.Validate("llm")).To(Succeed())
+	})
+
+	It("should accept effort: xhigh for Anthropic (a ceiling clamp, not a contradiction)", func() {
+		cfg := types.LLMConfig{
+			Provider:   types.LLMProviderAnthropic,
+			Model:      "claude-sonnet-4-6",
+			APIKeyFile: "/etc/credentials/anthropic_key",
+			Reasoning:  &types.LLMReasoningConfig{Enabled: true, Effort: "xhigh"},
+		}
+		Expect(cfg.Validate("llm")).To(Succeed())
+	})
+
+	It("should round-trip Effort through YAML marshal/unmarshal unchanged", func() {
+		original := types.LLMConfig{
+			Provider: "openai_compatible",
+			Model:    "deepseek-v4-pro",
+			Endpoint: "https://api.deepseek.com",
+			Reasoning: &types.LLMReasoningConfig{
+				Enabled: true,
+				Effort:  "high",
+			},
+		}
+
+		data, err := yaml.Marshal(&original)
+		Expect(err).NotTo(HaveOccurred())
+
+		var restored types.LLMConfig
+		Expect(yaml.Unmarshal(data, &restored)).To(Succeed())
+
+		Expect(restored.Reasoning).NotTo(BeNil())
+		Expect(*restored.Reasoning).To(Equal(*original.Reasoning))
+	})
+})

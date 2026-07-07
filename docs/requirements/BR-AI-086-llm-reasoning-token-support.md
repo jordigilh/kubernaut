@@ -13,7 +13,7 @@
 - [DD-LLM-005: Model-Aware Reasoning/Thinking Token Support](../architecture/decisions/DD-LLM-005-model-aware-reasoning-support.md)
 - [DD-LLM-006: AWS Bedrock Provider Support via Dual-Client Routing](../architecture/decisions/DD-LLM-006-bedrock-dual-client-routing.md)
 
-**Related Issues**: #1578 (parent), #1580, #1581, #1582
+**Related Issues**: #1578 (parent), #1580, #1581, #1582, #1601, #1604
 
 **Note**: This requirement supersedes no prior BR. `BR-HAPI-263` (conversation continuity) describes the API surface of the deprecated Python HolmesGPT-API (HAPI) service (`InvestigateRequest.previous_messages`, `investigate_issues`/`prompt_call`) and does not apply to Kubernaut Agent (KA)'s current Go implementation. HAPI is no longer a service in Kubernaut and must not be referenced or extended by current or future work; this BR is written fresh against KA's actual `llm.Client`/`Investigator` implementation.
 
@@ -47,6 +47,12 @@ Add opt-in, model-aware reasoning/thinking token support across every LLM provid
 5. Self-hosted/custom models (served via the OpenAI-compatible client) support an explicit capability override (`auto` / `force_on` / `force_off`) since they cannot be reliably identified by vendor enum alone.
 6. Captured reasoning content is surfaced in the investigation audit trail per SOC2 CC7.2 / BR-AUDIT-005.
 7. No regression to current investigation behavior for any provider/model when reasoning is left at its default-disabled state.
+8. A single, provider-agnostic reasoning-depth knob (`LLMReasoningConfig.Effort`: `""`/`none`/`minimal`/`low`/`medium`/`high`/`xhigh`) controls how hard the model thinks, mapped into each client's own wire dialect (issue #1604):
+   - Anthropic (native/Vertex): maps onto `genai.ThinkingLevel` via the shared `adk-anthropic-go/converters` mapping (DD-LLM-005), surfacing the resulting `output_config.effort` hint on adaptive-capable models.
+   - Real OpenAI/Azure o-series and gpt-5-family models: passed through verbatim as Chat Completions' `reasoning_effort` field.
+   - DeepSeek (openai_compatible): downscaled to DeepSeek's own two-tier dialect (`high`/`max`) plus an explicit thinking-enabled/disabled toggle.
+   - An explicit `BudgetTokens` always wins over `Effort` for Anthropic (an exact-value power-user override). `effort: none` combined with `enabled: true` for an Anthropic-family provider is rejected at config validation (fail-closed, not silently reinterpreted) — Anthropic's wire concept for "reasoning enabled, zero effort" is achievable but a contradictory pairing for operator-facing config clarity. Leaving `Effort` unset applies the provider's own vendor default (OpenAI/DeepSeek) or the pre-#1604 High-tier default (Anthropic).
+   - AF's OpenAI-compatible adapter (`pkg/apifrontend/launcher/openai`) carries the same `Effort` knob at parity with KA, via the identical shared `pkg/shared/llm/openaicompat` dialect detection/mapping — construction-time only (no per-call override, since ADK's `model.LLMRequest` has no reasoning field). AF's Anthropic/Vertex path (`adk-anthropic-go`) has no reasoning/effort support at all — a known, separately-tracked gap (DD-LLM-007), not addressed by issue #1604.
 
 ---
 

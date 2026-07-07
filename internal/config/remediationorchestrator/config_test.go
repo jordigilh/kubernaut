@@ -93,4 +93,24 @@ var _ = Describe("BR-FLEET-054/ADR-068: Fleet full-federation validation", func(
 
 		Expect(cfg.Validate()).ToNot(HaveOccurred())
 	})
+
+	// #1556: proves the ACM bearer-token hard-require (FleetConfig.Validate,
+	// UT-FLEET-CFG-070) is actually reachable from RO's own production
+	// Validate() chain (internal/config/remediationorchestrator/config.go ->
+	// c.Fleet.Validate()) — not just from FleetConfig in isolation.
+	It("[UT-RO-FLEET-005] should reject backend=acm with no tokenPath through RO's own Validate() chain", func() {
+		cfg := config.DefaultConfig()
+		cfg.Fleet = fleet.FleetConfig{
+			Enabled:            true,
+			Backend:            "acm",
+			Endpoint:           "https://search-api:4010",
+			MCPGatewayEndpoint: "http://mcp-gateway:8080/mcp",
+			MCPGatewayType:     fleet.GatewayEAIGW,
+		}
+
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred(),
+			"AC-4/IA-5: RO must fail to start with an ACM backend that has no bearer token configured")
+		Expect(err.Error()).To(ContainSubstring("tokenPath"))
+	})
 })

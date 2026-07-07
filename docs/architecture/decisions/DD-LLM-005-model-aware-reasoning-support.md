@@ -4,7 +4,7 @@
 **Priority**: P2
 **Owner**: KubernautAgent Team
 **Scope**: `pkg/kubernautagent/llm/types.go`, `pkg/kubernautagent/llm/anthropicfamily`, `pkg/kubernautagent/llm/openai`, `pkg/shared/llm/openaicompat`, `pkg/shared/types/llm.go`
-**Related**: [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), [DD-LLM-004](./DD-LLM-004-langchaingo-removal-generalized-clients.md), [DD-HAPI-019](./DD-HAPI-019-go-rewrite-design), Issue #1578, #1580, #1581
+**Related**: [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), [DD-LLM-004](./DD-LLM-004-langchaingo-removal-generalized-clients.md), [DD-HAPI-019](./DD-HAPI-019-go-rewrite-design), Issue #1578, #1580, #1581, #1601, #1604
 
 ---
 
@@ -83,12 +83,23 @@ type ChatOptions struct {
     Reasoning *ReasoningRequest `json:"reasoning,omitempty"`
 }
 type ReasoningRequest struct {
-    Enabled      bool `json:"enabled,omitempty"`
-    BudgetTokens int  `json:"budget_tokens,omitempty"`
+    Enabled      bool   `json:"enabled,omitempty"`
+    BudgetTokens int    `json:"budget_tokens,omitempty"`
+    Effort       string `json:"effort,omitempty"` // "", none/minimal/low/medium/high/xhigh (#1604)
 }
 ```
 
 Reasoning is resolved once at client-construction time (auto-detect from model name + `LLMReasoningConfig.CapabilityOverride`), never threaded per-call from the investigator — `internal/kubernautagent/investigator/*` remains completely unaware of reasoning.
+
+### Addendum (#1604): unified `Effort` knob
+
+`Effort` is a single, provider-agnostic reasoning-depth value using OpenAI's own vocabulary (the vendor with the widest tier granularity), reused as the canonical form for every provider rather than exposing a separate per-provider knob — the same "one config surface, provider-specific mapping under the hood" pattern this DD already established for `ReasoningMode`/`DetectReasoningMode`. Each client maps/clamps it into its own wire dialect:
+
+- **Anthropic (native/Vertex)**: mapped onto `genai.ThinkingLevel` and passed through the same `converters.ThinkingConfigToAnthropic` call this DD already reuses — the effort hint (`ThinkingMapping.Effort`, Anthropic's `output_config.effort`) that call already computed for adaptive-capable models but which was previously discarded is now applied. `xhigh` clamps to `High`: `genai.ThinkingLevel` has no tier above High, even though Anthropic's raw `OutputConfigEffort` enum does (up to `max`) — staying within the shared converter's intermediate representation was chosen over hand-mapping a second, independently-maintained table straight to the SDK's fuller enum, consistent with this DD's Alternative-B rationale.
+- **Real OpenAI/Azure o-series and gpt-5-family models**: passed through verbatim as Chat Completions' `reasoning_effort` field (`pkg/shared/llm/openaicompat`'s new `EffortDialectOpenAI`).
+- **DeepSeek (openai_compatible)**: downscaled to DeepSeek's own two-tier dialect (`high`/`max`) plus an explicit `thinking.type` enabled/disabled toggle (`EffortDialectDeepSeek`).
+- **`effort: none` + `enabled: true` for an Anthropic-family provider is a config-validation error (fail-closed at startup)**, not a runtime clamp — a deliberate exception to this DD's own compatibility-floor/graceful-degrade principle, because this is a known, deterministic operator-facing contradiction on a provider always identified by vendor enum, not an unknown-capability case the floor principle is meant to cover.
+- **AF's OpenAI-compatible adapter (`pkg/apifrontend/launcher/openai`) gets the same Effort knob**, via a construction-time-only `WithReasoningEffort` option wired from `cfg.Reasoning.Effort` in `pkg/apifrontend/launcher/model.go`'s `newOpenAICompatibleModel` — the openai/deepseek dialect detection and wire mapping are the exact same `pkg/shared/llm/openaicompat` code KA's wrapper calls, so there is no drift risk between the two call sites. Unlike KA's `Options.Reasoning`, AF has no per-call override: ADK's `model.LLMRequest` carries no reasoning field, so the construction-time default is the only knob for this family, consistent with AF's existing reasoning-capture wiring (`DetectReasoningMode`) having no per-call override either. AF's Anthropic/Vertex path (via `adk-anthropic-go`) still has no reasoning/effort support at all — that gap remains tracked separately in DD-LLM-007, unaffected by this addendum.
 
 ## Consequences
 

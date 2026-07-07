@@ -26,6 +26,8 @@ type Model struct {
 	name          string
 	client        *openaicompat.Client
 	reasoningMode openaicompat.ReasoningMode
+	effortDialect openaicompat.EffortDialect
+	effort        string
 }
 
 // Option configures the Model.
@@ -34,6 +36,7 @@ type Option func(*modelOpts)
 type modelOpts struct {
 	httpClient      *http.Client
 	azureAPIVersion string
+	effort          string
 }
 
 // WithHTTPClient injects a custom HTTP client for transport chain support.
@@ -54,10 +57,26 @@ func WithAzureAPIVersion(apiVersion string) Option {
 	}
 }
 
+// WithReasoningEffort sets the construction-time reasoning-depth value
+// (#1604's unified Effort knob — one of "", "none", "minimal", "low",
+// "medium", "high", "xhigh"). Unlike KA's kaopenai.WithReasoning, there is
+// no per-call override here: ADK's model.LLMRequest carries no reasoning
+// field, so this is the only knob (DD-LLM-005 addendum). An empty value
+// (the default) sends no effort parameter at all — the provider's own
+// vendor default applies, matching KA's zero-regression behavior.
+func WithReasoningEffort(effort string) Option {
+	return func(o *modelOpts) {
+		o.effort = effort
+	}
+}
+
 // NewModel creates a new OpenAI-compatible model adapter. The reasoning
 // round-trip mode is auto-detected from modelName (BR-AI-086, DD-LLM-005) —
 // unrecognized models default to no reasoning capture/replay, preserving
-// today's behavior exactly for every currently-configured model.
+// today's behavior exactly for every currently-configured model. The effort
+// wire dialect is likewise auto-detected (#1604); WithReasoningEffort's
+// value is only ever sent for a recognized dialect (see applyEffort in the
+// shared openaicompat package).
 func NewModel(modelName, endpoint, apiKey string, opts ...Option) *Model {
 	o := &modelOpts{}
 	for _, opt := range opts {
@@ -76,6 +95,8 @@ func NewModel(modelName, endpoint, apiKey string, opts ...Option) *Model {
 		name:          modelName,
 		client:        openaicompat.New(modelName, endpoint, apiKey, clientOpts...),
 		reasoningMode: openaicompat.DetectReasoningMode(modelName, ""),
+		effortDialect: openaicompat.DetectEffortDialect(modelName),
+		effort:        o.effort,
 	}
 }
 
@@ -111,6 +132,10 @@ func (m *Model) buildRequest(req *model.LLMRequest) openaicompat.Request {
 	compatReq := openaicompat.Request{
 		Model:         m.name,
 		ReasoningMode: m.reasoningMode,
+	}
+	if m.effort != "" {
+		compatReq.Effort = m.effort
+		compatReq.EffortDialect = m.effortDialect
 	}
 
 	if req.Config != nil && req.Config.SystemInstruction != nil {

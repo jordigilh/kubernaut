@@ -78,11 +78,55 @@ type LLMConfig struct {
 type LLMReasoningConfig struct {
 	Enabled      bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	BudgetTokens int  `yaml:"budgetTokens,omitempty" json:"budgetTokens,omitempty"`
+	// Effort is a unified, provider-agnostic reasoning-depth knob (#1604):
+	// one of "" (unset — no effort parameter sent, the provider's own
+	// vendor default applies), "none", "minimal", "low", "medium", "high",
+	// or "xhigh". The same value means the same thing regardless of which
+	// provider is configured — switching providers never requires
+	// re-tuning this field — but each client maps/clamps it into its own
+	// wire dialect:
+	//   - Anthropic (native/Vertex): maps to genai.ThinkingLevel tiers.
+	//     "xhigh" clamps to "high" (Anthropic's ceiling — a range clamp,
+	//     not a contradiction). "none" while Enabled is a genuine
+	//     contradiction (Anthropic has no "thinking enabled with zero
+	//     effort" state) and is rejected by Validate rather than silently
+	//     reinterpreted — see validateReasoning.
+	//   - Real OpenAI/Azure o-series & gpt-5 models: passed through
+	//     verbatim as the wire "reasoning_effort" value.
+	//   - DeepSeek (openai_compatible): downscaled to DeepSeek's own
+	//     two-tier dialect ("high"/"max" plus a separate thinking-enabled
+	//     toggle), per DeepSeek's own compatibility mapping.
+	//   - BudgetTokens, when set, always wins over Effort for Anthropic
+	//     (an exact-value power-user override); Effort is otherwise
+	//     ignored where a provider has no effort-dial concept at all.
+	Effort string `yaml:"effort,omitempty" json:"effort,omitempty"`
 	// CapabilityOverride short-circuits vendor/model-name auto-detection for
 	// self-hosted/custom models served via the OpenAI-compatible client,
 	// which cannot be reliably identified by vendor enum alone (AC5).
 	// One of "auto" (default), "force_on", or "force_off".
 	CapabilityOverride string `yaml:"capabilityOverride,omitempty" json:"capabilityOverride,omitempty"`
+}
+
+// validReasoningEfforts is the canonical, provider-agnostic effort
+// vocabulary (#1604). Empty string means "unset" and is always valid
+// (vendor default applies).
+var validReasoningEfforts = map[string]bool{
+	"":        true,
+	"none":    true,
+	"minimal": true,
+	"low":     true,
+	"medium":  true,
+	"high":    true,
+	"xhigh":   true,
+}
+
+// anthropicFamilyProviders are the providers routed to the Anthropic
+// thinking API (native and Vertex-hosted Claude) — see
+// cmd/kubernautagent/llm_builder.go's provider dispatch, which sends both
+// through anthropicfamily.Client.
+var anthropicFamilyProviders = map[string]bool{
+	LLMProviderAnthropic: true,
+	LLMProviderVertexAI:  true,
 }
 
 // LLMOAuth2Config holds OAuth2 client credentials for auth-gated LLM gateways.
@@ -179,7 +223,36 @@ func (c *LLMConfig) Validate(prefix string) error {
 	if err := c.validateCircuitBreaker(prefix); err != nil {
 		return err
 	}
+	if err := c.validateReasoning(prefix); err != nil {
+		return err
+	}
 	return c.validatePhaseModels(prefix)
+}
+
+// validateReasoning checks Reasoning.Effort against the canonical
+// provider-agnostic vocabulary and fails closed on a known contradiction:
+// "none" while Enabled for an Anthropic-family provider, which has no
+// "thinking enabled with zero effort" wire state (#1604). This is
+// deliberately NOT the same as the compatibility-floor graceful-degrade
+// principle (DD-LLM-005) — that principle covers models/providers we
+// cannot possibly identify; this is a known, deterministic contradiction
+// on a provider we always recognize, so it must be observable at startup
+// rather than silently reinterpreted at runtime.
+func (c *LLMConfig) validateReasoning(prefix string) error {
+	if c.Reasoning == nil {
+		return nil
+	}
+	if !validReasoningEfforts[c.Reasoning.Effort] {
+		return fmt.Errorf("%s.reasoning.effort must be one of \"\", \"none\", \"minimal\", \"low\", \"medium\", \"high\", \"xhigh\"; got %q",
+			prefix, c.Reasoning.Effort)
+	}
+	if c.Reasoning.Enabled && c.Reasoning.Effort == "none" && anthropicFamilyProviders[c.Provider] {
+		return fmt.Errorf("%s.reasoning: effort: none is not supported for provider %q while reasoning is enabled "+
+			"(Anthropic has no \"thinking enabled with zero effort\" state); use enabled: false to fully disable "+
+			"reasoning, or effort: minimal for Anthropic's lowest real tier",
+			prefix, c.Provider)
+	}
+	return nil
 }
 
 // validateProviderAndModel checks that Provider is one of the supported enum
