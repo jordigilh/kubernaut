@@ -41,11 +41,20 @@ type LLMConfig struct {
 	APIKeyFile      string                  `yaml:"apiKeyFile,omitempty"`
 	VertexProject   string                  `yaml:"vertexProject,omitempty"`
 	VertexLocation  string                  `yaml:"vertexLocation,omitempty"`
-	// AzureAPIVersion and BedrockRegion are parsed but currently NOT consumed
-	// by either AF's or KA's LLM client dispatch (#1600, #1582 respectively).
-	// The "azure" and "bedrock" Provider values are rejected at client
-	// construction until those issues land. Retained here (rather than
-	// removed) because both are the intended re-entry point once wired.
+	// AzureAPIVersion, when non-empty, switches provider: openai/
+	// openai_compatible into Azure OpenAI mode for both AF and KA (#1600):
+	// the shared openaicompat client uses Azure's deployment-scoped URL
+	// (Model doubles as the Azure deployment ID, Azure's own convention)
+	// plus this api-version query parameter, and api-key auth instead of
+	// Authorization: Bearer. There is no separate "azure" Provider value —
+	// matching this field's pre-langchaingo-removal behavior, which was
+	// layered the same way on top of the OpenAI backend.
+	//
+	// BedrockRegion is parsed but currently NOT consumed by either AF's or
+	// KA's LLM client dispatch (#1582). The "bedrock" Provider value is
+	// rejected at client construction until that issue lands. Retained
+	// here (rather than removed) because it is the intended re-entry point
+	// once wired.
 	AzureAPIVersion string                  `yaml:"azureApiVersion,omitempty"`
 	BedrockRegion   string                  `yaml:"bedrockRegion,omitempty"`
 	Temperature     *float64                `yaml:"temperature,omitempty"`

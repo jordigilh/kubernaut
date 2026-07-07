@@ -31,8 +31,8 @@ import (
 	"google.golang.org/genai"
 
 	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
-	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	openaimodel "github.com/jordigilh/kubernaut/pkg/apifrontend/launcher/openai"
+	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -207,6 +207,14 @@ func newOpenAICompatibleModel(cfg types.LLMConfig) (model.LLM, error) {
 	}
 	if httpClient != nil {
 		opts = append(opts, openaimodel.WithHTTPClient(httpClient))
+	}
+	// AzureAPIVersion is the sole detection signal for Azure OpenAI (#1600)
+	// — there is no separate "azure" provider enum value; Azure is layered
+	// on top of provider: openai/openai_compatible, matching KA's dispatch
+	// (cmd/kubernautagent/llm_builder.go's buildOpenAICompatClient). Net-new
+	// capability for AF — it never had Azure support before.
+	if cfg.AzureAPIVersion != "" {
+		opts = append(opts, openaimodel.WithAzureAPIVersion(cfg.AzureAPIVersion))
 	}
 
 	return openaimodel.NewModel(cfg.Model, cfg.Endpoint, cfg.APIKey, opts...), nil

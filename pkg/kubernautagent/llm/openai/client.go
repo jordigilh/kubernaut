@@ -46,6 +46,7 @@ type Option func(*clientOpts)
 type clientOpts struct {
 	httpClient         *http.Client
 	capabilityOverride string
+	azureAPIVersion    string
 }
 
 // WithHTTPClient injects a custom HTTP client for transport chain support
@@ -72,6 +73,14 @@ func WithCapabilityOverride(override string) Option {
 	return func(o *clientOpts) { o.capabilityOverride = override }
 }
 
+// WithAzureAPIVersion switches this client into Azure OpenAI mode (#1600):
+// the underlying openaicompat.Client uses Azure's deployment-scoped URL
+// (model doubles as deployment ID) and api-key auth instead of the flat
+// OpenAI path and Bearer auth. See openaicompat.WithAzureAPIVersion.
+func WithAzureAPIVersion(apiVersion string) Option {
+	return func(o *clientOpts) { o.azureAPIVersion = apiVersion }
+}
+
 // New creates a Client for the given model and OpenAI-Chat-Completions-
 // compatible endpoint. The reasoning round-trip mode is auto-detected from
 // model (BR-AI-086, DD-LLM-005) unless overridden.
@@ -84,6 +93,9 @@ func New(model, endpoint, apiKey string, opts ...Option) *Client {
 	var compatOpts []openaicompat.Option
 	if o.httpClient != nil {
 		compatOpts = append(compatOpts, openaicompat.WithHTTPClient(o.httpClient))
+	}
+	if o.azureAPIVersion != "" {
+		compatOpts = append(compatOpts, openaicompat.WithAzureAPIVersion(o.azureAPIVersion))
 	}
 
 	return &Client{

@@ -150,6 +150,13 @@ func buildOpenAICompatClient(cfg types.LLMConfig) (llm.Client, error) {
 	if cfg.Reasoning != nil && cfg.Reasoning.CapabilityOverride != "" {
 		opts = append(opts, kaopenai.WithCapabilityOverride(cfg.Reasoning.CapabilityOverride))
 	}
+	// AzureAPIVersion is the sole detection signal for Azure OpenAI (#1600)
+	// — there is no separate "azure" provider enum value, matching the
+	// pre-langchaingo-removal behavior this restores: Azure is layered on
+	// top of provider: openai/openai_compatible, not a distinct provider.
+	if cfg.AzureAPIVersion != "" {
+		opts = append(opts, kaopenai.WithAzureAPIVersion(cfg.AzureAPIVersion))
+	}
 
 	return kaopenai.New(cfg.Model, cfg.Endpoint, cfg.APIKey, opts...), nil
 }

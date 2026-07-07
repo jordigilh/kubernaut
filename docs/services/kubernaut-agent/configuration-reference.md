@@ -113,8 +113,8 @@ YAML path: `ai`
 
 | YAML key | Type | Default | Validation | Description |
 |----------|------|---------|------------|-------------|
-| `provider` | string | `openai` | Used with `LLMRuntimeConfig.Validate`; rejected at client construction (`os.Exit` at startup) unless one of `openai`, `anthropic`, `vertex_ai`, `openai_compatible` | Provider id. **`bedrock` and `azure` are NOT currently supported** (tracked in #1582, #1600 respectively — do not configure these). Mistral, Ollama, HuggingFace TGI, and self-hosted vLLM/LlamaStack are reached via `openai_compatible` + `endpoint`, not a dedicated provider string. |
-| `azureApiVersion` | string | (empty) | None | Reserved for future Azure OpenAI support (#1600). **Not currently consumed by any code path.** |
+| `provider` | string | `openai` | Used with `LLMRuntimeConfig.Validate`; rejected at client construction (`os.Exit` at startup) unless one of `openai`, `anthropic`, `vertex_ai`, `openai_compatible` | Provider id. **`bedrock` is NOT currently supported** (tracked in #1582 — do not configure it). Mistral, Ollama, HuggingFace TGI, and self-hosted vLLM/LlamaStack are reached via `openai_compatible` + `endpoint`, not a dedicated provider string. Azure OpenAI is reached via `openai`/`openai_compatible` + `azureApiVersion` below — there is no dedicated `azure` provider string (#1600). |
+| `azureApiVersion` | string | (empty) | None | Azure OpenAI API version (e.g. `2024-10-21`). When non-empty, switches the outgoing request to Azure's deployment-scoped URL (`model` above doubles as the Azure deployment ID) and `api-key` header auth instead of `Authorization: Bearer` (#1600). |
 | `vertexProject` | string | (empty) | None | GCP project for the `vertex_ai` provider. |
 | `vertexLocation` | string | (empty) | None | GCP region for the `vertex_ai` provider. |
 | `bedrockRegion` | string | (empty) | None | Reserved for future Bedrock support (#1582). **Not currently consumed by any code path.** |
@@ -174,9 +174,9 @@ YAML path: `ai`
 
 **Supported today**: `openai`, `anthropic`, `vertex_ai`, `openai_compatible`.
 
-**Not currently supported** (accepted by `LLMRuntimeConfig.Validate` below but rejected at client construction, causing `os.Exit` at startup — do not configure): `bedrock` (tracked in #1582), `azure` (tracked in #1600). `vertex` (Google-native Gemini/PaLM via Vertex, distinct from the Anthropic-on-Vertex `vertex_ai` path below) was a `langchaingo`-only provider with no current replacement.
+**Not currently supported** (accepted by `LLMRuntimeConfig.Validate` below but rejected at client construction, causing `os.Exit` at startup — do not configure): `bedrock` (tracked in #1582). `vertex` (Google-native Gemini/PaLM via Vertex, distinct from the Anthropic-on-Vertex `vertex_ai` path below) was a `langchaingo`-only provider with no current replacement.
 
-**No dedicated provider string** — reached via `openai_compatible` + `endpoint` pointing at the provider's own OpenAI-Chat-Completions-compatible base URL instead: Mistral, Ollama, HuggingFace TGI, self-hosted vLLM/LlamaStack.
+**No dedicated provider string** — reached via `openai_compatible` + `endpoint` pointing at the provider's own OpenAI-Chat-Completions-compatible base URL instead: Mistral, Ollama, HuggingFace TGI, self-hosted vLLM/LlamaStack, **and Azure OpenAI** (`openai`/`openai_compatible` + `azureApiVersion` set — #1600).
 
 | Provider strings | Endpoint required in runtime YAML? | Notes |
 |------------------|-----------------------------------|--------|
@@ -253,7 +253,7 @@ When `enabled` is true and `llm` is nil, startup logs **error-level** diagnostic
 | `endpoint` | string | (empty) | Overrides runtime endpoint when non-empty. |
 | `model` | string | (empty) | Overrides runtime model when non-empty. |
 | `apiKey` | string | (empty) | Overrides runtime apiKey when non-empty (sensitive). Does not bypass separate credential-dir resolution unless set in YAML/runtime merge. |
-| `azureApiVersion` | string | (empty) | Reserved (#1600) — not currently consumed. |
+| `azureApiVersion` | string | (empty) | Overrides static Azure API version when non-empty (#1600). |
 | `vertexProject` | string | (empty) | Overrides static Vertex project when non-empty. |
 | `vertexLocation` | string | (empty) | Overrides static Vertex location when non-empty. |
 | `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
@@ -369,7 +369,8 @@ Store in Kubernetes **Secrets** (or equivalent vault-backed mounts), never in pl
 | Prometheus tools missing | `integrations.tools.prometheus.url` empty. |
 | LLM TLS verify failures with private CA | Set **`ai.llm.tlsCaFile`**. Expecting **`TLS_CA_FILE`** alone **does not** fix LLM outbound trust. |
 | `vertex` provider configured | `vertex` (Gemini-focused, `langchaingo`-only) has no replacement post-#1598 and is rejected at startup. Use `vertex_ai` (Claude-on-Anthropic-Vertex, via `anthropicfamily`) instead if that's the backend you deployed. |
-| `bedrock` or `azure` provider configured | Both rejected at startup (`os.Exit`) post-#1598 — see #1582 / #1600. Not yet supported; do not upgrade past this chart version until those land. |
+| `bedrock` provider configured | Rejected at startup (`os.Exit`) post-#1598 — see #1582. Not yet supported; do not upgrade past this chart version until it lands. |
+| `azure` provider configured (i.e. `provider: azure`) | Rejected at startup — there is no `azure` provider string, before or after #1598/#1600. Use `provider: openai`/`openai_compatible` with `azureApiVersion` set instead. |
 | Summarizer never runs | `ai.summarizer.threshold <= 0` disables it without validation error. |
 | Startup exit with alignment enabled | Process exits when `alignmentCheck` is enabled **and** a dedicated shadow LLM fails to construct when `alignmentCheck.llm` is configured; sharing primary client when `llm` nil does **not** exit. |
 | Custom header validation fails | `secretKeyRef` env unset at startup or multiple of `value`/`secretKeyRef`/`filePath` set.
