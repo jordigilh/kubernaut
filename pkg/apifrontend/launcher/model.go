@@ -98,7 +98,7 @@ func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error)
 		}
 	}
 
-	httpClient, err := buildLLMHTTPClient(cfg)
+	httpClient, err := BuildLLMHTTPClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("build HTTP client: %w", err)
 	}
@@ -120,10 +120,14 @@ func newAnthropicModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, err
 	return adkanthropic.NewModel(ctx, anthropic.Model(cfg.Model), adkCfg)
 }
 
-// buildLLMHTTPClient constructs an HTTP client with the transport chain
+// BuildLLMHTTPClient constructs an HTTP client with the transport chain
 // (TLS CA, OAuth2, custom headers, circuit breaker) when any auth/resilience
-// options are configured. Returns (nil, nil) when no custom transport is needed.
-func buildLLMHTTPClient(cfg types.LLMConfig) (*http.Client, error) {
+// options are configured. Returns (nil, nil) when no custom transport is
+// needed. Exported (rather than kept package-private) because it's reused
+// by cmd/apifrontend's OpenAI-compatible severity-triage wiring (#1618), in
+// addition to this package's own OpenAI-compatible/Gemini model
+// construction — not just a testing-only need.
+func BuildLLMHTTPClient(cfg types.LLMConfig) (*http.Client, error) {
 	rt, err := buildTransportChain(cfg)
 	if err != nil {
 		return nil, err
@@ -146,11 +150,11 @@ func buildLLMHTTPClient(cfg types.LLMConfig) (*http.Client, error) {
 // Returns (nil, nil) when no custom transport is needed.
 //
 // Issue #1342: This transport chain is applied to the Gemini provider (via
-// buildLLMHTTPClient). Vertex AI and Anthropic providers cannot receive a custom
+// BuildLLMHTTPClient). Vertex AI and Anthropic providers cannot receive a custom
 // transport yet because the ADK wrapper (adk-anthropic-go) does not expose HTTP
 // client injection. An upstream PR adding BaseTransport to Config is pending;
 // once merged, newVertexAIModel and newAnthropicModel should call
-// buildLLMHTTPClient. The AF validation gate for these providers has been
+// BuildLLMHTTPClient. The AF validation gate for these providers has been
 // removed (Phase 3) to allow transport config in preparation.
 func buildTransportChain(cfg types.LLMConfig) (http.RoundTripper, error) {
 	base := http.DefaultTransport
@@ -204,7 +208,7 @@ func buildTransportChain(cfg types.LLMConfig) (http.RoundTripper, error) {
 func newOpenAICompatibleModel(cfg types.LLMConfig) (model.LLM, error) {
 	var opts []openaimodel.Option
 
-	httpClient, err := buildLLMHTTPClient(cfg)
+	httpClient, err := BuildLLMHTTPClient(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("build HTTP client: %w", err)
 	}
