@@ -399,6 +399,10 @@ Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remedia
 | `kubernautAgent.llm.oauth2.enabled` | Enable OAuth2 client credentials grant for LLM gateway | `false` |
 | `kubernautAgent.llm.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
 | `kubernautAgent.llm.oauth2.credentialsSecretRef` | Secret with `client-id` and `client-secret` keys (mounted as files) | `""` |
+| `kubernautAgent.llm.reasoning.enabled` | Request model reasoning/thinking output (BR-AI-086). Supported today on the Anthropic-family client (native + Vertex) | `false` |
+| `kubernautAgent.llm.reasoning.budgetTokens` | Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). `0` lets the client choose a default. Anthropic-only; always wins over `effort` when set | `0` |
+| `kubernautAgent.llm.reasoning.effort` | Unified, provider-agnostic reasoning-depth knob (#1604): `""` (vendor/provider default), `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Supported on Anthropic, real OpenAI/gpt-5/o-series models, and DeepSeek | `""` |
+| `kubernautAgent.llm.reasoning.capabilityOverride` | Override reasoning-capability auto-detection for `openai_compatible` self-hosted models: `""` (auto), `force_on`, or `force_off` | `""` |
 | `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset | `false` |
 | `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
 | `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |

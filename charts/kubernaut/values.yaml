@@ -599,6 +599,15 @@ kubernautAgent:
       tokenURL: ""              # e.g., "https://keycloak.acme.com/realms/infra/protocol/openid-connect/token"
       credentialsSecretRef: ""  # K8s Secret containing keys: client-id, client-secret (mounted as files)
       scopes: ""                # Space-separated scopes, e.g., "openid llm-gateway"
+    # -- Model-aware reasoning/thinking token support (BR-AI-086, static).
+    # Disabled by default -- opt-in only. Supported on both the Anthropic
+    # family client (native + Vertex) and, for the effort knob only, real
+    # OpenAI/gpt-5/o-series and DeepSeek models via openai_compatible (#1604).
+    reasoning:
+      enabled: false
+      budgetTokens: 0        # Max thinking-token budget, e.g. 4096. 0 lets the client choose a default. Anthropic-only; always wins over effort when set.
+      effort: ""             # "" (vendor/provider default), "none", "minimal", "low", "medium", "high", or "xhigh" -- unified reasoning-depth knob (#1604)
+      capabilityOverride: "" # "auto" (default), "force_on", or "force_off" -- only meaningful for openai_compatible
   # -- Shadow agent alignment check (#601): parallel audit for prompt injection detection.
   alignmentCheck:
     enabled: false

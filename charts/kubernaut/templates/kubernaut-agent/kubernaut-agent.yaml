@@ -233,6 +233,21 @@ data:
 {{- if .Values.kubernautAgent.llm.tlsCaFile }}
         tlsCaFile: {{ .Values.kubernautAgent.llm.tlsCaFile | quote }}
 {{- end }}
+{{- if or .Values.kubernautAgent.llm.reasoning.enabled .Values.kubernautAgent.llm.reasoning.capabilityOverride .Values.kubernautAgent.llm.reasoning.effort }}
+        reasoning:
+{{- if .Values.kubernautAgent.llm.reasoning.enabled }}
+          enabled: true
+{{- end }}
+{{- if .Values.kubernautAgent.llm.reasoning.budgetTokens }}
+          budgetTokens: {{ .Values.kubernautAgent.llm.reasoning.budgetTokens }}
+{{- end }}
+{{- if .Values.kubernautAgent.llm.reasoning.effort }}
+          effort: {{ .Values.kubernautAgent.llm.reasoning.effort | quote }}
+{{- end }}
+{{- if .Values.kubernautAgent.llm.reasoning.capabilityOverride }}
+          capabilityOverride: {{ .Values.kubernautAgent.llm.reasoning.capabilityOverride | quote }}
+{{- end }}
+{{- end }}
 {{- else }}
 {{- fail "LLM configuration required: set kubernautAgent.llm.provider and kubernautAgent.llm.model" }}
 {{- end }}
