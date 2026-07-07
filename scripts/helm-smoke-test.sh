@@ -1646,6 +1646,44 @@ for d in docs:
       "helm template succeeded with capabilityOverride=bogus (expected schema enum rejection)"
   fi
 
+  # ST-CHART-LLM-REASON-003a: reasoning.effort alone (enabled left false) still renders
+  # (#1604: effort is independently useful on OpenAI/DeepSeek models, which have no
+  # separate "enabled" concept the way Anthropic's thinking param does)
+  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.llm.reasoning.effort=high 2>&1)
+  if grep -A3 "reasoning:" <<< "$output" | grep -q 'effort: "high"' && \
+     ! grep -A3 "reasoning:" <<< "$output" | grep -q "enabled:"; then
+    tap_ok "ST-CHART-LLM-REASON-003a: effort renders without enabled"
+  else
+    tap_not_ok "ST-CHART-LLM-REASON-003a: effort without enabled" \
+      "effort not rendered, or enabled leaked in alongside it"
+  fi
+
+  # ST-CHART-LLM-REASON-003b: reasoning.enabled=true + effort renders both fields
+  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.llm.reasoning.enabled=true \
+    --set kubernautAgent.llm.reasoning.effort=medium 2>&1)
+  if grep -q "reasoning:" <<< "$output" && \
+     grep -A3 "reasoning:" <<< "$output" | grep -q "enabled: true" && \
+     grep -A3 "reasoning:" <<< "$output" | grep -q 'effort: "medium"'; then
+    tap_ok "ST-CHART-LLM-REASON-003b: reasoning.enabled+effort render together"
+  else
+    tap_not_ok "ST-CHART-LLM-REASON-003b: reasoning.enabled+effort" \
+      "reasoning block missing enabled:true or effort:medium"
+  fi
+
+  # ST-CHART-LLM-REASON-004: values.schema.json rejects an invalid effort value
+  if ! helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.llm.reasoning.effort=extreme >/dev/null 2>&1; then
+    tap_ok "ST-CHART-LLM-REASON-004: schema rejects invalid reasoning.effort"
+  else
+    tap_not_ok "ST-CHART-LLM-REASON-004: schema validation for reasoning.effort" \
+      "helm template succeeded with effort=extreme (expected schema enum rejection)"
+  fi
+
   echo "# --- Template Tests: Unified Monitoring Config (Issue #463) ---"
 
   # UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA
