@@ -25,6 +25,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -131,7 +132,7 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 		return nil, err
 	}
 
-	summary := j.buildStatusSummary(&job)
+	summary := j.buildStatusSummary(ctx, c, &job)
 
 	// Check Job conditions for terminal states
 	for _, condition := range job.Status.Conditions {
@@ -226,6 +227,73 @@ func (j *JobExecutor) enrichFailureMessage(ctx context.Context, c ExecutorClient
 func isJobPodName(podName, jobNamePrefix string) bool {
 	return len(podName) == len(jobNamePrefix)+jobPodNameSuffixLength &&
 		podName[:len(jobNamePrefix)] == jobNamePrefix
+}
+
+// successfulCreateReason is the Kubernetes job-controller's Event Reason
+// emitted on the Job object each time it creates a Pod -- the initial
+// attempt and every PodFailurePolicy-Ignore replacement alike. This is a
+// Kubernetes-internal implementation detail, not a versioned API contract;
+// see countPodCreationAttempts's doc comment for the defensive fallback if
+// it is ever renamed upstream.
+const successfulCreateReason = "SuccessfulCreate"
+
+// countPodCreationAttempts returns the number of AC4-tolerated pod-failure
+// attempts observed before the Job reached its current state (BR-WE-019
+// AC10 / DD-WE-008 Wiring Point C), computed as (total Pods the job-
+// controller has ever created for this Job) - 1.
+//
+// This is deliberately NOT job.Status.Failed: k8s.io/api batch/v1's
+// PodFailurePolicyActionIgnore doc comment states the counter towards
+// .backoffLimit -- job.Status.Failed itself -- "is not incremented" for
+// Ignore-action failures, which a real-cluster spike (DD-WE-008 Section 8)
+// confirmed empirically: job.Status.Failed stayed 0 across multiple
+// verified exit-137 pod failures. There is also no reliable per-Pod signal
+// to fall back on: like enrichFailureMessage above, this deliberately does
+// NOT list Pods, since the job-controller's ActiveDeadlineSeconds handling
+// (and ordinary replacement-pod churn) typically removes them before this
+// runs. Events on the Job object outlive individual Pods (independent TTL,
+// ~1h default, comfortably inside this Job's 30m ActiveDeadlineSeconds
+// ceiling) and reliably reflect Ignore-tolerated creations. Confirmed
+// empirically: a real-cluster spike found one "SuccessfulCreate" Event per
+// Pod created (Count=1 each, well under the ~10-events/10min aggregation
+// threshold), persisting past the Job's transition to a terminal condition.
+//
+// Best-effort, not a mathematical guarantee (same scope boundary as
+// enrichFailureMessage/per-attempt root-cause attribution, SOC2 CC8.1/AU-3):
+// depends on a cluster-operator-controlled kube-apiserver --event-ttl
+// outliving this Job's ActiveDeadlineSeconds, and on "SuccessfulCreate"
+// remaining stable (it is Kubernetes-internal, not a versioned API). Logs a
+// warning -- rather than silently returning an understated count -- when a
+// Job that clearly ran (Succeeded or Failed) has zero matching Events, so a
+// future regression is observable.
+func (j *JobExecutor) countPodCreationAttempts(ctx context.Context, c ExecutorClient, job *batchv1.Job) int32 {
+	logger := log.FromContext(ctx).WithValues("job", job.Name, "namespace", job.Namespace)
+
+	var events corev1.EventList
+	if err := c.List(ctx, &events, client.InNamespace(job.Namespace)); err != nil {
+		logger.V(1).Info("failed to list events for retry-count computation (BR-WE-019 AC10)", "error", err)
+		return 0
+	}
+
+	var totalCreations int32
+	for _, evt := range events.Items {
+		if evt.InvolvedObject.Kind != "Job" || evt.InvolvedObject.Name != job.Name || evt.Reason != successfulCreateReason {
+			continue
+		}
+		count := evt.Count
+		if count == 0 {
+			count = 1
+		}
+		totalCreations += count
+	}
+
+	if totalCreations == 0 {
+		if job.Status.Succeeded > 0 || job.Status.Failed > 0 {
+			logger.Info("no SuccessfulCreate events found for a Job that reached a terminal outcome; retry count may be understated (BR-WE-019 AC10 best-effort boundary)")
+		}
+		return 0
+	}
+	return totalCreations - 1
 }
 
 // activeDeadlineSecondsFor resolves the Job's ActiveDeadlineSeconds
@@ -353,6 +421,7 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 			BackoffLimit:            &backoffLimit,
 			TTLSecondsAfterFinished: &ttlSeconds,
 			ActiveDeadlineSeconds:   &activeDeadlineSeconds,
+			PodFailurePolicy:        jobPodFailurePolicy(),
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
@@ -372,12 +441,53 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 							Env:             envVars,
 							VolumeMounts:    mounts,
 							SecurityContext: restrictedContainerSecurityContext(),
+							Resources:       resourcesFor(wfe),
 						},
 					},
 				},
 			},
 		},
 	}
+}
+
+// jobPodFailurePolicy returns the unconditional PodFailurePolicy (BR-WE-019 /
+// DD-WE-008) that tolerates infra-caused pod failures -- OOM-kill (exit 137)
+// and node-disruption (DisruptionTarget) -- by Ignoring them, while every
+// other failure keeps today's Count (fail-fast) behavior against the
+// unchanged backoffLimit: 0. This grants tolerance for specific,
+// identifiable causes without weakening fail-fast for a genuinely-failing,
+// potentially non-idempotent remediation script (DD-WE-008 Scenario 5).
+func jobPodFailurePolicy() *batchv1.PodFailurePolicy {
+	return &batchv1.PodFailurePolicy{
+		Rules: []batchv1.PodFailurePolicyRule{
+			{
+				Action: batchv1.PodFailurePolicyActionIgnore,
+				OnPodConditions: []batchv1.PodFailurePolicyOnPodConditionsPattern{
+					{Type: corev1.DisruptionTarget, Status: corev1.ConditionTrue},
+				},
+			},
+			{
+				Action: batchv1.PodFailurePolicyActionIgnore,
+				OnExitCodes: &batchv1.PodFailurePolicyOnExitCodesRequirement{
+					ContainerName: ptr.To("workflow"),
+					Operator:      batchv1.PodFailurePolicyOnExitCodesOpIn,
+					Values:        []int32{137},
+				},
+			},
+		},
+	}
+}
+
+// resourcesFor returns the "workflow" container's resource requirements
+// (BR-WE-019 / DD-WE-008), resolved once during Pending into
+// wfe.Status.Resources by resolveWorkflowCatalog. Returns the zero value
+// (no requests/limits, BestEffort QoS) when the catalog entry declared none
+// -- backward compatible with pre-DD-WE-008 Job specs.
+func resourcesFor(wfe *workflowexecutionv1alpha1.WorkflowExecution) corev1.ResourceRequirements {
+	if wfe.Status.Resources == nil {
+		return corev1.ResourceRequirements{}
+	}
+	return *wfe.Status.Resources
 }
 
 // buildDependencyVolumes creates Volumes and VolumeMounts for schema-declared
@@ -446,10 +556,17 @@ func buildEnvVars(targetResource string, params map[string]string) []corev1.EnvV
 }
 
 // buildStatusSummary creates a lightweight status summary from a Job.
-func (j *JobExecutor) buildStatusSummary(job *batchv1.Job) *workflowexecutionv1alpha1.ExecutionStatusSummary {
+func (j *JobExecutor) buildStatusSummary(ctx context.Context, c ExecutorClient, job *batchv1.Job) *workflowexecutionv1alpha1.ExecutionStatusSummary {
 	summary := &workflowexecutionv1alpha1.ExecutionStatusSummary{
 		Status:     corev1.ConditionUnknown,
 		TotalTasks: 1,
+		// BR-WE-019 AC10 / DD-WE-008 Wiring Point C: captured unconditionally
+		// (including on the success branch below) so PodFailurePolicy-
+		// tolerated pod failures still surface in the audit trail as a
+		// retry count. See countPodCreationAttempts for why this is NOT
+		// job.Status.Failed (confirmed, via a real-cluster spike, to never
+		// increment for Ignore-action failures).
+		RetryCount: j.countPodCreationAttempts(ctx, c, job),
 	}
 
 	if job.Status.Succeeded > 0 {

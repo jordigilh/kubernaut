@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
 
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -44,6 +45,10 @@ type WorkflowCatalogMetadata struct {
 	ServiceAccountName    string
 	EngineConfig          json.RawMessage
 	Dependencies          *models.WorkflowDependencies
+	// Resources declares the resolved CPU/memory requests and limits for the
+	// Job engine's "workflow" container (BR-WE-019 / DD-WE-008). nil when the
+	// catalog entry declares none.
+	Resources *corev1.ResourceRequirements
 }
 
 // WorkflowQuerier retrieves workflow metadata from the Data Storage catalog.
@@ -388,6 +393,11 @@ func (q *OgenWorkflowQuerier) ResolveWorkflowCatalogMetadata(ctx context.Context
 		if rawMsg != nil {
 			meta.EngineConfig = *rawMsg
 		}
+		resources, err := parser.ExtractResources(parsed)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract resources for workflow %s: %w", workflowID, err)
+		}
+		meta.Resources = resources
 	}
 
 	return meta, nil

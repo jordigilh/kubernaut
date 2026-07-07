@@ -21,7 +21,10 @@ rules:
   - events
   verbs:
   - create
+  - get
+  - list
   - patch
+  - watch
 - apiGroups:
   - apps
   resources:
@@ -40,6 +43,18 @@ rules:
   verbs:
   - get
   - list
+  - watch
+- apiGroups:
+  - batch
+  resources:
+  - jobs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - kubernaut.ai
