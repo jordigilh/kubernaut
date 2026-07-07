@@ -424,6 +424,7 @@
             "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for federated scope checks. Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
             "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
             "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
+            "tokenSecretRef": { "type": "string", "default": "", "description": "K8s Secret (key: token) with an ACM Search bearer token (backend=acm). NOT YET FUNCTIONAL pending Issue #1556 (Go-side FleetConfig support)." },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         }
@@ -724,6 +725,7 @@
             "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for reading remote resource specs (spec hash). Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
             "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
             "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
+            "tokenSecretRef": { "type": "string", "default": "", "description": "K8s Secret (key: token) with an ACM Search bearer token (backend=acm). NOT YET FUNCTIONAL pending Issue #1556 (Go-side FleetConfig support)." },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
         }
@@ -771,6 +773,16 @@
                     "name": { "type": "string", "minLength": 1, "description": "Secret name" },
                     "key": { "type": "string", "default": "token", "description": "Key within the Secret" },
                     "namespace": { "type": "string", "default": "", "description": "Namespace of the Secret (empty = release namespace)" }
+                  }
+                },
+                "caCertSecretRef": {
+                  "type": "object",
+                  "description": "BR-PLATFORM-005: reference to a K8s Secret containing a PEM-encoded CA certificate for the AAP/AWX API endpoint. Set when AAP/AWX uses a self-signed or private-CA certificate (Kubernaut Operator parity). If omitted, only the system trust store + inter-service CA are trusted.",
+                  "additionalProperties": false,
+                  "required": ["name"],
+                  "properties": {
+                    "name": { "type": "string", "minLength": 1, "description": "Secret name" },
+                    "key": { "type": "string", "default": "ca.crt", "description": "Key within the Secret containing the PEM CA certificate" }
                   }
                 }
               }
@@ -1499,6 +1511,34 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": true }
+          }
+        },
+        "apifrontend": {
+          "type": "object",
+          "description": "BR-PLATFORM-005: NetworkPolicy toggle for APIFrontend",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "ingressNamespaces": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [],
+              "description": "Namespaces allowed to send ingress to APIFrontend (e.g., an ingress-controller namespace)"
+            }
+          }
+        },
+        "console": {
+          "type": "object",
+          "description": "BR-PLATFORM-006: NetworkPolicy toggle for the web console. A no-op when console.enabled=false.",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "ingressNamespaces": {
+              "type": "array",
+              "items": { "type": "string" },
+              "default": [],
+              "description": "Namespaces allowed to send ingress to the console (e.g., an ingress-controller namespace)"
+            }
           }
         },
         "postgresql": {

@@ -422,6 +422,14 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `workflowexecution.config.ansible.tokenSecretRef.name` | Secret containing AWX API token | `""` |
 | `workflowexecution.config.ansible.tokenSecretRef.key` | Key within the Secret | `token` |
 | `workflowexecution.config.ansible.tokenSecretRef.namespace` | Secret namespace (defaults to release namespace) | _(release ns)_ |
+| `workflowexecution.config.ansible.caCertSecretRef.name` | Secret with a custom/private CA cert for a self-signed AWX/AAP endpoint (BR-PLATFORM-005) | `""` |
+| `workflowexecution.config.ansible.caCertSecretRef.key` | Key within the Secret (PEM) | `ca.crt` |
+
+Setting `caCertSecretRef` adds a `build-ca-bundle` init container that combines the custom CA with
+the inter-service CA into one trust bundle (`TLS_CA_FILE`), mirroring the Kubernaut Operator. When
+`workflowexecution.config.ansible` is configured (`apiURL` set), the WorkflowExecution
+NetworkPolicy also allows HTTPS (443) egress, since the AWX/AAP endpoint may be outside the
+cluster's other known peers.
 
 ### Gateway
 
@@ -429,6 +437,19 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 |---|---|---|
 | `gateway.auth.signalSources` | External signal sources needing RBAC | `[]` |
 | `gateway.service.type` | Service type | `ClusterIP` |
+| `gateway.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
+| `gateway.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
+| `gateway.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
+| `gateway.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Not yet functional** — pre-wires the Helm side ahead of [Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556), which adds the Go-side `FleetConfig` support to actually send it. | `""` |
+
+### RemediationOrchestrator
+
+| Parameter | Description | Default |
+|---|---|---|
+| `remediationorchestrator.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
+| `remediationorchestrator.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
+| `remediationorchestrator.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
+| `remediationorchestrator.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Not yet functional** — pre-wires the Helm side ahead of [Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556), which adds the Go-side `FleetConfig` support to actually send it. | `""` |
 
 ### EffectivenessMonitor
 
@@ -474,16 +495,22 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `networkPolicies.apiServerCIDRs` | Additional API server backend endpoint CIDRs for HA (multiple control-plane nodes). Merged with `apiServerCIDR`; usually left empty (see above) | `[]` |
 | `networkPolicies.apiServerPort` | API server backend endpoint port (commonly 6443). `0` = auto-discover alongside the CIDR | `0` |
 | `networkPolicies.monitoring.namespace` | Namespace for Prometheus metrics scraping ingress | `""` |
-| `networkPolicies.monitoring.prometheusPort` | Prometheus port (9090 vanilla, 9091 OCP) | `9090` |
-| `networkPolicies.monitoring.alertManagerPort` | AlertManager port (9093 vanilla, 9094 OCP) | `9093` |
+| `networkPolicies.monitoring.prometheusPort` | Prometheus port to allow in the NetworkPolicy egress rule | `9090` |
+| `networkPolicies.monitoring.alertManagerPort` | AlertManager port to allow in the NetworkPolicy egress rule | `9093` |
 | `networkPolicies.externalWebhooks.cidr` | CIDR for Slack/PagerDuty/Teams webhook egress | `0.0.0.0/0` |
 | `networkPolicies.externalRegistry.cidr` | CIDR for OCI registry egress (datastorage bundle validation) | `0.0.0.0/0` |
 | `networkPolicies.<service>.enabled` | Per-service toggle (gateway, datastorage, etc.) | `true` |
+| `networkPolicies.apifrontend.enabled` | Enable the APIFrontend NetworkPolicy (BR-PLATFORM-005) | `true` |
+| `networkPolicies.apifrontend.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach APIFrontend's https port. Same-namespace traffic is always allowed | `[]` |
+| `networkPolicies.console.enabled` | Enable the console NetworkPolicy (BR-PLATFORM-006). No-op unless `console.enabled=true` | `true` |
+| `networkPolicies.console.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach the console's oauth2-proxy port. Same-namespace traffic is always allowed | `[]` |
 
 When enabled, each service gets a NetworkPolicy with:
 - **Default-deny ingress** with service-specific allow rules
 - **Egress**: most services restrict egress to DNS, K8s API, and known peers; **Kubernaut Agent uses an ingress-only policy** (unrestricted egress) because it must reach arbitrary LLM providers, MCP servers, and tool endpoints
 - **Datastorage**: allows egress to PostgreSQL, Valkey, and external container registries (configurable CIDR for OCI bundle validation)
+- **APIFrontend** (BR-PLATFORM-005, Kubernaut Operator parity — previously the only mesh component without a NetworkPolicy): ingress from same-namespace callers plus `networkPolicies.apifrontend.ingressNamespaces`; egress to DataStorage, Valkey (only when `apifrontend.config.auth.replayCache.enabled=true`), and OIDC/JWKS discovery (only when OIDC is configured)
+- **Console** (BR-PLATFORM-006; a no-op unless `console.enabled=true`): ingress from same-namespace callers plus `networkPolicies.console.ingressNamespaces`; egress to APIFrontend and OIDC token/JWKS discovery
 
 Example (API server CIDR/port are auto-discovered here; only set them explicitly for `helm template`/GitOps rendering, see [NetworkPolicy API Server Discovery](#networkpolicy-api-server-discovery)):
 
@@ -507,6 +534,22 @@ If neither an override nor discovery succeeds, `helm install`/`upgrade` fails wi
 ### Common Controller Parameters
 
 All controllers accept: `replicas`, `resources`, `pdb.{enabled,minAvailable,maxUnavailable}`, `podSecurityContext`, `containerSecurityContext`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`.
+
+### Kubernaut Agent Security Hardening (BR-PLATFORM-005)
+
+KubernautAgent is the highest-risk component in the mesh — it is LLM-driven and carries the
+broadest investigative RBAC of any Kubernaut service. Two hardening measures, ported from the
+Kubernaut Operator, apply unconditionally (not configurable, no `values.yaml` toggle):
+
+- **Short-TTL ServiceAccount token**: the `kubernaut-agent-sa` ServiceAccount disables the default
+  automounted token (`automountServiceAccountToken: false`); the Deployment instead mounts a
+  1-hour, audience-scoped (`https://kubernetes.default.svc`) projected token, refreshed
+  automatically by the kubelet.
+- **KubeVirt / scheduling investigative RBAC**: the `kubernaut-agent-investigator` ClusterRole
+  includes read-only (`get`/`list`/`watch`) access to `kubevirt.io` VirtualMachines/VMIs/
+  migrations, `cdi.kubevirt.io` DataVolumes, and `scheduling.k8s.io` PriorityClasses, so
+  investigations on clusters running VM-backed workloads or priority-based scheduling have the
+  same visibility as an Operator-managed deployment.
 
 ## Disconnected / Air-Gapped Install
 

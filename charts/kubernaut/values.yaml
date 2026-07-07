@@ -153,6 +153,13 @@ gateway:
     # global.fleet.tlsCAFile, then to the shared inter-service CA already mounted
     # at /etc/tls-ca/ca.crt, when unset.
     tlsCAFile: ""
+    # -- K8s Secret (key: "token") with a bearer token for authenticating to the ACM
+    # Search GraphQL API (backend=acm). Mounted and its path passed to GW at startup.
+    # NOT YET FUNCTIONAL: pkg/fleet.FleetConfig has no field to consume this path yet —
+    # the ACM client (pkg/fleet/acm/client.go) never sets an Authorization header today.
+    # This value pre-wires the Helm side ahead of the Go-side fix (tracked in Issue #1556).
+    # Safe to leave unset; ACM Search calls work unauthenticated until #1556 lands.
+    tokenSecretRef: ""
     # -- OAuth2 client credentials for MCP Gateway authentication.
     oauth2:
       enabled: false
@@ -381,6 +388,13 @@ remediationorchestrator:
     # global.fleet.tlsCAFile, then to the shared inter-service CA already
     # mounted at /etc/tls-ca/ca.crt, when unset.
     tlsCAFile: ""
+    # -- K8s Secret (key: "token") with a bearer token for authenticating to the ACM
+    # Search GraphQL API (backend=acm). Mounted and its path passed to RO at startup.
+    # NOT YET FUNCTIONAL: pkg/fleet.FleetConfig has no field to consume this path yet —
+    # the ACM client (pkg/fleet/acm/client.go) never sets an Authorization header today.
+    # This value pre-wires the Helm side ahead of the Go-side fix (tracked in Issue #1556).
+    # Safe to leave unset; ACM Search calls work unauthenticated until #1556 lands.
+    tokenSecretRef: ""
     # -- OAuth2 client credentials for MCP Gateway authentication.
     oauth2:
       enabled: false
@@ -413,6 +427,10 @@ workflowexecution:
     #     name: awx-token                 # Secret name containing AWX API token
     #     key: token                      # Key within the Secret
     #     namespace: ""                   # empty = release namespace
+    #   caCertSecretRef:                  # BR-PLATFORM-005: set when AAP/AWX uses a
+    #     name: aap-ca-secret              # self-signed or private-CA certificate.
+    #     key: ca.crt                     # Combined with the inter-service CA into
+    #                                      # one trust bundle (Kubernaut Operator parity).
   resources:
     requests:
       cpu: 100m
@@ -806,6 +824,19 @@ networkPolicies:
     enabled: true
   authwebhook:
     enabled: true
+  apifrontend:
+    enabled: true
+    # -- Namespaces allowed to reach APIFrontend's https port from outside the
+    # release namespace (e.g. an ingress-controller namespace). Same-namespace
+    # traffic is always allowed regardless of this list (BR-PLATFORM-005).
+    ingressNamespaces: []
+  console:
+    enabled: true
+    # -- Namespaces allowed to reach the console's oauth2-proxy port from outside
+    # the release namespace (e.g. an ingress-controller namespace). Same-namespace
+    # traffic is always allowed regardless of this list (BR-PLATFORM-006). Only
+    # relevant when console.enabled=true (the NetworkPolicy is a no-op otherwise).
+    ingressNamespaces: []
   postgresql:
     enabled: true
   valkey:
