@@ -127,9 +127,9 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(spy.LastInput).NotTo(BeNil())
-		Expect(spy.LastInput.DetectedLabels).NotTo(BeNil())
+		Expect(spy.LastInput.Classification.DetectedLabels).NotTo(BeNil())
 
-		dl := spy.LastInput.DetectedLabels
+		dl := spy.LastInput.Classification.DetectedLabels
 		Expect(dl["git_ops_managed"]).To(BeTrue(), "gitOpsManaged from PostRCAContext")
 		Expect(dl["git_ops_tool"]).To(Equal("argocd"), "gitOpsTool from PostRCAContext")
 		Expect(dl["pdb_protected"]).To(BeTrue(), "pdbProtected from PostRCAContext")
@@ -153,9 +153,9 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(spy.LastInput).NotTo(BeNil())
-		Expect(spy.LastInput.FailedDetections).To(HaveLen(2))
-		Expect(spy.LastInput.FailedDetections).To(ContainElement("pdbProtected"))
-		Expect(spy.LastInput.FailedDetections).To(ContainElement("hpaEnabled"))
+		Expect(spy.LastInput.KAResponse.FailedDetections).To(HaveLen(2))
+		Expect(spy.LastInput.KAResponse.FailedDetections).To(ContainElement("pdbProtected"))
+		Expect(spy.LastInput.KAResponse.FailedDetections).To(ContainElement("hpaEnabled"))
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -172,7 +172,7 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(spy.LastInput).NotTo(BeNil())
-		dl := spy.LastInput.DetectedLabels
+		dl := spy.LastInput.Classification.DetectedLabels
 		Expect(dl["stateful"]).To(BeTrue(),
 			"ADR-056: DetectedLabels from PostRCAContext")
 		Expect(dl["git_ops_managed"]).To(BeTrue(),
@@ -192,9 +192,9 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 
 		Expect(err).NotTo(HaveOccurred())
 		Expect(spy.LastInput).NotTo(BeNil())
-		Expect(spy.LastInput.DetectedLabels).NotTo(BeNil(),
+		Expect(spy.LastInput.Classification.DetectedLabels).NotTo(BeNil(),
 			"DetectedLabels must be non-nil empty map, not nil")
-		Expect(spy.LastInput.DetectedLabels).To(BeEmpty(),
+		Expect(spy.LastInput.Classification.DetectedLabels).To(BeEmpty(),
 			"DetectedLabels must be empty when PostRCAContext is nil")
 	})
 

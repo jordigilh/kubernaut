@@ -3,6 +3,8 @@
 ## Status
 **✅ APPROVED** (2025-11-29)
 **Updated**: 2025-12-05 (OPA v1 syntax requirement)
+**Updated**: 2026-07-07 (#247: `action_type` added to `rego.PolicyInput` -- see [BR-AI-085 FR-AI-085-006](../../requirements/BR-AI-085-rego-policy-input-schema.md#fr-ai-085-006-action_type-based-infrastructure-action-approval) for the schema/rule addition; no change to this DD's loading/hot-reload strategy)
+**Updated**: 2026-07-07 (#247 follow-up: `rego.PolicyInput` decomposed into `SignalContext`/`Classification`/`KAResponse` sub-structs to remediate a Go Anti-Pattern Checklist "God struct" finding -- see [BR-AI-085 v1.4 changelog](../../requirements/BR-AI-085-rego-policy-input-schema.md); Go-side organization only, no change to the Rego input contract or this DD's loading strategy)
 **Follows**: Gateway pattern (DD-GATEWAY-XXX)
 **Confidence**: 95%
 

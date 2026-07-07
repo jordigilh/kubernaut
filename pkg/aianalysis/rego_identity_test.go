@@ -49,9 +49,8 @@ var _ = Describe("Rego Identity Input — #774, BR-AI-085, BR-INTERACTIVE-001", 
 	Describe("UT-KA-774-009: Rego evaluator includes identity in inputMap when present", func() {
 		It("should auto-approve when identity has SRE group (policy checks input.identity.groups)", func() {
 			input := &rego.PolicyInput{
-				SignalType: "alert",
-				Severity:   "high",
-				Confidence: 0.95,
+				SignalContext: rego.SignalContextInput{SignalType: "alert", Severity: "high"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.95},
 				Identity: &rego.IdentityInput{
 					User:   "alice@example.com",
 					Groups: []string{"engineering", "sre"},
@@ -67,9 +66,8 @@ var _ = Describe("Rego Identity Input — #774, BR-AI-085, BR-INTERACTIVE-001", 
 
 		It("should require approval when identity has no SRE group", func() {
 			input := &rego.PolicyInput{
-				SignalType: "alert",
-				Severity:   "high",
-				Confidence: 0.95,
+				SignalContext: rego.SignalContextInput{SignalType: "alert", Severity: "high"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.95},
 				Identity: &rego.IdentityInput{
 					User:   "bob@example.com",
 					Groups: []string{"engineering", "dev"},
@@ -86,10 +84,9 @@ var _ = Describe("Rego Identity Input — #774, BR-AI-085, BR-INTERACTIVE-001", 
 	Describe("UT-KA-774-010: Nil identity handled gracefully in Rego input", func() {
 		It("should not panic when Identity is nil (autonomous flow)", func() {
 			input := &rego.PolicyInput{
-				SignalType: "alert",
-				Severity:   "warning",
-				Confidence: 0.9,
-				Identity:   nil,
+				SignalContext: rego.SignalContextInput{SignalType: "alert", Severity: "warning"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.9},
+				Identity:      nil,
 			}
 
 			result, err := evaluator.Evaluate(context.Background(), input)
@@ -102,9 +99,8 @@ var _ = Describe("Rego Identity Input — #774, BR-AI-085, BR-INTERACTIVE-001", 
 	Describe("UT-KA-774-011: buildPolicyInput produces nil identity for non-interactive flows", func() {
 		It("should produce PolicyInput with nil Identity by default", func() {
 			input := &rego.PolicyInput{
-				SignalType: "alert",
-				Severity:   "low",
-				Confidence: 0.8,
+				SignalContext: rego.SignalContextInput{SignalType: "alert", Severity: "low"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.8},
 			}
 
 			Expect(input.Identity).To(BeNil(),
