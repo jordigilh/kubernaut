@@ -69,11 +69,13 @@ var _ = Describe("Rego Case-Insensitive Matching (#604)", func() {
 		DescribeTable("UT-AIA-604: case-insensitive environment matching",
 			func(env string, confidence float64, remediationTarget *rego.RemediationTargetInput, expectedApproval bool, description string) {
 				input := &rego.PolicyInput{
-					Environment:       env,
-					Confidence:        confidence,
+					SignalContext:     rego.SignalContextInput{Environment: env},
 					RemediationTarget: remediationTarget,
-					FailedDetections:  []string{},
-					Warnings:          []string{},
+					KAResponse: rego.KAResponseInput{
+						Confidence:       confidence,
+						FailedDetections: []string{},
+						Warnings:         []string{},
+					},
 				}
 
 				result, err := evaluator.Evaluate(ctx, input)
@@ -119,14 +121,15 @@ var _ = Describe("Rego Case-Insensitive Matching (#604)", func() {
 
 		It("UT-AIA-604-005: PascalCase 'Critical' severity is recognized", func() {
 			input := &rego.PolicyInput{
-				Severity:    "Critical",
-				Environment: "production",
+				SignalContext: rego.SignalContextInput{Severity: "Critical", Environment: "production"},
 				RemediationTarget: &rego.RemediationTargetInput{
 					Kind: "Deployment", Name: "api", Namespace: "production",
 				},
-				Confidence:       0.9,
-				FailedDetections: []string{},
-				Warnings:         []string{},
+				KAResponse: rego.KAResponseInput{
+					Confidence:       0.9,
+					FailedDetections: []string{},
+					Warnings:         []string{},
+				},
 			}
 
 			result, err := evaluator.Evaluate(ctx, input)

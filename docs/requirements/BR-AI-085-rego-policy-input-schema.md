@@ -317,6 +317,50 @@ require_approval if {
 
 ---
 
+### **FR-AI-085-006: `action_type`-Based Infrastructure-Action Approval**
+
+**Requirement**: AIAnalysis MUST expose `action_type` in the Rego policy input schema so approval policies can force human approval for infrastructure-impacting action types, independent of `remediation_target.kind` (the ADR-055-ADDENDUM-001 rename of `affected_resource`).
+
+**Rationale (Issue #247)**: `remediation_target.kind`-based rules (FR-AI-085-005's `is_sensitive_resource`) require human approval for sensitive resource *kinds* (`Node`, `StatefulSet`). However, for infrastructure-provisioning workflows such as `ProvisionNode`, the LLM's RCA identifies the **source workload** (e.g. `Deployment`) as the remediation target -- not the `Node` actually being provisioned -- because the workload, not the not-yet-created node, is what the investigation observed. `remediation_target.kind` alone therefore cannot gate on "this action provisions infrastructure"; the *action type itself* is a more reliable signal, since `action_type` is catalog-authoritative (sourced from the `action_type_taxonomy` table via the KA three-step discovery protocol, per DD-WORKFLOW-016) rather than LLM-inferred.
+
+**PolicyInput Struct** (`pkg/aianalysis/rego/evaluator.go`):
+```go
+type PolicyInput struct {
+    // ... existing fields ...
+
+    // ActionType is the catalog action type selected for remediation
+    // (DD-WORKFLOW-016 taxonomy, e.g. ScaleReplicas, ProvisionNode).
+    // Unlike RemediationTarget.Kind, this is catalog-authoritative
+    // (not LLM-inferred), enabling reliable gating on infrastructure-
+    // impacting actions regardless of which resource the LLM reports
+    // as the remediation target (#247).
+    ActionType string `json:"action_type"`
+}
+```
+
+**Example Rego Rule**:
+```rego
+package aianalysis.approval
+
+# #247: Infrastructure-provisioning action types always require approval,
+# regardless of the (LLM-reported) remediation_target kind.
+is_infrastructure_action if {
+    input.action_type == "ProvisionNode"
+}
+
+require_approval if {
+    is_infrastructure_action
+}
+```
+
+**Acceptance Criteria**:
+1. ✅ `PolicyInput` struct includes `ActionType string` field, populated from `Status.SelectedWorkflow.ActionType`
+2. ✅ Default Rego approval policy includes an `is_infrastructure_action` rule gating on `action_type`
+3. ✅ Unit tests verify that `action_type == "ProvisionNode"` triggers `require_approval` regardless of `remediation_target.kind` or confidence
+4. ✅ Integration tests verify the rule against the real OPA evaluator (compile + query + extract)
+
+---
+
 ## 📊 **Non-Functional Requirements**
 
 ### **NFR-AI-085-001: Performance Impact**
@@ -493,9 +537,13 @@ require_approval if {
 
 **Document Control**:
 - **Created**: 2026-01-20
-- **Last Updated**: 2026-02-12
-- **Version**: 1.2
+- **Last Updated**: 2026-07-07
+- **Version**: 1.4
 - **Status**: ✅ Approved
 - **Changes in 1.1**: Added FR-AI-085-005 (default-deny for missing `affected_resource`), added ADR-055 reference, documented `target_in_owner_chain` supersession, added Example 5 (default-deny safety pattern).
 - **Changes in 1.2**: Added `ConfidenceThreshold *float64` to PolicyInput schema (#225). Confidence threshold is now configurable via `input.confidence_threshold` in the Rego policy, with a built-in default of 0.8. Stepping stone toward BR-HAPI-198.
+- **Changes in 1.3**: Added FR-AI-085-006 (`action_type`-based infrastructure-action approval, #247). `action_type` is now exposed in the Rego policy input alongside `remediation_target` (the ADR-055-ADDENDUM-001 rename of `affected_resource`), so infrastructure-provisioning workflows (e.g. `ProvisionNode`) require approval based on the catalog-authoritative action type rather than the (potentially LLM-misreported) remediation target kind.
+- **Changes in 1.4**: `#247` follow-up -- decomposed the Go `PolicyInput` struct into `SignalContext`/`Classification`/`KAResponse` sub-structs to keep the top-level field count below the AGENTS.md Go Anti-Pattern Checklist's "God struct" threshold (had reached 15 fields). Go-side organization only: `buildRegoInputMap` still flattens to the same top-level Rego input keys, so this is **not a Rego policy contract change** -- no `.rego` policy file needs updating.
 - **Next Review**: After BR-HAPI-198 V1.1 implementation
+
+**Note on field naming**: This document's earlier FRs (001-005) use the original `affected_resource` naming from when this BR was authored. Per [ADR-055-ADDENDUM-001](../architecture/decisions/remediation-target-rename.md) (#542), this field was subsequently renamed to `remediation_target` end-to-end (Go struct, JSON tag, Rego input key) to avoid LLM misinterpretation. FR-AI-085-006 uses the current `remediation_target` naming; the code examples in FR-AI-085-001 through 005 are retained as historical context and should be read as `remediation_target` in the current implementation.

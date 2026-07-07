@@ -74,17 +74,21 @@ var _ = Describe("RegoEvaluator", func() {
 			// BR-AI-013, #206: Production with clean state and confidence >= 0.8 → auto-approve
 			It("should auto-approve production environment with clean state and high confidence", func() {
 				input := &rego.PolicyInput{
-					Environment: "production",
+					SignalContext: rego.SignalContextInput{Environment: "production"},
 					RemediationTarget: &rego.RemediationTargetInput{
 						Kind: "Deployment", Name: "api", Namespace: "production",
 					},
-					Confidence: 0.85,
-					DetectedLabels: map[string]interface{}{
-						"gitOpsManaged": true,
-						"pdbProtected":  true,
+					Classification: rego.ClassificationInput{
+						DetectedLabels: map[string]interface{}{
+							"gitOpsManaged": true,
+							"pdbProtected":  true,
+						},
 					},
-					FailedDetections: []string{},
-					Warnings:         []string{},
+					KAResponse: rego.KAResponseInput{
+						Confidence:       0.85,
+						FailedDetections: []string{},
+						Warnings:         []string{},
+					},
 				}
 
 				result, err := evaluator.Evaluate(ctx, input)
@@ -112,11 +116,13 @@ var _ = Describe("RegoEvaluator", func() {
 			DescribeTable("based on environment and data quality",
 				func(env string, remediationTarget *rego.RemediationTargetInput, confidence float64, failedDetections []string, warnings []string, expectedApproval bool) {
 					input := &rego.PolicyInput{
-						Environment:      env,
+						SignalContext:     rego.SignalContextInput{Environment: env},
 						RemediationTarget: remediationTarget,
-						Confidence:       confidence,
-						FailedDetections: failedDetections,
-						Warnings:         warnings,
+						KAResponse: rego.KAResponseInput{
+							Confidence:       confidence,
+							FailedDetections: failedDetections,
+							Warnings:         warnings,
+						},
 					}
 
 					result, err := evaluator.Evaluate(ctx, input)
@@ -150,11 +156,13 @@ var _ = Describe("RegoEvaluator", func() {
 		DescribeTable("confidence-based auto-approval in production",
 			func(confidence float64, remediationTarget *rego.RemediationTargetInput, failedDetections []string, warnings []string, expectedApproval bool, expectedReasonSubstring string) {
 				input := &rego.PolicyInput{
-					Environment:      "production",
+					SignalContext:     rego.SignalContextInput{Environment: "production"},
 					RemediationTarget: remediationTarget,
-					Confidence:       confidence,
-					FailedDetections: failedDetections,
-					Warnings:         warnings,
+					KAResponse: rego.KAResponseInput{
+						Confidence:       confidence,
+						FailedDetections: failedDetections,
+						Warnings:         warnings,
+					},
 				}
 
 				result, err := evaluator.Evaluate(ctx, input)
@@ -210,12 +218,11 @@ var _ = Describe("RegoEvaluator", func() {
 		DescribeTable("based on environment and severity",
 				func(severity string, env string, expectedApproval bool) {
 					input := &rego.PolicyInput{
-						Environment: env,
+						SignalContext: rego.SignalContextInput{Environment: env, Severity: severity},
 						RemediationTarget: &rego.RemediationTargetInput{
 							Kind: "Deployment", Name: "api", Namespace: env,
 						},
-						Confidence: 0.9, // High confidence
-						Severity:   severity,
+						KAResponse: rego.KAResponseInput{Confidence: 0.9}, // High confidence
 					}
 
 					result, err := evaluator.Evaluate(ctx, input)
@@ -240,20 +247,62 @@ var _ = Describe("RegoEvaluator", func() {
 					"P0", "staging", false),
 			)
 
+		// #247: Infrastructure-impacting action types (e.g. ProvisionNode) must
+		// always require approval, since the LLM-reported remediation_target
+		// (e.g. the source Deployment) does not reflect the actual infrastructure
+		// being provisioned. action_type is catalog-authoritative (DD-WORKFLOW-016),
+		// unlike remediation_target.kind which is LLM-inferred.
+		DescribeTable("infrastructure-impacting action approval based on action_type",
+			func(actionType string, confidence float64, remediationTarget *rego.RemediationTargetInput, expectedApproval bool, desc string) {
+				input := &rego.PolicyInput{
+					SignalContext:     rego.SignalContextInput{Environment: "development"}, // non-production: would otherwise auto-approve
+					ActionType:        actionType,
+					RemediationTarget: remediationTarget,
+					KAResponse: rego.KAResponseInput{
+						Confidence:       confidence,
+						FailedDetections: []string{},
+						Warnings:         []string{},
+					},
+				}
+
+				result, err := evaluator.Evaluate(ctx, input)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.ApprovalRequired).To(Equal(expectedApproval), desc)
+			},
+			Entry("UT-AIA-ACT-001: ProvisionNode + high confidence + non-production → require approval",
+				"ProvisionNode", 0.99,
+				&rego.RemediationTargetInput{Kind: "Deployment", Name: "batch-processor", Namespace: "default"},
+				true, "action_type=ProvisionNode must force approval regardless of confidence/environment/remediation_target.kind"),
+			Entry("UT-AIA-ACT-002: ProvisionNode + missing remediation_target → require approval",
+				"ProvisionNode", 0.99, (*rego.RemediationTargetInput)(nil),
+				true, "action_type=ProvisionNode must force approval even without a remediation_target"),
+			Entry("UT-AIA-ACT-003: non-infrastructure action_type + high confidence + non-production → auto-approve",
+				"ScaleReplicas", 0.99,
+				&rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "default"},
+				false, "unrelated action_type must not trigger the infrastructure-action rule"),
+			Entry("UT-AIA-ACT-004: empty action_type + high confidence + non-production → auto-approve",
+				"", 0.99,
+				&rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "default"},
+				false, "empty action_type must not falsely match the infrastructure-action rule"),
+		)
+
 		// #225: Configurable confidence threshold via input.confidence_threshold
 		// The Rego policy should read confidence_threshold from input when provided,
 		// falling back to its built-in default (0.8) when not provided.
 		DescribeTable("configurable confidence threshold (#225)",
 			func(confidence float64, threshold *float64, expectedApproval bool, desc string) {
 				input := &rego.PolicyInput{
-					Environment: "production",
+					SignalContext: rego.SignalContextInput{Environment: "production"},
 					RemediationTarget: &rego.RemediationTargetInput{
 						Kind: "Deployment", Name: "api", Namespace: "production",
 					},
-					Confidence:          confidence,
 					ConfidenceThreshold: threshold,
-					FailedDetections:    []string{},
-					Warnings:            []string{},
+					KAResponse: rego.KAResponseInput{
+						Confidence:       confidence,
+						FailedDetections: []string{},
+						Warnings:         []string{},
+					},
 				}
 
 				result, err := evaluator.Evaluate(ctx, input)
@@ -288,10 +337,12 @@ var _ = Describe("RegoEvaluator", func() {
 		Context("handles signal context fields", func() {
 				It("should pass all signal context fields to policy", func() {
 					input := &rego.PolicyInput{
-						SignalType:       "OOMKilled",
-						Severity:         "critical",
-						Environment:      "development",
-						BusinessPriority: "P0",
+						SignalContext: rego.SignalContextInput{
+							SignalType:       "OOMKilled",
+							Severity:         "critical",
+							Environment:      "development",
+							BusinessPriority: "P0",
+						},
 						TargetResource: rego.TargetResourceInput{
 							Kind:      "Pod",
 							Name:      "test-pod",
@@ -300,7 +351,7 @@ var _ = Describe("RegoEvaluator", func() {
 						RemediationTarget: &rego.RemediationTargetInput{
 							Kind: "Deployment", Name: "api", Namespace: "default",
 						},
-						Confidence: 0.9,
+						KAResponse: rego.KAResponseInput{Confidence: 0.9},
 					}
 
 					result, err := evaluator.Evaluate(ctx, input)
@@ -322,7 +373,7 @@ var _ = Describe("RegoEvaluator", func() {
 
 			It("should default to manual approval (graceful degradation)", func() {
 				result, err := evaluator.Evaluate(ctx, &rego.PolicyInput{
-					Environment: "production",
+					SignalContext: rego.SignalContextInput{Environment: "production"},
 				})
 
 				// Should not error - graceful degradation
@@ -342,7 +393,7 @@ var _ = Describe("RegoEvaluator", func() {
 
 			It("should default to manual approval (graceful degradation)", func() {
 				result, err := evaluator.Evaluate(ctx, &rego.PolicyInput{
-					Environment: "production",
+					SignalContext: rego.SignalContextInput{Environment: "production"},
 				})
 
 				Expect(err).NotTo(HaveOccurred())

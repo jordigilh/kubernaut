@@ -8,6 +8,15 @@
 
 ---
 
+> ⚠️ **SUPERSEDED / STALE (as of 2026-07-07, #247)**: This is early design-exploration content from before the schema stabilized, and it no longer reflects the implemented input/output schema. Notably: the real Go types are `rego.PolicyInput`/`rego.PolicyResult` (not `ApprovalPolicyInput`/`ApprovalDecision`/`DetectedLabelsInput` shown below); there is no `action`/`Action` or `AutoApprove`/`Timestamp` field in the real schema; `target_in_owner_chain` was replaced by `remediation_target` (ADR-055-ADDENDUM-001); and `confidence_threshold` (#225), `identity` (#774), and `action_type` (#247) are missing from the examples entirely. **Do not use this document as a schema reference.** For the authoritative schema and rules, see:
+> - [BR-AI-085](../../../requirements/BR-AI-085-rego-policy-input-schema.md) -- policy input schema requirements
+> - `pkg/aianalysis/rego/evaluator.go` -- `PolicyInput`/`PolicyResult` Go types (source of truth)
+> - `pkg/aianalysis/testdata/policies/approval.rego` / `test/integration/aianalysis/testdata/policies/approval.rego` -- working Rego policy fixtures
+>
+> The rest of this document is retained as historical design context only.
+
+---
+
 ## ⚠️ OPA v1 Syntax
 
 All policies in this document use OPA v1 syntax (required for `github.com/open-policy-agent/opa/v1/rego`):
