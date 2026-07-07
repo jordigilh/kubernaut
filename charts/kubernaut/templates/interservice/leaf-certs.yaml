@@ -1,0 +1,78 @@
+{{- if eq .Values.tls.mode "cert-manager" }}
+# DD-PLATFORM-001: leaf certificates for inter-service mTLS, issued by the
+# dedicated internal CA (templates/interservice/ca.yaml), not by
+# tls.certManager.issuerRef. ECDSA P-256 and DNS SANs mirror hook mode's
+# per-service certs exactly (tls-cert-job.yaml Section 2), so consumers
+# behave identically regardless of tls.mode.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gateway-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  secretName: gateway-tls
+  duration: 8760h   # 365 days
+  renewBefore: 720h  # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: kubernaut-interservice-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+  dnsNames:
+    - gateway-service
+    - gateway-service.{{ .Release.Namespace }}
+    - gateway-service.{{ .Release.Namespace }}.svc
+    - gateway-service.{{ .Release.Namespace }}.svc.cluster.local
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: datastorage-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  secretName: datastorage-tls
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: kubernaut-interservice-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+  dnsNames:
+    - data-storage-service
+    - data-storage-service.{{ .Release.Namespace }}
+    - data-storage-service.{{ .Release.Namespace }}.svc
+    - data-storage-service.{{ .Release.Namespace }}.svc.cluster.local
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kubernautagent-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  secretName: kubernautagent-tls
+  duration: 8760h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: kubernaut-interservice-ca-issuer
+    kind: Issuer
+    group: cert-manager.io
+  dnsNames:
+    - kubernaut-agent
+    - kubernaut-agent.{{ .Release.Namespace }}
+    - kubernaut-agent.{{ .Release.Namespace }}.svc
+    - kubernaut-agent.{{ .Release.Namespace }}.svc.cluster.local
+{{- end }}

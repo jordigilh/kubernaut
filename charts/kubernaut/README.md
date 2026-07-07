@@ -541,6 +541,38 @@ cluster's other known peers.
 >   --cert=/tmp/signing-tls.crt --key=/tmp/signing-tls.key -n kubernaut-system
 > ```
 
+> **Inter-service mTLS prerequisite** (DD-PLATFORM-001): ~11 services encrypt
+> pod-to-pod HTTP traffic with mTLS, trusting a shared `inter-service-ca`
+> ConfigMap and presenting `gateway-tls`/`datastorage-tls`/`kubernautagent-tls`
+> certs. In `tls.mode=cert-manager`, the chart auto-provisions all of this via
+> a **dedicated internal CA** — deliberately decoupled from
+> `tls.certManager.issuerRef`, so internal service-to-service trust never
+> depends on whatever external/public PKI issues your webhook certs — no
+> action needed. In `tls.mode=manual`, you must create these yourself:
+>
+> ```bash
+> # 1. Generate a root CA (ECDSA P-256, matching hook-mode's algorithm)
+> openssl ecparam -genkey -name prime256v1 -noout -out /tmp/ca.key
+> openssl req -new -x509 -days 3650 -key /tmp/ca.key -out /tmp/ca.crt -subj "/CN=kubernaut-interservice-ca"
+> kubectl create configmap inter-service-ca --from-file=ca.crt=/tmp/ca.crt -n kubernaut-system
+>
+> # 2. Issue a leaf cert per service (repeat for gateway-service, data-storage-service, kubernaut-agent)
+> for SVC in gateway-service data-storage-service kubernaut-agent; do
+>   openssl ecparam -genkey -name prime256v1 -noout -out /tmp/${SVC}.key
+>   openssl req -new -key /tmp/${SVC}.key -out /tmp/${SVC}.csr -subj "/CN=${SVC}.kubernaut-system.svc" \
+>     -addext "subjectAltName=DNS:${SVC},DNS:${SVC}.kubernaut-system,DNS:${SVC}.kubernaut-system.svc,DNS:${SVC}.kubernaut-system.svc.cluster.local"
+>   openssl x509 -req -in /tmp/${SVC}.csr -CA /tmp/ca.crt -CAkey /tmp/ca.key -CAcreateserial -out /tmp/${SVC}.crt -days 365
+> done
+> kubectl create secret tls gateway-tls --cert=/tmp/gateway-service.crt --key=/tmp/gateway-service.key -n kubernaut-system
+> kubectl create secret tls datastorage-tls --cert=/tmp/data-storage-service.crt --key=/tmp/data-storage-service.key -n kubernaut-system
+> kubectl create secret tls kubernautagent-tls --cert=/tmp/kubernaut-agent.crt --key=/tmp/kubernaut-agent.key -n kubernaut-system
+> ```
+>
+> Without these, `pkg/shared/tls.ConfigureConditionalTLS`/`DefaultBaseTransport`
+> silently fall back to plain HTTP for inter-service traffic (no error, but an
+> SC-8 compliance gap) — the mounts are `optional: true` by design so the
+> chart degrades gracefully rather than crash-looping.
+
 ### NetworkPolicies
 
 | Parameter | Description | Default |

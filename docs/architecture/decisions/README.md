@@ -97,6 +97,12 @@
 || DD-AUTH-014 | [Middleware-Based SAR Authentication](./DD-AUTH-014-middleware-based-sar-authentication.md) | DataStorage, Gateway, KA | ✅ Approved | 2026-01-31 | Interface-driven SAR/TokenReview middleware |
 || DD-AUTH-015 | [Outbound LLM Authentication Transport](./DD-AUTH-015-outbound-llm-authentication-transport.md) | Kubernaut Agent | ✅ Approved | 2026-04-06 | Composable transport chain for LLM auth: custom headers + OAuth2 client credentials |
 
+#### **Platform / Helm Chart Decisions**
+
+| ID | Title | Scope | Status | Date | Impact |
+|---|-------|-------|--------|------|--------|
+| DD-PLATFORM-001 | [cert-manager Inter-Service mTLS Auto-Provisioning](./DD-PLATFORM-001-cert-manager-interservice-mtls.md) | Helm chart (all services) | ✅ Approved | 2026-07-07 | Dedicated internal CA closes SC-8 gap for cert-manager mode |
+
 **Note**: DD-* prefix is used for detailed design decisions with comprehensive alternatives analysis, implementation strategy, and validation plans. ADR-* prefix is used for architectural records.
 
 ---
