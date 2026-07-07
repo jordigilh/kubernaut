@@ -16960,6 +16960,8 @@ type EffectivenessAssessmentAuditPayload struct {
 	// Only present for effectiveness.metrics.assessed events.
 	// Phase A (V1.0): cpu_before/cpu_after populated. Other fields nullable pending
 	// Phase B metrics assessor expansion (additional PromQL queries).
+	// Cluster-scoped fields (node_*, pv_*) populated for Node/PersistentVolume
+	// targets only (Issue #193, DD-EM-005 v1.1); null for namespace-scoped targets.
 	MetricDeltas OptEffectivenessAssessmentAuditPayloadMetricDeltas `json:"metric_deltas"`
 	// Structured alert resolution check results from AlertManager.
 	// Only present for effectiveness.alert.assessed events.
@@ -17570,6 +17572,8 @@ func (s *EffectivenessAssessmentAuditPayloadHealthChecks) SetPendingCount(val Op
 // Only present for effectiveness.metrics.assessed events.
 // Phase A (V1.0): cpu_before/cpu_after populated. Other fields nullable pending
 // Phase B metrics assessor expansion (additional PromQL queries).
+// Cluster-scoped fields (node_*, pv_*) populated for Node/PersistentVolume
+// targets only (Issue #193, DD-EM-005 v1.1); null for namespace-scoped targets.
 type EffectivenessAssessmentAuditPayloadMetricDeltas struct {
 	// CPU utilization before remediation (earliest sample in query range).
 	CPUBefore OptNilFloat64 `json:"cpu_before"`
@@ -17591,6 +17595,36 @@ type EffectivenessAssessmentAuditPayloadMetricDeltas struct {
 	ThroughputBeforeRps OptNilFloat64 `json:"throughput_before_rps"`
 	// Request throughput (requests/second) after remediation.
 	ThroughputAfterRps OptNilFloat64 `json:"throughput_after_rps"`
+	// Node Ready condition status=false flag before remediation (1=not ready, 0=ready).
+	// Cluster-scoped (Issue #193, DD-EM-005).
+	NodeNotReadyBefore OptNilFloat64 `json:"node_not_ready_before"`
+	// Node Ready condition status=false flag after remediation (1=not ready, 0=ready). Cluster-scoped
+	// (Issue.
+	NodeNotReadyAfter OptNilFloat64 `json:"node_not_ready_after"`
+	// Node MemoryPressure condition flag before remediation (1=pressure, 0=none). Cluster-scoped (Issue.
+	NodeMemoryPressureBefore OptNilFloat64 `json:"node_memory_pressure_before"`
+	// Node MemoryPressure condition flag after remediation (1=pressure, 0=none). Cluster-scoped (Issue.
+	NodeMemoryPressureAfter OptNilFloat64 `json:"node_memory_pressure_after"`
+	// Node DiskPressure condition flag before remediation (1=pressure, 0=none). Cluster-scoped (Issue.
+	NodeDiskPressureBefore OptNilFloat64 `json:"node_disk_pressure_before"`
+	// Node DiskPressure condition flag after remediation (1=pressure, 0=none). Cluster-scoped (Issue.
+	NodeDiskPressureAfter OptNilFloat64 `json:"node_disk_pressure_after"`
+	// PersistentVolume Failed phase flag before remediation (1=failed, 0=not failed). Cluster-scoped
+	// (Issue.
+	PvPhaseFailedBefore OptNilFloat64 `json:"pv_phase_failed_before"`
+	// PersistentVolume Failed phase flag after remediation (1=failed, 0=not failed). Cluster-scoped
+	// (Issue.
+	PvPhaseFailedAfter OptNilFloat64 `json:"pv_phase_failed_after"`
+	// PersistentVolume Pending phase flag before remediation (1=pending, 0=not pending). Cluster-scoped
+	// (Issue.
+	PvPhasePendingBefore OptNilFloat64 `json:"pv_phase_pending_before"`
+	// PersistentVolume Pending phase flag after remediation (1=pending, 0=not pending). Cluster-scoped
+	// (Issue.
+	PvPhasePendingAfter OptNilFloat64 `json:"pv_phase_pending_after"`
+	// PersistentVolume used/capacity usage ratio before remediation (0.0-1.0+). Cluster-scoped (Issue.
+	PvUsageRatioBefore OptNilFloat64 `json:"pv_usage_ratio_before"`
+	// PersistentVolume used/capacity usage ratio after remediation (0.0-1.0+). Cluster-scoped (Issue.
+	PvUsageRatioAfter OptNilFloat64 `json:"pv_usage_ratio_after"`
 }
 
 // GetCPUBefore returns the value of CPUBefore.
@@ -17643,6 +17677,66 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetThroughputAfterRps(
 	return s.ThroughputAfterRps
 }
 
+// GetNodeNotReadyBefore returns the value of NodeNotReadyBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetNodeNotReadyBefore() OptNilFloat64 {
+	return s.NodeNotReadyBefore
+}
+
+// GetNodeNotReadyAfter returns the value of NodeNotReadyAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetNodeNotReadyAfter() OptNilFloat64 {
+	return s.NodeNotReadyAfter
+}
+
+// GetNodeMemoryPressureBefore returns the value of NodeMemoryPressureBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetNodeMemoryPressureBefore() OptNilFloat64 {
+	return s.NodeMemoryPressureBefore
+}
+
+// GetNodeMemoryPressureAfter returns the value of NodeMemoryPressureAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetNodeMemoryPressureAfter() OptNilFloat64 {
+	return s.NodeMemoryPressureAfter
+}
+
+// GetNodeDiskPressureBefore returns the value of NodeDiskPressureBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetNodeDiskPressureBefore() OptNilFloat64 {
+	return s.NodeDiskPressureBefore
+}
+
+// GetNodeDiskPressureAfter returns the value of NodeDiskPressureAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetNodeDiskPressureAfter() OptNilFloat64 {
+	return s.NodeDiskPressureAfter
+}
+
+// GetPvPhaseFailedBefore returns the value of PvPhaseFailedBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetPvPhaseFailedBefore() OptNilFloat64 {
+	return s.PvPhaseFailedBefore
+}
+
+// GetPvPhaseFailedAfter returns the value of PvPhaseFailedAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetPvPhaseFailedAfter() OptNilFloat64 {
+	return s.PvPhaseFailedAfter
+}
+
+// GetPvPhasePendingBefore returns the value of PvPhasePendingBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetPvPhasePendingBefore() OptNilFloat64 {
+	return s.PvPhasePendingBefore
+}
+
+// GetPvPhasePendingAfter returns the value of PvPhasePendingAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetPvPhasePendingAfter() OptNilFloat64 {
+	return s.PvPhasePendingAfter
+}
+
+// GetPvUsageRatioBefore returns the value of PvUsageRatioBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetPvUsageRatioBefore() OptNilFloat64 {
+	return s.PvUsageRatioBefore
+}
+
+// GetPvUsageRatioAfter returns the value of PvUsageRatioAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) GetPvUsageRatioAfter() OptNilFloat64 {
+	return s.PvUsageRatioAfter
+}
+
 // SetCPUBefore sets the value of CPUBefore.
 func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetCPUBefore(val OptNilFloat64) {
 	s.CPUBefore = val
@@ -17691,6 +17785,66 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetThroughputBeforeRps
 // SetThroughputAfterRps sets the value of ThroughputAfterRps.
 func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetThroughputAfterRps(val OptNilFloat64) {
 	s.ThroughputAfterRps = val
+}
+
+// SetNodeNotReadyBefore sets the value of NodeNotReadyBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetNodeNotReadyBefore(val OptNilFloat64) {
+	s.NodeNotReadyBefore = val
+}
+
+// SetNodeNotReadyAfter sets the value of NodeNotReadyAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetNodeNotReadyAfter(val OptNilFloat64) {
+	s.NodeNotReadyAfter = val
+}
+
+// SetNodeMemoryPressureBefore sets the value of NodeMemoryPressureBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetNodeMemoryPressureBefore(val OptNilFloat64) {
+	s.NodeMemoryPressureBefore = val
+}
+
+// SetNodeMemoryPressureAfter sets the value of NodeMemoryPressureAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetNodeMemoryPressureAfter(val OptNilFloat64) {
+	s.NodeMemoryPressureAfter = val
+}
+
+// SetNodeDiskPressureBefore sets the value of NodeDiskPressureBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetNodeDiskPressureBefore(val OptNilFloat64) {
+	s.NodeDiskPressureBefore = val
+}
+
+// SetNodeDiskPressureAfter sets the value of NodeDiskPressureAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetNodeDiskPressureAfter(val OptNilFloat64) {
+	s.NodeDiskPressureAfter = val
+}
+
+// SetPvPhaseFailedBefore sets the value of PvPhaseFailedBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetPvPhaseFailedBefore(val OptNilFloat64) {
+	s.PvPhaseFailedBefore = val
+}
+
+// SetPvPhaseFailedAfter sets the value of PvPhaseFailedAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetPvPhaseFailedAfter(val OptNilFloat64) {
+	s.PvPhaseFailedAfter = val
+}
+
+// SetPvPhasePendingBefore sets the value of PvPhasePendingBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetPvPhasePendingBefore(val OptNilFloat64) {
+	s.PvPhasePendingBefore = val
+}
+
+// SetPvPhasePendingAfter sets the value of PvPhasePendingAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetPvPhasePendingAfter(val OptNilFloat64) {
+	s.PvPhasePendingAfter = val
+}
+
+// SetPvUsageRatioBefore sets the value of PvUsageRatioBefore.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetPvUsageRatioBefore(val OptNilFloat64) {
+	s.PvUsageRatioBefore = val
+}
+
+// SetPvUsageRatioAfter sets the value of PvUsageRatioAfter.
+func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) SetPvUsageRatioAfter(val OptNilFloat64) {
+	s.PvUsageRatioAfter = val
 }
 
 // Individual component assessment scores.
@@ -28142,6 +28296,40 @@ type RemediationMetricDeltas struct {
 	ErrorRateBefore OptFloat64 `json:"errorRateBefore"`
 	// Error rate after remediation (0.0-1.0).
 	ErrorRateAfter OptFloat64 `json:"errorRateAfter"`
+	// Request throughput (requests/second) before remediation.
+	ThroughputBeforeRps OptFloat64 `json:"throughputBeforeRps"`
+	// Request throughput (requests/second) after remediation.
+	ThroughputAfterRps OptFloat64 `json:"throughputAfterRps"`
+	// Node Ready condition status=false flag before remediation (1=not ready, 0=ready). Cluster-scoped
+	// (Issue.
+	NodeNotReadyBefore OptFloat64 `json:"nodeNotReadyBefore"`
+	// Node Ready condition status=false flag after remediation (1=not ready, 0=ready). Cluster-scoped
+	// (Issue.
+	NodeNotReadyAfter OptFloat64 `json:"nodeNotReadyAfter"`
+	// Node MemoryPressure condition flag before remediation (1=pressure, 0=none). Cluster-scoped (Issue.
+	NodeMemoryPressureBefore OptFloat64 `json:"nodeMemoryPressureBefore"`
+	// Node MemoryPressure condition flag after remediation (1=pressure, 0=none). Cluster-scoped (Issue.
+	NodeMemoryPressureAfter OptFloat64 `json:"nodeMemoryPressureAfter"`
+	// Node DiskPressure condition flag before remediation (1=pressure, 0=none). Cluster-scoped (Issue.
+	NodeDiskPressureBefore OptFloat64 `json:"nodeDiskPressureBefore"`
+	// Node DiskPressure condition flag after remediation (1=pressure, 0=none). Cluster-scoped (Issue.
+	NodeDiskPressureAfter OptFloat64 `json:"nodeDiskPressureAfter"`
+	// PersistentVolume Failed phase flag before remediation (1=failed, 0=not failed). Cluster-scoped
+	// (Issue.
+	PvPhaseFailedBefore OptFloat64 `json:"pvPhaseFailedBefore"`
+	// PersistentVolume Failed phase flag after remediation (1=failed, 0=not failed). Cluster-scoped
+	// (Issue.
+	PvPhaseFailedAfter OptFloat64 `json:"pvPhaseFailedAfter"`
+	// PersistentVolume Pending phase flag before remediation (1=pending, 0=not pending). Cluster-scoped
+	// (Issue.
+	PvPhasePendingBefore OptFloat64 `json:"pvPhasePendingBefore"`
+	// PersistentVolume Pending phase flag after remediation (1=pending, 0=not pending). Cluster-scoped
+	// (Issue.
+	PvPhasePendingAfter OptFloat64 `json:"pvPhasePendingAfter"`
+	// PersistentVolume used/capacity usage ratio before remediation (0.0-1.0+). Cluster-scoped (Issue.
+	PvUsageRatioBefore OptFloat64 `json:"pvUsageRatioBefore"`
+	// PersistentVolume used/capacity usage ratio after remediation (0.0-1.0+). Cluster-scoped (Issue.
+	PvUsageRatioAfter OptFloat64 `json:"pvUsageRatioAfter"`
 }
 
 // GetCpuBefore returns the value of CpuBefore.
@@ -28184,6 +28372,76 @@ func (s *RemediationMetricDeltas) GetErrorRateAfter() OptFloat64 {
 	return s.ErrorRateAfter
 }
 
+// GetThroughputBeforeRps returns the value of ThroughputBeforeRps.
+func (s *RemediationMetricDeltas) GetThroughputBeforeRps() OptFloat64 {
+	return s.ThroughputBeforeRps
+}
+
+// GetThroughputAfterRps returns the value of ThroughputAfterRps.
+func (s *RemediationMetricDeltas) GetThroughputAfterRps() OptFloat64 {
+	return s.ThroughputAfterRps
+}
+
+// GetNodeNotReadyBefore returns the value of NodeNotReadyBefore.
+func (s *RemediationMetricDeltas) GetNodeNotReadyBefore() OptFloat64 {
+	return s.NodeNotReadyBefore
+}
+
+// GetNodeNotReadyAfter returns the value of NodeNotReadyAfter.
+func (s *RemediationMetricDeltas) GetNodeNotReadyAfter() OptFloat64 {
+	return s.NodeNotReadyAfter
+}
+
+// GetNodeMemoryPressureBefore returns the value of NodeMemoryPressureBefore.
+func (s *RemediationMetricDeltas) GetNodeMemoryPressureBefore() OptFloat64 {
+	return s.NodeMemoryPressureBefore
+}
+
+// GetNodeMemoryPressureAfter returns the value of NodeMemoryPressureAfter.
+func (s *RemediationMetricDeltas) GetNodeMemoryPressureAfter() OptFloat64 {
+	return s.NodeMemoryPressureAfter
+}
+
+// GetNodeDiskPressureBefore returns the value of NodeDiskPressureBefore.
+func (s *RemediationMetricDeltas) GetNodeDiskPressureBefore() OptFloat64 {
+	return s.NodeDiskPressureBefore
+}
+
+// GetNodeDiskPressureAfter returns the value of NodeDiskPressureAfter.
+func (s *RemediationMetricDeltas) GetNodeDiskPressureAfter() OptFloat64 {
+	return s.NodeDiskPressureAfter
+}
+
+// GetPvPhaseFailedBefore returns the value of PvPhaseFailedBefore.
+func (s *RemediationMetricDeltas) GetPvPhaseFailedBefore() OptFloat64 {
+	return s.PvPhaseFailedBefore
+}
+
+// GetPvPhaseFailedAfter returns the value of PvPhaseFailedAfter.
+func (s *RemediationMetricDeltas) GetPvPhaseFailedAfter() OptFloat64 {
+	return s.PvPhaseFailedAfter
+}
+
+// GetPvPhasePendingBefore returns the value of PvPhasePendingBefore.
+func (s *RemediationMetricDeltas) GetPvPhasePendingBefore() OptFloat64 {
+	return s.PvPhasePendingBefore
+}
+
+// GetPvPhasePendingAfter returns the value of PvPhasePendingAfter.
+func (s *RemediationMetricDeltas) GetPvPhasePendingAfter() OptFloat64 {
+	return s.PvPhasePendingAfter
+}
+
+// GetPvUsageRatioBefore returns the value of PvUsageRatioBefore.
+func (s *RemediationMetricDeltas) GetPvUsageRatioBefore() OptFloat64 {
+	return s.PvUsageRatioBefore
+}
+
+// GetPvUsageRatioAfter returns the value of PvUsageRatioAfter.
+func (s *RemediationMetricDeltas) GetPvUsageRatioAfter() OptFloat64 {
+	return s.PvUsageRatioAfter
+}
+
 // SetCpuBefore sets the value of CpuBefore.
 func (s *RemediationMetricDeltas) SetCpuBefore(val OptFloat64) {
 	s.CpuBefore = val
@@ -28222,6 +28480,76 @@ func (s *RemediationMetricDeltas) SetErrorRateBefore(val OptFloat64) {
 // SetErrorRateAfter sets the value of ErrorRateAfter.
 func (s *RemediationMetricDeltas) SetErrorRateAfter(val OptFloat64) {
 	s.ErrorRateAfter = val
+}
+
+// SetThroughputBeforeRps sets the value of ThroughputBeforeRps.
+func (s *RemediationMetricDeltas) SetThroughputBeforeRps(val OptFloat64) {
+	s.ThroughputBeforeRps = val
+}
+
+// SetThroughputAfterRps sets the value of ThroughputAfterRps.
+func (s *RemediationMetricDeltas) SetThroughputAfterRps(val OptFloat64) {
+	s.ThroughputAfterRps = val
+}
+
+// SetNodeNotReadyBefore sets the value of NodeNotReadyBefore.
+func (s *RemediationMetricDeltas) SetNodeNotReadyBefore(val OptFloat64) {
+	s.NodeNotReadyBefore = val
+}
+
+// SetNodeNotReadyAfter sets the value of NodeNotReadyAfter.
+func (s *RemediationMetricDeltas) SetNodeNotReadyAfter(val OptFloat64) {
+	s.NodeNotReadyAfter = val
+}
+
+// SetNodeMemoryPressureBefore sets the value of NodeMemoryPressureBefore.
+func (s *RemediationMetricDeltas) SetNodeMemoryPressureBefore(val OptFloat64) {
+	s.NodeMemoryPressureBefore = val
+}
+
+// SetNodeMemoryPressureAfter sets the value of NodeMemoryPressureAfter.
+func (s *RemediationMetricDeltas) SetNodeMemoryPressureAfter(val OptFloat64) {
+	s.NodeMemoryPressureAfter = val
+}
+
+// SetNodeDiskPressureBefore sets the value of NodeDiskPressureBefore.
+func (s *RemediationMetricDeltas) SetNodeDiskPressureBefore(val OptFloat64) {
+	s.NodeDiskPressureBefore = val
+}
+
+// SetNodeDiskPressureAfter sets the value of NodeDiskPressureAfter.
+func (s *RemediationMetricDeltas) SetNodeDiskPressureAfter(val OptFloat64) {
+	s.NodeDiskPressureAfter = val
+}
+
+// SetPvPhaseFailedBefore sets the value of PvPhaseFailedBefore.
+func (s *RemediationMetricDeltas) SetPvPhaseFailedBefore(val OptFloat64) {
+	s.PvPhaseFailedBefore = val
+}
+
+// SetPvPhaseFailedAfter sets the value of PvPhaseFailedAfter.
+func (s *RemediationMetricDeltas) SetPvPhaseFailedAfter(val OptFloat64) {
+	s.PvPhaseFailedAfter = val
+}
+
+// SetPvPhasePendingBefore sets the value of PvPhasePendingBefore.
+func (s *RemediationMetricDeltas) SetPvPhasePendingBefore(val OptFloat64) {
+	s.PvPhasePendingBefore = val
+}
+
+// SetPvPhasePendingAfter sets the value of PvPhasePendingAfter.
+func (s *RemediationMetricDeltas) SetPvPhasePendingAfter(val OptFloat64) {
+	s.PvPhasePendingAfter = val
+}
+
+// SetPvUsageRatioBefore sets the value of PvUsageRatioBefore.
+func (s *RemediationMetricDeltas) SetPvUsageRatioBefore(val OptFloat64) {
+	s.PvUsageRatioBefore = val
+}
+
+// SetPvUsageRatioAfter sets the value of PvUsageRatioAfter.
+func (s *RemediationMetricDeltas) SetPvUsageRatioAfter(val OptFloat64) {
+	s.PvUsageRatioAfter = val
 }
 
 // Type-safe audit event payload for RemediationOrchestrator (lifecycle.started, lifecycle.created,
