@@ -203,6 +203,96 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			Expect(entry.MetricDeltas.Value.CpuAfter.Value).To(BeNumerically("~", 0.45, 0.001))
 		})
 
+		// ========================================
+		// Cluster-scoped metric_deltas fields + throughput backfill
+		// (Issue #193 audit gap, DD-EM-005 v1.1)
+		// ========================================
+		It("UT-RH-LOGIC-025: should map cluster-scoped Node/PV metric_deltas fields and backfill throughput", func() {
+			roEvents := []repository.RawAuditRow{
+				makeROEvent("rr-cluster-001", "sha256:pre123", "success", "alert", "fp-node-001", "restart", fixedTime),
+			}
+			emEvents := map[string][]*server.EffectivenessEvent{
+				"rr-cluster-001": {
+					{
+						EventData: map[string]interface{}{
+							"event_type": "effectiveness.metrics.assessed",
+							"assessed":   true,
+							"score":      0.9,
+							"details":    "Node conditions and PV usage improved",
+							"metric_deltas": map[string]interface{}{
+								"throughput_before_rps":       120.0,
+								"throughput_after_rps":        150.0,
+								"node_not_ready_before":       1.0,
+								"node_not_ready_after":        0.0,
+								"node_memory_pressure_before": 1.0,
+								"node_memory_pressure_after":  0.0,
+								"node_disk_pressure_before":   0.0,
+								"node_disk_pressure_after":    0.0,
+								"pv_phase_failed_before":      1.0,
+								"pv_phase_failed_after":       0.0,
+								"pv_phase_pending_before":     0.0,
+								"pv_phase_pending_after":      0.0,
+								"pv_usage_ratio_before":       0.95,
+								"pv_usage_ratio_after":        0.60,
+							},
+						},
+					},
+				},
+			}
+
+			entries := server.CorrelateTier1Chain(roEvents, emEvents, "sha256:current")
+
+			Expect(entries).To(HaveLen(1))
+			md := entries[0].MetricDeltas
+			Expect(md.Set).To(BeTrue())
+
+			Expect(md.Value.ThroughputBeforeRps.Set).To(BeTrue(), "throughput_before_rps backfill")
+			Expect(md.Value.ThroughputBeforeRps.Value).To(BeNumerically("~", 120.0, 0.001))
+			Expect(md.Value.ThroughputAfterRps.Set).To(BeTrue())
+			Expect(md.Value.ThroughputAfterRps.Value).To(BeNumerically("~", 150.0, 0.001))
+
+			Expect(md.Value.NodeNotReadyBefore.Set).To(BeTrue())
+			Expect(md.Value.NodeNotReadyBefore.Value).To(BeNumerically("~", 1.0, 0.001))
+			Expect(md.Value.NodeNotReadyAfter.Set).To(BeTrue())
+			Expect(md.Value.NodeMemoryPressureBefore.Set).To(BeTrue())
+			Expect(md.Value.NodeMemoryPressureAfter.Set).To(BeTrue())
+			Expect(md.Value.NodeDiskPressureBefore.Set).To(BeTrue())
+			Expect(md.Value.NodeDiskPressureAfter.Set).To(BeTrue())
+
+			Expect(md.Value.PvPhaseFailedBefore.Set).To(BeTrue())
+			Expect(md.Value.PvPhaseFailedBefore.Value).To(BeNumerically("~", 1.0, 0.001))
+			Expect(md.Value.PvPhaseFailedAfter.Set).To(BeTrue())
+			Expect(md.Value.PvPhasePendingBefore.Set).To(BeTrue())
+			Expect(md.Value.PvPhasePendingAfter.Set).To(BeTrue())
+			Expect(md.Value.PvUsageRatioBefore.Set).To(BeTrue())
+			Expect(md.Value.PvUsageRatioBefore.Value).To(BeNumerically("~", 0.95, 0.001))
+			Expect(md.Value.PvUsageRatioAfter.Set).To(BeTrue())
+			Expect(md.Value.PvUsageRatioAfter.Value).To(BeNumerically("~", 0.60, 0.001))
+		})
+
+		It("UT-RH-LOGIC-026: should leave cluster-scoped and throughput fields unset when absent (namespace-scoped, Phase A/B only)", func() {
+			roEvents := []repository.RawAuditRow{
+				makeROEvent("rr-cluster-002", "sha256:pre456", "success", "alert", "fp-ns-001", "restart", fixedTime),
+			}
+			emEvents := map[string][]*server.EffectivenessEvent{
+				"rr-cluster-002": makeFullEMEvents(), // only cpu_before/cpu_after present
+			}
+
+			entries := server.CorrelateTier1Chain(roEvents, emEvents, "sha256:current")
+
+			Expect(entries).To(HaveLen(1))
+			md := entries[0].MetricDeltas.Value
+
+			Expect(md.ThroughputBeforeRps.Set).To(BeFalse())
+			Expect(md.ThroughputAfterRps.Set).To(BeFalse())
+			Expect(md.NodeNotReadyBefore.Set).To(BeFalse())
+			Expect(md.NodeMemoryPressureBefore.Set).To(BeFalse())
+			Expect(md.NodeDiskPressureBefore.Set).To(BeFalse())
+			Expect(md.PvPhaseFailedBefore.Set).To(BeFalse())
+			Expect(md.PvPhasePendingBefore.Set).To(BeFalse())
+			Expect(md.PvUsageRatioBefore.Set).To(BeFalse())
+		})
+
 		It("UT-RH-LOGIC-006: should build entry with nil effectiveness when no EM data", func() {
 			roEvents := []repository.RawAuditRow{
 				makeROEvent("rr-002", "sha256:pre789", "success", "alert", "fp-002", "restart", fixedTime),

@@ -123,9 +123,10 @@ func mapHealthChecks(eventData map[string]interface{}) api.OptRemediationHealthC
 // effectiveness.metrics.assessed event's data.
 //
 // DD-HAPI-016 v1.1: metric_deltas provides before/after pairs for CPU, memory,
-// latency p95, and error rate. Currently only CPU is populated by the EM team;
-// remaining metrics fields are optional and absent until additional PromQL
-// queries are implemented.
+// latency p95, error rate, and throughput. DD-EM-005 v1.1 (Issue #193) adds
+// cluster-scoped Node/PersistentVolume fields, populated only when the source
+// EffectivenessAssessment targets a Node or PersistentVolume; all fields are
+// optional and absent until the corresponding PromQL query succeeds.
 func mapMetricDeltas(eventData map[string]interface{}) api.OptRemediationMetricDeltas {
 	mdMap, ok := eventData["metric_deltas"].(map[string]interface{})
 	if !ok {
@@ -157,7 +158,60 @@ func mapMetricDeltas(eventData map[string]interface{}) api.OptRemediationMetricD
 	if v, ok := mdMap["error_rate_after"].(float64); ok {
 		md.ErrorRateAfter = api.OptFloat64{Value: v, Set: true}
 	}
+	populateClusterScopedAndThroughputDeltas(&md, mdMap)
 	return api.OptRemediationMetricDeltas{Value: md, Set: true}
+}
+
+// populateClusterScopedAndThroughputDeltas maps the throughput backfill
+// (present in the raw event since 21e592475, never propagated downstream)
+// and the 6 cluster-scoped Node/PersistentVolume metric_deltas fields
+// (Issue #193 audit gap, DD-EM-005 v1.1) from the raw event map into md.
+// Extracted from mapMetricDeltas to keep that function within the project's
+// line-length convention -- pure code motion alongside the new field
+// mappings, no behavior change to the existing fields mapped above.
+func populateClusterScopedAndThroughputDeltas(md *api.RemediationMetricDeltas, mdMap map[string]interface{}) {
+	if v, ok := mdMap["throughput_before_rps"].(float64); ok {
+		md.ThroughputBeforeRps = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["throughput_after_rps"].(float64); ok {
+		md.ThroughputAfterRps = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["node_not_ready_before"].(float64); ok {
+		md.NodeNotReadyBefore = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["node_not_ready_after"].(float64); ok {
+		md.NodeNotReadyAfter = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["node_memory_pressure_before"].(float64); ok {
+		md.NodeMemoryPressureBefore = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["node_memory_pressure_after"].(float64); ok {
+		md.NodeMemoryPressureAfter = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["node_disk_pressure_before"].(float64); ok {
+		md.NodeDiskPressureBefore = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["node_disk_pressure_after"].(float64); ok {
+		md.NodeDiskPressureAfter = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["pv_phase_failed_before"].(float64); ok {
+		md.PvPhaseFailedBefore = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["pv_phase_failed_after"].(float64); ok {
+		md.PvPhaseFailedAfter = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["pv_phase_pending_before"].(float64); ok {
+		md.PvPhasePendingBefore = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["pv_phase_pending_after"].(float64); ok {
+		md.PvPhasePendingAfter = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["pv_usage_ratio_before"].(float64); ok {
+		md.PvUsageRatioBefore = api.OptFloat64{Value: v, Set: true}
+	}
+	if v, ok := mdMap["pv_usage_ratio_after"].(float64); ok {
+		md.PvUsageRatioAfter = api.OptFloat64{Value: v, Set: true}
+	}
 }
 
 // mapAlertResolution extracts signalResolved from the alert_resolution typed
