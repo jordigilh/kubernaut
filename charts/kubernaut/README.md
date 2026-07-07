@@ -23,7 +23,7 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 
 Infrastructure secrets must be pre-created before installing the chart (#557).
 The chart does **not** auto-generate credentials — this prevents password leaks
-via rendered Helm templates and avoids silent `lookup` failures on OCP / restricted-RBAC
+via rendered Helm templates and avoids silent `lookup` failures on restricted-RBAC
 environments.
 
 The chart validates that required secrets exist at install/upgrade time and fails
@@ -329,12 +329,6 @@ Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remedia
 
 `gateway.fleet.mcpGatewayEndpoint`, `remediationorchestrator.fleet.mcpGatewayEndpoint`, and `fleetmetadatacache.mcpGatewayEndpoint` are required (directly or via the global fallback) when their respective `fleet.enabled` / `fleetmetadatacache.enabled` is `true` — `helm install`/`upgrade` fails fast with a remediation message if neither is set. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
 
-### Demo Content
-
-| Parameter | Description | Default |
-|---|---|---|
-| `demoContent.enabled` | Deploy bundled ActionTypes + RemediationWorkflows | `true` |
-
 ### Kubernaut Agent (LLM)
 
 | Parameter | Description | Default |
@@ -348,7 +342,6 @@ Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remedia
 | `kubernautAgent.llm.oauth2.credentialsSecretRef` | Secret with `client-id` and `client-secret` keys (mounted as files) | `""` |
 | `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset | `false` |
 | `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
-| `kubernautAgent.prometheus.ocpMonitoringRbac` | **DEPRECATED v1.4** — Create RBAC for OCP monitoring stack | `false` |
 | `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
 | `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM | `""` |
 
@@ -416,7 +409,6 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 |---|---|---|
 | `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
 | `postgresql.auth.existingSecret` | Pre-created Secret name (empty = expect `postgresql-secret`) | `""` |
-| `postgresql.variant` | Image variant: `upstream` or `ocp` | `upstream` |
 | `postgresql.host` | External host (when `enabled=false`) | `""` |
 | `datastorage.dbExistingSecret` | DEPRECATED: db-secrets.yaml is now in postgresql-secret | `""` |
 | `valkey.enabled` | Deploy in-chart Valkey | `true` |
@@ -466,8 +458,6 @@ helm install kubernaut charts/kubernaut \
   --set "networkPolicies.gateway.ingressNamespaces[0]=monitoring"
 ```
 
-On OpenShift, the `values-ocp.yaml` overlay sets monitoring ports to 9091/9094.
-
 #### NetworkPolicy API Server Discovery
 
 During a real `helm install`/`upgrade`, the chart auto-discovers the kube-apiserver's real backend endpoint IP(s) and port via `lookup` against the live `kubernetes` Endpoints object, so `networkPolicies.apiServerCIDR(s)`/`apiServerPort` usually don't need to be set. Set them explicitly if:
@@ -496,7 +486,7 @@ helm install kubernaut oci://harbor.corp/kubernaut-ai/charts/kubernaut \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego
 
-# Flat registry (quay.io, Docker Hub, OCP internal)
+# Flat registry (quay.io, Docker Hub)
 helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=quay.io/myorg \
@@ -507,7 +497,7 @@ helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
   --set-file aianalysis.policies.content=path/to/approval.rego
 ```
 
-See the [Disconnected Install Guide](https://jordigilh.github.io/kubernaut-docs/operations/disconnected-install/) for image mirroring and OCP IDMS instructions.
+See the [Disconnected Install Guide](https://jordigilh.github.io/kubernaut-docs/operations/disconnected-install/) for image mirroring instructions.
 
 ## Upgrading
 

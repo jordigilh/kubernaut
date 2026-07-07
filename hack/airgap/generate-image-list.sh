@@ -6,7 +6,7 @@
 #
 # Usage:
 #   ./hack/airgap/generate-image-list.sh                           # default values
-#   ./hack/airgap/generate-image-list.sh -f values-ocp.yaml        # with OCP overlay
+#   ./hack/airgap/generate-image-list.sh -f values-airgap.yaml     # with air-gap overlay
 #   ./hack/airgap/generate-image-list.sh --set global.image.tag=1.0.0
 
 set -euo pipefail

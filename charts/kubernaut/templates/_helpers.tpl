@@ -273,45 +273,30 @@ Return the PostgreSQL database name.
 {{- end }}
 
 {{/*
-Return the PostgreSQL variant ("upstream" or "ocp").
+Return the env var name for the PostgreSQL user.
+Secret keys are always POSTGRES_*; kept as a helper for a single source of truth
+across postgresql.yaml/valkey.yaml/datastorage.yaml.
 */}}
-{{- define "kubernaut.postgresql.variant" -}}
-{{- .Values.postgresql.variant | default "upstream" -}}
-{{- end }}
+{{- define "kubernaut.postgresql.envVarUser" -}}POSTGRES_USER{{- end -}}
 
 {{/*
-Return the env var name for the PostgreSQL user, by variant.
-Secret keys are always POSTGRES_*; env var names differ per image.
+Return the env var name for the PostgreSQL password.
 */}}
-{{- define "kubernaut.postgresql.envVarUser" -}}
-{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_USER{{- else -}}POSTGRES_USER{{- end -}}
-{{- end }}
+{{- define "kubernaut.postgresql.envVarPassword" -}}POSTGRES_PASSWORD{{- end -}}
 
 {{/*
-Return the env var name for the PostgreSQL password, by variant.
+Return the env var name for the PostgreSQL database.
 */}}
-{{- define "kubernaut.postgresql.envVarPassword" -}}
-{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_PASSWORD{{- else -}}POSTGRES_PASSWORD{{- end -}}
-{{- end }}
-
-{{/*
-Return the env var name for the PostgreSQL database, by variant.
-*/}}
-{{- define "kubernaut.postgresql.envVarDatabase" -}}
-{{- if eq (include "kubernaut.postgresql.variant" .) "ocp" -}}POSTGRESQL_DATABASE{{- else -}}POSTGRES_DB{{- end -}}
-{{- end }}
+{{- define "kubernaut.postgresql.envVarDatabase" -}}POSTGRES_DB{{- end -}}
 
 {{/*
 Return the data directory mount path for the PostgreSQL volume.
-Issue #464: Use a single image-agnostic path so switching between upstream
-(postgres:16-alpine) and OCP (rhel10/postgresql-16) images does not change
-the data directory and silently lose data.
+Issue #464: Use a single image-agnostic path.
 */}}
 {{- define "kubernaut.postgresql.dataDir" -}}/var/lib/kubernaut-pg/data{{- end -}}
 
 {{/*
 Return the Valkey data directory mount path.
-upstream: /data   ocp: /var/lib/valkey/data
 */}}
 {{- define "kubernaut.valkey.dataDir" -}}
 /data
@@ -450,15 +435,6 @@ Usage: {{ include "kubernaut.podSecurityContext" .Values.gateway | nindent 6 }}
 {{/* ===== Unified Monitoring Helpers (Issue #463) ===== */}}
 
 {{/*
-Whether the cluster is OCP (presence of route.openshift.io/v1 API).
-DEPRECATED v1.4 (Issue #848): OCP auto-detection will be removed in v1.5.
-Use the Kubernaut Operator for OpenShift deployments.
-*/}}
-{{- define "kubernaut.monitoring.isOCP" -}}
-{{- if .Capabilities.APIVersions.Has "route.openshift.io/v1" -}}true{{- end -}}
-{{- end -}}
-
-{{/*
 Whether Prometheus integration is enabled.
 */}}
 {{- define "kubernaut.monitoring.prometheus.enabled" -}}
@@ -466,14 +442,10 @@ Whether Prometheus integration is enabled.
 {{- end -}}
 
 {{/*
-Resolved Prometheus URL. On OCP, defaults to Thanos querier when empty.
+Resolved Prometheus URL.
 */}}
 {{- define "kubernaut.monitoring.prometheus.url" -}}
-{{- if .Values.monitoring.prometheus.url -}}
 {{- .Values.monitoring.prometheus.url -}}
-{{- else if include "kubernaut.monitoring.isOCP" . -}}
-https://prometheus-k8s.openshift-monitoring.svc:9091
-{{- end -}}
 {{- end -}}
 
 {{/*
@@ -484,51 +456,29 @@ Whether AlertManager integration is enabled.
 {{- end -}}
 
 {{/*
-Resolved AlertManager URL. On OCP, defaults to alertmanager-main when empty.
+Resolved AlertManager URL.
 */}}
 {{- define "kubernaut.monitoring.alertManager.url" -}}
-{{- if .Values.monitoring.alertManager.url -}}
 {{- .Values.monitoring.alertManager.url -}}
-{{- else if include "kubernaut.monitoring.isOCP" . -}}
-https://alertmanager-main.openshift-monitoring.svc:9094
-{{- end -}}
 {{- end -}}
 
 {{/*
-Resolved Prometheus TLS CA file path. On OCP, defaults to service-serving CA.
+Resolved Prometheus TLS CA file path.
 */}}
 {{- define "kubernaut.monitoring.prometheus.tlsCaFile" -}}
-{{- if .Values.monitoring.prometheus.tlsCaFile -}}
 {{- .Values.monitoring.prometheus.tlsCaFile -}}
-{{- else if include "kubernaut.monitoring.isOCP" . -}}
-/etc/ssl/certs/service-ca.crt
-{{- end -}}
 {{- end -}}
 
 {{/*
-Resolved AlertManager TLS CA file path. On OCP, defaults to service-serving CA.
+Resolved AlertManager TLS CA file path.
 */}}
 {{- define "kubernaut.monitoring.alertManager.tlsCaFile" -}}
-{{- if .Values.monitoring.alertManager.tlsCaFile -}}
 {{- .Values.monitoring.alertManager.tlsCaFile -}}
-{{- else if include "kubernaut.monitoring.isOCP" . -}}
-/etc/ssl/certs/service-ca.crt
-{{- end -}}
-{{- end -}}
-
-{{/*
-Whether OCP monitoring RBAC should be created.
-True when monitoring is enabled and cluster is OCP.
-DEPRECATED v1.4 (Issue #848): OCP RBAC helpers will be removed in v1.5.
-Use the Kubernaut Operator for OpenShift deployments.
-*/}}
-{{- define "kubernaut.monitoring.ocpRbac" -}}
-{{- if and (or (include "kubernaut.monitoring.prometheus.enabled" .) (include "kubernaut.monitoring.alertManager.enabled" .)) (include "kubernaut.monitoring.isOCP" .) -}}true{{- end -}}
 {{- end -}}
 
 {{/*
 Whether TLS CA trust is needed for monitoring connections.
-True when any monitoring TLS CA file is configured (explicitly or via OCP defaults).
+True when any monitoring TLS CA file is explicitly configured.
 */}}
 {{- define "kubernaut.monitoring.tlsEnabled" -}}
 {{- if or (include "kubernaut.monitoring.prometheus.tlsCaFile" .) (include "kubernaut.monitoring.alertManager.tlsCaFile" .) -}}true{{- end -}}
@@ -564,7 +514,8 @@ Delegates to unified monitoring TLS detection.
 
 {{/*
 Name of the ConfigMap containing the CA certificate for Kubernaut Agent.
-On OCP, uses chart-created service-CA ConfigMap with auto-injection annotation.
+BYO (Issue #848 v1.5): the chart no longer creates this ConfigMap — operators must
+pre-create it with real CA data when monitoring.prometheus/alertManager.tlsCaFile is set.
 */}}
 {{- define "kubernaut.agent.tlsCaConfigMapName" -}}
 kubernaut-agent-service-ca
