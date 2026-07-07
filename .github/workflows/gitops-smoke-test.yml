@@ -191,17 +191,70 @@ jobs:
       # (Synced AND Healthy), not just until manifests are applied. This smoke
       # test intentionally uses placeholder LLM credentials/config (it validates
       # GitOps sync mechanics -- CRDs, hooks, cert-manager wiring -- not full
-      # application runtime health), so pods never reach Healthy and this
-      # command reliably times out even on a fully successful sync. That
-      # timeout is therefore tolerated here (`|| true`); the "Verify GitOps
-      # deployment" step below asserts the specific resources that actually
-      # matter (CRD count, Certificate readiness, ConfigMap sync) with their
-      # own precise waits, instead of relying on aggregate app health.
+      # application runtime health), so several controllers (e.g. aianalysis,
+      # kubernaut-agent) never reach Healthy for reasons unrelated to GitOps
+      # mechanics, and this command reliably times out even on a fully
+      # successful sync. That timeout is therefore tolerated here (`|| true`);
+      # the "Verify GitOps deployment" step below asserts the specific
+      # resources that actually matter (CRD count, Certificate readiness,
+      # ConfigMap sync) with their own precise waits, instead of relying on
+      # aggregate app health.
+      #
+      # DD-PLATFORM-002 fixed the ArgoCD PostSync/health deadlock that used to
+      # prevent db-migration and interservice-ca-sync from ever running (see
+      # that DD for the full root cause). Empirically confirmed via a local
+      # kind+ArgoCD dry run: with the fix, both Jobs complete within ~20s and
+      # the Application reaches full Health.
       - name: Sync ArgoCD Application
         run: |
           argocd app sync kubernaut-gitops-smoke --server-side --timeout 180 || \
-            echo "::notice::sync timed out waiting for full pod health (expected with placeholder credentials) -- proceeding to targeted resource checks"
+            echo "::notice::sync timed out waiting for full pod health (expected -- some controllers need real LLM credentials/config this smoke test doesn't provide) -- proceeding to targeted resource checks"
           argocd app get kubernaut-gitops-smoke || true
+
+      # DD-PLATFORM-002 residual nuance (shared with tls.mode=hook under plain
+      # Helm CLI -- not new, not ArgoCD-specific): ~11 services mount
+      # inter-service-ca as a ConfigMap volume with `optional: true`. If a
+      # service's pod is scheduled and its volume set up *before*
+      # interservice-ca-sync creates that ConfigMap (a real race: the Job
+      # needs ~15-20s to run, a Deployment pod can start faster), kubelet
+      # mounts an empty directory and -- per documented kubelet behavior --
+      # will not retroactively populate it for that pod once the ConfigMap
+      # appears; only a fresh pod (not just a container restart within the
+      # same pod) re-evaluates the volume. The same race exists for
+      # db-migration and any pod hitting DataStorage before its schema
+      # exists. This step makes that convergence deterministic in CI by
+      # restarting any pod still crash-looping once both sync Jobs have
+      # actually completed, mirroring what a human operator (or a follow-up
+      # `kubectl rollout restart`) would do on a real first install.
+      - name: Recover pods that raced the migration/CA-sync Jobs
+        run: |
+          echo "=== Waiting for db-migration and interservice-ca-sync Jobs to complete ==="
+          # Job objects only carry the chart's generic app.kubernetes.io/*
+          # labels; the `app: db-migration` / `app: interservice-ca-sync`
+          # labels live on the pod template. Resolve the actual (release-
+          # name-prefixed) Job name via Kubernetes' auto-injected `job-name`
+          # pod label instead of hardcoding the release name.
+          for app_label in db-migration interservice-ca-sync; do
+            JOB_NAME=$(kubectl get pods -n "$NAMESPACE" -l "app=${app_label}" -o jsonpath='{.items[0].metadata.labels.job-name}' 2>/dev/null || true)
+            if [[ -n "$JOB_NAME" ]]; then
+              kubectl wait --for=condition=Complete --timeout=120s "job/${JOB_NAME}" -n "$NAMESPACE" 2>&1 || true
+            else
+              echo "::warning::no pod found for app=${app_label} yet -- Job may not have been scheduled"
+            fi
+          done
+
+          echo "=== Restarting any pods still CrashLoopBackOff after the Jobs completed ==="
+          CRASHING=$(kubectl get pods -n "$NAMESPACE" --field-selector=status.phase=Running -o json | \
+            jq -r '.items[] | select(.status.containerStatuses[]?.state.waiting.reason == "CrashLoopBackOff") | .metadata.name')
+          if [[ -n "$CRASHING" ]]; then
+            echo "Restarting: $CRASHING"
+            # shellcheck disable=SC2086
+            kubectl delete pod -n "$NAMESPACE" $CRASHING
+            sleep 30
+          else
+            echo "No crash-looping pods found -- nothing to restart"
+          fi
+          kubectl get pods -n "$NAMESPACE" -o wide
 
       - name: Verify GitOps deployment
         run: |
@@ -223,25 +276,20 @@ jobs:
             fi
           done
 
-          # KNOWN LIMITATION (tracked separately, not a #1619/#1620 regression):
-          # interservice-ca-sync-job and migration-job both use Helm's
-          # "post-install,post-upgrade" hook, which ArgoCD maps to PostSync.
-          # ArgoCD's PostSync gate requires the WHOLE Application to already be
-          # Healthy before it fires -- but DataStorage can never become Healthy
-          # without migrations having run, and several services never become
-          # Healthy without this ConfigMap. That's a genuine chart/ArgoCD hook
-          # deadlock (well-documented upstream pattern: argoproj/argo-cd#17604,
-          # same class of issue Airflow/OpenFGA hit), pre-existing and NOT
-          # specific to tls.mode=cert-manager or this issue's scope. It needs
-          # its own design pass (e.g. explicit `argocd.argoproj.io/hook: Sync`
-          # override on those two Jobs). Until fixed, this check is
-          # informational only so this workflow doesn't perpetually red-flag a
-          # known, separately-tracked issue.
-          echo "=== inter-service-ca ConfigMap sync hook (DD-PLATFORM-001) ==="
+          echo "=== db-migration + inter-service-ca ConfigMap sync hooks (DD-PLATFORM-002) ==="
+          MIGRATION_JOB=$(kubectl get pods -n "$NAMESPACE" -l app=db-migration -o jsonpath='{.items[0].metadata.labels.job-name}' 2>/dev/null || true)
+          if [[ -n "$MIGRATION_JOB" ]] && kubectl get job "$MIGRATION_JOB" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}' 2>/dev/null | grep -q '^1$'; then
+            echo "OK: db-migration Job (${MIGRATION_JOB}) succeeded"
+          else
+            echo "FAIL: db-migration Job did not succeed -- ArgoCD PostSync/health deadlock may have regressed"
+            kubectl get pods -n "$NAMESPACE" -l app=db-migration -o wide 2>&1 || true
+            FAIL=1
+          fi
           if kubectl get configmap inter-service-ca -n "$NAMESPACE" >/dev/null 2>&1; then
             echo "OK: inter-service-ca ConfigMap exists"
           else
-            echo "::warning::inter-service-ca ConfigMap missing -- expected until the PostSync/health deadlock (see workflow comments) is fixed; not gating this job"
+            echo "FAIL: inter-service-ca ConfigMap missing -- ArgoCD PostSync/health deadlock may have regressed"
+            FAIL=1
           fi
 
           echo "=== datastorage-signing-cert Secret (#334 regression guard) ==="
@@ -251,6 +299,17 @@ jobs:
             echo "FAIL: datastorage-signing-cert missing or empty tls.key"
             FAIL=1
           fi
+
+          echo "=== datastorage + gateway Ready (DD-PLATFORM-002 end-to-end proof) ==="
+          for dep in datastorage gateway; do
+            if kubectl wait --for=condition=Available --timeout=120s "deployment/${dep}" -n "$NAMESPACE" 2>/dev/null; then
+              echo "OK: ${dep} Available"
+            else
+              echo "FAIL: ${dep} not Available"
+              kubectl describe "deployment/${dep}" -n "$NAMESPACE" 2>&1 || true
+              FAIL=1
+            fi
+          done
 
           echo "=== Pod status (informational -- real quay.io images, no app-level config tuning) ==="
           kubectl get pods -n "$NAMESPACE" -o wide
