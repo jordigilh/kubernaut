@@ -1,7 +1,7 @@
 # Fleet Readiness Gate - Production Runbooks
 
-**Version**: v1.0
-**Last Updated**: 2026-07-04
+**Version**: v1.1
+**Last Updated**: 2026-07-07
 **Status**: ✅ Production Ready
 **Applies to**: Gateway (GW), RemediationOrchestrator (RO), EffectivenessMonitor (EM),
 SignalProcessing (SP), WorkflowExecution (WE), APIFrontend (AF), KubernautAgent (KA)
@@ -14,7 +14,7 @@ SignalProcessing (SP), WorkflowExecution (WE), APIFrontend (AF), KubernautAgent 
 | ID | Runbook | Triggers On | Automation |
 |----|---------|-------------|------------|
 | RB-FLEET-001 | [Pod stuck NotReady due to Fleet dependency](#rb-fleet-001-pod-stuck-notready-due-to-fleet-dependency) | `/readyz` returns 503, pod removed from Service endpoints | Alert + Dashboard |
-| RB-FLEET-002 | [ACM backend permanently NotReady (#1556)](#rb-fleet-002-acm-backend-permanently-notready-1556) | `fleet.backend: "acm"` deployments never reach Ready | Alert |
+| RB-FLEET-002 | [ACM backend NotReady due to auth/RBAC misconfiguration](#rb-fleet-002-acm-backend-notready-due-to-authrbac-misconfiguration) | `fleet.backend: "acm"` deployments fail to start or never reach Ready | Alert |
 
 ---
 
@@ -65,8 +65,9 @@ kubectl logs -n kubernaut-system deploy/<service> --since=5m | grep -i "fleet\|r
 kubectl exec -n kubernaut-system deploy/<service> -- curl -sk https://<mcp-gateway-endpoint>/healthz
 #   - FMC scope-check backend:
 kubectl exec -n kubernaut-system deploy/<service> -- curl -s http://<fmc-endpoint>/healthz
-#   - ACM Search backend: see RB-FLEET-002 first — a permanently-unreachable ACM backend is a
-#     known, separate issue (#1556), not a transient outage.
+#   - ACM Search backend: see RB-FLEET-002 first — a permanently-unreachable ACM backend is
+#     usually an auth/RBAC misconfiguration (missing/invalid bearer token, missing RBAC
+#     bindings), not a transient outage.
 
 # Step 4: Check OAuth2 provider reachability if MCP Gateway auth is failing
 kubectl exec -n kubernaut-system deploy/<service> -- curl -sk https://<oauth2-token-url>
@@ -93,38 +94,64 @@ kubectl exec -n kubernaut-system deploy/<service> -- curl -s -o /dev/null -w "%{
 
 ---
 
-## RB-FLEET-002: ACM backend permanently NotReady (#1556)
+## RB-FLEET-002: ACM backend NotReady due to auth/RBAC misconfiguration
+
+> **History**: `pkg/fleet/acm.Client` originally never sent the `Authorization: Bearer <token>`
+> header the real ACM Search GraphQL API (`stolostron/search-v2-api`) mandatorily requires — a
+> pre-existing gap tracked as **[#1556](https://github.com/jordigilh/kubernaut/issues/1556)**.
+> Before #1553, this failed silently (`IsManagedResource` fail-safe-swallowed the 401 into
+> `(false, nil)`). After #1553 and before #1556 landed, it surfaced as a **permanent**
+> `/readyz=NotReady` for every `fleet.backend: "acm"` deployment. **#1556 is now resolved**:
+> `pkg/fleet/scope_factory.go` composes `auth.AuthTransport` (reading the token from
+> `FleetConfig.TokenPath`) into the ACM client's HTTP transport, and `FleetConfig.Validate()`
+> hard-rejects `backend: "acm"` without `TokenPath` set (fail-closed at startup instead of at
+> the readiness probe). A related defect in `acm.Client.Ping()` (sent an empty search filter,
+> which real ACM Search rejects with a GraphQL error) was also found and fixed during a
+> live-cluster spike against ACM 2.16.2. This runbook now covers the auth/RBAC misconfigurations
+> that can still cause ACM-backend `NotReady` after those fixes.
 
 ### Symptoms
 
 - Only affects deployments with `fleet.backend: "acm"` configured.
-- Pod is permanently `NotReady`, and RB-FLEET-001's diagnosis steps show the ACM Search endpoint
-  itself is reachable (e.g., `curl` to the endpoint from outside the pod succeeds, or returns 401
+- **Fails at startup** (pod crash-loops, does not reach `Running`) if `fleet.tokenPath` /
+  `<service>.fleet.tokenSecretRef` is unset — this is expected, fail-closed behavior per #1556,
+  not a bug. `FleetConfig.Validate()` rejects the config before the process starts serving.
+- **Pod is `Running` but permanently `NotReady`** if `TokenPath` is set but the token is invalid,
+  expired, or lacks RBAC visibility — RB-FLEET-001's diagnosis steps will show the ACM Search
+  endpoint itself is reachable (e.g., `curl` from outside the pod succeeds or returns 401/403,
   rather than a connection error).
 
 ### Root Cause
 
-`pkg/fleet/acm.Client` does not currently send the `Authorization: Bearer <token>` header that the
-real ACM Search GraphQL API (`stolostron/search-v2-api`) mandatorily requires (confirmed against the
-upstream project — every request, including the project's own dev-testing `curl` targets, requires
-a bearer token validated via Kubernetes `TokenReview`-backed RBAC). This is a **pre-existing gap**
-in the ACM adapter (it never worked, but previously failed silently — see below), not something
-introduced by #1553. It's tracked separately as **[#1556](https://github.com/jordigilh/kubernaut/issues/1556)**.
+Most commonly one of:
 
-Before #1553: `acm.Client.IsManagedResource` fail-safe-swallowed the resulting 401 into
-`(false, nil)` — scope checks against the ACM backend silently always reported "unmanaged" with no
-visible error.
-
-After #1553: `acm.Client.Ping` (used by `readiness.ScopeCheckerProber`) does **not** swallow the
-error, so the same 401 now correctly surfaces as `/readyz=NotReady` instead of being silently
-absorbed.
+1. **Missing `tokenPath`/`tokenSecretRef`** — `<service>.fleet.backend: "acm"` was set without
+   `<service>.fleet.tokenSecretRef` in Helm values. `Validate()` now catches this at startup
+   (`fleet: tokenPath is required when backend=acm`); it is not a `/readyz` symptom.
+2. **Invalid or expired token** — the ServiceAccount token referenced by `tokenSecretRef` was
+   revoked, rotated out-of-band, or the Secret contains a stale value.
+3. **RBAC not configured on the ACM hub** — per the ADR-068 setup guide below, ACM Search
+   enforces two independent RBAC layers (K8s RBAC + a `view` RoleBinding in each managed
+   cluster's hub namespace). Missing either layer returns `count: 0` or a 403, not a connection
+   error.
+4. **`fine-grained-rbac` MCH component not enabled** — see ADR-068's ACM Search Production
+   Setup Guide, Step 1.
 
 ### Resolution
 
-There is currently no workaround short of not using the ACM backend (`fleet.backend: "acm"`) until
-[#1556](https://github.com/jordigilh/kubernaut/issues/1556) ships bearer-token support. If you need
-Fleet federation today and cannot wait, use the FMC backend (`fleet.backend: "fleetmetadatacache"`,
-the chart default) instead.
+1. Confirm `<service>.fleet.tokenSecretRef` is set in Helm values for the affected service, and
+   that the referenced Secret exists in the pod's namespace with a `token` key:
+   ```bash
+   kubectl get secret -n kubernaut-system <tokenSecretRef> -o jsonpath='{.data.token}' | base64 -d | head -c 20
+   ```
+2. Confirm the mounted token is current and matches what was issued for the `kubernaut-fleet-reader`
+   ServiceAccount on the ACM hub (see [ADR-068](../../architecture/decisions/ADR-068-fleet-federation-architecture.md#acm-search-production-setup-guide),
+   Step 6 for cross-cluster token generation/rotation).
+3. Confirm RBAC per the ADR-068 setup guide: `fine-grained-rbac` MCH component enabled, K8s
+   ClusterRole/ClusterRoleBinding for the SA, and a `view` RoleBinding in each managed cluster's
+   hub namespace.
+4. If none of the above resolves it, use the Verification step to reproduce the exact request
+   the pod is making and inspect the GraphQL response for `errors`.
 
 Do **not** work around this by disabling the readiness gate or reverting to fail-open behavior for
 the ACM backend specifically — that would just restore the previous silent-failure behavior (scope
@@ -133,11 +160,15 @@ visible `NotReady`.
 
 ### Verification
 
-Track [#1556](https://github.com/jordigilh/kubernaut/issues/1556) for the fix. Once shipped, confirm
-via:
-
 ```bash
-kubectl exec -n kubernaut-system deploy/<service> -- curl -sk -H "Authorization: Bearer $(cat /path/to/token)" \
-  -H 'Content-Type: application/json' --data-raw '{"query":"{search(input:[{filters:[]}]){count}}"}' \
-  https://<acm-search-endpoint>/searchapi/graphql
+# Exec into the pod and confirm the mounted token authenticates successfully
+kubectl exec -n kubernaut-system deploy/<service> -- sh -c \
+  'curl -sk -H "Authorization: Bearer $(cat /etc/<service>/<tokenSecretRef>/token)" \
+   -H "Content-Type: application/json" \
+   --data-raw "{\"query\":\"query(\$input:[SearchInput]){searchResult:search(input:\$input){count}}\",\"variables\":{\"input\":[{\"filters\":[{\"property\":\"kind\",\"values\":[\"Namespace\"]}]}]}}" \
+   https://<acm-search-endpoint>/searchapi/graphql'
+# Expected: {"data":{"searchResult":[{"count":N}]}} with N > 0 and no "errors" key.
+# A 401/403 means the token or RBAC is the problem; a populated "errors" array with count:0
+# despite a 200 status usually means the RBAC "view" RoleBinding (Step 5 of the ADR-068 setup
+# guide) is missing on the managed cluster namespace being queried.
 ```

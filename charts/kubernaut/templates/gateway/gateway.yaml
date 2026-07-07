@@ -82,9 +82,8 @@ data:
       mcpGatewayType: {{ $gatewayFleet.mcpGatewayType | quote }}
       {{- end }}
       tlsCAFile: {{ $gatewayFleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). NOT YET FUNCTIONAL: no
-           FleetConfig field consumes tokenPath until Issue #1556 lands the Go-side support.
-           Rendered ahead of time so enabling it later is a values-only change. */}}
+      {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). FleetConfig.TokenPath
+           consumes this (Issue #1556) and Validate() hard-requires it when backend=acm. */}}
       {{- if .Values.gateway.fleet.tokenSecretRef }}
       tokenPath: "/etc/gateway/{{ .Values.gateway.fleet.tokenSecretRef }}/token"
       {{- end }}
