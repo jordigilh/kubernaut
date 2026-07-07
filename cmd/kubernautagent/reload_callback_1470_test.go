@@ -19,12 +19,15 @@ package main
 import (
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-func setupPhaseResolver(t *testing.T) (*llm.SwappableClient, *investigator.DefaultPhaseResolver) {
+func setupPhaseResolver(t testing.TB) (*llm.SwappableClient, *investigator.DefaultPhaseResolver) {
 	t.Helper()
 	inner := &stubLLMClient{}
 	sc, err := llm.NewSwappableClient(inner, "default-model")
@@ -35,13 +38,14 @@ func setupPhaseResolver(t *testing.T) (*llm.SwappableClient, *investigator.Defau
 	return sc, resolver
 }
 
-// IT-AI-1470-004a (CM-3): Hot-reload with phaseModels rebuild
-func TestReloadAI1470_004a_PhaseModelsRebuild(t *testing.T) {
-	sc, resolver := setupPhaseResolver(t)
+var _ = Describe("llmRuntimeReloadCallback — per-phase model wiring (#1470)", func() {
+	// IT-AI-1470-004a (CM-3): Hot-reload with phaseModels rebuild
+	It("rebuilds phase overrides on reload and leaves unlisted phases on the reloaded default", func() {
+		sc, resolver := setupPhaseResolver(GinkgoTB())
 
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver)
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver)
 
-	err := cb(`model: gpt-4
+		err := cb(`model: gpt-4
 endpoint: http://localhost:11434
 apiKey: test-key
 phaseModels:
@@ -49,33 +53,25 @@ phaseModels:
     model: gpt-4-mini
     endpoint: http://fast-endpoint:11434
 `)
-	if err != nil {
-		t.Fatalf("reload with phaseModels should succeed, got: %v", err)
-	}
+		Expect(err).NotTo(HaveOccurred())
 
-	_, wfModel, _ := resolver.ResolvePhase(katypes.PhaseWorkflowDiscovery)
-	if wfModel != "gpt-4-mini" {
-		t.Fatalf("expected workflow_discovery model gpt-4-mini, got %s", wfModel)
-	}
+		_, wfModel, _ := resolver.ResolvePhase(katypes.PhaseWorkflowDiscovery)
+		Expect(wfModel).To(Equal("gpt-4-mini"))
 
-	_, rcaModel, _ := resolver.ResolvePhase(katypes.PhaseRCA)
-	if rcaModel != "gpt-4" {
-		t.Fatalf("expected RCA to use default (reloaded) model gpt-4, got %s", rcaModel)
-	}
-}
+		_, rcaModel, _ := resolver.ResolvePhase(katypes.PhaseRCA)
+		Expect(rcaModel).To(Equal("gpt-4"), "RCA should use the default (reloaded) model")
+	})
 
-// IT-AI-1470-004b: Hot-reload adding a new phase override
-func TestReloadAI1470_004b_AddPhaseOverride(t *testing.T) {
-	sc, resolver := setupPhaseResolver(t)
+	// IT-AI-1470-004b: Hot-reload adding a new phase override
+	It("adds a new phase override on reload", func() {
+		sc, resolver := setupPhaseResolver(GinkgoTB())
 
-	_, rcaModelBefore, _ := resolver.ResolvePhase(katypes.PhaseRCA)
-	if rcaModelBefore != "default-model" {
-		t.Fatalf("before reload, expected default model, got %s", rcaModelBefore)
-	}
+		_, rcaModelBefore, _ := resolver.ResolvePhase(katypes.PhaseRCA)
+		Expect(rcaModelBefore).To(Equal("default-model"))
 
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver)
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver)
 
-	err := cb(`model: gpt-4
+		err := cb(`model: gpt-4
 endpoint: http://localhost:11434
 apiKey: test-key
 phaseModels:
@@ -83,61 +79,46 @@ phaseModels:
     model: claude-sonnet
     endpoint: http://anthropic:443
 `)
-	if err != nil {
-		t.Fatalf("reload adding rca override should succeed, got: %v", err)
-	}
+		Expect(err).NotTo(HaveOccurred())
 
-	_, rcaModel, _ := resolver.ResolvePhase(katypes.PhaseRCA)
-	if rcaModel != "claude-sonnet" {
-		t.Fatalf("expected rca model claude-sonnet, got %s", rcaModel)
-	}
-}
+		_, rcaModel, _ := resolver.ResolvePhase(katypes.PhaseRCA)
+		Expect(rcaModel).To(Equal("claude-sonnet"))
+	})
 
-// IT-AI-1470-004c: Hot-reload removing a phase override
-func TestReloadAI1470_004c_RemovePhaseOverride(t *testing.T) {
-	sc, resolver := setupPhaseResolver(t)
+	// IT-AI-1470-004c: Hot-reload removing a phase override
+	It("removes a phase override on reload, falling back to the reloaded default", func() {
+		sc, resolver := setupPhaseResolver(GinkgoTB())
 
-	wfInner := &stubLLMClient{}
-	wfSw, err := llm.NewSwappableClient(wfInner, "fast-model")
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolver.SetPhaseSwappable(katypes.PhaseWorkflowDiscovery, wfSw)
+		wfInner := &stubLLMClient{}
+		wfSw, err := llm.NewSwappableClient(wfInner, "fast-model")
+		Expect(err).NotTo(HaveOccurred())
+		resolver.SetPhaseSwappable(katypes.PhaseWorkflowDiscovery, wfSw)
 
-	_, wfModelBefore, _ := resolver.ResolvePhase(katypes.PhaseWorkflowDiscovery)
-	if wfModelBefore != "fast-model" {
-		t.Fatalf("before reload, expected fast-model, got %s", wfModelBefore)
-	}
+		_, wfModelBefore, _ := resolver.ResolvePhase(katypes.PhaseWorkflowDiscovery)
+		Expect(wfModelBefore).To(Equal("fast-model"))
 
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver)
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver)
 
-	err = cb(`model: gpt-4
+		err = cb(`model: gpt-4
 endpoint: http://localhost:11434
 apiKey: test-key
 `)
-	if err != nil {
-		t.Fatalf("reload without phaseModels should succeed, got: %v", err)
-	}
+		Expect(err).NotTo(HaveOccurred())
 
-	_, wfModelAfter, _ := resolver.ResolvePhase(katypes.PhaseWorkflowDiscovery)
-	if wfModelAfter != "gpt-4" {
-		t.Fatalf("after removing phase override, expected default (reloaded) model gpt-4, got %s", wfModelAfter)
-	}
-}
+		_, wfModelAfter, _ := resolver.ResolvePhase(katypes.PhaseWorkflowDiscovery)
+		Expect(wfModelAfter).To(Equal("gpt-4"), "removing a phase override should fall back to the reloaded default")
+	})
 
-// Backward compat: nil resolver does not break existing reload
-func TestReloadAI1470_NilResolverBackwardCompat(t *testing.T) {
-	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
+	// Backward compat: nil resolver does not break existing reload
+	It("does not break reload when the resolver is nil (backward compat)", func() {
+		sc := setupSwappable(GinkgoTB())
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
-	err := cb(`model: gpt-4-turbo
+		err := cb(`model: gpt-4-turbo
 endpoint: http://localhost:11434
 apiKey: test-key
 `)
-	if err != nil {
-		t.Fatalf("reload with nil resolver should succeed, got: %v", err)
-	}
-	if sc.ModelName() != "gpt-4-turbo" {
-		t.Fatalf("expected model gpt-4-turbo, got %s", sc.ModelName())
-	}
-}
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sc.ModelName()).To(Equal("gpt-4-turbo"))
+	})
+})

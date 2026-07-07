@@ -21,6 +21,9 @@ import (
 	"testing"
 
 	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -36,7 +39,11 @@ func staticCfg() *kaconfig.Config {
 	return cfg
 }
 
-func setupSwappable(t *testing.T) *llm.SwappableClient {
+// setupSwappable accepts testing.TB (not *testing.T) so both plain
+// `testing.T`-based tests and Ginkgo specs (via GinkgoTB(), which implements
+// testing.TB) can share this
+// fixture.
+func setupSwappable(t testing.TB) *llm.SwappableClient {
 	t.Helper()
 	inner := &stubLLMClient{}
 	sc, err := llm.NewSwappableClient(inner, "gpt-4")
@@ -58,84 +65,68 @@ func (s *stubLLMClient) StreamChat(_ context.Context, _ llm.ChatRequest, _ func(
 
 func (s *stubLLMClient) Close() error { return nil }
 
-func TestReloadRejectsEmptyContent(t *testing.T) {
-	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
+var _ = Describe("llmRuntimeReloadCallback (#783)", func() {
+	It("rejects empty content and does not change the model", func() {
+		sc := setupSwappable(GinkgoTB())
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
-	err := cb("")
-	if err == nil {
-		t.Fatal("expected error for empty content")
-	}
-	if sc.ModelName() != "gpt-4" {
-		t.Fatalf("model should not change on rejected reload, got %s", sc.ModelName())
-	}
-}
+		err := cb("")
+		Expect(err).To(HaveOccurred())
+		Expect(sc.ModelName()).To(Equal("gpt-4"))
+	})
 
-func TestReloadRejectsWhitespaceContent(t *testing.T) {
-	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
+	It("rejects whitespace-only content", func() {
+		sc := setupSwappable(GinkgoTB())
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
-	err := cb("   \n  \t  ")
-	if err == nil {
-		t.Fatal("expected error for whitespace-only content")
-	}
-}
+		err := cb("   \n  \t  ")
+		Expect(err).To(HaveOccurred())
+	})
 
-func TestReloadAcceptsModelChange(t *testing.T) {
-	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
+	It("accepts a model change", func() {
+		sc := setupSwappable(GinkgoTB())
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
-	err := cb(`model: gpt-4-turbo
+		err := cb(`model: gpt-4-turbo
 endpoint: http://localhost:11434
 apiKey: test-key
 `)
-	if err != nil {
-		t.Fatalf("model change should succeed, got: %v", err)
-	}
-	if sc.ModelName() != "gpt-4-turbo" {
-		t.Fatalf("expected model gpt-4-turbo, got %s", sc.ModelName())
-	}
-}
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sc.ModelName()).To(Equal("gpt-4-turbo"))
+	})
 
-func TestReloadAcceptsEndpointChange(t *testing.T) {
-	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
+	It("accepts an endpoint change", func() {
+		sc := setupSwappable(GinkgoTB())
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
-	err := cb(`model: gpt-4
+		err := cb(`model: gpt-4
 endpoint: http://new-endpoint:8080
 apiKey: test-key
 `)
-	if err != nil {
-		t.Fatalf("endpoint change should succeed, got: %v", err)
-	}
-}
+		Expect(err).NotTo(HaveOccurred())
+	})
 
-func TestReloadRejectsValidationFailure(t *testing.T) {
-	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
+	It("rejects a validation failure and does not change the model", func() {
+		sc := setupSwappable(GinkgoTB())
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
-	err := cb(`model: ""
+		err := cb(`model: ""
 endpoint: http://localhost:11434
 apiKey: test-key
 `)
-	if err == nil {
-		t.Fatal("expected error for validation failure (empty model)")
-	}
-	if sc.ModelName() != "gpt-4" {
-		t.Fatalf("model should not change on rejected reload, got %s", sc.ModelName())
-	}
-}
+		Expect(err).To(HaveOccurred())
+		Expect(sc.ModelName()).To(Equal("gpt-4"))
+	})
 
-func TestReloadAcceptsTemperatureChange(t *testing.T) {
-	sc := setupSwappable(t)
-	cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
+	It("accepts a temperature change", func() {
+		sc := setupSwappable(GinkgoTB())
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil)
 
-	err := cb(`model: gpt-4
+		err := cb(`model: gpt-4
 endpoint: http://localhost:11434
 apiKey: test-key
 temperature: 0.9
 `)
-	if err != nil {
-		t.Fatalf("temperature change should succeed, got: %v", err)
-	}
-}
+		Expect(err).NotTo(HaveOccurred())
+	})
+})

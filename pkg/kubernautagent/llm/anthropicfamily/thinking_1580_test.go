@@ -101,6 +101,75 @@ var _ = Describe("anthropicfamily thinking/reasoning wiring — #1580", func() {
 		})
 	})
 
+	Describe("WithReasoning — construction-time default (#1578 wiring-gap fix)", func() {
+		// Prior to this fix, no production code path ever set
+		// ChatRequest.Options.Reasoning: llm_builder.go never read
+		// cfg.Reasoning.Enabled/BudgetTokens, and no investigator call site
+		// set Options.Reasoning per-call. Operator config's
+		// ai.llm.reasoning.enabled=true was therefore a structural dead end —
+		// the "thinking" param was never sent on a real Anthropic call,
+		// regardless of config. WithReasoning closes this by resolving the
+		// operator's setting ONCE at client-construction time (matching the
+		// documented intent on llm.ReasoningRequest: "resolved once at
+		// LLM-client-construction time from operator config, never threaded
+		// per-call from business logic").
+		newTestClientWithReasoning := func(model string, r llm.ReasoningRequest) *anthropicfamily.Client {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(body, &receivedBody)
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(responseBody))
+			}))
+			client, err := anthropicfamily.NewWithAPIKey("sk-ant-fake-key", model,
+				anthropicfamily.WithSDKOptions(option.WithBaseURL(server.URL)),
+				anthropicfamily.WithReasoning(r),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			return client
+		}
+
+		It("UT-KA-1578-201: a client constructed WithReasoning(Enabled:true) sends thinking on a call with no per-call Options.Reasoning", func() {
+			client := newTestClientWithReasoning("claude-sonnet-4-6", llm.ReasoningRequest{Enabled: true, BudgetTokens: 4096})
+			_, err := client.Chat(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "hello"}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedBody).To(HaveKey("thinking"),
+				"the construction-time default must apply when the caller (business logic) never sets Options.Reasoning per-call")
+			thinking := receivedBody["thinking"].(map[string]interface{})
+			Expect(thinking["budget_tokens"]).To(BeNumerically("==", 4096))
+		})
+
+		It("UT-KA-1578-202: a client constructed without WithReasoning still omits thinking (no regression for existing deployments)", func() {
+			client := newTestClient("claude-sonnet-4-6")
+			_, err := client.Chat(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "hello"}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedBody).NotTo(HaveKey("thinking"))
+		})
+
+		It("UT-KA-1578-203: an explicit per-call Options.Reasoning still overrides the construction-time default (disable wins)", func() {
+			client := newTestClientWithReasoning("claude-sonnet-4-6", llm.ReasoningRequest{Enabled: true, BudgetTokens: 4096})
+			_, err := client.Chat(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "hello"}},
+				Options:  llm.ChatOptions{Reasoning: &llm.ReasoningRequest{Enabled: false}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedBody).NotTo(HaveKey("thinking"),
+				"a per-call override must win over the client's construction-time default")
+		})
+
+		It("UT-KA-1578-204: WithReasoning(Enabled:false) never sends thinking, even with a BudgetTokens set", func() {
+			client := newTestClientWithReasoning("claude-sonnet-4-6", llm.ReasoningRequest{Enabled: false, BudgetTokens: 4096})
+			_, err := client.Chat(context.Background(), llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "hello"}},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(receivedBody).NotTo(HaveKey("thinking"))
+		})
+	})
+
 	Describe("request wiring — model-aware tier detection (adk-anthropic-go/converters reuse)", func() {
 		It("UT-KA-1580-103: adaptive-capable model (claude-sonnet-4-6) with no explicit budget gets adaptive thinking", func() {
 			client := newTestClient("claude-sonnet-4-6")
