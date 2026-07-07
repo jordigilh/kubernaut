@@ -1,12 +1,36 @@
 # BR-HAPI-199: ConfigMap Hot-Reload for HolmesGPT API
 
 ## Status
-**✅ IMPLEMENTED** (V1.0)
+**⚠️ SUPERSEDED** — see note below
 **Created**: 2025-12-06
-**Last Updated**: 2025-12-07
-**Implemented**: 2025-12-07
+**Last Updated**: 2026-07-06 (superseded)
+**Implemented**: 2025-12-07 (for the Python "HolmesGPT API" PoC described below, not the current Go implementation)
 
 ---
+
+> **SUPERSEDED (2026-07-06)**: This BR describes a Python-based "HolmesGPT API"
+> service (`kubernaut-agent/poc/hot_reload_poc.py`, `watchdog` dependency,
+> `DD-HAPI-004`) that was a pre-Go-rewrite proof of concept. It does not
+> describe the current Kubernaut Agent (KA, `cmd/kubernautagent`), which is
+> implemented in Go per [DD-HAPI-019](../architecture/decisions/DD-HAPI-019-go-rewrite-design).
+>
+> Specifically, the "Fields Supporting Hot-Reload" table below claiming
+> `llm.model` and `llm.provider` are both hot-reloadable (✅) is **incorrect**
+> for the current Go implementation: as of
+> [#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
+> [DD-LLM-008](../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md),
+> LLM identity (`provider` + `model`, at both base and per-phase-override level)
+> requires a process restart to change — only `endpoint`, `apiKeyFile`,
+> `temperature`, `maxRetries`, `timeoutSeconds`, and `customHeaders` are
+> hot-reloadable. `llm.provider` was, in fact, never hot-reloadable in the Go
+> implementation even before #1599 (KA's `LLMRuntimeConfig` has no `Provider`
+> field at all).
+>
+> The authoritative source for KA's current hot-reload behavior is
+> [`docs/services/kubernaut-agent/configuration-reference.md`](../services/kubernaut-agent/configuration-reference.md).
+> This document is retained for historical reference only and MUST NOT be used
+> to answer "is X hot-reloadable in KA" — recall/query tools should prefer the
+> configuration-reference doc and DD-LLM-008 for that question.
 
 ## Business Context
 

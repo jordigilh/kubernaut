@@ -3,15 +3,28 @@
 **Issue**: [#783](https://github.com/jordigilh/kubernaut/issues/783)
 **Service**: Kubernaut Agent (KA)
 **Date**: 2026-04-15
-**Status**: Active
+**Status**: Active — amended 2026-07-06 for [#1599](https://github.com/jordigilh/kubernaut/issues/1599) / [DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md) (see below)
+
+> **2026-07-06 amendment**: `model` moved from "In Scope" to "Out of Scope" per #1599 —
+> LLM identity (provider+model, base and per-phase) now requires a restart to change.
+> The BR table below was also corrected: the original `BR-AI-029` and unqualified
+> `BR-CFG-005`/`BR-PERF-008` citations pointed at the wrong requirement (or an
+> ambiguous, colliding BR ID — multiple unrelated requirements docs reuse the same
+> ID); see the source-file-qualified citations below. This plan otherwise still
+> describes the credential/transport-focused fields (`provider`, `oauth2.*`) that
+> were already out of scope before #1599 for unrelated reasons.
 
 ## Business Requirements
 
-| BR ID | Description | Hot-Reload Relevance |
-|-------|-------------|---------------------|
-| BR-CFG-005 | Hot-reload configuration where safe | Primary driver: SDK LLM config must reload without pod restart |
-| BR-PERF-008 | Hot-reload must apply within 10 seconds | FileWatcher debounce (200ms) + client build must complete within budget |
-| BR-AI-029 | Zero-downtime policy updates | Model/endpoint changes must not interrupt in-flight investigations |
+`BR-CFG-005` and `BR-PERF-008` are reused, unrelated IDs across multiple
+`docs/requirements/*.md` files — citations below are qualified with the source
+file to disambiguate.
+
+| BR ID | Source | Description | Hot-Reload Relevance |
+|-------|--------|-------------|---------------------|
+| BR-CFG-005 | `docs/requirements/09_SHARED_UTILITIES_COMMON.md` | MUST implement configuration hot-reloading where safe | Primary driver: SDK LLM config must reload without pod restart, for the fields that are actually safe to reload (see #1599 amendment above for what "safe" now excludes) |
+| BR-PERF-008 | `docs/requirements/09_SHARED_UTILITIES_COMMON.md` | Hot-reload operations MUST complete within 10 seconds | FileWatcher debounce (200ms) + client build must complete within budget |
+| BR-PERF-015 | `docs/requirements/10_AI_CONTEXT_ORCHESTRATION.md` | Dynamic toolset reconfiguration MUST not interrupt ongoing investigations | Closest existing analog for "config changes must not interrupt in-flight investigations" — written about toolset reconfiguration specifically; applied here by the same principle to LLM client hot-swap (implemented via per-phase client pinning, #783/#1470). The original citation (`BR-AI-029`, Rego/OPA zero-downtime policy updates) was unrelated to LLM hot-reload and has been replaced. |
 
 ## Scope
 
@@ -19,7 +32,6 @@
 
 | Field | Merge Semantic | Risk Level |
 |-------|---------------|------------|
-| `model` | Gap-fill | Low |
 | `endpoint` | Gap-fill | Low |
 | `api_key` | Gap-fill | Medium (credential rotation) |
 | `vertex_project` | Gap-fill | Low |
@@ -33,7 +45,9 @@
 
 | Field | Reason |
 |-------|--------|
-| `provider` | Changes entire construction path, transport stack, credential model |
+| `model` (base and `phaseModels` overrides) | **#1599 / DD-LLM-008**: LLM identity (provider+model) is immutable after process start — a hot-swap risks replaying one provider's opaque reasoning signature against a different provider/model that never issued it. Was previously "In Scope" (gap-fill) before this amendment. |
+| `phaseModels.<phase>.provider` | Same as above — phase-level provider is part of that phase's identity |
+| `provider` (base) | Changes entire construction path, transport stack, credential model (already immutable pre-#1599: `LLMRuntimeConfig` has no base `Provider` field) |
 | `oauth2.token_url` | Credential redirect attack surface (M5) |
 | `oauth2.client_id` | Credential exfiltration risk |
 | `oauth2.client_secret` | Credential exfiltration risk |
@@ -72,7 +86,7 @@
 | UT-KA-783-RC-004 | Reload rejects OAuth2 token_url change | `reload_callback_test.go` |
 | UT-KA-783-RC-005 | Reload rejects OAuth2 client_id change | `reload_callback_test.go` |
 | UT-KA-783-RC-006 | Reload rejects OAuth2 client_secret change | `reload_callback_test.go` |
-| UT-KA-783-RC-007 | Reload accepts model change | `reload_callback_test.go` |
+| UT-KA-783-RC-007 | Reload rejects model change, requires restart (amended per #1599; was "accepts model change" before this DD) | `reload_callback_783_test.go` |
 | UT-KA-783-RC-008 | Reload accepts endpoint change | `reload_callback_test.go` |
 | UT-KA-783-RC-009 | Reload accepts api_key change | `reload_callback_test.go` |
 | UT-KA-783-RC-010 | Reload accepts OAuth2 scopes change | `reload_callback_test.go` |
@@ -99,8 +113,9 @@
 
 1. Live config is NEVER mutated before validation succeeds
 2. Provider changes are ALWAYS rejected
-3. OAuth2 credential changes are ALWAYS rejected
-4. Empty/whitespace SDK content is ALWAYS rejected
-5. In-flight investigations complete with pinned client
-6. Old clients are explicitly closed after swap
-7. Structured reload events are emitted for every attempt
+3. Model changes are ALWAYS rejected (base and per-phase-override identity; amended per #1599 — was previously accepted)
+4. OAuth2 credential changes are ALWAYS rejected
+5. Empty/whitespace SDK content is ALWAYS rejected
+6. In-flight investigations complete with pinned client
+7. Old clients are explicitly closed after swap
+8. Structured reload events are emitted for every attempt

@@ -17,7 +17,16 @@ Configuration is split into two files plus optional CLI overrides:
 | Layer | Reload | Purpose |
 |-------|--------|---------|
 | Static YAML (`Config`) | Requires process restart | Runtime, AI (except hot LLM knobs), integrations |
-| LLM runtime YAML (`LLMRuntimeConfig`) | File watcher reload | Model, endpoint, API key placeholder, tuning, custom headers |
+| LLM runtime YAML (`LLMRuntimeConfig`) | File watcher reload, **except LLM identity** | Endpoint, API key placeholder, tuning, custom headers, per-phase overrides — see §6 |
+
+> **LLM identity (`model`, and `phaseModels.<phase>.provider`/`.model`) requires a
+> process restart to change** — [#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
+> [DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md).
+> A hot-reload attempt that changes identity is rejected in full (the whole
+> candidate reload, including any otherwise-safe tuning changes in the same
+> payload) and the previous configuration keeps running. See §6 for the full
+> field-by-field breakdown and §13 for the operational implications of this
+> across deployment topologies (Operator, Helm-only, GitOps).
 
 CLI flags only select paths or override the main HTTP listen socket; they do not replace the YAML surface.
 
@@ -207,15 +216,67 @@ Top-level YAML (not nested under `runtime`/`ai` in file). Mapped by `LLMRuntimeC
 
 | YAML key | Type | Default | Validation / behavior | Description |
 |----------|------|---------|------------------------|-------------|
-| `model` | string | (empty) | **Required** | Model id for the provider. |
+| `model` | string | (empty) | **Required**; **immutable after boot — see below** | Model id for the provider. |
 | `endpoint` | string | (empty) | Required for non-standard providers (see section 5.1) | API base / proxy URL. |
 | `apiKey` | string | (empty) | If empty, resolved from credential files (section 5.2) | Inline key material (sensitive). |
 | `temperature` | float64 | `0` if omitted | None in `Validate` | Passed to `RuntimeParams`. **Omitted YAML fields decode as Go zero values** (`0`); they are **not** merged with `DefaultLLMRuntime()` in `LoadLLMRuntime`. |
 | `maxRetries` | int | `0` if omitted | None in `Validate` | Retry attempts = `maxAttempts = 1 + maxRetries`; if `maxAttempts < 1` it is clamped to `1` in chat helper. |
 | `timeoutSeconds` | int | `0` if omitted | None | If `<= 0`, per-chat wrapper does not add `context.WithTimeout` (relies on parent context). The `anthropicfamily`/`openai` clients still use a **120s** default HTTP client timeout when a custom transport stack is built. |
 | `customHeaders` | array | `nil` | Each entry validated; see below | Extra outbound headers on LLM HTTP stack. |
+| `phaseModels` | map of `LLMOverrideConfig`, keyed by phase name | `nil` | See §6.1 | Per-phase LLM overrides (#1470). Identity fields (`provider`, `model`) within an override are subject to the same restart-required rule as base `model` — see §6.1. |
 
-### 6.1 `customHeaders[]`
+**`model` is immutable after process start** ([#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
+[DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md)):
+`ai.llm.provider` (static config) combined with runtime `model` form the LLM's
+"identity". A hot-reload attempt where the new `model` differs from the model
+the process booted with is rejected in full — the reload callback returns an
+error, the FileWatcher keeps the previous configuration running, and no field
+in that reload payload is applied (not even otherwise-safe tuning changes
+bundled in the same file). This is enforced against the boot-time snapshot,
+not the most-recently-accepted reload — since accepted reloads can never
+actually change `model`, these are equivalent in practice. To change the
+model or provider, edit the config and restart the pod (see §13 for how that
+restart is triggered, or isn't, depending on deployment topology).
+
+### 6.1 `phaseModels.<phase>` (per-phase LLM override, #1470)
+
+Each key under `phaseModels` must be a valid phase name (`workflow_discovery`,
+`rca`, `validation`, ...). The value is an `LLMOverrideConfig` — the same
+struct type used by `ai.alignmentCheck.llm` (§7.1), but here it lives in the
+**hot-reloadable** runtime file, not the static one.
+
+| YAML key | Type | Default | Description |
+|----------|------|---------|-------------|
+| `provider` | string | (empty) | Overrides base `ai.llm.provider` for this phase when non-empty. **Identity field — restart required to change, see below.** |
+| `model` | string | (empty) | Overrides base runtime `model` for this phase when non-empty. **Identity field — restart required to change, see below.** |
+| `endpoint` | string | (empty) | Overrides base runtime `endpoint` for this phase when non-empty. Hot-reloadable. |
+| `apiKeyFile` | string | (empty) | Overrides base `apiKeyFile` for this phase when non-empty. Hot-reloadable. |
+| `azureApiVersion` | string | (empty) | Overrides static Azure API version for this phase when non-empty (#1600). Hot-reloadable. |
+| `vertexProject` | string | (empty) | Overrides static Vertex project for this phase when non-empty. Hot-reloadable. |
+| `vertexLocation` | string | (empty) | Overrides static Vertex location for this phase when non-empty. Hot-reloadable. |
+| `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
+
+An override's *effective identity* is `provider` (falling back to base
+`ai.llm.provider` when empty) + `model` (falling back to base runtime `model`
+when empty) — not the literal override fields. Per #1599 / DD-LLM-008, a
+hot-reload is rejected if it would change any phase's effective identity,
+whether that's because:
+
+- an **existing** phase override's `provider`/`model` changed,
+- a **new** phase override is added whose effective identity differs from
+  base (e.g. adding `phaseModels.rca.model: claude-sonnet` when the base
+  model is `gpt-4o`), or
+- an **existing** phase override is **removed** and falling back to base
+  would change that phase's effective identity (e.g. removing an override
+  that pinned `rca` to a different provider than base).
+
+Adding, tuning, or removing a phase override is accepted whenever doing so
+does **not** change that phase's effective identity — for example, adding a
+new override that only sets `endpoint` (inheriting the base model/provider),
+or removing an override that only ever set `endpoint` (so removal falls back
+to the same effective identity it already had).
+
+### 6.2 `customHeaders[]`
 
 | Field | Type | Sources | Validation | Description |
 |-------|------|---------|------------|-------------|
@@ -231,6 +292,8 @@ Reload failures leave the previously swapped client in place; reload rejects emp
 ## 7. Alignment checker
 
 YAML path: `ai.alignmentCheck`
+
+**Static configuration — not hot-reloadable.** Unlike `phaseModels` (§6.1), `ai.alignmentCheck` (including its optional `llm` override) lives entirely in the static config file and is read once at startup. There is no restart-required *identity lock* to reason about here specifically because nothing in this section is ever hot-swapped in the first place — changing anything under `ai.alignmentCheck`, including its shadow-model override, always requires a process restart.
 
 When `enabled` is true and `llm` is nil, startup logs **error-level** diagnostics that shadow traffic shares the primary instrumented LLM client ( contention risk ). When `enabled` is true and dedicated shadow client creation fails (non-nil `ai.alignmentCheck.llm` configured but client build fails), the **process exits** (fail-closed).
 
@@ -373,6 +436,18 @@ Store in Kubernetes **Secrets** (or equivalent vault-backed mounts), never in pl
 | Summarizer never runs | `ai.summarizer.threshold <= 0` disables it without validation error. |
 | Startup exit with alignment enabled | Process exits when `alignmentCheck` is enabled **and** a dedicated shadow LLM fails to construct when `alignmentCheck.llm` is configured; sharing primary client when `llm` nil does **not** exit. |
 | Custom header validation fails | `secretKeyRef` env unset at startup or multiple of `value`/`secretKeyRef`/`filePath` set.
+
+## 13. Deployment topology and restart triggers for LLM identity changes
+
+Per §1 and §6, changing `ai.llm.provider` (static) or `model`/`phaseModels.<phase>.provider`/`phaseModels.<phase>.model` (runtime) requires a **pod restart** — a hot-reload attempt that changes any of these is rejected outright (#1599 / DD-LLM-008). Editing the ConfigMap alone does **not** restart anything; whether an edit actually reaches a running pod depends entirely on how kubernaut-agent is deployed:
+
+| Deployment path | Restarts on `llm-runtime` ConfigMap change? | Notes |
+|------------------|:---:|-------|
+| **Kubernaut Operator** | ✅ Yes, automatically | The operator hashes the `llm-runtime` ConfigMap's contents and stamps the hash into the Deployment's pod template annotations, forcing a rolling restart on *any* change to that ConfigMap — identity or tuning field alike. No action needed; this was already the behavior before #1599 and required no operator change. |
+| **Helm chart only (no operator)** | ❌ No | Helm renders the ConfigMap but does not itself trigger a restart when its contents change on a subsequent `helm upgrade` — this is a standard Helm limitation, not specific to this chart. If you need `model`/`provider`/phase-identity changes to take effect, you must manually restart the deployment (`kubectl rollout restart deployment/<name>`) after upgrading. |
+| **GitOps (e.g. ArgoCD) managing the Helm chart or raw manifests** | ❌ No, by default | Same limitation as raw Helm — GitOps tooling syncs the ConfigMap but does not restart pods on its own. If you want identity changes (or any config change) to restart the pod automatically, use [`stakater/Reloader`](https://github.com/stakater/Reloader) with an annotation on the Deployment (e.g. `configmap.reloader.stakater.com/reload: "kubernaut-agent-llm-runtime"`). When using ArgoCD, also add an `ignoreDifferences` rule for the pod-template annotation Reloader injects, so ArgoCD doesn't report perpetual drift against the last-applied manifest. |
+
+This table is a deployment-topology reference, not a promise this chart implements restart-on-change itself outside the Operator path — the Helm chart's responsibility ends at rendering the ConfigMap/Deployment; triggering a restart on a subsequent content change is a deployment-topology concern that the tools above already solve well, and duplicating that logic in the chart was deliberately avoided (see DD-LLM-008's Deployment Note for the alternatives considered).
 
 ## Appendix A: TLS trust precedence (independent stacks)
 

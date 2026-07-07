@@ -119,6 +119,7 @@
 | DD-LLM-005 | Model-Aware Reasoning/Thinking Token Support | 📋 Proposed | 2026-07-06 | [DD-LLM-005-model-aware-reasoning-support.md](decisions/DD-LLM-005-model-aware-reasoning-support.md) |
 | DD-LLM-006 | AWS Bedrock Provider Support via Dual-Client Routing | 📋 Proposed | 2026-07-06 | [DD-LLM-006-bedrock-dual-client-routing.md](decisions/DD-LLM-006-bedrock-dual-client-routing.md) |
 | DD-LLM-007 | AF and KA Intentionally Do Not Share an Anthropic Client | ✅ Approved | 2026-07-06 | [DD-LLM-007-af-ka-anthropic-client-divergence.md](decisions/DD-LLM-007-af-ka-anthropic-client-divergence.md) |
+| DD-LLM-008 | LLM Identity (Provider+Model) Requires a Restart to Change | ✅ Approved & Implemented | 2026-07-06 | [DD-LLM-008-restart-required-llm-identity-lock.md](decisions/DD-LLM-008-restart-required-llm-identity-lock.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
