@@ -233,6 +233,11 @@ func (in *WorkflowExecutionStatus) DeepCopyInto(out *WorkflowExecutionStatus) {
 		*out = make([]int, len(*in))
 		copy(*out, *in)
 	}
+	if in.Resources != nil {
+		in, out := &in.Resources, &out.Resources
+		*out = new(corev1.ResourceRequirements)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))
