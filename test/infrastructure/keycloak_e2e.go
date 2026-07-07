@@ -54,7 +54,7 @@ var keycloakRealmFleetJSON string
 
 // KeycloakFleetTokenConfig holds configuration for obtaining a
 // client_credentials token from Keycloak for fleet service-to-service
-// authentication (mirrors DexFleetTokenConfig).
+// authentication.
 type KeycloakFleetTokenConfig struct {
 	TokenEndpoint string       // e.g. https://localhost:30557/realms/kubernaut-fleet/protocol/openid-connect/token
 	ClientID      string       // e.g. kubernaut-fleet-read
@@ -75,7 +75,7 @@ func DefaultKeycloakFleetReadConfig(hostPort int) KeycloakFleetTokenConfig {
 }
 
 // GetKeycloakClientCredentialsToken obtains an access_token from Keycloak
-// using the OAuth2 client_credentials grant (mirrors GetDexClientCredentialsToken).
+// using the OAuth2 client_credentials grant.
 func GetKeycloakClientCredentialsToken(cfg KeycloakFleetTokenConfig) (string, error) {
 	data := url.Values{
 		"grant_type":    {"client_credentials"},
