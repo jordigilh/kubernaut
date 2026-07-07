@@ -25,12 +25,15 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
+	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 )
 
@@ -887,5 +890,251 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 
 			GinkgoWriter.Printf("✅ IT-WE-374-002: Concurrent lock preserved (running Job blocks new WFE)\n")
 		})
+	})
+})
+
+// ========================================
+// DD-WE-008 / BR-WE-019: Per-Workflow Job Resource Governance and
+// Transient-Failure Tolerance
+// ========================================
+//
+// Wiring Point A: catalog execution.resources -> WFE.Status.Resources -> Job
+// "workflow" container resources.
+var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
+
+	AfterEach(func() {
+		// Prevent leaking Resources configuration into subsequent tests that
+		// don't set it explicitly (BestEffort QoS is the default elsewhere).
+		testWorkflowQuerier.Resources = nil
+	})
+
+	It("should apply catalog-resolved resources to the Job's workflow container (IT-WE-019-001)", func() {
+		testWorkflowQuerier.Resources = &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("128Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("500m"),
+				corev1.ResourceMemory: resource.MustParse("256Mi"),
+			},
+		}
+
+		targetResource := fmt.Sprintf("default/deployment/job-resources-%d", time.Now().UnixNano())
+		wfe := createUniqueJobWFE("resources", targetResource)
+
+		defer func() {
+			cleanupJobWFE(wfe)
+		}()
+
+		By("Creating a WFE with executionEngine=job and catalog-resolved resources")
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+		By("Waiting for the controller to create a Job")
+		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Verifying the workflow container's resources match the catalog-resolved values")
+		Expect(job.Spec.Template.Spec.Containers).To(HaveLen(1))
+		container := job.Spec.Template.Spec.Containers[0]
+		Expect(container.Resources.Requests.Cpu().String()).To(Equal("100m"))
+		Expect(container.Resources.Requests.Memory().String()).To(Equal("128Mi"))
+		Expect(container.Resources.Limits.Cpu().String()).To(Equal("500m"))
+		Expect(container.Resources.Limits.Memory().String()).To(Equal("256Mi"))
+
+		By("Verifying the resolved resources were persisted to WFE.Status.Resources")
+		updated, err := getWFE(wfe.Name, wfe.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(updated.Status.Resources).ToNot(BeNil())
+		Expect(updated.Status.Resources.Requests.Cpu().String()).To(Equal("100m"))
+
+		GinkgoWriter.Printf("✅ IT-WE-019-001: Catalog-resolved resources applied to Job container\n")
+	})
+
+	It("should leave the workflow container BestEffort when the catalog declares no resources (backward compat)", func() {
+		testWorkflowQuerier.Resources = nil
+
+		targetResource := fmt.Sprintf("default/deployment/job-no-resources-%d", time.Now().UnixNano())
+		wfe := createUniqueJobWFE("no-resources", targetResource)
+
+		defer func() {
+			cleanupJobWFE(wfe)
+		}()
+
+		By("Creating a WFE with executionEngine=job and no catalog resources")
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+		By("Waiting for the controller to create a Job")
+		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Verifying the workflow container has no resource requests/limits (BestEffort QoS)")
+		container := job.Spec.Template.Spec.Containers[0]
+		Expect(container.Resources.Requests).To(BeEmpty())
+		Expect(container.Resources.Limits).To(BeEmpty())
+
+		GinkgoWriter.Printf("✅ backward-compat: nil catalog resources leave Job container BestEffort\n")
+	})
+
+	// Wiring Point B: PodFailurePolicy tolerates OOM-kill / node-disruption
+	// pod failures. envtest runs a real API server but not the real
+	// kube-controller-manager Job controller, so this proves the shape is
+	// valid and accepted by the API server -- not that Ignore semantics are
+	// actually evaluated on a failure (that is Phase 6's real-cluster job).
+	It("should create a Job whose spec is accepted by the API server with the PodFailurePolicy shape (IT-WE-019-002)", func() {
+		targetResource := fmt.Sprintf("default/deployment/job-podfailurepolicy-%d", time.Now().UnixNano())
+		wfe := createUniqueJobWFE("podfailurepolicy", targetResource)
+
+		defer func() {
+			cleanupJobWFE(wfe)
+		}()
+
+		By("Creating a WFE with executionEngine=job")
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+		By("Waiting for the controller to create a Job")
+		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Verifying the Job's PodFailurePolicy shape was accepted by the API server")
+		Expect(job.Spec.PodFailurePolicy).ToNot(BeNil())
+		Expect(job.Spec.PodFailurePolicy.Rules).To(HaveLen(2))
+
+		By("Verifying an Ignore rule exists for DisruptionTarget conditions")
+		Expect(job.Spec.PodFailurePolicy.Rules).To(ContainElement(
+			And(
+				HaveField("Action", batchv1.PodFailurePolicyActionIgnore),
+				HaveField("OnPodConditions", ContainElement(
+					HaveField("Type", corev1.DisruptionTarget),
+				)),
+			),
+		))
+
+		By("Verifying an Ignore rule exists for exit code 137 (OOM-kill) on the workflow container")
+		Expect(job.Spec.PodFailurePolicy.Rules).To(ContainElement(
+			And(
+				HaveField("Action", batchv1.PodFailurePolicyActionIgnore),
+				HaveField("OnExitCodes", And(
+					HaveField("ContainerName", HaveValue(Equal("workflow"))),
+					HaveField("Operator", batchv1.PodFailurePolicyOnExitCodesOpIn),
+					HaveField("Values", ConsistOf(int32(137))),
+				)),
+			),
+		))
+
+		By("Verifying BackoffLimit remains 0 (fail-fast unchanged for non-tolerated failures)")
+		Expect(*job.Spec.BackoffLimit).To(Equal(int32(0)))
+
+		GinkgoWriter.Printf("✅ IT-WE-019-002: Job PodFailurePolicy shape accepted by API server\n")
+	})
+
+	// Phase 5.3 bundled BR-AUDIT-005 regression guard: no genuine RED phase --
+	// audit emission is already gated on terminal-phase transition, not
+	// reconcile count. Written as a permanent regression guard, not new-
+	// behavior proof.
+	It("should record exactly 1 workflow.completed audit event despite N repeated Active reconciles before success (IT-WE-019-003)", func() {
+		targetResource := fmt.Sprintf("default/deployment/job-audit-repeat-%d", time.Now().UnixNano())
+		wfe := createUniqueJobWFE("audit-repeat-active", targetResource)
+
+		defer func() {
+			cleanupJobWFE(wfe)
+		}()
+
+		By("Creating a WFE with executionEngine=job")
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+		By("Waiting for the controller to create a Job")
+		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Forcing N repeated reconciles while the Job remains Active (no terminal condition)")
+		for i := 0; i < 3; i++ {
+			Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+			job.Status.Active = int32(i + 1)
+			Expect(k8sClient.Status().Update(ctx, job)).To(Succeed())
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		By("Completing the Job")
+		Expect(k8sClient.Get(ctx, client.ObjectKey{Name: job.Name, Namespace: job.Namespace}, job)).To(Succeed())
+		Expect(simulateJobCompletion(job, true)).To(Succeed())
+
+		By("Waiting for the WFE to reach Completed")
+		_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, workflowexecutionv1alpha1.PhaseCompleted, 15*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Verifying exactly 1 workflow.completed audit event was recorded despite the repeated Active reconciles")
+		auditClient := dsClients.OpenAPIClient
+		correlationID := wfe.Spec.RemediationRequestRef.Name
+		flushAuditBuffer()
+		Eventually(func() int {
+			events, err := queryAuditEvents(auditClient, correlationID, nil)
+			if err != nil {
+				return 0
+			}
+			return countEventsByType(events)[weaudit.EventTypeCompleted]
+		}, 30*time.Second, 500*time.Millisecond).Should(Equal(1),
+			"BR-AUDIT-005: exactly 1 workflow.completed event expected despite N repeated Active reconciles before success")
+
+		GinkgoWriter.Printf("✅ IT-WE-019-003: exactly 1 workflow.completed event despite repeated Active reconciles\n")
+	})
+
+	// Wiring Point C: audit retry-count completeness (BR-WE-019 AC10).
+	It("should record retry_count == N in the workflow.completed audit event when the Job tolerated N pod failures before succeeding (IT-WE-019-004)", func() {
+		targetResource := fmt.Sprintf("default/deployment/job-retry-count-%d", time.Now().UnixNano())
+		wfe := createUniqueJobWFE("retry-count", targetResource)
+
+		defer func() {
+			cleanupJobWFE(wfe)
+		}()
+
+		By("Creating a WFE with executionEngine=job")
+		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+		By("Waiting for the controller to create a Job")
+		job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Simulating N tolerated pod failures observed on the Job before it succeeds")
+		Expect(simulateJobCompletionWithRetries(job, 3)).To(Succeed())
+
+		By("Waiting for the WFE to reach Completed")
+		_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, workflowexecutionv1alpha1.PhaseCompleted, 15*time.Second)
+		Expect(err).ToNot(HaveOccurred())
+
+		By("Verifying WFE.Status.ExecutionStatus.RetryCount reflects the tolerated failures")
+		updated, err := getWFE(wfe.Name, wfe.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(updated.Status.ExecutionStatus).ToNot(BeNil())
+		Expect(updated.Status.ExecutionStatus.RetryCount).To(Equal(int32(3)),
+			"BR-WE-019 AC10: RetryCount must be captured unconditionally from SuccessfulCreate Job events, including on the success path")
+
+		By("Verifying the workflow.completed audit event's retry_count field equals 3")
+		auditClient := dsClients.OpenAPIClient
+		correlationID := wfe.Spec.RemediationRequestRef.Name
+		flushAuditBuffer()
+		var completedEvent *ogenclient.AuditEvent
+		Eventually(func() bool {
+			events, err := queryAuditEvents(auditClient, correlationID, nil)
+			if err != nil {
+				return false
+			}
+			for i := range events {
+				if events[i].EventType == weaudit.EventTypeCompleted {
+					completedEvent = &events[i]
+					return true
+				}
+			}
+			return false
+		}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+			"workflowexecution.workflow.completed audit event should be persisted in DataStorage")
+
+		eventData, ok := completedEvent.EventData.GetWorkflowExecutionAuditPayload()
+		Expect(ok).To(BeTrue(), "EventData should be WorkflowExecutionAuditPayload")
+		Expect(eventData.RetryCount.IsSet()).To(BeTrue(),
+			"BR-WE-019 AC10: retry_count must be present in the audit payload when tolerated failures occurred")
+		Expect(eventData.RetryCount.Value).To(Equal(3))
+
+		GinkgoWriter.Printf("✅ IT-WE-019-004: workflow.completed event retry_count == 3\n")
 	})
 })

@@ -425,6 +425,14 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			// DD-AUDIT-CORRELATION-001: CorrelationID = RemediationRequestRef.Name
 			Expect(startedEvent.CorrelationID).To(Equal(wfe.Spec.RemediationRequestRef.Name))
 
+			// BR-AUDIT-005: tightened from bare-existence to an exact count (Phase 5.3,
+			// DD-WE-008) -- a duplicate started event would previously pass this test.
+			By("Verifying exactly 1 workflowexecution.execution.started event was recorded")
+			allEvents, err := queryAuditEvents(auditClient, correlationID, nil)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(countEventsByType(allEvents)[weaudit.EventTypeExecutionStarted]).To(Equal(1),
+				"BR-AUDIT-005: exactly 1 execution.started event expected, not merely >= 1")
+
 			GinkgoWriter.Println("✅ execution.workflow.started audit event persisted with correct field values")
 		})
 
@@ -481,6 +489,14 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(completedEvent.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess))
 			// WE-BUG-002: event_action contains short form ("completed" not weaudit.EventTypeCompleted)
 			Expect(completedEvent.EventAction).To(Equal("completed"))
+
+			// BR-AUDIT-005: tightened from bare-existence to an exact count (Phase 5.3,
+			// DD-WE-008) -- a duplicate completed event would previously pass this test.
+			By("Verifying exactly 1 workflowexecution.workflow.completed event was recorded")
+			allEvents, err := queryAuditEvents(auditClient, correlationID, nil)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(countEventsByType(allEvents)[weaudit.EventTypeCompleted]).To(Equal(1),
+				"BR-AUDIT-005: exactly 1 workflow.completed event expected, not merely >= 1")
 
 			GinkgoWriter.Println("✅ workflowexecution.workflow.completed audit event persisted with correct field values")
 		})
@@ -549,6 +565,14 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(eventData.FailureReason.IsSet()).To(BeTrue(), "failure_reason should be populated")
 			Expect(eventData.FailureMessage.IsSet()).To(BeTrue(), "failure_message should be populated")
 			Expect(eventData.FailureMessage.Value).ToNot(BeEmpty(), "failure_message should be populated")
+
+			// BR-AUDIT-005: tightened from bare-existence to an exact count (Phase 5.3,
+			// DD-WE-008) -- a duplicate failed event would previously pass this test.
+			By("Verifying exactly 1 workflowexecution.workflow.failed event was recorded")
+			allEvents, err := queryAuditEvents(auditClient, correlationID, nil)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(countEventsByType(allEvents)[weaudit.EventTypeFailed]).To(Equal(1),
+				"BR-AUDIT-005: exactly 1 workflow.failed event expected, not merely >= 1")
 
 			GinkgoWriter.Println("✅ workflowexecution.workflow.failed audit event persisted with failure details")
 		})
