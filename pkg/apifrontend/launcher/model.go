@@ -48,10 +48,13 @@ import (
 // model.LLM contract), while anthropicfamily implements KA's own,
 // deliberately framework-independent llm.Client interface (DD-HAPI-019-001).
 // This is an intentional architectural boundary, not an inconsistency to
-// converge — see DD-LLM-007. Note neither case below threads cfg.Reasoning:
-// AF has no reasoning/thinking-token support today (unlike its OpenAI-
-// compatible path, which gained it for free via the shared openaicompat
-// core, DD-LLM-004) — tracked as a gap in DD-LLM-007, not fixed by it.
+// converge — see DD-LLM-007. Note the Anthropic/Vertex cases below still
+// don't thread cfg.Reasoning: AF has no reasoning/thinking-token support on
+// that path today (unlike its OpenAI-compatible path, which gained
+// reasoning-content capture for free via the shared openaicompat core,
+// DD-LLM-004, and now also threads cfg.Reasoning.Effort, #1604, via
+// newOpenAICompatibleModel below) — the Anthropic/Vertex gap remains
+// tracked in DD-LLM-007, not fixed by it.
 func NewModelFromConfig(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
 	switch cfg.Provider {
 	case types.LLMProviderVertexAI:
@@ -207,6 +210,9 @@ func newOpenAICompatibleModel(cfg types.LLMConfig) (model.LLM, error) {
 	}
 	if httpClient != nil {
 		opts = append(opts, openaimodel.WithHTTPClient(httpClient))
+	}
+	if cfg.Reasoning != nil && cfg.Reasoning.Enabled {
+		opts = append(opts, openaimodel.WithReasoningEffort(cfg.Reasoning.Effort))
 	}
 
 	return openaimodel.NewModel(cfg.Model, cfg.Endpoint, cfg.APIKey, opts...), nil

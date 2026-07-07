@@ -297,26 +297,80 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 		reasoning = c.defaultReasoning
 	}
 	if reasoning != nil && reasoning.Enabled {
-		params.Thinking = resolveThinkingParam(reasoning, anthropic.Model(c.model))
+		thinking, effort := resolveThinkingParam(reasoning, anthropic.Model(c.model))
+		params.Thinking = thinking
+		if effort != "" {
+			params.OutputConfig.Effort = effort
+		}
 	}
 
 	return params
 }
 
 // resolveThinkingParam maps a KA ReasoningRequest to the Anthropic thinking
-// parameter, delegating model-tier detection (adaptive-capable vs
-// manual-budget-only) to adk-anthropic-go/converters — the same logic AF
-// uses, avoiding a second, independently-maintained tier-detection table
-// (DD-LLM-005). An explicit BudgetTokens always wins with a manual budget
-// regardless of tier; omitting it lets the per-tier default apply (adaptive
-// on adaptive-capable models, a high-effort manual budget otherwise).
-func resolveThinkingParam(r *llm.ReasoningRequest, model anthropic.Model) anthropic.ThinkingConfigParamUnion {
-	cfg := &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevelHigh}
+// parameter and output_config effort hint, delegating model-tier detection
+// (adaptive-capable vs manual-budget-only) to adk-anthropic-go/converters —
+// the same logic AF uses, avoiding a second, independently-maintained
+// tier-detection table (DD-LLM-005). An explicit BudgetTokens always wins
+// with a manual budget regardless of tier or Effort (an exact-value
+// power-user override); otherwise Effort (#1604), mapped onto
+// genai.ThinkingLevel, selects the tier; with neither set, the per-tier
+// default applies (adaptive-high on adaptive-capable models, a
+// high-effort manual budget otherwise) — the pre-#1604, zero-regression
+// behavior.
+//
+// The returned effort hint (adk-anthropic-go's ThinkingMapping.Effort) is
+// only meaningful — non-empty — for adaptive-capable models; manual-budget
+// models have no separate effort dial on the wire, so callers should only
+// set params.OutputConfig.Effort when it is non-empty.
+func resolveThinkingParam(r *llm.ReasoningRequest, model anthropic.Model) (anthropic.ThinkingConfigParamUnion, anthropic.OutputConfigEffort) {
+	cfg := effortToThinkingConfig(r)
+	mapping := converters.ThinkingConfigToAnthropic(cfg, model)
+	return mapping.Thinking, mapping.Effort
+}
+
+// effortToThinkingConfig resolves the effective genai.ThinkingConfig for a
+// ReasoningRequest. See resolveThinkingParam for the precedence rule.
+func effortToThinkingConfig(r *llm.ReasoningRequest) *genai.ThinkingConfig {
 	if r.BudgetTokens > 0 {
 		budget := int32(r.BudgetTokens)
-		cfg = &genai.ThinkingConfig{ThinkingBudget: &budget}
+		return &genai.ThinkingConfig{ThinkingBudget: &budget}
 	}
-	return converters.ThinkingConfigToAnthropic(cfg, model).Thinking
+	if level, ok := effortToThinkingLevel(r.Effort); ok {
+		return &genai.ThinkingConfig{ThinkingLevel: level}
+	}
+	return &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevelHigh}
+}
+
+// effortToThinkingLevel maps the canonical, provider-agnostic Effort
+// vocabulary (#1604) onto genai.ThinkingLevel. "none" maps to Minimal —
+// genai's Minimal already means "no thinking" via the converter (a
+// coherent, real off-state, not a contradiction at this layer); the
+// enabled:true + effort:none contradiction is rejected earlier, at config
+// validation (shared/types.LLMConfig.Validate), for operator-facing
+// clarity — this mapping stays defensively correct even if that gate is
+// ever bypassed. "xhigh" clamps to High: genai.ThinkingLevel has no tier
+// above High, even though Anthropic's raw OutputConfigEffort enum does
+// (up to "max") — reusing the shared converter (DD-LLM-005) means staying
+// within its intermediate representation rather than hand-mapping a
+// second, independently-maintained table straight to the SDK's fuller
+// enum. The empty string (unset) is intentionally not handled here; it is
+// only reachable via effortToThinkingConfig's default-High fallback.
+func effortToThinkingLevel(effort string) (genai.ThinkingLevel, bool) {
+	switch effort {
+	case "none":
+		return genai.ThinkingLevelMinimal, true
+	case "minimal":
+		return genai.ThinkingLevelMinimal, true
+	case "low":
+		return genai.ThinkingLevelLow, true
+	case "medium":
+		return genai.ThinkingLevelMedium, true
+	case "high", "xhigh":
+		return genai.ThinkingLevelHigh, true
+	default:
+		return "", false
+	}
 }
 
 // convertMessagesToAnthropic translates Kubernaut's role-tagged message

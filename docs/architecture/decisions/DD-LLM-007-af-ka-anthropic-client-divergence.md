@@ -55,10 +55,12 @@ This directly answers the "shouldn't we have parity" question raised while scopi
 - Two independent Anthropic message-conversion/tool-call-mapping implementations remain (AF's via ADK, KA's in `anthropicfamily`). A future correctness fix discovered in one may need to be checked against the other. Mitigated by both being thin (AF's is entirely `adk-anthropic-go`'s responsibility; KA's is ~300 LOC with its own test suite) and both ultimately bounded by `anthropic-sdk-go`'s own behavior.
 - AF's Anthropic/Vertex (and Gemini) surface has no reasoning/thinking-token support today, and this DD does not add any. If needed, track as a separate BR scoped to AF + ADK's thinking-config surface.
 
+**Update (#1604)**: the unified `Effort` reasoning-depth knob extended the "gained it for free via `openaicompat`" parity above from reasoning-content capture to the effort/depth-control dial as well — AF's OpenAI-compatible surface (`pkg/apifrontend/launcher/openai`) now carries `WithReasoningEffort`, wired from `cfg.Reasoning.Effort` in `pkg/apifrontend/launcher/model.go`, at parity with KA's equivalent wrapper. This is the same shared `pkg/shared/llm/openaicompat` dialect code on both sides — no new divergence introduced. The Anthropic/Vertex/Gemini gap noted above is unchanged by this update.
+
 ## Related Decisions
 - **Builds on**: DD-HAPI-019-001 (Framework Isolation Pattern — the reason KA's and AF's LLM layers are structured differently in the first place)
 - **Contrasts with**: DD-LLM-004 (where AF/KA sharing *was* the right call, because the OpenAI-Chat-Completions protocol is wire-identical between them — unlike the Anthropic surface, where AF's consumer is ADK's `model.LLM` interface and KA's is KA's own `llm.Client`)
-- **Referenced by**: #1601 (KA reasoning-request wiring fix), while scoping E2E coverage for that fix
+- **Referenced by**: #1601 (KA reasoning-request wiring fix), while scoping E2E coverage for that fix; #1604 (unified Effort knob, extended to AF's OpenAI-compatible surface)
 
 ---
 

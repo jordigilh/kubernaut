@@ -144,4 +144,10 @@ type ChatOptions struct {
 type ReasoningRequest struct {
 	Enabled      bool `json:"enabled,omitempty"`
 	BudgetTokens int  `json:"budget_tokens,omitempty"`
+	// Effort is the canonical, provider-agnostic reasoning-depth value
+	// ("", "none", "minimal", "low", "medium", "high", "xhigh" — #1604).
+	// BudgetTokens, when > 0, always wins over Effort for Anthropic (an
+	// exact-value power-user override); Effort is otherwise ignored by
+	// clients with no effort-dial concept.
+	Effort string `json:"effort,omitempty"`
 }

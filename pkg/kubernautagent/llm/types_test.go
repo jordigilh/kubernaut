@@ -182,5 +182,24 @@ var _ = Describe("LLM Types — #433", func() {
 			Expect(restored.Reasoning.Enabled).To(BeTrue())
 			Expect(restored.Reasoning.BudgetTokens).To(Equal(2048))
 		})
+
+		It("should round-trip a ReasoningRequest's Effort field (#1604)", func() {
+			original := llm.ChatOptions{
+				Reasoning: &llm.ReasoningRequest{
+					Enabled: true,
+					Effort:  "high",
+				},
+			}
+
+			data, err := json.Marshal(original)
+			Expect(err).NotTo(HaveOccurred())
+
+			var restored llm.ChatOptions
+			err = json.Unmarshal(data, &restored)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(restored.Reasoning).NotTo(BeNil())
+			Expect(restored.Reasoning.Effort).To(Equal("high"))
+		})
 	})
 })
