@@ -7,16 +7,31 @@ name: GitOps Smoke Test (ArgoCD)
 # ServerSideApply requirement) was valuable but not automated. This workflow
 # makes it repeatable.
 #
-# Scheduled (not per-PR) because it is heavier and more failure-prone than the
-# plain helm-install smoke test in ci-pipeline.yml (ArgoCD sync timing, CRD
-# bundling size limits, cascade-delete timing) -- see the CI feasibility
-# discussion on issue #1617.
+# Runs per-PR, but path-filtered to only the parts of the chart whose
+# correctness genuinely depends on ArgoCD's phase/wave/hook semantics rather
+# than plain `helm install` order (hooks/**, interservice mTLS, the
+# datastorage signing cert, CRDs, and Chart.yaml/values.yaml). Everything
+# else in charts/kubernaut/ is already covered per-PR by the plain
+# helm-install smoke test in ci-pipeline.yml, which is far cheaper and
+# doesn't need this job's heavier Kind+ArgoCD+cert-manager setup. No
+# schedule/cron backstop: since this now runs on every PR that touches an
+# ArgoCD-sensitive path, a periodic re-run would only add value against
+# drift with no chart change at all (e.g. an ArgoCD/cert-manager version
+# bump) -- accepted as out of scope for now; re-add a schedule trigger if
+# that gap ever bites.
 #
 # Authority: issue #1617 (GitOps/ArgoCD operational readiness)
 
 on:
-  schedule:
-    - cron: '37 4 * * 1' # weekly, Monday 04:37 UTC
+  pull_request:
+    paths:
+      - 'charts/kubernaut/templates/hooks/**'
+      - 'charts/kubernaut/templates/interservice/**'
+      - 'charts/kubernaut/templates/datastorage/certificate.yaml'
+      - 'charts/kubernaut/Chart.yaml'
+      - 'charts/kubernaut/values.yaml'
+      - 'charts/kubernaut/crds/**'
+      - '.github/workflows/gitops-smoke-test.yml'
   workflow_dispatch:
     inputs:
       ref:
@@ -38,6 +53,11 @@ env:
   ARGOCD_VERSION: v3.4.4
   CERT_MANAGER_VERSION: v1.20.3
   NAMESPACE: kubernaut-system
+  # refs/pull/<n>/head is maintained by GitHub in the base repo for every PR
+  # (including from forks), so ArgoCD's own in-cluster git clone of
+  # REPO_URL (always the base repo, below) can fetch the exact PR head
+  # commit without needing fork-specific repo URLs.
+  PR_REF: ${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || '' }}
 
 jobs:
   gitops-smoke-test:
@@ -48,7 +68,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
-          ref: ${{ inputs.ref || 'main' }}
+          ref: ${{ inputs.ref || github.event.pull_request.head.sha || github.sha }}
 
       - name: Install Kind
         run: |
@@ -141,7 +161,7 @@ jobs:
       - name: Create ArgoCD Application
         env:
           REPO_URL: https://github.com/${{ github.repository }}.git
-          TARGET_REVISION: ${{ inputs.ref || 'main' }}
+          TARGET_REVISION: ${{ inputs.ref || env.PR_REF || 'main' }}
           IMAGE_TAG: ${{ inputs.image_tag || 'latest' }}
         run: |
           cat <<EOF | argocd app create -f -
