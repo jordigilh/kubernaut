@@ -1359,6 +1359,58 @@ for d in docs:
   # Note: Vertex AI / GCP-specific fields (gcpProjectId, gcpRegion) are configured
   # via the main config.yaml, not the quickstart provider/model values.
 
+  echo "# --- Template Tests: LLM Reasoning/Thinking Config (BR-AI-086) ---"
+
+  # ST-CHART-LLM-REASON-001a: default (reasoning unset) renders no reasoning block
+  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) 2>&1)
+  if ! grep -q "reasoning:" <<< "$output"; then
+    tap_ok "ST-CHART-LLM-REASON-001a: reasoning block absent by default"
+  else
+    tap_not_ok "ST-CHART-LLM-REASON-001a: reasoning block absent by default" \
+      "reasoning: rendered despite reasoning.enabled=false and no capabilityOverride"
+  fi
+
+  # ST-CHART-LLM-REASON-001b: reasoning.enabled=true + budgetTokens renders both fields
+  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.llm.reasoning.enabled=true \
+    --set kubernautAgent.llm.reasoning.budgetTokens=4096 2>&1)
+  if grep -q "reasoning:" <<< "$output" && \
+     grep -A2 "reasoning:" <<< "$output" | grep -q "enabled: true" && \
+     grep -A2 "reasoning:" <<< "$output" | grep -q "budgetTokens: 4096"; then
+    tap_ok "ST-CHART-LLM-REASON-001b: reasoning.enabled+budgetTokens render together"
+  else
+    tap_not_ok "ST-CHART-LLM-REASON-001b: reasoning.enabled+budgetTokens" \
+      "reasoning block missing enabled:true or budgetTokens:4096"
+  fi
+
+  # ST-CHART-LLM-REASON-001c: capabilityOverride alone (enabled left false) still renders
+  # (BR-AI-086 AC5: openai_compatible self-hosted models can force detection off/on
+  # independently of the enabled toggle)
+  output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
+    $(template_common_args) $(policy_flags) \
+    --set kubernautAgent.llm.provider=openai_compatible \
+    --set kubernautAgent.llm.model=custom-model \
+    --set kubernautAgent.llm.reasoning.capabilityOverride=force_off 2>&1)
+  if grep -A2 "reasoning:" <<< "$output" | grep -q 'capabilityOverride: "force_off"' && \
+     ! grep -A2 "reasoning:" <<< "$output" | grep -q "enabled:"; then
+    tap_ok "ST-CHART-LLM-REASON-001c: capabilityOverride renders without enabled"
+  else
+    tap_not_ok "ST-CHART-LLM-REASON-001c: capabilityOverride without enabled" \
+      "capabilityOverride not rendered, or enabled leaked in alongside it"
+  fi
+
+  # ST-CHART-LLM-REASON-002: values.schema.json rejects an invalid capabilityOverride
+  if ! helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set kubernautAgent.llm.reasoning.capabilityOverride=bogus >/dev/null 2>&1; then
+    tap_ok "ST-CHART-LLM-REASON-002: schema rejects invalid reasoning.capabilityOverride"
+  else
+    tap_not_ok "ST-CHART-LLM-REASON-002: schema validation for reasoning.capabilityOverride" \
+      "helm template succeeded with capabilityOverride=bogus (expected schema enum rejection)"
+  fi
+
   echo "# --- Template Tests: Unified Monitoring Config (Issue #463) ---"
 
   # UT-MON-463-001: monitoring.prometheus.enabled+url configures both EM and KA
