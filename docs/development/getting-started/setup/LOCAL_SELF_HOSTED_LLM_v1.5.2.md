@@ -201,11 +201,67 @@ Notes:
 
 ## 5. Operational recommendations for the pilot
 
-- **Raise the AA auto-approval confidence threshold** (`rego.confidenceThreshold`,
-  default `0.8`) for the duration of the pilot — e.g. `0.92` — to compensate
-  for a weaker/self-hosted model's typically higher hallucination rate and
-  lower agentic/tool-use reliability relative to a frontier hosted model.
-  Relax it only after comparing outcomes against your existing baseline.
+### On the auto-approval confidence threshold: don't trust a number you haven't measured
+
+The Rego approval policy's `confidence_threshold` (`rego.confidenceThreshold`,
+default `0.8`) is, in practice, **the only gate standing between an LLM's
+remediation suggestion and unattended execution** — approval-required actions
+aside (sensitive resource kinds, missing remediation target,
+infrastructure-provisioning actions), it's the sole confidence-based control
+(`pkg/aianalysis/testdata/policies/approval.rego`: `is_high_confidence if {
+input.confidence >= confidence_threshold }`). It is worth understanding
+exactly what that number is before leaning on it as a pilot safety lever:
+
+- `confidence` is **entirely LLM self-report** — a byproduct of the model
+  narrating its own uncertainty in the RCA prompt's "Pre-Submit Adversarial
+  Due Diligence" step ("Start at 1.0 and list each factor that reduced it...":
+  `internal/kubernautagent/prompt/templates/incident_investigation.tmpl`).
+  There is no log-prob-based score, no independent verifier, no
+  self-consistency/ensemble check, and no historical calibration curve behind
+  it — just the model grading its own homework.
+- The JSON schema enforces that the calibration field is *present* as a
+  string (`internal/kubernautagent/parser/schema.go`), not that it's truthful
+  or substantive. A model can satisfy the schema with a generic placeholder
+  sentence while still reporting `confidence: 0.95`.
+- Raising the threshold (e.g. to `0.92`) only filters cases where the model
+  is self-aware enough to flag its own gaps. It does **nothing** for a
+  confidently wrong RCA — a hallucination the model sincerely (if
+  miscalibrated-ly) believes is correct — which is the more dangerous class
+  of error precisely because it clears any threshold you pick. Worse, the
+  same weak agentic reliability that motivates using a higher threshold in
+  the first place (missed evidence, premature investigation abort per
+  [#1613](https://github.com/jordigilh/kubernaut/issues/1613), truncated
+  output silently accepted per
+  [#1614](https://github.com/jordigilh/kubernaut/issues/1614)) is exactly
+  what undermines the model's ability to *recognize* those same gaps when
+  self-scoring its confidence. Leaning on self-reported confidence to
+  compensate for unreliable self-assessment is circular.
+- **Kubernaut has no eval harness that runs candidate models against its own
+  demo scenarios to measure RCA accuracy or confidence calibration.** Demo
+  scenarios exist as a specification
+  (`docs/requirements/BR-PLATFORM-002-demo-scenario-specification.md`), but
+  nothing today replays them against a candidate model and compares
+  self-reported confidence to human-verified correctness. Without that, any
+  specific threshold value — `0.8`, `0.92`, or otherwise — is a guess, not a
+  measurement, for any given model.
+
+**Recommendation**: don't tune the threshold as your primary mitigation for
+this pilot. Instead:
+
+- Treat **100% human review** as the default for the pilot's duration,
+  independent of whatever `confidence` the model reports — the threshold
+  should not be trusted to do this job until it's been validated.
+- If/when an eval harness against Kubernaut's own demo scenarios exists,
+  use it to measure the model's actual confidence-vs-correctness calibration
+  first, and only then decide whether any threshold value buys real
+  precision — and what that value should be. (Tracked:
+  [#1622](https://github.com/jordigilh/kubernaut/issues/1622).)
+- Relax to threshold-based auto-approval only after that comparison shows
+  the model's self-reported confidence is a meaningfully predictive signal
+  for your workload, not before.
+
+### Other recommendations
+
 - **Validate tool-calling end-to-end through each service's actual adapter**
   (not just a raw `curl` to vLLM) before trusting the pilot — see §2.
 - **Don't rely on hot-reload to swap models** on KA — restart manually (§3).
