@@ -23,6 +23,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -217,11 +219,68 @@ func validateWorkflowExecution(schema *models.WorkflowSchema) error {
 		}
 	}
 
+	if err := validateWorkflowResources(schema.Execution.Resources, engine); err != nil {
+		return err
+	}
+
 	if engine == "ansible" {
 		return validateAnsibleEngineConfig(schema.Execution.EngineConfig)
 	}
 
 	return nil
+}
+
+// validateWorkflowResources validates the optional execution.resources
+// section (BR-WE-019 / DD-WE-008): engine-scoping (Job engine only, AC2),
+// quantity parseability, and requests<=limits per resource name (AC3).
+// A nil resources section is always valid (backward compatible).
+func validateWorkflowResources(resources *models.ResourcesSchema, engine string) error {
+	if resources == nil {
+		return nil
+	}
+
+	if engine != "job" {
+		return models.NewSchemaValidationError("execution.resources",
+			fmt.Sprintf("execution.resources is only supported for engine %q, got %q", "job", engine))
+	}
+
+	requests, err := parseResourceQuantities("execution.resources.requests", resources.Requests)
+	if err != nil {
+		return err
+	}
+	limits, err := parseResourceQuantities("execution.resources.limits", resources.Limits)
+	if err != nil {
+		return err
+	}
+
+	for name, req := range requests {
+		if limit, ok := limits[name]; ok && req.Cmp(limit) > 0 {
+			return models.NewSchemaValidationError("execution.resources",
+				fmt.Sprintf("requests.%s (%s) must not exceed limits.%s (%s)", name, req.String(), name, limit.String()))
+		}
+	}
+
+	return nil
+}
+
+// parseResourceQuantities parses a string-keyed quantity map (e.g.
+// {"cpu": "100m", "memory": "512Mi"}) into a corev1.ResourceList, returning a
+// SchemaValidationError scoped to fieldPrefix on the first unparseable value.
+func parseResourceQuantities(fieldPrefix string, quantities map[string]string) (corev1.ResourceList, error) {
+	if len(quantities) == 0 {
+		return nil, nil
+	}
+
+	result := make(corev1.ResourceList, len(quantities))
+	for name, value := range quantities {
+		qty, err := resource.ParseQuantity(value)
+		if err != nil {
+			return nil, models.NewSchemaValidationError(fieldPrefix,
+				fmt.Sprintf("invalid quantity %q for %q: %v", value, name, err))
+		}
+		result[corev1.ResourceName(name)] = qty
+	}
+	return result, nil
 }
 
 // validateAnsibleEngineConfig validates the engineConfig discriminator for
@@ -485,4 +544,31 @@ func (p *Parser) ExtractBundleDigest(schema *models.WorkflowSchema) *string {
 		}
 	}
 	return nil
+}
+
+// ExtractResources parses the optional execution.resources section into a
+// typed corev1.ResourceRequirements (BR-WE-019 / DD-WE-008). Returns
+// (nil, nil) when the section is absent -- callers must preserve the
+// existing BestEffort QoS Job container spec in that case. Quantity parsing
+// errors here indicate the schema reached ExtractResources without going
+// through ParseAndValidate/Validate first, since registration-time
+// validation (validateWorkflowResources) already rejects invalid quantities.
+func (p *Parser) ExtractResources(schema *models.WorkflowSchema) (*corev1.ResourceRequirements, error) {
+	if schema == nil || schema.Execution == nil || schema.Execution.Resources == nil {
+		return nil, nil
+	}
+
+	requests, err := parseResourceQuantities("execution.resources.requests", schema.Execution.Resources.Requests)
+	if err != nil {
+		return nil, err
+	}
+	limits, err := parseResourceQuantities("execution.resources.limits", schema.Execution.Resources.Limits)
+	if err != nil {
+		return nil, err
+	}
+
+	return &corev1.ResourceRequirements{
+		Requests: requests,
+		Limits:   limits,
+	}, nil
 }

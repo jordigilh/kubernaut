@@ -256,6 +256,28 @@ type WorkflowExecution struct {
 	// BR-WE-016: Discriminator pattern — the Engine field determines the shape.
 	// Stored as interface{} for YAML compatibility; converted to json.RawMessage by the parser.
 	EngineConfig interface{} `yaml:"engineConfig,omitempty" json:"engineConfig,omitempty"`
+
+	// Resources declares CPU/memory requests and limits for the "workflow"
+	// container (Job engine only). BR-WE-019 / DD-WE-008.
+	// +optional
+	Resources *ResourcesSchema `yaml:"resources,omitempty" json:"resources,omitempty"`
+}
+
+// ResourcesSchema declares CPU/memory requests and limits for the "workflow"
+// container (Job engine only). Plain string-keyed maps (yaml.v3-native)
+// rather than corev1.ResourceRequirements directly -- resource.Quantity only
+// implements the JSON codec (DD-WE-008 Finding 1); yaml.v3 would silently
+// mis-parse it via struct-reflection over its unexported fields. Quantity
+// strings are parsed explicitly in ExtractResources via resource.ParseQuantity.
+// validate tags follow the sibling-struct convention in this file (see
+// ADR-046) but are not currently enforced -- WorkflowSchema validation does
+// not yet call validator.Struct() anywhere (tracked separately, issue #1591,
+// not addressed by DD-WE-008).
+type ResourcesSchema struct {
+	// +optional
+	Requests map[string]string `yaml:"requests,omitempty" json:"requests,omitempty" validate:"omitempty,dive,keys,required,endkeys,required"`
+	// +optional
+	Limits map[string]string `yaml:"limits,omitempty" json:"limits,omitempty" validate:"omitempty,dive,keys,required,endkeys,required"`
 }
 
 // AnsibleEngineConfig holds Ansible/AWX/AAP-specific execution configuration.
