@@ -32315,6 +32315,10 @@ type WorkflowExecutionAuditPayload struct {
 	// Post-normalization workflow parameters applied to PipelineRun (map[string]string). SOC2 CC7.1-CC7.
 	// 3 chain of custody.
 	Parameters OptWorkflowExecutionAuditPayloadParameters `json:"parameters"`
+	// Number of pod-failure attempts tolerated by PodFailurePolicy before the Job engine execution
+	// reached a terminal state (Job engine only). Present only when greater than 0. SOC2 CC8.1 / AU-3
+	// audit completeness for tolerated transient failures.
+	RetryCount OptInt `json:"retry_count"`
 }
 
 // GetEventType returns the value of EventType.
@@ -32402,6 +32406,11 @@ func (s *WorkflowExecutionAuditPayload) GetParameters() OptWorkflowExecutionAudi
 	return s.Parameters
 }
 
+// GetRetryCount returns the value of RetryCount.
+func (s *WorkflowExecutionAuditPayload) GetRetryCount() OptInt {
+	return s.RetryCount
+}
+
 // SetEventType sets the value of EventType.
 func (s *WorkflowExecutionAuditPayload) SetEventType(val WorkflowExecutionAuditPayloadEventType) {
 	s.EventType = val
@@ -32485,6 +32494,11 @@ func (s *WorkflowExecutionAuditPayload) SetPipelinerunName(val OptString) {
 // SetParameters sets the value of Parameters.
 func (s *WorkflowExecutionAuditPayload) SetParameters(val OptWorkflowExecutionAuditPayloadParameters) {
 	s.Parameters = val
+}
+
+// SetRetryCount sets the value of RetryCount.
+func (s *WorkflowExecutionAuditPayload) SetRetryCount(val OptInt) {
+	s.RetryCount = val
 }
 
 // Event type for discriminator (matches parent event_type). Per ADR-034 v1.5, all WorkflowExecution

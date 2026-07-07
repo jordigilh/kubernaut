@@ -17132,6 +17132,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 					s.Parameters.Encode(e)
 				}
 			}
+			{
+				if s.RetryCount.Set {
+					e.FieldStart("retry_count")
+					s.RetryCount.Encode(e)
+				}
+			}
 		}
 	case AuditEventEventDataWebhookNotificationAcknowledgedAuditEventEventData, AuditEventEventDataWebhookNotificationCancelledAuditEventEventData:
 		switch s.Type {
@@ -22132,6 +22138,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.Parameters.Set {
 					e.FieldStart("parameters")
 					s.Parameters.Encode(e)
+				}
+			}
+			{
+				if s.RetryCount.Set {
+					e.FieldStart("retry_count")
+					s.RetryCount.Encode(e)
 				}
 			}
 		}
@@ -51404,9 +51416,15 @@ func (s *WorkflowExecutionAuditPayload) encodeFields(e *jx.Encoder) {
 			s.Parameters.Encode(e)
 		}
 	}
+	{
+		if s.RetryCount.Set {
+			e.FieldStart("retry_count")
+			s.RetryCount.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfWorkflowExecutionAuditPayload = [17]string{
+var jsonFieldsNameOfWorkflowExecutionAuditPayload = [18]string{
 	0:  "event_type",
 	1:  "workflow_id",
 	2:  "workflow_version",
@@ -51424,6 +51442,7 @@ var jsonFieldsNameOfWorkflowExecutionAuditPayload = [17]string{
 	14: "error_details",
 	15: "pipelinerun_name",
 	16: "parameters",
+	17: "retry_count",
 }
 
 // Decode decodes WorkflowExecutionAuditPayload from json.
@@ -51614,6 +51633,16 @@ func (s *WorkflowExecutionAuditPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"parameters\"")
+			}
+		case "retry_count":
+			if err := func() error {
+				s.RetryCount.Reset()
+				if err := s.RetryCount.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"retry_count\"")
 			}
 		default:
 			return d.Skip()
