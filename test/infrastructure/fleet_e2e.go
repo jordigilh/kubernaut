@@ -189,12 +189,6 @@ type RemoteClusterBridgeConfig struct {
 	RemoteNodePort int
 }
 
-// DefaultKubeMCPServerAuthConfig returns the "fleet" full-pipeline E2E
-// suite's auth config: kubeconfig mode, matching the Issue #54 RCA fix.
-func DefaultKubeMCPServerAuthConfig() KubeMCPServerAuthConfig {
-	return KubeMCPServerAuthConfig{Mode: KubeMCPServerAuthModeKubeconfig}
-}
-
 // FMCOAuth2Config configures how FMC authenticates to the Kuadrant MCP
 // Gateway via OAuth2 client_credentials (see fleetmetadatacache-config
 // ConfigMap in DeployFleetCoreInfra's Phase 4).
@@ -211,16 +205,6 @@ type FMCOAuth2Config struct {
 	// instead request ["kube-mcp-server-audience"], the scope that carries
 	// the audience-mapper gating the RFC 8693 exchange (Spike S17/S18).
 	Scopes []string
-}
-
-// DefaultFMCOAuth2Config returns the "fleet" full-pipeline E2E suite's FMC
-// OAuth2 config, pointed at DEX.
-func DefaultFMCOAuth2Config() FMCOAuth2Config {
-	return FMCOAuth2Config{
-		TokenURL:     "https://dex:5556/dex/token",
-		ClientID:     "kubernaut-fleet-read",
-		ClientSecret: "e2e-fleet-secret",
-	}
 }
 
 // tomlString renders a TOML config for kube-mcp-server per the configured
@@ -479,36 +463,34 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 // not true for a lighter FMC-only lane -- see DeployFleetCoreInfra).
 //
 // authConfig/fmcOAuth2Config are threaded straight through to
-// DeployFleetCoreInfra -- callers pass DefaultKubeMCPServerAuthConfig()/
-// DefaultFMCOAuth2Config() for the original kubeconfig-mode+Dex behavior, or
-// a passthrough+STS config (mirroring the FMC E2E lane) to exercise a real
-// remote cluster (see SetupFleetE2EInfrastructure).
+// DeployFleetCoreInfra -- callers pass a passthrough+STS config (mirroring
+// the FMC E2E lane) to exercise a real remote cluster (see
+// SetupFleetE2EInfrastructure). Kubeconfig mode (see
+// KubeMCPServerAuthModeKubeconfig) remains a valid KubeMCPServerAuthConfig
+// value for other callers of DeployFleetCoreInfra/deployKubeMCPServer, but
+// DeployFleetInfra's Phase 4b RBAC step below only implements the
+// passthrough-mode identity binding; the Dex OIDC-group binding it used to
+// pair with kubeconfig mode was retired with the last kubeconfig-mode
+// caller (issue #1554).
 //
-// Total memory: ~388 MB (kubeconfig mode) / ~1.7-2.5 GB (passthrough mode).
+// Total memory: ~1.7-2.5 GB (passthrough mode).
 func DeployFleetInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, writer io.Writer) error {
 	if err := DeployFleetCoreInfra(ctx, namespace, kubeconfigPath, fmcImage, authConfig, fmcOAuth2Config, writer); err != nil {
 		return err
 	}
 
 	// ── Phase 4b: RBAC for the passthrough-mode caller identity ──────────
-	// kubeconfig mode (DefaultKubeMCPServerAuthConfig) needs the Dex
-	// OIDC-group RBAC below for any OIDC-authenticated identity calling the
-	// cluster directly (kube-mcp-server itself uses its own ServiceAccount
-	// in this mode, so this does not gate its K8s calls). Passthrough mode
-	// (Keycloak + RFC 8693 token exchange, mirroring the FMC E2E lane)
-	// instead needs applyExchangedIdentityRBAC for the identity that
-	// survives the exchange -- Dex has no Standard Token Exchange, so the
-	// two modes are mutually exclusive here.
-	if authConfig.Mode == KubeMCPServerAuthModePassthrough {
-		_, _ = fmt.Fprintln(writer, "\n  🔑 Phase 4b: Creating RBAC for the exchanged Keycloak identity...")
-		if err := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); err != nil {
-			return fmt.Errorf("fleet exchanged-identity RBAC creation failed: %w", err)
-		}
-	} else {
-		_, _ = fmt.Fprintln(writer, "\n  🔑 Phase 4b: Creating RBAC for Dex-authenticated fleet identities...")
-		if err := applyDexOIDCGroupRBAC(ctx, kubeconfigPath, writer); err != nil {
-			return fmt.Errorf("fleet OIDC RBAC creation failed: %w", err)
-		}
+	// Keycloak + RFC 8693 token exchange (mirroring the FMC E2E lane) needs
+	// applyExchangedIdentityRBAC for the identity that survives the
+	// exchange. Kubeconfig mode's Dex OIDC-group RBAC counterpart was
+	// removed (issue #1554) once its last caller (the Dex/loopback fleet
+	// readiness check) was retired.
+	if authConfig.Mode != KubeMCPServerAuthModePassthrough {
+		return fmt.Errorf("DeployFleetInfra: unsupported KubeMCPServerAuthConfig.Mode %q (only %q is implemented; kubeconfig-mode RBAC binding was retired with issue #1554)", authConfig.Mode, KubeMCPServerAuthModePassthrough)
+	}
+	_, _ = fmt.Fprintln(writer, "\n  🔑 Phase 4b: Creating RBAC for the exchanged Keycloak identity...")
+	if err := applyExchangedIdentityRBAC(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("fleet exchanged-identity RBAC creation failed: %w", err)
 	}
 
 	// ── Phase 5: Enable fleet scope checking in Gateway ──────────────────
@@ -994,67 +976,6 @@ fleet:
 	return nil
 }
 
-// applyDexOIDCGroupRBAC creates RBAC bindings for Dex-authenticated fleet
-// identities (dex:mcp-read, dex:mcp-write groups, matching the
-// --oidc-groups-claim/--oidc-groups-prefix flags patchAPIServerForOIDC sets).
-// Only used by the "fleet" full-pipeline E2E suite (DeployFleetInfra) --
-// extracted out of DeployFleetCoreInfra so the FMC-only lane (which uses
-// Keycloak + passthrough/token-exchange, not Dex groups) doesn't apply RBAC
-// for an identity shape it never authenticates.
-func applyDexOIDCGroupRBAC(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
-	oidcRBACManifest := `---
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: fleet-mcp-reader
-rules:
-- apiGroups: ["", "apps"]
-  resources: ["pods", "services", "nodes", "deployments", "statefulsets", "daemonsets"]
-  verbs: ["get", "list", "watch"]
-- apiGroups: [""]
-  resources: ["namespaces"]
-  verbs: ["get", "list"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: fleet-dex-mcp-read
-  labels:
-    app: fleet-oidc
-    component: fleet
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: fleet-mcp-reader
-subjects:
-- kind: Group
-  name: "dex:mcp-read"
-  apiGroup: rbac.authorization.k8s.io
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: fleet-dex-mcp-write
-  labels:
-    app: fleet-oidc
-    component: fleet
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: fleet-mcp-reader
-subjects:
-- kind: Group
-  name: "dex:mcp-write"
-  apiGroup: rbac.authorization.k8s.io
-`
-
-	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, oidcRBACManifest); err != nil {
-		return err
-	}
-	_, _ = fmt.Fprintln(writer, "    ✅ Fleet OIDC RBAC bindings created (dex:mcp-read, dex:mcp-write)")
-	return nil
-}
-
 // DeployFleetCoreInfra deploys the fleet-core infrastructure in the Kind
 // cluster, independent of any Kubernaut service:
 //
@@ -1074,16 +995,16 @@ subjects:
 // DataStorage + Dex + this core alongside FMC.
 //
 // authConfig controls how kube-mcp-server authenticates to the target
-// Kubernetes API server -- see KubeMCPServerAuthConfig. The "fleet" suite
-// passes DefaultKubeMCPServerAuthConfig() (kubeconfig mode); the FMC E2E lane
-// passes a passthrough+STS config to validate the real token-exchange wiring.
+// Kubernetes API server -- see KubeMCPServerAuthConfig. Both the "fleet"
+// suite and the FMC E2E lane pass a passthrough+STS config (Keycloak +
+// RFC 8693 token exchange) to validate the real token-exchange wiring.
 //
 // fmcOAuth2Config controls FMC's own OAuth2 client_credentials IdP endpoint
-// -- see FMCOAuth2Config. The "fleet" suite passes DefaultFMCOAuth2Config()
-// (DEX); the FMC E2E lane passes Keycloak's token endpoint.
+// -- see FMCOAuth2Config. Both lanes point this at Keycloak's token
+// endpoint (issue #1554 retired the "fleet" suite's earlier Dex-based
+// kubeconfig-mode config).
 //
-// Total memory: ~388 MB (kubeconfig mode) / ~1.7-2.5 GB (passthrough mode,
-// Keycloak replacing Dex -- see suite_test.go).
+// Total memory: ~1.7-2.5 GB (passthrough mode, Keycloak).
 func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcImage string, authConfig KubeMCPServerAuthConfig, fmcOAuth2Config FMCOAuth2Config, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "🚀 Deploying Fleet Core E2E Infrastructure...")
 
@@ -2309,21 +2230,10 @@ fleet:
 	return nil
 }
 
-// DefaultDexFleetReadTokenFunc returns a token-fetch function using DEX's
-// client_credentials grant, matching the "fleet" full-pipeline suite's IdP.
-func DefaultDexFleetReadTokenFunc() func() (string, error) {
-	tokenCfg := DefaultDexFleetReadConfig()
-	tokenCfg.TokenEndpoint = "https://localhost:30556/dex/token"
-	return func() (string, error) {
-		return GetDexClientCredentialsToken(tokenCfg)
-	}
-}
-
 // WaitForFleetReady verifies the MCP Gateway (Kuadrant or EAIGW) is reachable
 // via NodePort by performing an MCP initialize handshake, then a real
-// authenticated tools/call using tokenFunc (DEX for the "fleet" suite,
-// Keycloak for the FMC E2E lane -- see DefaultDexFleetReadTokenFunc and the
-// FMC lane's own Keycloak-based token func in fleetmetadatacache_e2e.go).
+// authenticated tools/call using tokenFunc (the FMC lane's Keycloak-based
+// token func in fleetmetadatacache_e2e.go).
 // nodePort/toolPrefix select the gateway-specific NodePort (Kuadrant 31975 /
 // EAIGW 31976 per DD-TEST-001) and loopback-cluster tool-name prefix
 // (Kuadrant's MCPServerRegistration "loopback_cluster_" vs EAIGW's
