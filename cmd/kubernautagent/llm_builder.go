@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -236,30 +237,30 @@ func mergeLLMConfig(base types.LLMConfig, rt *kaconfig.LLMRuntimeConfig) types.L
 // llmRuntimeReloadCallback creates a hotreload.ReloadCallback for LLM runtime
 // config file changes. It parses the new content, validates it, merges with
 // static config, builds a new LLM client, and swaps it into the SwappableClient.
+//
+// #1599 / DD-LLM-008: LLM identity (provider+model, at both base and
+// per-phase-override level) is immutable after process start — a
+// cross-provider hot-swap risks replaying one provider's opaque reasoning
+// signature (e.g. Anthropic's thinking-block Signature bytes) against a
+// different provider/model, which that provider never issued. Any attempt
+// to change identity is rejected in full (the whole candidate reload, base
+// and phase tuning alike) and requires a restart; bootRuntime is the frozen
+// LLM runtime snapshot captured once at boot and is the source of truth for
+// "what identity is this process currently running", independent of
+// anything a later reload attempted.
 func llmRuntimeReloadCallback(
 	staticCfg *kaconfig.Config,
 	swappable *llm.SwappableClient,
 	logger logr.Logger,
 	phaseResolver *investigator.DefaultPhaseResolver,
+	bootRuntime *kaconfig.LLMRuntimeConfig,
 ) func(newContent string) error {
 	return func(newContent string) error {
 		oldModel := swappable.ModelName()
 
-		if strings.TrimSpace(newContent) == "" {
-			logger.Info("llm_runtime_reload rejected: empty content",
-				"event", "llm_runtime_reload", "status", "rejected", "reason", "empty_content")
-			return fmt.Errorf("llm runtime reload rejected: empty or whitespace-only content")
-		}
-
-		rt, err := kaconfig.LoadLLMRuntime([]byte(newContent))
+		rt, err := parseAndAuthorizeReload(staticCfg, phaseResolver, bootRuntime, newContent, logger)
 		if err != nil {
-			return fmt.Errorf("reload: parsing llm runtime config: %w", err)
-		}
-
-		if err := rt.Validate(staticCfg.AI.LLM.Provider); err != nil {
-			logger.Info("llm_runtime_reload rejected: validation failed",
-				"event", "llm_runtime_reload", "status", "rejected", "error", err)
-			return fmt.Errorf("reload: validation failed: %w", err)
+			return err
 		}
 
 		merged := mergeLLMConfig(staticCfg.AI.LLM, rt)
@@ -291,6 +292,92 @@ func llmRuntimeReloadCallback(
 		}
 		return nil
 	}
+}
+
+// parseAndAuthorizeReload parses, validates, and applies the #1599
+// restart-required identity lock to a candidate llm-runtime reload payload.
+// Returns the parsed *kaconfig.LLMRuntimeConfig on success (safe to merge and
+// apply), or an error if the content is empty, malformed, fails field
+// validation, or would change base or per-phase LLM identity. Extracted from
+// llmRuntimeReloadCallback to keep that function's cognitive complexity
+// within the AGENTS.md Go Anti-Pattern Checklist budget.
+func parseAndAuthorizeReload(
+	staticCfg *kaconfig.Config,
+	phaseResolver *investigator.DefaultPhaseResolver,
+	bootRuntime *kaconfig.LLMRuntimeConfig,
+	newContent string,
+	logger logr.Logger,
+) (*kaconfig.LLMRuntimeConfig, error) {
+	if bootRuntime == nil {
+		return nil, fmt.Errorf("reload: internal error: boot runtime snapshot not configured")
+	}
+
+	if strings.TrimSpace(newContent) == "" {
+		logger.Info("llm_runtime_reload rejected: empty content",
+			"event", "llm_runtime_reload", "status", "rejected", "reason", "empty_content")
+		return nil, fmt.Errorf("llm runtime reload rejected: empty or whitespace-only content")
+	}
+
+	rt, err := kaconfig.LoadLLMRuntime([]byte(newContent))
+	if err != nil {
+		return nil, fmt.Errorf("reload: parsing llm runtime config: %w", err)
+	}
+
+	if err := rt.Validate(staticCfg.AI.LLM.Provider); err != nil {
+		logger.Info("llm_runtime_reload rejected: validation failed",
+			"event", "llm_runtime_reload", "status", "rejected", "error", err)
+		return nil, fmt.Errorf("reload: validation failed: %w", err)
+	}
+
+	if rt.Model != bootRuntime.Model {
+		logger.Info("llm_runtime_reload rejected: model change requires restart",
+			"event", "llm_runtime_reload", "status", "rejected", "reason", "identity_change",
+			"boot_model", bootRuntime.Model, "requested_model", rt.Model)
+		return nil, fmt.Errorf("reload: model change from %q to %q requires a process restart (see #1599)", bootRuntime.Model, rt.Model)
+	}
+
+	if phaseResolver != nil {
+		if err := validatePhaseIdentity(staticCfg, bootRuntime, rt); err != nil {
+			logger.Info("llm_runtime_reload rejected: phase identity change requires restart",
+				"event", "llm_runtime_reload", "status", "rejected", "error", err)
+			return nil, fmt.Errorf("reload: %w", err)
+		}
+	}
+
+	return rt, nil
+}
+
+// validatePhaseIdentity checks that no phase's effective LLM identity
+// (provider+model) differs between the frozen boot-time snapshot and the
+// reload candidate. Per #1599, phase identity is subject to the same
+// restart-required rule as base identity; hot-reload may only alter
+// non-identity tuning fields (endpoint, temperature, timeouts, headers,
+// custom auth) within a phase override, whether that override is new,
+// existing, or being removed. Returns a single error naming every phase
+// that would require a restart, or nil if the candidate is safe to apply.
+func validatePhaseIdentity(staticCfg *kaconfig.Config, bootRuntime, rt *kaconfig.LLMRuntimeConfig) error {
+	phases := make(map[string]struct{}, len(bootRuntime.PhaseModels)+len(rt.PhaseModels))
+	for name := range bootRuntime.PhaseModels {
+		phases[name] = struct{}{}
+	}
+	for name := range rt.PhaseModels {
+		phases[name] = struct{}{}
+	}
+
+	violations := make([]string, 0, len(phases))
+	for name := range phases {
+		bootLLM, bootRT := bootRuntime.EffectivePhaseConfig(name, staticCfg.AI.LLM, *bootRuntime)
+		newLLM, newRT := rt.EffectivePhaseConfig(name, staticCfg.AI.LLM, *rt)
+		if bootLLM.Provider != newLLM.Provider || bootRT.Model != newRT.Model {
+			violations = append(violations, fmt.Sprintf("%s: %s/%s -> %s/%s",
+				name, bootLLM.Provider, bootRT.Model, newLLM.Provider, newRT.Model))
+		}
+	}
+	if len(violations) == 0 {
+		return nil
+	}
+	sort.Strings(violations)
+	return fmt.Errorf("phase identity change requires a process restart (see #1599): %s", strings.Join(violations, "; "))
 }
 
 // resolveAPIKeyForReload fills in merged.APIKey when the runtime reload

@@ -420,17 +420,6 @@ func buildInvestigationRunner(p investigationRunnerParams) *investigationStack {
 	}
 }
 
-// wireHotReload configures conditional server TLS (with hot-reload), the
-// LLM-runtime config watcher, the OCP TLS security profile, and the
-// CA-file watcher. Mutates httpServer.TLSConfig in place when TLS is
-// enabled. Terminates the process on unrecoverable wiring failures, matching
-// the original inline main() behavior.
-//
-// Returns a single cleanup function that stops every watcher that was
-// successfully started; the caller must defer it in its own scope so the
-// watchers live for the server's lifetime, not just this function's call
-// (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4f — same pattern as
-// watchLoopState.stopEAWatcher in Phase 4e).
 // wireServerTLS configures conditional TLS on httpServer (Issue #493) and,
 // when TLS is enabled, starts a FileWatcher for hot-reloading the server
 // certificate (Issue #756). Returns a stopper for the cert watcher, or nil
@@ -475,9 +464,10 @@ func wireLLMRuntimeWatcher(
 	llmRuntimePath string,
 	swappable *llm.SwappableClient,
 	phaseResolver *investigator.DefaultPhaseResolver,
+	bootRuntime *kaconfig.LLMRuntimeConfig,
 	logger logr.Logger,
 ) func() {
-	rtCallback := llmRuntimeReloadCallback(cfg, swappable, logger, phaseResolver)
+	rtCallback := llmRuntimeReloadCallback(cfg, swappable, logger, phaseResolver, bootRuntime)
 	rtWatcher, rtWatchErr := hotreload.NewFileWatcher(
 		llmRuntimePath,
 		rtCallback,
@@ -495,6 +485,26 @@ func wireLLMRuntimeWatcher(
 	return rtWatcher.Stop
 }
 
+// hotReloadParams groups wireHotReload's non-context dependencies. Extracted
+// per AGENTS.md's 8+-param Options-pattern rule
+// (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4f), same pattern as
+// shutdownDeps/routerBuildParams/handlerDeps in cmd/apifrontend —
+// bootRuntime (#1599) tipped this function's positional param count to 8.
+// ctx is deliberately kept as wireHotReload's own first parameter rather
+// than a struct field (AGENTS.md Go Anti-Pattern Checklist: "Context stored
+// in struct fields").
+type hotReloadParams struct {
+	Cfg            *kaconfig.Config
+	HTTPServer     *http.Server
+	LLMRuntimePath string
+	Swappable      *llm.SwappableClient
+	PhaseResolver  *investigator.DefaultPhaseResolver
+	// BootRuntime is the frozen LLM runtime snapshot loaded at process start,
+	// used to enforce the #1599 restart-required identity lock.
+	BootRuntime *kaconfig.LLMRuntimeConfig
+	Logger      logr.Logger
+}
+
 // wireHotReload configures conditional server TLS (with hot-reload), the
 // LLM-runtime config watcher, the OCP TLS security profile, and the
 // CA-file watcher. Mutates httpServer.TLSConfig in place when TLS is
@@ -506,22 +516,15 @@ func wireLLMRuntimeWatcher(
 // watchers live for the server's lifetime, not just this function's call
 // (GO-ANTIPATTERN-AUDIT-2026-07-01 Phase 4f — same pattern as
 // watchLoopState.stopEAWatcher in Phase 4e).
-func wireHotReload(
-	ctx context.Context,
-	cfg *kaconfig.Config,
-	httpServer *http.Server,
-	llmRuntimePath string,
-	swappable *llm.SwappableClient,
-	phaseResolver *investigator.DefaultPhaseResolver,
-	logger logr.Logger,
-) func() {
+func wireHotReload(ctx context.Context, p hotReloadParams) func() {
+	cfg, httpServer, logger := p.Cfg, p.HTTPServer, p.Logger
 	var stoppers []func()
 
 	if stop := wireServerTLS(ctx, cfg, httpServer, logger); stop != nil {
 		stoppers = append(stoppers, stop)
 	}
 
-	if stop := wireLLMRuntimeWatcher(ctx, cfg, llmRuntimePath, swappable, phaseResolver, logger); stop != nil {
+	if stop := wireLLMRuntimeWatcher(ctx, cfg, p.LLMRuntimePath, p.Swappable, p.PhaseResolver, p.BootRuntime, logger); stop != nil {
 		stoppers = append(stoppers, stop)
 	}
 
