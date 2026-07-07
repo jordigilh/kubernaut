@@ -5,7 +5,7 @@
 **Version**: 1.0
 **Created**: 2026-07-07
 **Author**: KubernautAgent Team
-**Status**: Draft
+**Status**: Implemented — all scenarios Pass
 **Branch**: `fix/1616-phase-reasoning-overrides`
 
 ---
@@ -213,16 +213,16 @@ over-broad regeneration.
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |---|---|---|---|---|---|
-| BR-AI-086 | Phase override's `Reasoning` wins over base when set | P1 | Unit | UT-AI-1616-001 | Pending |
-| BR-AI-086 | Falls back to base `Reasoning` when phase override unset | P1 | Unit | UT-AI-1616-002 | Pending |
-| BR-AI-086 | Reasoning-only phase override not rejected as empty | P0 | Unit | UT-AI-1616-003 | Pending |
-| BR-AI-086 (SI-10) | Invalid `effort` value rejected on override | P1 | Unit | UT-AI-1616-004 | Pending |
-| BR-AI-086 (SI-10) | Anthropic `none`+`enabled` contradiction rejected on override's effective provider | P1 | Unit | UT-AI-1616-005 | Pending |
-| BR-AI-086 | Alignment override's `Reasoning` wins over base when set | P2 | Unit | UT-AI-1616-006 | Pending |
-| BR-AI-086 | Alignment falls back to base `Reasoning` when unset | P2 | Unit | UT-AI-1616-007 | Pending |
-| BR-AI-086 / DD-LLM-008 | Reasoning-only reload not rejected by #1599 identity lock | P0 | Integration | IT-KA-1616-001 | Pending |
-| BR-AI-086 | Phase override `Reasoning` reaches the real outgoing LLM request | P0 | Integration | IT-KA-1616-002 | Pending |
-| BR-AI-086 | Alignment override `Reasoning` reaches the real outgoing LLM request | P1 | Integration | IT-KA-1616-003 | Pending |
+| BR-AI-086 | Phase override's `Reasoning` wins over base when set | P1 | Unit | UT-AI-1616-001 | Pass |
+| BR-AI-086 | Falls back to base `Reasoning` when phase override unset | P1 | Unit | UT-AI-1616-002 | Pass |
+| BR-AI-086 | Reasoning-only phase override not rejected as empty | P0 | Unit | UT-AI-1616-003 | Pass |
+| BR-AI-086 (SI-10) | Invalid `effort` value rejected on override | P1 | Unit | UT-AI-1616-004 | Pass |
+| BR-AI-086 (SI-10) | Anthropic `none`+`enabled` contradiction rejected on override's effective provider | P1 | Unit | UT-AI-1616-005 | Pass |
+| BR-AI-086 | Alignment override's `Reasoning` wins over base when set | P2 | Unit | UT-AI-1616-006 | Pass |
+| BR-AI-086 | Alignment falls back to base `Reasoning` when unset | P2 | Unit | UT-AI-1616-007 | Pass |
+| BR-AI-086 / DD-LLM-008 | Reasoning-only reload not rejected by #1599 identity lock | P0 | Integration | IT-KA-1616-001 | Pass |
+| BR-AI-086 | Phase override `Reasoning` reaches the real outgoing LLM request | P0 | Integration | IT-KA-1616-002 | Pass |
+| BR-AI-086 | Alignment override `Reasoning` reaches the real outgoing LLM request | P1 | Integration | IT-KA-1616-003 | Pass |
 
 ---
 
@@ -241,13 +241,13 @@ Format: `{TIER}-{SERVICE}-{ISSUE}-{SEQUENCE}` — `AI` for config-package unit l
 
 | ID | Business Outcome Under Test | Phase |
 |---|---|---|
-| UT-AI-1616-001 | Operator's per-phase reasoning tuning takes effect | Pending |
-| UT-AI-1616-002 | Phases without a reasoning override keep base behavior (no regression) | Pending |
-| UT-AI-1616-003 | Operator can set a reasoning-only phase override without a spurious validation error | Pending |
-| UT-AI-1616-004 | Operator gets an immediate, clear error for a malformed `effort` value on an override | Pending |
-| UT-AI-1616-005 | Operator gets an immediate, clear error for a contradictory Anthropic reasoning config on an override | Pending |
-| UT-AI-1616-006 | Operator can independently tune the shadow/alignment-checker's reasoning | Pending |
-| UT-AI-1616-007 | Shadow/alignment-checker without a reasoning override keeps base behavior | Pending |
+| UT-AI-1616-001 | Operator's per-phase reasoning tuning takes effect | Pass |
+| UT-AI-1616-002 | Phases without a reasoning override keep base behavior (no regression) | Pass |
+| UT-AI-1616-003 | Operator can set a reasoning-only phase override without a spurious validation error | Pass |
+| UT-AI-1616-004 | Operator gets an immediate, clear error for a malformed `effort` value on an override | Pass |
+| UT-AI-1616-005 | Operator gets an immediate, clear error for a contradictory Anthropic reasoning config on an override | Pass |
+| UT-AI-1616-006 | Operator can independently tune the shadow/alignment-checker's reasoning | Pass |
+| UT-AI-1616-007 | Shadow/alignment-checker without a reasoning override keeps base behavior | Pass |
 
 ### Tier 2: Integration Tests
 
@@ -255,9 +255,9 @@ Format: `{TIER}-{SERVICE}-{ISSUE}-{SEQUENCE}` — `AI` for config-package unit l
 
 | ID | Business Outcome Under Test | Phase |
 |---|---|---|
-| IT-KA-1616-001 | Operator can hot-reload a phase's reasoning tuning without triggering an unnecessary restart-required rejection | Pending |
-| IT-KA-1616-002 | A phase's reasoning override actually changes what KA sends to that phase's real LLM provider | Pending |
-| IT-KA-1616-003 | The alignment-checker's reasoning override actually changes what KA sends to the shadow LLM provider | Pending |
+| IT-KA-1616-001 | Operator can hot-reload a phase's reasoning tuning without triggering an unnecessary restart-required rejection | Pass |
+| IT-KA-1616-002 | A phase's reasoning override actually changes what KA sends to that phase's real LLM provider | Pass |
+| IT-KA-1616-003 | The alignment-checker's reasoning override actually changes what KA sends to the shadow LLM provider | Pass |
 
 ### Tier 3: E2E Tests
 
@@ -412,9 +412,9 @@ go test ./cmd/kubernautagent/... -ginkgo.focus="IT-KA-1616"
 
 | Code Path | Entry Point | Exit Point | Wiring IT | Status |
 |---|---|---|---|---|
-| Phase override `Reasoning` | `buildLLMClients`/`reloadSinglePhaseClient` (boot + hot-reload) | Outgoing LLM HTTP request | IT-KA-1616-002 | Pending |
-| Alignment override `Reasoning` | `buildAlignmentStack` | Outgoing shadow LLM HTTP request | IT-KA-1616-003 | Pending |
-| Identity-lock non-interference | `llmRuntimeReloadCallback` -> `parseAndAuthorizeReload` -> `validatePhaseIdentity` | Reload accepted/rejected | IT-KA-1616-001 | Pending |
+| Phase override `Reasoning` | `buildLLMClients`/`reloadSinglePhaseClient` (boot + hot-reload) | Outgoing LLM HTTP request | IT-KA-1616-002 | Pass |
+| Alignment override `Reasoning` | `buildAlignmentStack` | Outgoing shadow LLM HTTP request | IT-KA-1616-003 | Pass |
+| Identity-lock non-interference | `llmRuntimeReloadCallback` -> `parseAndAuthorizeReload` -> `validatePhaseIdentity` | Reload accepted/rejected | IT-KA-1616-001 | Pass |
 
 **Unit tests do NOT count as wiring proof.** IT-KA-1616-002/003 traverse the real client-construction
 path and assert on the actual outgoing HTTP request body.
@@ -436,3 +436,4 @@ path and assert on the actual outgoing HTTP request body.
 | Version | Date | Changes |
 |---|---|---|
 | 1.0 | 2026-07-07 | Initial test plan |
+| 1.1 | 2026-07-07 | RED->GREEN->REFACTOR complete: all UT-AI-1616-001..007 and IT-KA-1616-001..003 Pass; dead `types.LLMConfig.PhaseModels`/`types.LLMOverride` removed and deepcopy regenerated; Section 15's three obsolete test blocks removed. See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) verification checklist. |

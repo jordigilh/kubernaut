@@ -145,13 +145,13 @@ grep -rn "OldFieldName\|types.LLMOverride" --include="*.go" .
 
 ## Verification (Definition of Done)
 
-- [ ] `go build ./...`
-- [ ] `go test ./internal/kubernautagent/config/... ./pkg/shared/types/... ./cmd/kubernautagent/...`
-- [ ] `golangci-lint run --timeout=5m`
-- [ ] `grep -rn "types.LLMOverride" --include=*.go` returns zero matches
-- [ ] `make generate` diff reviewed and scoped to exactly the removed type's deepcopy methods
-- [ ] All TEST_PLAN.md Section 7 (BR Coverage Matrix) rows moved from Pending to Pass
-- [ ] Documentation updates (Phase 4) merged alongside code
+- [x] `go build ./...`
+- [x] `go test ./internal/kubernautagent/config/... ./pkg/shared/types/... ./cmd/kubernautagent/...`
+- [x] `golangci-lint run --timeout=5m`
+- [x] `grep -rn "types.LLMOverride" --include=*.go` returns zero matches
+- [x] `controller-gen` deepcopy regeneration diff reviewed and scoped to exactly the removed type's deepcopy methods (`make generate` also runs `ogen`, unrelated to this change; ran the `controller-gen` step directly instead)
+- [x] All TEST_PLAN.md Section 7 (BR Coverage Matrix) rows moved from Pending to Pass
+- [x] Documentation updates (Phase 4) merged alongside code
 
 ## Out of Scope
 
