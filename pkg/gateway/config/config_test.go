@@ -266,6 +266,26 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 
 			Expect(cfg.Validate()).ToNot(HaveOccurred())
 		})
+
+		// #1556: proves the ACM bearer-token hard-require (FleetConfig.Validate,
+		// UT-FLEET-CFG-070) is actually reachable from GW's own production
+		// Validate() chain (cmd/gateway/main.go -> serverCfg.Validate() ->
+		// c.Fleet.Validate()) — not just from FleetConfig in isolation.
+		It("[UT-GW-FLEET-007] should reject backend=acm with no tokenPath through GW's own Validate() chain", func() {
+			cfg := config.DefaultServerConfig()
+			cfg.Fleet = fleet.FleetConfig{
+				Enabled:            true,
+				Backend:            "acm",
+				Endpoint:           "https://search-api:4010",
+				MCPGatewayEndpoint: "http://mcp-gateway:8080/mcp",
+				MCPGatewayType:     fleet.GatewayEAIGW,
+			}
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred(),
+				"AC-4/IA-5: GW must fail to start with an ACM backend that has no bearer token configured")
+			Expect(err.Error()).To(ContainSubstring("tokenPath"))
+		})
 	})
 
 	Context("hot reload", func() {

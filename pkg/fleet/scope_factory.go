@@ -25,6 +25,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/acm"
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
@@ -85,15 +86,28 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 		remoteChecker := fmc.NewHTTPClient(endpoint)
 		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
 	case BackendACM:
-		var acmOpts []acm.ClientOption
+		// #1556: ACM Search mandatorily requires bearer-token auth.
+		// FleetConfig.Validate() hard-requires cfg.TokenPath for BackendACM, so
+		// in practice this branch always composes auth.AuthTransport. The
+		// TokenPath=="" fallback below only matters for direct FleetConfig
+		// construction that bypasses Validate() (e.g. test helpers) — it must
+		// never fabricate a partial/malformed Authorization header.
+		transport := http.DefaultTransport
 		if cfg.TLSCAFile != "" {
 			reloader, err := sharedtls.NewCAReloaderFromFile(cfg.TLSCAFile)
 			if err != nil {
 				return nil, fmt.Errorf("fleet: failed to load ACM TLS CA from %s: %w", cfg.TLSCAFile, err)
 			}
+			transport = reloader
+		}
+		if cfg.TokenPath != "" {
+			transport = auth.NewAuthTransport(auth.NewTokenSource(cfg.TokenPath), transport)
+		}
+		var acmOpts []acm.ClientOption
+		if cfg.TLSCAFile != "" || cfg.TokenPath != "" {
 			acmOpts = append(acmOpts, acm.WithHTTPClient(&http.Client{
 				Timeout:   10 * time.Second,
-				Transport: reloader,
+				Transport: transport,
 			}))
 		}
 		remoteChecker := acm.NewClient(endpoint, acmOpts...)

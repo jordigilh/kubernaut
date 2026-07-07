@@ -17,11 +17,18 @@ limitations under the License.
 package fleet_test
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
@@ -69,7 +76,12 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 	})
 
 	It("UT-FLEET-FAC-005 [AC-4]: BackendACM with endpoint returns FederatedScopeChecker using ACM client", func() {
-		cfg := fleet.FleetConfig{Enabled: true, Backend: "acm", Endpoint: "https://search-api:4010"}
+		cfg := fleet.FleetConfig{
+			Enabled:   true,
+			Backend:   "acm",
+			Endpoint:  "https://search-api:4010",
+			TokenPath: "/etc/gateway/acm-token/token",
+		}
 		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 		Expect(err).ToNot(HaveOccurred())
 		Expect(checker).ToNot(BeIdenticalTo(local),
@@ -94,5 +106,71 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 		Expect(err).To(HaveOccurred(),
 			"empty backend with endpoint must fail validation in factory")
 		Expect(checker).To(BeNil())
+	})
+
+	// #1556: proves the factory actually composes the bearer-token transport,
+	// not just that it returns a FederatedScopeChecker (UT-FLEET-FAC-005 only
+	// checks the type, not the wire behavior).
+	It("UT-FLEET-FAC-008 [SC-7,IA-5]: BackendACM with TokenPath set sends Authorization: Bearer <token> to the ACM endpoint", func() {
+		var gotAuthHeader string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotAuthHeader = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0}]}}`))
+		}))
+		defer server.Close()
+
+		tokenPath := filepath.Join(GinkgoT().TempDir(), "token")
+		Expect(os.WriteFile(tokenPath, []byte("test-acm-token"), 0o600)).To(Succeed())
+
+		cfg := fleet.FleetConfig{
+			Enabled:   true,
+			Backend:   "acm",
+			Endpoint:  server.URL,
+			TokenPath: tokenPath,
+		}
+		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(gotAuthHeader).To(Equal("Bearer test-acm-token"),
+			"SC-7/IA-5: factory-composed ACM client must authenticate every request "+
+				"with the configured bearer token")
+	})
+
+	// #1556 defense-in-depth: FleetConfig.Validate() hard-requires TokenPath for
+	// BackendACM (UT-FLEET-CFG-070), so this state is unreachable through normal
+	// config loading. This test locks in the factory's own fail-safe behavior
+	// for direct struct construction that bypasses Validate() (e.g. a future
+	// caller or test helper) — it must never send a partial/malformed
+	// Authorization header, only either a correct one or none at all.
+	It("UT-FLEET-FAC-009 [AC-4]: BackendACM without TokenPath (Validate bypassed) sends no Authorization header", func() {
+		var gotAuthHeader string
+		sawRequest := false
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sawRequest = true
+			gotAuthHeader = r.Header.Get("Authorization")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"searchResult":[{"count":0}]}}`))
+		}))
+		defer server.Close()
+
+		cfg := fleet.FleetConfig{Enabled: true, Backend: "acm", Endpoint: server.URL}
+		checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
+			ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(sawRequest).To(BeTrue(), "request must still reach the ACM endpoint")
+		Expect(gotAuthHeader).To(BeEmpty(),
+			"AC-4: without a configured TokenPath the factory must never send a "+
+				"partial or malformed Authorization header")
 	})
 })

@@ -154,11 +154,9 @@ gateway:
     # at /etc/tls-ca/ca.crt, when unset.
     tlsCAFile: ""
     # -- K8s Secret (key: "token") with a bearer token for authenticating to the ACM
-    # Search GraphQL API (backend=acm). Mounted and its path passed to GW at startup.
-    # NOT YET FUNCTIONAL: pkg/fleet.FleetConfig has no field to consume this path yet —
-    # the ACM client (pkg/fleet/acm/client.go) never sets an Authorization header today.
-    # This value pre-wires the Helm side ahead of the Go-side fix (tracked in Issue #1556).
-    # Safe to leave unset; ACM Search calls work unauthenticated until #1556 lands.
+    # Search GraphQL API (backend=acm). Mounted and its path passed to GW at startup
+    # as fleet.tokenPath. ACM Search mandatorily requires bearer-token auth (#1556):
+    # when backend=acm, this MUST be set, or GW fails FleetConfig.Validate() at startup.
     tokenSecretRef: ""
     # -- OAuth2 client credentials for MCP Gateway authentication.
     oauth2:
@@ -389,11 +387,9 @@ remediationorchestrator:
     # mounted at /etc/tls-ca/ca.crt, when unset.
     tlsCAFile: ""
     # -- K8s Secret (key: "token") with a bearer token for authenticating to the ACM
-    # Search GraphQL API (backend=acm). Mounted and its path passed to RO at startup.
-    # NOT YET FUNCTIONAL: pkg/fleet.FleetConfig has no field to consume this path yet —
-    # the ACM client (pkg/fleet/acm/client.go) never sets an Authorization header today.
-    # This value pre-wires the Helm side ahead of the Go-side fix (tracked in Issue #1556).
-    # Safe to leave unset; ACM Search calls work unauthenticated until #1556 lands.
+    # Search GraphQL API (backend=acm). Mounted and its path passed to RO at startup
+    # as fleet.tokenPath. ACM Search mandatorily requires bearer-token auth (#1556):
+    # when backend=acm, this MUST be set, or RO fails FleetConfig.Validate() at startup.
     tokenSecretRef: ""
     # -- OAuth2 client credentials for MCP Gateway authentication.
     oauth2:

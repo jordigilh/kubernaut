@@ -1914,9 +1914,11 @@ for d in docs:
       "DataStorage/APIFrontend alert rules rendered despite monitoring.coreos.com/v1 CRD not being present"
   fi
 
-  # ST-CHART-ACM-001: ACM backend tokenSecretRef wiring (BR-PLATFORM-003, #1556 dependency).
-  # tokenSecretRef is optional (chart wiring is ahead of the Go-side #1556 fix) — no fail()
-  # guard is expected; backend=acm without a token must still render cleanly.
+  # ST-CHART-ACM-001: ACM backend tokenSecretRef wiring (BR-PLATFORM-003, #1556).
+  # The Helm chart itself has no fail() guard for a missing tokenSecretRef — backend=acm
+  # without a token must still render cleanly at the template layer. Enforcement is done
+  # Go-side: FleetConfig.Validate() now hard-rejects backend=acm without TokenPath, so the
+  # rendered Pod will fail to start (fail-closed), even though `helm template` succeeds here.
   local acm_with_token
   acm_with_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
@@ -1938,14 +1940,14 @@ for d in docs:
     --set gateway.fleet.mcpGatewayEndpoint=https://mcp.example.com 2>&1)
   acm_without_token_exit=$?
   if [[ "$acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$acm_without_token"; then
-    tap_ok "ST-CHART-ACM-001b: backend=acm without tokenSecretRef renders cleanly (unauthenticated, pending #1556)"
+    tap_ok "ST-CHART-ACM-001b: backend=acm without tokenSecretRef renders cleanly (fails Go-side Validate() at pod startup, per #1556)"
   else
     tap_not_ok "ST-CHART-ACM-001b: backend=acm without tokenSecretRef" \
       "render failed, or fleet-acm-token volume unexpectedly present without tokenSecretRef set"
   fi
 
   # ST-CHART-ACM-002: same ACM backend tokenSecretRef wiring, ported to RemediationOrchestrator
-  # (BR-PLATFORM-003, #1556 dependency). Mirrors ST-CHART-ACM-001 — this wiring point had zero
+  # (BR-PLATFORM-003, #1556). Mirrors ST-CHART-ACM-001 — this wiring point had zero
   # test coverage despite being identical in shape to Gateway's.
   local ro_acm_with_token
   ro_acm_with_token=$(helm template test "$CHART_PATH" \
@@ -1968,7 +1970,7 @@ for d in docs:
     --set remediationorchestrator.fleet.mcpGatewayEndpoint=https://mcp.example.com 2>&1)
   ro_acm_without_token_exit=$?
   if [[ "$ro_acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$ro_acm_without_token"; then
-    tap_ok "ST-CHART-ACM-002b: RemediationOrchestrator backend=acm without tokenSecretRef renders cleanly (unauthenticated, pending #1556)"
+    tap_ok "ST-CHART-ACM-002b: RemediationOrchestrator backend=acm without tokenSecretRef renders cleanly (fails Go-side Validate() at pod startup, per #1556)"
   else
     tap_not_ok "ST-CHART-ACM-002b: RemediationOrchestrator backend=acm without tokenSecretRef" \
       "render failed, or fleet-acm-token volume unexpectedly present without tokenSecretRef set"
