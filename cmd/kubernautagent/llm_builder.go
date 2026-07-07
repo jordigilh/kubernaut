@@ -51,6 +51,7 @@ func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Cli
 			timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 		}
 		vertexOpts = append(vertexOpts, anthropicfamily.WithHTTPTimeout(timeout))
+		vertexOpts = append(vertexOpts, anthropicReasoningOptions(cfg)...)
 
 		chain, err := buildTransportChain(cfg)
 		if err != nil {
@@ -84,6 +85,7 @@ func buildAnthropicNativeClient(cfg types.LLMConfig) (llm.Client, error) {
 		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
 	}
 	opts = append(opts, anthropicfamily.WithHTTPTimeout(timeout))
+	opts = append(opts, anthropicReasoningOptions(cfg)...)
 
 	chain, err := buildTransportChain(cfg)
 	if err != nil {
@@ -94,6 +96,27 @@ func buildAnthropicNativeClient(cfg types.LLMConfig) (llm.Client, error) {
 	}
 
 	return anthropicfamily.NewWithAPIKey(cfg.APIKey, cfg.Model, opts...)
+}
+
+// anthropicReasoningOptions maps the operator's ai.llm.reasoning config into
+// an anthropicfamily.WithReasoning construction option, resolved once here
+// rather than threaded per-call from investigator business logic
+// (DD-HAPI-019, llm.ReasoningRequest doc contract).
+//
+// #1578 wiring-gap fix: before this, cfg.Reasoning.Enabled/BudgetTokens were
+// parsed and validated but never read anywhere in this file (only
+// cfg.Reasoning.CapabilityOverride was, for the unrelated OpenAI-compatible
+// replay-mode auto-detection below) — so ai.llm.reasoning.enabled: true had
+// no effect on any real Anthropic/Vertex call. anthropicfamily.Client now
+// applies this default whenever a per-call req.Options.Reasoning is nil.
+func anthropicReasoningOptions(cfg types.LLMConfig) []anthropicfamily.Option {
+	if cfg.Reasoning == nil || !cfg.Reasoning.Enabled {
+		return nil
+	}
+	return []anthropicfamily.Option{anthropicfamily.WithReasoning(llm.ReasoningRequest{
+		Enabled:      true,
+		BudgetTokens: cfg.Reasoning.BudgetTokens,
+	})}
 }
 
 // buildOpenAICompatClient constructs the shared-core-backed kaopenai.Client
@@ -116,6 +139,14 @@ func buildOpenAICompatClient(cfg types.LLMConfig) (llm.Client, error) {
 	}
 
 	opts := []kaopenai.Option{kaopenai.WithHTTPClient(httpClient)}
+	// Only CapabilityOverride is threaded here — the OpenAI Chat Completions
+	// wire protocol has no request-side "enable reasoning" field (unlike
+	// Anthropic's "thinking" param, see anthropicReasoningOptions above).
+	// cfg.Reasoning.Enabled/BudgetTokens are intentionally NOT read: reasoning
+	// capture for this family is unconditional and model-driven (DeepSeek
+	// -reasoner-class models always emit reasoning_content; see
+	// openaicompat's AC3 "always capture" behavior). CapabilityOverride only
+	// controls DetectReasoningMode's replay-mode auto-detection.
 	if cfg.Reasoning != nil && cfg.Reasoning.CapabilityOverride != "" {
 		opts = append(opts, kaopenai.WithCapabilityOverride(cfg.Reasoning.CapabilityOverride))
 	}
