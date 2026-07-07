@@ -1114,15 +1114,22 @@ jobs:
   # ========================================
 
   helm-smoke-test:
-    name: Helm Smoke Tests (Kind)
+    name: Helm Smoke Tests (Kind, tls=${{ matrix.tls_mode }})
     needs: [detect-changes, build-images, build-infra-images, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # #334 + DD-PLATFORM-001: cert-manager mode was previously untested in
+        # CI -- both the datastorage-signing-cert gap and the inter-service
+        # mTLS gap were silent regressions only caught by manual kind spikes.
+        tls_mode: [hook, cert-manager]
     permissions:
       contents: read
     env:
-      KIND_CLUSTER_NAME: helm-smoke
+      KIND_CLUSTER_NAME: helm-smoke-${{ matrix.tls_mode }}
       IMAGE_TAG: ${{ needs.build-images.outputs.tag }}
 
     steps:
@@ -1209,13 +1216,26 @@ jobs:
             kind load image-archive "$tar" --name "$KIND_CLUSTER_NAME"
           done
 
+      # #334 + DD-PLATFORM-001: install cert-manager + a single bootstrap
+      # ClusterIssuer so the chart's `lookup`-based issuerRef auto-selection
+      # (tls.certManager.issuerRef in values.yaml) has exactly one candidate,
+      # matching how a real cluster operator would prepare cert-manager mode.
+      - name: Install cert-manager
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.3/cert-manager.yaml
+          kubectl wait --for=condition=Available --timeout=120s deployment --all -n cert-manager
+          kubectl apply -f deploy/cert-manager/selfsigned-issuer.yaml
+          kubectl wait --for=condition=Ready --timeout=60s clusterissuer/selfsigned-issuer
+
       - name: Run smoke tests
         run: |
           scripts/helm-smoke-test.sh \
             --platform kind \
             --image-tag "${IMAGE_TAG}" \
             --registry localhost \
-            --chart-path charts/kubernaut/
+            --chart-path charts/kubernaut/ \
+            --tls-mode "${{ matrix.tls_mode }}"
 
       - name: Collect Kind node logs on failure
         if: failure() || cancelled()
@@ -1226,7 +1246,7 @@ jobs:
         if: failure() || cancelled()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: helm-smoke-must-gather-${{ github.run_id }}
+          name: helm-smoke-must-gather-${{ matrix.tls_mode }}-${{ github.run_id }}
           path: |
             /tmp/must-gather-helm-smoke-*.tar.gz
             /tmp/kind-smoke-logs/

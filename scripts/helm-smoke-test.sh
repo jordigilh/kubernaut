@@ -22,6 +22,12 @@ PULL_SECRET=""
 CHART_PATH="charts/kubernaut/"
 NAMESPACE="kubernaut-system"
 TIMEOUT_PODS="300s"
+# "hook" (default, Flow A + Flow B) or "cert-manager" (Flow C only). cert-manager
+# mode requires cert-manager and exactly one ClusterIssuer already installed in
+# the cluster as a prerequisite -- the chart auto-selects it via `lookup` during
+# a real `helm install` (see tls.certManager.issuerRef in values.yaml), so this
+# script does not need to pass --set tls.certManager.issuerRef.name explicitly.
+TLS_MODE="hook"
 
 # TAP state
 TAP_COUNT=0
@@ -47,8 +53,9 @@ while [[ $# -gt 0 ]]; do
     --chart-path) CHART_PATH="$2"; shift 2 ;;
     --namespace)  NAMESPACE="$2";  shift 2 ;;
     --timeout)    TIMEOUT_PODS="$2"; shift 2 ;;
+    --tls-mode)   TLS_MODE="$2";   shift 2 ;;
     -h|--help)
-      echo "Usage: $0 --platform kind --image-tag TAG --chart-path PATH [--registry REGISTRY] [--pull-secret NAME]"
+      echo "Usage: $0 --platform kind --image-tag TAG --chart-path PATH [--registry REGISTRY] [--pull-secret NAME] [--tls-mode hook|cert-manager]"
       echo ""
       echo "Options:"
       echo "  --platform    Target platform: kind (default: kind)"
@@ -58,6 +65,8 @@ while [[ $# -gt 0 ]]; do
       echo "  --chart-path  Path to chart directory (default: charts/kubernaut/)"
       echo "  --namespace   Kubernetes namespace (default: kubernaut-system)"
       echo "  --timeout     Pod readiness timeout (default: 300s)"
+      echo "  --tls-mode    TLS mode to test: hook (Flow A+B, default) or cert-manager (Flow C)."
+      echo "                cert-manager requires cert-manager + one ClusterIssuer pre-installed."
       exit 0
       ;;
     *) echo "Unknown option: $1"; exit 1 ;;
@@ -66,6 +75,11 @@ done
 
 if [[ -z "$IMAGE_TAG" ]]; then
   echo "Error: --image-tag is required"
+  exit 1
+fi
+
+if [[ "$TLS_MODE" != "hook" && "$TLS_MODE" != "cert-manager" ]]; then
+  echo "Error: --tls-mode must be 'hook' or 'cert-manager', got '${TLS_MODE}'"
   exit 1
 fi
 
@@ -1298,6 +1312,141 @@ flow_b_quickstart() {
 }
 
 # ---------------------------------------------------------------------------
+# Flow C: cert-manager TLS mode lifecycle
+#
+# #334 + DD-PLATFORM-001 regression guard. Before this flow existed, CI only
+# ever exercised tls.mode=hook (see tls_flags() above) -- the datastorage-
+# signing-cert gap (#334) and the inter-service mTLS gap (DD-PLATFORM-001)
+# were BOTH silent in cert-manager mode and were only caught by manual kind
+# spikes, never by CI. This flow makes tls.mode=cert-manager a first-class,
+# continuously-verified deployment path.
+#
+# Prerequisite (provided by the CI workflow, not this script): cert-manager
+# installed and exactly one ClusterIssuer present in the cluster. The chart
+# auto-selects it via `lookup` on a real `helm install` (see
+# tls.certManager.issuerRef in values.yaml), so no --set is needed here.
+# ---------------------------------------------------------------------------
+run_inst_cm_001() {
+  local desc="ST-CHART-INST-CM-001: Production install (tls.mode=cert-manager)"
+  local flags
+  flags="$(common_install_flags) --set tls.mode=cert-manager"
+
+  # shellcheck disable=SC2046
+  if helm install kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" \
+    $(production_secret_flags) \
+    $flags \
+    --timeout 5m >/dev/null; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "helm install failed"
+    return 1
+  fi
+}
+
+# #334 regression guard: DataStorage's AU-9 audit-signing key must be
+# auto-provisioned in cert-manager mode, not just hook mode.
+run_tls_cm_datastorage() {
+  local pass=true
+  assert_resource_exists secret datastorage-signing-cert "$NAMESPACE" \
+    "ST-CHART-TLS-CM-001a: datastorage-signing-cert Secret exists (#334)" || pass=false
+
+  local key
+  key=$(kubectl get secret datastorage-signing-cert -n "$NAMESPACE" \
+    -o jsonpath='{.data.tls\.key}' 2>/dev/null || echo "")
+  if [[ -n "$key" ]]; then
+    tap_ok "ST-CHART-TLS-CM-001b: datastorage-signing-cert Secret contains tls.key"
+  else
+    tap_not_ok "ST-CHART-TLS-CM-001b: datastorage-signing-cert Secret contains tls.key" "tls.key missing"
+    pass=false
+  fi
+
+  $pass
+}
+
+# DD-PLATFORM-001 regression guard: the dedicated internal CA, its three leaf
+# certs, and the inter-service-ca ConfigMap sync hook must all provision
+# correctly and be internally consistent (not just individually present).
+run_tls_cm_interservice() {
+  local pass=true
+
+  assert_resource_exists secret kubernaut-interservice-ca-secret "$NAMESPACE" \
+    "ST-CHART-TLS-CM-002a: kubernaut-interservice-ca-secret exists (DD-PLATFORM-001)" || pass=false
+
+  local leaf
+  for leaf in gateway-tls datastorage-tls kubernautagent-tls; do
+    assert_resource_exists secret "$leaf" "$NAMESPACE" \
+      "ST-CHART-TLS-CM-002b: ${leaf} leaf Secret exists" || pass=false
+  done
+
+  assert_resource_exists configmap inter-service-ca "$NAMESPACE" \
+    "ST-CHART-TLS-CM-002c: inter-service-ca ConfigMap exists (synced by hook)" || pass=false
+
+  # Cross-check: the ConfigMap's ca.crt must match the CA secret's ca.crt --
+  # proves the sync hook copied the right bytes, not stale/empty data.
+  local ca_from_secret ca_from_cm
+  ca_from_secret=$(kubectl get secret kubernaut-interservice-ca-secret -n "$NAMESPACE" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  ca_from_cm=$(kubectl get configmap inter-service-ca -n "$NAMESPACE" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null || echo "")
+  if [[ -n "$ca_from_secret" && "$ca_from_secret" == "$ca_from_cm" ]]; then
+    tap_ok "ST-CHART-TLS-CM-002d: inter-service-ca ConfigMap matches CA secret"
+  else
+    tap_not_ok "ST-CHART-TLS-CM-002d: inter-service-ca ConfigMap matches CA secret" "mismatch or empty"
+    pass=false
+  fi
+
+  # gateway-tls must chain to the interservice CA specifically (not some other
+  # CA, e.g. authwebhook's) -- verifies issuerRef wiring end-to-end, not just
+  # "a cert exists".
+  local tmpdir
+  tmpdir=$(mktemp -d)
+  kubectl get secret kubernaut-interservice-ca-secret -n "$NAMESPACE" \
+    -o jsonpath='{.data.ca\.crt}' 2>/dev/null | base64 -d > "$tmpdir/ca.crt" 2>/dev/null
+  kubectl get secret gateway-tls -n "$NAMESPACE" \
+    -o jsonpath='{.data.tls\.crt}' 2>/dev/null | base64 -d > "$tmpdir/gateway.crt" 2>/dev/null
+  if openssl verify -CAfile "$tmpdir/ca.crt" "$tmpdir/gateway.crt" >/dev/null 2>&1; then
+    tap_ok "ST-CHART-TLS-CM-002e: gateway-tls chains to the interservice CA"
+  else
+    tap_not_ok "ST-CHART-TLS-CM-002e: gateway-tls chains to the interservice CA" \
+      "openssl verify failed -- leaf not signed by kubernaut-interservice-ca-secret"
+    pass=false
+  fi
+  rm -rf "$tmpdir"
+
+  $pass
+}
+
+flow_c_cert_manager() {
+  echo "# --- Flow C: cert-manager TLS Mode Lifecycle (kind only) ---"
+  local flow_failed=false
+
+  run_pre_001
+  run_pre_002
+  run_pre_003
+  # NOTE: run_pre_004 (manual authwebhook-tls pre-seed) is intentionally
+  # skipped -- in cert-manager mode, cert-manager owns that Secret's
+  # lifecycle via the authwebhook-cert Certificate resource.
+  run_inst_cm_001 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow C tests"; must_gather "$NAMESPACE" "install-failure"; return 1; }
+
+  run_verify_001 || flow_failed=true
+  run_verify_002 || flow_failed=true
+  run_verify_003 || flow_failed=true
+  run_verify_policies || flow_failed=true
+
+  run_tls_001 || flow_failed=true
+  run_tls_cm_datastorage || flow_failed=true
+  run_tls_cm_interservice || flow_failed=true
+
+  if $flow_failed; then
+    must_gather "$NAMESPACE" "flow-c-verification-failure"
+  fi
+
+  run_uninst_001
+  run_uninst_002
+}
+
+# ---------------------------------------------------------------------------
 # Template tests (no cluster required)
 # Issue #390: Validate ConfigMap split, prometheus, and SDK config tiers
 # ---------------------------------------------------------------------------
@@ -2270,6 +2419,7 @@ main() {
   echo "# Pull secret: ${PULL_SECRET:-none}"
   echo "# Chart: ${CHART_PATH}"
   echo "# Namespace: ${NAMESPACE}"
+  echo "# TLS mode: ${TLS_MODE}"
   echo "#"
 
   setup_policy_files
@@ -2286,11 +2436,15 @@ main() {
   # pre-delete hooks don't hang on Docker Hub rate limits during uninstall.
   preload_hook_image
 
-  flow_a_production
+  if [[ "$TLS_MODE" == "cert-manager" ]]; then
+    flow_c_cert_manager
+  else
+    flow_a_production
 
-  if [[ "$PLATFORM" == "kind" ]]; then
-    full_cleanup
-    flow_b_quickstart
+    if [[ "$PLATFORM" == "kind" ]]; then
+      full_cleanup
+      flow_b_quickstart
+    fi
   fi
 
   tap_footer

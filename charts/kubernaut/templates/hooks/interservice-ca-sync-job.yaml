@@ -17,6 +17,17 @@ metadata:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # DD-PLATFORM-002: under ArgoCD, "helm.sh/hook": post-install,post-upgrade
+    # maps to PostSync, which only fires once the WHOLE Application is
+    # Healthy -- but several services (e.g. gateway) never become Healthy
+    # without the inter-service-ca ConfigMap this Job creates, deadlocking
+    # the sync forever. An explicit argocd.argoproj.io/hook annotation takes
+    # precedence over the Helm-translated one (ArgoCD-only; Helm CLI ignores
+    # this annotation and is unaffected), so this Job instead runs in
+    # ArgoCD's "Sync" phase -- concurrently with the rest of the manifests,
+    # not gated on their health.
+    "argocd.argoproj.io/hook": Sync
+    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation,HookSucceeded
 spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 3
