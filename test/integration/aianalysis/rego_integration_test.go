@@ -64,11 +64,13 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 	Context("Production Approval Policy - BR-AI-013", func() {
 		It("should auto-approve staging environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "staging",
+				SignalContext:     rego.SignalContextInput{Environment: "staging"},
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "staging"},
-				FailedDetections: []string{},
-				Warnings:         []string{},
-				Confidence:       0.95,
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{},
+					Warnings:         []string{},
+					Confidence:       0.95,
+				},
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -80,10 +82,12 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		// ADR-055 + BR-AI-085-005: Missing remediation_target = default-deny
 		It("should require approval when remediation target is missing", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "production",
-				FailedDetections: []string{},
-				Warnings:         []string{},
-				Confidence:       0.90,
+				SignalContext: rego.SignalContextInput{Environment: "production"},
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{},
+					Warnings:         []string{},
+					Confidence:       0.90,
+				},
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -94,11 +98,13 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 		It("should require approval for production with failed detections", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "production",
+				SignalContext:     rego.SignalContextInput{Environment: "production"},
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				FailedDetections: []string{"gitOpsManaged"},
-				Warnings:         []string{},
-				Confidence:       0.79,
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{"gitOpsManaged"},
+					Warnings:         []string{},
+					Confidence:       0.79,
+				},
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -108,14 +114,18 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 		It("should auto-approve production with all validations passing", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "production",
+				SignalContext:     rego.SignalContextInput{Environment: "production"},
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				FailedDetections: []string{},
-				Warnings:         []string{},
-				Confidence:       0.95,
-				DetectedLabels: map[string]interface{}{
-					"gitOpsManaged": true,
-					"pdbProtected":  true,
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{},
+					Warnings:         []string{},
+					Confidence:       0.95,
+				},
+				Classification: rego.ClassificationInput{
+					DetectedLabels: map[string]interface{}{
+						"gitOpsManaged": true,
+						"pdbProtected":  true,
+					},
 				},
 			})
 
@@ -129,10 +139,12 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 	Context("Environment-Specific Rules - BR-AI-013", func() {
 		It("should auto-approve development environment with affected resource", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "development",
+				SignalContext:     rego.SignalContextInput{Environment: "development"},
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "development"},
-				FailedDetections: []string{"gitOpsManaged"},
-				Confidence:       0.50,
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{"gitOpsManaged"},
+					Confidence:       0.50,
+				},
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -141,10 +153,12 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 		It("should auto-approve qa environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "qa",
+				SignalContext:     rego.SignalContextInput{Environment: "qa"},
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "qa"},
-				FailedDetections: []string{},
-				Confidence:       0.75,
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{},
+					Confidence:       0.75,
+				},
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -153,9 +167,9 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 
 		It("should auto-approve test environment", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "test",
+				SignalContext:     rego.SignalContextInput{Environment: "test"},
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "test"},
-				Confidence:       0.80,
+				KAResponse:        rego.KAResponseInput{Confidence: 0.80},
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -166,11 +180,13 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 	Context("Warning Handling - BR-AI-011", func() {
 		It("should require approval for production with warnings", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "production",
+				SignalContext:     rego.SignalContextInput{Environment: "production"},
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "production"},
-				FailedDetections: []string{},
-				Warnings:         []string{"High resource utilization detected"},
-				Confidence:       0.79,
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{},
+					Warnings:         []string{"High resource utilization detected"},
+					Confidence:       0.79,
+				},
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -184,18 +200,63 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 			// Kind "Deployment" (not "StatefulSet") isolates the is_stateful rule (score 50)
 			// from the is_sensitive_resource rule (score 80), which would mask the reason.
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment:      "production",
+				SignalContext:     rego.SignalContextInput{Environment: "production"},
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "db", Namespace: "production"},
-				FailedDetections: []string{},
-				Confidence:       0.79,
-				DetectedLabels: map[string]interface{}{
-					"stateful": true,
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{},
+					Confidence:       0.79,
+				},
+				Classification: rego.ClassificationInput{
+					DetectedLabels: map[string]interface{}{
+						"stateful": true,
+					},
 				},
 			})
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeTrue())
 			Expect(result.Reason).To(ContainSubstring("Stateful"))
+		})
+	})
+
+	// #247: Infrastructure-provisioning action types (e.g. ProvisionNode) must
+	// always require approval, since the LLM-reported remediation_target
+	// reflects the source workload observed during RCA, not the not-yet-created
+	// infrastructure the action actually provisions. action_type is
+	// catalog-authoritative (DD-WORKFLOW-016), unlike remediation_target.kind.
+	Context("Infrastructure Action Approval - #247", func() {
+		It("should require approval for ProvisionNode regardless of confidence, environment, or remediation_target kind", func() {
+			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
+				SignalContext:     rego.SignalContextInput{Environment: "development"}, // would otherwise auto-approve
+				ActionType:        "ProvisionNode",
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "batch-processor", Namespace: "default"},
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{},
+					Warnings:         []string{},
+					Confidence:       0.99,
+				},
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.ApprovalRequired).To(BeTrue())
+			Expect(result.Degraded).To(BeFalse())
+			Expect(result.Reason).To(ContainSubstring("Infrastructure-provisioning"))
+		})
+
+		It("should not require approval for a non-infrastructure action_type outside production", func() {
+			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
+				SignalContext:     rego.SignalContextInput{Environment: "development"},
+				ActionType:        "ScaleReplicas",
+				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "api", Namespace: "default"},
+				KAResponse: rego.KAResponseInput{
+					FailedDetections: []string{},
+					Warnings:         []string{},
+					Confidence:       0.99,
+				},
+			})
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.ApprovalRequired).To(BeFalse())
 		})
 	})
 
@@ -207,7 +268,7 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 			}, logr.Discard())
 
 			result, err := badEvaluator.Evaluate(evalCtx, &rego.PolicyInput{
-				Environment: "staging",
+				SignalContext: rego.SignalContextInput{Environment: "staging"},
 			})
 
 			// Should NOT return error - graceful degradation
@@ -223,10 +284,12 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 		It("should handle complete policy input with all fields", func() {
 			result, err := evaluator.Evaluate(evalCtx, &rego.PolicyInput{
 				// Signal context
-				SignalType:       "alert",
-				Severity:         "high",
-				Environment:      "staging",
-				BusinessPriority: "P1",
+				SignalContext: rego.SignalContextInput{
+					SignalType:       "alert",
+					Severity:         "high",
+					Environment:      "staging",
+					BusinessPriority: "P1",
+				},
 
 				// Target resource
 				TargetResource: rego.TargetResourceInput{
@@ -235,28 +298,28 @@ var _ = Describe("Rego Policy Integration", Label("integration", "rego"), func()
 					Namespace: "staging",
 				},
 
-				// Detected labels
-				DetectedLabels: map[string]interface{}{
-					"gitOpsManaged": true,
-					"pdbProtected":  true,
-					"stateful":      false,
-				},
-
-				// Custom labels
-				CustomLabels: map[string][]string{
-					"team":        {"platform"},
-					"criticality": {"high"},
+				// Detected/custom labels
+				Classification: rego.ClassificationInput{
+					DetectedLabels: map[string]interface{}{
+						"gitOpsManaged": true,
+						"pdbProtected":  true,
+						"stateful":      false,
+					},
+					CustomLabels: map[string][]string{
+						"team":        {"platform"},
+						"criticality": {"high"},
+					},
 				},
 
 				// ADR-055: Affected resource (replaces target_in_owner_chain)
 				RemediationTarget: &rego.RemediationTargetInput{Kind: "Deployment", Name: "web-app", Namespace: "staging"},
 
 				// KA response data
-				Confidence: 0.92,
-				Warnings:   []string{},
-
-				// Failed detections
-				FailedDetections: []string{},
+				KAResponse: rego.KAResponseInput{
+					Confidence:       0.92,
+					Warnings:         []string{},
+					FailedDetections: []string{},
+				},
 			})
 
 			Expect(err).NotTo(HaveOccurred())

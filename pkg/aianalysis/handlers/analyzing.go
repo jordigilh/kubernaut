@@ -384,10 +384,12 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *rego.PolicyInput {
 	input := &rego.PolicyInput{
 		// Signal context (from Spec.AnalysisRequest.SignalContext)
-		SignalType:       analysis.Spec.AnalysisRequest.SignalContext.SignalName,
-		Severity:         analysis.Spec.AnalysisRequest.SignalContext.Severity,
-		Environment:      analysis.Spec.AnalysisRequest.SignalContext.Environment,
-		BusinessPriority: analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority,
+		SignalContext: rego.SignalContextInput{
+			SignalType:       analysis.Spec.AnalysisRequest.SignalContext.SignalName,
+			Severity:         analysis.Spec.AnalysisRequest.SignalContext.Severity,
+			Environment:      analysis.Spec.AnalysisRequest.SignalContext.Environment,
+			BusinessPriority: analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority,
+		},
 
 		// Target resource
 		TargetResource: rego.TargetResourceInput{
@@ -397,12 +399,17 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 		},
 
 		// KA response data
-		Warnings: analysis.Status.Warnings,
+		KAResponse: rego.KAResponseInput{
+			Warnings: analysis.Status.Warnings,
+		},
 	}
 
-	// Get confidence from SelectedWorkflow (populated by InvestigatingHandler)
+	// Get confidence and action type from SelectedWorkflow (populated by InvestigatingHandler)
+	// #247: ActionType enables infrastructure-action approval gating independent
+	// of remediation_target.kind (see rego.PolicyInput.ActionType doc comment).
 	if analysis.Status.SelectedWorkflow != nil {
-		input.Confidence = analysis.Status.SelectedWorkflow.Confidence
+		input.KAResponse.Confidence = analysis.Status.SelectedWorkflow.Confidence
+		input.ActionType = analysis.Status.SelectedWorkflow.ActionType
 	}
 
 	// ADR-055: Populate RemediationTarget for Rego policy evaluation
@@ -417,25 +424,25 @@ func (h *AnalyzingHandler) buildPolicyInput(analysis *aianalysisv1.AIAnalysis) *
 
 	// ADR-056: DetectedLabels read exclusively from PostRCAContext (HAPI post-RCA).
 	dl := h.resolveDetectedLabels(analysis)
-	input.DetectedLabels = h.detectedLabelsToMap(dl)
+	input.Classification.DetectedLabels = h.detectedLabelsToMap(dl)
 
 	if dl != nil {
-		input.FailedDetections = dl.FailedDetections
+		input.KAResponse.FailedDetections = dl.FailedDetections
 	}
 
 	// Populate CustomLabels from EnrichmentResults (Issue #113: now on KubernetesContext)
 	er := analysis.Spec.AnalysisRequest.SignalContext.EnrichmentResults
 	if er.KubernetesContext != nil && er.KubernetesContext.CustomLabels != nil {
-		input.CustomLabels = er.KubernetesContext.CustomLabels
+		input.Classification.CustomLabels = er.KubernetesContext.CustomLabels
 	} else {
-		input.CustomLabels = make(map[string][]string)
+		input.Classification.CustomLabels = make(map[string][]string)
 	}
 
 	// #225: Pass operator-configurable threshold to Rego policy
 	input.ConfidenceThreshold = h.confidenceThreshold
 
 	// Populate BusinessClassification from EnrichmentResults (BR-SP-002, BR-SP-080, BR-SP-081)
-	input.BusinessClassification = buildBusinessClassification(er.BusinessClassification)
+	input.Classification.BusinessClassification = buildBusinessClassification(er.BusinessClassification)
 
 	// #774: Populate identity from InteractiveSession status (user-driven flows).
 	// Nil for autonomous (alert-driven) flows; Rego policies handle absence

@@ -47,38 +47,72 @@ type IdentityInput struct {
 	Groups []string `json:"groups,omitempty"`
 }
 
-// PolicyInput represents input to Rego policy
-// Per IMPLEMENTATION_PLAN_V1.0.md lines 1756-1785 (ApprovalInput schema)
-// Fields align with AIAnalysis status fields captured by InvestigatingHandler
-type PolicyInput struct {
-	// Signal context (from SignalProcessing)
+// SignalContextInput carries signal-source metadata (from SignalProcessing)
+// used by Rego policies for environment/severity/priority-based approval
+// rules. Grouped out of PolicyInput (Go Anti-Pattern Checklist "God struct"
+// remediation, #247 follow-up) — these four fields are always populated
+// together from AnalysisRequest.SignalContext.
+type SignalContextInput struct {
 	SignalType       string `json:"signal_type"`
 	Severity         string `json:"severity"`
 	Environment      string `json:"environment"`
 	BusinessPriority string `json:"business_priority"`
+}
 
-	// Target resource
-	TargetResource TargetResourceInput `json:"target_resource"`
-
-	// Detected labels (ADR-056: computed by KA post-RCA)
+// ClassificationInput carries label and business-classification metadata
+// used by Rego policies for classification-based approval rules. Grouped
+// out of PolicyInput (Go Anti-Pattern Checklist "God struct" remediation,
+// #247 follow-up) — these fields are all sourced from EnrichmentResults/
+// post-RCA context, distinct from the KA investigation response.
+type ClassificationInput struct {
+	// DetectedLabels (ADR-056: computed by KA post-RCA)
 	DetectedLabels map[string]interface{} `json:"detected_labels"`
 
-	// Custom labels (customer-defined via Rego)
+	// CustomLabels (customer-defined via Rego)
 	CustomLabels map[string][]string `json:"custom_labels"`
 
-	// Business classification from SP categorization (BR-SP-002, BR-SP-080, BR-SP-081)
+	// BusinessClassification from SP categorization (BR-SP-002, BR-SP-080, BR-SP-081)
 	BusinessClassification map[string]string `json:"business_classification,omitempty"`
+}
 
-	// KA response data
+// KAResponseInput carries fields populated from the Kubernaut Agent's (KA)
+// investigation/RCA response. Grouped out of PolicyInput (Go Anti-Pattern
+// Checklist "God struct" remediation, #247 follow-up).
+type KAResponseInput struct {
 	Confidence float64  `json:"confidence"`
 	Warnings   []string `json:"warnings,omitempty"`
+
+	// FailedDetections (DD-WORKFLOW-001 v2.1)
+	FailedDetections []string `json:"failed_detections,omitempty"`
+}
+
+// PolicyInput represents input to Rego policy
+// Per IMPLEMENTATION_PLAN_V1.0.md lines 1756-1785 (ApprovalInput schema)
+// Fields align with AIAnalysis status fields captured by InvestigatingHandler
+//
+// Field groups (SignalContext/Classification/KAResponse) are Go-side
+// organization only — buildRegoInputMap still flattens them to the same
+// top-level Rego input keys (e.g. input.environment, input.confidence), so
+// this restructuring does not change the Rego policy contract. Introduced
+// to keep the top-level field count away from the "God struct" threshold
+// (AGENTS.md Go Anti-Pattern Checklist) as the schema has grown across many
+// BRs (#225, #774, #247).
+type PolicyInput struct {
+	// SignalContext carries signal-source metadata (from SignalProcessing).
+	SignalContext SignalContextInput `json:"signal_context"`
+
+	// TargetResource identifies the resource the signal was raised against.
+	TargetResource TargetResourceInput `json:"target_resource"`
+
+	// Classification carries label/business-classification metadata.
+	Classification ClassificationInput `json:"classification"`
+
+	// KAResponse carries fields from the Kubernaut Agent's investigation response.
+	KAResponse KAResponseInput `json:"ka_response"`
 
 	// ADR-055: Remediation target identified by LLM during RCA
 	// Replaces target_in_owner_chain boolean with structured resource data
 	RemediationTarget *RemediationTargetInput `json:"remediation_target,omitempty"`
-
-	// FailedDetections (DD-WORKFLOW-001 v2.1)
-	FailedDetections []string `json:"failed_detections,omitempty"`
 
 	// #225: Operator-configurable confidence threshold for auto-approval.
 	// When nil, the Rego policy uses its built-in default (0.8).
@@ -90,6 +124,15 @@ type PolicyInput struct {
 	// access input.identity.user and input.identity.groups for role-based
 	// approval decisions (BR-AI-085, #774).
 	Identity *IdentityInput `json:"identity,omitempty"`
+
+	// ActionType is the catalog action type selected for remediation
+	// (DD-WORKFLOW-016 taxonomy, e.g. ScaleReplicas, ProvisionNode).
+	// Unlike RemediationTarget.Kind, this is catalog-authoritative (sourced
+	// from the action_type_taxonomy table via KA's three-step discovery),
+	// not LLM-inferred, enabling reliable gating on infrastructure-impacting
+	// actions regardless of which resource the LLM reports as the
+	// remediation target (BR-AI-085 FR-AI-085-006, #247).
+	ActionType string `json:"action_type"`
 }
 
 // TargetResourceInput contains target resource identification
@@ -221,10 +264,10 @@ func (e *Evaluator) resolveCompiledQuery(ctx context.Context) (rego.PreparedEval
 func buildRegoInputMap(input *PolicyInput) map[string]interface{} {
 	inputMap := map[string]interface{}{
 		// Signal context
-		"signal_type":       input.SignalType,
-		"severity":          input.Severity,
-		"environment":       input.Environment,
-		"business_priority": input.BusinessPriority,
+		"signal_type":       input.SignalContext.SignalType,
+		"severity":          input.SignalContext.Severity,
+		"environment":       input.SignalContext.Environment,
+		"business_priority": input.SignalContext.BusinessPriority,
 		// Target resource
 		"target_resource": map[string]interface{}{
 			"kind":      input.TargetResource.Kind,
@@ -232,17 +275,19 @@ func buildRegoInputMap(input *PolicyInput) map[string]interface{} {
 			"namespace": input.TargetResource.Namespace,
 		},
 		// Detected labels
-		"detected_labels": input.DetectedLabels,
-		"custom_labels":   input.CustomLabels,
+		"detected_labels": input.Classification.DetectedLabels,
+		"custom_labels":   input.Classification.CustomLabels,
 		// Business classification (BR-SP-002)
-		"business_classification": input.BusinessClassification,
+		"business_classification": input.Classification.BusinessClassification,
 		// KA response data
-		"confidence": input.Confidence,
-		"warnings":   input.Warnings,
+		"confidence": input.KAResponse.Confidence,
+		"warnings":   input.KAResponse.Warnings,
 		// ADR-055: Remediation target for granular per-kind policies
 		"remediation_target": input.RemediationTarget,
 		// FailedDetections
-		"failed_detections": input.FailedDetections,
+		"failed_detections": input.KAResponse.FailedDetections,
+		// #247: Catalog-authoritative action type for infrastructure-action gating
+		"action_type": input.ActionType,
 	}
 
 	// #225: Only include confidence_threshold when explicitly configured.

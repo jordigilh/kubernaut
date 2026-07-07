@@ -57,10 +57,8 @@ var _ = Describe("Rego Identity Integration — #774, BR-AI-085", Label("integra
 	Describe("IT-KA-774-003: End-to-end identity chain — buildPolicyInput -> Rego evaluator sees identity", func() {
 		It("should auto-approve when PolicyInput has SRE group identity", func() {
 			input := &rego.PolicyInput{
-				SignalType:  "alert",
-				Severity:    "high",
-				Environment: "production",
-				Confidence:  0.95,
+				SignalContext: rego.SignalContextInput{SignalType: "alert", Severity: "high", Environment: "production"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.95},
 				TargetResource: rego.TargetResourceInput{
 					Kind:      "Pod",
 					Name:      "api-server-abc123",
@@ -81,10 +79,8 @@ var _ = Describe("Rego Identity Integration — #774, BR-AI-085", Label("integra
 
 		It("should require approval when PolicyInput identity has no SRE group", func() {
 			input := &rego.PolicyInput{
-				SignalType:  "alert",
-				Severity:    "high",
-				Environment: "production",
-				Confidence:  0.95,
+				SignalContext: rego.SignalContextInput{SignalType: "alert", Severity: "high", Environment: "production"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.95},
 				TargetResource: rego.TargetResourceInput{
 					Kind:      "Pod",
 					Name:      "api-server-abc123",
@@ -104,10 +100,8 @@ var _ = Describe("Rego Identity Integration — #774, BR-AI-085", Label("integra
 
 		It("should require approval when PolicyInput has nil identity (autonomous flow)", func() {
 			input := &rego.PolicyInput{
-				SignalType:  "alert",
-				Severity:    "warning",
-				Environment: "staging",
-				Confidence:  0.90,
+				SignalContext: rego.SignalContextInput{SignalType: "alert", Severity: "warning", Environment: "staging"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.90},
 				TargetResource: rego.TargetResourceInput{
 					Kind:      "Deployment",
 					Name:      "worker",
