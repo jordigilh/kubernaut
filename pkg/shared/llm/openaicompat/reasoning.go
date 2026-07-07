@@ -86,3 +86,60 @@ func shouldReplayReasoning(mode ReasoningMode, hadToolCalls bool) bool {
 		return false
 	}
 }
+
+// EffortDialect identifies which wire dialect, if any, a model speaks for
+// the request-side reasoning-depth knob (#1604). This is a distinct axis
+// from ReasoningMode: ReasoningMode governs replaying already-captured
+// reasoning text back to the provider; EffortDialect governs asking the
+// provider to think harder or less in the first place. A model can have
+// either, both, or neither independently (e.g. a bare-bones self-hosted
+// server has neither; DeepSeek has both; real OpenAI o-series/gpt-5 has
+// only the effort dial, since Chat Completions never returns their
+// reasoning text at all — see #1604's non-goal on the Responses API).
+type EffortDialect string
+
+const (
+	// EffortDialectNone: no request-side effort parameter is recognized.
+	// The compatibility-floor default (BR-AI-086) — an unrecognized model
+	// never receives a speculative field it might reject.
+	EffortDialectNone EffortDialect = "none"
+
+	// EffortDialectOpenAI: real OpenAI/Azure o-series and gpt-5-family
+	// reasoning models. The canonical effort vocabulary ("none", "minimal",
+	// "low", "medium", "high", "xhigh") is OpenAI's own and is passed
+	// through verbatim as the wire "reasoning_effort" field.
+	EffortDialectOpenAI EffortDialect = "openai"
+
+	// EffortDialectDeepSeek: DeepSeek's own two-tier dialect ("high"/"max")
+	// plus a separate thinking-enabled/disabled toggle, per DeepSeek's own
+	// compatibility mapping (https://api-docs.deepseek.com/guides/thinking_mode).
+	EffortDialectDeepSeek EffortDialect = "deepseek"
+)
+
+// DetectEffortDialect infers which effort wire dialect a model speaks from
+// its name, implementing the same compatibility-floor default as
+// DetectReasoningMode: any unrecognized model gets EffortDialectNone, never
+// a speculative dialect that could send an unsupported field to a
+// bare-bones OpenAI-compatible server.
+func DetectEffortDialect(model string) EffortDialect {
+	lower := strings.ToLower(model)
+
+	if strings.Contains(lower, "deepseek-reasoner") || strings.Contains(lower, "deepseek-r1") ||
+		strings.HasPrefix(lower, "deepseek-v4") {
+		return EffortDialectDeepSeek
+	}
+
+	// Real OpenAI o-series and gpt-5-family reasoning models. Heuristic
+	// mirrors langchaingo's own model-family detection (tmc/langchaingo
+	// llms/openai/openaillm.go SupportsReasoning) — the same problem has
+	// the same shape of answer in every Go OpenAI client, not a shortcut
+	// unique to this package.
+	if lower == "o1" || strings.HasPrefix(lower, "o1-") ||
+		lower == "o3" || strings.HasPrefix(lower, "o3-") ||
+		lower == "o4" || strings.HasPrefix(lower, "o4-") ||
+		strings.HasPrefix(lower, "o5-") ||
+		strings.HasPrefix(lower, "gpt-5") {
+		return EffortDialectOpenAI
+	}
+	return EffortDialectNone
+}

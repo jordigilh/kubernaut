@@ -81,6 +81,16 @@ type Request struct {
 	// zero value ("none") by accident for a model that needs a different
 	// mode, and never guessed per-call from business logic (DD-HAPI-019).
 	ReasoningMode ReasoningMode
+	// Effort is the canonical, provider-agnostic reasoning-depth value
+	// ("", "none", "minimal", "low", "medium", "high", "xhigh" — #1604).
+	// Distinct from ReasoningMode/Message.Reasoning: this asks the
+	// provider to think harder or less; it never controls whether
+	// already-captured reasoning text is replayed.
+	Effort string
+	// EffortDialect governs how Effort is mapped onto the wire. Resolved
+	// once via DetectEffortDialect at client-construction time, same
+	// pattern as ReasoningMode.
+	EffortDialect EffortDialect
 }
 
 // Response is the mapped, non-streaming reply from a Chat Completions call.

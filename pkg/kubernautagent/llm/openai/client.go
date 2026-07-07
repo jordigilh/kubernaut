@@ -36,8 +36,10 @@ import (
 
 // Client implements llm.Client for OpenAI-protocol-compatible endpoints.
 type Client struct {
-	client        *openaicompat.Client
-	reasoningMode openaicompat.ReasoningMode
+	client           *openaicompat.Client
+	reasoningMode    openaicompat.ReasoningMode
+	effortDialect    openaicompat.EffortDialect
+	defaultReasoning *llm.ReasoningRequest
 }
 
 // Option configures the Client.
@@ -46,6 +48,7 @@ type Option func(*clientOpts)
 type clientOpts struct {
 	httpClient         *http.Client
 	capabilityOverride string
+	defaultReasoning   *llm.ReasoningRequest
 }
 
 // WithHTTPClient injects a custom HTTP client for transport chain support
@@ -72,6 +75,17 @@ func WithCapabilityOverride(override string) Option {
 	return func(o *clientOpts) { o.capabilityOverride = override }
 }
 
+// WithReasoning sets the construction-time default reasoning/effort request,
+// applied whenever a per-call req.Options.Reasoning is nil (#1604, mirroring
+// anthropicfamily.WithReasoning for cross-family symmetry). Unlike the
+// Anthropic family, this controls only the request-side Effort knob
+// ("reasoning_effort") — reasoning-content capture for this family remains
+// unconditional and model-driven (BR-AI-086 AC3), independent of this
+// option.
+func WithReasoning(r llm.ReasoningRequest) Option {
+	return func(o *clientOpts) { o.defaultReasoning = &r }
+}
+
 // New creates a Client for the given model and OpenAI-Chat-Completions-
 // compatible endpoint. The reasoning round-trip mode is auto-detected from
 // model (BR-AI-086, DD-LLM-005) unless overridden.
@@ -87,8 +101,10 @@ func New(model, endpoint, apiKey string, opts ...Option) *Client {
 	}
 
 	return &Client{
-		client:        openaicompat.New(model, endpoint, apiKey, compatOpts...),
-		reasoningMode: openaicompat.DetectReasoningMode(model, o.capabilityOverride),
+		client:           openaicompat.New(model, endpoint, apiKey, compatOpts...),
+		reasoningMode:    openaicompat.DetectReasoningMode(model, o.capabilityOverride),
+		effortDialect:    openaicompat.DetectEffortDialect(model),
+		defaultReasoning: o.defaultReasoning,
 	}
 }
 
@@ -158,6 +174,15 @@ func (c *Client) buildRequest(req llm.ChatRequest) openaicompat.Request {
 	}
 	if len(req.Options.OutputSchema) > 0 {
 		out.ResponseSchema = req.Options.OutputSchema
+	}
+
+	reasoning := req.Options.Reasoning
+	if reasoning == nil {
+		reasoning = c.defaultReasoning
+	}
+	if reasoning != nil && reasoning.Enabled {
+		out.Effort = reasoning.Effort
+		out.EffortDialect = c.effortDialect
 	}
 	return out
 }
