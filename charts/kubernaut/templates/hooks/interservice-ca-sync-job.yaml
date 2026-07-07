@@ -26,8 +26,19 @@ metadata:
     # this annotation and is unaffected), so this Job instead runs in
     # ArgoCD's "Sync" phase -- concurrently with the rest of the manifests,
     # not gated on their health.
+    #
+    # sync-wave override is equally required: ArgoCD also translates
+    # "helm.sh/hook-weight": "5" into argocd.argoproj.io/sync-wave: "5", and
+    # regular (unannotated) chart resources -- including the leaf
+    # Certificates this Job's own retry loop waits on, and every Deployment
+    # that mounts the resulting ConfigMap -- default to sync-wave "0". A
+    # positive wave places this Job in a *later* wave than those resources,
+    # and ArgoCD gates wave N+1 on wave N being Healthy -- recreating the
+    # exact same deadlock one level down. Pinning sync-wave to "0" puts this
+    # Job in the same wave so it actually runs concurrently, as intended.
     "argocd.argoproj.io/hook": Sync
     "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation,HookSucceeded
+    "argocd.argoproj.io/sync-wave": "0"
 spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 3
