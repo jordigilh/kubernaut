@@ -32,6 +32,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -1780,7 +1781,10 @@ func TestTriageConfigResolution_ExplicitOverridesAgent(t *testing.T) {
 
 func TestNewLLMTriagerFromConfig_RejectsUnsupportedProvider(t *testing.T) {
 	logger := logr.Discard()
-	cfg := types.LLMConfig{Provider: "openai", Model: "gpt-4"}
+	// "azure" alone (without provider: openai + AzureAPIVersion) isn't a
+	// recognized provider value in its own right — genuinely unsupported,
+	// unlike "openai"/"openai_compatible" which are now routed (#1618).
+	cfg := types.LLMConfig{Provider: "azure", Model: "gpt-4"}
 
 	_, err := newLLMTriagerFromConfig(context.Background(), cfg, logger)
 	if err == nil {
@@ -1788,5 +1792,33 @@ func TestNewLLMTriagerFromConfig_RejectsUnsupportedProvider(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported") {
 		t.Errorf("expected 'unsupported' in error, got: %v", err)
+	}
+}
+
+// TestNewLLMTriagerFromConfig_AcceptsOpenAICompatible proves #1618's fix:
+// severity triage no longer errors at startup for openai/openai_compatible
+// providers, closing the gap that made AF's severity-triage feature
+// unusable in fully local/air-gapped deployments (ADR-002's stated goal)
+// even though the main agent already supports these providers.
+func TestNewLLMTriagerFromConfig_AcceptsOpenAICompatible(t *testing.T) {
+	logger := logr.Discard()
+
+	for _, provider := range []string{types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible} {
+		cfg := types.LLMConfig{
+			Provider: provider,
+			Model:    "openai/gpt-oss-120b",
+			Endpoint: "http://localhost:8000",
+		}
+
+		triager, err := newLLMTriagerFromConfig(context.Background(), cfg, logger)
+		if err != nil {
+			t.Fatalf("IT-AF-1618-001: provider %q: expected no error, got: %v", provider, err)
+		}
+		if triager == nil {
+			t.Fatalf("IT-AF-1618-001: provider %q: expected non-nil triager", provider)
+		}
+		if _, ok := triager.(*severity.OpenAICompatibleTriager); !ok {
+			t.Errorf("IT-AF-1618-001: provider %q: expected *severity.OpenAICompatibleTriager, got %T", provider, triager)
+		}
 	}
 }
