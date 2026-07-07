@@ -64,9 +64,30 @@ jobs:
           chmod +x /usr/local/bin/argocd
           argocd version --client
 
+      # extraPortMappings exposes a fixed hostPort straight through to a
+      # NodePort on the control-plane container. Combined with patching
+      # argocd-server to NodePort 30080 below, this lets the ArgoCD CLI
+      # connect via a plain, static "localhost:8080" TCP connection -- no
+      # `kubectl port-forward` background process to launch, track a PID
+      # for, restart on failure, or leak if a later step exits early. A
+      # backgrounded port-forward is an extra moving part with its own
+      # failure mode (the process can die mid-workflow independent of
+      # cluster/app health); NodePort removes that class of flakiness
+      # entirely by using the same "real fixed port" connection ArgoCD
+      # would have in production.
       - name: Create Kind cluster
         run: |
-          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+          cat <<'EOF' > /tmp/kind-config.yaml
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+          - role: control-plane
+            extraPortMappings:
+            - containerPort: 30080
+              hostPort: 8080
+              protocol: TCP
+          EOF
+          kind create cluster --name "$KIND_CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 120s
           kubectl cluster-info
           kubectl get nodes -o wide
 
@@ -91,9 +112,8 @@ jobs:
       - name: Log in to ArgoCD CLI
         run: |
           kubectl -n argocd wait --for=condition=Available --timeout=60s deployment/argocd-server
-          kubectl port-forward svc/argocd-server -n argocd 8080:443 > /tmp/argocd-pf.log 2>&1 &
-          echo $! > /tmp/argocd-pf.pid
-          sleep 5
+          kubectl patch svc argocd-server -n argocd -p \
+            '{"spec": {"type": "NodePort", "ports": [{"name": "https", "port": 443, "targetPort": 8080, "nodePort": 30080}]}}'
           ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
           for i in $(seq 1 10); do
             argocd login localhost:8080 --username admin --password "$ARGOCD_PASSWORD" --insecure && break
@@ -366,5 +386,4 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          [[ -f /tmp/argocd-pf.pid ]] && kill "$(cat /tmp/argocd-pf.pid)" 2>/dev/null || true
           kind delete cluster --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
