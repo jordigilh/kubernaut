@@ -1,0 +1,47 @@
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: test-job-oomkill
+spec:
+  # OOM-Kill Simulation Job Workflow Schema (BR-WE-019, DD-WE-008)
+  # Authority: ADR-043
+  # E2E Testing: Real-cluster proof that Job.Spec.PodFailurePolicy Ignores
+  # exit-137 pod failures (Wiring Point B) and that the tolerated retries are
+  # captured in the audit trail (Wiring Point C / BR-WE-019 AC10).
+  version: "1.0.0"
+  description:
+    what: "Job workflow whose container deterministically exits 137 (simulated OOM-kill) for E2E testing"
+    whenToUse: "For E2E validation of PodFailurePolicy Ignore semantics on a real Job controller"
+    whenNotToUse: "Not intended for production use"
+    preconditions: "Kubernetes cluster with Job support"
+
+  actionType: RestartPod
+
+  labels:
+    severity: [info]
+    environment: [test]
+    component: [apps/v1/Deployment]
+    priority: P3
+
+  customLabels:
+    test-category: e2e
+    validation-type: podfailurepolicy
+
+  execution:
+    engine: job
+    # Digest of the pushed exec image (quay.io/kubernaut-cicd/test-workflows/job-oomkill:v1.0.0-exec),
+    # manually built/pushed for Phase 6 (DD-WE-008); re-sync via
+    # `make build-test-workflows` if the exec image is ever rebuilt.
+    bundle: quay.io/kubernaut-cicd/test-workflows/job-oomkill:v1.0.0-exec@sha256:949be6f31e137b8644cab7af1017b22e7196189d602f99f46dd5f88dcb84ff45
+
+  parameters:
+    - name: TARGET_RESOURCE
+      type: string
+      required: true
+      description: "Target resource (test purposes only)"
+      default: "test/deployment/oomkill"
+    - name: FAILURE_MESSAGE
+      type: string
+      required: false
+      description: "Error message to include in failure output"
+      default: "Simulated OOM-kill for PodFailurePolicy E2E testing"
