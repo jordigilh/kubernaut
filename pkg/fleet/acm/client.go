@@ -121,15 +121,24 @@ func (c *Client) IsManagedResource(ctx context.Context, r scope.ResourceIdentity
 }
 
 // Ping checks connectivity to the ACM Search GraphQL API by issuing the
-// same SearchQuery used by IsManagedResource with an empty filter set.
+// same SearchQuery used by IsManagedResource, filtered on kind=Namespace.
+// ACM Search rejects an empty/nil filter set with a GraphQL business error
+// ("query input must contain a filter or keyword") even when the backend is
+// healthy and fully authenticated (confirmed against a live ACM 2.16.2
+// cluster during the #1556 spike) — so Ping needs a filter that is always
+// syntactically valid and satisfiable on every real ACM hub. Namespace is
+// always indexed (the hub cluster itself always has namespaces), so this
+// filter never depends on Kubernaut-specific fleet state.
 // Unlike IsManagedResource, Ping does NOT swallow errors: the readiness
 // gate (pkg/fleet/readiness.ScopeCheckerProber) needs the real
 // transport/status/GraphQL error to correctly flip /readyz to NotReady
 // when ACM Search is unreachable.
 func (c *Client) Ping(ctx context.Context) error {
 	reqBody := graphQLRequest{
-		Query:     SearchQuery,
-		Variables: map[string]interface{}{"input": []searchInput{{}}},
+		Query: SearchQuery,
+		Variables: map[string]interface{}{
+			"input": []searchInput{{Filters: []searchFilter{{Property: "kind", Values: []string{"Namespace"}}}}},
+		},
 	}
 
 	body, err := json.Marshal(reqBody)

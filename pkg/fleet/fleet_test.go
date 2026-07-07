@@ -162,13 +162,46 @@ var _ = Describe("FleetConfig adapter pattern (Phase 2)", func() {
 
 	It("UT-FLEET-CFG-015 [CM-6]: Validate accepts acm backend", func() {
 		cfg := fleet.FleetConfig{
-			Enabled:  true,
-			Backend:  "acm",
-			Endpoint: "https://search-api.open-cluster-management.svc:4010",
+			Enabled:   true,
+			Backend:   "acm",
+			Endpoint:  "https://search-search-api.open-cluster-management.svc:4010",
+			TokenPath: "/etc/gateway/acm-token/token",
 		}
 
 		err := cfg.Validate()
 		Expect(err).ToNot(HaveOccurred())
+	})
+})
+
+// #1556: ACM Search mandatorily requires bearer-token auth, but the acm.Client
+// adapter never sent an Authorization header and nothing forced operators to
+// configure one. This left every ACM-backed deployment silently unauthenticated.
+// TokenPath hard-requirement closes that gap at config-validation time instead
+// of failing at request time inside the ACM Search backend.
+var _ = Describe("FleetConfig.TokenPath — acm backend bearer-token requirement (BR-INTEGRATION-065, #1556)", func() {
+	It("UT-FLEET-CFG-070 [IA-5,AC-4]: Validate rejects acm backend with empty TokenPath", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:  true,
+			Backend:  "acm",
+			Endpoint: "https://search-search-api.open-cluster-management.svc:4010",
+		}
+
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred(),
+			"IA-5/AC-4: ACM Search mandatorily requires bearer-token auth; starting "+
+				"without TokenPath would silently send unauthenticated requests")
+		Expect(err.Error()).To(ContainSubstring("tokenPath"))
+	})
+
+	It("UT-FLEET-CFG-071 [IA-5,AC-4]: Validate accepts acm backend with TokenPath set", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:   true,
+			Backend:   "acm",
+			Endpoint:  "https://search-search-api.open-cluster-management.svc:4010",
+			TokenPath: "/etc/gateway/acm-token/token",
+		}
+
+		Expect(cfg.Validate()).ToNot(HaveOccurred())
 	})
 })
 
