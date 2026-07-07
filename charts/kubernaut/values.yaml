@@ -566,14 +566,20 @@ kubernautAgent:
     # use "openai_compatible" with `endpoint` pointing at the provider's
     # OpenAI-Chat-Completions-compatible base URL (e.g. https://api.mistral.ai/v1) --
     # these are not separate provider values.
-    # NOT currently supported: bedrock (#1582), azure (#1600). Configuring
-    # either of these values will fail fast at startup (os.Exit) rather than
-    # silently degrading -- do not upgrade to this chart version if using
-    # them today.
+    # For Azure OpenAI: use "openai" or "openai_compatible" with `azureApiVersion`
+    # set below -- there is no separate "azure" provider value (#1600).
+    # NOT currently supported: bedrock (#1582). Configuring it will fail Helm
+    # schema validation at install/upgrade time -- do not upgrade to this
+    # chart version if using it today.
     provider: ""   # e.g., "openai", "anthropic", "vertex_ai", "openai_compatible"
     # -- Provider-specific static fields (require pod restart to change).
     vertexProject: ""    # GCP project ID (required for vertex_ai provider)
     vertexLocation: ""   # GCP region (required for vertex_ai provider), e.g., "us-central1"
+    # -- Azure OpenAI API version (e.g. "2024-10-21"). Set alongside
+    # provider: openai/openai_compatible to switch to Azure's deployment-
+    # scoped URL and api-key auth; `model` below doubles as the Azure
+    # deployment ID. Leave empty for non-Azure endpoints (#1600).
+    azureApiVersion: ""
     # -- Path to a PEM CA certificate for internal LLM endpoints (static).
     # Use when the LLM gateway (vLLM, Ollama, LiteLLM, etc.) uses a
     # private/internal CA. Leave empty for public LLM endpoints.

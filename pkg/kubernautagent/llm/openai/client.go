@@ -48,6 +48,7 @@ type Option func(*clientOpts)
 type clientOpts struct {
 	httpClient         *http.Client
 	capabilityOverride string
+	azureAPIVersion    string
 	defaultReasoning   *llm.ReasoningRequest
 }
 
@@ -75,6 +76,14 @@ func WithCapabilityOverride(override string) Option {
 	return func(o *clientOpts) { o.capabilityOverride = override }
 }
 
+// WithAzureAPIVersion switches this client into Azure OpenAI mode (#1600):
+// the underlying openaicompat.Client uses Azure's deployment-scoped URL
+// (model doubles as deployment ID) and api-key auth instead of the flat
+// OpenAI path and Bearer auth. See openaicompat.WithAzureAPIVersion.
+func WithAzureAPIVersion(apiVersion string) Option {
+	return func(o *clientOpts) { o.azureAPIVersion = apiVersion }
+}
+
 // WithReasoning sets the construction-time default reasoning/effort request,
 // applied whenever a per-call req.Options.Reasoning is nil (#1604, mirroring
 // anthropicfamily.WithReasoning for cross-family symmetry). Unlike the
@@ -98,6 +107,9 @@ func New(model, endpoint, apiKey string, opts ...Option) *Client {
 	var compatOpts []openaicompat.Option
 	if o.httpClient != nil {
 		compatOpts = append(compatOpts, openaicompat.WithHTTPClient(o.httpClient))
+	}
+	if o.azureAPIVersion != "" {
+		compatOpts = append(compatOpts, openaicompat.WithAzureAPIVersion(o.azureAPIVersion))
 	}
 
 	return &Client{

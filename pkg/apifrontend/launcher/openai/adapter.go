@@ -34,14 +34,26 @@ type Model struct {
 type Option func(*modelOpts)
 
 type modelOpts struct {
-	httpClient *http.Client
-	effort     string
+	httpClient      *http.Client
+	azureAPIVersion string
+	effort          string
 }
 
 // WithHTTPClient injects a custom HTTP client for transport chain support.
 func WithHTTPClient(c *http.Client) Option {
 	return func(o *modelOpts) {
 		o.httpClient = c
+	}
+}
+
+// WithAzureAPIVersion switches this model into Azure OpenAI mode (#1600):
+// the underlying openaicompat.Client uses Azure's deployment-scoped URL
+// (modelName doubles as deployment ID) and api-key auth instead of the flat
+// OpenAI path and Bearer auth. Net-new for AF — added for parity with KA's
+// equivalent option, see openaicompat.WithAzureAPIVersion.
+func WithAzureAPIVersion(apiVersion string) Option {
+	return func(o *modelOpts) {
+		o.azureAPIVersion = apiVersion
 	}
 }
 
@@ -74,6 +86,9 @@ func NewModel(modelName, endpoint, apiKey string, opts ...Option) *Model {
 	var clientOpts []openaicompat.Option
 	if o.httpClient != nil {
 		clientOpts = append(clientOpts, openaicompat.WithHTTPClient(o.httpClient))
+	}
+	if o.azureAPIVersion != "" {
+		clientOpts = append(clientOpts, openaicompat.WithAzureAPIVersion(o.azureAPIVersion))
 	}
 
 	return &Model{

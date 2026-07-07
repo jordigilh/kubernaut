@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -34,6 +35,13 @@ type Client struct {
 	endpoint   string
 	apiKey     string
 	httpClient *http.Client
+	// azureAPIVersion, when non-empty, switches do() from the flat
+	// /chat/completions path + Bearer auth every other provider in this
+	// package's doc comment uses, to Azure OpenAI's own deployment-scoped
+	// URL + api-key header (#1600). Resolved once via WithAzureAPIVersion at
+	// client-construction time, the same pattern as ReasoningMode/
+	// EffortDialect.
+	azureAPIVersion string
 }
 
 // Option configures the Client.
@@ -43,6 +51,15 @@ type Option func(*Client)
 // (TLS CA, OAuth2, custom headers, circuit breaker — issue #1342).
 func WithHTTPClient(c *http.Client) Option {
 	return func(cl *Client) { cl.httpClient = c }
+}
+
+// WithAzureAPIVersion switches this client into Azure OpenAI mode (#1600):
+// requests go to Azure's deployment-scoped URL (using the model name as the
+// deployment ID, per Azure's own convention — this package has no separate
+// deployment-ID concept) with the given api-version query parameter, and
+// authenticate via the api-key header instead of Authorization: Bearer.
+func WithAzureAPIVersion(apiVersion string) Option {
+	return func(cl *Client) { cl.azureAPIVersion = apiVersion }
 }
 
 // New creates a Client for the given model and Chat-Completions-compatible
@@ -101,14 +118,14 @@ func (c *Client) do(ctx context.Context, req Request, stream bool) (*http.Respon
 		return nil, fmt.Errorf("openaicompat: marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		c.endpoint+"/chat/completions", strings.NewReader(string(jsonBody)))
+	reqURL, authHeader, authValue := c.requestTarget()
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, strings.NewReader(string(jsonBody)))
 	if err != nil {
 		return nil, fmt.Errorf("openaicompat: build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	if c.apiKey != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	if authValue != "" {
+		httpReq.Header.Set(authHeader, authValue)
 	}
 
 	resp, err := c.httpClient.Do(httpReq)
@@ -122,6 +139,30 @@ func (c *Client) do(ctx context.Context, req Request, stream bool) (*http.Respon
 		return nil, fmt.Errorf("openaicompat: API error (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
 	}
 	return resp, nil
+}
+
+// requestTarget returns the request URL and auth header name/value for this
+// client's configured mode. Azure mode (#1600) uses a deployment-scoped
+// path — the model name doubles as the deployment ID, Azure's own
+// convention — plus a mandatory api-version query parameter, and an
+// api-key header; every other provider uses the flat /chat/completions
+// path and Authorization: Bearer. In both modes, an empty apiKey yields an
+// empty authValue, so no auth header is sent at all — the same "no header
+// rather than an empty one" behavior this package already had for Bearer,
+// preserved here so an operator using a transport-layer auth wrapper
+// (e.g. Azure AD/Entra Bearer tokens, out of scope for this package — see
+// #1600's issue) never has this client's header collide with theirs.
+func (c *Client) requestTarget() (reqURL, authHeader, authValue string) {
+	if c.azureAPIVersion != "" {
+		u := fmt.Sprintf("%s/openai/deployments/%s/chat/completions",
+			c.endpoint, url.PathEscape(c.model))
+		q := url.Values{"api-version": {c.azureAPIVersion}}
+		return u + "?" + q.Encode(), "api-key", c.apiKey
+	}
+	if c.apiKey == "" {
+		return c.endpoint + "/chat/completions", "Authorization", ""
+	}
+	return c.endpoint + "/chat/completions", "Authorization", "Bearer " + c.apiKey
 }
 
 // buildRequestBody assembles the JSON request body, applying generation
