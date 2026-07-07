@@ -1,0 +1,225 @@
+suite: Inter-service mTLS CA/Issuer/Certificate provisioning in cert-manager mode (DD-PLATFORM-001)
+templates:
+  - templates/interservice/ca.yaml
+  - templates/interservice/leaf-certs.yaml
+  - templates/hooks/interservice-ca-sync-job.yaml
+tests:
+  # ── cert-manager mode: bootstrap Issuer + root CA + CA Issuer ──────────
+  - it: "cert-manager mode: renders a self-signed bootstrap Issuer"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/ca.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-interservice-bootstrap-issuer
+    asserts:
+      - isKind:
+          of: Issuer
+      - exists:
+          path: spec.selfSigned
+
+  - it: "cert-manager mode: renders the root CA Certificate as a dedicated internal CA"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/ca.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-interservice-ca
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.isCA
+          value: true
+      - equal:
+          path: spec.secretName
+          value: kubernaut-interservice-ca-secret
+      - equal:
+          path: spec.privateKey.algorithm
+          value: ECDSA
+      - equal:
+          path: spec.privateKey.size
+          value: 256
+      - equal:
+          path: spec.issuerRef.name
+          value: kubernaut-interservice-bootstrap-issuer
+      - equal:
+          path: spec.issuerRef.kind
+          value: Issuer
+
+  - it: "cert-manager mode: renders the CA-type Issuer backed by the root CA secret"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/ca.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-interservice-ca-issuer
+    asserts:
+      - isKind:
+          of: Issuer
+      - equal:
+          path: spec.ca.secretName
+          value: kubernaut-interservice-ca-secret
+
+  - it: "cert-manager mode: ca.yaml is decoupled from tls.certManager.issuerRef (dedicated internal CA)"
+    set:
+      tls:
+        mode: cert-manager
+        certManager:
+          issuerRef:
+            name: some-external-public-issuer
+            kind: ClusterIssuer
+            group: cert-manager.io
+    template: templates/interservice/ca.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-interservice-ca
+    asserts:
+      - equal:
+          path: spec.issuerRef.name
+          value: kubernaut-interservice-bootstrap-issuer
+      - notEqual:
+          path: spec.issuerRef.name
+          value: some-external-public-issuer
+
+  # ── cert-manager mode: leaf Certificates ────────────────────────────────
+  - it: "cert-manager mode: gateway-tls leaf Certificate issued by the dedicated CA issuer"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-tls
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: gateway-tls
+      - equal:
+          path: spec.privateKey.algorithm
+          value: ECDSA
+      - equal:
+          path: spec.privateKey.size
+          value: 256
+      - equal:
+          path: spec.issuerRef.name
+          value: kubernaut-interservice-ca-issuer
+      - equal:
+          path: spec.issuerRef.kind
+          value: Issuer
+      - contains:
+          path: spec.dnsNames
+          content: gateway-service
+      - contains:
+          path: spec.dnsNames
+          content: gateway-service.NAMESPACE.svc.cluster.local
+
+  - it: "cert-manager mode: datastorage-tls leaf Certificate uses the data-storage-service DNS names"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: datastorage-tls
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: datastorage-tls
+      - equal:
+          path: spec.issuerRef.name
+          value: kubernaut-interservice-ca-issuer
+      - contains:
+          path: spec.dnsNames
+          content: data-storage-service
+      - contains:
+          path: spec.dnsNames
+          content: data-storage-service.NAMESPACE.svc.cluster.local
+
+  - it: "cert-manager mode: kubernautagent-tls leaf Certificate uses the kubernaut-agent DNS names"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernautagent-tls
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: kubernautagent-tls
+      - equal:
+          path: spec.issuerRef.name
+          value: kubernaut-interservice-ca-issuer
+      - contains:
+          path: spec.dnsNames
+          content: kubernaut-agent
+      - contains:
+          path: spec.dnsNames
+          content: kubernaut-agent.NAMESPACE.svc.cluster.local
+
+  - it: "cert-manager mode: exactly 3 leaf Certificates rendered"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    asserts:
+      - hasDocuments:
+          count: 3
+
+  # ── cert-manager mode: CA sync hook Job ─────────────────────────────────
+  - it: "cert-manager mode: renders the CA-to-ConfigMap sync hook Job"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/hooks/interservice-ca-sync-job.yaml
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: post-install,post-upgrade
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-kubernaut-hook-sa
+
+  # ── hook mode: none of the new resources should render ──────────────────
+  - it: "hook mode: no interservice CA/Issuer/Certificate resources rendered (hook Job manages certs instead)"
+    set:
+      tls:
+        mode: hook
+    asserts:
+      - hasDocuments:
+          count: 0
+          template: templates/interservice/ca.yaml
+      - hasDocuments:
+          count: 0
+          template: templates/interservice/leaf-certs.yaml
+      - hasDocuments:
+          count: 0
+          template: templates/hooks/interservice-ca-sync-job.yaml
+
+  # ── manual mode: none of the new resources should render ────────────────
+  - it: "manual mode: no interservice CA/Issuer/Certificate resources rendered (user-managed prerequisite)"
+    set:
+      tls:
+        mode: manual
+    asserts:
+      - hasDocuments:
+          count: 0
+          template: templates/interservice/ca.yaml
+      - hasDocuments:
+          count: 0
+          template: templates/interservice/leaf-certs.yaml
+      - hasDocuments:
+          count: 0
+          template: templates/hooks/interservice-ca-sync-job.yaml

@@ -1,0 +1,52 @@
+{{- if eq .Values.tls.mode "cert-manager" }}
+# DD-PLATFORM-001: dedicated internal CA for inter-service mTLS, deliberately
+# decoupled from tls.certManager.issuerRef -- internal service-to-service
+# trust must not depend on whatever external/public PKI issues webhook or
+# API certs (e.g. a public ACME issuer). Mirrors hook mode's single shared
+# CA model (charts/kubernaut/templates/hooks/tls-cert-job.yaml Section 1/2).
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: kubernaut-interservice-bootstrap-issuer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+# Root CA certificate, self-signed via the bootstrap Issuer above. Long-lived
+# (10y) since it is the root of trust for internal mTLS, not a leaf cert.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kubernaut-interservice-ca
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: kubernaut-interservice-ca
+  secretName: kubernaut-interservice-ca-secret
+  duration: 87600h   # 10 years -- root CA
+  renewBefore: 720h  # 30 days
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: kubernaut-interservice-bootstrap-issuer
+    kind: Issuer
+    group: cert-manager.io
+---
+# CA-type Issuer backed by the root CA secret -- issues the per-service leaf
+# certificates in templates/interservice/leaf-certs.yaml.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: kubernaut-interservice-ca-issuer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: kubernaut-interservice-ca-secret
+{{- end }}

@@ -373,9 +373,18 @@ metadata:
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 rules:
+  # #334: webhook-cleanup (pre-delete) runs in every tls.mode, so delete must
+  # stay unconditional. get/patch are only used by tls-cabundle-patch, which
+  # only exists in hook mode -- granting them in cert-manager/manual mode
+  # would be unused, least-privilege-violating access.
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
-    verbs: ["get", "patch", "delete"]
+    verbs: ["delete"]
+  {{- if eq .Values.tls.mode "hook" }}
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+    verbs: ["get", "patch"]
+  {{- end }}
   # #521: CRD upgrade hook needs SSA permissions on CRDs.
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]

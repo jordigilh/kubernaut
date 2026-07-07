@@ -89,7 +89,11 @@ Certificates are automatically renewed during upgrade if they expire within 30 d
 {{- else if eq .Values.tls.mode "cert-manager" }}
 TLS mode: cert-manager (certificates managed by cert-manager).
 The authwebhook-cert Certificate resource provisions the authwebhook-tls Secret.
-cert-manager handles renewal automatically.
+The datastorage-signing-cert Certificate resource provisions DataStorage's AU-9
+audit-signing key (#334). A dedicated internal CA (kubernaut-interservice-ca,
+DD-PLATFORM-001) auto-provisions inter-service mTLS: gateway-tls, datastorage-tls,
+kubernautagent-tls, and the inter-service-ca ConfigMap. cert-manager handles
+renewal automatically for all of these.
 {{- else if eq .Values.tls.mode "manual" }}
 TLS mode: manual (user-managed certificates).
 You must create the authwebhook-tls Secret (type kubernetes.io/tls) and patch the
@@ -102,6 +106,22 @@ MutatingWebhookConfiguration and ValidatingWebhookConfiguration with the CA bund
 
    kubectl patch mutatingwebhookconfigurations authwebhook-mutating --type=json \
      -p "[{\"op\":\"add\",\"path\":\"/webhooks/0/clientConfig/caBundle\",\"value\":\"${CA_B64}\"}]"
+
+You must also create the datastorage-signing-cert Secret (type kubernetes.io/tls,
+RSA 2048 key) for DataStorage's AU-9 audit-signing key -- DataStorage fails to
+start without it, with no fallback (#334):
+
+   openssl genrsa -out /tmp/signing-tls.key 2048
+   openssl req -new -x509 -days 365 -key /tmp/signing-tls.key \
+     -out /tmp/signing-tls.crt -subj "/CN=datastorage-signing-cert"
+   kubectl create secret tls datastorage-signing-cert \
+     --cert=/tmp/signing-tls.crt --key=/tmp/signing-tls.key -n {{ .Release.Namespace }}
+
+You must also create gateway-tls, datastorage-tls, kubernautagent-tls Secrets
+(type kubernetes.io/tls) plus an inter-service-ca ConfigMap (key ca.crt) for
+inter-service mTLS -- DD-PLATFORM-001. Without these, inter-service traffic
+silently falls back to plain HTTP (SC-8 gap). See the chart README's
+"Inter-service mTLS prerequisite" section for full openssl commands.
 {{- end }}
 
 === Uninstalling ===
