@@ -22,10 +22,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
-	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
@@ -40,110 +41,96 @@ func (fakeUnreadyProber) Probe(context.Context) error {
 	return errors.New("fake: fleet dependency unreachable")
 }
 
-// UT-KA-JWKS-001: readinessHandler reports not_ready before the main API
-// server has started listening, even when shutdownFlag and the LLM client
-// are otherwise ready. This guards against the race fixed alongside the JWKS
-// pre-warm startup reorder: the health server now starts before the
-// route-setup closure (which performs the JWKS pre-warm), so /readyz must
-// not report ready until the main API server is actually about to listen.
-func TestReadinessHandler_NotReadyBeforeAPIServerListening(t *testing.T) {
+var _ = Describe("readinessHandler", func() {
 	var shutdownFlag, apiServerReady int32
-	swappable := setupSwappable(t)
-	interactive := karbac.NewInteractiveReadiness()
 
-	handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
+	BeforeEach(func() {
+		shutdownFlag = 0
+		apiServerReady = 0
+	})
 
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	rec := httptest.NewRecorder()
-	handler(rec, req)
-
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("UT-KA-JWKS-001: expected 503 before apiServerReady is set, got %d", rec.Code)
+	doRequest := func(handler http.HandlerFunc) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		return rec
 	}
-}
 
-// UT-KA-JWKS-002: readinessHandler reports ready once apiServerReady is set
-// (and all other dependencies are healthy).
-func TestReadinessHandler_ReadyAfterAPIServerListening(t *testing.T) {
-	var shutdownFlag, apiServerReady int32
-	atomic.StoreInt32(&apiServerReady, 1)
-	swappable := setupSwappable(t)
-	interactive := karbac.NewInteractiveReadiness()
+	// UT-KA-JWKS-001: readinessHandler reports not_ready before the main API
+	// server has started listening, even when shutdownFlag and the LLM client
+	// are otherwise ready. This guards against the race fixed alongside the
+	// JWKS pre-warm startup reorder: the health server now starts before the
+	// route-setup closure (which performs the JWKS pre-warm), so /readyz must
+	// not report ready until the main API server is actually about to listen.
+	It("UT-KA-JWKS-001: reports not_ready before the API server has started listening", func() {
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
 
-	handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	rec := httptest.NewRecorder()
-	handler(rec, req)
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+	})
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("UT-KA-JWKS-002: expected 200 once apiServerReady is set, got %d (body: %s)", rec.Code, rec.Body.String())
-	}
-}
+	// UT-KA-JWKS-002: readinessHandler reports ready once apiServerReady is
+	// set (and all other dependencies are healthy).
+	It("UT-KA-JWKS-002: reports ready once the API server is listening", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
 
-// UT-KA-JWKS-003: shutdownFlag takes priority over apiServerReady -- once
-// shutdown begins, the probe must fail even if the API server was ready.
-func TestReadinessHandler_ShutdownTakesPriority(t *testing.T) {
-	var shutdownFlag, apiServerReady int32
-	atomic.StoreInt32(&apiServerReady, 1)
-	atomic.StoreInt32(&shutdownFlag, 1)
-	swappable := setupSwappable(t)
-	interactive := karbac.NewInteractiveReadiness()
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
 
-	handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+	})
 
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	rec := httptest.NewRecorder()
-	handler(rec, req)
+	// UT-KA-JWKS-003: shutdownFlag takes priority over apiServerReady -- once
+	// shutdown begins, the probe must fail even if the API server was ready.
+	It("UT-KA-JWKS-003: shutdownFlag takes priority over apiServerReady", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		atomic.StoreInt32(&shutdownFlag, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("UT-KA-JWKS-003: expected 503 during shutdown, got %d", rec.Code)
-	}
-}
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
 
-// UT-KA-1553-001: readinessHandler must report 503 when the injected Fleet
-// readiness gate is NotReady, even though every other dependency (API
-// server, LLM client, interactive mode) is healthy. This is the pod-wide
-// fail-closed behavior mandated by ADR-068 decision #11 / BR-INTEGRATION-054
-// (#1553): an unreachable Fleet MCP Gateway must remove the whole pod from
-// Service endpoints, not just silently degrade fleet-scoped functionality.
-func TestReadinessHandler_FleetGateNotReady_ReturnsUnavailable(t *testing.T) {
-	var shutdownFlag, apiServerReady int32
-	atomic.StoreInt32(&apiServerReady, 1)
-	swappable := setupSwappable(t)
-	interactive := karbac.NewInteractiveReadiness()
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+	})
 
-	gate := readiness.NewGate(time.Hour, logr.Discard(), fakeUnreadyProber{})
-	gate.Start(context.Background())
-	t.Cleanup(gate.Stop)
+	// UT-KA-1553-001: readinessHandler must report 503 when the injected Fleet
+	// readiness gate is NotReady, even though every other dependency (API
+	// server, LLM client, interactive mode) is healthy. This is the pod-wide
+	// fail-closed behavior mandated by ADR-068 decision #11 / BR-INTEGRATION-054
+	// (#1553): an unreachable Fleet MCP Gateway must remove the whole pod from
+	// Service endpoints, not just silently degrade fleet-scoped functionality.
+	It("UT-KA-1553-001: reports 503 when the Fleet readiness gate is NotReady", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
 
-	handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, gate)
+		gate := readiness.NewGate(time.Hour, logr.Discard(), fakeUnreadyProber{})
+		gate.Start(context.Background())
+		DeferCleanup(gate.Stop)
 
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	rec := httptest.NewRecorder()
-	handler(rec, req)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, gate)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("UT-KA-1553-001: expected 503 when the fleet readiness gate is NotReady, got %d (body: %s)", rec.Code, rec.Body.String())
-	}
-}
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+	})
 
-// UT-KA-1553-002: readinessHandler must report 200 when the injected Fleet
-// readiness gate is nil (fleet mode not configured), matching the existing
-// soft-dependency convention used for ds.
-func TestReadinessHandler_NilFleetGate_DoesNotBlockReady(t *testing.T) {
-	var shutdownFlag, apiServerReady int32
-	atomic.StoreInt32(&apiServerReady, 1)
-	swappable := setupSwappable(t)
-	interactive := karbac.NewInteractiveReadiness()
+	// UT-KA-1553-002: readinessHandler must report 200 when the injected Fleet
+	// readiness gate is nil (fleet mode not configured), matching the existing
+	// soft-dependency convention used for ds.
+	It("UT-KA-1553-002: reports 200 when the Fleet readiness gate is nil (fleet mode not configured)", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
 
-	handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
 
-	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	rec := httptest.NewRecorder()
-	handler(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("UT-KA-1553-002: expected 200 when fleet mode is not configured (nil gate), got %d (body: %s)", rec.Code, rec.Body.String())
-	}
-}
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+	})
+})

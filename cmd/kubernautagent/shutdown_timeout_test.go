@@ -17,30 +17,28 @@ limitations under the License.
 package main
 
 import (
-	"testing"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 )
 
-// UT-KA-1329-004: shutdownTimeout returns configured value (CM-3)
-func TestShutdownTimeout_UsesConfig(t *testing.T) {
-	cfg := kaconfig.DefaultConfig()
-	cfg.Runtime.Shutdown.DrainSeconds = 3
+var _ = Describe("shutdownTimeout", func() {
+	// UT-KA-1329-004: shutdownTimeout returns configured value (CM-3)
+	It("returns the configured value", func() {
+		cfg := kaconfig.DefaultConfig()
+		cfg.Runtime.Shutdown.DrainSeconds = 3
 
-	timeout := shutdownTimeout(cfg)
-	if timeout != 3*time.Second {
-		t.Errorf("UT-KA-1329-004: CM-3: expected 3s from config, got %v", timeout)
-	}
-}
+		Expect(shutdownTimeout(cfg)).To(Equal(3 * time.Second))
+	})
 
-// UT-KA-1329-005: shutdownTimeout returns 30s default on zero (CM-3)
-func TestShutdownTimeout_DefaultsOnZero(t *testing.T) {
-	cfg := kaconfig.DefaultConfig()
-	cfg.Runtime.Shutdown.DrainSeconds = 0
+	// UT-KA-1329-005: shutdownTimeout returns 30s default on zero (CM-3)
+	It("defaults to 30s when unset", func() {
+		cfg := kaconfig.DefaultConfig()
+		cfg.Runtime.Shutdown.DrainSeconds = 0
 
-	timeout := shutdownTimeout(cfg)
-	if timeout != 30*time.Second {
-		t.Errorf("UT-KA-1329-005: CM-3: expected 30s default, got %v", timeout)
-	}
-}
+		Expect(shutdownTimeout(cfg)).To(Equal(30 * time.Second))
+	})
+})
