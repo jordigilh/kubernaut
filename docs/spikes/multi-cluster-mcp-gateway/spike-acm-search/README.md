@@ -20,6 +20,7 @@ live ACM instance. Answer four yes/no questions to raise confidence from 55% to
 | S4 | Does `search` return `{ searchResult: { items } }` for clusters? | **PASS** | Items are flat `map[string]string` |
 | S5 | Can a ServiceAccount authenticate with bearer token? | **PASS** | SA tokens authenticate (HTTP 200); authorization requires `cluster-admin` |
 | S6 | Go client approach? | **Option A** | Hand-rolled HTTP+JSON; zero new dependencies |
+| S7 | Does Kubernaut's own `pkg/fleet/acm.Client` (post-#1556 bearer-token fix) actually authenticate and return correct results? | **PASS** | See [Post-#1556 Fix: Production Go Client Validation](#post-1556-fix-production-go-client-validation-2026-07-07) below — the earlier S1-S6/RBAC validation used `curl`, not our Go client, and the Go client had a since-fixed auth bug that would have 401'd on every request |
 
 ### Confidence Reassessment
 
@@ -195,6 +196,91 @@ Full step-by-step guide in ADR-068 and `rbac.yaml` in this directory.
 - Secret: `search-api-certs` in `open-cluster-management` namespace
 - In-cluster: inject service CA into a ConfigMap with annotation
   `service.beta.openshift.io/inject-cabundle: "true"`
+
+## Post-#1556 Fix: Production Go Client Validation (2026-07-07)
+
+**Cluster**: OCP (dev.redhat-internal.com), ACM 2.16.2 (fresh install, same session)
+
+### Goal
+
+The validation above (S1-S6, and the "Production RBAC Validation" section) used
+raw `curl` against the ACM Search GraphQL API. It never exercised Kubernaut's
+own Go client, because `pkg/fleet/acm.Client` had a pre-existing bug: it never
+sent the `Authorization: Bearer <token>` header at all (tracked as
+[#1556](https://github.com/jordigilh/kubernaut/issues/1556)). This meant every
+prior "validation" of the adapter was actually validating the wrong thing — the
+real Go client would have 401'd on every request.
+
+After implementing the #1556 fix (`auth.AuthTransport` composed into the ACM
+client's HTTP transport via `pkg/fleet/scope_factory.go`, gated by
+`FleetConfig.Validate()`) and a related fix to `acm.Client.Ping()` (see below),
+this spike closes that gap: it drives the **actual production code path** —
+`fleet.NewScopeChecker()`, the exact factory GW/RO call at startup — against
+the live cluster, from inside a pod (so the real in-cluster DNS name and TLS
+cert both match, unlike a local port-forward).
+
+### Method
+
+1. Enabled the `fine-grained-rbac` MCH component and applied `rbac.yaml` from
+   this directory (scoped `kubernaut-fleet-reader` SA, no cluster-admin).
+2. Generated a bound SA token (`oc create token`) and the service-ca bundle
+   (via the `inject-cabundle` ConfigMap annotation).
+3. Cross-compiled a throwaway `linux/amd64` Go program that calls
+   `fleet.NewScopeChecker()` with `FleetConfig{Backend: "acm", Endpoint:
+   "https://search-search-api.open-cluster-management.svc:4010", TokenPath,
+   TLSCAFile}`, then exercises `Ping()` and `IsManagedResource()` through the
+   returned `*fleet.FederatedScopeChecker`.
+4. Ran it inside a short-lived debug pod in `kubernaut-system` (`oc run` +
+   `oc exec`, files copied in via `cat > file` over `oc exec -i`, since the
+   minimal base image lacked `tar` for `oc cp`).
+5. Deleted the debug pod, CA ConfigMap, and the throwaway program afterward.
+   Left the RBAC (SA + bindings) and `fine-grained-rbac=true` in place, since
+   they match this ADR's documented production setup rather than being
+   spike-only state.
+
+### Results
+
+| Check | Result |
+|-------|--------|
+| `FleetConfig.Validate()` accepts `backend=acm` + `TokenPath` | **PASS** |
+| `fleet.NewScopeChecker()` composes `CAReloader` + `AuthTransport` + `acm.Client` | **PASS** |
+| `Ping()` (readiness-gate call) succeeds with real bearer-token auth | **PASS** |
+| `IsManagedResource()` on a resource that exists (`search-api` Deployment) | **PASS** — `managed=true` |
+| `IsManagedResource()` on a resource that doesn't exist | **PASS** — `managed=false` |
+| `Ping()` with a missing token file fails closed (no silent unauthenticated fallback) | **PASS** — `authentication token unavailable: cannot read SA token from ...` |
+
+```
+PASS Validate(): config accepted
+PASS NewScopeChecker(): factory constructed a checker
+PASS Ping(): ACM Search reports healthy through real bearer-token auth
+PASS IsManagedResource(search-api Deployment): managed=true
+PASS IsManagedResource(nonexistent Deployment): managed=false (expect false)
+PASS: Ping() correctly fails closed with a missing token file: ACM Search
+  unreachable: ... authentication token unavailable: cannot read SA token
+  from /tmp/does-not-exist-token
+```
+
+### `Ping()` query-shape defect found and fixed during this spike
+
+Before this validation, `acm.Client.Ping()` sent an **empty filter set**
+(`searchInput{}` with no `Filters`). Real ACM Search 2.16.2 rejects this with
+a GraphQL-level error (`"query input must contain a filter or keyword"`,
+returned as HTTP 200 with a populated `errors` array — not a transport
+error). Since `readiness.ScopeCheckerProber` treats any `Ping()` error as
+unhealthy, this alone would have kept `/readyz` permanently `NotReady` for
+every `backend: "acm"` deployment, independent of the auth fix. Fixed by
+having `Ping()` send a `kind=Namespace` filter — always valid and always
+satisfiable, since every ACM hub indexes at least one namespace. See
+`UT-ACM-054-013` (`pkg/fleet/acm/client_test.go`) and `IT-ACM-054-004`
+(`test/integration/acm/acm_factory_test.go`) for the regression coverage.
+
+### Confidence
+
+**100%** — this is not a mocked-server test. It is the real `pkg/fleet`
+production factory, the real `pkg/fleet/acm` client, real TLS trust via
+`sharedtls.CAReloader`, real bearer-token injection via `auth.AuthTransport`,
+and a real ACM 2.16.2 Search API, wired exactly as `cmd/gateway` and
+`cmd/remediationorchestrator` wire them.
 
 ### S6: Go Client Decision
 
