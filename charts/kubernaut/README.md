@@ -584,7 +584,14 @@ kubectl delete namespace kubernaut-system
 
 ## Known Limitations
 
-- **Single installation per cluster**: Cluster-scoped resources use static names.
+- **Single installation per cluster**: Cluster-scoped resources use static names. This is an
+  enforced constraint, not just a naming convention — a second `helm install` on a cluster that
+  already has a Kubernaut release fails fast with a Kubernaut-specific error naming the existing
+  release/namespace and the `helm uninstall` remediation step (BR-PLATFORM-004,
+  [DD-018](../../docs/architecture/decisions/DD-018-helm-chart-single-install-per-cluster-guard.md)).
+  `helm upgrade` of the same release is unaffected. The guard only runs during `helm
+  install`/`upgrade` (requires live cluster access via `lookup`) — it is a no-op under `helm
+  template`/`helm lint --strict`.
 - **`helm template` and auto-generated credentials**: `lookup` returns nil during `helm template`, so random passwords are generated on each dry-run. Use `helm install` directly or provide `existingSecret` for reproducible output.
 
 ## Documentation
