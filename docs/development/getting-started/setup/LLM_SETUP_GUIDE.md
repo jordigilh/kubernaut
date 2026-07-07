@@ -1,5 +1,18 @@
 # LLM Integration Setup Guide
 
+> **⚠️ SUPERSEDED for KA/AF (v1.5.2+)**: the `SLM_*` environment-variable
+> scheme and `localai`/`ramalama` provider names below describe a
+> pre-microservices-architecture setup (a monolithic `kubernaut` binary) and
+> do not apply to the current Kubernaut Agent (`cmd/kubernautagent`) or API
+> Frontend (`cmd/apifrontend`) services. For running KA and/or AF locally
+> against a self-hosted OpenAI-compatible model (vLLM, Ollama, LlamaStack),
+> see
+> [`LOCAL_SELF_HOSTED_LLM_v1.5.2.md`](LOCAL_SELF_HOSTED_LLM_v1.5.2.md)
+> (v1.5.2) or
+> [`docs/services/kubernaut-agent/configuration-reference.md`](../../../services/kubernaut-agent/configuration-reference.md)
+> / [`docs/services/apifrontend/configuration-reference.md`](../../../services/apifrontend/configuration-reference.md)
+> (1.6.0/`main`). This document is retained for historical reference only.
+
 ## 🚀 Quick Start for Local LLM (192.168.1.169:8080)
 
 ### Option 1: Environment Variables (Recommended)
