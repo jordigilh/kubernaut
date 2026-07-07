@@ -1,0 +1,177 @@
+suite: TLS mode conditional RBAC and Certificate resources (#334)
+templates:
+  - templates/hooks/tls-cert-job.yaml
+  - templates/authwebhook/certificate.yaml
+  - templates/datastorage/certificate.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  kubernautAgent:
+    llm:
+      provider: openai
+      model: gpt-4
+  # kubernaut.tls.issuerName requires an explicit issuerRef.name when there is
+  # no live cluster access to auto-discover an Issuer/ClusterIssuer (helm
+  # template / helm-unittest / GitOps rendering all fall into this path).
+  tls:
+    certManager:
+      issuerRef:
+        name: test-issuer
+tests:
+  - it: "hook mode: kubernaut-hook-role grants delete unconditionally"
+    set:
+      tls:
+        mode: hook
+    template: templates/hooks/tls-cert-job.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["admissionregistration.k8s.io"]
+            resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+            verbs: ["delete"]
+
+  - it: "hook mode: kubernaut-hook-role also grants get+patch (tls-cabundle-patch needs it)"
+    set:
+      tls:
+        mode: hook
+    template: templates/hooks/tls-cert-job.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["admissionregistration.k8s.io"]
+            resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+            verbs: ["get", "patch"]
+
+  - it: "hook mode: kubernaut-hook-role still grants CRD SSA permissions (regression guard)"
+    set:
+      tls:
+        mode: hook
+    template: templates/hooks/tls-cert-job.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["apiextensions.k8s.io"]
+            resources: ["customresourcedefinitions"]
+            verbs: ["get", "list", "create", "update", "patch"]
+
+  - it: "cert-manager mode: kubernaut-hook-role does NOT grant get/patch on webhook configs (#334)"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/hooks/tls-cert-job.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["admissionregistration.k8s.io"]
+            resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+            verbs: ["delete"]
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["admissionregistration.k8s.io"]
+            resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+            verbs: ["get", "patch"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["apiextensions.k8s.io"]
+            resources: ["customresourcedefinitions"]
+            verbs: ["get", "list", "create", "update", "patch"]
+
+  - it: "manual mode: kubernaut-hook-role does NOT grant get/patch on webhook configs (#334)"
+    set:
+      tls:
+        mode: manual
+    template: templates/hooks/tls-cert-job.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["admissionregistration.k8s.io"]
+            resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+            verbs: ["delete"]
+      - notContains:
+          path: rules
+          content:
+            apiGroups: ["admissionregistration.k8s.io"]
+            resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
+            verbs: ["get", "patch"]
+
+  - it: "cert-manager mode: datastorage-signing-cert Certificate is auto-provisioned"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/datastorage/certificate.yaml
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: datastorage-signing-cert
+      - equal:
+          path: spec.privateKey.algorithm
+          value: RSA
+      - equal:
+          path: spec.privateKey.size
+          value: 2048
+
+  - it: "cert-manager mode: authwebhook-cert Certificate still renders (regression guard)"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/authwebhook/certificate.yaml
+    documentSelector:
+      path: metadata.name
+      value: authwebhook-cert
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: authwebhook-tls
+
+  - it: "hook mode: no Certificate resources rendered (hook Job manages certs instead)"
+    set:
+      tls:
+        mode: hook
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/authwebhook/certificate.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/datastorage/certificate.yaml
+
+  - it: "manual mode: no Certificate resources rendered (user-managed)"
+    set:
+      tls:
+        mode: manual
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/authwebhook/certificate.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/datastorage/certificate.yaml
