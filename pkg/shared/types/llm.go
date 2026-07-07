@@ -41,6 +41,11 @@ type LLMConfig struct {
 	APIKeyFile      string                  `yaml:"apiKeyFile,omitempty"`
 	VertexProject   string                  `yaml:"vertexProject,omitempty"`
 	VertexLocation  string                  `yaml:"vertexLocation,omitempty"`
+	// AzureAPIVersion and BedrockRegion are parsed but currently NOT consumed
+	// by either AF's or KA's LLM client dispatch (#1600, #1582 respectively).
+	// The "azure" and "bedrock" Provider values are rejected at client
+	// construction until those issues land. Retained here (rather than
+	// removed) because both are the intended re-entry point once wired.
 	AzureAPIVersion string                  `yaml:"azureApiVersion,omitempty"`
 	BedrockRegion   string                  `yaml:"bedrockRegion,omitempty"`
 	Temperature     *float64                `yaml:"temperature,omitempty"`
