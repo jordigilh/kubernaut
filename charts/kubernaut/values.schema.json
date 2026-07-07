@@ -933,10 +933,21 @@
                 "credentialsSecretRef": { "type": "string", "default": "", "description": "K8s Secret name containing client-id and client-secret keys." },
                 "scopes": { "type": "string", "default": "", "description": "Space-separated OAuth2 scopes." }
               }
+            },
+            "reasoning": {
+              "type": "object",
+              "description": "Model-aware reasoning/thinking token support (BR-AI-086). Disabled by default; opt-in only. Static — requires pod restart.",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean", "default": false, "description": "Request reasoning/thinking output from the model where the provider/model supports it. Unsupported models silently skip the parameter rather than erroring." },
+                "budgetTokens": { "type": "integer", "default": 0, "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). 0 lets the provider/client choose a default. Anthropic-only; always wins over effort when set." },
+                "effort": { "type": "string", "enum": ["", "none", "minimal", "low", "medium", "high", "xhigh"], "default": "", "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default. Supported on Anthropic (mapped to a thinking tier), real OpenAI/gpt-5/o-series models (reasoning_effort), and DeepSeek (downscaled to its own high/max dialect). effort: none combined with enabled: true is rejected for Anthropic/vertex_ai at startup." },
+                "capabilityOverride": { "type": "string", "enum": ["", "auto", "force_on", "force_off"], "default": "", "description": "Overrides vendor/model-name auto-detection of reasoning support. Only meaningful for self-hosted/custom models served via the openai_compatible provider, which cannot be reliably identified by vendor enum alone." }
+              }
             }
           }
         },
-       
+
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },
