@@ -397,16 +397,20 @@ var _ = Describe("Audit Manager — Typed Sub-Objects (DD-017 v2.5)", func() {
 			latAfter := 80.0
 			errBefore := 0.05
 			errAfter := 0.01
+			throughputBefore := 120.0
+			throughputAfter := 180.0
 
 			metricsData := audit.MetricsAssessedData{
-				CPUBefore:          &cpuBefore,
-				CPUAfter:           &cpuAfter,
-				MemoryBefore:       &memBefore,
-				MemoryAfter:        &memAfter,
-				LatencyP95BeforeMs: &latBefore,
-				LatencyP95AfterMs:  &latAfter,
-				ErrorRateBefore:    &errBefore,
-				ErrorRateAfter:     &errAfter,
+				CPUBefore:           &cpuBefore,
+				CPUAfter:            &cpuAfter,
+				MemoryBefore:        &memBefore,
+				MemoryAfter:         &memAfter,
+				LatencyP95BeforeMs:  &latBefore,
+				LatencyP95AfterMs:   &latAfter,
+				ErrorRateBefore:     &errBefore,
+				ErrorRateAfter:      &errAfter,
+				ThroughputBeforeRPS: &throughputBefore,
+				ThroughputAfterRPS:  &throughputAfter,
 			}
 
 			err := mgr.RecordMetricsAssessed(ctx, ea, result, metricsData)
@@ -437,6 +441,11 @@ var _ = Describe("Audit Manager — Typed Sub-Objects (DD-017 v2.5)", func() {
 			Expect(md.ErrorRateBefore.Value).To(BeNumerically("~", 0.05, 0.001))
 			Expect(md.ErrorRateAfter.Set).To(BeTrue())
 			Expect(md.ErrorRateAfter.Value).To(BeNumerically("~", 0.01, 0.001))
+
+			Expect(md.ThroughputBeforeRps.Set).To(BeTrue())
+			Expect(md.ThroughputBeforeRps.Value).To(BeNumerically("~", 120.0, 0.001))
+			Expect(md.ThroughputAfterRps.Set).To(BeTrue())
+			Expect(md.ThroughputAfterRps.Value).To(BeNumerically("~", 180.0, 0.001))
 		})
 
 		It("UT-EM-AM-011: should leave Phase B fields unset when only CPU available (partial query)", func() {
@@ -472,6 +481,167 @@ var _ = Describe("Audit Manager — Typed Sub-Objects (DD-017 v2.5)", func() {
 			Expect(md.LatencyP95AfterMs.Set).To(BeFalse())
 			Expect(md.ErrorRateBefore.Set).To(BeFalse())
 			Expect(md.ErrorRateAfter.Set).To(BeFalse())
+			Expect(md.ThroughputBeforeRps.Set).To(BeFalse())
+			Expect(md.ThroughputAfterRps.Set).To(BeFalse())
+		})
+
+		// ========================================
+		// Cluster-scoped metric_deltas fields (Issue #193, DD-EM-005 v1.1)
+		// ========================================
+
+		It("UT-EM-AM-013: should set Node condition metric_deltas fields when provided", func() {
+			score := 0.75
+			result := types.ComponentResult{
+				Component: types.ComponentMetrics,
+				Assessed:  true,
+				Score:     &score,
+				Details:   "Node conditions improved",
+			}
+
+			notReadyBefore, notReadyAfter := 1.0, 0.0
+			memPressureBefore, memPressureAfter := 1.0, 0.0
+			diskPressureBefore, diskPressureAfter := 0.0, 0.0
+
+			metricsData := audit.MetricsAssessedData{
+				NodeNotReadyBefore:       &notReadyBefore,
+				NodeNotReadyAfter:        &notReadyAfter,
+				NodeMemoryPressureBefore: &memPressureBefore,
+				NodeMemoryPressureAfter:  &memPressureAfter,
+				NodeDiskPressureBefore:   &diskPressureBefore,
+				NodeDiskPressureAfter:    &diskPressureAfter,
+			}
+
+			err := mgr.RecordMetricsAssessed(ctx, ea, result, metricsData)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload := extractPayload(spy.lastEvent)
+			Expect(payload.MetricDeltas.Set).To(BeTrue())
+			md := payload.MetricDeltas.Value
+
+			Expect(md.NodeNotReadyBefore.Set).To(BeTrue())
+			Expect(md.NodeNotReadyBefore.Value).To(BeNumerically("~", 1.0, 0.001))
+			Expect(md.NodeNotReadyAfter.Set).To(BeTrue())
+			Expect(md.NodeNotReadyAfter.Value).To(BeNumerically("~", 0.0, 0.001))
+
+			Expect(md.NodeMemoryPressureBefore.Set).To(BeTrue())
+			Expect(md.NodeMemoryPressureBefore.Value).To(BeNumerically("~", 1.0, 0.001))
+			Expect(md.NodeMemoryPressureAfter.Set).To(BeTrue())
+			Expect(md.NodeMemoryPressureAfter.Value).To(BeNumerically("~", 0.0, 0.001))
+
+			Expect(md.NodeDiskPressureBefore.Set).To(BeTrue())
+			Expect(md.NodeDiskPressureBefore.Value).To(BeNumerically("~", 0.0, 0.001))
+			Expect(md.NodeDiskPressureAfter.Set).To(BeTrue())
+			Expect(md.NodeDiskPressureAfter.Value).To(BeNumerically("~", 0.0, 0.001))
+		})
+
+		It("UT-EM-AM-014: should set PersistentVolume phase/usage metric_deltas fields when provided", func() {
+			score := 0.9
+			result := types.ComponentResult{
+				Component: types.ComponentMetrics,
+				Assessed:  true,
+				Score:     &score,
+				Details:   "PV phase and usage improved",
+			}
+
+			phaseFailedBefore, phaseFailedAfter := 1.0, 0.0
+			phasePendingBefore, phasePendingAfter := 0.0, 0.0
+			usageRatioBefore, usageRatioAfter := 0.95, 0.60
+
+			metricsData := audit.MetricsAssessedData{
+				PVPhaseFailedBefore:  &phaseFailedBefore,
+				PVPhaseFailedAfter:   &phaseFailedAfter,
+				PVPhasePendingBefore: &phasePendingBefore,
+				PVPhasePendingAfter:  &phasePendingAfter,
+				PVUsageRatioBefore:   &usageRatioBefore,
+				PVUsageRatioAfter:    &usageRatioAfter,
+			}
+
+			err := mgr.RecordMetricsAssessed(ctx, ea, result, metricsData)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload := extractPayload(spy.lastEvent)
+			Expect(payload.MetricDeltas.Set).To(BeTrue())
+			md := payload.MetricDeltas.Value
+
+			Expect(md.PvPhaseFailedBefore.Set).To(BeTrue())
+			Expect(md.PvPhaseFailedBefore.Value).To(BeNumerically("~", 1.0, 0.001))
+			Expect(md.PvPhaseFailedAfter.Set).To(BeTrue())
+			Expect(md.PvPhaseFailedAfter.Value).To(BeNumerically("~", 0.0, 0.001))
+
+			Expect(md.PvPhasePendingBefore.Set).To(BeTrue())
+			Expect(md.PvPhasePendingAfter.Set).To(BeTrue())
+
+			Expect(md.PvUsageRatioBefore.Set).To(BeTrue())
+			Expect(md.PvUsageRatioBefore.Value).To(BeNumerically("~", 0.95, 0.001))
+			Expect(md.PvUsageRatioAfter.Set).To(BeTrue())
+			Expect(md.PvUsageRatioAfter.Value).To(BeNumerically("~", 0.60, 0.001))
+		})
+
+		It("UT-EM-AM-015: should leave cluster-scoped fields unset for namespace-scoped assessments", func() {
+			score := 0.85
+			result := types.ComponentResult{
+				Component: types.ComponentMetrics,
+				Assessed:  true,
+				Score:     &score,
+			}
+
+			cpuBefore, cpuAfter := 0.8, 0.3
+			metricsData := audit.MetricsAssessedData{
+				CPUBefore: &cpuBefore,
+				CPUAfter:  &cpuAfter,
+				// Cluster-scoped fields intentionally nil (namespace-scoped target)
+			}
+
+			err := mgr.RecordMetricsAssessed(ctx, ea, result, metricsData)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload := extractPayload(spy.lastEvent)
+			md := payload.MetricDeltas.Value
+
+			Expect(md.CPUBefore.Set).To(BeTrue())
+
+			Expect(md.NodeNotReadyBefore.Set).To(BeFalse(), "node_not_ready_before should not be set for namespace-scoped targets")
+			Expect(md.NodeNotReadyAfter.Set).To(BeFalse())
+			Expect(md.NodeMemoryPressureBefore.Set).To(BeFalse())
+			Expect(md.NodeMemoryPressureAfter.Set).To(BeFalse())
+			Expect(md.NodeDiskPressureBefore.Set).To(BeFalse())
+			Expect(md.NodeDiskPressureAfter.Set).To(BeFalse())
+			Expect(md.PvPhaseFailedBefore.Set).To(BeFalse())
+			Expect(md.PvPhaseFailedAfter.Set).To(BeFalse())
+			Expect(md.PvPhasePendingBefore.Set).To(BeFalse())
+			Expect(md.PvPhasePendingAfter.Set).To(BeFalse())
+			Expect(md.PvUsageRatioBefore.Set).To(BeFalse())
+			Expect(md.PvUsageRatioAfter.Set).To(BeFalse())
+		})
+
+		It("UT-EM-AM-016: should not clobber Phase A/B fields when cluster-scoped fields are also present", func() {
+			score := 0.7
+			result := types.ComponentResult{
+				Component: types.ComponentMetrics,
+				Assessed:  true,
+				Score:     &score,
+			}
+
+			cpuBefore, cpuAfter := 0.8, 0.3
+			notReadyBefore, notReadyAfter := 1.0, 0.0
+
+			metricsData := audit.MetricsAssessedData{
+				CPUBefore:          &cpuBefore,
+				CPUAfter:           &cpuAfter,
+				NodeNotReadyBefore: &notReadyBefore,
+				NodeNotReadyAfter:  &notReadyAfter,
+			}
+
+			err := mgr.RecordMetricsAssessed(ctx, ea, result, metricsData)
+			Expect(err).ToNot(HaveOccurred())
+
+			payload := extractPayload(spy.lastEvent)
+			md := payload.MetricDeltas.Value
+
+			Expect(md.CPUBefore.Set).To(BeTrue())
+			Expect(md.CPUBefore.Value).To(BeNumerically("~", 0.8, 0.001))
+			Expect(md.NodeNotReadyBefore.Set).To(BeTrue())
+			Expect(md.NodeNotReadyBefore.Value).To(BeNumerically("~", 1.0, 0.001))
 		})
 	})
 })
