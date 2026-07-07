@@ -527,6 +527,20 @@ cluster's other known peers.
 | `tls.mode` | `hook` (self-signed), `cert-manager` (production), or `manual` | `hook` |
 | `tls.certManager.issuerRef.name` | Issuer/ClusterIssuer name. When mode=cert-manager and left empty, auto-selected via `lookup` if exactly one exists in the cluster (real `helm install`/`upgrade` only); required if rendering via `helm template`/GitOps or if multiple issuers exist | `""` |
 
+> **`datastorage-signing-cert` prerequisite** (#334): DataStorage signs audit exports with an
+> RSA 2048 key for tamper-evidence (AU-9) and **fails to start with no fallback** if this key is
+> missing. In `tls.mode=cert-manager`, the chart auto-provisions it via a `Certificate` resource
+> (same as `authwebhook-tls`) — no action needed. In `tls.mode=manual`, you must create it
+> yourself before installing:
+>
+> ```bash
+> openssl genrsa -out /tmp/signing-tls.key 2048
+> openssl req -new -x509 -days 365 -key /tmp/signing-tls.key \
+>   -out /tmp/signing-tls.crt -subj "/CN=datastorage-signing-cert"
+> kubectl create secret tls datastorage-signing-cert \
+>   --cert=/tmp/signing-tls.crt --key=/tmp/signing-tls.key -n kubernaut-system
+> ```
+
 ### NetworkPolicies
 
 | Parameter | Description | Default |

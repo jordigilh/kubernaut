@@ -1,0 +1,28 @@
+{{- if eq .Values.tls.mode "cert-manager" }}
+# #334: datastorage-signing-cert is DataStorage's AU-9 audit-signing key
+# (pkg/cert.Signer), not a network-facing TLS cert -- no dnsNames needed,
+# just a stable RSA keypair signed by the configured issuer. Mirrors what the
+# hook-mode tls-cert-gen Job creates via
+# `openssl req -x509 -subj "/CN=datastorage-signing-cert"`. Without this,
+# tls.mode=cert-manager never provisions the secret and DataStorage's
+# loadSigningCertificate fails hard (no fallback, by AU-9 design).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: datastorage-signing-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  secretName: datastorage-signing-cert
+  duration: 8760h   # 365 days
+  renewBefore: 720h  # 30 days
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: {{ include "kubernaut.tls.issuerName" . }}
+    kind: {{ .Values.tls.certManager.issuerRef.kind }}
+    group: {{ .Values.tls.certManager.issuerRef.group }}
+  commonName: datastorage-signing-cert
+{{- end }}
