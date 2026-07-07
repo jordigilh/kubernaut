@@ -58,6 +58,12 @@ is_sensitive_resource if {
     input.remediation_target.kind == "StatefulSet"
 }
 
+# #247: Infrastructure-provisioning action types always require approval,
+# regardless of the (LLM-reported) remediation_target kind.
+is_infrastructure_action if {
+    input.action_type == "ProvisionNode"
+}
+
 has_warnings if {
     count(input.warnings) > 0
 }
@@ -114,6 +120,12 @@ require_approval if {
     is_sensitive_resource
 }
 
+# #247: Infrastructure-provisioning actions always require approval,
+# regardless of environment or confidence.
+require_approval if {
+    is_infrastructure_action
+}
+
 # Production + failed detections + low confidence
 require_approval if {
     is_production
@@ -152,6 +164,13 @@ risk_factors contains {"score": 90, "reason": "Missing remediation target - cann
 risk_factors contains {"score": 80, "reason": "Production environment with sensitive resource kind - requires manual approval"} if {
     is_production
     is_sensitive_resource
+}
+
+# #247: Highest score -- infrastructure-provisioning actions always require
+# approval, independent of environment/confidence, so the reason must be
+# unambiguous regardless of what other risk factors might also apply.
+risk_factors contains {"score": 95, "reason": "Infrastructure-provisioning action type requires manual approval (#247)"} if {
+    is_infrastructure_action
 }
 
 risk_factors contains {"score": 70, "reason": "Production environment with failed detections - requires manual approval"} if {

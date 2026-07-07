@@ -118,8 +118,8 @@ approval {
 				// Verify Evaluate() uses cached policy (no file I/O)
 				// If caching works, should be able to Evaluate even if file is deleted
 				result, err := evaluator.Evaluate(ctx, &rego.PolicyInput{
-					Environment: "staging",
-					Confidence:  0.9,
+					SignalContext: rego.SignalContextInput{Environment: "staging"},
+					KAResponse:    rego.KAResponseInput{Confidence: 0.9},
 				})
 
 				Expect(err).NotTo(HaveOccurred())
@@ -238,8 +238,8 @@ approval = result if {
 
 			// Verify initial policy works
 			result, err := evaluator.Evaluate(ctx, &rego.PolicyInput{
-				Environment: "staging",
-				Confidence:  0.9,
+				SignalContext: rego.SignalContextInput{Environment: "staging"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.9},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeFalse(), "Staging should auto-approve initially")
@@ -262,8 +262,8 @@ approval {
 
 			// Verify evaluator still works with old policy
 			result, err = evaluator.Evaluate(ctx, &rego.PolicyInput{
-				Environment: "staging",
-				Confidence:  0.9,
+				SignalContext: rego.SignalContextInput{Environment: "staging"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.9},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeFalse(), "Should still use old policy (graceful degradation)")
@@ -295,8 +295,8 @@ approval = result if {
 
 			// Verify new policy is applied
 			result, err := evaluator.Evaluate(ctx, &rego.PolicyInput{
-				Environment: "production", // Previously required approval
-				Confidence:  0.9,
+				SignalContext: rego.SignalContextInput{Environment: "production"}, // Previously required approval
+				KAResponse:    rego.KAResponseInput{Confidence: 0.9},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.ApprovalRequired).To(BeFalse(), "Production should now auto-approve (new policy)")
@@ -339,8 +339,8 @@ approval = result if {
 
 			// Evaluate should still work (using cached compiled policy)
 			result, err := evaluator.Evaluate(ctx, &rego.PolicyInput{
-				Environment: "staging",
-				Confidence:  0.9,
+				SignalContext: rego.SignalContextInput{Environment: "staging"},
+				KAResponse:    rego.KAResponseInput{Confidence: 0.9},
 			})
 
 			// Note: This test will fail if Evaluate() tries to read from disk

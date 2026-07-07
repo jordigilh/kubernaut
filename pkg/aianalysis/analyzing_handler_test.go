@@ -435,7 +435,7 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.Environment).To(Equal("staging"))
+				Expect(spy.LastInput.SignalContext.Environment).To(Equal("staging"))
 			})
 
 			It("should pass confidence from SelectedWorkflow", func() {
@@ -445,7 +445,7 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.Confidence).To(BeNumerically("~", 0.92, 0.01))
+				Expect(spy.LastInput.KAResponse.Confidence).To(BeNumerically("~", 0.92, 0.01))
 			})
 
 			// ADR-055: TargetInOwnerChain replaced by RemediationTarget
@@ -471,6 +471,20 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(spy.LastInput.RemediationTarget.Namespace).To(Equal("production"))
 			})
 
+			// #247: ActionType is catalog-authoritative (DD-WORKFLOW-016), unlike
+			// RemediationTarget.Kind which is LLM-inferred, so it's a reliable
+			// gating signal for infrastructure-impacting actions like ProvisionNode.
+			It("should pass ActionType from SelectedWorkflow to policy input", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.SelectedWorkflow.ActionType = "ProvisionNode"
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(spy.LastInput).NotTo(BeNil())
+				Expect(spy.LastInput.ActionType).To(Equal("ProvisionNode"))
+			})
+
 			It("should pass Warnings from status", func() {
 				analysis := createTestAnalysis()
 				analysis.Status.Warnings = []string{"High memory pressure", "Node scheduling delayed"}
@@ -479,8 +493,8 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.Warnings).To(HaveLen(2))
-				Expect(spy.LastInput.Warnings).To(ContainElement("High memory pressure"))
+				Expect(spy.LastInput.KAResponse.Warnings).To(HaveLen(2))
+				Expect(spy.LastInput.KAResponse.Warnings).To(ContainElement("High memory pressure"))
 			})
 
 			// BR-AI-012: Extended PolicyInput fields (per IMPLEMENTATION_PLAN_V1.0.md)
@@ -494,9 +508,9 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.SignalType).To(Equal("OOMKilled"))
-				Expect(spy.LastInput.Severity).To(Equal("critical"))
-				Expect(spy.LastInput.BusinessPriority).To(Equal("P0"))
+				Expect(spy.LastInput.SignalContext.SignalType).To(Equal("OOMKilled"))
+				Expect(spy.LastInput.SignalContext.Severity).To(Equal("critical"))
+				Expect(spy.LastInput.SignalContext.BusinessPriority).To(Equal("P0"))
 			})
 
 			It("should pass target resource fields", func() {
@@ -529,11 +543,11 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.CustomLabels).NotTo(BeNil())
-				Expect(spy.LastInput.CustomLabels["constraint"]).To(ContainElement("cost-constrained"))
-				Expect(spy.LastInput.CustomLabels["constraint"]).To(ContainElement("stateful-safe"))
-				Expect(spy.LastInput.CustomLabels["team"]).To(ContainElement("name=payments"))
-				Expect(spy.LastInput.CustomLabels["region"]).To(ContainElement("us-east-1"))
+				Expect(spy.LastInput.Classification.CustomLabels).NotTo(BeNil())
+				Expect(spy.LastInput.Classification.CustomLabels["constraint"]).To(ContainElement("cost-constrained"))
+				Expect(spy.LastInput.Classification.CustomLabels["constraint"]).To(ContainElement("stateful-safe"))
+				Expect(spy.LastInput.Classification.CustomLabels["team"]).To(ContainElement("name=payments"))
+				Expect(spy.LastInput.Classification.CustomLabels["region"]).To(ContainElement("us-east-1"))
 			})
 
 			// BR-AI-012: Empty CustomLabels returns empty map
@@ -547,8 +561,8 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.CustomLabels).NotTo(BeNil())
-				Expect(spy.LastInput.CustomLabels).To(BeEmpty())
+				Expect(spy.LastInput.Classification.CustomLabels).NotTo(BeNil())
+				Expect(spy.LastInput.Classification.CustomLabels).To(BeEmpty())
 			})
 
 			// BR-SP-002, BR-SP-080, BR-SP-081: BusinessClassification pass-through to Rego policy
@@ -565,11 +579,11 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.BusinessClassification).NotTo(BeNil())
-				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("business_unit", "payments"))
-				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("service_owner", "team-checkout"))
-				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityCritical)))
-				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("sla_requirement", string(sharedtypes.SLARequirementPlatinum)))
+				Expect(spy.LastInput.Classification.BusinessClassification).NotTo(BeNil())
+				Expect(spy.LastInput.Classification.BusinessClassification).To(HaveKeyWithValue("business_unit", "payments"))
+				Expect(spy.LastInput.Classification.BusinessClassification).To(HaveKeyWithValue("service_owner", "team-checkout"))
+				Expect(spy.LastInput.Classification.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityCritical)))
+				Expect(spy.LastInput.Classification.BusinessClassification).To(HaveKeyWithValue("sla_requirement", string(sharedtypes.SLARequirementPlatinum)))
 			})
 
 			It("should not set BusinessClassification when nil in EnrichmentResults", func() {
@@ -580,7 +594,7 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.BusinessClassification).To(BeNil())
+				Expect(spy.LastInput.Classification.BusinessClassification).To(BeNil())
 			})
 
 			It("should map only populated BusinessClassification fields", func() {
@@ -593,8 +607,8 @@ var _ = Describe("AnalyzingHandler", func() {
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(spy.LastInput).NotTo(BeNil())
-				Expect(spy.LastInput.BusinessClassification).To(HaveLen(1))
-				Expect(spy.LastInput.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityHigh)))
+				Expect(spy.LastInput.Classification.BusinessClassification).To(HaveLen(1))
+				Expect(spy.LastInput.Classification.BusinessClassification).To(HaveKeyWithValue("criticality", string(sharedtypes.CriticalityHigh)))
 			})
 		})
 
