@@ -170,7 +170,7 @@ var _ = Describe("Transport Chain", func() {
 				Model:    "gemini-2.0-flash",
 				APIKey:   "test-key",
 			}
-			client, err := launcher.BuildLLMHTTPClientForTest(cfg)
+			client, err := launcher.BuildLLMHTTPClient(cfg)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).To(BeNil())
 		})
@@ -187,7 +187,7 @@ var _ = Describe("Transport Chain", func() {
 				TLSCaFile:      caFile,
 				TimeoutSeconds: 60,
 			}
-			client, err := launcher.BuildLLMHTTPClientForTest(cfg)
+			client, err := launcher.BuildLLMHTTPClient(cfg)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
 			Expect(client.Timeout).To(Equal(60 * time.Second))
@@ -204,7 +204,7 @@ var _ = Describe("Transport Chain", func() {
 				APIKey:    "test-key",
 				TLSCaFile: caFile,
 			}
-			client, err := launcher.BuildLLMHTTPClientForTest(cfg)
+			client, err := launcher.BuildLLMHTTPClient(cfg)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(client).NotTo(BeNil())
 			Expect(client.Timeout).To(Equal(time.Duration(types.DefaultLLMTimeoutSeconds) * time.Second))

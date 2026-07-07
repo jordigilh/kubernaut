@@ -52,11 +52,6 @@ func BuildTransportChainForTest(cfg types.LLMConfig) (http.RoundTripper, error) 
 	return buildTransportChain(cfg)
 }
 
-// BuildLLMHTTPClientForTest exports buildLLMHTTPClient for unit testing.
-func BuildLLMHTTPClientForTest(cfg types.LLMConfig) (*http.Client, error) {
-	return buildLLMHTTPClient(cfg)
-}
-
 // EnsureTrailingParagraphBreakForTest exports ensureTrailingParagraphBreak for unit testing.
 func EnsureTrailingParagraphBreakForTest(s string) string {
 	return ensureTrailingParagraphBreak(s)
