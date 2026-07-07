@@ -1,0 +1,87 @@
+{{- if eq .Values.tls.mode "cert-manager" }}
+# DD-PLATFORM-001: publishes the dedicated inter-service CA's public cert
+# (kubernaut-interservice-ca-secret, created by templates/interservice/ca.yaml)
+# into the inter-service-ca ConfigMap that ~11 services already mount as
+# `optional: true` (see kubernaut.interServiceTLS.caFile in _helpers.tpl).
+# Reuses the existing hook-sa/hook-ns-role (already grants get/create/update
+# on secrets+configmaps in this namespace, unconditional on tls.mode) --
+# no new RBAC surface.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-interservice-ca-sync
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: interservice-ca-sync
+    spec:
+      serviceAccountName: {{ include "kubernaut.fullname" . }}-hook-sa
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: Never
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.hooks | nindent 8 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Mi
+      containers:
+        - name: interservice-ca-sync
+          image: {{ .Values.hooks.tlsCerts.image }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              NAMESPACE="{{ .Release.Namespace }}"
+              CA_SECRET="kubernaut-interservice-ca-secret"
+
+              echo "==> Waiting for cert-manager to issue $CA_SECRET..."
+              CA_B64=""
+              i=0
+              while [ "$i" -lt 60 ]; do
+                CA_B64=$(kubectl get secret "$CA_SECRET" -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}' 2>/dev/null || true)
+                [ -n "$CA_B64" ] && break
+                i=$((i + 1))
+                echo "  waiting for $CA_SECRET ca.crt ($i/60)..."
+                sleep 5
+              done
+
+              if [ -z "$CA_B64" ]; then
+                echo "ERROR: $CA_SECRET has no ca.crt after 5 minutes -- cert-manager did not issue the root CA."
+                echo "  Check: kubectl describe certificate kubernaut-interservice-ca -n $NAMESPACE"
+                exit 1
+              fi
+
+              TMPDIR=$(mktemp -d)
+              printf '%s' "$CA_B64" | base64 -d > "$TMPDIR/ca.crt"
+
+              echo "==> Syncing inter-service-ca ConfigMap..."
+              kubectl create configmap inter-service-ca \
+                --from-file=ca.crt="$TMPDIR/ca.crt" \
+                -n "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+              rm -rf "$TMPDIR"
+              echo "  inter-service-ca ConfigMap ready"
+{{- end }}
