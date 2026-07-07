@@ -38,6 +38,10 @@ const oldClientCloseTimeout = 5 * time.Second
 //     so it never blocks callers.
 //   - Snapshot returns a bare llm.Client pinned at the current moment;
 //     subsequent Swap calls do not affect outstanding snapshots.
+//   - Pin (#1610) atomically captures Client+ModelName+RuntimeParams under
+//     one lock acquisition; callers needing more than one of these values
+//     together should use Pin rather than calling Snapshot/ModelName/
+//     RuntimeParameters separately, which can observe a torn combination.
 // RuntimeParams holds LLM runtime parameters that can be hot-reloaded
 // alongside the client. Investigator reads these at the start of each
 // investigation to pin values for the duration.
@@ -125,6 +129,38 @@ func (sc *SwappableClient) Snapshot() Client {
 	c := sc.inner
 	sc.mu.RUnlock()
 	return c
+}
+
+// PinnedSnapshot is an atomically-captured, mutually consistent view of a
+// SwappableClient's client, model name, and runtime params at a single
+// point in time. All three fields are guaranteed to come from the same
+// Swap "version" — see Pin.
+type PinnedSnapshot struct {
+	Client        Client
+	ModelName     string
+	RuntimeParams RuntimeParams
+}
+
+// Pin atomically captures the client, model name, and runtime params under
+// a single lock acquisition, so the three are guaranteed to describe the
+// same Swap version.
+//
+// Prefer Pin over calling Snapshot, ModelName, and RuntimeParameters
+// separately when a caller needs more than one of these values to jointly
+// describe the same point in time (e.g. resolving the client to pin for the
+// duration of an investigation phase, #1610): each of those three methods
+// takes/releases the lock independently, so a Swap landing between two
+// calls can return a torn combination (e.g. the pre-swap Client paired with
+// the post-swap RuntimeParams). Every individual field read is race-free
+// under go test -race — only the cross-field combination is at risk.
+func (sc *SwappableClient) Pin() PinnedSnapshot {
+	sc.mu.RLock()
+	defer sc.mu.RUnlock()
+	return PinnedSnapshot{
+		Client:        sc.inner,
+		ModelName:     sc.modelName,
+		RuntimeParams: sc.runtimeParams,
+	}
 }
 
 // ModelName returns the model name associated with the current inner client.

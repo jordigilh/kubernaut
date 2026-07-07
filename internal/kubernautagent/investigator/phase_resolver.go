@@ -60,6 +60,12 @@ func NewDefaultPhaseResolver(
 // If a phase-specific SwappableClient exists, it is used; otherwise the
 // default is used. The returned client is a snapshot that is unaffected by
 // subsequent hot-reload swaps.
+//
+// The client, model name, and runtime params are captured via a single
+// SwappableClient.Pin() call so the three are guaranteed to describe the
+// same Swap version — calling Snapshot/ModelName/RuntimeParameters
+// separately would risk a torn read if a hot-reload landed between calls
+// (#1610).
 func (r *DefaultPhaseResolver) ResolvePhase(phase katypes.Phase) (llm.Client, string, llm.RuntimeParams) {
 	r.mu.RLock()
 	sw, ok := r.phaseSwappables[phase]
@@ -69,20 +75,18 @@ func (r *DefaultPhaseResolver) ResolvePhase(phase katypes.Phase) (llm.Client, st
 		sw = r.defaultSwappable
 	}
 
-	pinned := sw.Snapshot()
-	modelName := sw.ModelName()
-	params := sw.RuntimeParameters()
+	snap := sw.Pin()
 
 	var client llm.Client
 	if r.pinDecorator != nil {
-		client = r.pinDecorator(pinned)
+		client = r.pinDecorator(snap.Client)
 		if client == nil {
-			client = llm.NewInstrumentedClient(pinned)
+			client = llm.NewInstrumentedClient(snap.Client)
 		}
 	} else {
-		client = llm.NewInstrumentedClient(pinned)
+		client = llm.NewInstrumentedClient(snap.Client)
 	}
-	return client, modelName, params
+	return client, snap.ModelName, snap.RuntimeParams
 }
 
 // SetPhaseSwappable adds or replaces a phase-specific SwappableClient.
