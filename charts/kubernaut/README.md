@@ -23,7 +23,7 @@ Kubernaut is an autonomous Kubernetes remediation platform that detects incident
 
 Infrastructure secrets must be pre-created before installing the chart (#557).
 The chart does **not** auto-generate credentials — this prevents password leaks
-via rendered Helm templates and avoids silent `lookup` failures on OCP / restricted-RBAC
+via rendered Helm templates and avoids silent `lookup` failures on restricted-RBAC
 environments.
 
 The chart validates that required secrets exist at install/upgrade time and fails
@@ -137,6 +137,42 @@ route:
         - alertname!=""
       continue: true
 ```
+
+#### ServiceMonitor, PrometheusRule, and Autoscaling (BR-PLATFORM-003)
+
+If the Prometheus Operator CRDs (`monitoring.coreos.com/v1`) are installed
+(e.g. via `kube-prometheus-stack`), the chart can generate `ServiceMonitor` and
+`PrometheusRule` resources for observability parity with the Kubernaut Operator:
+
+```bash
+helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system \
+  --set monitoring.serviceMonitor.enabled=true \
+  --set monitoring.prometheusRule.enabled=true \
+  ...
+```
+
+- `monitoring.serviceMonitor.enabled=true` creates a `ServiceMonitor` (scraping `/metrics` every
+  15s) for every metrics-emitting service. Not created for `authwebhook`, which intentionally
+  does not expose metrics.
+- `monitoring.prometheusRule.enabled=true` creates alerting rules for DataStorage and
+  APIFrontend (availability, latency, error rate, circuit breakers), ported from the Kubernaut
+  Operator's `internal/resources/monitoring.go`. It also controls the pre-existing Kubernaut
+  Agent interactive-session SLO rules (Issue #1005).
+- Both are a no-op — render nothing — when the `monitoring.coreos.com/v1` CRD is not present on
+  the cluster, even if `enabled=true`. Safe to set unconditionally in a values file shared
+  across clusters with and without the Prometheus Operator installed.
+
+DataStorage and APIFrontend can additionally scale via a `HorizontalPodAutoscaler`
+(`autoscaling/v2`, a stable core API — no CRD required):
+
+```bash
+--set datastorage.autoscaling.enabled=true \
+--set apifrontend.autoscaling.enabled=true
+```
+
+Defaults: `minReplicas: 1`, `maxReplicas: 5`, CPU target `75%`, memory target `80%`
+(`datastorage.autoscaling.*` / `apifrontend.autoscaling.*`).
 
 ## Production Configuration
 
@@ -279,27 +315,50 @@ Tune `datastorage.config.server.rateLimit.requestsPerSecond` (default `50`)
 and `.burst` (default `100`) to match expected legitimate traffic (e.g.
 KubernautAgent/APIFrontend polling volume) before enabling in production.
 
-### OpenShift (OCP)
+### Optional: Web Console (BR-PLATFORM-006)
 
-> **DEPRECATED v1.4 (Issue #848)**: The OCP Helm chart overlay is deprecated and will be
-> **removed in v1.5**. For OpenShift deployments, use the
-> [Kubernaut Operator](https://jordigilh.github.io/kubernaut-docs/operations/operator/)
-> which provides native OCP integration (service-ca TLS, OLM catalog, SCC management,
-> automated upgrades). See the
-> [Helm-to-Operator Migration Guide](https://jordigilh.github.io/kubernaut-docs/operations/helm-to-operator/).
+The chart can deploy a standalone web console — a static SPA fronted by an `oauth2-proxy`
+sidecar, giving users a browser-based A2A chat UI authenticated against the same OIDC
+provider as APIFrontend — ported from the Kubernaut Operator's console feature. Opt-in,
+disabled by default.
 
 ```bash
-# DEPRECATED — use the Kubernaut Operator instead (available since v1.3)
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  -n kubernaut-system \
-  -f charts/kubernaut/values-ocp.yaml \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
-  --set-file signalprocessing.policies.content=path/to/policy.rego \
-  --set-file aianalysis.policies.content=path/to/approval.rego
+# 1. Pre-create the OIDC client Secret (client-id/client-secret from your OIDC provider;
+#    cookie-secret is a random 32-byte value used to encrypt oauth2-proxy's session cookie)
+kubectl create secret generic console-oauth-creds \
+  --from-literal=client-id=kubernaut-console \
+  --from-literal=client-secret="$OIDC_CLIENT_SECRET" \
+  --from-literal=cookie-secret="$(openssl rand -base64 32 | head -c 32 | base64)" \
+  -n kubernaut-system
+
+# 2. Enable the console (requires apifrontend.config.auth.issuerURL or .jwtProviders to
+#    already be configured, since the console reuses APIFrontend's OIDC provider)
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system \
+  --reuse-values \
+  --set console.enabled=true \
+  --set console.auth.secretName=console-oauth-creds \
+  --set console.ingress.host=console.apps.example.com
 ```
 
-The OCP overlay switches PostgreSQL and Valkey to Red Hat RHEL10 catalog images and replaces `bitnami/kubectl` with `ose-cli` for hook jobs. No ImageStream prerequisites -- pods pull directly from `registry.redhat.io` using the cluster's global pull secret.
+- `console.ingress.host` is **required** whenever `console.enabled=true` — even if you set
+  `console.ingress.enabled=false` to front the console with your own Ingress/Route — because
+  oauth2-proxy needs the browser-facing hostname for its OIDC redirect URL.
+- Unlike Gateway/APIFrontend (machine-facing APIs, where the chart leaves external exposure
+  entirely to the user), the console is browser-facing, so the chart creates a
+  `networking.k8s.io/v1` Ingress by default (`console.ingress.enabled=true`) — the
+  vanilla-Kubernetes equivalent of the Operator's OCP Route.
+- The chart fails fast at `helm template`/`helm install` time (before any resources are
+  applied) if `console.enabled=true` and `console.auth.secretName`, a resolvable OIDC issuer,
+  or `console.ingress.host` is missing.
+
+### OpenShift (OCP)
+
+This chart targets non-OpenShift (vanilla Kubernetes) deployments. For OpenShift, use the
+[Kubernaut Operator](https://jordigilh.github.io/kubernaut-docs/operations/operator/)
+instead, which provides native OCP integration (service-ca TLS, OLM catalog, SCC
+management, automated upgrades). See the
+[Helm-to-Operator Migration Guide](https://jordigilh.github.io/kubernaut-docs/operations/helm-to-operator/).
 
 ## Configuration Reference
 
@@ -329,12 +388,6 @@ Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remedia
 
 `gateway.fleet.mcpGatewayEndpoint`, `remediationorchestrator.fleet.mcpGatewayEndpoint`, and `fleetmetadatacache.mcpGatewayEndpoint` are required (directly or via the global fallback) when their respective `fleet.enabled` / `fleetmetadatacache.enabled` is `true` — `helm install`/`upgrade` fails fast with a remediation message if neither is set. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
 
-### Demo Content
-
-| Parameter | Description | Default |
-|---|---|---|
-| `demoContent.enabled` | Deploy bundled ActionTypes + RemediationWorkflows | `true` |
-
 ### Kubernaut Agent (LLM)
 
 | Parameter | Description | Default |
@@ -348,7 +401,6 @@ Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remedia
 | `kubernautAgent.llm.oauth2.credentialsSecretRef` | Secret with `client-id` and `client-secret` keys (mounted as files) | `""` |
 | `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset | `false` |
 | `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
-| `kubernautAgent.prometheus.ocpMonitoringRbac` | **DEPRECATED v1.4** — Create RBAC for OCP monitoring stack | `false` |
 | `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
 | `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM | `""` |
 
@@ -393,6 +445,14 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `workflowexecution.config.ansible.tokenSecretRef.name` | Secret containing AWX API token | `""` |
 | `workflowexecution.config.ansible.tokenSecretRef.key` | Key within the Secret | `token` |
 | `workflowexecution.config.ansible.tokenSecretRef.namespace` | Secret namespace (defaults to release namespace) | _(release ns)_ |
+| `workflowexecution.config.ansible.caCertSecretRef.name` | Secret with a custom/private CA cert for a self-signed AWX/AAP endpoint (BR-PLATFORM-005) | `""` |
+| `workflowexecution.config.ansible.caCertSecretRef.key` | Key within the Secret (PEM) | `ca.crt` |
+
+Setting `caCertSecretRef` adds a `build-ca-bundle` init container that combines the custom CA with
+the inter-service CA into one trust bundle (`TLS_CA_FILE`), mirroring the Kubernaut Operator. When
+`workflowexecution.config.ansible` is configured (`apiURL` set), the WorkflowExecution
+NetworkPolicy also allows HTTPS (443) egress, since the AWX/AAP endpoint may be outside the
+cluster's other known peers.
 
 ### Gateway
 
@@ -400,6 +460,19 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 |---|---|---|
 | `gateway.auth.signalSources` | External signal sources needing RBAC | `[]` |
 | `gateway.service.type` | Service type | `ClusterIP` |
+| `gateway.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
+| `gateway.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
+| `gateway.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
+| `gateway.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Not yet functional** — pre-wires the Helm side ahead of [Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556), which adds the Go-side `FleetConfig` support to actually send it. | `""` |
+
+### RemediationOrchestrator
+
+| Parameter | Description | Default |
+|---|---|---|
+| `remediationorchestrator.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
+| `remediationorchestrator.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
+| `remediationorchestrator.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
+| `remediationorchestrator.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Not yet functional** — pre-wires the Helm side ahead of [Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556), which adds the Go-side `FleetConfig` support to actually send it. | `""` |
 
 ### EffectivenessMonitor
 
@@ -416,7 +489,6 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 |---|---|---|
 | `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
 | `postgresql.auth.existingSecret` | Pre-created Secret name (empty = expect `postgresql-secret`) | `""` |
-| `postgresql.variant` | Image variant: `upstream` or `ocp` | `upstream` |
 | `postgresql.host` | External host (when `enabled=false`) | `""` |
 | `datastorage.dbExistingSecret` | DEPRECATED: db-secrets.yaml is now in postgresql-secret | `""` |
 | `valkey.enabled` | Deploy in-chart Valkey | `true` |
@@ -429,6 +501,20 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `datastorage.config.server.rateLimit.requestsPerSecond` | Sustained per-IP requests/second | `50` |
 | `datastorage.config.server.rateLimit.burst` | Per-IP token bucket burst size | `100` |
 | `datastorage.config.auditHashKey.existingSecret` | Pre-created Secret name (empty = expect `datastorage-audit-hmac-key`) | `""` |
+
+### Console
+
+| Parameter | Description | Default |
+|---|---|---|
+| `console.enabled` | Deploy the standalone web console (BR-PLATFORM-006); see [Optional: Web Console](#optional-web-console-br-platform-006) | `false` |
+| `console.replicas` | Replica count | `1` |
+| `console.auth.secretName` | Secret with keys: `client-id`, `client-secret`, `cookie-secret`. **Required** when `console.enabled=true` | `""` |
+| `console.oauth2Proxy.image` | Third-party oauth2-proxy sidecar image | `quay.io/oauth2-proxy/oauth2-proxy:v7.15.3` |
+| `console.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for browser access | `true` |
+| `console.ingress.className` | `spec.ingressClassName` | `""` |
+| `console.ingress.host` | Browser-facing hostname. **Required** when `console.enabled=true` (even if `ingress.enabled=false`) | `""` |
+| `console.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or a controller with its own default cert | `""` |
+| `console.pdb.{enabled,minAvailable,maxUnavailable}` | PodDisruptionBudget | `enabled: false` |
 
 ### TLS
 
@@ -446,16 +532,22 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `networkPolicies.apiServerCIDRs` | Additional API server backend endpoint CIDRs for HA (multiple control-plane nodes). Merged with `apiServerCIDR`; usually left empty (see above) | `[]` |
 | `networkPolicies.apiServerPort` | API server backend endpoint port (commonly 6443). `0` = auto-discover alongside the CIDR | `0` |
 | `networkPolicies.monitoring.namespace` | Namespace for Prometheus metrics scraping ingress | `""` |
-| `networkPolicies.monitoring.prometheusPort` | Prometheus port (9090 vanilla, 9091 OCP) | `9090` |
-| `networkPolicies.monitoring.alertManagerPort` | AlertManager port (9093 vanilla, 9094 OCP) | `9093` |
+| `networkPolicies.monitoring.prometheusPort` | Prometheus port to allow in the NetworkPolicy egress rule | `9090` |
+| `networkPolicies.monitoring.alertManagerPort` | AlertManager port to allow in the NetworkPolicy egress rule | `9093` |
 | `networkPolicies.externalWebhooks.cidr` | CIDR for Slack/PagerDuty/Teams webhook egress | `0.0.0.0/0` |
 | `networkPolicies.externalRegistry.cidr` | CIDR for OCI registry egress (datastorage bundle validation) | `0.0.0.0/0` |
 | `networkPolicies.<service>.enabled` | Per-service toggle (gateway, datastorage, etc.) | `true` |
+| `networkPolicies.apifrontend.enabled` | Enable the APIFrontend NetworkPolicy (BR-PLATFORM-005) | `true` |
+| `networkPolicies.apifrontend.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach APIFrontend's https port. Same-namespace traffic is always allowed | `[]` |
+| `networkPolicies.console.enabled` | Enable the console NetworkPolicy (BR-PLATFORM-006). No-op unless `console.enabled=true` | `true` |
+| `networkPolicies.console.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach the console's oauth2-proxy port. Same-namespace traffic is always allowed | `[]` |
 
 When enabled, each service gets a NetworkPolicy with:
 - **Default-deny ingress** with service-specific allow rules
 - **Egress**: most services restrict egress to DNS, K8s API, and known peers; **Kubernaut Agent uses an ingress-only policy** (unrestricted egress) because it must reach arbitrary LLM providers, MCP servers, and tool endpoints
 - **Datastorage**: allows egress to PostgreSQL, Valkey, and external container registries (configurable CIDR for OCI bundle validation)
+- **APIFrontend** (BR-PLATFORM-005, Kubernaut Operator parity — previously the only mesh component without a NetworkPolicy): ingress from same-namespace callers plus `networkPolicies.apifrontend.ingressNamespaces`; egress to DataStorage, Valkey (only when `apifrontend.config.auth.replayCache.enabled=true`), and OIDC/JWKS discovery (only when OIDC is configured)
+- **Console** (BR-PLATFORM-006; a no-op unless `console.enabled=true`): ingress from same-namespace callers plus `networkPolicies.console.ingressNamespaces`; egress to APIFrontend and OIDC token/JWKS discovery
 
 Example (API server CIDR/port are auto-discovered here; only set them explicitly for `helm template`/GitOps rendering, see [NetworkPolicy API Server Discovery](#networkpolicy-api-server-discovery)):
 
@@ -465,8 +557,6 @@ helm install kubernaut charts/kubernaut \
   --set networkPolicies.monitoring.namespace=monitoring \
   --set "networkPolicies.gateway.ingressNamespaces[0]=monitoring"
 ```
-
-On OpenShift, the `values-ocp.yaml` overlay sets monitoring ports to 9091/9094.
 
 #### NetworkPolicy API Server Discovery
 
@@ -482,6 +572,22 @@ If neither an override nor discovery succeeds, `helm install`/`upgrade` fails wi
 
 All controllers accept: `replicas`, `resources`, `pdb.{enabled,minAvailable,maxUnavailable}`, `podSecurityContext`, `containerSecurityContext`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`.
 
+### Kubernaut Agent Security Hardening (BR-PLATFORM-005)
+
+KubernautAgent is the highest-risk component in the mesh — it is LLM-driven and carries the
+broadest investigative RBAC of any Kubernaut service. Two hardening measures, ported from the
+Kubernaut Operator, apply unconditionally (not configurable, no `values.yaml` toggle):
+
+- **Short-TTL ServiceAccount token**: the `kubernaut-agent-sa` ServiceAccount disables the default
+  automounted token (`automountServiceAccountToken: false`); the Deployment instead mounts a
+  1-hour, audience-scoped (`https://kubernetes.default.svc`) projected token, refreshed
+  automatically by the kubelet.
+- **KubeVirt / scheduling investigative RBAC**: the `kubernaut-agent-investigator` ClusterRole
+  includes read-only (`get`/`list`/`watch`) access to `kubevirt.io` VirtualMachines/VMIs/
+  migrations, `cdi.kubevirt.io` DataVolumes, and `scheduling.k8s.io` PriorityClasses, so
+  investigations on clusters running VM-backed workloads or priority-based scheduling have the
+  same visibility as an Operator-managed deployment.
+
 ## Disconnected / Air-Gapped Install
 
 For airgapped environments, mirror container images and override the registry. Rego policies must still be provided via `--set-file`:
@@ -496,7 +602,7 @@ helm install kubernaut oci://harbor.corp/kubernaut-ai/charts/kubernaut \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego
 
-# Flat registry (quay.io, Docker Hub, OCP internal)
+# Flat registry (quay.io, Docker Hub)
 helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=quay.io/myorg \
@@ -507,7 +613,7 @@ helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
   --set-file aianalysis.policies.content=path/to/approval.rego
 ```
 
-See the [Disconnected Install Guide](https://jordigilh.github.io/kubernaut-docs/operations/disconnected-install/) for image mirroring and OCP IDMS instructions.
+See the [Disconnected Install Guide](https://jordigilh.github.io/kubernaut-docs/operations/disconnected-install/) for image mirroring instructions.
 
 ## Upgrading
 
@@ -558,7 +664,14 @@ kubectl delete namespace kubernaut-system
 
 ## Known Limitations
 
-- **Single installation per cluster**: Cluster-scoped resources use static names.
+- **Single installation per cluster**: Cluster-scoped resources use static names. This is an
+  enforced constraint, not just a naming convention — a second `helm install` on a cluster that
+  already has a Kubernaut release fails fast with a Kubernaut-specific error naming the existing
+  release/namespace and the `helm uninstall` remediation step (BR-PLATFORM-004,
+  [DD-018](../../docs/architecture/decisions/DD-018-helm-chart-single-install-per-cluster-guard.md)).
+  `helm upgrade` of the same release is unaffected. The guard only runs during `helm
+  install`/`upgrade` (requires live cluster access via `lookup`) — it is a no-op under `helm
+  template`/`helm lint --strict`.
 - **`helm template` and auto-generated credentials**: `lookup` returns nil during `helm template`, so random passwords are generated on each dry-run. Use `helm install` directly or provide `existingSecret` for reproducible output.
 
 ## Documentation

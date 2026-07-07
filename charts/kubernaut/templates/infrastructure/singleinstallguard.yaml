@@ -1,0 +1,37 @@
+{{/*
+  Single-install-per-cluster guard (BR-PLATFORM-004, DD-018).
+
+  Kubernaut's supported operational model is ONE Helm installation per cluster. The chart
+  provisions ~30 cluster-scoped resources (ClusterRole, ClusterRoleBinding,
+  MutatingWebhookConfiguration, ValidatingWebhookConfiguration) with static, unprefixed names.
+  A second `helm install` into a different namespace is not a supported topology.
+
+  Without this guard, a second install is only caught indirectly by Helm's own
+  ownership-conflict check when it hits the first colliding cluster-scoped resource — a generic,
+  late-firing error that doesn't explain the supported topology or the remediation step.
+
+  This guard fails fast, before any resources are rendered/applied, with a Kubernaut-specific
+  message. It uses the `gateway-role` ClusterRole (templates/gateway/gateway.yaml) as an
+  existence canary: Gateway is not an optional/gated service, so this ClusterRole is
+  unconditionally present whenever Kubernaut is installed. If Gateway ever becomes
+  optional/gated, this canary must be swapped for a different unconditionally-rendered
+  cluster-scoped resource.
+
+  Skipped during `helm template` / `helm lint --strict` (no live cluster access — `lookup`
+  returns empty), consistent with the chart's existing offline-rendering contract (see the
+  $hasCluster canary in secrets.yaml). Validated live via scripts/helm-smoke-test.sh
+  (ST-CHART-GUARD-001).
+*/}}
+
+{{- $existingGatewayRole := lookup "rbac.authorization.k8s.io/v1" "ClusterRole" "" "gateway-role" }}
+{{- if $existingGatewayRole }}
+{{- $existingRelease := "" }}
+{{- $existingNamespace := "" }}
+{{- if $existingGatewayRole.metadata.annotations }}
+{{- $existingRelease = index $existingGatewayRole.metadata.annotations "meta.helm.sh/release-name" | default "" }}
+{{- $existingNamespace = index $existingGatewayRole.metadata.annotations "meta.helm.sh/release-namespace" | default "" }}
+{{- end }}
+{{- if or (ne $existingRelease .Release.Name) (ne $existingNamespace .Release.Namespace) }}
+{{- fail (printf "Kubernaut only supports one installation per cluster. An existing installation was found: release %q in namespace %q. This install is release %q in namespace %q.\n\nTo replace the existing installation:\n  helm uninstall %s -n %s\n\nThen retry this install." $existingRelease $existingNamespace .Release.Name .Release.Namespace $existingRelease $existingNamespace) }}
+{{- end }}
+{{- end }}

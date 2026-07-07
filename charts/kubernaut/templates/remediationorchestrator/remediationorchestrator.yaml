@@ -84,6 +84,12 @@ data:
       mcpGatewayType: {{ $remediationorchestratorFleet.mcpGatewayType | quote }}
       {{- end }}
       tlsCAFile: {{ $remediationorchestratorFleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). NOT YET FUNCTIONAL: no
+           FleetConfig field consumes tokenPath until Issue #1556 lands the Go-side support.
+           Rendered ahead of time so enabling it later is a values-only change. */}}
+      {{- if .Values.remediationorchestrator.fleet.tokenSecretRef }}
+      tokenPath: "/etc/remediationorchestrator/{{ .Values.remediationorchestrator.fleet.tokenSecretRef }}/token"
+      {{- end }}
       {{- if .Values.remediationorchestrator.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
@@ -182,10 +188,6 @@ rules:
   - apiGroups: ["networking.istio.io"]
     resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
     verbs: ["get", "list"]
-  # ── Issue #615: Cluster identity discovery for notification context ────
-  - apiGroups: ["config.openshift.io"]
-    resources: ["infrastructures"]
-    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -304,6 +306,11 @@ spec:
               mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorOauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
+            {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
+            - name: fleet-acm-token
+              mountPath: "/etc/remediationorchestrator/{{ .Values.remediationorchestrator.fleet.tokenSecretRef }}"
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.remediationorchestrator.resources | nindent 12 }}
       volumes:
@@ -318,6 +325,11 @@ spec:
         - name: oauth2-credentials
           secret:
             secretName: {{ $remediationorchestratorOauth2.credentialsSecretRef }}
+        {{- end }}
+        {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
+        - name: fleet-acm-token
+          secret:
+            secretName: {{ .Values.remediationorchestrator.fleet.tokenSecretRef }}
         {{- end }}
 ---
 apiVersion: v1

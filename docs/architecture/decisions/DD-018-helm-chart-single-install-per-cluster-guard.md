@@ -136,13 +136,20 @@ and cert-manager auto-discovery), that:
 
 ## Implementation
 
-- New helper in `templates/_helpers.tpl` (working name: `kubernaut.singleInstallGuard`),
-  called once near the top of chart rendering (alongside the existing
-  `kubernaut.hasClusterAccess` call site).
+- Implemented as a standalone template, `templates/infrastructure/singleinstallguard.yaml`,
+  rather than a `_helpers.tpl` named define — this matches the codebase's existing convention
+  for `lookup`-based pre-flight validation (the `$hasCluster` canary + secret-existence checks in
+  `templates/infrastructure/secrets.yaml` use the same inline-`lookup`-plus-`fail` idiom, not a
+  helper function), so the guard reads consistently with its nearest precedent.
 - Canonical canary resource: the `gateway-role` ClusterRole (`templates/gateway/gateway.yaml`).
 - Validated live via `scripts/helm-smoke-test.sh` (a second `helm install` in a different
   namespace against the same cluster must fail with the new guard's message); not
   reachable via `helm template`/`helm lint --strict` since those never see a live cluster.
+- Confirmed live via a pre-implementation spike (standalone test chart, real Kind cluster):
+  offline `helm template` is a no-op; first install passes; `helm upgrade` of the same release
+  passes; installing a second, different release fails immediately with
+  `GUARD TRIGGERED: existing release "<a>" in namespace "<ns-a>", this install is "<b>" in "<ns-b>"`
+  with zero side effects (no partial resource creation for the failed install).
 
 ## Consequences
 

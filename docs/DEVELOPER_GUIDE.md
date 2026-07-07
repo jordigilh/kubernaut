@@ -388,8 +388,9 @@ The chart lives in `charts/kubernaut/` and supports value files for different en
 | Values file | Purpose |
 |-------------|---------|
 | `values.yaml` | Default (Kind / vanilla Kubernetes) |
-| `values-ocp.yaml` | OpenShift-specific overrides |
 | `values-airgap.yaml` | Air-gapped / disconnected environments |
+
+For OpenShift, use the [Kubernaut Operator](https://jordigilh.github.io/kubernaut-docs/operations/operator/) instead of this Helm chart.
 
 ### Development — Local checkout
 

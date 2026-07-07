@@ -1,0 +1,96 @@
+{{/*
+  APIFrontend alerting rules (BR-PLATFORM-003, Issue #1589).
+  Ported verbatim from the Kubernaut Operator's APIFrontendPrometheusRule
+  (kubernaut-operator/internal/resources/monitoring.go) for observability parity.
+  Gated on monitoring.prometheusRule.enabled + monitoring.coreos.com/v1 CRD presence — see
+  kubernaut.monitoring.crdsPresent in _helpers.tpl.
+*/}}
+{{- if and .Values.monitoring.prometheusRule.enabled (include "kubernaut.monitoring.crdsPresent" .) }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: apifrontend-rules
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+    app: apifrontend
+spec:
+  groups:
+    - name: apifrontend.availability
+      rules:
+        - alert: ApifrontendDown
+          expr: up{job="apifrontend"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend is down"
+            description: "The API Frontend service has been unreachable for more than 5 minutes."
+            runbook_url: "https://docs.kubernaut.ai/runbooks/apifrontend-down"
+    - name: apifrontend.latency
+      rules:
+        - alert: ApifrontendHighLatencyP95
+          expr: histogram_quantile(0.95, sum(rate(af_http_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 0.5
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "API Frontend P95 latency > 500ms"
+            runbook_url: "https://docs.kubernaut.ai/runbooks/apifrontend-high-latency"
+        - alert: ApifrontendHighLatencyP99
+          expr: histogram_quantile(0.99, sum(rate(af_http_request_duration_seconds_bucket{job="apifrontend"}[5m])) by (le)) > 1.0
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend P99 latency > 1s"
+            runbook_url: "https://docs.kubernaut.ai/runbooks/apifrontend-high-latency"
+    - name: apifrontend.errors
+      rules:
+        - alert: ApifrontendHighErrorRate
+          expr: sum(rate(af_http_requests_total{job="apifrontend",status=~"5.."}[5m])) / sum(rate(af_http_requests_total{job="apifrontend"}[5m])) > 0.01
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend error rate > 1%"
+            runbook_url: "https://docs.kubernaut.ai/runbooks/apifrontend-high-error-rate"
+    - name: apifrontend.auth
+      rules:
+        - alert: ApifrontendAuthFailureSpike
+          expr: sum(rate(af_http_requests_total{job="apifrontend",status="401"}[5m])) / sum(rate(af_http_requests_total{job="apifrontend"}[5m])) > 0.1
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "API Frontend auth failure rate > 10%"
+            runbook_url: "https://docs.kubernaut.ai/runbooks/apifrontend-auth-failure"
+    - name: apifrontend.circuitbreaker
+      rules:
+        - alert: ApifrontendCircuitBreakerOpenKA
+          expr: af_circuit_breaker_state{job="apifrontend",dependency="ka"} == 2
+          for: 2m
+          labels:
+            severity: critical
+          annotations:
+            summary: "KA circuit breaker is open"
+            runbook_url: "https://docs.kubernaut.ai/runbooks/apifrontend-circuit-breaker"
+        - alert: ApifrontendCircuitBreakerOpenDS
+          expr: af_circuit_breaker_state{job="apifrontend",dependency="ds"} == 2
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "DS circuit breaker is open"
+            runbook_url: "https://docs.kubernaut.ai/runbooks/apifrontend-circuit-breaker"
+    - name: apifrontend.tools
+      rules:
+        - alert: ApifrontendToolErrorRate
+          expr: sum(rate(af_tool_calls_total{job="apifrontend",result=~"error|timeout|panic"}[5m])) / sum(rate(af_tool_calls_total{job="apifrontend"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "MCP tool error rate > 5%"
+            runbook_url: "https://docs.kubernaut.ai/runbooks/apifrontend-tool-error-rate"
+{{- end }}

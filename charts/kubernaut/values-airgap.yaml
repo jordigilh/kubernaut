@@ -1,30 +1,21 @@
 # Air-gapped / disconnected overlay for Kubernaut Helm chart.
 #
-# IMPORTANT: Layer this AFTER values-ocp.yaml so it overrides the
-# registry.redhat.io pulls with your mirror registry.
-#
 # Usage (nested registry — Harbor, Artifactory, generic Docker v2):
 #   helm install kubernaut charts/kubernaut \
 #     -f charts/kubernaut/values-demo.yaml \
-#     -f charts/kubernaut/values-ocp.yaml \
 #     -f charts/kubernaut/values-airgap.yaml \
 #     --set global.image.registry=harbor.corp
 #
-# Usage (flat registry — quay.io, Docker Hub, OCP internal):
+# Usage (flat registry — quay.io, Docker Hub):
 #   helm install kubernaut charts/kubernaut \
 #     -f charts/kubernaut/values-demo.yaml \
-#     -f charts/kubernaut/values-ocp.yaml \
 #     -f charts/kubernaut/values-airgap.yaml \
 #     --set global.image.registry=quay.io/myorg \
 #     --set global.image.separator=-
 #
 # Prerequisites:
 #   1. Mirror all images listed by hack/airgap/generate-image-list.sh
-#      to your internal registry using `oc mirror` or `skopeo copy`.
-#   2. If using OCP, add mirror registry credentials to the global pull secret:
-#        oc set data secret/pull-secret -n openshift-config \
-#          --from-file=.dockerconfigjson=<auth-file>
-#   3. For OCP 4.13+, create an ImageDigestMirrorSet (see chart README).
+#      to your internal registry using `skopeo copy` (or an equivalent mirroring tool).
 
 # Override the registry for all Kubernaut service images (including db-migrate).
 # Replace <mirror-registry> with your internal registry hostname.
@@ -33,7 +24,7 @@
 #   Images are stored as <mirror-registry>/kubernaut-ai/gateway:tag
 #   → separator stays "/"
 #
-# Flat registries (quay.io, Docker Hub, OCP internal):
+# Flat registries (quay.io, Docker Hub):
 #   Images are stored as <mirror-registry>/kubernaut-ai-gateway:tag
 #   → set separator to "-"
 global:
@@ -42,11 +33,10 @@ global:
     namespace: kubernaut-ai
     separator: "/"  # change to "-" for flat registries (quay.io, Docker Hub)
     # Optionally pin by digest for immutable references:
-    # digest: "sha256:<digest-from-oc-mirror-output>"
+    # digest: "sha256:<digest-from-mirror-tool-output>"
 
 # Override each third-party image to point to your mirror.
 # These images are NOT governed by global.image settings.
-# Red Hat RHEL10 equivalents are used (matching values-ocp.yaml).
 #
 # For flat registries, adjust paths to single-level repos, e.g.:
 #   postgresql.image: <mirror-registry>/rhel10-postgresql-16
@@ -58,7 +48,4 @@ valkey:
 
 hooks:
   tlsCerts:
-    image: <mirror-registry>/openshift4/ose-cli-rhel9:v4.17
-
-effectivenessmonitor:
-  initImage: <mirror-registry>/ubi10/ubi-minimal:latest
+    image: <mirror-registry>/bitnami/kubectl:latest

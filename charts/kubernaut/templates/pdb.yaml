@@ -9,8 +9,10 @@
   "workflowexecution-controller" $.Values.workflowexecution
   "effectivenessmonitor-controller" $.Values.effectivenessmonitor
   "aianalysis-controller" $.Values.aianalysis
+  "console" $.Values.console
 }}
-{{- if and $component.pdb $component.pdb.enabled }}
+{{/* "console" is opt-in (console.enabled defaults false); skip its PDB entirely when disabled. */}}
+{{- if and $component.pdb $component.pdb.enabled (or (ne $name "console") $component.enabled) }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

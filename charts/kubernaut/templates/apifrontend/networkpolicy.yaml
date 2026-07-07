@@ -1,0 +1,64 @@
+{{/*
+BR-PLATFORM-005 (Issue #1589 follow-up, Kubernaut Operator parity).
+Every other component (gateway, datastorage, aianalysis, signalprocessing,
+remediationorchestrator, workflowexecution, notification, effectivenessmonitor,
+authwebhook, kubernaut-agent) has a NetworkPolicy — APIFrontend was the one
+externally-facing gap. Ported from the Operator's apifrontendNetworkPolicy()
+(kubernaut-operator/internal/resources/networkpolicies.go).
+*/}}
+{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.apifrontend.enabled .Values.apifrontend.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kubernaut.fullname" . }}-apifrontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: apifrontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Same-namespace callers (port-forward, in-cluster MCP clients, kagenti gateway).
+    - ports:
+        - port: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+    {{- range .Values.networkPolicies.apifrontend.ingressNamespaces }}
+    # External ingress-controller / route namespace (user-configured).
+    - ports:
+        - port: {{ $.Values.apifrontend.config.server.httpPort | default 8443 }}
+          protocol: TCP
+      from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+    {{- end }}
+    {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
+    # GAP-08 (#1505): JWT replay-cache egress to Valkey.
+    - ports:
+        - port: 6379
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: valkey
+    {{- end }}
+    {{- if or .Values.apifrontend.config.auth.issuerURL (gt (len (.Values.apifrontend.config.auth.jwtProviders | default list)) 0) }}
+    # OIDC/JWKS discovery may be outside the cluster.
+    - ports:
+        - port: 443
+          protocol: TCP
+    {{- end }}
+{{- end }}

@@ -1,0 +1,42 @@
+{{/*
+BR-PLATFORM-006 (Kubernaut Operator parity): the Operator exposes the console via
+an OCP Route; this chart targets vanilla Kubernetes, so a standard networking.k8s.io/v1
+Ingress is the equivalent. Unlike Gateway/APIFrontend (machine-facing APIs, where the
+chart leaves external exposure entirely to the user), the console is browser-facing,
+so an Ingress is created by default whenever the console is enabled.
+*/}}
+{{- if and .Values.console.enabled .Values.console.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: console
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: console
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- with .Values.console.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.console.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.console.ingress.tls.secretName }}
+  tls:
+    - hosts:
+        - {{ .Values.console.ingress.host }}
+      secretName: {{ .Values.console.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.console.ingress.host }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: console
+                port:
+                  name: http
+{{- end }}
