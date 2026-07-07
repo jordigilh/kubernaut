@@ -943,9 +943,23 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		Expect(container.Resources.Limits.Memory().String()).To(Equal("256Mi"))
 
 		By("Verifying the resolved resources were persisted to WFE.Status.Resources")
-		updated, err := getWFE(wfe.Name, wfe.Namespace)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(updated.Status.Resources).ToNot(BeNil())
+		// Job creation (waitForJobCreation above) and the WFE status update that
+		// persists Status.Resources are two sequential, non-atomic API calls within
+		// the same reconcile (finalizePendingToRunning): the Job becomes visible to
+		// this test as soon as it's created, which can race ahead of the subsequent
+		// Status().Update() -- especially when a concurrent reconcile (e.g. the
+		// Running-phase progress check triggered by the Job's own creation event)
+		// causes a resourceVersion conflict and forces a retry. Poll rather than a
+		// single-shot read to tolerate that expected eventual-consistency gap.
+		var updated *workflowexecutionv1alpha1.WorkflowExecution
+		Eventually(func() *corev1.ResourceRequirements {
+			var err error
+			updated, err = getWFE(wfe.Name, wfe.Namespace)
+			if err != nil {
+				return nil
+			}
+			return updated.Status.Resources
+		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
 		Expect(updated.Status.Resources.Requests.Cpu().String()).To(Equal("100m"))
 
 		GinkgoWriter.Printf("✅ IT-WE-019-001: Catalog-resolved resources applied to Job container\n")
