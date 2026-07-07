@@ -33,6 +33,13 @@ limitations under the License.
 // logic the API Frontend uses — rather than an independently-maintained
 // second copy (DD-LLM-005).
 //
+// This package is deliberately NOT shared with the API Frontend's Anthropic
+// path (which uses adk-anthropic-go's full model.LLM wrapper for Google
+// ADK compatibility): KA is framework-isolated by design (DD-HAPI-019-001)
+// while AF's entire agent loop is ADK-based. Only framework-independent
+// protocol logic (like the converters import above) is reused; the model
+// wrapper layers stay separate on purpose. See DD-LLM-007.
+//
 // Reference: https://docs.anthropic.com/en/api/claude-on-vertex-ai
 // Reference: https://github.com/anthropics/anthropic-sdk-go
 package anthropicfamily
