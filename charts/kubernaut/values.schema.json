@@ -9,6 +9,18 @@
       "description": "Kubernetes resource quantity (e.g., 256Mi, 100m)",
       "type": "string"
     },
+    "autoscaling": {
+      "description": "HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core API — no CRD required.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false, "description": "Create a HorizontalPodAutoscaler for this service" },
+        "minReplicas": { "type": "integer", "default": 1 },
+        "maxReplicas": { "type": "integer", "default": 5 },
+        "cpuTarget": { "type": "integer", "default": 75, "description": "Target average CPU utilization percentage" },
+        "memoryTarget": { "type": "integer", "default": 80, "description": "Target average memory utilization percentage (0 disables the memory metric)" }
+      }
+    },
     "resources": {
       "description": "Kubernetes resource requests and limits",
       "type": "object",
@@ -423,6 +435,7 @@
       "additionalProperties": false,
       "properties": {
         "replicas": { "type": "integer", "default": 1 },
+        "autoscaling": { "$ref": "#/definitions/autoscaling" },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -1130,6 +1143,7 @@
       "properties": {
         "enabled": { "type": "boolean", "default": true },
         "replicas": { "type": "integer", "default": 1 },
+        "autoscaling": { "$ref": "#/definitions/autoscaling" },
         "image": {
           "type": "object",
           "additionalProperties": false,
@@ -1285,16 +1299,24 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false, "description": "Enable AlertManager integration for EM" },
-            "url": { "type": "string", "default": "", "description": "AlertManager API base URL. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS. OCP auto-detection deprecated v1.4 (Issue #848) — will be removed in v1.5." }
+            "url": { "type": "string", "default": "", "description": "AlertManager API base URL." },
+            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS." }
+          }
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "description": "ServiceMonitor resources for scraping each service's /metrics endpoint (BR-PLATFORM-003, Issue #1589). Requires monitoring.coreos.com/v1 CRD (kube-prometheus-stack) — no-op when absent, even if enabled=true. Not rendered for authwebhook (metrics intentionally disabled).",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false, "description": "Create ServiceMonitor resources for all metrics-emitting services" }
           }
         },
         "prometheusRule": {
           "type": "object",
-          "description": "PrometheusRule resource for interactive session SLO alerting (Issue #1005)",
+          "description": "PrometheusRule resource for interactive session SLO alerting (Issue #1005), and for DataStorage/APIFrontend availability/latency/error alerting (BR-PLATFORM-003, Issue #1589)",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Create PrometheusRule for interactive session SLOs" },
+            "enabled": { "type": "boolean", "default": false, "description": "Create PrometheusRule resources (interactive session SLOs, DataStorage/APIFrontend alerting)" },
             "additionalLabels": { "type": "object", "default": {}, "description": "Additional labels for PrometheusRule (e.g. prometheus: kube-prometheus)" },
             "thresholds": {
               "type": "object",

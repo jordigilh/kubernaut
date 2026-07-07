@@ -490,12 +490,67 @@ Invoked once from the EM template to catch misconfig at render time.
 */}}
 {{- define "kubernaut.monitoring.validate" -}}
 {{- if and (include "kubernaut.monitoring.prometheus.enabled" .) (not (include "kubernaut.monitoring.prometheus.url" .)) -}}
-{{- fail "monitoring.prometheus.enabled=true but no URL resolvable. Set monitoring.prometheus.url or deploy on OCP for auto-detection." -}}
+{{- fail "monitoring.prometheus.enabled=true but no URL resolvable. Set monitoring.prometheus.url." -}}
 {{- end -}}
 {{- if and (include "kubernaut.monitoring.alertManager.enabled" .) (not (include "kubernaut.monitoring.alertManager.url" .)) -}}
-{{- fail "monitoring.alertManager.enabled=true but no URL resolvable. Set monitoring.alertManager.url or deploy on OCP for auto-detection." -}}
+{{- fail "monitoring.alertManager.enabled=true but no URL resolvable. Set monitoring.alertManager.url." -}}
 {{- end -}}
 {{- end -}}
+
+{{/* ===== ServiceMonitor / PrometheusRule / HPA helpers (BR-PLATFORM-003, Issue #1589) ===== */}}
+
+{{/*
+Whether the Prometheus Operator CRDs (monitoring.coreos.com/v1) are present on the target
+cluster. Always false under `helm template`/`helm lint` (no live cluster, .Capabilities reflects
+only what --api-versions passes in). Used to gate ServiceMonitor/PrometheusRule rendering so
+enabling monitoring.serviceMonitor/prometheusRule without the CRDs installed renders nothing
+instead of failing with "no matches for kind".
+*/}}
+{{- define "kubernaut.monitoring.crdsPresent" -}}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1" -}}true{{- end -}}
+{{- end -}}
+
+{{/*
+Render a ServiceMonitor for one Kubernaut service, gated on monitoring.serviceMonitor.enabled +
+CRD presence. Mirrors the Kubernaut Operator's componentServiceMonitor helper
+(kubernaut-operator/internal/resources/monitoring.go) for parity.
+Usage: {{ include "kubernaut.serviceMonitor" (dict "root" . "service" "gateway") }}
+- "appLabel": the Service's `app` label to select on, when it differs from "service"
+  (several controllers use a "-controller" suffixed app label, e.g. aianalysis-controller).
+- "jobName": the "job" relabel value, when it differs from "service" (none currently do).
+*/}}
+{{- define "kubernaut.serviceMonitor" -}}
+{{- $root := .root -}}
+{{- $service := .service -}}
+{{- $appLabel := .appLabel | default .service -}}
+{{- $job := .jobName | default .service -}}
+{{- if and $root.Values.monitoring.serviceMonitor.enabled (include "kubernaut.monitoring.crdsPresent" $root) }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $service }}-monitor
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" $root | nindent 4 }}
+    app: {{ $appLabel }}
+spec:
+  jobLabel: app.kubernetes.io/name
+  selector:
+    matchLabels:
+      app: {{ $appLabel }}
+  namespaceSelector:
+    matchNames:
+      - {{ $root.Release.Namespace }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      relabelings:
+        - sourceLabels: ["__address__"]
+          targetLabel: job
+          replacement: {{ $job }}
+{{- end -}}
+{{- end }}
 
 {{/* ===== Kubernaut Agent TLS Helpers (delegating to monitoring) ===== */}}
 

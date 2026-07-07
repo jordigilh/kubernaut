@@ -138,6 +138,42 @@ route:
       continue: true
 ```
 
+#### ServiceMonitor, PrometheusRule, and Autoscaling (BR-PLATFORM-003)
+
+If the Prometheus Operator CRDs (`monitoring.coreos.com/v1`) are installed
+(e.g. via `kube-prometheus-stack`), the chart can generate `ServiceMonitor` and
+`PrometheusRule` resources for observability parity with the Kubernaut Operator:
+
+```bash
+helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system \
+  --set monitoring.serviceMonitor.enabled=true \
+  --set monitoring.prometheusRule.enabled=true \
+  ...
+```
+
+- `monitoring.serviceMonitor.enabled=true` creates a `ServiceMonitor` (scraping `/metrics` every
+  15s) for every metrics-emitting service. Not created for `authwebhook`, which intentionally
+  does not expose metrics.
+- `monitoring.prometheusRule.enabled=true` creates alerting rules for DataStorage and
+  APIFrontend (availability, latency, error rate, circuit breakers), ported from the Kubernaut
+  Operator's `internal/resources/monitoring.go`. It also controls the pre-existing Kubernaut
+  Agent interactive-session SLO rules (Issue #1005).
+- Both are a no-op — render nothing — when the `monitoring.coreos.com/v1` CRD is not present on
+  the cluster, even if `enabled=true`. Safe to set unconditionally in a values file shared
+  across clusters with and without the Prometheus Operator installed.
+
+DataStorage and APIFrontend can additionally scale via a `HorizontalPodAutoscaler`
+(`autoscaling/v2`, a stable core API — no CRD required):
+
+```bash
+--set datastorage.autoscaling.enabled=true \
+--set apifrontend.autoscaling.enabled=true
+```
+
+Defaults: `minReplicas: 1`, `maxReplicas: 5`, CPU target `75%`, memory target `80%`
+(`datastorage.autoscaling.*` / `apifrontend.autoscaling.*`).
+
 ## Production Configuration
 
 For production environments, use custom secret names and provide custom policies:

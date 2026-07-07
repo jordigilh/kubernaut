@@ -166,6 +166,15 @@ gateway:
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
   replicas: 1
+  # -- HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core
+  # API — no CRD gate needed, unlike ServiceMonitor/PrometheusRule. Ported from the Kubernaut
+  # Operator's DataStorageHPA (kubernaut-operator/internal/resources/hpa.go).
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    cpuTarget: 75
+    memoryTarget: 80
   pdb:
     enabled: true
     minAvailable: 1
@@ -701,7 +710,14 @@ monitoring:
     enabled: false
     url: ""
     tlsCaFile: ""
-  # -- PrometheusRule for interactive session SLO alerting (Issue #1005).
+  # -- ServiceMonitor for scraping each service's /metrics endpoint (BR-PLATFORM-003, Issue #1589).
+  # Requires monitoring.coreos.com/v1 CRD (kube-prometheus-stack). No-op (renders nothing) when
+  # the CRD isn't installed, even if enabled=true — see kubernaut.monitoring.crdsPresent.
+  # Not rendered for authwebhook: metrics are intentionally disabled for that service.
+  serviceMonitor:
+    enabled: false
+  # -- PrometheusRule for interactive session SLO alerting (Issue #1005), and for DataStorage /
+  # APIFrontend availability/latency/error alerting (BR-PLATFORM-003, Issue #1589).
   # Requires monitoring.coreos.com/v1 CRD (kube-prometheus-stack).
   prometheusRule:
     enabled: false
@@ -799,6 +815,15 @@ networkPolicies:
 apifrontend:
   enabled: true
   replicas: 1
+  # -- HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core
+  # API — no CRD gate needed, unlike ServiceMonitor/PrometheusRule. Ported from the Kubernaut
+  # Operator's APIFrontendHPA (kubernaut-operator/internal/resources/hpa.go).
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    cpuTarget: 75
+    memoryTarget: 80
   image:
     repository: ghcr.io/jordigilh/kubernaut/apifrontend
     pullPolicy: IfNotPresent
