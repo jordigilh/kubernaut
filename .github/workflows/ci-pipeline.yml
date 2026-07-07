@@ -1118,7 +1118,10 @@ jobs:
     needs: [detect-changes, build-images, build-infra-images, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # cert-manager leg additionally runs the ArgoCD GitOps validation (see
+    # "Install ArgoCD" onward below) on top of the plain helm-install smoke
+    # test, so it needs materially more headroom than the hook leg.
+    timeout-minutes: ${{ matrix.tls_mode == 'cert-manager' && 45 || 30 }}
     strategy:
       fail-fast: false
       matrix:
@@ -1131,6 +1134,8 @@ jobs:
     env:
       KIND_CLUSTER_NAME: helm-smoke-${{ matrix.tls_mode }}
       IMAGE_TAG: ${{ needs.build-images.outputs.tag }}
+      ARGOCD_VERSION: v3.4.4
+      GITOPS_NAMESPACE: kubernaut-gitops-smoke
 
     steps:
       - name: Checkout
@@ -1190,9 +1195,23 @@ jobs:
           sudo mv ./kind /usr/local/bin/kind
           kind version
 
+      # extraPortMappings (hostPort 8080 -> containerPort 30080) is only
+      # consumed by the cert-manager leg's ArgoCD CLI access below (NodePort,
+      # not `kubectl port-forward` -- avoids a backgrounded process as a
+      # source of flakiness); harmless no-op for the hook leg.
       - name: Create Kind cluster
         run: |
-          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+          cat <<'EOF' > /tmp/kind-config.yaml
+          kind: Cluster
+          apiVersion: kind.x-k8s.io/v1alpha4
+          nodes:
+          - role: control-plane
+            extraPortMappings:
+            - containerPort: 30080
+              hostPort: 8080
+              protocol: TCP
+          EOF
+          kind create cluster --name "$KIND_CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 120s
           kubectl cluster-info
           kubectl get nodes -o wide
 
@@ -1236,6 +1255,291 @@ jobs:
             --registry localhost \
             --chart-path charts/kubernaut/ \
             --tls-mode "${{ matrix.tls_mode }}"
+
+      # ==========================================================
+      # GitOps (ArgoCD) validation -- issue #1617 item 4, DD-PLATFORM-002
+      #
+      # Deploys the SAME chart, at the SAME commit, using the SAME
+      # already-loaded PR images (registry=localhost, tag=${IMAGE_TAG}) as
+      # the plain `helm install` smoke test above -- but through a real
+      # ArgoCD Application instead of the Helm CLI, to catch ArgoCD-specific
+      # phase/wave/hook incompatibilities (e.g. the PostSync/health deadlock
+      # fixed by DD-PLATFORM-002) that a plain `helm install` can never
+      # exercise. Deliberately reuses this job's already-running Kind
+      # cluster and already-loaded images rather than a separate workflow
+      # with its own cluster: a separate workflow has no access to this PR's
+      # freshly-built (unpublished) images, so it would have to fall back to
+      # a stale published tag -- silently passing/failing independently of
+      # the actual code change under review. Scoped to the cert-manager leg
+      # only: DD-PLATFORM-001's inter-service mTLS auto-provisioning (which
+      # this validates end-to-end) only applies in that mode.
+      # ==========================================================
+
+      - name: Install ArgoCD CLI
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          curl -sSL -o /usr/local/bin/argocd "https://github.com/argoproj/argo-cd/releases/download/${ARGOCD_VERSION}/argocd-linux-amd64"
+          chmod +x /usr/local/bin/argocd
+          argocd version --client
+
+      # #1617 spike finding: ArgoCD's own CRDs (e.g. applicationsets.argoproj.io)
+      # exceed the client-side apply kubectl.kubernetes.io/last-applied-configuration
+      # annotation limit (262144 bytes) -- server-side apply is required to install
+      # ArgoCD itself, not just to sync this chart.
+      - name: Install ArgoCD
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          kubectl create namespace argocd
+          kubectl apply -n argocd --server-side --force-conflicts \
+            -f "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
+          kubectl wait --for=condition=Available --timeout=180s deployment -l app.kubernetes.io/part-of=argocd -n argocd
+
+      - name: Log in to ArgoCD CLI
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          kubectl -n argocd wait --for=condition=Available --timeout=60s deployment/argocd-server
+          kubectl patch svc argocd-server -n argocd -p \
+            '{"spec": {"type": "NodePort", "ports": [{"name": "https", "port": 443, "targetPort": 8080, "nodePort": 30080}]}}'
+          ARGOCD_PASSWORD=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
+          for i in $(seq 1 10); do
+            argocd login localhost:8080 --username admin --password "$ARGOCD_PASSWORD" --insecure && break
+            echo "Retrying ArgoCD login ($i/10)..."
+            sleep 5
+          done
+
+      - name: Provision GitOps prerequisite namespace and secrets
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          kubectl create namespace "$GITOPS_NAMESPACE"
+          # #1617 spike finding: `lookup` has no live cluster access when ArgoCD's
+          # repo-server renders the chart (equivalent to `helm template`, not a real
+          # `helm install`) -- every value the chart would otherwise auto-discover
+          # via `lookup` (issuerRef, secrets) must be supplied explicitly here.
+          kubectl create secret generic postgresql-secret -n "$GITOPS_NAMESPACE" \
+            --from-literal=POSTGRES_USER=slm_user \
+            --from-literal=POSTGRES_PASSWORD=gitops-smoke-pass \
+            --from-literal=POSTGRES_DB=action_history \
+            --from-literal="db-secrets.yaml=$(printf 'username: slm_user\npassword: gitops-smoke-pass')"
+          kubectl create secret generic valkey-secret -n "$GITOPS_NAMESPACE" \
+            --from-literal="valkey-secrets.yaml=password: gitops-smoke-pass"
+          kubectl create secret generic kubernaut-llm-credentials -n "$GITOPS_NAMESPACE" \
+            --from-literal=OPENAI_API_KEY=sk-gitops-smoke-placeholder # pre-commit:allow-sensitive
+
+      # targetRevision uses the same merge commit this job already checked
+      # out and built images from (refs/pull/<n>/merge is maintained by
+      # GitHub in the base repo for every PR, fork or not), so ArgoCD's
+      # in-cluster git clone deploys the exact chart under review -- not a
+      # separately-fetched branch head that could have already diverged.
+      - name: Create ArgoCD Application
+        if: matrix.tls_mode == 'cert-manager'
+        env:
+          REPO_URL: https://github.com/${{ github.repository }}.git
+          TARGET_REVISION: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+        run: |
+          cat <<EOF | argocd app create -f -
+          apiVersion: argoproj.io/v1alpha1
+          kind: Application
+          metadata:
+            name: kubernaut-gitops-smoke
+            namespace: argocd
+          spec:
+            project: default
+            source:
+              repoURL: ${REPO_URL}
+              targetRevision: ${TARGET_REVISION}
+              path: charts/kubernaut
+              helm:
+                valuesObject:
+                  global:
+                    image:
+                      registry: localhost
+                      namespace: ""
+                      tag: ${IMAGE_TAG}
+                  postgresql:
+                    auth:
+                      existingSecret: postgresql-secret
+                  valkey:
+                    existingSecret: valkey-secret
+                  kubernautAgent:
+                    llm:
+                      provider: openai
+                      model: gpt-4o
+                      credentialsSecretName: kubernaut-llm-credentials
+                  signalprocessing:
+                    policies:
+                      content: |
+                        package signalprocessing
+                        import rego.v1
+                        default severity := "info"
+                  aianalysis:
+                    policies:
+                      content: |
+                        package aianalysis.approval
+                        import rego.v1
+                        default allow := false
+                  monitoring:
+                    prometheus:
+                      enabled: false
+                    alertManager:
+                      enabled: false
+                  tls:
+                    mode: cert-manager
+                    certManager:
+                      issuerRef:
+                        name: selfsigned-issuer
+                        kind: ClusterIssuer
+            destination:
+              server: https://kubernetes.default.svc
+              namespace: ${GITOPS_NAMESPACE}
+            # #1617 spike finding: the chart's bundled-CRDs ConfigMap (consumed by the
+            # crd-upgrade hook) is large enough that ArgoCD's default client-side apply
+            # fails with "metadata.annotations: Too long: may not be more than 262144
+            # bytes". ServerSideApply is required at the Application level.
+            syncPolicy:
+              syncOptions:
+                - ServerSideApply=true
+          EOF
+          argocd app list
+
+      # `argocd app sync` blocks until Synced AND Healthy, not just until
+      # manifests are applied. This validates GitOps sync mechanics -- CRDs,
+      # hooks, cert-manager wiring -- with placeholder LLM credentials, so
+      # some controllers (aianalysis, kubernaut-agent) never reach Healthy
+      # for reasons unrelated to GitOps mechanics, and this command reliably
+      # times out even on a fully successful sync. That timeout is
+      # therefore tolerated here (`|| true`); "Verify GitOps deployment"
+      # below asserts the specific resources that actually matter with
+      # their own precise waits, instead of relying on aggregate app health.
+      - name: Sync ArgoCD Application
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          argocd app sync kubernaut-gitops-smoke --server-side --timeout 180 || \
+            echo "::notice::sync timed out waiting for full pod health (expected -- some controllers need real LLM credentials/config this smoke test doesn't provide) -- proceeding to targeted resource checks"
+          argocd app get kubernaut-gitops-smoke || true
+
+      # DD-PLATFORM-002 residual nuance (shared with tls.mode=hook under plain
+      # Helm CLI -- not new, not ArgoCD-specific): ~11 services mount
+      # inter-service-ca as a ConfigMap volume with `optional: true`. If a
+      # service's pod is scheduled and its volume set up *before*
+      # interservice-ca-sync creates that ConfigMap (a real race: the Job
+      # needs ~15-20s to run, a Deployment pod can start faster), kubelet
+      # mounts an empty directory and will not retroactively populate it for
+      # that pod once the ConfigMap appears; only a fresh pod re-evaluates
+      # the volume. This step makes that convergence deterministic in CI by
+      # restarting any pod still crash-looping once both sync Jobs have
+      # actually completed.
+      - name: Recover pods that raced the migration/CA-sync Jobs
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          echo "=== Waiting for db-migration and interservice-ca-sync Jobs to complete ==="
+          for app_label in db-migration interservice-ca-sync; do
+            JOB_NAME=$(kubectl get pods -n "$GITOPS_NAMESPACE" -l "app=${app_label}" -o jsonpath='{.items[0].metadata.labels.job-name}' 2>/dev/null || true)
+            if [[ -n "$JOB_NAME" ]]; then
+              kubectl wait --for=condition=Complete --timeout=120s "job/${JOB_NAME}" -n "$GITOPS_NAMESPACE" 2>&1 || true
+            else
+              echo "::warning::no pod found for app=${app_label} yet -- Job may not have been scheduled"
+            fi
+          done
+
+          echo "=== Restarting any pods still CrashLoopBackOff after the Jobs completed ==="
+          CRASHING=$(kubectl get pods -n "$GITOPS_NAMESPACE" --field-selector=status.phase=Running -o json | \
+            jq -r '.items[] | select(.status.containerStatuses[]?.state.waiting.reason == "CrashLoopBackOff") | .metadata.name')
+          if [[ -n "$CRASHING" ]]; then
+            echo "Restarting: $CRASHING"
+            kubectl delete pod -n "$GITOPS_NAMESPACE" $CRASHING
+            sleep 30
+          else
+            echo "No crash-looping pods found -- nothing to restart"
+          fi
+          kubectl get pods -n "$GITOPS_NAMESPACE" -o wide
+
+      - name: Verify GitOps deployment
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          FAIL=0
+
+          echo "=== CRDs (expect 10, installed by the PreSync crd-upgrade hook) ==="
+          CRD_COUNT=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
+          echo "Found: ${CRD_COUNT}"
+          [[ "$CRD_COUNT" -eq 10 ]] || { echo "FAIL: expected 10 CRDs"; FAIL=1; }
+
+          echo "=== cert-manager Certificates (#334 + DD-PLATFORM-001) ==="
+          for cert in authwebhook-cert datastorage-signing-cert kubernaut-interservice-ca gateway-tls datastorage-tls kubernautagent-tls; do
+            if kubectl wait --for=condition=Ready --timeout=180s "certificate/${cert}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
+              echo "OK: ${cert} Ready"
+            else
+              echo "FAIL: ${cert} not Ready"
+              kubectl describe "certificate/${cert}" -n "$GITOPS_NAMESPACE" 2>&1 || true
+              FAIL=1
+            fi
+          done
+
+          echo "=== db-migration + inter-service-ca ConfigMap sync hooks (DD-PLATFORM-002) ==="
+          MIGRATION_JOB=$(kubectl get pods -n "$GITOPS_NAMESPACE" -l app=db-migration -o jsonpath='{.items[0].metadata.labels.job-name}' 2>/dev/null || true)
+          if [[ -n "$MIGRATION_JOB" ]] && kubectl get job "$MIGRATION_JOB" -n "$GITOPS_NAMESPACE" -o jsonpath='{.status.succeeded}' 2>/dev/null | grep -q '^1$'; then
+            echo "OK: db-migration Job (${MIGRATION_JOB}) succeeded"
+          else
+            echo "FAIL: db-migration Job did not succeed -- ArgoCD PostSync/health deadlock may have regressed"
+            kubectl get pods -n "$GITOPS_NAMESPACE" -l app=db-migration -o wide 2>&1 || true
+            FAIL=1
+          fi
+          if kubectl get configmap inter-service-ca -n "$GITOPS_NAMESPACE" >/dev/null 2>&1; then
+            echo "OK: inter-service-ca ConfigMap exists"
+          else
+            echo "FAIL: inter-service-ca ConfigMap missing -- ArgoCD PostSync/health deadlock may have regressed"
+            FAIL=1
+          fi
+
+          echo "=== datastorage-signing-cert Secret (#334 regression guard) ==="
+          if kubectl get secret datastorage-signing-cert -n "$GITOPS_NAMESPACE" -o jsonpath='{.data.tls\.key}' 2>/dev/null | grep -q .; then
+            echo "OK: datastorage-signing-cert has tls.key"
+          else
+            echo "FAIL: datastorage-signing-cert missing or empty tls.key"
+            FAIL=1
+          fi
+
+          echo "=== datastorage + gateway Ready (DD-PLATFORM-002 end-to-end proof) ==="
+          for dep in datastorage gateway; do
+            if kubectl wait --for=condition=Available --timeout=120s "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
+              echo "OK: ${dep} Available"
+            else
+              echo "FAIL: ${dep} not Available"
+              kubectl describe "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>&1 || true
+              FAIL=1
+            fi
+          done
+
+          echo "=== Pod status (informational) ==="
+          kubectl get pods -n "$GITOPS_NAMESPACE" -o wide
+
+          if [[ "$FAIL" -ne 0 ]]; then
+            echo "::error::One or more GitOps deployment checks failed"
+            exit 1
+          fi
+          echo "PASS: all GitOps deployment checks succeeded"
+
+      - name: Verify PreDelete hook fires on ArgoCD cascade delete
+        if: matrix.tls_mode == 'cert-manager' && always()
+        run: |
+          argocd app delete kubernaut-gitops-smoke --cascade --yes || true
+          echo "Waiting up to 3m for cascade delete + webhook-cleanup PreDelete hook..."
+          for i in $(seq 1 18); do
+            if ! kubectl get namespace "$GITOPS_NAMESPACE" >/dev/null 2>&1; then
+              echo "OK: namespace ${GITOPS_NAMESPACE} fully removed (cascade + PreDelete hook completed)"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::warning::Namespace ${GITOPS_NAMESPACE} still present after 3m -- cascade delete or PreDelete hook may be stuck"
+          kubectl get all -n "$GITOPS_NAMESPACE" 2>&1 || true
+
+      - name: Collect ArgoCD diagnostics on failure
+        if: matrix.tls_mode == 'cert-manager' && (failure() || cancelled())
+        run: |
+          argocd app get kubernaut-gitops-smoke 2>&1 || true
+          kubectl get pods -n "$GITOPS_NAMESPACE" -o wide 2>&1 || true
+          kubectl get events -n "$GITOPS_NAMESPACE" --sort-by='.lastTimestamp' 2>&1 | tail -40 || true
+          kubectl get certificates -n "$GITOPS_NAMESPACE" -o wide 2>&1 || true
 
       - name: Collect Kind node logs on failure
         if: failure() || cancelled()
