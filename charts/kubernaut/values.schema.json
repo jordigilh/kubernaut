@@ -1273,6 +1273,50 @@
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
+    "console": {
+      "type": "object",
+      "description": "BR-PLATFORM-006: standalone web console (A2A chat UI), opt-in, Kubernaut Operator parity",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "replicas": { "type": "integer", "default": 1 },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "auth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": { "type": "string", "default": "", "description": "Pre-created Secret with keys: client-id, client-secret, cookie-secret. Required when console.enabled=true." }
+          }
+        },
+        "oauth2Proxy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": { "type": "string", "default": "quay.io/oauth2-proxy/oauth2-proxy:v7.15.3" }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "className": { "type": "string", "default": "" },
+            "host": { "type": "string", "default": "", "description": "Hostname for browser access. Leaving this empty matches all hosts on the ingress controller, which is usually undesirable when other apps share it." },
+            "annotations": { "type": "object", "default": {} },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "secretName": { "type": "string", "default": "", "description": "Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert" }
+              }
+            }
+          }
+        },
+        "resources": { "$ref": "#/definitions/resources" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
+      }
+    },
     "hooks": {
       "type": "object",
       "description": "Post-install Jobs",

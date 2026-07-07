@@ -752,3 +752,28 @@ Usage: {{ include "kubernaut.np.metricsIngress" . | nindent 4 }}
           kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoring.namespace }}
 {{- end }}
 {{- end }}
+
+{{/* ===== Console helpers (BR-PLATFORM-006, Kubernaut Operator parity) ===== */}}
+
+{{/*
+Derive the OIDC issuer URL for the console's oauth2-proxy from APIFrontend's auth
+config. Mirrors the Kubernaut Operator's KubernautSpec.ConsoleIssuerURL(): the first
+jwtProviders entry takes precedence over the single-provider issuerURL shortcut.
+Usage: {{ include "kubernaut.console.issuerURL" . }}
+*/}}
+{{- define "kubernaut.console.issuerURL" -}}
+{{- $providers := .Values.apifrontend.config.auth.jwtProviders | default list -}}
+{{- if gt (len $providers) 0 -}}
+{{- (first $providers).issuerURL -}}
+{{- else -}}
+{{- .Values.apifrontend.config.auth.issuerURL -}}
+{{- end -}}
+{{- end }}
+
+{{/*
+In-cluster APIFrontend URL the console's nginx sidecar reverse-proxies to.
+Usage: {{ include "kubernaut.console.apifrontendURL" . }}
+*/}}
+{{- define "kubernaut.console.apifrontendURL" -}}
+{{- printf "https://apifrontend.%s.svc:%v" .Release.Namespace (.Values.apifrontend.config.server.httpPort | default 8443) -}}
+{{- end }}

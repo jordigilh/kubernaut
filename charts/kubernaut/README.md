@@ -315,27 +315,50 @@ Tune `datastorage.config.server.rateLimit.requestsPerSecond` (default `50`)
 and `.burst` (default `100`) to match expected legitimate traffic (e.g.
 KubernautAgent/APIFrontend polling volume) before enabling in production.
 
-### OpenShift (OCP)
+### Optional: Web Console (BR-PLATFORM-006)
 
-> **DEPRECATED v1.4 (Issue #848)**: The OCP Helm chart overlay is deprecated and will be
-> **removed in v1.5**. For OpenShift deployments, use the
-> [Kubernaut Operator](https://jordigilh.github.io/kubernaut-docs/operations/operator/)
-> which provides native OCP integration (service-ca TLS, OLM catalog, SCC management,
-> automated upgrades). See the
-> [Helm-to-Operator Migration Guide](https://jordigilh.github.io/kubernaut-docs/operations/helm-to-operator/).
+The chart can deploy a standalone web console — a static SPA fronted by an `oauth2-proxy`
+sidecar, giving users a browser-based A2A chat UI authenticated against the same OIDC
+provider as APIFrontend — ported from the Kubernaut Operator's console feature. Opt-in,
+disabled by default.
 
 ```bash
-# DEPRECATED — use the Kubernaut Operator instead (available since v1.3)
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  -n kubernaut-system \
-  -f charts/kubernaut/values-ocp.yaml \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
-  --set-file signalprocessing.policies.content=path/to/policy.rego \
-  --set-file aianalysis.policies.content=path/to/approval.rego
+# 1. Pre-create the OIDC client Secret (client-id/client-secret from your OIDC provider;
+#    cookie-secret is a random 32-byte value used to encrypt oauth2-proxy's session cookie)
+kubectl create secret generic console-oauth-creds \
+  --from-literal=client-id=kubernaut-console \
+  --from-literal=client-secret="$OIDC_CLIENT_SECRET" \
+  --from-literal=cookie-secret="$(openssl rand -base64 32 | head -c 32 | base64)" \
+  -n kubernaut-system
+
+# 2. Enable the console (requires apifrontend.config.auth.issuerURL or .jwtProviders to
+#    already be configured, since the console reuses APIFrontend's OIDC provider)
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system \
+  --reuse-values \
+  --set console.enabled=true \
+  --set console.auth.secretName=console-oauth-creds \
+  --set console.ingress.host=console.apps.example.com
 ```
 
-The OCP overlay switches PostgreSQL and Valkey to Red Hat RHEL10 catalog images and replaces `bitnami/kubectl` with `ose-cli` for hook jobs. No ImageStream prerequisites -- pods pull directly from `registry.redhat.io` using the cluster's global pull secret.
+- `console.ingress.host` is **required** whenever `console.enabled=true` — even if you set
+  `console.ingress.enabled=false` to front the console with your own Ingress/Route — because
+  oauth2-proxy needs the browser-facing hostname for its OIDC redirect URL.
+- Unlike Gateway/APIFrontend (machine-facing APIs, where the chart leaves external exposure
+  entirely to the user), the console is browser-facing, so the chart creates a
+  `networking.k8s.io/v1` Ingress by default (`console.ingress.enabled=true`) — the
+  vanilla-Kubernetes equivalent of the Operator's OCP Route.
+- The chart fails fast at `helm template`/`helm install` time (before any resources are
+  applied) if `console.enabled=true` and `console.auth.secretName`, a resolvable OIDC issuer,
+  or `console.ingress.host` is missing.
+
+### OpenShift (OCP)
+
+This chart targets non-OpenShift (vanilla Kubernetes) deployments. For OpenShift, use the
+[Kubernaut Operator](https://jordigilh.github.io/kubernaut-docs/operations/operator/)
+instead, which provides native OCP integration (service-ca TLS, OLM catalog, SCC
+management, automated upgrades). See the
+[Helm-to-Operator Migration Guide](https://jordigilh.github.io/kubernaut-docs/operations/helm-to-operator/).
 
 ## Configuration Reference
 
@@ -478,6 +501,20 @@ cluster's other known peers.
 | `datastorage.config.server.rateLimit.requestsPerSecond` | Sustained per-IP requests/second | `50` |
 | `datastorage.config.server.rateLimit.burst` | Per-IP token bucket burst size | `100` |
 | `datastorage.config.auditHashKey.existingSecret` | Pre-created Secret name (empty = expect `datastorage-audit-hmac-key`) | `""` |
+
+### Console
+
+| Parameter | Description | Default |
+|---|---|---|
+| `console.enabled` | Deploy the standalone web console (BR-PLATFORM-006); see [Optional: Web Console](#optional-web-console-br-platform-006) | `false` |
+| `console.replicas` | Replica count | `1` |
+| `console.auth.secretName` | Secret with keys: `client-id`, `client-secret`, `cookie-secret`. **Required** when `console.enabled=true` | `""` |
+| `console.oauth2Proxy.image` | Third-party oauth2-proxy sidecar image | `quay.io/oauth2-proxy/oauth2-proxy:v7.15.3` |
+| `console.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for browser access | `true` |
+| `console.ingress.className` | `spec.ingressClassName` | `""` |
+| `console.ingress.host` | Browser-facing hostname. **Required** when `console.enabled=true` (even if `ingress.enabled=false`) | `""` |
+| `console.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or a controller with its own default cert | `""` |
+| `console.pdb.{enabled,minAvailable,maxUnavailable}` | PodDisruptionBudget | `enabled: false` |
 
 ### TLS
 

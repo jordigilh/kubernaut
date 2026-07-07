@@ -1013,3 +1013,44 @@ apifrontend:
     limits:
       memory: 256Mi
       cpu: 500m
+
+# -- Standalone web console (A2A chat UI), opt-in (BR-PLATFORM-006, Kubernaut Operator
+# parity). A static SPA fronted by an oauth2-proxy sidecar that authenticates users via
+# the same OIDC provider as APIFrontend, then reverse-proxies to APIFrontend.
+# Requires: console.auth.secretName (pre-created Secret with client-id/client-secret/
+# cookie-secret) AND an OIDC issuer configured on APIFrontend (apifrontend.config.auth
+# .issuerURL or .jwtProviders[0].issuerURL) — the chart fails fast if either is missing
+# while console.enabled=true.
+console:
+  enabled: false
+  replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
+  auth:
+    # -- Pre-created Secret with keys: client-id, client-secret, cookie-secret
+    # (generate cookie-secret with: openssl rand -base64 32 | head -c 32 | base64).
+    secretName: ""
+  # -- Third-party oauth2-proxy sidecar image (not a Kubernaut-published component,
+  # so it does not follow the global.image.* registry/namespace convention).
+  oauth2Proxy:
+    image: "quay.io/oauth2-proxy/oauth2-proxy:v7.15.3"
+  # -- Ingress for external (browser) access. console.ingress.host is REQUIRED
+  # whenever console.enabled=true — even if you set console.ingress.enabled=false
+  # to manage external access with your own Ingress/Route — because oauth2-proxy
+  # needs the browser-facing hostname for its OIDC redirect URL.
+  ingress:
+    enabled: true
+    className: ""
+    host: ""  # required when console.enabled=true, e.g. "console.apps.example.com"
+    annotations: {}
+    tls:
+      secretName: ""  # pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert
+  resources:
+    requests:
+      cpu: 10m
+      memory: 16Mi
+    limits:
+      cpu: 50m
+      memory: 64Mi
