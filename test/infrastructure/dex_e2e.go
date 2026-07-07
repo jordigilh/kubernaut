@@ -29,10 +29,8 @@ import (
 	"time"
 )
 
-// dexImage is the DEX OIDC provider image used for E2E JWT testing.
-// latest (master) includes client_credentials grant support (PR #4583)
-// for service-to-service fleet authentication (BR-INTEGRATION-054).
-// No official release contains this yet (v2.45.1 is latest release).
+// dexImage is the DEX OIDC provider image used for E2E JWT testing
+// (KA's CompositeAuthenticator JWT/JWKS/SAR authorization, BR-INTEGRATION-054).
 const dexImage = "ghcr.io/dexidp/dex:latest"
 
 // DexE2EConfig holds the DEX E2E user credentials for token acquisition.
@@ -42,16 +40,6 @@ type DexE2EConfig struct {
 	ClientSecret  string
 	Username      string       // email for static password user
 	Password      string
-	HTTPClient    *http.Client // optional TLS-aware client; defaults to InsecureSkipVerify for HTTPS
-}
-
-// DexFleetTokenConfig holds configuration for obtaining a client_credentials
-// token from DEX for fleet service-to-service authentication.
-type DexFleetTokenConfig struct {
-	TokenEndpoint string       // e.g. https://localhost:5556/dex/token
-	ClientID      string       // e.g. kubernaut-fleet-read
-	ClientSecret  string       // e.g. e2e-fleet-secret
-	Scopes        []string     // e.g. ["openid", "groups"]
 	HTTPClient    *http.Client // optional TLS-aware client; defaults to InsecureSkipVerify for HTTPS
 }
 
@@ -108,71 +96,6 @@ func GetDexIDToken(cfg DexE2EConfig) (string, error) {
 	return tokenResp.IDToken, nil
 }
 
-// DefaultDexFleetReadConfig returns the default DEX fleet-read client config
-// matching the static clients deployed by deployDexInNamespace.
-func DefaultDexFleetReadConfig() DexFleetTokenConfig {
-	return DexFleetTokenConfig{
-		TokenEndpoint: "https://localhost:5556/dex/token",
-		ClientID:      "kubernaut-fleet-read",
-		ClientSecret:  "e2e-fleet-secret",
-		Scopes:        []string{"openid", "groups"},
-	}
-}
-
-// GetDexClientCredentialsToken obtains an access_token from DEX using the
-// OAuth2 client_credentials grant. This is the service-to-service auth flow
-// used by fleet services to authenticate to the MCP Gateway.
-func GetDexClientCredentialsToken(cfg DexFleetTokenConfig) (string, error) {
-	data := url.Values{
-		"grant_type":    {"client_credentials"},
-		"scope":         {strings.Join(cfg.Scopes, " ")},
-		"client_id":     {cfg.ClientID},
-		"client_secret": {cfg.ClientSecret},
-	}
-
-	client := dexHTTPClient(cfg.HTTPClient)
-	resp, err := client.PostForm(cfg.TokenEndpoint, data)
-	if err != nil {
-		return "", fmt.Errorf("DEX client_credentials token request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("read DEX token response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("DEX token endpoint returned %d: %s", resp.StatusCode, string(body))
-	}
-
-	var tokenResp struct {
-		AccessToken string `json:"access_token"`
-		TokenType   string `json:"token_type"`
-	}
-	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return "", fmt.Errorf("parse DEX token response: %w", err)
-	}
-	if tokenResp.AccessToken == "" {
-		return "", fmt.Errorf("DEX token response missing access_token: %s", string(body))
-	}
-
-	return tokenResp.AccessToken, nil
-}
-
-// DeployDexInfra deploys DEX and waits for it to be ready. This is the
-// exported entry point for E2E suites that need OIDC/JWT authentication
-// (fleet OAuth2 client_credentials, AF password grant).
-//
-// hostPort must match the Kind extraPortMappings host port for the Dex
-// NodePort (30556) in the caller's Kind config -- see waitForDexReady.
-func DeployDexInfra(ctx context.Context, namespace, kubeconfigPath string, hostPort int, writer io.Writer) error {
-	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
-		return err
-	}
-	return waitForDexReady(hostPort, writer)
-}
-
 // deployDexInNamespace deploys DEX as an OIDC provider in the Kind cluster
 // for E2E JWT/OIDC testing. DEX is configured with:
 //   - Static password user (e2e-user@kubernaut.test)
@@ -225,23 +148,6 @@ data:
           - authorization_code
           - password
           - client_credentials
-      - id: kubernaut-fleet-read
-        name: 'Kubernaut Fleet Read (E2E)'
-        secret: e2e-fleet-secret
-        grantTypes:
-          - client_credentials
-        clientCredentialsClaims:
-          groups:
-            - mcp-read
-      - id: kubernaut-fleet-write
-        name: 'Kubernaut Fleet Write (E2E)'
-        secret: e2e-fleet-secret
-        grantTypes:
-          - client_credentials
-        clientCredentialsClaims:
-          groups:
-            - mcp-write
-            - mcp-read
 ---
 apiVersion: apps/v1
 kind: Deployment
