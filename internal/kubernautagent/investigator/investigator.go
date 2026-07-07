@@ -225,6 +225,11 @@ func (inv *Investigator) auditLog() logr.Logger {
 // the given investigation phase. When a PhaseClientResolver is configured, it
 // delegates to the resolver (which may return a phase-specific client).
 // Otherwise, falls back to the legacy Swappable + PinDecorator pattern.
+//
+// The legacy branch captures client/model/params via a single
+// SwappableClient.Pin() call so the three describe the same Swap version —
+// calling Snapshot/ModelName/RuntimeParameters separately would risk a torn
+// read if a hot-reload landed between calls (#1610).
 func (inv *Investigator) resolveForPhase(phase katypes.Phase) (llm.Client, string, llm.RuntimeParams) {
 	if inv.phaseResolver != nil {
 		return inv.phaseResolver.ResolvePhase(phase)
@@ -233,17 +238,17 @@ func (inv *Investigator) resolveForPhase(phase katypes.Phase) (llm.Client, strin
 	modelName := inv.modelName
 	var runtimeParams llm.RuntimeParams
 	if inv.swappable != nil {
-		pinned := inv.swappable.Snapshot()
+		snap := inv.swappable.Pin()
 		if inv.pinDecorator != nil {
-			client = inv.pinDecorator(pinned)
+			client = inv.pinDecorator(snap.Client)
 			if client == nil {
-				client = llm.NewInstrumentedClient(pinned)
+				client = llm.NewInstrumentedClient(snap.Client)
 			}
 		} else {
-			client = llm.NewInstrumentedClient(pinned)
+			client = llm.NewInstrumentedClient(snap.Client)
 		}
-		modelName = inv.swappable.ModelName()
-		runtimeParams = inv.swappable.RuntimeParameters()
+		modelName = snap.ModelName
+		runtimeParams = snap.RuntimeParams
 	}
 	return client, modelName, runtimeParams
 }

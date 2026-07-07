@@ -497,11 +497,18 @@ func startIdleSessionEviction(pool *ka.KASessionPool, logger logr.Logger) chan s
 	return evictStop
 }
 
-// startConfigWatcher wires CM-02 config file drift detection + audit trail.
-// Returns a cleanup func to stop the watcher; safe to call unconditionally
-// even if the watcher was never started.
-func startConfigWatcher(ctx context.Context, cfg *config.Config, auditor audit.Emitter, logger logr.Logger) func() {
-	cfgWatcher, err := config.NewFileWatcher(configPath, func(newContent []byte) error {
+// configReloadCallback returns the CM-02 config-drift-detection callback used
+// by startConfigWatcher's file watcher. It parses and validates the candidate
+// content for audit/drift-detection purposes only. By design (#1599 /
+// DD-LLM-008: LLM provider/model changes must require a restart, and — since
+// AF has no live-swap mechanism for any config field — every field is
+// effectively restart-only today), the parsed result is never assigned back
+// into cfg or any other live state; a restart is required to actually apply
+// any change, including LLM Provider/Model. See the
+// "configReloadCallback — restart-required LLM identity" Describe block in
+// reload_identity_test.go for the regression coverage proving this.
+func configReloadCallback(cfg *config.Config) func(newContent []byte) error {
+	return func(newContent []byte) error {
 		var newCfg config.Config
 		if err := yaml.Unmarshal(newContent, &newCfg); err != nil {
 			return fmt.Errorf("parse config: %w", err)
@@ -510,7 +517,15 @@ func startConfigWatcher(ctx context.Context, cfg *config.Config, auditor audit.E
 			return fmt.Errorf("resolve defaults: %w", err)
 		}
 		return newCfg.Validate()
-	}, config.WithLogger(logger.WithName("config-watcher")), config.WithAuditor(auditor))
+	}
+}
+
+// startConfigWatcher wires CM-02 config file drift detection + audit trail.
+// Returns a cleanup func to stop the watcher; safe to call unconditionally
+// even if the watcher was never started.
+func startConfigWatcher(ctx context.Context, cfg *config.Config, auditor audit.Emitter, logger logr.Logger) func() {
+	cfgWatcher, err := config.NewFileWatcher(configPath, configReloadCallback(cfg),
+		config.WithLogger(logger.WithName("config-watcher")), config.WithAuditor(auditor))
 	if err != nil {
 		logger.Info("config file watcher unavailable", "error", err)
 		return func() {}

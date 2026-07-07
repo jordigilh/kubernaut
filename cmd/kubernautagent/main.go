@@ -98,12 +98,17 @@ func buildRouterAndRateLimiter(cfg *kaconfig.Config, agentMetrics *kametrics.Met
 // construct the HTTP server, wire hot-reload, and start serving. Extracted
 // per AGENTS.md's 8+-param Options-pattern rule.
 type apiServerStartParams struct {
-	r                  chi.Router
-	cfg                *kaconfig.Config
-	addr               string
-	llmRuntimePath     string
-	swappable          *llm.SwappableClient
-	phaseResolver      *investigator.DefaultPhaseResolver
+	r              chi.Router
+	cfg            *kaconfig.Config
+	addr           string
+	llmRuntimePath string
+	swappable      *llm.SwappableClient
+	phaseResolver  *investigator.DefaultPhaseResolver
+	// bootRuntime is the frozen LLM runtime snapshot loaded at process start.
+	// Threaded into wireHotReload so the reload callback can enforce the
+	// #1599 restart-required identity lock against the boot-time
+	// provider/model, independent of any later reload attempt.
+	bootRuntime        *kaconfig.LLMRuntimeConfig
 	core               *coreServices
 	inv                *investigator.Investigator
 	mgr                *session.Manager
@@ -146,7 +151,10 @@ func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *ht
 		// connections that would be killed by a finite WriteTimeout.
 	}
 
-	stopHotReload := wireHotReload(ctx, p.cfg, httpServer, p.llmRuntimePath, p.swappable, p.phaseResolver, p.logger)
+	stopHotReload := wireHotReload(ctx, hotReloadParams{
+		Cfg: p.cfg, HTTPServer: httpServer, LLMRuntimePath: p.llmRuntimePath,
+		Swappable: p.swappable, PhaseResolver: p.phaseResolver, BootRuntime: p.bootRuntime, Logger: p.logger,
+	})
 
 	p.store.StartCleanupLoop(ctx, p.cfg.Runtime.Session.TTL/2)
 
@@ -266,7 +274,7 @@ func main() {
 
 	httpServer, sessionDrainer, cleanupServers := startAPIServer(ctx, apiServerStartParams{
 		r: r, cfg: cfg, addr: addr, llmRuntimePath: llmRuntimePath,
-		swappable: swappable, phaseResolver: stack.phaseResolver, core: core, inv: stack.inv,
+		swappable: swappable, phaseResolver: stack.phaseResolver, bootRuntime: llmRuntime, core: core, inv: stack.inv,
 		mgr: stack.mgr, store: stack.store, agentMetrics: stack.agentMetrics, instrumentedAudit: stack.instrumentedAudit,
 		ogenSrv: stack.ogenSrv, apiRateLimiter: apiRateLimiter, maxRequestBodySize: maxRequestBodySize,
 		apiServerReady: &apiServerReady, logger: logger,
