@@ -19,7 +19,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
     server:
@@ -46,7 +46,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.fleetmetadatacache.replicas }}
   selector:
@@ -59,20 +59,17 @@ spec:
         app.kubernetes.io/component: fleet-metadata-cache
     spec:
       serviceAccountName: fleetmetadatacache
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        {{- include "kubernaut.podSecurityContext" .Values.fleetmetadatacache | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.fleetmetadatacache | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.fleetmetadatacache "global" .Values.global) | nindent 6 }}
       containers:
         - name: fleetmetadatacache
           image: "{{ .Values.fleetmetadatacache.image.repository }}:{{ .Values.fleetmetadatacache.image.tag }}"
           imagePullPolicy: {{ .Values.fleetmetadatacache.image.pullPolicy }}
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
+            {{- include "kubernaut.containerSecurityContext" .Values.fleetmetadatacache | nindent 12 }}
           args:
             - "--config=/etc/fleetmetadatacache/config.yaml"
           ports:
@@ -119,7 +116,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   selector:
@@ -142,6 +139,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
+    {{- include "kubernaut.labels" . | nindent 4 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -149,6 +147,7 @@ metadata:
   name: fleetmetadatacache
   labels:
     app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
 {{- if eq .Values.fleetmetadatacache.gatewayType "kuadrant" }}
   - apiGroups: ["mcp.kuadrant.io"]
@@ -172,6 +171,7 @@ metadata:
   name: fleetmetadatacache
   labels:
     app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -189,6 +189,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
+    {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:

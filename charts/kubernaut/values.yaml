@@ -709,6 +709,10 @@ valkey:
 fleetmetadatacache:
   enabled: false
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   image:
     repository: quay.io/kubernaut-ai/fleetmetadatacache
     tag: v1.6.0
@@ -870,6 +874,10 @@ networkPolicies:
 apifrontend:
   enabled: true
   replicas: 1
+  pdb:
+    enabled: false
+    # minAvailable: 1
+    # maxUnavailable: ""
   # -- HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core
   # API — no CRD gate needed, unlike ServiceMonitor/PrometheusRule. Ported from the Kubernaut
   # Operator's APIFrontendHPA (kubernaut-operator/internal/resources/hpa.go).

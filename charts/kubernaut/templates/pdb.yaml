@@ -1,18 +1,21 @@
-{{- range $name, $component := dict
-  "gateway" $.Values.gateway
-  "datastorage" $.Values.datastorage
-  "kubernaut-agent" $.Values.kubernautAgent
-  "notification-controller" $.Values.notification
-  "authwebhook" $.Values.authwebhook
-  "signalprocessing-controller" $.Values.signalprocessing
-  "remediationorchestrator-controller" $.Values.remediationorchestrator
-  "workflowexecution-controller" $.Values.workflowexecution
-  "effectivenessmonitor-controller" $.Values.effectivenessmonitor
-  "aianalysis-controller" $.Values.aianalysis
-  "console" $.Values.console
+{{- range $name, $entry := dict
+  "gateway" (dict "values" $.Values.gateway "selectorLabel" "app")
+  "datastorage" (dict "values" $.Values.datastorage "selectorLabel" "app")
+  "kubernaut-agent" (dict "values" $.Values.kubernautAgent "selectorLabel" "app")
+  "notification-controller" (dict "values" $.Values.notification "selectorLabel" "app")
+  "authwebhook" (dict "values" $.Values.authwebhook "selectorLabel" "app")
+  "signalprocessing-controller" (dict "values" $.Values.signalprocessing "selectorLabel" "app")
+  "remediationorchestrator-controller" (dict "values" $.Values.remediationorchestrator "selectorLabel" "app")
+  "workflowexecution-controller" (dict "values" $.Values.workflowexecution "selectorLabel" "app")
+  "effectivenessmonitor-controller" (dict "values" $.Values.effectivenessmonitor "selectorLabel" "app")
+  "aianalysis-controller" (dict "values" $.Values.aianalysis "selectorLabel" "app")
+  "console" (dict "values" $.Values.console "selectorLabel" "app")
+  "apifrontend" (dict "values" $.Values.apifrontend "selectorLabel" "app")
+  "fleetmetadatacache" (dict "values" $.Values.fleetmetadatacache "selectorLabel" "app.kubernetes.io/name")
 }}
-{{/* "console" is opt-in (console.enabled defaults false); skip its PDB entirely when disabled. */}}
-{{- if and $component.pdb $component.pdb.enabled (or (ne $name "console") $component.enabled) }}
+{{- $component := $entry.values }}
+{{/* "console" and "fleetmetadatacache" are opt-in (enabled defaults false); skip their PDB entirely when disabled. */}}
+{{- if and $component.pdb $component.pdb.enabled (or (not (has $name (list "console" "fleetmetadatacache"))) $component.enabled) }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -25,7 +28,7 @@ metadata:
 spec:
   selector:
     matchLabels:
-      app: {{ $name }}
+      {{ $entry.selectorLabel }}: {{ $name }}
   {{- with $component.pdb.minAvailable }}
   minAvailable: {{ . }}
   {{- end }}
