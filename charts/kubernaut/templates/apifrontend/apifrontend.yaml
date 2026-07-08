@@ -222,7 +222,6 @@ kind: ClusterRole
 metadata:
   name: kubernaut-tool-{{ $persona }}
   labels:
-    app.kubernetes.io/part-of: kubernaut
     kubernaut.ai/component: tool-authorization
     {{- include "kubernaut.labels" $ | nindent 4 }}
 rules:
@@ -255,10 +254,17 @@ spec:
     spec:
       serviceAccountName: apifrontend
       automountServiceAccountToken: true
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
+      securityContext:
+        {{- include "kubernaut.podSecurityContext" .Values.apifrontend | nindent 8 }}
+      {{- include "kubernaut.affinity" .Values.apifrontend | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.apifrontend "global" .Values.global) | nindent 6 }}
       containers:
         - name: apifrontend
           image: {{ include "kubernaut.image" (dict "service" "apifrontend" "global" .Values.global "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy | default "IfNotPresent" }}
+          securityContext:
+            {{- include "kubernaut.containerSecurityContext" .Values.apifrontend | nindent 12 }}
           ports:
             - name: https
               containerPort: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}

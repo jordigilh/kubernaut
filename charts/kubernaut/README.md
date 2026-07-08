@@ -622,6 +622,14 @@ If neither an override nor discovery succeeds, `helm install`/`upgrade` fails wi
 
 All controllers accept: `replicas`, `resources`, `pdb.{enabled,minAvailable,maxUnavailable}`, `podSecurityContext`, `containerSecurityContext`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`.
 
+**APIFrontend** and **FleetMetadataCache** also accept the full set above (`podSecurityContext`,
+`containerSecurityContext`, `affinity`, `topologySpreadConstraints`, `pdb`, `nodeSelector`,
+`tolerations`) — previously these two services were missing wiring for the pod-hardening and
+scheduling helpers that every other service already used, even though the schema and values
+already implied they were supported. `pdb.enabled` defaults to `false` for both, matching every
+other service; set `apifrontend.pdb.enabled=true` / `fleetmetadatacache.pdb.enabled=true` (plus
+`minAvailable`/`maxUnavailable`) to opt in.
+
 ### Kubernaut Agent Security Hardening (BR-PLATFORM-005)
 
 KubernautAgent is the highest-risk component in the mesh — it is LLM-driven and carries the

@@ -1171,7 +1171,14 @@
             "credentialsSecretRef": { "type": "string", "default": "", "description": "Secret with client-id and client-secret keys (REQUIRED)" }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" }
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "apifrontend": {
@@ -1295,6 +1302,11 @@
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
