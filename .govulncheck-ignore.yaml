@@ -15,3 +15,7 @@ GO-2023-1901:
 GO-2026-5662:
   reason: "FALSE POSITIVE — fixed in Prometheus 3.11.2; kubernaut uses v0.312.0 (= 3.12.0). Go vuln DB cannot map Prometheus non-standard module versioning (noted in report itself). Web UI XSS; kubernaut does not expose Prometheus UI to end users."
   date: 2026-10-01T00:00:00Z
+
+GO-2026-5856:
+  reason: "NOT EXPLOITABLE — CVE-2026-42505 (crypto/tls ECH outer ClientHello PSK privacy leak, golang/go#79282) only affects TLS clients that configure Encrypted Client Hello via tls.Config.EncryptedClientHelloConfigList. Verified zero references to EncryptedClientHello/ECHConfig anywhere in the kubernaut codebase — ECH is never configured on any outbound TLS client. Fixed upstream in go1.26.5 (released 2026-07-07, one day before this was flagged); toolchain bump tracked as a separate follow-up since go-version is pinned in 10+ places across .github/workflows/ci-pipeline.yml and is out of scope for a targeted bug-fix PR."
+  date: 2026-08-15T00:00:00Z
