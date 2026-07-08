@@ -104,8 +104,9 @@ type TextResult struct {
 
 func (*TextResult) loopResult() {}
 
-// ExhaustedResult is returned when the loop exhausts maxTurns or tool budget.
-// Reason distinguishes the two cases for observability (#770).
+// ExhaustedResult is returned when the loop exhausts maxTurns, tool budget,
+// or the truncation-retry escalation (#1614: the escalated retry is ALSO
+// truncated). Reason distinguishes the cases for observability (#770).
 type ExhaustedResult struct{ Reason string }
 
 func (*ExhaustedResult) loopResult() {}

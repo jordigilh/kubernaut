@@ -104,8 +104,17 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		return nil, toolMessages, false, nil
 	}
 
-	if resp.FinishReason == llm.FinishReasonLength && !state.truncationRetried {
-		return nil, inv.handleTruncation(ctx, state, messages, resp, phase, correlationID), false, nil
+	if resp.FinishReason == llm.FinishReasonLength {
+		if !state.truncationRetried {
+			return nil, inv.handleTruncation(ctx, state, messages, resp, phase, correlationID), false, nil
+		}
+		// #1614: the escalated retry is ALSO truncated. The one-shot guard
+		// above means we will never retry again, so returning the
+		// still-truncated content as a TextResult would silently ship a
+		// partial/garbage answer downstream as if it were complete.
+		// Classify as exhausted instead so every runLLMLoop caller's
+		// existing *ExhaustedResult handling flags it for human review.
+		return &ExhaustedResult{Reason: "output truncated after retry"}, messages, true, nil
 	}
 
 	return &TextResult{Content: resp.Message.Content, Reasoning: resp.Message.Reasoning}, messages, true, nil
