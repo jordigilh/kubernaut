@@ -30584,19 +30584,103 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) encodeFields(e *jx.Enc
 			s.ThroughputAfterRps.Encode(e)
 		}
 	}
+	{
+		if s.NodeNotReadyBefore.Set {
+			e.FieldStart("node_not_ready_before")
+			s.NodeNotReadyBefore.Encode(e)
+		}
+	}
+	{
+		if s.NodeNotReadyAfter.Set {
+			e.FieldStart("node_not_ready_after")
+			s.NodeNotReadyAfter.Encode(e)
+		}
+	}
+	{
+		if s.NodeMemoryPressureBefore.Set {
+			e.FieldStart("node_memory_pressure_before")
+			s.NodeMemoryPressureBefore.Encode(e)
+		}
+	}
+	{
+		if s.NodeMemoryPressureAfter.Set {
+			e.FieldStart("node_memory_pressure_after")
+			s.NodeMemoryPressureAfter.Encode(e)
+		}
+	}
+	{
+		if s.NodeDiskPressureBefore.Set {
+			e.FieldStart("node_disk_pressure_before")
+			s.NodeDiskPressureBefore.Encode(e)
+		}
+	}
+	{
+		if s.NodeDiskPressureAfter.Set {
+			e.FieldStart("node_disk_pressure_after")
+			s.NodeDiskPressureAfter.Encode(e)
+		}
+	}
+	{
+		if s.PvPhaseFailedBefore.Set {
+			e.FieldStart("pv_phase_failed_before")
+			s.PvPhaseFailedBefore.Encode(e)
+		}
+	}
+	{
+		if s.PvPhaseFailedAfter.Set {
+			e.FieldStart("pv_phase_failed_after")
+			s.PvPhaseFailedAfter.Encode(e)
+		}
+	}
+	{
+		if s.PvPhasePendingBefore.Set {
+			e.FieldStart("pv_phase_pending_before")
+			s.PvPhasePendingBefore.Encode(e)
+		}
+	}
+	{
+		if s.PvPhasePendingAfter.Set {
+			e.FieldStart("pv_phase_pending_after")
+			s.PvPhasePendingAfter.Encode(e)
+		}
+	}
+	{
+		if s.PvUsageRatioBefore.Set {
+			e.FieldStart("pv_usage_ratio_before")
+			s.PvUsageRatioBefore.Encode(e)
+		}
+	}
+	{
+		if s.PvUsageRatioAfter.Set {
+			e.FieldStart("pv_usage_ratio_after")
+			s.PvUsageRatioAfter.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfEffectivenessAssessmentAuditPayloadMetricDeltas = [10]string{
-	0: "cpu_before",
-	1: "cpu_after",
-	2: "memory_before",
-	3: "memory_after",
-	4: "latency_p95_before_ms",
-	5: "latency_p95_after_ms",
-	6: "error_rate_before",
-	7: "error_rate_after",
-	8: "throughput_before_rps",
-	9: "throughput_after_rps",
+var jsonFieldsNameOfEffectivenessAssessmentAuditPayloadMetricDeltas = [22]string{
+	0:  "cpu_before",
+	1:  "cpu_after",
+	2:  "memory_before",
+	3:  "memory_after",
+	4:  "latency_p95_before_ms",
+	5:  "latency_p95_after_ms",
+	6:  "error_rate_before",
+	7:  "error_rate_after",
+	8:  "throughput_before_rps",
+	9:  "throughput_after_rps",
+	10: "node_not_ready_before",
+	11: "node_not_ready_after",
+	12: "node_memory_pressure_before",
+	13: "node_memory_pressure_after",
+	14: "node_disk_pressure_before",
+	15: "node_disk_pressure_after",
+	16: "pv_phase_failed_before",
+	17: "pv_phase_failed_after",
+	18: "pv_phase_pending_before",
+	19: "pv_phase_pending_after",
+	20: "pv_usage_ratio_before",
+	21: "pv_usage_ratio_after",
 }
 
 // Decode decodes EffectivenessAssessmentAuditPayloadMetricDeltas from json.
@@ -30706,6 +30790,126 @@ func (s *EffectivenessAssessmentAuditPayloadMetricDeltas) Decode(d *jx.Decoder) 
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"throughput_after_rps\"")
+			}
+		case "node_not_ready_before":
+			if err := func() error {
+				s.NodeNotReadyBefore.Reset()
+				if err := s.NodeNotReadyBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"node_not_ready_before\"")
+			}
+		case "node_not_ready_after":
+			if err := func() error {
+				s.NodeNotReadyAfter.Reset()
+				if err := s.NodeNotReadyAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"node_not_ready_after\"")
+			}
+		case "node_memory_pressure_before":
+			if err := func() error {
+				s.NodeMemoryPressureBefore.Reset()
+				if err := s.NodeMemoryPressureBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"node_memory_pressure_before\"")
+			}
+		case "node_memory_pressure_after":
+			if err := func() error {
+				s.NodeMemoryPressureAfter.Reset()
+				if err := s.NodeMemoryPressureAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"node_memory_pressure_after\"")
+			}
+		case "node_disk_pressure_before":
+			if err := func() error {
+				s.NodeDiskPressureBefore.Reset()
+				if err := s.NodeDiskPressureBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"node_disk_pressure_before\"")
+			}
+		case "node_disk_pressure_after":
+			if err := func() error {
+				s.NodeDiskPressureAfter.Reset()
+				if err := s.NodeDiskPressureAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"node_disk_pressure_after\"")
+			}
+		case "pv_phase_failed_before":
+			if err := func() error {
+				s.PvPhaseFailedBefore.Reset()
+				if err := s.PvPhaseFailedBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pv_phase_failed_before\"")
+			}
+		case "pv_phase_failed_after":
+			if err := func() error {
+				s.PvPhaseFailedAfter.Reset()
+				if err := s.PvPhaseFailedAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pv_phase_failed_after\"")
+			}
+		case "pv_phase_pending_before":
+			if err := func() error {
+				s.PvPhasePendingBefore.Reset()
+				if err := s.PvPhasePendingBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pv_phase_pending_before\"")
+			}
+		case "pv_phase_pending_after":
+			if err := func() error {
+				s.PvPhasePendingAfter.Reset()
+				if err := s.PvPhasePendingAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pv_phase_pending_after\"")
+			}
+		case "pv_usage_ratio_before":
+			if err := func() error {
+				s.PvUsageRatioBefore.Reset()
+				if err := s.PvUsageRatioBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pv_usage_ratio_before\"")
+			}
+		case "pv_usage_ratio_after":
+			if err := func() error {
+				s.PvUsageRatioAfter.Reset()
+				if err := s.PvUsageRatioAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pv_usage_ratio_after\"")
 			}
 		default:
 			return d.Skip()
@@ -44707,17 +44911,115 @@ func (s *RemediationMetricDeltas) encodeFields(e *jx.Encoder) {
 			s.ErrorRateAfter.Encode(e)
 		}
 	}
+	{
+		if s.ThroughputBeforeRps.Set {
+			e.FieldStart("throughputBeforeRps")
+			s.ThroughputBeforeRps.Encode(e)
+		}
+	}
+	{
+		if s.ThroughputAfterRps.Set {
+			e.FieldStart("throughputAfterRps")
+			s.ThroughputAfterRps.Encode(e)
+		}
+	}
+	{
+		if s.NodeNotReadyBefore.Set {
+			e.FieldStart("nodeNotReadyBefore")
+			s.NodeNotReadyBefore.Encode(e)
+		}
+	}
+	{
+		if s.NodeNotReadyAfter.Set {
+			e.FieldStart("nodeNotReadyAfter")
+			s.NodeNotReadyAfter.Encode(e)
+		}
+	}
+	{
+		if s.NodeMemoryPressureBefore.Set {
+			e.FieldStart("nodeMemoryPressureBefore")
+			s.NodeMemoryPressureBefore.Encode(e)
+		}
+	}
+	{
+		if s.NodeMemoryPressureAfter.Set {
+			e.FieldStart("nodeMemoryPressureAfter")
+			s.NodeMemoryPressureAfter.Encode(e)
+		}
+	}
+	{
+		if s.NodeDiskPressureBefore.Set {
+			e.FieldStart("nodeDiskPressureBefore")
+			s.NodeDiskPressureBefore.Encode(e)
+		}
+	}
+	{
+		if s.NodeDiskPressureAfter.Set {
+			e.FieldStart("nodeDiskPressureAfter")
+			s.NodeDiskPressureAfter.Encode(e)
+		}
+	}
+	{
+		if s.PvPhaseFailedBefore.Set {
+			e.FieldStart("pvPhaseFailedBefore")
+			s.PvPhaseFailedBefore.Encode(e)
+		}
+	}
+	{
+		if s.PvPhaseFailedAfter.Set {
+			e.FieldStart("pvPhaseFailedAfter")
+			s.PvPhaseFailedAfter.Encode(e)
+		}
+	}
+	{
+		if s.PvPhasePendingBefore.Set {
+			e.FieldStart("pvPhasePendingBefore")
+			s.PvPhasePendingBefore.Encode(e)
+		}
+	}
+	{
+		if s.PvPhasePendingAfter.Set {
+			e.FieldStart("pvPhasePendingAfter")
+			s.PvPhasePendingAfter.Encode(e)
+		}
+	}
+	{
+		if s.PvUsageRatioBefore.Set {
+			e.FieldStart("pvUsageRatioBefore")
+			s.PvUsageRatioBefore.Encode(e)
+		}
+	}
+	{
+		if s.PvUsageRatioAfter.Set {
+			e.FieldStart("pvUsageRatioAfter")
+			s.PvUsageRatioAfter.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfRemediationMetricDeltas = [8]string{
-	0: "cpuBefore",
-	1: "cpuAfter",
-	2: "memoryBefore",
-	3: "memoryAfter",
-	4: "latencyP95BeforeMs",
-	5: "latencyP95AfterMs",
-	6: "errorRateBefore",
-	7: "errorRateAfter",
+var jsonFieldsNameOfRemediationMetricDeltas = [22]string{
+	0:  "cpuBefore",
+	1:  "cpuAfter",
+	2:  "memoryBefore",
+	3:  "memoryAfter",
+	4:  "latencyP95BeforeMs",
+	5:  "latencyP95AfterMs",
+	6:  "errorRateBefore",
+	7:  "errorRateAfter",
+	8:  "throughputBeforeRps",
+	9:  "throughputAfterRps",
+	10: "nodeNotReadyBefore",
+	11: "nodeNotReadyAfter",
+	12: "nodeMemoryPressureBefore",
+	13: "nodeMemoryPressureAfter",
+	14: "nodeDiskPressureBefore",
+	15: "nodeDiskPressureAfter",
+	16: "pvPhaseFailedBefore",
+	17: "pvPhaseFailedAfter",
+	18: "pvPhasePendingBefore",
+	19: "pvPhasePendingAfter",
+	20: "pvUsageRatioBefore",
+	21: "pvUsageRatioAfter",
 }
 
 // Decode decodes RemediationMetricDeltas from json.
@@ -44807,6 +45109,146 @@ func (s *RemediationMetricDeltas) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"errorRateAfter\"")
+			}
+		case "throughputBeforeRps":
+			if err := func() error {
+				s.ThroughputBeforeRps.Reset()
+				if err := s.ThroughputBeforeRps.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"throughputBeforeRps\"")
+			}
+		case "throughputAfterRps":
+			if err := func() error {
+				s.ThroughputAfterRps.Reset()
+				if err := s.ThroughputAfterRps.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"throughputAfterRps\"")
+			}
+		case "nodeNotReadyBefore":
+			if err := func() error {
+				s.NodeNotReadyBefore.Reset()
+				if err := s.NodeNotReadyBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"nodeNotReadyBefore\"")
+			}
+		case "nodeNotReadyAfter":
+			if err := func() error {
+				s.NodeNotReadyAfter.Reset()
+				if err := s.NodeNotReadyAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"nodeNotReadyAfter\"")
+			}
+		case "nodeMemoryPressureBefore":
+			if err := func() error {
+				s.NodeMemoryPressureBefore.Reset()
+				if err := s.NodeMemoryPressureBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"nodeMemoryPressureBefore\"")
+			}
+		case "nodeMemoryPressureAfter":
+			if err := func() error {
+				s.NodeMemoryPressureAfter.Reset()
+				if err := s.NodeMemoryPressureAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"nodeMemoryPressureAfter\"")
+			}
+		case "nodeDiskPressureBefore":
+			if err := func() error {
+				s.NodeDiskPressureBefore.Reset()
+				if err := s.NodeDiskPressureBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"nodeDiskPressureBefore\"")
+			}
+		case "nodeDiskPressureAfter":
+			if err := func() error {
+				s.NodeDiskPressureAfter.Reset()
+				if err := s.NodeDiskPressureAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"nodeDiskPressureAfter\"")
+			}
+		case "pvPhaseFailedBefore":
+			if err := func() error {
+				s.PvPhaseFailedBefore.Reset()
+				if err := s.PvPhaseFailedBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pvPhaseFailedBefore\"")
+			}
+		case "pvPhaseFailedAfter":
+			if err := func() error {
+				s.PvPhaseFailedAfter.Reset()
+				if err := s.PvPhaseFailedAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pvPhaseFailedAfter\"")
+			}
+		case "pvPhasePendingBefore":
+			if err := func() error {
+				s.PvPhasePendingBefore.Reset()
+				if err := s.PvPhasePendingBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pvPhasePendingBefore\"")
+			}
+		case "pvPhasePendingAfter":
+			if err := func() error {
+				s.PvPhasePendingAfter.Reset()
+				if err := s.PvPhasePendingAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pvPhasePendingAfter\"")
+			}
+		case "pvUsageRatioBefore":
+			if err := func() error {
+				s.PvUsageRatioBefore.Reset()
+				if err := s.PvUsageRatioBefore.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pvUsageRatioBefore\"")
+			}
+		case "pvUsageRatioAfter":
+			if err := func() error {
+				s.PvUsageRatioAfter.Reset()
+				if err := s.PvUsageRatioAfter.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"pvUsageRatioAfter\"")
 			}
 		default:
 			return d.Skip()

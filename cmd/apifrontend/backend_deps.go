@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/resilience"
@@ -41,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/llm/openaicompat"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -581,6 +583,8 @@ func adaptFleetReaderFactory(rf fleet.ReaderFactory) tools.ResourceReaderFactory
 //   - vertex_ai + other model → GenAITriager (Google GenAI SDK)
 //   - gemini → GenAITriager (Gemini API)
 //   - anthropic → AnthropicTriager (direct Anthropic API)
+//   - openai / openai_compatible → OpenAICompatibleTriager (shared openaicompat
+//     client — OpenAI, Azure OpenAI, vLLM, Ollama, LlamaStack, self-hosted; #1618)
 func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	switch llmCfg.Provider {
 	case types.LLMProviderVertexAI:
@@ -592,6 +596,8 @@ func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger
 		return newGenAITriagerForGemini(ctx, llmCfg, logger)
 	case types.LLMProviderAnthropic:
 		return newAnthropicTriagerDirect(ctx, llmCfg, logger)
+	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
+		return newOpenAICompatibleTriager(llmCfg, logger)
 	default:
 		return nil, fmt.Errorf("unsupported triage LLM provider: %q", llmCfg.Provider)
 	}
@@ -654,6 +660,33 @@ func newAnthropicTriagerDirect(_ context.Context, llmCfg types.LLMConfig, logger
 		return nil, fmt.Errorf("anthropic direct client: %w", err)
 	}
 	return severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+		Client: client,
+		Model:  llmCfg.Model,
+		Logger: logger,
+	}), nil
+}
+
+// newOpenAICompatibleTriager builds an LLMTriager backed by the shared
+// openaicompat client (#1618), reusing the same TLS/OAuth2/custom-header/
+// circuit-breaker transport chain as AF's main-agent OpenAI-compatible
+// model (launcher.BuildLLMHTTPClient) so severity triage gets identical
+// resilience/auth behavior to the agent it triages for.
+func newOpenAICompatibleTriager(llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	httpClient, err := launcher.BuildLLMHTTPClient(llmCfg)
+	if err != nil {
+		return nil, fmt.Errorf("build HTTP client: %w", err)
+	}
+
+	var opts []openaicompat.Option
+	if httpClient != nil {
+		opts = append(opts, openaicompat.WithHTTPClient(httpClient))
+	}
+	if llmCfg.AzureAPIVersion != "" {
+		opts = append(opts, openaicompat.WithAzureAPIVersion(llmCfg.AzureAPIVersion))
+	}
+
+	client := openaicompat.New(llmCfg.Model, llmCfg.Endpoint, llmCfg.APIKey, opts...)
+	return severity.NewOpenAICompatibleTriager(severity.OpenAICompatibleTriagerConfig{
 		Client: client,
 		Model:  llmCfg.Model,
 		Logger: logger,

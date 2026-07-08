@@ -127,6 +127,25 @@ type MetricDeltas struct {
 	LatencyP95AfterMs  *float64 `json:"latency_p95_after_ms,omitempty"`
 	ErrorRateBefore    *float64 `json:"error_rate_before,omitempty"`
 	ErrorRateAfter     *float64 `json:"error_rate_after,omitempty"`
+	// ThroughputBeforeRps/After backfill a pre-existing gap: present in the raw
+	// EM audit event and DS's RemediationMetricDeltas since 21e592475, but never
+	// propagated to this domain type until now.
+	ThroughputBeforeRps *float64 `json:"throughput_before_rps,omitempty"`
+	ThroughputAfterRps  *float64 `json:"throughput_after_rps,omitempty"`
+	// Cluster-scoped fields (Issue #193, DD-EM-005 v1.1): populated only when
+	// the source remediation targeted a Node or PersistentVolume.
+	NodeNotReadyBefore       *float64 `json:"node_not_ready_before,omitempty"`
+	NodeNotReadyAfter        *float64 `json:"node_not_ready_after,omitempty"`
+	NodeMemoryPressureBefore *float64 `json:"node_memory_pressure_before,omitempty"`
+	NodeMemoryPressureAfter  *float64 `json:"node_memory_pressure_after,omitempty"`
+	NodeDiskPressureBefore   *float64 `json:"node_disk_pressure_before,omitempty"`
+	NodeDiskPressureAfter    *float64 `json:"node_disk_pressure_after,omitempty"`
+	PvPhaseFailedBefore      *float64 `json:"pv_phase_failed_before,omitempty"`
+	PvPhaseFailedAfter       *float64 `json:"pv_phase_failed_after,omitempty"`
+	PvPhasePendingBefore     *float64 `json:"pv_phase_pending_before,omitempty"`
+	PvPhasePendingAfter      *float64 `json:"pv_phase_pending_after,omitempty"`
+	PvUsageRatioBefore       *float64 `json:"pv_usage_ratio_before,omitempty"`
+	PvUsageRatioAfter        *float64 `json:"pv_usage_ratio_after,omitempty"`
 }
 
 // RetryConfig controls retry behavior for infrastructure calls in Enrich().

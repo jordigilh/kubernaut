@@ -331,10 +331,43 @@ func FormatMetricDeltas(md *enrichment.MetricDeltas) string {
 	if md.ErrorRateBefore != nil && md.ErrorRateAfter != nil {
 		parts = append(parts, fmt.Sprintf("error_rate: %.4f -> %.4f", *md.ErrorRateBefore, *md.ErrorRateAfter))
 	}
+	parts = append(parts, formatClusterScopedAndThroughputDeltas(md)...)
 	if len(parts) == 0 {
 		return "N/A"
 	}
 	return strings.Join(parts, ", ")
+}
+
+// formatClusterScopedAndThroughputDeltas renders the throughput backfill and
+// the 6 cluster-scoped Node/PersistentVolume metric_deltas fields (Issue
+// #193, DD-EM-005 v1.1) as human-readable before->after pairs for the LLM
+// prompt. Extracted from FormatMetricDeltas to keep that function within the
+// project's line-length convention -- pure code motion alongside the new
+// field mappings, no behavior change to the existing fields formatted above.
+func formatClusterScopedAndThroughputDeltas(md *enrichment.MetricDeltas) []string {
+	var parts []string
+	if md.ThroughputBeforeRps != nil && md.ThroughputAfterRps != nil {
+		parts = append(parts, fmt.Sprintf("throughput: %.1f -> %.1f rps", *md.ThroughputBeforeRps, *md.ThroughputAfterRps))
+	}
+	if md.NodeNotReadyBefore != nil && md.NodeNotReadyAfter != nil {
+		parts = append(parts, fmt.Sprintf("node_not_ready: %.0f -> %.0f", *md.NodeNotReadyBefore, *md.NodeNotReadyAfter))
+	}
+	if md.NodeMemoryPressureBefore != nil && md.NodeMemoryPressureAfter != nil {
+		parts = append(parts, fmt.Sprintf("node_memory_pressure: %.0f -> %.0f", *md.NodeMemoryPressureBefore, *md.NodeMemoryPressureAfter))
+	}
+	if md.NodeDiskPressureBefore != nil && md.NodeDiskPressureAfter != nil {
+		parts = append(parts, fmt.Sprintf("node_disk_pressure: %.0f -> %.0f", *md.NodeDiskPressureBefore, *md.NodeDiskPressureAfter))
+	}
+	if md.PvPhaseFailedBefore != nil && md.PvPhaseFailedAfter != nil {
+		parts = append(parts, fmt.Sprintf("pv_phase_failed: %.0f -> %.0f", *md.PvPhaseFailedBefore, *md.PvPhaseFailedAfter))
+	}
+	if md.PvPhasePendingBefore != nil && md.PvPhasePendingAfter != nil {
+		parts = append(parts, fmt.Sprintf("pv_phase_pending: %.0f -> %.0f", *md.PvPhasePendingBefore, *md.PvPhasePendingAfter))
+	}
+	if md.PvUsageRatioBefore != nil && md.PvUsageRatioAfter != nil {
+		parts = append(parts, fmt.Sprintf("pv_usage_ratio: %.2f -> %.2f", *md.PvUsageRatioBefore, *md.PvUsageRatioAfter))
+	}
+	return parts
 }
 
 // DetectDecliningEffectiveness groups Tier1 entries by actionType and checks

@@ -156,6 +156,19 @@ func (r *Reconciler) emitMetricsEvent(ctx context.Context, ea *eav1.Effectivenes
 			ErrorRateAfter:      mr.ErrorRateAfter,
 			ThroughputBeforeRPS: mr.ThroughputBeforeRPS,
 			ThroughputAfterRPS:  mr.ThroughputAfterRPS,
+
+			NodeNotReadyBefore:       mr.NodeNotReadyBefore,
+			NodeNotReadyAfter:        mr.NodeNotReadyAfter,
+			NodeMemoryPressureBefore: mr.NodeMemoryPressureBefore,
+			NodeMemoryPressureAfter:  mr.NodeMemoryPressureAfter,
+			NodeDiskPressureBefore:   mr.NodeDiskPressureBefore,
+			NodeDiskPressureAfter:    mr.NodeDiskPressureAfter,
+			PVPhaseFailedBefore:      mr.PVPhaseFailedBefore,
+			PVPhaseFailedAfter:       mr.PVPhaseFailedAfter,
+			PVPhasePendingBefore:     mr.PVPhasePendingBefore,
+			PVPhasePendingAfter:      mr.PVPhasePendingAfter,
+			PVUsageRatioBefore:       mr.PVUsageRatioBefore,
+			PVUsageRatioAfter:        mr.PVUsageRatioAfter,
 		})
 	})
 }
