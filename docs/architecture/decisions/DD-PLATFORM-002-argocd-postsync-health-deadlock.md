@@ -152,6 +152,19 @@ readiness probes pass.
   spike never actually exercised the PostSync-health interaction end-to-end
   (it stopped at an unrelated password-mismatch artifact first). This DD is
   the actual empirical validation of that interaction.
+- Amendment (PR #1625, 2026-07-08): `hook-delete-policy` on both Jobs dropped
+  `hook-succeeded` (Helm: `before-hook-creation,hook-succeeded` →
+  `before-hook-creation`; ArgoCD: `BeforeHookCreation,HookSucceeded` →
+  `BeforeHookCreation`). `before-hook-creation` alone already gives the
+  "recreate on every sync" semantics this DD depends on (Option B's rejection
+  above); `hook-succeeded` was an *additional*, non-required trigger that
+  deletes the Job the instant ArgoCD observes it Healthy. Once the terminal
+  sync-failure race from cert-manager health flakiness (see the CI fix in
+  `ci-pipeline.yml`'s "Sync ArgoCD Application" step) stopped masking it, this
+  was found to delete the Job before the GitOps smoke test's own verification
+  step could inspect it, and to cost a real operator any post-hoc visibility
+  into the last migration/CA-sync run. `ttlSecondsAfterFinished: 86400` on
+  both Jobs still bounds their lifetime.
 
 ## 🔗 Related Decisions
 

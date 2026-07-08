@@ -16,7 +16,12 @@ metadata:
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "5"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # hook-succeeded intentionally omitted -- see migration-job.yaml for
+    # rationale (before-hook-creation alone gives the required "recreate on
+    # every sync" semantics; immediate post-success deletion only costs
+    # debuggability and races CI verification, ttlSecondsAfterFinished below
+    # still bounds this Job's lifetime).
+    "helm.sh/hook-delete-policy": before-hook-creation
     # DD-PLATFORM-002: under ArgoCD, "helm.sh/hook": post-install,post-upgrade
     # maps to PostSync, which only fires once the WHOLE Application is
     # Healthy -- but several services (e.g. gateway) never become Healthy
@@ -37,7 +42,7 @@ metadata:
     # as the CA/Certificate chain it reads from, ahead of every application
     # controller that mounts the ConfigMap it produces.
     "argocd.argoproj.io/hook": Sync
-    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation,HookSucceeded
+    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation
     "argocd.argoproj.io/sync-wave": "-1"
 spec:
   ttlSecondsAfterFinished: 86400
