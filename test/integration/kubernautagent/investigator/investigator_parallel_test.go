@@ -28,6 +28,7 @@ type delayedFakeTool struct {
 	result    string
 	delay     time.Duration
 	active    *atomic.Int32
+	peak      *atomic.Int32
 	execCount *atomic.Int32
 }
 
@@ -36,8 +37,16 @@ func (f *delayedFakeTool) Description() string         { return "delayed fake " 
 func (f *delayedFakeTool) Parameters() json.RawMessage { return nil }
 func (f *delayedFakeTool) Execute(ctx context.Context, _ json.RawMessage) (string, error) {
 	if f.active != nil {
-		f.active.Add(1)
+		cur := f.active.Add(1)
 		defer f.active.Add(-1)
+		if f.peak != nil {
+			for {
+				p := f.peak.Load()
+				if cur <= p || f.peak.CompareAndSwap(p, cur) {
+					break
+				}
+			}
+		}
 	}
 	if f.execCount != nil {
 		f.execCount.Add(1)
@@ -109,10 +118,12 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 			const toolDelay = 200 * time.Millisecond
 			const numTools = 4
 
+			active := &atomic.Int32{}
+			peak := &atomic.Int32{}
 			reg := registry.New()
 			toolNames := []string{"kubectl_describe", "kubectl_events", "kubectl_logs", "kubectl_get_by_name"}
 			for _, tn := range toolNames {
-				reg.Register(&delayedFakeTool{name: tn, result: fmt.Sprintf(`{"tool":"%s","status":"ok"}`, tn), delay: toolDelay})
+				reg.Register(&delayedFakeTool{name: tn, result: fmt.Sprintf(`{"tool":"%s","status":"ok"}`, tn), delay: toolDelay, active: active, peak: peak})
 			}
 
 			toolCalls := make([]llm.ToolCall, numTools)
@@ -148,9 +159,26 @@ var _ = Describe("BR-PERFORMANCE-970: Parallel Tool Execution in runLLMLoop", fu
 			elapsed := time.Since(start)
 			Expect(err).NotTo(HaveOccurred())
 
-			sequentialBaseline := time.Duration(numTools) * toolDelay
-			Expect(elapsed).To(BeNumerically("<", sequentialBaseline),
-				"parallel execution should complete in less than sequential baseline (%v); got %v", sequentialBaseline, elapsed)
+			// PRIMARY proof of parallelism (#1552): peak concurrent active tool
+			// executions is a deterministic structural signal, unlike wall-clock
+			// timing. A tight elapsed-vs-sequential-baseline assertion is
+			// intrinsically flaky on shared CI runners -- this exact check was
+			// already loosened once (0.6x -> 1.0x sequential baseline in
+			// 7c4c14d3b) and still failed at 941ms and 852ms against the 800ms
+			// (1.0x) ceiling despite genuinely parallel dispatch. If dispatch
+			// ever regressed to sequential, peak would deterministically be 1,
+			// not a value that only sometimes drifts past a timing threshold.
+			Expect(peak.Load()).To(Equal(int32(numTools)),
+				"all %d tool calls should have been in flight concurrently at some point, proving genuine parallel dispatch rather than a sequential fallback", numTools)
+
+			// SECONDARY sanity ceiling: guards against a true hang, not tuned to
+			// prove speed. Anchored to a single tool's delay plus a large fixed
+			// margin (not a multiple of numTools) so CI scheduling jitter can
+			// never trip it; a real sequential-fallback regression would still
+			// be caught above by the peak-concurrency assertion.
+			sanityCeiling := toolDelay + 5*time.Second
+			Expect(elapsed).To(BeNumerically("<", sanityCeiling),
+				"parallel execution took %v, exceeding the generous sanity ceiling of %v -- possible hang", elapsed, sanityCeiling)
 
 			// Verify message ordering: the 2nd LLM call's messages should end with
 			// tool results in declaration order (tc_0, tc_1, tc_2, tc_3)

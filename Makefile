@@ -988,7 +988,13 @@ set -e; \
 package=$(2)@$(3) ;\
 echo "Downloading $${package}" ;\
 rm -f $(1) || true ;\
-GOBIN=$(LOCALBIN) go install $${package} ;\
+attempt=1 ;\
+while ! GOBIN=$(LOCALBIN) go install $${package}; do \
+	if [ $$attempt -ge 3 ]; then echo "❌ go install $${package} failed after 3 attempts" >&2; exit 1; fi ;\
+	echo "⚠️  go install $${package} failed (attempt $$attempt/3) — likely a transient proxy.golang.org network error, retrying in 5s..." >&2 ;\
+	sleep 5 ;\
+	attempt=$$((attempt + 1)) ;\
+done ;\
 mv $(1) $(1)-$(3) ;\
 } ;\
 ln -sf $(1)-$(3) $(1)
