@@ -40,6 +40,11 @@ var skipMetricsSeeding bool
 // RemediationOrchestrator: Metrics Host: 9183, NodePort: 30183
 var metricsURL = "http://localhost:9183"
 
+// coreMetricPhaseTransitionsTotal is the metric name asserted by both the
+// seed helper's readiness wait (#1648) and the "core reconciliation
+// metrics" spec below — kept as one constant so they can't drift.
+const coreMetricPhaseTransitionsTotal = "kubernaut_remediationorchestrator_phase_transitions_total"
+
 // seedMetricsWithRemediation creates a simple RemediationRequest and waits for processing
 // to ensure all metrics are populated before tests run.
 // This is required because CRD controllers with envtest don't expose HTTP endpoints,
@@ -82,7 +87,39 @@ func seedMetricsWithRemediation() {
 		return updated.Status.OverallPhase
 	}, 30*time.Second, 1*time.Second).ShouldNot(BeEmpty(), "Metrics seeding RR should be processed")
 
+	// #1648: OverallPhase becoming non-empty only proves the status update
+	// persisted to the API server — it does NOT prove the controller has
+	// reached the (later, in-process) PhaseTransitionsTotal.Inc() call for
+	// that same transition. Since PhaseTransitionsTotal is a CounterVec, its
+	// metric family is absent from /metrics entirely until some label
+	// combination is first incremented (see client_golang CounterVec docs),
+	// so callers that only wait on OverallPhase can race a scrape against
+	// that increment. Wait on the actual condition under test instead of a
+	// proxy signal.
+	waitForMetric(coreMetricPhaseTransitionsTotal)
+
 	GinkgoWriter.Println("✅ Metrics seeding complete")
+}
+
+// waitForMetric polls the RO /metrics endpoint until it contains the named
+// metric family, or fails the spec after the timeout. Centralizes the
+// wait-for-scrape-content pattern needed by seedMetricsWithRemediation
+// (#1648) so other seed/assertion helpers can reuse it if they hit the same
+// class of race.
+func waitForMetric(metric string) {
+	Eventually(func() string {
+		resp, err := http.Get(metricsURL + "/metrics")
+		if err != nil {
+			return ""
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return ""
+		}
+		return string(body)
+	}, 30*time.Second, 500*time.Millisecond).Should(ContainSubstring(metric),
+		"metric %s should appear in /metrics after seeding", metric)
 }
 
 // randomSuffix generates a random suffix for unique resource names
@@ -131,7 +168,7 @@ var _ = Describe("RemediationOrchestrator Metrics E2E", Label("e2e", "metrics"),
 			// Core reconciliation metrics (BR-ORCH-044: Reconciliation Metrics)
 			coreMetrics := []string{
 				"kubernaut_remediationorchestrator_reconcile_duration_seconds",
-				"kubernaut_remediationorchestrator_phase_transitions_total",
+				coreMetricPhaseTransitionsTotal,
 			}
 
 			for _, metric := range coreMetrics {
