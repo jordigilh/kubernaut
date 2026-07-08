@@ -1428,6 +1428,27 @@ jobs:
       # the volume. This step makes that convergence deterministic in CI by
       # restarting any pod still crash-looping once both sync Jobs have
       # actually completed.
+      #
+      # Separate, CI-only resource-contention finding (observed on
+      # PR #1625's first cert-manager run, 2026-07-08): this Kind cluster
+      # runs kube-apiserver/etcd/scheduler + ArgoCD's ~9 pods + cert-manager's
+      # 3 pods + this chart's ~14 Go controllers + postgres + valkey -- and
+      # DD-PLATFORM-002 puts every chart Deployment in the same sync-wave "0"
+      # as the hook Jobs, so ArgoCD applies (and each controller starts) them
+      # essentially simultaneously. On a standard 4-vCPU/16GB GitHub-hosted
+      # runner (docs.github.com/en/actions/reference/runners/github-hosted-runners),
+      # that simultaneous burst can transiently starve the node enough that
+      # in-cluster apiserver connections fail during controller-runtime
+      # manager startup -- confirmed via must-gather: multiple *unrelated*
+      # services (gateway, authwebhook, effectivenessmonitor, notification,
+      # signalprocessing, workflowexecution) all failed with the identical
+      # "dial tcp <apiserver-ClusterIP>:443: i/o timeout" error, each exactly
+      # 30s (client-go's dial timeout) after their last successful log line,
+      # in the same ~45s wall-clock window -- while kube-apiserver's own log
+      # went silent for the preceding ~4 minutes. This is a CI-environment
+      # capacity artifact, not a chart/app defect, so a single restart isn't
+      # reliably enough time for the burst to subside; poll across multiple
+      # passes instead of failing fast on the first one.
       - name: Recover pods that raced the migration/CA-sync Jobs
         if: matrix.tls_mode == 'cert-manager'
         run: |
@@ -1441,16 +1462,20 @@ jobs:
             fi
           done
 
-          echo "=== Restarting any pods still CrashLoopBackOff after the Jobs completed ==="
-          CRASHING=$(kubectl get pods -n "$GITOPS_NAMESPACE" --field-selector=status.phase=Running -o json | \
-            jq -r '.items[] | select(.status.containerStatuses[]?.state.waiting.reason == "CrashLoopBackOff") | .metadata.name')
-          if [[ -n "$CRASHING" ]]; then
-            echo "Restarting: $CRASHING"
+          echo "=== Restarting any pods still CrashLoopBackOff, across multiple passes to absorb transient CI resource contention ==="
+          for attempt in 1 2 3 4 5; do
+            CRASHING=$(kubectl get pods -n "$GITOPS_NAMESPACE" -o json | \
+              jq -r '.items[] | select(.status.containerStatuses[]?.state.waiting.reason == "CrashLoopBackOff") | .metadata.name')
+            if [[ -z "$CRASHING" ]]; then
+              echo "No crash-looping pods found on attempt ${attempt}/5 -- stable"
+              break
+            fi
+            echo "Attempt ${attempt}/5: restarting crash-looping pods: $CRASHING"
+            # shellcheck disable=SC2086
             kubectl delete pod -n "$GITOPS_NAMESPACE" $CRASHING
-            sleep 30
-          else
-            echo "No crash-looping pods found -- nothing to restart"
-          fi
+            echo "Waiting 45s for restarted pods to stabilize..."
+            sleep 45
+          done
           kubectl get pods -n "$GITOPS_NAMESPACE" -o wide
 
       - name: Verify GitOps deployment
@@ -1499,8 +1524,12 @@ jobs:
           fi
 
           echo "=== datastorage + gateway Ready (DD-PLATFORM-002 end-to-end proof) ==="
+          # 180s (not 120s): the "Recover pods" step above already absorbs most
+          # of the CI resource-contention-driven restarts, but leaves some
+          # margin here in case a pod's crash-loop backoff had grown past 45s
+          # by the time this runs.
           for dep in datastorage gateway; do
-            if kubectl wait --for=condition=Available --timeout=120s "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
+            if kubectl wait --for=condition=Available --timeout=180s "deployment/${dep}" -n "$GITOPS_NAMESPACE" 2>/dev/null; then
               echo "OK: ${dep} Available"
             else
               echo "FAIL: ${dep} not Available"
