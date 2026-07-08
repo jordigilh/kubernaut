@@ -1391,13 +1391,6 @@ jobs:
             destination:
               server: https://kubernetes.default.svc
               namespace: ${GITOPS_NAMESPACE}
-            # #1617 spike finding: the chart's bundled-CRDs ConfigMap (consumed by the
-            # crd-upgrade hook) is large enough that ArgoCD's default client-side apply
-            # fails with "metadata.annotations: Too long: may not be more than 262144
-            # bytes". ServerSideApply is required at the Application level.
-            syncPolicy:
-              syncOptions:
-                - ServerSideApply=true
           EOF
           argocd app list
 

@@ -1,0 +1,87 @@
+suite: CRD manifests split per-CRD to fix GitOps client-side-apply size limit (#1641)
+templates:
+  - templates/hooks/crd-upgrade-job.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  kubernautAgent:
+    llm:
+      provider: openai
+      model: gpt-4
+tests:
+  # hasDocuments counts all documents in the template's rendered output; it
+  # does not apply documentSelector filtering (verified empirically -- see
+  # PR description). 10 per-CRD ConfigMaps + 1 Job = 11, vs. the pre-fix
+  # 1 bundled ConfigMap + 1 Job = 2. The per-field assertions below (which DO
+  # apply the selector) independently confirm the 10 matched documents are
+  # actually ConfigMaps with the expected shape.
+  - it: "renders 10 separate per-CRD ConfigMaps plus the Job (was 1 ConfigMap + 1 Job = 2 documents)"
+    asserts:
+      - hasDocuments:
+          count: 11
+
+  - it: "each per-CRD ConfigMap carries the pre-upgrade hook annotations"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+      matchMany: true
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-weight"]
+          value: "-3"
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation,hook-succeeded
+
+  - it: "each per-CRD ConfigMap's data is non-empty (one CRD manifest embedded)"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+      matchMany: true
+    asserts:
+      - notEqual:
+          path: data
+          value: {}
+
+  - it: "the crd-upgrade Job mounts CRDs via a projected volume with one source per CRD"
+    documentSelector:
+      path: kind
+      value: Job
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[0].name
+          value: crds
+      - isNull:
+          path: spec.template.spec.volumes[0].configMap
+      - isNotNull:
+          path: spec.template.spec.volumes[0].projected
+      - lengthEqual:
+          path: spec.template.spec.volumes[0].projected.sources
+          count: 10
+
+  - it: "the crd-upgrade Job's volume mount path and read-only flag are unchanged"
+    documentSelector:
+      path: kind
+      value: Job
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].mountPath
+          value: /crds
+      - equal:
+          path: spec.template.spec.containers[0].volumeMounts[0].readOnly
+          value: true
+
+  - it: "the Job's kubectl apply loop and RBAC wait script are unchanged (only the volume source changed)"
+    documentSelector:
+      path: kind
+      value: Job
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "kubectl apply --server-side --force-conflicts -f"

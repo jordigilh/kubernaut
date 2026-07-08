@@ -2,23 +2,34 @@
 # This pre-upgrade hook applies CRDs via server-side apply so schema changes
 # (field additions, removals, default changes) take effect on upgrade.
 # See: https://helm.sh/docs/chart_best_practices/custom_resource_definitions/
+#
+# #1641: one ConfigMap per CRD file, not a single bundled ConfigMap. A single
+# ConfigMap holding all 10 CRDs' full YAML is ~288 KB, which exceeds the
+# 262144-byte Kubernetes annotation-size limit once GitOps tools (ArgoCD,
+# Flux) or plain `kubectl apply` store it in the client-side-apply
+# `kubectl.kubernetes.io/last-applied-configuration` annotation for 3-way
+# merge diffing. The largest individual CRD is ~62 KB, leaving ~4x headroom
+# per ConfigMap -- fixing the root cause (object size) instead of an
+# ArgoCD-only `ServerSideApply` sync-option workaround (which wouldn't help
+# Flux users). The Job's own cluster-side apply already uses
+# `kubectl apply --server-side`; this is unrelated to that.
+{{- range $path, $_ := .Files.Glob "files/crds/*.yaml" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "kubernaut.fullname" . }}-crd-manifests
-  namespace: {{ .Release.Namespace }}
+  name: {{ include "kubernaut.fullname" $ }}-crd-{{ $path | base | trimPrefix "kubernaut.ai_" | trimSuffix ".yaml" }}
+  namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "kubernaut.labels" . | nindent 4 }}
+    {{- include "kubernaut.labels" $ | nindent 4 }}
   annotations:
     "helm.sh/hook": pre-upgrade
     "helm.sh/hook-weight": "-3"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 data:
-  {{- range $path, $_ := .Files.Glob "files/crds/*.yaml" }}
   {{ $path | base }}: |
     {{- $.Files.Get $path | nindent 4 }}
-  {{- end }}
 ---
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -46,8 +57,17 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
       volumes:
         - name: crds
-          configMap:
-            name: {{ include "kubernaut.fullname" . }}-crd-manifests
+          # #1641: projected volume merging one configMap source per CRD ConfigMap
+          # (see the ConfigMap block above). Each ConfigMap has exactly one
+          # uniquely-named data key (the original CRD filename), so this merges
+          # flatly into /crds with no collisions -- the hook script's
+          # `for f in /crds/*.yaml` loop below is unaffected.
+          projected:
+            sources:
+              {{- range $path, $_ := .Files.Glob "files/crds/*.yaml" }}
+              - configMap:
+                  name: {{ include "kubernaut.fullname" $ }}-crd-{{ $path | base | trimPrefix "kubernaut.ai_" | trimSuffix ".yaml" }}
+              {{- end }}
       containers:
         - name: apply-crds
           # Reuses the shared kubectl image from hooks.tlsCerts.image
