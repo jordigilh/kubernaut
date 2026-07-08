@@ -249,7 +249,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.remediationorchestrator | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.remediationorchestrator | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.remediationorchestrator "matchLabels" (dict "app" "remediationorchestrator-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.remediationorchestrator "global" .Values.global) | nindent 6 }}
       containers:
         - name: remediationorchestrator-controller

@@ -239,7 +239,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.workflowexecution | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.workflowexecution | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.workflowexecution "matchLabels" (dict "app" "workflowexecution-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.workflowexecution "global" .Values.global) | nindent 6 }}
       {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
       # BR-PLATFORM-005 (Kubernaut Operator parity): combine the inter-service CA

@@ -194,7 +194,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.effectivenessmonitor | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.effectivenessmonitor | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.effectivenessmonitor "matchLabels" (dict "app" "effectivenessmonitor-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.effectivenessmonitor "global" .Values.global) | nindent 6 }}
       containers:
         - name: controller

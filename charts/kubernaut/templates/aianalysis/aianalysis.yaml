@@ -173,7 +173,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.aianalysis | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.aianalysis | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.aianalysis "matchLabels" (dict "app" "aianalysis-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.aianalysis "global" .Values.global) | nindent 6 }}
       containers:
         - name: aianalysis

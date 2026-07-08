@@ -93,11 +93,11 @@
       "additionalProperties": { "type": "string" }
     },
     "pdb": {
-      "description": "PodDisruptionBudget configuration",
+      "description": "PodDisruptionBudget configuration. DD-PLATFORM-004: enabled by default (maxUnavailable: 1) for all services that render a PDB (see templates/pdb.yaml); minAvailable is intentionally not the default because it blocks all voluntary disruption at replicas=1 (PodDisruptionBudgetAtLimit).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": false },
+        "enabled": { "type": "boolean", "default": true },
         "minAvailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
         "maxUnavailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }
       }

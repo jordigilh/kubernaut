@@ -1,0 +1,172 @@
+suite: default anti-affinity and PDB (DD-PLATFORM-004)
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/datastorage/datastorage.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+  - templates/pdb.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  kubernautAgent:
+    llm:
+      provider: openai
+      model: gpt-4
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "gateway Deployment gets default soft pod anti-affinity keyed on its own selector"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.topologyKey
+          value: kubernetes.io/hostname
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels.app
+          value: gateway
+
+  - it: "fleetmetadatacache Deployment's default anti-affinity uses its app.kubernetes.io/name selector scheme"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        mcpGatewayEndpoint: "http://mcp.example.com"
+        oauth2:
+          tokenURL: "http://oauth.example.com"
+          credentialsSecretRef: "fmc-creds"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels["app.kubernetes.io/name"]
+          value: fleetmetadatacache
+
+  - it: "user-supplied affinity (e.g. nodeAffinity) merges additively with the default anti-affinity, not replacing it"
+    set:
+      gateway:
+        affinity:
+          nodeAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              nodeSelectorTerms:
+                - matchExpressions:
+                    - key: disktype
+                      operator: In
+                      values: ["ssd"]
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].key
+          value: disktype
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 100
+
+  - it: "user can fully replace the default anti-affinity with a non-empty override (merge keeps a non-zero user value, not the default)"
+    set:
+      gateway:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 1
+                podAffinityTerm:
+                  topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels:
+                      app: something-else
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].weight
+          value: 1
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution[0].podAffinityTerm.labelSelector.matchLabels.app
+          value: something-else
+      - lengthEqual:
+          path: spec.template.spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution
+          count: 1
+
+  - it: "gateway PDB is enabled by default with maxUnavailable: 1 (no minAvailable)"
+    documentSelector:
+      path: metadata.name
+      value: gateway
+    template: templates/pdb.yaml
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+
+  - it: "datastorage PDB defaults to maxUnavailable: 1, not minAvailable (regression guard for the pre-existing PodDisruptionBudgetAtLimit bug)"
+    documentSelector:
+      path: metadata.name
+      value: datastorage
+    template: templates/pdb.yaml
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+
+  - it: "PDB can still be opted out of per-service"
+    set:
+      gateway:
+        pdb:
+          enabled: false
+      datastorage:
+        pdb:
+          enabled: false
+      aianalysis:
+        pdb:
+          enabled: false
+      signalprocessing:
+        pdb:
+          enabled: false
+      remediationorchestrator:
+        pdb:
+          enabled: false
+      workflowexecution:
+        pdb:
+          enabled: false
+      notification:
+        pdb:
+          enabled: false
+      effectivenessmonitor:
+        pdb:
+          enabled: false
+      kubernautAgent:
+        pdb:
+          enabled: false
+      authwebhook:
+        pdb:
+          enabled: false
+      apifrontend:
+        pdb:
+          enabled: false
+      console:
+        pdb:
+          enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/pdb.yaml

@@ -116,7 +116,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.authwebhook | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.authwebhook | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.authwebhook "matchLabels" (dict "app" "authwebhook")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.authwebhook "global" .Values.global) | nindent 6 }}
       {{- if eq .Values.tls.mode "hook" }}
       initContainers:

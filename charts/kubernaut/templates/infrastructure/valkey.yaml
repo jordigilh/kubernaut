@@ -62,7 +62,7 @@ spec:
       {{- $pscOverride := .Values.valkey.podSecurityContext | default dict }}
       securityContext:
         {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.valkey | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.valkey "matchLabels" (dict "app" "valkey")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.valkey "global" .Values.global) | nindent 6 }}
       containers:
         - name: valkey

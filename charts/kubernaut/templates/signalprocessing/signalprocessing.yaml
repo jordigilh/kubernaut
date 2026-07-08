@@ -193,7 +193,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.signalprocessing | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.signalprocessing | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.signalprocessing "matchLabels" (dict "app" "signalprocessing-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.signalprocessing "global" .Values.global) | nindent 6 }}
       containers:
         - name: signalprocessing-controller

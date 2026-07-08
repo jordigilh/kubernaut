@@ -257,7 +257,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.apifrontend | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.apifrontend | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.apifrontend "matchLabels" (dict "app" "apifrontend")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.apifrontend "global" .Values.global) | nindent 6 }}
       containers:
         - name: apifrontend

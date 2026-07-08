@@ -105,7 +105,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.datastorage | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.datastorage | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.datastorage "matchLabels" (dict "app" "datastorage")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.datastorage "global" .Values.global) | nindent 6 }}
       terminationGracePeriodSeconds: 90
       initContainers:

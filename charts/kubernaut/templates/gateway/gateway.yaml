@@ -192,7 +192,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.gateway | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.gateway | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.gateway "matchLabels" (dict "app" "gateway")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.gateway "global" .Values.global) | nindent 6 }}
       containers:
         - name: gateway
