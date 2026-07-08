@@ -179,6 +179,12 @@ func processBridgeEvent(ctx context.Context, evt ka.InvestigationEvent, summary 
 		return true, ExitReasonChannelClosed
 	}
 	emitEventToA2A(ctx, evt, FormatEventForUser(evt))
+	// #1635 / DD-LLM-009: EventTypeReasoningContentDelta (genuine captured LLM
+	// reasoning) is deliberately NOT accumulated into summary here, unlike
+	// EventTypeReasoningDelta (orchestration narration). Raw model
+	// deliberation must never leak into the final chat-answer/RCA summary
+	// text shown to the operator; the live SSE channel (emitEventToA2A above)
+	// and the audit trail are its only surfaces.
 	switch evt.Type {
 	case ka.EventTypeReasoningDelta:
 		if chunk := extractJSONField(evt.Data, "text"); chunk != "" {
@@ -287,6 +293,12 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 	switch evt.Type {
 	case ka.EventTypeReasoningDelta:
 		return extractJSONField(evt.Data, "text")
+	case ka.EventTypeReasoningContentDelta:
+		// #1635 / BR-AI-086 AC10: KA's wire payload is redaction-transparent
+		// (empty text on a redacted turn) — extractJSONField naturally
+		// returns "" in that case, and emitEventToA2A's text=="" guard
+		// no-ops, matching EmitReasoning's existing empty-text behavior.
+		return extractJSONField(evt.Data, "text")
 	case ka.EventTypeTokenDelta:
 		return extractJSONField(evt.Data, "delta")
 	case ka.EventTypeToolCallStart:
@@ -337,9 +349,14 @@ func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string)
 	if text == "" {
 		return
 	}
-	if isStatusEvent(evt.Type) {
+	switch {
+	case isStatusEvent(evt.Type):
 		_ = launcher.EmitStatusSafe(ctx, text)
-	} else {
+	case evt.Type == ka.EventTypeReasoningContentDelta:
+		// #1635 / DD-LLM-009: dedicated channel, kept distinct from the
+		// EmitReasoningSafe path used by orchestration narration below.
+		_ = launcher.EmitReasoningContentSafe(ctx, text)
+	default:
 		_ = launcher.EmitReasoningSafe(ctx, text)
 	}
 }
