@@ -48,6 +48,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -265,10 +266,24 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 
 	msg, err := c.sdk.Messages.New(ctx, params)
 	if err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("anthropicfamily: %w", err)
+		return llm.ChatResponse{}, classifyErr(fmt.Errorf("anthropicfamily: %w", err))
 	}
 
 	return c.mapResponse(msg), nil
+}
+
+// classifyErr marks err non-retryable (kubernaut#1585) when it unwraps to
+// the Anthropic SDK's typed *anthropic.Error with a permanent
+// (400/401/403/404-class) StatusCode. Classification happens here, at this
+// package's own translation boundary, rather than in the shared llm
+// package, so the generic retry machinery never needs to import a
+// provider SDK (DD-HAPI-019 Framework Isolation).
+func classifyErr(err error) error {
+	var apiErr *anthropic.Error
+	if errors.As(err, &apiErr) && llm.IsNonRetryableHTTPStatus(apiErr.StatusCode) {
+		return llm.MarkNonRetryable(err)
+	}
+	return err
 }
 
 func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
@@ -629,7 +644,7 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return llm.ChatResponse{}, fmt.Errorf("anthropicfamily: stream error: %w", err)
+		return llm.ChatResponse{}, classifyErr(fmt.Errorf("anthropicfamily: stream error: %w", err))
 	}
 	_ = callback(llm.ChatStreamEvent{Done: true})
 	return c.mapResponse(&acc), nil

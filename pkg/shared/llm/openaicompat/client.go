@@ -136,9 +136,25 @@ func (c *Client) do(ctx context.Context, req Request, stream bool) (*http.Respon
 	if resp.StatusCode != http.StatusOK {
 		defer func() { _ = resp.Body.Close() }()
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("openaicompat: API error (HTTP %d): %s", resp.StatusCode, string(bodyBytes))
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: string(bodyBytes)}
 	}
 	return resp, nil
+}
+
+// APIError represents a non-2xx HTTP response from the compat endpoint. It
+// carries the status code programmatically so callers can classify
+// retryable (429, 5xx) vs. non-retryable (400, 401, 403, 404) failures
+// instead of parsing the error string (kubernaut#1585).
+type APIError struct {
+	StatusCode int
+	Body       string
+}
+
+// Error preserves the exact message format the bare fmt.Errorf previously
+// produced, so existing logs/tests that only inspect the string are
+// unaffected by this type's introduction.
+func (e *APIError) Error() string {
+	return fmt.Sprintf("openaicompat: API error (HTTP %d): %s", e.StatusCode, e.Body)
 }
 
 // requestTarget returns the request URL and auth header name/value for this
