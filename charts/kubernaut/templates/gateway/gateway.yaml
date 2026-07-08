@@ -1,14 +1,13 @@
-{{- $gatewayOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.gateway.fleet.oauth2) | fromYaml }}
-{{- $gatewayFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.gateway.fleet) | fromYaml }}
+{{- $gatewayFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.gateway.fleet "oauth2" .Values.gateway.fleet.oauth2) | fromYaml }}
 {{- if .Values.gateway.fleet.enabled }}
-{{- if not $gatewayFleet.mcpGatewayEndpoint }}
+{{- if not $gatewayFleetPreamble.config.mcpGatewayEndpoint }}
 {{- fail "gateway.fleet.mcpGatewayEndpoint is required when gateway.fleet.enabled=true (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
 {{- end }}
 {{- if .Values.gateway.fleet.oauth2.enabled }}
-{{- if not $gatewayOauth2.tokenURL }}
+{{- if not $gatewayFleetPreamble.oauth2.tokenURL }}
 {{- fail "gateway.fleet.oauth2.tokenURL is required when gateway.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
-{{- if not $gatewayOauth2.credentialsSecretRef }}
+{{- if not $gatewayFleetPreamble.oauth2.credentialsSecretRef }}
 {{- fail "gateway.fleet.oauth2.credentialsSecretRef is required when gateway.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
 {{- end }}
 {{- end }}
@@ -77,11 +76,11 @@ data:
       {{- else if eq (default "fleetmetadatacache" .Values.gateway.fleet.backend) "fleetmetadatacache" }}
       endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
       {{- end }}
-      mcpGatewayEndpoint: {{ $gatewayFleet.mcpGatewayEndpoint | quote }}
-      {{- if $gatewayFleet.mcpGatewayType }}
-      mcpGatewayType: {{ $gatewayFleet.mcpGatewayType | quote }}
+      mcpGatewayEndpoint: {{ $gatewayFleetPreamble.config.mcpGatewayEndpoint | quote }}
+      {{- if $gatewayFleetPreamble.config.mcpGatewayType }}
+      mcpGatewayType: {{ $gatewayFleetPreamble.config.mcpGatewayType | quote }}
       {{- end }}
-      tlsCAFile: {{ $gatewayFleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      tlsCAFile: {{ $gatewayFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). FleetConfig.TokenPath
            consumes this (Issue #1556) and Validate() hard-requires it when backend=acm. */}}
       {{- if .Values.gateway.fleet.tokenSecretRef }}
@@ -90,15 +89,15 @@ data:
       {{- if .Values.gateway.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
-        tokenURL: {{ $gatewayOauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ $gatewayOauth2.credentialsSecretRef | quote }}
-        {{- if $gatewayOauth2.scopes }}
+        tokenURL: {{ $gatewayFleetPreamble.oauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ $gatewayFleetPreamble.oauth2.credentialsSecretRef | quote }}
+        {{- if $gatewayFleetPreamble.oauth2.scopes }}
         scopes:
-          {{- range $gatewayOauth2.scopes }}
+          {{- range $gatewayFleetPreamble.oauth2.scopes }}
           - {{ . | quote }}
           {{- end }}
         {{- end }}
-        tlsCAFile: {{ $gatewayOauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+        tlsCAFile: {{ $gatewayFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- end }}
     {{- end }}
 ---
@@ -192,7 +191,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.gateway | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.gateway | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.gateway "matchLabels" (dict "app" "gateway")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.gateway "global" .Values.global) | nindent 6 }}
       containers:
         - name: gateway
@@ -227,12 +226,10 @@ spec:
             - name: config
               mountPath: /etc/gateway
               readOnly: true
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
             - name: oauth2-credentials
-              mountPath: "/etc/gateway/{{ $gatewayOauth2.credentialsSecretRef }}"
+              mountPath: "/etc/gateway/{{ $gatewayFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
             {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.tokenSecretRef }}
@@ -262,14 +259,11 @@ spec:
         - name: config
           configMap:
             name: gateway-config
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
-            secretName: {{ $gatewayOauth2.credentialsSecretRef }}
+            secretName: {{ $gatewayFleetPreamble.oauth2.credentialsSecretRef }}
         {{- end }}
         {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.tokenSecretRef }}
         - name: fleet-acm-token

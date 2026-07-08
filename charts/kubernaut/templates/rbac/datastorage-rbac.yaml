@@ -8,6 +8,13 @@ metadata:
   labels:
     app: data-storage-service
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    # DD-PLATFORM-003: a Deployment's serviceAccountName must already exist at
+    # apply time or pod admission is rejected outright -- this SA must render
+    # in the same "infra-first" wave as the DataStorage Deployment
+    # (templates/datastorage/datastorage.yaml) that references it, ahead of
+    # every other application controller.
+    "argocd.argoproj.io/sync-wave": "-1"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

@@ -622,6 +622,30 @@ If neither an override nor discovery succeeds, `helm install`/`upgrade` fails wi
 
 All controllers accept: `replicas`, `resources`, `pdb.{enabled,minAvailable,maxUnavailable}`, `podSecurityContext`, `containerSecurityContext`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`.
 
+**APIFrontend** and **FleetMetadataCache** also accept the full set above (`podSecurityContext`,
+`containerSecurityContext`, `affinity`, `topologySpreadConstraints`, `pdb`, `nodeSelector`,
+`tolerations`) — previously these two services were missing wiring for the pod-hardening and
+scheduling helpers that every other service already used, even though the schema and values
+already implied they were supported.
+
+#### Default anti-affinity and PDB (DD-PLATFORM-004)
+
+Every service that renders a Deployment gets a default **soft** (preferred, not required)
+pod anti-affinity spreading its replicas across nodes, and `pdb.enabled` defaults to
+`true` (`maxUnavailable: 1`) for every service in `templates/pdb.yaml` — matching the
+Kubernaut Operator's defaults. Both are safe with the chart's default `replicas: 1`: a
+preferred anti-affinity term is a no-op with no peer replica to avoid, and
+`maxUnavailable: 1` (never `minAvailable`) always permits the sole pod to be voluntarily
+evicted (e.g. `kubectl drain`) rather than blocking it. Override per-service via
+`<service>.affinity` (deep-merged with the default: a sibling key like `nodeAffinity`
+merges in alongside the default `podAntiAffinity`; to fully replace the default
+anti-affinity term itself, provide your own **non-empty**
+`podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution` list — an *empty*
+list or `null` is treated as unset and the default silently wins back, see
+DD-PLATFORM-004) and `<service>.pdb.enabled=false` to opt out of the PDB entirely.
+`console`'s and `fleetmetadatacache`'s PDBs still only render when the service itself
+is enabled.
+
 ### Kubernaut Agent Security Hardening (BR-PLATFORM-005)
 
 KubernautAgent is the highest-risk component in the mesh — it is LLM-driven and carries the

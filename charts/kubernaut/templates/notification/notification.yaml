@@ -153,7 +153,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.notification | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.notification | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.notification "matchLabels" (dict "app" "notification-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.notification "global" .Values.global) | nindent 6 }}
       containers:
         - name: manager
@@ -210,9 +210,7 @@ spec:
               readOnly: true
             - name: notification-output
               mountPath: /tmp/notifications
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
           resources:
             {{- toYaml .Values.notification.resources | nindent 12 }}
       volumes:
@@ -246,10 +244,7 @@ spec:
           {{- end }}
         - name: notification-output
           emptyDir: {}
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
       terminationGracePeriodSeconds: 10
 ---
 apiVersion: v1

@@ -6,12 +6,7 @@ convention as every other component in the chart.
 {{- if and .Values.networkPolicies.enabled .Values.networkPolicies.console.enabled .Values.console.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata:
-  name: {{ include "kubernaut.fullname" . }}-console
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: console
-    {{- include "kubernaut.labels" . | nindent 4 }}
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "console" "appLabel" "console") }}
 spec:
   podSelector:
     matchLabels:

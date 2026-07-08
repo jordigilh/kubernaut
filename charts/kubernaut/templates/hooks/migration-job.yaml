@@ -8,7 +8,34 @@ metadata:
   annotations:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "2"
-    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # hook-succeeded intentionally omitted (before-hook-creation alone gives
+    # the required "recreate on every sync" semantics, DD-PLATFORM-002): with
+    # it, ArgoCD deletes this Job the instant it's observed Healthy, which
+    # (a) races the GitOps smoke test's own verification step that inspects
+    # the completed Job/pod for BR-AUDIT/DD-PLATFORM-002 regression evidence,
+    # and (b) removes debuggability for a real operator inspecting the last
+    # migration run. ttlSecondsAfterFinished below still bounds its lifetime.
+    "helm.sh/hook-delete-policy": before-hook-creation
+    # DD-PLATFORM-002: under ArgoCD, "helm.sh/hook": post-install,post-upgrade
+    # maps to PostSync, which only fires once the WHOLE Application is Healthy
+    # -- but DataStorage can never become Healthy without this migration
+    # having run first, deadlocking the sync forever. An explicit
+    # argocd.argoproj.io/hook annotation takes precedence over the
+    # Helm-translated one (ArgoCD-only; Helm CLI ignores this annotation and
+    # is unaffected), so this Job instead runs in ArgoCD's "Sync" phase --
+    # concurrently with the rest of the manifests, not gated on their health.
+    #
+    # sync-wave override is equally required: ArgoCD also translates
+    # "helm.sh/hook-weight": "2" into argocd.argoproj.io/sync-wave: "2", and
+    # a positive wave would place this Job *after* PostgreSQL (DD-PLATFORM-003:
+    # sync-wave "-1"), which it depends on, but also after every default-wave
+    # "0" Deployment, recreating the exact same deadlock one level down.
+    # DD-PLATFORM-003 pins this to "-1" (not "0"): it must run in the same
+    # "infra-first" wave as PostgreSQL and DataStorage, both of which it is a
+    # hard prerequisite for, ahead of every other application controller.
+    "argocd.argoproj.io/hook": Sync
+    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 3
@@ -132,6 +159,13 @@ metadata:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    # DD-PLATFORM-002/003: see the db-migration Job annotation above -- this
+    # ConfigMap is consumed by that Job and must render in the same ArgoCD
+    # "Sync" phase and sync-wave ("-1", not PostSync, not a later wave) so
+    # both are available together, ahead of every application controller.
+    "argocd.argoproj.io/hook": Sync
+    "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation,HookSucceeded
+    "argocd.argoproj.io/sync-wave": "-1"
 data:
   {{- range $path, $_ := .Files.Glob "migrations/*.sql" }}
   {{ base $path }}: |

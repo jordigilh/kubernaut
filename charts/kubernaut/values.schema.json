@@ -7,7 +7,21 @@
   "definitions": {
     "resourceQuantity": {
       "description": "Kubernetes resource quantity (e.g., 256Mi, 100m)",
-      "type": "string"
+      "type": "string",
+      "pattern": "^[+]?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))([eE][+-]?[0-9]+)?(m|k|M|G|T|P|E|Ki|Mi|Gi|Ti|Pi|Ei)?$"
+    },
+    "goDuration": {
+      "description": "Go time.Duration string (e.g. \"30s\", \"5m\", \"1h30m\")",
+      "type": "string",
+      "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$"
+    },
+    "serviceToggle": {
+      "description": "Simple enabled/disabled toggle with no other configuration",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean", "default": true }
+      }
     },
     "autoscaling": {
       "description": "HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core API — no CRD required.",
@@ -15,10 +29,10 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": false, "description": "Create a HorizontalPodAutoscaler for this service" },
-        "minReplicas": { "type": "integer", "default": 1 },
-        "maxReplicas": { "type": "integer", "default": 5 },
-        "cpuTarget": { "type": "integer", "default": 75, "description": "Target average CPU utilization percentage" },
-        "memoryTarget": { "type": "integer", "default": 80, "description": "Target average memory utilization percentage (0 disables the memory metric)" }
+        "minReplicas": { "type": "integer", "default": 1, "minimum": 1 },
+        "maxReplicas": { "type": "integer", "default": 5, "minimum": 1 },
+        "cpuTarget": { "type": "integer", "default": 75, "minimum": 1, "maximum": 100, "description": "Target average CPU utilization percentage" },
+        "memoryTarget": { "type": "integer", "default": 80, "minimum": 0, "maximum": 100, "description": "Target average memory utilization percentage (0 disables the memory metric)" }
       }
     },
     "resources": {
@@ -79,11 +93,11 @@
       "additionalProperties": { "type": "string" }
     },
     "pdb": {
-      "description": "PodDisruptionBudget configuration",
+      "description": "PodDisruptionBudget configuration. DD-PLATFORM-004: enabled by default (maxUnavailable: 1) for all services that render a PDB (see templates/pdb.yaml); minAvailable is intentionally not the default because it blocks all voluntary disruption at replicas=1 (PodDisruptionBudgetAtLimit).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": false },
+        "enabled": { "type": "boolean", "default": true },
         "minAvailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
         "maxUnavailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }
       }
@@ -102,10 +116,10 @@
       "additionalProperties": false,
       "properties": {
         "key": { "type": "string" },
-        "operator": { "type": "string" },
+        "operator": { "type": "string", "enum": ["Equal", "Exists"] },
         "value": { "type": "string" },
-        "effect": { "type": "string" },
-        "tolerationSeconds": { "type": "integer" }
+        "effect": { "type": "string", "enum": ["NoSchedule", "PreferNoSchedule", "NoExecute"] },
+        "tolerationSeconds": { "type": "integer", "minimum": 0 }
       }
     },
     "tolerations": {
@@ -318,7 +332,7 @@
       "description": "Gateway service (AlertManager webhook target + external signal ingestion)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -327,10 +341,10 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "maxConcurrentRequests": { "type": "integer", "default": 100 },
-                "readTimeout": { "type": "string", "default": "30s" },
-                "writeTimeout": { "type": "string", "default": "30s" },
-                "k8sRequestTimeout": { "type": "string", "default": "15s", "description": "Per-handler K8s API timeout (BR-GATEWAY-102)" }
+                "maxConcurrentRequests": { "type": "integer", "default": 100, "minimum": 0 },
+                "readTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s" },
+                "writeTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s" },
+                "k8sRequestTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "15s", "description": "Per-handler K8s API timeout (BR-GATEWAY-102)" }
               }
             },
             "middleware": {
@@ -370,6 +384,7 @@
                 "maxAge": {
                   "type": "integer",
                   "default": 300,
+                  "minimum": 0,
                   "description": "Preflight cache duration in seconds."
                 }
               }
@@ -378,7 +393,7 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "cooldownPeriod": { "type": "string", "default": "5m" }
+                "cooldownPeriod": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m" }
               }
             }
           }
@@ -435,7 +450,7 @@
       "description": "DataStorage service (audit trail, workflow catalog)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "autoscaling": { "$ref": "#/definitions/autoscaling" },
         "config": {
           "type": "object",
@@ -447,8 +462,8 @@
               "description": "DataStorage server configuration",
               "properties": {
                 "maxBodySize": { "type": "string", "default": "5242880", "description": "#1048 Phase 4 / SC-5: Maximum request body size in bytes" },
-                "maxConcurrentRequests": { "type": "integer", "default": 100, "description": "Maximum concurrent request limit" },
-                "readTimeout": { "type": "string", "default": "30s", "description": "Server read timeout" },
+                "maxConcurrentRequests": { "type": "integer", "default": 100, "minimum": 0, "description": "Maximum concurrent request limit" },
+                "readTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s", "description": "Server read timeout" },
                 "corsAllowedOrigins": { "type": "array", "items": { "type": "string" }, "description": "#1048 Phase 4 / AC-4: CORS allowed origins" },
                 "signerCertDir": { "type": "string", "default": "/etc/certs", "description": "#1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key)" },
                 "rateLimit": {
@@ -457,8 +472,8 @@
                   "description": "GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting for the DS HTTP API. Disabled by default.",
                   "properties": {
                     "enabled": { "type": "boolean", "default": false },
-                    "requestsPerSecond": { "type": "number", "default": 50, "description": "Sustained per-IP requests/second" },
-                    "burst": { "type": "integer", "default": 100, "description": "Per-IP token bucket burst size" }
+                    "requestsPerSecond": { "type": "number", "default": 50, "minimum": 0, "description": "Sustained per-IP requests/second" },
+                    "burst": { "type": "integer", "default": 100, "minimum": 0, "description": "Per-IP token bucket burst size" }
                   }
                 }
               }
@@ -468,9 +483,9 @@
               "additionalProperties": false,
               "properties": {
                 "sslMode": { "type": "string", "default": "disable", "description": "PostgreSQL SSL mode" },
-                "maxOpenConns": { "type": "integer", "default": 100, "description": "Maximum open database connections" },
-                "maxIdleConns": { "type": "integer", "default": 20, "description": "Maximum idle database connections" },
-                "connMaxLifetime": { "type": "string", "default": "1h", "description": "Maximum connection lifetime" }
+                "maxOpenConns": { "type": "integer", "default": 100, "minimum": 0, "description": "Maximum open database connections" },
+                "maxIdleConns": { "type": "integer", "default": 20, "minimum": 0, "description": "Maximum idle database connections" },
+                "connMaxLifetime": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "1h", "description": "Maximum connection lifetime" }
               }
             },
             "redis": {
@@ -478,7 +493,7 @@
               "additionalProperties": false,
               "description": "Redis DLQ configuration",
               "properties": {
-                "dlqMaxLen": { "type": "integer", "default": 10000, "description": "#1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound" },
+                "dlqMaxLen": { "type": "integer", "default": 10000, "minimum": 0, "description": "#1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound" },
                 "tls": {
                   "type": "object",
                   "additionalProperties": false,
@@ -499,9 +514,9 @@
               "description": "#1048 Phase 5 / AU-11: Retention worker configuration (BR-AUDIT-009)",
               "properties": {
                 "enabled": { "type": "boolean", "default": false, "description": "Enable periodic purge of expired audit events" },
-                "interval": { "type": "string", "default": "24h", "description": "How often the retention worker runs" },
-                "batchSize": { "type": "integer", "default": 1000, "description": "Max rows per DELETE batch" },
-                "defaultDays": { "type": "integer", "default": 2555, "description": "Application-level default retention in days (ADR-034: 7 years)" }
+                "interval": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "24h", "description": "How often the retention worker runs" },
+                "batchSize": { "type": "integer", "default": 1000, "minimum": 1, "description": "Max rows per DELETE batch" },
+                "defaultDays": { "type": "integer", "default": 2555, "minimum": 0, "description": "Application-level default retention in days (ADR-034: 7 years)" }
               }
             },
             "auditHashKey": {
@@ -538,13 +553,13 @@
       "description": "AIAnalysis controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "rego": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "confidenceThreshold": {
-              "oneOf": [{ "type": "number" }, { "type": "null" }],
+              "oneOf": [{ "type": "number", "minimum": 0, "maximum": 1 }, { "type": "null" }],
               "description": "BR-AI-076: nil = use Rego default (0.8)"
             }
           }
@@ -574,7 +589,7 @@
       "description": "SignalProcessing controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "policies": {
           "type": "object",
           "description": "Classification policy externalization (ADR-060). Provide content via --set-file or reference an existing ConfigMap.",
@@ -620,7 +635,7 @@
       "description": "RemediationOrchestrator controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "resources": { "$ref": "#/definitions/resources" },
         "config": {
           "type": "object",
@@ -630,23 +645,23 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "global": { "type": "string", "default": "1h", "description": "Global remediation timeout" },
-                "processing": { "type": "string", "default": "5m", "description": "Signal processing phase timeout" },
-                "analyzing": { "type": "string", "default": "10m", "description": "AI analysis phase timeout" },
-                "executing": { "type": "string", "default": "30m", "description": "Workflow execution phase timeout" },
-                "verifying": { "type": "string", "default": "30m", "description": "Effectiveness verification phase timeout" }
+                "global": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "1h", "description": "Global remediation timeout" },
+                "processing": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m", "description": "Signal processing phase timeout" },
+                "analyzing": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10m", "description": "AI analysis phase timeout" },
+                "executing": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30m", "description": "Workflow execution phase timeout" },
+                "verifying": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30m", "description": "Effectiveness verification phase timeout" }
               }
             },
             "routing": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "consecutiveFailureThreshold": { "type": "integer", "default": 3, "description": "Failures before cooldown" },
-                "consecutiveFailureCooldown": { "type": "string", "default": "1h", "description": "Cooldown after consecutive failures" },
-                "recentlyRemediatedCooldown": { "type": "string", "default": "5m", "description": "Cooldown for recently remediated signals" },
-                "ineffectiveChainThreshold": { "type": "integer", "default": 3, "description": "Ineffective workflow chain length before escalation" },
-                "recurrenceCountThreshold": { "type": "integer", "default": 5, "description": "Signal recurrence count before escalation" },
-                "ineffectiveTimeWindow": { "type": "string", "default": "4h", "description": "Time window for ineffectiveness evaluation" }
+                "consecutiveFailureThreshold": { "type": "integer", "default": 3, "minimum": 1, "description": "Failures before cooldown" },
+                "consecutiveFailureCooldown": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "1h", "description": "Cooldown after consecutive failures" },
+                "recentlyRemediatedCooldown": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m", "description": "Cooldown for recently remediated signals" },
+                "ineffectiveChainThreshold": { "type": "integer", "default": 3, "minimum": 1, "description": "Ineffective workflow chain length before escalation" },
+                "recurrenceCountThreshold": { "type": "integer", "default": 5, "minimum": 1, "description": "Signal recurrence count before escalation" },
+                "ineffectiveTimeWindow": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "4h", "description": "Time window for ineffectiveness evaluation" }
               }
             },
             "effectivenessAssessment": {
@@ -654,7 +669,7 @@
               "additionalProperties": false,
               "properties": {
                 "stabilizationWindow": {
-                  "type": "string",
+                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
                   "default": "5m",
                   "description": "Time for system stabilization after remediation before assessment"
                 }
@@ -665,17 +680,17 @@
               "additionalProperties": false,
               "properties": {
                 "gitOpsSyncDelay": {
-                  "type": "string",
+                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
                   "default": "3m",
                   "description": "Expected time for GitOps tool (ArgoCD/Flux) to sync changes to cluster"
                 },
                 "operatorReconcileDelay": {
-                  "type": "string",
+                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
                   "default": "1m",
                   "description": "Expected time for operator to reconcile after CR update"
                 },
                 "proactiveAlertDelay": {
-                  "type": "string",
+                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
                   "default": "5m",
                   "description": "Extra delay for proactive alert resolution"
                 }
@@ -698,7 +713,7 @@
               "description": "CRD retention TTL configuration (Issue #265)",
               "properties": {
                 "period": {
-                  "type": "string",
+                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
                   "default": "24h",
                   "description": "Duration before terminal RemediationRequests are cleaned up"
                 }
@@ -736,7 +751,7 @@
       "description": "WorkflowExecution controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -745,7 +760,7 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "cooldownPeriod": { "type": "string", "default": "1m", "description": "Cooldown between workflow executions" }
+                "cooldownPeriod": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "1m", "description": "Cooldown between workflow executions" }
               }
             },
             "tekton": {
@@ -763,7 +778,7 @@
               "required": ["apiURL"],
               "properties": {
                 "apiURL": { "type": "string", "minLength": 1, "description": "AWX/AAP API base URL (required when ansible is enabled)" },
-                "organizationID": { "type": "integer", "default": 1, "description": "AWX organization ID" },
+                "organizationID": { "type": "integer", "default": 1, "minimum": 1, "description": "AWX organization ID" },
                 "tokenSecretRef": {
                   "type": "object",
                   "description": "Reference to a K8s Secret containing the AWX API token",
@@ -810,7 +825,7 @@
       "description": "Notification controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "slack": {
           "type": "object",
           "description": "Slack quickstart shortcut. Auto-generates routing and credential projection when secretName is set.",
@@ -860,7 +875,7 @@
       "description": "EffectivenessMonitor controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -869,8 +884,8 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "stabilizationWindow": { "type": "string", "default": "30s", "description": "Time to wait after remediation before assessing effectiveness" },
-                "validityWindow": { "type": "string", "default": "120s", "description": "Time window for assessment validity" }
+                "stabilizationWindow": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s", "description": "Time to wait after remediation before assessing effectiveness" },
+                "validityWindow": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "120s", "description": "Time window for assessment validity" }
               }
             }
           }
@@ -903,7 +918,7 @@
       "description": "Kubernaut Agent (Go LLM investigation service)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "logging": { "$ref": "#/definitions/serviceLogging" },
         "resources": { "$ref": "#/definitions/resources" },
         "service": { "$ref": "#/definitions/serviceConfig" },
@@ -920,9 +935,9 @@
             "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA cert for internal LLM endpoints behind private CA. Static — requires pod restart." },
             "model": { "type": "string", "default": "", "description": "LLM model name (gpt-4o, claude-sonnet-4-20250514). Hot-reloadable." },
             "endpoint": { "type": "string", "default": "", "description": "LLM endpoint URL. Hot-reloadable." },
-            "temperature": { "type": "number", "default": 0.7, "description": "LLM sampling temperature. Hot-reloadable." },
-            "maxRetries": { "type": "integer", "default": 3, "description": "Max retries for LLM requests. Hot-reloadable." },
-            "timeoutSeconds": { "type": "integer", "default": 120, "description": "LLM request timeout in seconds. Hot-reloadable." },
+            "temperature": { "type": "number", "default": 0.7, "minimum": 0, "maximum": 2, "description": "LLM sampling temperature. Hot-reloadable." },
+            "maxRetries": { "type": "integer", "default": 3, "minimum": 0, "description": "Max retries for LLM requests. Hot-reloadable." },
+            "timeoutSeconds": { "type": "integer", "default": 120, "minimum": 1, "description": "LLM request timeout in seconds. Hot-reloadable." },
             "oauth2": {
               "type": "object",
               "description": "OAuth2 client credentials grant for enterprise LLM gateway authentication.",
@@ -940,7 +955,7 @@
               "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean", "default": false, "description": "Request reasoning/thinking output from the model where the provider/model supports it. Unsupported models silently skip the parameter rather than erroring." },
-                "budgetTokens": { "type": "integer", "default": 0, "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). 0 lets the provider/client choose a default. Anthropic-only; always wins over effort when set." },
+                "budgetTokens": { "type": "integer", "default": 0, "minimum": 0, "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). 0 lets the provider/client choose a default. Anthropic-only; always wins over effort when set." },
                 "effort": { "type": "string", "enum": ["", "none", "minimal", "low", "medium", "high", "xhigh"], "default": "", "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default. Supported on Anthropic (mapped to a thinking tier), real OpenAI/gpt-5/o-series models (reasoning_effort), and DeepSeek (downscaled to its own high/max dialect). effort: none combined with enabled: true is rejected for Anthropic/vertex_ai at startup." },
                 "capabilityOverride": { "type": "string", "enum": ["", "auto", "force_on", "force_off"], "default": "", "description": "Overrides vendor/model-name auto-detection of reasoning support. Only meaningful for self-hosted/custom models served via the openai_compatible provider, which cannot be reliably identified by vendor enum alone." }
               }
@@ -961,8 +976,8 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false, "description": "Enable the shadow alignment agent." },
-            "timeout": { "type": "string", "default": "10s", "description": "Per-step evaluation timeout." },
-            "maxStepTokens": { "type": "integer", "default": 500, "description": "Max evaluator response tokens per step." },
+            "timeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10s", "description": "Per-step evaluation timeout." },
+            "maxStepTokens": { "type": "integer", "default": 500, "minimum": 1, "description": "Max evaluator response tokens per step." },
             "llm": {
               "type": "object",
               "description": "Optional separate LLM config for alignment evaluation. Omit to reuse investigation LLM.",
@@ -982,11 +997,11 @@
           "additionalProperties": false,
           "properties": {
             "enabled": { "type": "boolean", "default": false, "description": "Enable MCP interactive mode endpoint and Lease-based session management." },
-            "sessionTTL": { "type": "string", "default": "30m", "description": "Maximum duration for an interactive session before auto-release." },
-            "inactivityTimeout": { "type": "string", "default": "10m", "description": "Session timeout after last activity." },
-            "maxConcurrentSessions": { "type": "integer", "default": 5, "description": "Maximum concurrent interactive sessions per instance." },
-            "rateLimitPerUser": { "type": "integer", "default": 10, "description": "Maximum requests per second per authenticated user." },
-            "maxAnalyzingTimeout": { "type": "string", "default": "45m", "description": "Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating." },
+            "sessionTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30m", "description": "Maximum duration for an interactive session before auto-release." },
+            "inactivityTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10m", "description": "Session timeout after last activity." },
+            "maxConcurrentSessions": { "type": "integer", "default": 5, "minimum": 1, "description": "Maximum concurrent interactive sessions per instance." },
+            "rateLimitPerUser": { "type": "integer", "default": 10, "minimum": 1, "description": "Maximum requests per second per authenticated user." },
+            "maxAnalyzingTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "45m", "description": "Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating." },
             "jwtProviders": {
               "type": "array",
               "description": "JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0).",
@@ -1019,7 +1034,7 @@
       "description": "AuthWebhook admission controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "logging": { "$ref": "#/definitions/serviceLogging" },
         "resources": { "$ref": "#/definitions/resources" },
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
@@ -1036,7 +1051,7 @@
       "description": "PostgreSQL (DataStorage backend). Set enabled=false to use external host/port (BYO #256)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "enabled": {
           "type": "boolean",
           "default": true,
@@ -1047,7 +1062,7 @@
           "default": "",
           "description": "External PostgreSQL host. Required when enabled=false."
         },
-        "port": { "type": "integer", "default": 5432 },
+        "port": { "type": "integer", "default": 5432, "minimum": 1, "maximum": 65535 },
         "image": {
           "type": "string",
           "default": "postgres:16-alpine"
@@ -1087,7 +1102,7 @@
       "description": "Valkey (DataStorage DLQ). Redis-compatible in-memory store. Set enabled=false to use external host/port (BYO #256)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "enabled": {
           "type": "boolean",
           "default": true,
@@ -1098,7 +1113,7 @@
           "default": "",
           "description": "External Valkey host. Required when enabled=false."
         },
-        "port": { "type": "integer", "default": 6379 },
+        "port": { "type": "integer", "default": 6379, "minimum": 1, "maximum": 65535 },
         "image": {
           "type": "string",
           "default": "valkey/valkey:8-alpine"
@@ -1131,7 +1146,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": false },
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "image": {
           "type": "object",
           "additionalProperties": false,
@@ -1141,8 +1156,8 @@
             "pullPolicy": { "type": "string", "default": "IfNotPresent" }
           }
         },
-        "syncInterval": { "type": "string", "default": "30s" },
-        "keyTTL": { "type": "string", "default": "45s" },
+        "syncInterval": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s" },
+        "keyTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "45s" },
         "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "Required when fleetmetadatacache.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
         "gatewayType": { "type": "string", "enum": ["eaigw", "kuadrant"], "default": "eaigw", "description": "MCP Gateway type: eaigw (Envoy AI Gateway) or kuadrant (Kuadrant MCP Gateway)" },
         "valkeyAddr": { "type": "string", "default": "" },
@@ -1156,7 +1171,14 @@
             "credentialsSecretRef": { "type": "string", "default": "", "description": "Secret with client-id and client-secret keys (REQUIRED)" }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" }
+        "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
+        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "tolerations": { "$ref": "#/definitions/tolerations" }
       }
     },
     "apifrontend": {
@@ -1165,7 +1187,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": true },
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "autoscaling": { "$ref": "#/definitions/autoscaling" },
         "image": {
           "type": "object",
@@ -1197,25 +1219,25 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "httpPort": { "type": "integer", "default": 8443 },
-                "metricsPort": { "type": "integer", "default": 9090 },
-                "healthPort": { "type": "integer", "default": 8081 }
+                "httpPort": { "type": "integer", "default": 8443, "minimum": 1, "maximum": 65535 },
+                "metricsPort": { "type": "integer", "default": 9090, "minimum": 1, "maximum": 65535 },
+                "healthPort": { "type": "integer", "default": 8081, "minimum": 1, "maximum": 65535 }
               }
             },
             "session": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "disconnectTTL": { "type": "string", "default": "10m" },
-                "retentionTTL": { "type": "string", "default": "720h" }
+                "disconnectTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10m" },
+                "retentionTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "720h" }
               }
             },
             "severityTriage": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "cacheTTLSeconds": { "type": "integer", "default": 30 },
-                "llmConfidence": { "type": "number", "default": 0.7 }
+                "cacheTTLSeconds": { "type": "integer", "default": 30, "minimum": 0 },
+                "llmConfidence": { "type": "number", "default": 0.7, "minimum": 0, "maximum": 1 }
               }
             },
             "auth": {
@@ -1257,7 +1279,7 @@
                   "description": "GAP-08 (Issue #1505): distributed jti replay-detection backend, shared across all APIFrontend replicas via the cluster's Valkey instance. Disabled by default (legacy in-memory, single-process cache).",
                   "properties": {
                     "enabled": { "type": "boolean", "default": false },
-                    "redisDB": { "type": "integer", "default": 1, "description": "Valkey logical DB index used for replay cache keys" }
+                    "redisDB": { "type": "integer", "default": 1, "minimum": 0, "maximum": 15, "description": "Valkey logical DB index used for replay cache keys" }
                   }
                 }
               }
@@ -1266,7 +1288,7 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "sarCacheTTL": { "type": "string", "default": "30s", "description": "TTL for SubjectAccessReview cache entries" },
+                "sarCacheTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s", "description": "TTL for SubjectAccessReview cache entries" },
                 "personas": {
                   "type": "object",
                   "description": "Map of persona name to list of allowed tool names for SAR-based authorization",
@@ -1280,6 +1302,11 @@
           }
         },
         "resources": { "$ref": "#/definitions/resources" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "pdb": { "$ref": "#/definitions/pdb" },
+        "affinity": { "$ref": "#/definitions/affinity" },
+        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
         "tolerations": { "$ref": "#/definitions/tolerations" }
       }
@@ -1290,7 +1317,7 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean", "default": false },
-        "replicas": { "type": "integer", "default": 1 },
+        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
         "pdb": { "$ref": "#/definitions/pdb" },
         "auth": {
           "type": "object",
@@ -1389,14 +1416,14 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "activeSessionsMax": { "type": "integer", "default": 10, "description": "Max concurrent interactive sessions before alerting" },
-                "activeSessionsFor": { "type": "string", "default": "5m", "description": "Duration threshold must be exceeded before firing" },
-                "leaseContentionRateMax": { "type": "number", "default": 0.1, "description": "Max Lease contention events/sec (5m rate)" },
-                "leaseContentionFor": { "type": "string", "default": "5m", "description": "Duration before firing" },
-                "commandDurationP99Max": { "type": "number", "default": 30, "description": "Max p99 command duration in seconds" },
-                "commandDurationFor": { "type": "string", "default": "10m", "description": "Duration before firing" },
-                "takeoverRateMax": { "type": "number", "default": 0.05, "description": "Max takeover events/sec (5m rate)" },
-                "takeoverRateFor": { "type": "string", "default": "15m", "description": "Duration before firing" }
+                "activeSessionsMax": { "type": "integer", "default": 10, "minimum": 0, "description": "Max concurrent interactive sessions before alerting" },
+                "activeSessionsFor": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m", "description": "Duration threshold must be exceeded before firing" },
+                "leaseContentionRateMax": { "type": "number", "default": 0.1, "minimum": 0, "description": "Max Lease contention events/sec (5m rate)" },
+                "leaseContentionFor": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m", "description": "Duration before firing" },
+                "commandDurationP99Max": { "type": "number", "default": 30, "minimum": 0, "description": "Max p99 command duration in seconds" },
+                "commandDurationFor": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10m", "description": "Duration before firing" },
+                "takeoverRateMax": { "type": "number", "default": 0.05, "minimum": 0, "description": "Max takeover events/sec (5m rate)" },
+                "takeoverRateFor": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "15m", "description": "Duration before firing" }
               }
             }
           }
@@ -1407,15 +1434,6 @@
       "type": "object",
       "description": "NetworkPolicy configuration for all Kubernaut services (Issue #285)",
       "additionalProperties": false,
-      "definitions": {
-        "serviceToggle": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        }
-      },
       "properties": {
         "enabled": {
           "type": "boolean",
@@ -1436,6 +1454,8 @@
         "apiServerPort": {
           "type": "integer",
           "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
           "description": "Port the K8s API server's real backend endpoint(s) listen on (commonly 6443), not necessarily the 'kubernetes' Service's port (443). 0 means auto-discover via `lookup` (falls back to 443 if unavailable)."
         },
         "monitoring": {
@@ -1450,11 +1470,15 @@
             "prometheusPort": {
               "type": "integer",
               "default": 9090,
+              "minimum": 1,
+              "maximum": 65535,
               "description": "Prometheus port to allow in the NetworkPolicy egress rule"
             },
             "alertManagerPort": {
               "type": "integer",
               "default": 9093,
+              "minimum": 1,
+              "maximum": 65535,
               "description": "AlertManager port to allow in the NetworkPolicy egress rule"
             }
           }
@@ -1471,6 +1495,8 @@
             "port": {
               "type": "integer",
               "default": 443,
+              "minimum": 1,
+              "maximum": 65535,
               "description": "Port for external webhook endpoints"
             }
           }
@@ -1487,6 +1513,8 @@
             "port": {
               "type": "integer",
               "default": 443,
+              "minimum": 1,
+              "maximum": 65535,
               "description": "Port for OCI container registry"
             }
           }
@@ -1504,70 +1532,18 @@
             }
           }
         },
-        "datastorage": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "aianalysis": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
+        "datastorage": { "$ref": "#/definitions/serviceToggle" },
+        "aianalysis": { "$ref": "#/definitions/serviceToggle" },
         "kubernautAgent": {
-          "type": "object",
-          "description": "NetworkPolicy toggle for Kubernaut Agent",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
+          "allOf": [{ "$ref": "#/definitions/serviceToggle" }],
+          "description": "NetworkPolicy toggle for Kubernaut Agent"
         },
-        "signalprocessing": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "remediationorchestrator": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "workflowexecution": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "notification": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "effectivenessmonitor": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "authwebhook": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
+        "signalprocessing": { "$ref": "#/definitions/serviceToggle" },
+        "remediationorchestrator": { "$ref": "#/definitions/serviceToggle" },
+        "workflowexecution": { "$ref": "#/definitions/serviceToggle" },
+        "notification": { "$ref": "#/definitions/serviceToggle" },
+        "effectivenessmonitor": { "$ref": "#/definitions/serviceToggle" },
+        "authwebhook": { "$ref": "#/definitions/serviceToggle" },
         "apifrontend": {
           "type": "object",
           "description": "BR-PLATFORM-005: NetworkPolicy toggle for APIFrontend",
@@ -1596,20 +1572,8 @@
             }
           }
         },
-        "postgresql": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        },
-        "valkey": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": { "type": "boolean", "default": true }
-          }
-        }
+        "postgresql": { "$ref": "#/definitions/serviceToggle" },
+        "valkey": { "$ref": "#/definitions/serviceToggle" }
       }
     }
   }

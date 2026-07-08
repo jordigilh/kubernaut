@@ -118,6 +118,65 @@ Usage:
 {{- end }}
 
 {{/*
+Combines kubernaut.fleet.oauth2 and kubernaut.fleet.config into a single
+call, replacing the two-line `include | fromYaml` preamble every
+fleet-capable service (gateway, remediationorchestrator, signalprocessing,
+effectivenessmonitor, apifrontend, fleetmetadatacache) previously repeated
+at its own top. Returns a dict with "oauth2" and "config" keys (both
+already fromYaml-parsed).
+Usage:
+  {{- $f := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.gateway.fleet "oauth2" .Values.gateway.fleet.oauth2) | fromYaml -}}
+  {{ $f.oauth2.tokenURL }} / {{ $f.config.mcpGatewayEndpoint }}
+*/}}
+{{- define "kubernaut.fleet.preamble" -}}
+{{- $oauth2 := include "kubernaut.fleet.oauth2" (dict "root" .root "svc" .oauth2) | fromYaml -}}
+{{- $config := include "kubernaut.fleet.config" (dict "root" .root "svc" .fleet) | fromYaml -}}
+{{- dict "oauth2" $oauth2 "config" $config | toYaml -}}
+{{- end }}
+
+{{/*
+HorizontalPodAutoscaler (autoscaling/v2) for a component, targeting a
+same-named Deployment. Ported from the Kubernaut Operator's HPA builders
+(kubernaut-operator/internal/resources/hpa.go); identical across every
+autoscaling-capable service — only name/autoscaling values vary.
+Usage: {{ include "kubernaut.hpa" (dict "root" $ "name" "datastorage" "autoscaling" .Values.datastorage.autoscaling) }}
+*/}}
+{{- define "kubernaut.hpa" -}}
+{{- if .autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .name }}
+  namespace: {{ .root.Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" .root | nindent 4 }}
+    app: {{ .name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .name }}
+  minReplicas: {{ .autoscaling.minReplicas }}
+  maxReplicas: {{ .autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .autoscaling.cpuTarget }}
+    {{- if gt (.autoscaling.memoryTarget | int) 0 }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .autoscaling.memoryTarget }}
+    {{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
 Common labels applied to every resource.
 */}}
 {{- define "kubernaut.labels" -}}
@@ -407,18 +466,67 @@ subjects:
 {{- end }}
 
 {{/*
-Render optional affinity and topologySpreadConstraints for a component pod spec.
-Usage: {{ include "kubernaut.affinity" .Values.gateway | nindent 6 }}
+Render affinity and topologySpreadConstraints for a component pod spec.
+DD-PLATFORM-004: injects a default soft (preferred, weight 100) pod
+anti-affinity spreading replicas across nodes by the given matchLabels,
+merged with any user-supplied .affinity override — user values win on
+conflicting keys, sibling keys (e.g. nodeAffinity, or an explicit empty
+preferredDuringSchedulingIgnoredDuringExecution: [] to opt out) merge
+additively. Ported from the Kubernaut Operator's preferredPodAntiAffinity
+(kubernaut-operator/internal/resources/deployments.go).
+Usage: {{ include "kubernaut.affinity" (dict "component" .Values.gateway "matchLabels" (dict "app" "gateway")) | nindent 6 }}
 */}}
 {{- define "kubernaut.affinity" -}}
-{{- with .affinity }}
+{{- $component := .component -}}
+{{- $defaultAntiAffinity := dict "podAntiAffinity" (dict "preferredDuringSchedulingIgnoredDuringExecution" (list (dict "weight" 100 "podAffinityTerm" (dict "topologyKey" "kubernetes.io/hostname" "labelSelector" (dict "matchLabels" .matchLabels))))) -}}
+{{- $userAffinity := $component.affinity | default dict -}}
 affinity:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-{{- with .topologySpreadConstraints }}
+  {{- toYaml (merge $userAffinity $defaultAntiAffinity) | nindent 2 }}
+{{- with $component.topologySpreadConstraints }}
 topologySpreadConstraints:
   {{- toYaml . | nindent 2 }}
 {{- end }}
+{{- end }}
+
+{{/*
+volumeMount for the inter-service-ca ConfigMap (mounts the shared CA bundle
+used to validate peer mTLS certs; see DD-PLATFORM-001). Identical across
+every consuming service — only the surrounding indentation varies.
+Usage: {{ include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
+*/}}
+{{- define "kubernaut.tlsCaVolumeMount" -}}
+- name: tls-ca
+  mountPath: /etc/tls-ca
+  readOnly: true
+{{- end }}
+
+{{/*
+volume for the inter-service-ca ConfigMap (optional so hook-mode/plain-HTTP
+installs without it still start; see DD-PLATFORM-001). Identical across
+every consuming service — only the surrounding indentation varies.
+Usage: {{ include "kubernaut.tlsCaVolume" . | nindent 8 }}
+*/}}
+{{- define "kubernaut.tlsCaVolume" -}}
+- name: tls-ca
+  configMap:
+    name: inter-service-ca
+    optional: true
+{{- end }}
+
+{{/*
+Common `metadata:` block for a NetworkPolicy manifest: name
+({{ kubernaut.fullname }}-<nameSuffix>), namespace, and labels
+(app: <appLabel> plus kubernaut.labels). Identical across every
+NetworkPolicy template — only nameSuffix/appLabel vary per component.
+Usage: {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "gateway" "appLabel" "gateway") }}
+*/}}
+{{- define "kubernaut.np.metadata" -}}
+metadata:
+  name: {{ include "kubernaut.fullname" .root }}-{{ .nameSuffix }}
+  namespace: {{ .root.Release.Namespace }}
+  labels:
+    app: {{ .appLabel }}
+    {{- include "kubernaut.labels" .root | nindent 4 }}
 {{- end }}
 
 {{/*
@@ -592,6 +700,20 @@ Usage: {{ include "kubernaut.containerSecurityContext" .Values.gateway | nindent
 {{- $defaults := dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" true "capabilities" (dict "drop" (list "ALL")) -}}
 {{- $override := .containerSecurityContext | default dict -}}
 {{- toYaml (merge $override $defaults) }}
+{{- end }}
+
+{{/*
+Generic merge(override, defaults) -> toYaml for a securityContext block,
+for components needing different defaults than kubernaut.podSecurityContext/
+kubernaut.containerSecurityContext above (e.g. postgresql/valkey, whose
+upstream images already run non-root and need write access to their own
+data directories, so they don't set runAsNonRoot/readOnlyRootFilesystem/
+capabilities.drop by default).
+Usage: {{ include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.podSecurityContext "defaults" (dict "seccompProfile" (dict "type" "RuntimeDefault"))) | nindent 8 }}
+*/}}
+{{- define "kubernaut.mergedSecurityContext" -}}
+{{- $override := .override | default dict -}}
+{{- toYaml (merge $override .defaults) }}
 {{- end }}
 
 {{/* ===== NetworkPolicy Helpers (Issue #285) ===== */}}

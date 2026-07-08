@@ -1,10 +1,9 @@
-{{- $signalprocessingOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.signalprocessing.fleet.oauth2) | fromYaml }}
-{{- $signalprocessingFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.signalprocessing.fleet) | fromYaml }}
+{{- $signalprocessingFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.signalprocessing.fleet "oauth2" .Values.signalprocessing.fleet.oauth2) | fromYaml }}
 {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
-{{- if not $signalprocessingOauth2.tokenURL }}
+{{- if not $signalprocessingFleetPreamble.oauth2.tokenURL }}
 {{- fail "signalprocessing.fleet.oauth2.tokenURL is required when signalprocessing.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
-{{- if not $signalprocessingOauth2.credentialsSecretRef }}
+{{- if not $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}
 {{- fail "signalprocessing.fleet.oauth2.credentialsSecretRef is required when signalprocessing.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
 {{- end }}
 {{- end }}
@@ -76,8 +75,8 @@ data:
     {{- if .Values.signalprocessing.fleet.endpoint }}
     fleet:
       endpoint: {{ .Values.signalprocessing.fleet.endpoint | quote }}
-      {{- if $signalprocessingFleet.mcpGatewayType }}
-      mcpGatewayType: {{ $signalprocessingFleet.mcpGatewayType | quote }}
+      {{- if $signalprocessingFleetPreamble.config.mcpGatewayType }}
+      mcpGatewayType: {{ $signalprocessingFleetPreamble.config.mcpGatewayType | quote }}
       {{- end }}
       {{- if .Values.signalprocessing.fleet.namespace }}
       namespace: {{ .Values.signalprocessing.fleet.namespace | quote }}
@@ -85,15 +84,15 @@ data:
       {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
-        tokenURL: {{ $signalprocessingOauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ $signalprocessingOauth2.credentialsSecretRef | quote }}
-        {{- if $signalprocessingOauth2.scopes }}
+        tokenURL: {{ $signalprocessingFleetPreamble.oauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef | quote }}
+        {{- if $signalprocessingFleetPreamble.oauth2.scopes }}
         scopes:
-          {{- range $signalprocessingOauth2.scopes }}
+          {{- range $signalprocessingFleetPreamble.oauth2.scopes }}
           - {{ . | quote }}
           {{- end }}
         {{- end }}
-        tlsCAFile: {{ $signalprocessingOauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+        tlsCAFile: {{ $signalprocessingFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- end }}
     {{- end }}
 ---
@@ -140,7 +139,7 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if eq $signalprocessingFleet.mcpGatewayType "kuadrant" }}
+  {{- if eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant" }}
   # BR-FLEET-003 (#1511): SP's ClusterRegistry watches MCPServerRegistration
   # CRs directly via a dynamic informer to evaluate the `cluster`
   # classification dimension when the Kuadrant MCP Gateway is used.
@@ -193,7 +192,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.signalprocessing | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.signalprocessing | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.signalprocessing "matchLabels" (dict "app" "signalprocessing-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.signalprocessing "global" .Values.global) | nindent 6 }}
       containers:
         - name: signalprocessing-controller
@@ -239,12 +238,10 @@ spec:
             - name: proactive-signal-mappings
               mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml
               subPath: proactive-signal-mappings.yaml
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
             - name: oauth2-credentials
-              mountPath: "/etc/signalprocessing/{{ $signalprocessingOauth2.credentialsSecretRef }}"
+              mountPath: "/etc/signalprocessing/{{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
           resources:
@@ -259,14 +256,11 @@ spec:
         - name: proactive-signal-mappings
           configMap:
             name: {{ .Values.signalprocessing.proactiveSignalMappings.existingConfigMap | default "signalprocessing-proactive-signal-mappings" }}
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
-            secretName: {{ $signalprocessingOauth2.credentialsSecretRef }}
+            secretName: {{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}
         {{- end }}
 ---
 apiVersion: v1

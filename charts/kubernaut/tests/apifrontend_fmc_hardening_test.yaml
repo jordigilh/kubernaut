@@ -1,0 +1,225 @@
+suite: apifrontend/fleetmetadatacache hardening gaps (chart refactor PR A)
+templates:
+  - templates/apifrontend/apifrontend.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+  - templates/pdb.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  kubernautAgent:
+    llm:
+      provider: openai
+      model: gpt-4
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  fleetmetadatacache:
+    enabled: true
+    mcpGatewayEndpoint: "http://mcp.example.com"
+    oauth2:
+      tokenURL: "http://oauth.example.com"
+      credentialsSecretRef: "fmc-creds"
+tests:
+  - it: "apifrontend Deployment gets default pod securityContext"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+
+  - it: "apifrontend container gets default containerSecurityContext (previously absent)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop[0]
+          value: ALL
+
+  - it: "apifrontend imagePullSecrets renders when global.imagePullSecrets is set"
+    set:
+      global:
+        imagePullSecrets:
+          - name: my-pull-secret
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets[0].name
+          value: my-pull-secret
+
+  - it: "apifrontend affinity/scheduling overrides are honored"
+    set:
+      apifrontend:
+        nodeSelector:
+          disktype: ssd
+        tolerations:
+          - key: dedicated
+            operator: Equal
+            value: kubernaut
+            effect: NoSchedule
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector.disktype
+          value: ssd
+      - equal:
+          path: spec.template.spec.tolerations[0].key
+          value: dedicated
+
+  - it: "fleetmetadatacache pod/container securityContext rendered output is unchanged (now via helper, not hardcoded)"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop[0]
+          value: ALL
+
+  - it: "fleetmetadatacache selector/matchLabels scheme (app.kubernetes.io/name) is untouched"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: fleetmetadatacache
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+          value: fleetmetadatacache
+
+  - it: "fleetmetadatacache resources gain standard chart labels (helm.sh/chart etc.) without touching selectors"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+
+  - it: "apifrontend PDB renders with app selector when enabled"
+    set:
+      apifrontend:
+        pdb:
+          enabled: true
+          maxUnavailable: 1
+    template: templates/pdb.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels.app
+          value: apifrontend
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+
+  - it: "fleetmetadatacache PDB renders with app.kubernetes.io/name selector when enabled"
+    set:
+      fleetmetadatacache:
+        pdb:
+          enabled: true
+          maxUnavailable: 1
+    template: templates/pdb.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: fleetmetadatacache
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+
+  - it: "fleetmetadatacache PDB does not render when fleetmetadatacache is disabled, even if pdb.enabled=true"
+    set:
+      fleetmetadatacache:
+        enabled: false
+        pdb:
+          enabled: true
+          maxUnavailable: 1
+      # DD-PLATFORM-004: pdb.enabled defaults to true for every other service;
+      # disable them all here so the only PDB that could possibly render is
+      # the (guarded) fleetmetadatacache one.
+      gateway:
+        pdb:
+          enabled: false
+      datastorage:
+        pdb:
+          enabled: false
+      aianalysis:
+        pdb:
+          enabled: false
+      signalprocessing:
+        pdb:
+          enabled: false
+      remediationorchestrator:
+        pdb:
+          enabled: false
+      workflowexecution:
+        pdb:
+          enabled: false
+      notification:
+        pdb:
+          enabled: false
+      effectivenessmonitor:
+        pdb:
+          enabled: false
+      kubernautAgent:
+        pdb:
+          enabled: false
+      authwebhook:
+        pdb:
+          enabled: false
+      apifrontend:
+        pdb:
+          enabled: false
+      console:
+        pdb:
+          enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/pdb.yaml

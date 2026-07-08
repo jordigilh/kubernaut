@@ -4,41 +4,38 @@
 # tls.certManager.issuerRef. ECDSA P-256 and DNS SANs mirror hook mode's
 # per-service certs exactly (tls-cert-job.yaml Section 2), so consumers
 # behave identically regardless of tls.mode.
+{{- range $i, $cert := list
+    (dict "name" "gateway-tls" "dnsNameBase" "gateway-service")
+    (dict "name" "datastorage-tls" "dnsNameBase" "data-storage-service")
+    (dict "name" "kubernautagent-tls" "dnsNameBase" "kubernaut-agent")
+  }}
+{{- if $i }}
+---
+{{- end }}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: gateway-tls
-  namespace: {{ .Release.Namespace }}
+  name: {{ $cert.name }}
+  namespace: {{ $.Release.Namespace }}
   labels:
-    {{- include "kubernaut.labels" . | nindent 4 }}
+    {{- include "kubernaut.labels" $ | nindent 4 }}
+  annotations:
+    {{- if not $i }}
+    # DD-PLATFORM-003: leaf Certificates render in ArgoCD's "-1" sync-wave so
+    # the Secret they produce already exists before the consuming Deployment
+    # (default wave "0") mounts it as `optional: true` -- otherwise the
+    # volume mounts empty and kubelet never retroactively populates it.
+    {{- end }}
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
-  secretName: gateway-tls
+  secretName: {{ $cert.name }}
+  {{- if not $i }}
   duration: 8760h   # 365 days
   renewBefore: 720h  # 30 days
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    name: kubernaut-interservice-ca-issuer
-    kind: Issuer
-    group: cert-manager.io
-  dnsNames:
-    - gateway-service
-    - gateway-service.{{ .Release.Namespace }}
-    - gateway-service.{{ .Release.Namespace }}.svc
-    - gateway-service.{{ .Release.Namespace }}.svc.cluster.local
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: datastorage-tls
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kubernaut.labels" . | nindent 4 }}
-spec:
-  secretName: datastorage-tls
+  {{- else }}
   duration: 8760h
   renewBefore: 720h
+  {{- end }}
   privateKey:
     algorithm: ECDSA
     size: 256
@@ -47,32 +44,9 @@ spec:
     kind: Issuer
     group: cert-manager.io
   dnsNames:
-    - data-storage-service
-    - data-storage-service.{{ .Release.Namespace }}
-    - data-storage-service.{{ .Release.Namespace }}.svc
-    - data-storage-service.{{ .Release.Namespace }}.svc.cluster.local
----
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: kubernautagent-tls
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kubernaut.labels" . | nindent 4 }}
-spec:
-  secretName: kubernautagent-tls
-  duration: 8760h
-  renewBefore: 720h
-  privateKey:
-    algorithm: ECDSA
-    size: 256
-  issuerRef:
-    name: kubernaut-interservice-ca-issuer
-    kind: Issuer
-    group: cert-manager.io
-  dnsNames:
-    - kubernaut-agent
-    - kubernaut-agent.{{ .Release.Namespace }}
-    - kubernaut-agent.{{ .Release.Namespace }}.svc
-    - kubernaut-agent.{{ .Release.Namespace }}.svc.cluster.local
+    - {{ $cert.dnsNameBase }}
+    - {{ $cert.dnsNameBase }}.{{ $.Release.Namespace }}
+    - {{ $cert.dnsNameBase }}.{{ $.Release.Namespace }}.svc
+    - {{ $cert.dnsNameBase }}.{{ $.Release.Namespace }}.svc.cluster.local
+{{- end }}
 {{- end }}
