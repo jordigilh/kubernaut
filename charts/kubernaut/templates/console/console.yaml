@@ -213,19 +213,14 @@ spec:
               mountPath: /opt/app-root/etc/nginx.default.d/kubernaut-server.conf
               subPath: server.conf
               readOnly: true
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
       volumes:
         - name: nginx-tmp
           emptyDir: {}
         - name: nginx-config
           configMap:
             name: console-nginx
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
 ---
 apiVersion: v1
 kind: Service

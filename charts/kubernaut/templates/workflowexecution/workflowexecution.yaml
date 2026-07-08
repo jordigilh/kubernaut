@@ -257,9 +257,7 @@ spec:
             - |
               { [ -s /etc/tls-ca/ca.crt ] && cat /etc/tls-ca/ca.crt; cat /etc/aap-ca/aap-ca.crt; } > /etc/combined-ca/ca-bundle.crt
           volumeMounts:
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             - name: aap-ca
               mountPath: /etc/aap-ca
               readOnly: true
@@ -315,9 +313,7 @@ spec:
             - name: config
               mountPath: /etc/config
               readOnly: true
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
             - name: combined-ca
               mountPath: /etc/combined-ca
@@ -329,10 +325,7 @@ spec:
         - name: config
           configMap:
             name: workflowexecution-config
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         {{- if and .Values.workflowexecution.config.ansible .Values.workflowexecution.config.ansible.caCertSecretRef }}
         - name: aap-ca
           secret:

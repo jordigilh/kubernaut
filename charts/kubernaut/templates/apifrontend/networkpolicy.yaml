@@ -9,12 +9,7 @@ externally-facing gap. Ported from the Operator's apifrontendNetworkPolicy()
 {{- if and .Values.networkPolicies.enabled .Values.networkPolicies.apifrontend.enabled .Values.apifrontend.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata:
-  name: {{ include "kubernaut.fullname" . }}-apifrontend
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: apifrontend
-    {{- include "kubernaut.labels" . | nindent 4 }}
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "apifrontend" "appLabel" "apifrontend") }}
 spec:
   podSelector:
     matchLabels:

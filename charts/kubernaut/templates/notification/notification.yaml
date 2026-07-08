@@ -210,9 +210,7 @@ spec:
               readOnly: true
             - name: notification-output
               mountPath: /tmp/notifications
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
           resources:
             {{- toYaml .Values.notification.resources | nindent 12 }}
       volumes:
@@ -246,10 +244,7 @@ spec:
           {{- end }}
         - name: notification-output
           emptyDir: {}
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
       terminationGracePeriodSeconds: 10
 ---
 apiVersion: v1

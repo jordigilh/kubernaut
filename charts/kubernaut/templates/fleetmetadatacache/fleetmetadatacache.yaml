@@ -1,13 +1,12 @@
 {{- if .Values.fleetmetadatacache.enabled }}
-{{- $fmcOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.fleetmetadatacache.oauth2) | fromYaml }}
-{{- $fmcFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.fleetmetadatacache) | fromYaml }}
-{{- if not $fmcFleet.mcpGatewayEndpoint }}
+{{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
+{{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
 {{- fail "fleetmetadatacache.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
 {{- end }}
-{{- if not $fmcOauth2.tokenURL }}
+{{- if not $fmcFleetPreamble.oauth2.tokenURL }}
 {{- fail "fleetmetadatacache.oauth2.tokenURL is required when fleetmetadatacache.enabled=true — MCP Gateway requires OAuth2 authentication (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
-{{- if not $fmcOauth2.credentialsSecretRef }}
+{{- if not $fmcFleetPreamble.oauth2.credentialsSecretRef }}
 {{- fail "fleetmetadatacache.oauth2.credentialsSecretRef is required when fleetmetadatacache.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
 {{- end }}
 ---
@@ -26,7 +25,7 @@ data:
       apiAddr: ":8080"
       metricsAddr: ":8081"
     mcpGateway:
-      endpoint: {{ $fmcFleet.mcpGatewayEndpoint | quote }}
+      endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
       gatewayType: {{ .Values.fleetmetadatacache.gatewayType | quote }}
       namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
     valkey:
@@ -35,7 +34,7 @@ data:
       interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
       keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
     oauth2:
-      tokenUrl: {{ $fmcOauth2.tokenURL | quote }}
+      tokenUrl: {{ $fmcFleetPreamble.oauth2.tokenURL | quote }}
       credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
 ---
 apiVersion: apps/v1
@@ -106,7 +105,7 @@ spec:
             name: fleetmetadatacache-config
         - name: oauth2-credentials
           secret:
-            secretName: {{ $fmcOauth2.credentialsSecretRef }}
+            secretName: {{ $fmcFleetPreamble.oauth2.credentialsSecretRef }}
 ---
 apiVersion: v1
 kind: Service

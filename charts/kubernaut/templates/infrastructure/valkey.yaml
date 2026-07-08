@@ -58,20 +58,16 @@ spec:
     spec:
       serviceAccountName: valkey
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
-      {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
-      {{- $pscOverride := .Values.valkey.podSecurityContext | default dict }}
       securityContext:
-        {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}
+        {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.valkey.podSecurityContext "defaults" (dict "seccompProfile" (dict "type" "RuntimeDefault"))) | nindent 8 }}
       {{- include "kubernaut.affinity" (dict "component" .Values.valkey "matchLabels" (dict "app" "valkey")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.valkey "global" .Values.global) | nindent 6 }}
       containers:
         - name: valkey
           image: {{ .Values.valkey.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
-          {{- $cscDefaults := dict "allowPrivilegeEscalation" false }}
-          {{- $cscOverride := .Values.valkey.containerSecurityContext | default dict }}
           securityContext:
-            {{- toYaml (merge $cscOverride $cscDefaults) | nindent 12 }}
+            {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.valkey.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false)) | nindent 12 }}
           ports:
             - name: valkey
               containerPort: 6379

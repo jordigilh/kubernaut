@@ -1,12 +1,7 @@
 {{- if and .Values.networkPolicies.enabled .Values.networkPolicies.authwebhook.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata:
-  name: {{ include "kubernaut.fullname" . }}-authwebhook
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: authwebhook
-    {{- include "kubernaut.labels" . | nindent 4 }}
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "authwebhook" "appLabel" "authwebhook") }}
 spec:
   podSelector:
     matchLabels:

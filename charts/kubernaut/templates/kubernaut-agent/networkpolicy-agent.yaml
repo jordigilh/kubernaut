@@ -1,12 +1,7 @@
 {{- if and .Values.networkPolicies.enabled .Values.networkPolicies.kubernautAgent.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata:
-  name: {{ include "kubernaut.fullname" . }}-kubernaut-agent
-  namespace: {{ .Release.Namespace }}
-  labels:
-    app: kubernaut-agent
-    {{- include "kubernaut.labels" . | nindent 4 }}
+{{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "kubernaut-agent" "appLabel" "kubernaut-agent") }}
 spec:
   podSelector:
     matchLabels:
