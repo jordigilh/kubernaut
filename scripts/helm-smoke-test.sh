@@ -292,24 +292,32 @@ assert_pods_ready() {
     # transiently starve the node, causing a controller's in-cluster
     # apiserver dial to time out during startup, or a TLS leaf-cert Secret /
     # inter-service-ca ConfigMap mount to race the cert-manager Certificate
-    # or sync hook Job that produces it (both self-heal once the burst
-    # subsides / the dependency appears, but a pod already in
-    # CrashLoopBackOff needs a delete to force an immediate re-schedule
-    # rather than waiting out its exponential backoff). Poll across multiple
-    # recovery passes instead of failing fast on the first timeout.
+    # or sync hook Job that produces it. Both self-heal via the container's
+    # own crash-loop restart cycle once the burst subsides / the dependency
+    # appears -- confirmed via must-gather, PR #1625 run 28919738536: at the
+    # moment of the first timeout every affected pod already showed exactly
+    # 3 restarts and 15-20s later (this same job's own `helm uninstall`
+    # pre-snapshot) was fully 1/1 Running with no further restarts, i.e. the
+    # actual fix here is a longer wait budget, not intervention. A pod is
+    # only force-deleted (to skip a long backoff rather than wait it out) if
+    # it is *currently* observed in CrashLoopBackOff -- a snapshot check can
+    # easily miss that state entirely if the container happens to be
+    # mid-restart at the instant of the check (as happened on the prior
+    # attempt at this fix), so every pass re-waits regardless of whether any
+    # crash-looping pod was found.
     local recovered=false
     for attempt in 1 2 3; do
       local crashing
       crashing=$(kubectl get pods -n "$ns" \
         -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[*].state.waiting.reason}{"\n"}{end}' 2>/dev/null | \
         awk '/CrashLoopBackOff/{print $1}')
-      if [[ -z "$crashing" ]]; then
-        echo "# Recovery: no crash-looping pods found on attempt ${attempt}/3" >&2
-        break
+      if [[ -n "$crashing" ]]; then
+        echo "# Recovery attempt ${attempt}/3: restarting crash-looping pods: ${crashing}" >&2
+        # shellcheck disable=SC2086
+        kubectl delete pod -n "$ns" $crashing >/dev/null 2>&1 || true
+      else
+        echo "# Recovery attempt ${attempt}/3: no pod currently snapshotted in CrashLoopBackOff -- re-waiting in case one is mid-restart" >&2
       fi
-      echo "# Recovery attempt ${attempt}/3: restarting crash-looping pods: ${crashing}" >&2
-      # shellcheck disable=SC2086
-      kubectl delete pod -n "$ns" $crashing >/dev/null 2>&1 || true
       if kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout=90s >/dev/null 2>&1; then
         recovered=true
         break
