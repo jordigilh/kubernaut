@@ -230,7 +230,7 @@ var _ = Describe("Streaming LLM call retry — #1612", func() {
 	})
 
 	Describe("UT-KA-1612-005: no retry once a stream callback has already fired this attempt", func() {
-		It("fails the turn immediately even though the error is retryable and budget remains", func() {
+		It("fails the turn immediately even though the error is retryable and budget remains, and the observer never sees a duplicated/interleaved delta", func() {
 			mock := &scriptedStreamClient{
 				chunksSeq: [][]string{{"partial", "delta"}},
 				errSeq:    []error{errors.New("transient error mid-stream")},
@@ -247,6 +247,22 @@ var _ = Describe("Streaming LLM call retry — #1612", func() {
 			Expect(err).To(HaveOccurred(), "must not retry after a partial stream delivery — would duplicate emitted events")
 			Expect(result).To(BeNil())
 			Expect(mock.callCount()).To(Equal(1))
+
+			// The business risk the issue actually describes is duplicate/
+			// interleaved delivery to an already-notified client — proving
+			// "no second network call" alone doesn't rule out a hypothetical
+			// future bug that re-emits cached deltas without re-calling
+			// StreamChat. Assert the observer's own event stream directly.
+			var deltas []string
+			for ev := range eventCh {
+				if ev.Type == session.EventTypeTokenDelta {
+					var data map[string]interface{}
+					Expect(json.Unmarshal(ev.Data, &data)).To(Succeed())
+					deltas = append(deltas, data["delta"].(string))
+				}
+			}
+			Expect(deltas).To(Equal([]string{"partial", "delta"}),
+				"the observer must see each emitted delta exactly once, in order — never duplicated or interleaved by a retry (#1612)")
 		})
 	})
 
@@ -275,7 +291,12 @@ var _ = Describe("Streaming LLM call retry — #1612", func() {
 			Expect(ctx.Err()).NotTo(HaveOccurred(), "parent context must still be alive — this is not a cancellation")
 
 			failedEvents := spy.eventsByType(audit.EventTypeResponseFailed)
-			Expect(failedEvents).NotTo(BeEmpty(), "exhausted retries must audit as ResponseFailed, not silently disappear")
+			Expect(failedEvents).To(HaveLen(1), "exactly one response-failed audit event expected (AU-3)")
+			Expect(failedEvents[0].EventAction).To(Equal(audit.ActionResponseFailed))
+			Expect(failedEvents[0].EventOutcome).To(Equal(audit.OutcomeFailure))
+			Expect(failedEvents[0].CorrelationID).To(Equal(streamingRetrySignal.RemediationID))
+			Expect(failedEvents[0].Data).To(HaveKeyWithValue("error_message", ContainSubstring("transient error 3")))
+			Expect(failedEvents[0].Data).To(HaveKey("phase"))
 
 			var events []session.InvestigationEvent
 			for ev := range eventCh {
