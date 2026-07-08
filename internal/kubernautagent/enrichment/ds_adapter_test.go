@@ -126,6 +126,85 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 		})
 	})
 
+	Describe("UT-KA-433W-014: DS adapter maps cluster-scoped and throughput metric_deltas fields (Issue #193, DD-EM-005 v1.1)", func() {
+		It("should map throughput and Node/PersistentVolume fields into enrichment.MetricDeltas", func() {
+			client := &stubDSClient{
+				response: &ogenclient.RemediationHistoryContext{
+					TargetResource: "cluster/Node/worker-1",
+					Tier1: ogenclient.RemediationHistoryTier1{
+						Chain: []ogenclient.RemediationHistoryEntry{
+							{
+								RemediationUID: "wf-node-recovery-001",
+								CompletedAt:    time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+								MetricDeltas: ogenclient.NewOptRemediationMetricDeltas(ogenclient.RemediationMetricDeltas{
+									ThroughputBeforeRps:      ogenclient.NewOptFloat64(120.0),
+									ThroughputAfterRps:       ogenclient.NewOptFloat64(150.0),
+									NodeNotReadyBefore:       ogenclient.NewOptFloat64(1.0),
+									NodeNotReadyAfter:        ogenclient.NewOptFloat64(0.0),
+									NodeMemoryPressureBefore: ogenclient.NewOptFloat64(1.0),
+									NodeMemoryPressureAfter:  ogenclient.NewOptFloat64(0.0),
+									NodeDiskPressureBefore:   ogenclient.NewOptFloat64(0.0),
+									NodeDiskPressureAfter:    ogenclient.NewOptFloat64(0.0),
+									PvPhaseFailedBefore:      ogenclient.NewOptFloat64(1.0),
+									PvPhaseFailedAfter:       ogenclient.NewOptFloat64(0.0),
+									PvPhasePendingBefore:     ogenclient.NewOptFloat64(0.0),
+									PvPhasePendingAfter:      ogenclient.NewOptFloat64(0.0),
+									PvUsageRatioBefore:       ogenclient.NewOptFloat64(0.95),
+									PvUsageRatioAfter:        ogenclient.NewOptFloat64(0.60),
+								}),
+							},
+						},
+					},
+				},
+			}
+
+			adapter := enrichment.NewDSAdapter(client)
+			result, err := adapter.GetRemediationHistory(context.Background(), "Node", "worker-1", "", "abc123")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Tier1).To(HaveLen(1))
+			md := result.Tier1[0].MetricDeltas
+			Expect(md).NotTo(BeNil())
+
+			Expect(*md.ThroughputBeforeRps).To(BeNumerically("~", 120.0))
+			Expect(*md.ThroughputAfterRps).To(BeNumerically("~", 150.0))
+			Expect(*md.NodeNotReadyBefore).To(BeNumerically("~", 1.0))
+			Expect(*md.NodeNotReadyAfter).To(BeNumerically("~", 0.0))
+			Expect(*md.NodeMemoryPressureBefore).To(BeNumerically("~", 1.0))
+			Expect(*md.NodeDiskPressureBefore).To(BeNumerically("~", 0.0))
+			Expect(*md.PvPhaseFailedBefore).To(BeNumerically("~", 1.0))
+			Expect(*md.PvPhasePendingBefore).To(BeNumerically("~", 0.0))
+			Expect(*md.PvUsageRatioBefore).To(BeNumerically("~", 0.95))
+			Expect(*md.PvUsageRatioAfter).To(BeNumerically("~", 0.60))
+		})
+
+		It("should leave cluster-scoped and throughput fields nil when absent (namespace-scoped target)", func() {
+			client := &stubDSClient{
+				response: &ogenclient.RemediationHistoryContext{
+					Tier1: ogenclient.RemediationHistoryTier1{
+						Chain: []ogenclient.RemediationHistoryEntry{
+							{
+								RemediationUID: "wf-ns-001",
+								CompletedAt:    time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+								MetricDeltas: ogenclient.NewOptRemediationMetricDeltas(ogenclient.RemediationMetricDeltas{
+									CpuBefore: ogenclient.NewOptFloat64(0.85),
+									CpuAfter:  ogenclient.NewOptFloat64(0.45),
+								}),
+							},
+						},
+					},
+				},
+			}
+
+			adapter := enrichment.NewDSAdapter(client)
+			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "abc123")
+			Expect(err).NotTo(HaveOccurred())
+			md := result.Tier1[0].MetricDeltas
+			Expect(md.ThroughputBeforeRps).To(BeNil())
+			Expect(md.NodeNotReadyBefore).To(BeNil())
+			Expect(md.PvUsageRatioBefore).To(BeNil())
+		})
+	})
+
 	Describe("UT-KA-433W-002: DS adapter returns empty result for empty DS history", func() {
 		It("should return empty Tier1/Tier2 slices, not nil", func() {
 			client := &stubDSClient{

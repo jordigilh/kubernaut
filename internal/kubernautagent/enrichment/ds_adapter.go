@@ -247,5 +247,71 @@ func mapMetricDeltas(md ogenclient.RemediationMetricDeltas) *MetricDeltas {
 		v := md.ErrorRateAfter.Value
 		result.ErrorRateAfter = &v
 	}
+	populateClusterScopedAndThroughputDeltas(result, md)
 	return result
+}
+
+// populateClusterScopedAndThroughputDeltas maps the throughput backfill and
+// the 6 cluster-scoped Node/PersistentVolume fields (Issue #193, DD-EM-005
+// v1.1) from the ogen-generated RemediationMetricDeltas into result. Extracted
+// from mapMetricDeltas to keep that function within the project's
+// line-length convention -- pure code motion alongside the new field
+// mappings, no behavior change to the existing fields mapped above.
+func populateClusterScopedAndThroughputDeltas(result *MetricDeltas, md ogenclient.RemediationMetricDeltas) {
+	if md.ThroughputBeforeRps.Set {
+		v := md.ThroughputBeforeRps.Value
+		result.ThroughputBeforeRps = &v
+	}
+	if md.ThroughputAfterRps.Set {
+		v := md.ThroughputAfterRps.Value
+		result.ThroughputAfterRps = &v
+	}
+	if md.NodeNotReadyBefore.Set {
+		v := md.NodeNotReadyBefore.Value
+		result.NodeNotReadyBefore = &v
+	}
+	if md.NodeNotReadyAfter.Set {
+		v := md.NodeNotReadyAfter.Value
+		result.NodeNotReadyAfter = &v
+	}
+	if md.NodeMemoryPressureBefore.Set {
+		v := md.NodeMemoryPressureBefore.Value
+		result.NodeMemoryPressureBefore = &v
+	}
+	if md.NodeMemoryPressureAfter.Set {
+		v := md.NodeMemoryPressureAfter.Value
+		result.NodeMemoryPressureAfter = &v
+	}
+	if md.NodeDiskPressureBefore.Set {
+		v := md.NodeDiskPressureBefore.Value
+		result.NodeDiskPressureBefore = &v
+	}
+	if md.NodeDiskPressureAfter.Set {
+		v := md.NodeDiskPressureAfter.Value
+		result.NodeDiskPressureAfter = &v
+	}
+	if md.PvPhaseFailedBefore.Set {
+		v := md.PvPhaseFailedBefore.Value
+		result.PvPhaseFailedBefore = &v
+	}
+	if md.PvPhaseFailedAfter.Set {
+		v := md.PvPhaseFailedAfter.Value
+		result.PvPhaseFailedAfter = &v
+	}
+	if md.PvPhasePendingBefore.Set {
+		v := md.PvPhasePendingBefore.Value
+		result.PvPhasePendingBefore = &v
+	}
+	if md.PvPhasePendingAfter.Set {
+		v := md.PvPhasePendingAfter.Value
+		result.PvPhasePendingAfter = &v
+	}
+	if md.PvUsageRatioBefore.Set {
+		v := md.PvUsageRatioBefore.Value
+		result.PvUsageRatioBefore = &v
+	}
+	if md.PvUsageRatioAfter.Set {
+		v := md.PvUsageRatioAfter.Value
+		result.PvUsageRatioAfter = &v
+	}
 }

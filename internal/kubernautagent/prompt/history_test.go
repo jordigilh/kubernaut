@@ -96,6 +96,33 @@ var _ = Describe("Remediation History Prompt Builder — KA Parity (#433)", func
 		It("should return N/A for nil metric deltas", func() {
 			Expect(prompt.FormatMetricDeltas(nil)).To(Equal("N/A"))
 		})
+
+		It("should format throughput and cluster-scoped Node/PV pairs (Issue #193, DD-EM-005 v1.1)", func() {
+			md := &enrichment.MetricDeltas{
+				ThroughputBeforeRps:      floatPtr(120.0),
+				ThroughputAfterRps:       floatPtr(150.0),
+				NodeNotReadyBefore:       floatPtr(1.0),
+				NodeNotReadyAfter:        floatPtr(0.0),
+				NodeMemoryPressureBefore: floatPtr(1.0),
+				NodeMemoryPressureAfter:  floatPtr(0.0),
+				NodeDiskPressureBefore:   floatPtr(0.0),
+				NodeDiskPressureAfter:    floatPtr(0.0),
+				PvPhaseFailedBefore:      floatPtr(1.0),
+				PvPhaseFailedAfter:       floatPtr(0.0),
+				PvPhasePendingBefore:     floatPtr(0.0),
+				PvPhasePendingAfter:      floatPtr(0.0),
+				PvUsageRatioBefore:       floatPtr(0.95),
+				PvUsageRatioAfter:        floatPtr(0.60),
+			}
+			result := prompt.FormatMetricDeltas(md)
+			Expect(result).To(ContainSubstring("throughput: 120.0 -> 150.0 rps"))
+			Expect(result).To(ContainSubstring("node_not_ready: 1 -> 0"))
+			Expect(result).To(ContainSubstring("node_memory_pressure: 1 -> 0"))
+			Expect(result).To(ContainSubstring("node_disk_pressure: 0 -> 0"))
+			Expect(result).To(ContainSubstring("pv_phase_failed: 1 -> 0"))
+			Expect(result).To(ContainSubstring("pv_phase_pending: 0 -> 0"))
+			Expect(result).To(ContainSubstring("pv_usage_ratio: 0.95 -> 0.60"))
+		})
 	})
 
 	Describe("UT-KA-433-HP-004: FormatTier1Entry — normal entry", func() {
