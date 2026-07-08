@@ -37,6 +37,12 @@ type poolEntry struct {
 	sessionID string
 	lastUsed  time.Time
 	onRelease func()
+	// relay is non-nil only for entries created via InjectVerified (the
+	// kubernaut_investigate handoff path, #1637/DD-AF-009). It lets
+	// PooledMCPClient.callPooledTool advertise which A2A call is
+	// currently in flight, so the background event-watcher goroutine can
+	// relay KA's mid-call notifications to it instead of dropping them.
+	relay *EventRelay
 }
 
 func extractSessionID(s PoolSession) string {
@@ -170,22 +176,9 @@ func (p *KASessionPool) tryReuseCachedSession(ctx context.Context, key poolKey, 
 // tool calls (discover_workflows, select_workflow) reuse the same connection
 // and driver lease without requiring a separate takeover.
 func (p *KASessionPool) Inject(rrID, username string, session PoolSession) {
-	key := poolKey{rrID: rrID, username: username}
-	sid := extractSessionID(session)
-
-	p.mu.Lock()
-	old, exists := p.entries[key]
-	p.entries[key] = &poolEntry{
-		session:   session,
-		sessionID: sid,
-		lastUsed:  time.Now(),
-	}
-	p.mu.Unlock()
-
-	if exists && old.session != nil {
-		_ = old.session.Close()
-	}
-	p.logger.Info("session injected into pool", "rr_id", rrID, "username", username, "mcp_session_id", sid)
+	p.injectEntry(rrID, username, session, nil, nil)
+	p.logger.Info("session injected into pool",
+		"rr_id", rrID, "username", username, "mcp_session_id", extractSessionID(session))
 }
 
 // InjectWithCleanup is like Inject but additionally stores an onRelease
@@ -194,6 +187,45 @@ func (p *KASessionPool) Inject(rrID, username string, session PoolSession) {
 // This enables deterministic cleanup of resources tied to the pooled session,
 // such as the watchTerminalEvents goroutine (#1438).
 func (p *KASessionPool) InjectWithCleanup(rrID, username string, session PoolSession, onRelease func()) {
+	p.injectEntry(rrID, username, session, onRelease, nil)
+	p.logger.Info("session injected into pool (with cleanup)",
+		"rr_id", rrID, "username", username, "mcp_session_id", extractSessionID(session))
+}
+
+// InjectVerified pings the session before injecting it into the pool. If the
+// session is dead (Ping fails), it is closed and an error is returned. This
+// avoids inserting sessions that died between creation and injection (#1442).
+// An optional onRelease callback is forwarded to InjectWithCleanup.
+//
+// InjectVerified always constructs and stores an EventRelay for the entry,
+// returned alongside the (nil) error on success (#1637/DD-AF-009). This is
+// the sole handoff path used after a blocking kubernaut_investigate, so the
+// injected session is guaranteed to still be receiving KA's live
+// notifications; RelayFor later exposes the same relay to
+// PooledMCPClient.callPooledTool. Callers that don't need it (most existing
+// callers) can discard it: `_, err := pool.InjectVerified(...)`.
+func (p *KASessionPool) InjectVerified(ctx context.Context, rrID, username string, session PoolSession, onRelease ...func()) (*EventRelay, error) {
+	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := session.Ping(pingCtx, nil); err != nil {
+		p.logger.Info("session dead on inject, skipping",
+			"rr_id", rrID, "username", username, "error", err.Error())
+		_ = session.Close()
+		return nil, fmt.Errorf("session dead on inject: %w", err)
+	}
+	var release func()
+	if len(onRelease) > 0 && onRelease[0] != nil {
+		release = onRelease[0]
+	}
+	relay := &EventRelay{}
+	p.injectEntry(rrID, username, session, release, relay)
+	return relay, nil
+}
+
+// injectEntry is the shared low-level entry-construction/replacement logic
+// used by Inject, InjectWithCleanup, and InjectVerified. relay may be nil
+// (Inject/InjectWithCleanup entries have no events channel to relay).
+func (p *KASessionPool) injectEntry(rrID, username string, session PoolSession, onRelease func(), relay *EventRelay) {
 	key := poolKey{rrID: rrID, username: username}
 	sid := extractSessionID(session)
 
@@ -204,6 +236,7 @@ func (p *KASessionPool) InjectWithCleanup(rrID, username string, session PoolSes
 		sessionID: sid,
 		lastUsed:  time.Now(),
 		onRelease: onRelease,
+		relay:     relay,
 	}
 	p.mu.Unlock()
 
@@ -215,27 +248,17 @@ func (p *KASessionPool) InjectWithCleanup(rrID, username string, session PoolSes
 			_ = old.session.Close()
 		}
 	}
-	p.logger.Info("session injected into pool (with cleanup)",
-		"rr_id", rrID, "username", username, "mcp_session_id", sid)
 }
 
-// InjectVerified pings the session before injecting it into the pool. If the
-// session is dead (Ping fails), it is closed and an error is returned. This
-// avoids inserting sessions that died between creation and injection (#1442).
-// An optional onRelease callback is forwarded to InjectWithCleanup.
-func (p *KASessionPool) InjectVerified(ctx context.Context, rrID, username string, session PoolSession, onRelease ...func()) error {
-	pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-	defer cancel()
-	if err := session.Ping(pingCtx, nil); err != nil {
-		p.logger.Info("session dead on inject, skipping",
-			"rr_id", rrID, "username", username, "error", err.Error())
-		_ = session.Close()
-		return fmt.Errorf("session dead on inject: %w", err)
-	}
-	if len(onRelease) > 0 && onRelease[0] != nil {
-		p.InjectWithCleanup(rrID, username, session, onRelease[0])
-	} else {
-		p.Inject(rrID, username, session)
+// RelayFor returns the EventRelay for the pooled entry keyed by
+// (rrID, username), or nil if no entry exists or the entry has no relay
+// (e.g. it was created via Inject/InjectWithCleanup rather than
+// InjectVerified). #1637/DD-AF-009.
+func (p *KASessionPool) RelayFor(rrID, username string) *EventRelay {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	if e, ok := p.entries[poolKey{rrID: rrID, username: username}]; ok {
+		return e.relay
 	}
 	return nil
 }

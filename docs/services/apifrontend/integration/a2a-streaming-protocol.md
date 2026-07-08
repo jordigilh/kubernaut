@@ -126,6 +126,7 @@ All ephemeral/progress content uses `TaskStatusUpdateEvent`:
 | Type | Description | Rendering Guidance |
 |------|-------------|--------------------|
 | `reasoning` | LLM inner thoughts, investigation reasoning deltas | Dimmed/collapsible, like Claude Code's "thinking" |
+| `reasoning_content` | Captured LLM reasoning/thinking-channel content (BR-AI-086, distinct from `reasoning`'s free-text narration deltas — see below) | Dimmed/collapsible "thinking" panel, same treatment as `reasoning` |
 | `status` | Orchestration progress ("Analyzing...", tool call summaries) | Ephemeral/italic, substatus indicator |
 | `output` | Execution progress (JSON steps from kubernaut_watch) | Progress bar or step list |
 | `decision` | Legacy structured decision (pre-#1399 path, StatusUpdateEvent) | Rich workflow card |
@@ -170,6 +171,39 @@ The `kubernaut_investigate` FunctionResponse is suppressed in streaming mode bec
 the EventBridge has already delivered the investigation results progressively as
 reasoning events. Without suppression, the user would see duplicate content: once
 during streaming and again when the FunctionResponse is converted to a text part.
+
+### `reasoning` vs `reasoning_content` (BR-AI-086, #1635)
+
+Two distinct status event types both drive a "thinking panel" style UI, but carry
+different content:
+
+- **`reasoning`**: free-text narration deltas synthesized by AF's own ADK LLM loop
+  (tool-call preambles, `Thought` parts, intermediate text) — see Event Routing
+  Pipeline above.
+- **`reasoning_content`**: the LLM's own captured reasoning/thinking-channel output
+  (e.g. a DeepSeek/vLLM-style `reasoning_content` field, or Anthropic extended
+  thinking) as recorded by KA during its investigation LLM calls (BR-AI-086), relayed
+  to AF verbatim via a dedicated `reasoning_content_delta` KA event type (not
+  overloaded onto the generic `reasoning_delta` KA event, so client behavior can
+  diverge from generic reasoning if desired — currently both render identically).
+
+Both are safe to treat identically by clients that don't need to distinguish them;
+they use the same `EmitReasoningContentSafe`/`EmitReasoningSafe` rendering path and
+the same redaction (`redacted: true` suppresses text) semantics.
+
+### Live Event Relay for Pooled Interactive Calls (#1637, DD-AF-009)
+
+Live streaming is **not** exclusive to the initial `kubernaut_investigate` call.
+Follow-up interactive turns — `kubernaut_message`, `discover_workflows`,
+`select_workflow`, `complete_no_action` — reuse the same underlying MCP session
+(handed off into a session pool after the initial call completes) and now relay any
+KA event arriving mid-call (`reasoning`, `reasoning_content`, `status`,
+`investigation`, etc.) to that call's SSE stream exactly as the initial investigation
+does. Previously these events were silently dropped once the session moved into the
+pool — this was a genuine streaming gap for the majority of an interactive session's
+lifetime (only the first turn ever streamed live progress), now closed. No wire or
+schema change: the same event types and metadata shapes documented in this file now
+simply reach the stream from a code path that used to drop them.
 
 Similarly, `kubernaut_present_decision` FunctionResponse is suppressed because the
 decision is emitted as a structured ArtifactUpdateEvent at FunctionCall time (the
@@ -277,6 +311,27 @@ render a progress stepper while standard clients show it as text.
   "metadata": {"type": "reasoning"}
 }
 ```
+
+### Reasoning Content Event (captured LLM reasoning, BR-AI-086)
+
+```json
+{
+  "kind": "status-update",
+  "status": {
+    "state": "working",
+    "timestamp": "2026-07-08T12:00:01Z",
+    "message": {
+      "role": "agent",
+      "parts": [{"kind": "text", "text": "Memory usage climbed steadily before the OOMKill, consistent with a slow leak..."}]
+    }
+  },
+  "metadata": {"type": "reasoning_content"}
+}
+```
+
+This event can arrive during the initial `kubernaut_investigate` call **or** during a
+later `kubernaut_message` turn on the same interactive session (#1637) — clients
+should not assume `reasoning_content` only appears once per conversation.
 
 ### Execution Progress Event
 

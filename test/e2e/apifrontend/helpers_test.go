@@ -111,6 +111,28 @@ func a2aMessageStream(id, text string) string {
 	})
 }
 
+// a2aMessageStreamWithContext is like a2aMessageStream but takes an explicit
+// shared contextID instead of deriving one from id. Used by multi-turn tests
+// (#1637) where a follow-up turn must land in the same ADK session as an
+// earlier turn — e.g. a kubernaut_investigate call followed by a
+// kubernaut_message call continuing that same interactive session. Since
+// SessionInterceptor only overrides ContextID when the message doesn't
+// already set one (see pkg/apifrontend/launcher/session_interceptor.go),
+// passing the identical contextID across calls is sufficient for ADK-level
+// session continuity — no interceptor involvement required.
+func a2aMessageStreamWithContext(id, contextID, text string) string {
+	return buildJSONRPC(id, "message/stream", map[string]interface{}{
+		"message": map[string]interface{}{
+			"messageId": "msg-" + id,
+			"contextId": contextID,
+			"role":      "user",
+			"parts": []map[string]interface{}{
+				{"kind": "text", "text": text},
+			},
+		},
+	})
+}
+
 // rpcResponse represents a JSON-RPC 2.0 response.
 type rpcResponse struct {
 	JSONRPC string          `json:"jsonrpc"`

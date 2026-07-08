@@ -641,6 +641,80 @@ var _ = Describe("A2A Streaming Reasoning (#1399)", Ordered, Label("e2e", "phase
 			"SI-4: SSE stream must contain at least one reasoning-type event")
 	})
 
+	// E2E-AF-1637-001 (formerly attempted as E2E-AF-1635-001 and removed —
+	// see git history / DD-AF-009 for the investigation): a true E2E journey
+	// ("real KA subprocess -> MCP wire -> AF subprocess -> SSE") for a
+	// kubernaut_message-driven turn was not reachable before #1637 because
+	// AF's `kubernaut_message` tool (PooledMCPClient.InvokeAction) never
+	// attached an EventBridge to the pooled session's residual event
+	// channel — only the initial `kubernaut_investigate` call did. #1637
+	// (DD-AF-009) closes that gap with an EventRelay attach/detach pointer
+	// consumed by WatchTerminalEvents, making this journey reachable.
+	It("E2E-AF-1637-001 (SI-4, AU-3): kubernaut_message turn relays live reasoning_content to SSE", func() {
+		rrName := "rr-reasoning-e2e-1637"
+		Expect(createRR(e2eNamespace, rrName, "Deployment", "reasoning-e2e-app")).To(Succeed())
+		DeferCleanup(func() { deleteRR(e2eNamespace, rrName) })
+
+		const sharedCtxID = "ctx-reasoning-e2e-1637-shared"
+		streamCtx, streamCancel := context.WithTimeout(context.Background(), 3*time.Minute)
+		defer streamCancel()
+
+		// Turn 1: kubernaut_investigate opens the interactive session for the
+		// pre-existing RR (af_investigate_reasoning_capture mock-LLM scenario).
+		resp1, err := a2aSSEPostReq(streamCtx, a2aMessageStreamWithContext("reasoning-e2e-1637-t1", sharedCtxID, "start reasoning capture investigation"))
+		Expect(err).NotTo(HaveOccurred())
+		func() {
+			defer func() { _ = resp1.Body.Close() }()
+			Expect(resp1.StatusCode).To(Equal(http.StatusOK), "turn 1 HTTP status")
+			_, _ = io.Copy(io.Discard, resp1.Body)
+		}()
+
+		// Turn 2: kubernaut_message, same shared A2A contextId so the ADK
+		// session (and therefore AF's phase-guard "active driver" state)
+		// continues from turn 1 (af_drive_reasoning_capture mock-LLM
+		// scenario, repeat_tool_call: true since the ADK session already has
+		// turn 1's function-call result). The embedded "mock_reasoning_capture"
+		// keyword drives KA's own mock-LLM to return a captured reasoning
+		// block (BR-AI-086), which KA emits as reasoning_content_delta on the
+		// same pooled MCP session turn 1 handed off — #1637's EventRelay is
+		// what makes this reach turn 2's SSE stream instead of being dropped.
+		resp2, err := a2aSSEPostReq(streamCtx, a2aMessageStreamWithContext("reasoning-e2e-1637-t2", sharedCtxID, "drive reasoning capture turn"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp2.Body.Close() }()
+		Expect(resp2.StatusCode).To(Equal(http.StatusOK), "turn 2 HTTP status")
+
+		var foundReasoningContent bool
+		sc := bufio.NewScanner(resp2.Body)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+		for sc.Scan() {
+			line := strings.TrimRight(sc.Text(), "\r")
+			if !strings.HasPrefix(strings.TrimSpace(line), "data:") {
+				continue
+			}
+			data := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+			if data == "" {
+				continue
+			}
+			var evt map[string]any
+			if err := json.Unmarshal([]byte(data), &evt); err != nil {
+				continue
+			}
+			result, _ := evt["result"].(map[string]any)
+			if result == nil {
+				continue
+			}
+			meta, _ := result["metadata"].(map[string]any)
+			if meta != nil && meta["type"] == "reasoning_content" {
+				foundReasoningContent = true
+				break
+			}
+		}
+		Expect(foundReasoningContent).To(BeTrue(),
+			"E2E-AF-1637-001: turn 2's SSE stream must contain a metadata.type=reasoning_content event, "+
+				"proving the real KA subprocess -> MCP wire -> AF subprocess -> SSE journey for the "+
+				"previously-unreachable kubernaut_message path (#1634, #1635, #1637, DD-AF-009)")
+	})
+
 	It("E2E-AF-1399-002: SSE stream emits TaskArtifactUpdateEvent for structured decision", func() {
 		streamCtx, streamCancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer streamCancel()
