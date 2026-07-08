@@ -632,6 +632,143 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 				"should preserve the generic Job condition message when no enriching Pod event is found")
 		})
 
+		// Issue #1645 / BR-WORKFLOW-008: extends the Job engine's runtime
+		// observability (already present for dependency-mount failures, see
+		// UT-WE-054-JOB-018 above) to container image-pull failures, mirroring
+		// the Tekton engine's existing ImagePullBackOff message classification
+		// (internal/controller/workflowexecution/failure_analysis.go). This
+		// gap is more relevant since Issue #1642 removed the DataStorage
+		// pre-flight execution.bundle registry existence check -- bad/
+		// unreachable bundle references now always surface here at runtime.
+		It("UT-WE-054-JOB-028 [BR-WORKFLOW-008]: should enrich Failed message with the kubelet's detailed image-pull-failure event", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/bad-image")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Failed: 1,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobFailed,
+							Status:  corev1.ConditionTrue,
+							Reason:  "DeadlineExceeded",
+							Message: "Job was active longer than specified deadline",
+						},
+					},
+				},
+			}
+			evt := &corev1.Event{
+				ObjectMeta: metav1.ObjectMeta{Name: "evt-errimagepull", Namespace: namespace},
+				InvolvedObject: corev1.ObjectReference{
+					Kind:      "Pod",
+					Name:      jobName + "-x7k2m",
+					Namespace: namespace,
+				},
+				// Real kubelet event: Reason is the generic "Failed" -- the
+				// specific detail lives in the message (see
+				// pkg/kubelet/images/image_manager.go upstream).
+				Reason:  "Failed",
+				Message: `Failed to pull image "quay.io/kubernaut/bad-bundle:v1": rpc error: code = NotFound desc = manifest unknown`,
+				Type:    corev1.EventTypeWarning,
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, evt).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-bad-image", "default/deployment/bad-image", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			Expect(result.Message).To(ContainSubstring("manifest unknown"),
+				"BR-WORKFLOW-008: message should be enriched with the specific image-pull failure detail from the Pod event")
+		})
+
+		It("UT-WE-054-JOB-029 [BR-WORKFLOW-008]: should enrich Failed message with a terse 'Error: ImagePullBackOff' event when no detailed event exists", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/backoff-image")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Failed: 1,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobFailed,
+							Status:  corev1.ConditionTrue,
+							Reason:  "DeadlineExceeded",
+							Message: "Job was active longer than specified deadline",
+						},
+					},
+				},
+			}
+			evt := &corev1.Event{
+				ObjectMeta: metav1.ObjectMeta{Name: "evt-imagepullbackoff", Namespace: namespace},
+				InvolvedObject: corev1.ObjectReference{
+					Kind:      "Pod",
+					Name:      jobName + "-x7k2m",
+					Namespace: namespace,
+				},
+				Reason:  "Failed",
+				Message: "Error: ImagePullBackOff",
+				Type:    corev1.EventTypeWarning,
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, evt).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-backoff-image", "default/deployment/backoff-image", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			Expect(result.Message).To(ContainSubstring("ImagePullBackOff"),
+				"BR-WORKFLOW-008: message should be enriched even from the terse image-pull-backoff event variant")
+		})
+
+		It("UT-WE-054-JOB-030 [BR-WORKFLOW-008]: should NOT misclassify an unrelated 'Failed' Pod event as an image-pull failure", func() {
+			jobName := executor.ExecutionResourceName("default/deployment/probe-failure")
+			job := &batchv1.Job{
+				ObjectMeta: metav1.ObjectMeta{Name: jobName, Namespace: namespace},
+				Status: batchv1.JobStatus{
+					Failed: 1,
+					Conditions: []batchv1.JobCondition{
+						{
+							Type:    batchv1.JobFailed,
+							Status:  corev1.ConditionTrue,
+							Reason:  "BackoffLimitExceeded",
+							Message: "Job has reached the specified backoff limit",
+						},
+					},
+				},
+			}
+			// kubelet reuses the generic "Failed" reason for many unrelated
+			// container lifecycle events (e.g. liveness probe failures) --
+			// this must NOT be misread as an image-pull failure.
+			evt := &corev1.Event{
+				ObjectMeta: metav1.ObjectMeta{Name: "evt-probe-failed", Namespace: namespace},
+				InvolvedObject: corev1.ObjectReference{
+					Kind:      "Pod",
+					Name:      jobName + "-x7k2m",
+					Namespace: namespace,
+				},
+				Reason:  "Failed",
+				Message: "Liveness probe failed: HTTP probe failed with statuscode: 500",
+				Type:    corev1.EventTypeWarning,
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job, evt).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+
+			wfe := newTestWFE("wfe-probe-failure", "default/deployment/probe-failure", "")
+			wfe.Status.ExecutionRef = &corev1.LocalObjectReference{Name: jobName}
+
+			result, err := je.GetStatus(ctx, wfe, namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			Expect(result.Message).To(Equal("Job has reached the specified backoff limit"),
+				"an unrelated 'Failed' event (e.g. probe failure) must not be misclassified as an image-pull failure")
+		})
+
 		It("UT-WE-054-JOB-007: should return Running when Job has no terminal condition", func() {
 			jobName := executor.ExecutionResourceName("default/deployment/running")
 			completions := int32(1)

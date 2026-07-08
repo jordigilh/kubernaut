@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -53,6 +54,37 @@ const (
 var podMountFailureReasons = map[string]bool{
 	"FailedMount":                true,
 	"CreateContainerConfigError": true,
+}
+
+// imagePullFailureReasons are the kubelet Event reasons that MAY indicate a
+// container image could not be pulled (Issue #1645, BR-WORKFLOW-008),
+// mirroring the Tekton engine's existing ImagePullBackOff message
+// classification (internal/controller/workflowexecution/failure_analysis.go).
+//
+// Unlike podMountFailureReasons, a reason match alone is not sufficient:
+// kubelet reuses the generic "Failed" and "BackOff" reasons for many
+// unrelated container lifecycle events (e.g. liveness probe failures,
+// CrashLoopBackOff), so isImagePullFailureEvent also checks the message text.
+var imagePullFailureReasons = map[string]bool{
+	"Failed":  true,
+	"BackOff": true,
+}
+
+// isImagePullFailureEvent reports whether evt is a kubelet Event describing
+// a container image-pull failure, as opposed to some other cause of the
+// generic "Failed"/"BackOff" reason. Real kubelet image-pull events always
+// mention "pull image" in the detailed message (e.g. `Failed to pull image
+// "x": rpc error: ...`) or, for the terser retry-summary variant, "Error:
+// ErrImagePull" / "Error: ImagePullBackOff" (see
+// k8s.io/kubernetes/pkg/kubelet/images).
+func isImagePullFailureEvent(evt corev1.Event) bool {
+	if !imagePullFailureReasons[evt.Reason] {
+		return false
+	}
+	messageLower := strings.ToLower(evt.Message)
+	return strings.Contains(messageLower, "pull image") ||
+		strings.Contains(messageLower, "errimagepull") ||
+		strings.Contains(messageLower, "imagepullbackoff")
 }
 
 // JobExecutor implements the Executor interface for Kubernetes Jobs.
@@ -184,11 +216,12 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 const jobPodNameSuffixLength = 5
 
 // enrichFailureMessage inspects Events involving the failed Job's Pod(s) for
-// a FailedMount or CreateContainerConfigError reason and, if found, returns
+// a FailedMount/CreateContainerConfigError reason (missing Secret/ConfigMap
+// dependency, #1481) or an image-pull failure (#1645) and, if found, returns
 // its message in place of the generic Job condition message
 // (BR-WORKFLOW-008). Since dependency existence is no longer pre-flight
-// validated (#1481), this is the only place the specific missing
-// Secret/ConfigMap name surfaces.
+// validated (#1481) and, as of #1642, neither is execution.bundle image
+// existence, this is the only place either specific failure detail surfaces.
 //
 // Deliberately does NOT list the Job's Pods first: Kubernetes' job-controller
 // deletes a Job's active Pods as soon as ActiveDeadlineSeconds is exceeded —
@@ -215,7 +248,7 @@ func (j *JobExecutor) enrichFailureMessage(ctx context.Context, c ExecutorClient
 		if evt.InvolvedObject.Kind != "Pod" || !isJobPodName(evt.InvolvedObject.Name, podNamePrefix) {
 			continue
 		}
-		if podMountFailureReasons[evt.Reason] {
+		if podMountFailureReasons[evt.Reason] || isImagePullFailureEvent(evt) {
 			return evt.Message
 		}
 	}

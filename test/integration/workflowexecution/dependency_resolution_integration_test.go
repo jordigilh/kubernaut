@@ -172,6 +172,31 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 				"BR-WORKFLOW-008: failure message should name the missing resource from the Pod's FailedMount event")
 		})
 
+		It("IT-WE-1645-001 [BR-WORKFLOW-008]: should enrich the Failed message from the Pod's image-pull-failure event", func() {
+			wfe := createUniqueJobWFE("depres-1645-001", "default/deployment/dep-test-1645-001")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+			defer cleanupJobWFE(wfe)
+
+			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "Job should be created")
+
+			// EnvTest has no kubelet/job-controller: simulate the kubelet-emitted
+			// image-pull-failure Pod event + terminal JobFailed condition a real
+			// cluster would produce for an unreachable/nonexistent bundle image
+			// (Issue #1642 removed the DataStorage pre-flight check that used to
+			// catch some of these earlier, at registration time).
+			const badImageMessage = `Failed to pull image "quay.io/kubernaut/nonexistent-1645:v1": rpc error: code = NotFound desc = manifest unknown`
+			Expect(simulateJobFailureWithMissingDependency(job, "Failed", badImageMessage)).To(Succeed())
+
+			failedWFE, err := waitForWFEPhase(wfe.Name, wfe.Namespace, "Failed", 15*time.Second)
+			Expect(err).ToNot(HaveOccurred(), "WFE should reach Failed once the Job reaches a terminal JobFailed condition")
+
+			Expect(failedWFE.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			Expect(failedWFE.Status.FailureDetails).ToNot(BeNil())
+			Expect(failedWFE.Status.FailureDetails.Message).To(ContainSubstring("manifest unknown"),
+				"BR-WORKFLOW-008: failure message should surface the specific image-pull failure detail from the Pod event")
+		})
+
 		It("IT-WE-006-005: should create Job without dependency volumes when querier returns nil", func() {
 			testWorkflowQuerier.Deps = nil
 
