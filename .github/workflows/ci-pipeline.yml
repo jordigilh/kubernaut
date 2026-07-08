@@ -1410,11 +1410,48 @@ jobs:
       # therefore tolerated here (`|| true`); "Verify GitOps deployment"
       # below asserts the specific resources that actually matter with
       # their own precise waits, instead of relying on aggregate app health.
+      # RCA (PR #1625 run 28916308187, 2026-07-08): the very first cert-manager
+      # run of this job hit a *terminal* sync failure, not the tolerated
+      # health-timeout above -- the operation phase flipped straight to
+      # "Failed" with message "one or more synchronization tasks completed
+      # unsuccessfully" while every sync-wave "-1" resource was in fact
+      # Healthy by the time the operation ended (confirmed via must-gather:
+      # datastorage-signing-cert, the 3 leaf Certificates, and the
+      # kubernaut-interservice-ca-issuer Issuer were all momentarily observed
+      # Degraded -- "Issuing certificate as Secret does not exist" / "Error
+      # getting keypair for CA issuer" -- for exactly one controller poll
+      # before self-healing). ArgoCD's sync engine records a sync task's
+      # phase as Failed the instant it sees this and never re-evaluates it,
+      # so it refuses to progress into sync-wave "0" (gateway, etc.) for the
+      # rest of that operation even though the gating wave *did* finish
+      # Healthy moments later -- this is a documented upstream behavior, not
+      # a chart defect (argoproj/argo-cd#9721: "when a hook fails [i.e. any
+      # sync task], even when it is retried and eventually successful, this
+      # will block argocd from continuing the sync"). A brand new sync
+      # operation re-evaluates current live state -- by then everything from
+      # the previous attempt is already Synced/Healthy -- so retry a bounded
+      # number of times before falling back to the pre-existing
+      # health-timeout tolerance.
       - name: Sync ArgoCD Application
         if: matrix.tls_mode == 'cert-manager'
         run: |
-          argocd app sync kubernaut-gitops-smoke --server-side --timeout 180 || \
-            echo "::notice::sync timed out waiting for full pod health (expected -- some controllers need real LLM credentials/config this smoke test doesn't provide) -- proceeding to targeted resource checks"
+          for attempt in 1 2 3; do
+            if argocd app sync kubernaut-gitops-smoke --server-side --timeout 180; then
+              echo "::notice::ArgoCD sync succeeded on attempt $attempt"
+              break
+            fi
+            phase=$(argocd app get kubernaut-gitops-smoke -o json 2>/dev/null | jq -r '.status.operationState.phase // "Unknown"')
+            if [ "$phase" != "Failed" ] && [ "$phase" != "Error" ]; then
+              echo "::notice::sync timed out waiting for full pod health (expected -- some controllers need real LLM credentials/config this smoke test doesn't provide) -- proceeding to targeted resource checks"
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::notice::sync operation phase '$phase' (attempt $attempt/3) -- terminal sync failure, likely a transient ArgoCD sync-wave health race (argoproj/argo-cd#9721); retrying with a fresh sync operation"
+              sleep 5
+            else
+              echo "::warning::sync failed 3 times with terminal phase '$phase' -- proceeding to targeted resource checks regardless, which will fail below if this was not a transient race"
+            fi
+          done
           argocd app get kubernaut-gitops-smoke || true
 
       # DD-PLATFORM-002 residual nuance (shared with tls.mode=hook under plain
