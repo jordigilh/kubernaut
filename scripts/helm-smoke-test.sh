@@ -284,31 +284,37 @@ assert_pods_ready() {
   local desc="${2:-ST-CHART-VERIFY-001: ${expected_count} pods reach 1/1 Running}"
   local ns="${3:-$NAMESPACE}"
 
-  if ! kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout="$TIMEOUT_PODS" >/dev/null 2>&1; then
-    # CI resource-contention recovery (twin of ci-pipeline.yml's "Recover pods
-    # that raced the migration/CA-sync Jobs" step for the ArgoCD flow -- see
-    # that step's comment for the full RCA): a burst of ~14 controllers +
-    # postgres/valkey starting simultaneously on a constrained runner can
-    # transiently starve the node, causing a controller's in-cluster
-    # apiserver dial to time out during startup, or a TLS leaf-cert Secret /
-    # inter-service-ca ConfigMap mount to race the cert-manager Certificate
-    # or sync hook Job that produces it. Both self-heal via the container's
-    # own crash-loop restart cycle once the burst subsides / the dependency
-    # appears -- confirmed via must-gather, PR #1625 run 28919738536: at the
-    # moment of the first timeout every affected pod already showed exactly
-    # 3 restarts and 15-20s later (this same job's own `helm uninstall`
-    # pre-snapshot) was fully 1/1 Running with no further restarts, i.e. the
-    # actual fix here is a longer wait budget, not intervention. A pod is
-    # only force-deleted (to skip a long backoff rather than wait it out) if
-    # it is *currently* observed in CrashLoopBackOff -- a snapshot check can
-    # easily miss that state entirely if the container happens to be
-    # mid-restart at the instant of the check (as happened on the prior
-    # attempt at this fix), so every pass re-waits regardless of whether any
-    # crash-looping pod was found.
+  # RCA (must-gather, PR #1625 runs 28919738536 + 28920637199, 2026-07-08):
+  # `--all` includes the completed db-migration/interservice-ca-sync hook Job
+  # pods. A Job pod's `Ready` condition is permanently `status: "False",
+  # reason: PodCompleted` once its container exits (Completed/Succeeded is a
+  # terminal phase for a restartPolicy!=Always pod) -- it can never satisfy
+  # `--for=condition=Ready`, so `kubectl wait --for=condition=Ready pod --all`
+  # was guaranteed to run out the full timeout on *every* invocation as soon
+  # as those Job pods were still present, regardless of how ready the 13 real
+  # Deployment pods actually were (confirmed via must-gather pods.yaml: the
+  # `gateway` pod's own Ready condition had already flipped True ~68s after
+  # creation, while the wait command timed out 5+ minutes later regardless).
+  # This became visible only after dropping `hook-succeeded` from the hook
+  # Jobs' delete policy in this same PR (7233fd765) -- previously ArgoCD/Helm
+  # deleted the Job pods immediately on success, so `--all` never actually
+  # observed them long enough to matter. `-l '!job-name'` excludes every
+  # Job-owned pod (Kubernetes auto-labels all Job pods with `job-name`), not
+  # just today's two hooks, so this stays correct if more hook Jobs are added.
+  local pod_selector='!job-name'
+
+  if ! kubectl wait --for=condition=Ready pod -l "$pod_selector" -n "$ns" --timeout="$TIMEOUT_PODS" >/dev/null 2>&1; then
+    # Defense in depth for genuine CI resource contention (a burst of ~14
+    # controllers + postgres/valkey starting simultaneously on a constrained
+    # runner can transiently starve the node, or a TLS leaf-cert Secret /
+    # inter-service-ca ConfigMap mount can race the cert-manager Certificate
+    # or sync hook Job that produces it): if the corrected wait above still
+    # times out, force-delete any pod actually observed in CrashLoopBackOff
+    # (to skip its exponential backoff) and re-wait, across a few passes.
     local recovered=false
     for attempt in 1 2 3; do
       local crashing
-      crashing=$(kubectl get pods -n "$ns" \
+      crashing=$(kubectl get pods -n "$ns" -l "$pod_selector" \
         -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[*].state.waiting.reason}{"\n"}{end}' 2>/dev/null | \
         awk '/CrashLoopBackOff/{print $1}')
       if [[ -n "$crashing" ]]; then
@@ -318,7 +324,7 @@ assert_pods_ready() {
       else
         echo "# Recovery attempt ${attempt}/3: no pod currently snapshotted in CrashLoopBackOff -- re-waiting in case one is mid-restart" >&2
       fi
-      if kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout=90s >/dev/null 2>&1; then
+      if kubectl wait --for=condition=Ready pod -l "$pod_selector" -n "$ns" --timeout=90s >/dev/null 2>&1; then
         recovered=true
         break
       fi
