@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -87,10 +86,8 @@ func (h *Handler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate external checks in parallel (Issue #1070)
-	// Typed-result-slot pattern: each check writes to its own error slot,
-	// then we check slots in priority order so callers always see the same
-	// RFC 7807 error type regardless of goroutine completion order.
+	// Validate external checks (action-type taxonomy — Issue #1642 removed
+	// the last other check, execution.bundle image existence).
 	if err := h.validateExternalChecks(r.Context(), workflow); err != nil {
 		err.writeTo(w, h.logger)
 		return
@@ -291,115 +288,56 @@ func (ve *validationError) writeTo(w http.ResponseWriter, logger logr.Logger) {
 	response.WriteRFC7807Error(w, ve.status, ve.errorType, ve.title, ve.detail, logger)
 }
 
-// validateExternalChecks runs Steps 5a–5b (action-type, bundle-exists)
-// in parallel and returns the highest-priority error, preserving the
-// original sequential error contract.
+// validateExternalChecks runs Step 5a (action-type taxonomy) and returns
+// its error, if any.
 //
-// A 10-second timeout budget bounds the total wall-clock time for all
-// external calls, preventing a degraded backend from consuming the
-// entire server WriteTimeout.
-//
-// Issue #1070: Typed-result-slot pattern — each goroutine writes to its
-// own slot; after all goroutines complete we check slots in priority order.
+// A 10-second timeout budget bounds the external call, preventing a
+// degraded backend from consuming the entire server WriteTimeout.
 //
 // Issue #1481: Step 5c (schema-declared dependency existence check,
 // DD-WE-006) was removed — Kubernetes now validates dependency existence
 // exclusively at runtime when the WorkflowExecution's Job/PipelineRun
 // attempts to mount the volume/workspace (BR-WORKFLOW-008).
+//
+// Issue #1642: Step 5b (execution.bundle image existence check) was
+// removed — the same pre-flight/runtime context mismatch applies: a check
+// running from the DataStorage pod's own network/credential context cannot
+// validate self-signed or credential-required private registries reachable
+// only by the actual workflow execution environment, which unconditionally
+// blocked valid registrations. Kubernetes now fails fast at Job/PipelineRun
+// image-pull time instead, extending the same BR-WORKFLOW-008 pattern.
+//
+// With only one external check remaining, Issue #1070's typed-result-slot/
+// goroutine pattern (built for running multiple checks in parallel) no
+// longer serves a purpose and has been collapsed back into a direct
+// sequential call.
 func (h *Handler) validateExternalChecks(
 	ctx context.Context,
 	workflow *models.RemediationWorkflow,
 ) *validationError {
-	const (
-		slotActionType = iota
-		slotBundle
-		slotCount
-
-		validationTimeout = 10 * time.Second
-	)
+	const validationTimeout = 10 * time.Second
 
 	ctx, cancel := context.WithTimeout(ctx, validationTimeout)
 	defer cancel()
 
-	var (
-		slots [slotCount]*validationError
-		mu    sync.Mutex
-		wg    sync.WaitGroup
-	)
-
-	totalStart := time.Now()
-
-	setSlot := func(idx int, ve *validationError) {
-		mu.Lock()
-		slots[idx] = ve
-		mu.Unlock()
+	if h.actionTypeValidator == nil {
+		return nil
 	}
 
-	h.launchExternalValidationGoroutines(ctx, &wg, workflow, setSlot, validationSlots{
-		actionType: slotActionType,
-		bundle:     slotBundle,
-	})
-
-	wg.Wait()
-
-	// Return the highest-priority error (lowest slot index).
-	for _, slot := range slots {
-		if slot != nil {
-			dsmetrics.WorkflowValidationDuration.WithLabelValues("total", "error").Observe(time.Since(totalStart).Seconds())
-			return slot
-		}
+	totalStart := time.Now()
+	ve := h.validateActionType(ctx, workflow)
+	if ve != nil {
+		dsmetrics.WorkflowValidationDuration.WithLabelValues("total", "error").Observe(time.Since(totalStart).Seconds())
+		return ve
 	}
 	dsmetrics.WorkflowValidationDuration.WithLabelValues("total", "ok").Observe(time.Since(totalStart).Seconds())
 	return nil
 }
 
-// validationSlots groups the typed-result-slot indices (Issue #1070) used by
-// launchExternalValidationGoroutines, so the function stays within the
-// 7-argument limit (100go.co anti-pattern: functions with 8+ parameters).
-type validationSlots struct {
-	actionType int
-	bundle     int
-}
-
-// launchExternalValidationGoroutines fires steps 5a-5b of validateExternalChecks
-// (action-type, bundle-exists) as parallel goroutines against wg, each
-// reporting into its typed result slot via setSlot. Extracted from
-// validateExternalChecks (Wave 6 6f GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func (h *Handler) launchExternalValidationGoroutines(
-	ctx context.Context,
-	wg *sync.WaitGroup,
-	workflow *models.RemediationWorkflow,
-	setSlot func(idx int, ve *validationError),
-	slots validationSlots,
-) {
-	// 5a: Validate action_type against taxonomy (GAP-4, DD-WORKFLOW-016)
-	if h.actionTypeValidator != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			h.validateActionTypeSlot(ctx, workflow, func(ve *validationError) { setSlot(slots.actionType, ve) })
-		}()
-	}
-
-	// 5b: Validate execution bundle image exists in the registry (skip for ansible — Git repo)
-	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" &&
-		workflow.ExecutionEngine != models.ExecutionEngineAnsible && h.schemaExtractor != nil {
-		bundleRef := *workflow.ExecutionBundle
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			h.validateBundleExistsSlot(ctx, bundleRef, func(ve *validationError) { setSlot(slots.bundle, ve) })
-		}()
-	}
-}
-
-// validateActionTypeSlot implements step 5a of validateExternalChecks:
-// validate workflow.ActionType against the action-type taxonomy
-// (GAP-4, DD-WORKFLOW-016), reporting the result via setSlot. Extracted
-// from validateExternalChecks (Wave 6 6f GREEN: funlen remediation) — pure
-// code motion, no behavior change.
-func (h *Handler) validateActionTypeSlot(ctx context.Context, workflow *models.RemediationWorkflow, setSlot func(*validationError)) {
+// validateActionType implements step 5a of validateExternalChecks: validate
+// workflow.ActionType against the action-type taxonomy (GAP-4,
+// DD-WORKFLOW-016).
+func (h *Handler) validateActionType(ctx context.Context, workflow *models.RemediationWorkflow) *validationError {
 	start := time.Now()
 	exists, err := h.actionTypeValidator.ActionTypeExists(ctx, workflow.ActionType)
 	if err != nil {
@@ -407,48 +345,24 @@ func (h *Handler) validateActionTypeSlot(ctx context.Context, workflow *models.R
 		h.logger.Error(err, "Failed to validate action_type against taxonomy",
 			"action_type", workflow.ActionType,
 		)
-		setSlot(&validationError{
+		return &validationError{
 			status:    http.StatusInternalServerError,
 			errorType: "internal-error",
 			title:     "Internal Server Error",
 			detail:    "Failed to validate action type",
-		})
-		return
+		}
 	}
 	if !exists {
 		dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "error").Observe(time.Since(start).Seconds())
-		setSlot(&validationError{
+		return &validationError{
 			status:    http.StatusBadRequest,
 			errorType: "validation-error",
 			title:     "Validation Error",
 			detail:    fmt.Sprintf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", workflow.ActionType),
-		})
-		return
+		}
 	}
 	dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "ok").Observe(time.Since(start).Seconds())
-}
-
-// validateBundleExistsSlot implements step 5b of validateExternalChecks:
-// validate that the execution bundle image resolves in the registry,
-// reporting the result via setSlot. Extracted from validateExternalChecks
-// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior
-// change.
-func (h *Handler) validateBundleExistsSlot(ctx context.Context, bundleRef string, setSlot func(*validationError)) {
-	start := time.Now()
-	if err := h.schemaExtractor.ValidateBundleExists(ctx, bundleRef); err != nil {
-		dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "error").Observe(time.Since(start).Seconds())
-		h.logger.Error(err, "Execution bundle image not found in registry",
-			"execution_bundle", bundleRef,
-		)
-		setSlot(&validationError{
-			status:    http.StatusBadRequest,
-			errorType: "bundle-not-found",
-			title:     "Execution Bundle Not Found",
-			detail:    "execution.bundle image could not be resolved; verify the image reference is correct",
-		})
-		return
-	}
-	dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "ok").Observe(time.Since(start).Seconds())
+	return nil
 }
 
 // contentIntegrityError is returned when an active workflow with the same

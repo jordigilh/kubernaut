@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 
@@ -260,29 +259,14 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 				"error detail must indicate schema validation failure")
 		})
 
-		It("UT-WF-017-013: should reject inline registration when execution.bundle image does not exist in registry", func() {
-			puller := oci.NewMockImagePullerWithFailingExists(
-				validDigestOnlyBundleSchemaYAML,
-				fmt.Errorf("MANIFEST_UNKNOWN: manifest unknown"),
-			)
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeInlineCreateRequest(validDigestOnlyBundleSchemaYAML)
-			rr := httptest.NewRecorder()
-
-			handler.HandleCreateWorkflow(rr, req)
-
-			Expect(rr.Code).To(Equal(http.StatusBadRequest),
-				"non-existent execution.bundle must be rejected with 400")
-			Expect(rr.Header().Get("Content-Type")).To(ContainSubstring("application/problem+json"),
-				"error response must use RFC 7807 content type")
-
-			var problem map[string]interface{}
-			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
-				"response body must be valid RFC 7807 JSON")
-			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/bundle-not-found"),
-				"RFC 7807 type must be bundle-not-found")
-			Expect(problem["detail"]).To(ContainSubstring("execution.bundle"),
-				"error detail must reference the bundle field")
-		})
+		// UT-WF-017-013 ("should reject inline registration when execution.bundle
+		// image does not exist in registry") was removed by Issue #1642: the
+		// pre-flight registry existence check ran from the DataStorage pod's own
+		// network/credential context, which cannot validate self-signed or
+		// credential-required private registries reachable only by the actual
+		// workflow execution environment — this unconditionally blocked valid
+		// registrations. Kubernetes now fails fast at Job/PipelineRun image-pull
+		// time instead (BR-WORKFLOW-008), mirroring the precedent set by Issue
+		// #1481 for schema-declared dependency existence checks.
 	})
 })

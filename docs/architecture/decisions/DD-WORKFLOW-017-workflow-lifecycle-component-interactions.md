@@ -728,7 +728,7 @@ This DD **supersedes**:
 - **Priority**: P0 (blocking for DD-004 compliance)
 - **Description**: All HTTP error responses (4xx, 5xx) from workflow registration and lifecycle management endpoints MUST use RFC 7807 Problem Details format per DD-004. Each error response must include the `type` URI (`https://kubernaut.ai/problems/{error-type}`), `title`, `detail`, `status`, and `instance` fields, with `Content-Type: application/problem+json`.
 - **Acceptance Criteria**:
-  - All validation errors (400, 409, 422, 502) during registration use RFC 7807 format with domain-specific error types (e.g., `unknown-action-type`, `duplicate-workflow`, `schema-not-found`, `image-pull-failed`)
+  - All validation errors (400, 409, 422, 502) during registration use RFC 7807 format with domain-specific error types (e.g., `unknown-action-type`, `duplicate-workflow`, `schema-not-found`)
   - Invalid lifecycle transitions return 409 with error type `invalid-transition` and actionable `detail` text
   - Missing mandatory `reason` field on lifecycle PATCH endpoints returns 400 with error type `validation-error`
   - `Content-Type: application/problem+json` header is set on all error responses

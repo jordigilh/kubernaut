@@ -35,7 +35,7 @@
 - Phase 1 (#292) format migration (covered by [Phase 1 Test Plan](../292/TEST_PLAN.md))
 - Seed-workflows Helm Job migration to CRD manifests (deferred, Step 8)
 - AW integration tests with real Kind cluster (deferred to E2E)
-- OCI bundle validation (`ValidateBundleExists`) -- unchanged, still uses OCI puller
+- OCI bundle validation (`ValidateBundleExists`) -- unchanged at the time of this plan, still used the OCI puller; **removed by Issue #1642** (pre-flight registry existence check could not validate self-signed/credential-required private registries)
 
 ### Design Decisions
 
