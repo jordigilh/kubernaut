@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -31,13 +32,16 @@ import (
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"knative.dev/pkg/apis"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -1179,6 +1183,202 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(1*time.Minute),
 				"MarkFailed must schedule RequeueAfter so ReconcileTerminal runs to release the lock (#375)")
+		})
+	})
+
+	// ========================================
+	// Issue #1597: duplicate audit writes on RetryOnConflict retries
+	//
+	// Root cause: MarkCompleted/MarkFailed/MarkFailedWithReason recorded the
+	// terminal audit event INSIDE the AtomicStatusUpdate closure. When
+	// Status().Update() hit an optimistic-lock conflict, RetryOnConflict
+	// re-ran the ENTIRE closure — including the audit call — producing one
+	// duplicate audit write per retry for a single logical transition.
+	//
+	// Fix (DD-WE-009): audit is now recorded by recordTerminalAudit AFTER the
+	// primary AtomicStatusUpdate durably commits, then the AuditRecorded
+	// condition outcome is persisted via a second, idempotent
+	// AtomicStatusUpdate. These tests inject exactly one conflict on the
+	// FIRST Status().Update() call (via interceptor.Funcs) to prove the
+	// audit event count stays at 1 regardless of retries.
+	// ========================================
+	Describe("Issue #1597: terminal audit recorded exactly once despite conflict retries", func() {
+		// newConflictOnFirstAttemptClient builds a fake client whose FIRST
+		// Status().Update() call fails with a conflict (simulating a
+		// concurrent writer winning the race), then succeeds on every
+		// subsequent call. Returns the client and a counter of total
+		// SubResourceUpdate attempts observed.
+		newConflictOnFirstAttemptClient := func(objs ...client.Object) (client.Client, *int32) {
+			var attempts int32
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objs...).
+				WithStatusSubresource(objs...).
+				WithInterceptorFuncs(interceptor.Funcs{
+					SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+						if atomic.AddInt32(&attempts, 1) == 1 {
+							return apierrors.NewConflict(
+								schema.GroupResource{Group: "workflowexecution.kubernaut.ai", Resource: "workflowexecutions"},
+								obj.GetName(),
+								fmt.Errorf("simulated concurrent status write"),
+							)
+						}
+						return c.Status().Update(ctx, obj, opts...)
+					},
+				}).
+				Build()
+			return fakeClient, &attempts
+		}
+
+		It("UT-WE-1597-001: MarkCompleted records exactly one workflow.completed audit event despite a conflict retry", func() {
+			startTime := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-1597-completed", Namespace: "default"},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/app-1597",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      "restart-deployment",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase:     workflowexecutionv1alpha1.PhaseRunning,
+					StartTime: &startTime,
+				},
+			}
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      weexecutor.ExecutionResourceName(wfe.Spec.TargetResource),
+					Namespace: "kubernaut-workflows",
+				},
+			}
+
+			fakeClient, attempts := newConflictOnFirstAttemptClient(wfe)
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
+			reconciler := &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           recorder,
+				ExecutionNamespace: "kubernaut-workflows",
+				AuditStore:         auditStore,
+				StatusManager:      status.NewManager(fakeClient),
+				AuditManager:       audit.NewManager(auditStore, logr.Discard()),
+			}
+
+			_, err := reconciler.MarkCompleted(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred(), "RetryOnConflict must absorb the injected conflict and succeed")
+			Expect(atomic.LoadInt32(attempts)).To(BeNumerically(">=", 2),
+				"the injected conflict must have forced at least one retry")
+
+			Expect(auditStore.events).To(HaveLen(1),
+				"exactly one workflow.completed audit event must be recorded despite the conflict retry")
+
+			var updated workflowexecutionv1alpha1.WorkflowExecution
+			Expect(reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+			cond := meta.FindStatusCondition(updated.Status.Conditions, "AuditRecorded")
+			Expect(cond).ToNot(BeNil(), "AuditRecorded condition must be persisted")
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+
+		It("UT-WE-1597-002: MarkFailed records exactly one workflow.failed audit event despite a conflict retry", func() {
+			startTime := metav1.NewTime(time.Now().Add(-45 * time.Second))
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-1597-failed", Namespace: "default"},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/failing-app-1597",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      "restart-deployment",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase:     workflowexecutionv1alpha1.PhaseRunning,
+					StartTime: &startTime,
+				},
+			}
+			pr := &tektonv1.PipelineRun{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      weexecutor.ExecutionResourceName(wfe.Spec.TargetResource),
+					Namespace: "kubernaut-workflows",
+				},
+			}
+			pr.Status.SetCondition(&apis.Condition{
+				Type:    apis.ConditionSucceeded,
+				Status:  corev1.ConditionFalse,
+				Reason:  "Failed",
+				Message: "Task 'apply-memory-increase' failed: permission denied",
+			})
+
+			fakeClient, attempts := newConflictOnFirstAttemptClient(wfe)
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
+			reconciler := &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           recorder,
+				ExecutionNamespace: "kubernaut-workflows",
+				AuditStore:         auditStore,
+				StatusManager:      status.NewManager(fakeClient),
+				AuditManager:       audit.NewManager(auditStore, logr.Discard()),
+			}
+
+			_, err := reconciler.MarkFailed(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred(), "RetryOnConflict must absorb the injected conflict and succeed")
+			Expect(atomic.LoadInt32(attempts)).To(BeNumerically(">=", 2),
+				"the injected conflict must have forced at least one retry")
+
+			Expect(auditStore.events).To(HaveLen(1),
+				"exactly one workflow.failed audit event must be recorded despite the conflict retry")
+
+			var updated workflowexecutionv1alpha1.WorkflowExecution
+			Expect(reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			cond := meta.FindStatusCondition(updated.Status.Conditions, "AuditRecorded")
+			Expect(cond).ToNot(BeNil(), "AuditRecorded condition must be persisted")
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		})
+
+		It("UT-WE-1597-003: MarkFailedWithReason records exactly one workflow.failed audit event despite a conflict retry", func() {
+			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
+				ObjectMeta: metav1.ObjectMeta{Name: "wfe-1597-preexec-failed", Namespace: "default"},
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					TargetResource: "default/deployment/quota-app-1597",
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowID:      "restart-deployment",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+					},
+				},
+				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
+					Phase: workflowexecutionv1alpha1.PhasePending,
+				},
+			}
+
+			fakeClient, attempts := newConflictOnFirstAttemptClient(wfe)
+			auditStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
+			reconciler := &workflowexecution.WorkflowExecutionReconciler{
+				Client:             fakeClient,
+				Scheme:             scheme,
+				Recorder:           recorder,
+				ExecutionNamespace: "kubernaut-workflows",
+				AuditStore:         auditStore,
+				StatusManager:      status.NewManager(fakeClient),
+				AuditManager:       audit.NewManager(auditStore, logr.Discard()),
+			}
+
+			err := reconciler.MarkFailedWithReason(ctx, wfe, "QuotaExceeded", "namespace quota exceeded")
+			Expect(err).ToNot(HaveOccurred(), "RetryOnConflict must absorb the injected conflict and succeed")
+			Expect(atomic.LoadInt32(attempts)).To(BeNumerically(">=", 2),
+				"the injected conflict must have forced at least one retry")
+
+			Expect(auditStore.events).To(HaveLen(1),
+				"exactly one workflow.failed audit event must be recorded despite the conflict retry")
+
+			var updated workflowexecutionv1alpha1.WorkflowExecution
+			Expect(reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)).To(Succeed())
+			Expect(updated.Status.Phase).To(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			cond := meta.FindStatusCondition(updated.Status.Conditions, "AuditRecorded")
+			Expect(cond).ToNot(BeNil(), "AuditRecorded condition must be persisted")
+			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		})
 	})
 
