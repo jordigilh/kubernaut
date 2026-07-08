@@ -50,4 +50,10 @@ const (
 	EventTypeCancelled        = "cancelled"
 	EventTypeAlignmentVerdict = "alignment_verdict"
 	EventTypeSessionEnded    = "session_ended"
+	// EventTypeReasoningContentDelta streams BR-AI-086's captured LLM
+	// reasoning/thinking content (llm.Message.Reasoning), distinct from
+	// EventTypeReasoningDelta's orchestration/progress narration so
+	// downstream consumers (AF's relay, future Console rendering) can
+	// treat the two differently (#1634, #1635, DD-LLM-009).
+	EventTypeReasoningContentDelta = "reasoning_content_delta"
 )

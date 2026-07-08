@@ -23,6 +23,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -61,6 +62,25 @@ func truncatePreview(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen]
+}
+
+// emitReasoningContentEvent live-streams BR-AI-086's captured LLM reasoning
+// content via the dedicated EventTypeReasoningContentDelta event, distinct
+// from EventTypeReasoningDelta's orchestration narration (#1634, #1635,
+// DD-LLM-009). No-op when reasoning is nil (BR-AI-086 AC2 default-disabled
+// parity — Reasoning is nil unless an operator opts in). Shared by the three
+// call sites that already emit EventTypeReasoningDelta right before this
+// call: the main LLM loop (investigator_loop.go) and the RCA/workflow-
+// selection parse-retry paths (investigator_rca.go,
+// investigator_workflow_selection.go).
+func emitReasoningContentEvent(ctx context.Context, reasoning *llm.ReasoningBlock, turn int, phase string) {
+	if reasoning == nil {
+		return
+	}
+	emitToSink(ctx, session.EventTypeReasoningContentDelta, turn, phase, map[string]interface{}{
+		"text":     reasoning.Text,
+		"redacted": reasoning.Redacted,
+	})
 }
 
 // retryAuditParams groups the per-attempt fields for emitRetryAudit. Kept as

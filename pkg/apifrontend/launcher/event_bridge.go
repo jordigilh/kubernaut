@@ -53,6 +53,13 @@ const (
 	MetaTypeKeepalive     = "keepalive"
 	MetaTypeDecision      = "decision"
 
+	// MetaTypeReasoningContent tags KA's captured LLM reasoning/thinking
+	// content (BR-AI-086), kept distinct from MetaTypeReasoning (AF's own
+	// ADK Thought-part narration + KA's orchestration-progress narration)
+	// so a client can render/handle genuine model deliberation differently
+	// (#1634, #1635, DD-LLM-009).
+	MetaTypeReasoningContent = "reasoning_content"
+
 	MetaTypeVerificationStep = "verification_step"
 
 	MetaTypeApprovalRequest         = "approval_request"
@@ -194,6 +201,17 @@ func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
 // #1435: raised from 512 to prevent truncation of final answers.
 func (b *EventBridge) EmitOutput(ctx context.Context, text string) error {
 	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeOutput})
+}
+
+// EmitReasoningContent writes a TaskStatusUpdateEvent with
+// metadata.type="reasoning_content" for KA's captured LLM reasoning/thinking
+// content (BR-AI-086 AC10). Distinct from EmitReasoning, which carries AF's
+// own ADK Thought-part narration and KA's orchestration-progress narration
+// (#1634, #1635, DD-LLM-009). Uses the same 4096-rune limit and no-op-on-empty
+// semantics as EmitReasoning/EmitOutput; an empty text (a redacted turn) is
+// silently skipped, matching that established pattern.
+func (b *EventBridge) EmitReasoningContent(ctx context.Context, text string) error {
+	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeReasoningContent})
 }
 
 // emitWithLimit sanitizes text with a caller-specified rune limit and emits
@@ -392,6 +410,21 @@ func EmitOutputSafe(ctx context.Context, text string) error {
 	}
 	if err := bridge.EmitOutput(ctx, text); err != nil {
 		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "output")
+		return err
+	}
+	return nil
+}
+
+// EmitReasoningContentSafe is a nil-safe helper that emits KA's captured
+// reasoning content via the bridge. If no bridge is present, it's a no-op.
+// Write failures are logged (AU-2). #1635.
+func EmitReasoningContentSafe(ctx context.Context, text string) error {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	if err := bridge.EmitReasoningContent(ctx, text); err != nil {
+		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "reasoning_content")
 		return err
 	}
 	return nil

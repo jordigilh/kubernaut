@@ -119,7 +119,7 @@ var _ = Describe("Terminal event emission to A2A — #1438", func() {
 
 			exited := make(chan struct{})
 			go func() {
-				tools.WatchTerminalEvents(ctx, events, "rr-1438-020", done)
+				tools.WatchTerminalEvents(ctx, events, "rr-1438-020", done, nil)
 				close(exited)
 			}()
 
@@ -144,7 +144,7 @@ var _ = Describe("Terminal event emission to A2A — #1438", func() {
 
 			exited := make(chan struct{})
 			go func() {
-				tools.WatchTerminalEvents(ctx, events, "rr-1438-021", done)
+				tools.WatchTerminalEvents(ctx, events, "rr-1438-021", done, nil)
 				close(exited)
 			}()
 
@@ -163,7 +163,7 @@ var _ = Describe("Terminal event emission to A2A — #1438", func() {
 
 			exited := make(chan struct{})
 			go func() {
-				tools.WatchTerminalEvents(ctx, events, "rr-1438-022", done)
+				tools.WatchTerminalEvents(ctx, events, "rr-1438-022", done, nil)
 				close(exited)
 			}()
 
@@ -227,7 +227,7 @@ var _ = Describe("Terminal event emission to A2A — #1438", func() {
 
 				exited := make(chan struct{})
 				go func() {
-					tools.WatchTerminalEvents(ctx, events, "rr-1438-026", done)
+					tools.WatchTerminalEvents(ctx, events, "rr-1438-026", done, nil)
 					close(exited)
 				}()
 
@@ -258,7 +258,7 @@ var _ = Describe("Terminal event emission to A2A — #1438", func() {
 
 			exited := make(chan struct{})
 			go func() {
-				tools.WatchTerminalEvents(ctx, events, "rr-1438-025", done)
+				tools.WatchTerminalEvents(ctx, events, "rr-1438-025", done, nil)
 				close(exited)
 			}()
 			Eventually(exited, 3*time.Second).Should(BeClosed())

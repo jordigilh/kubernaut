@@ -55,7 +55,7 @@ var _ = Describe("IT #1438 — AF terminal event wiring through production path"
 		watchCtx := context.WithoutCancel(ctx)
 		exited := make(chan struct{})
 		go func() {
-			tools.WatchTerminalEvents(watchCtx, eventCh, "rr-it-1438-020", done)
+			tools.WatchTerminalEvents(watchCtx, eventCh, "rr-it-1438-020", done, nil)
 			close(exited)
 		}()
 

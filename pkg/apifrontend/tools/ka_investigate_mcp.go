@@ -611,7 +611,8 @@ func handoffOrCloseSession(ctx context.Context, cfg *InvestigateConfig, rrID, us
 	}
 	watchDone := make(chan struct{})
 	onRelease := func() { close(watchDone) }
-	if injectErr := cfg.Pool.InjectVerified(ctx, rrID, username, result.Session, onRelease); injectErr != nil {
+	relay, injectErr := cfg.Pool.InjectVerified(ctx, rrID, username, result.Session, onRelease)
+	if injectErr != nil {
 		logger.Info("investigation session dead on handoff, skipping pool inject",
 			"rr_id", rrID, "session_id", result.SessionID, "error", injectErr.Error())
 		if cfg.Registry != nil {
@@ -623,7 +624,7 @@ func handoffOrCloseSession(ctx context.Context, cfg *InvestigateConfig, rrID, us
 		cfg.Registry.Deregister(result.SessionID)
 	}
 	watchCtx := context.WithoutCancel(ctx)
-	go WatchTerminalEvents(watchCtx, result.Events, rrID, watchDone)
+	go WatchTerminalEvents(watchCtx, result.Events, rrID, watchDone, relay)
 	logger.Info("investigation session handed off to pool",
 		"rr_id", rrID, "session_id", result.SessionID, "username", username)
 }
