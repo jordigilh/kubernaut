@@ -269,32 +269,53 @@ Key concepts:
 
 ### Step 1: Create the maintenance branch (first patch only)
 
-If `release/v1.1` does not already exist, create it from the GA tag:
+If `release/vX.Y` does not already exist, create it from the GA tag — **not**
+from `main`, which may have diverged significantly since the tag was cut:
 
 ```bash
-git checkout main && git pull origin main
+git fetch --tags origin
+git checkout -b release/vX.Y vX.Y.0
+git push -u origin release/vX.Y
+```
+
+If `release/vX.Y` already exists (from a previous patch), skip this step and
+pull it instead: `git checkout release/vX.Y && git pull origin release/vX.Y`.
+
+### Step 2: Create the fix branch from the maintenance branch
+
+```bash
+git checkout release/vX.Y
 git checkout -b fix/vX.Y.Z
 ```
 
-### Step 2: Cherry-pick or implement the fix
+### Step 3: Cherry-pick or implement the fix
 
-If the fix already exists on a feature branch:
+If the fix already exists as a commit on `main` (e.g., landed there first),
+try to cherry-pick it:
 
 ```bash
 git cherry-pick <commit-sha>
 ```
 
-Otherwise, implement the fix directly on the hotfix branch following TDD.
+If the maintenance branch has diverged structurally from `main` (moved/renamed
+files, refactors that postdate the tag), the cherry-pick will conflict or
+silently apply against the wrong code shape. In that case, hand-port the fix:
+re-implement the same behavioral change directly against the code as it exists
+on the maintenance branch, following TDD. Always diff the result conceptually
+against the original commit to confirm the fix is equivalent in intent.
 
-### Step 3: Bump Chart.yaml and CHANGELOG
+### Step 4: Bump Chart.yaml and CHANGELOG
 
 Update `Chart.yaml` to the patch version. Add a CHANGELOG entry under a new
 `## [X.Y.Z]` section above the previous release.
 
-### Step 4: PR, merge, tag
+### Step 5: PR, merge, tag
 
-Follow the same PR → merge → tag flow as the [GA Release Workflow](#ga-release-workflow),
-substituting the patch version.
+Open the PR against the **maintenance branch** (`release/vX.Y`), not `main`.
+Otherwise follow the same PR → merge → tag flow as the
+[GA Release Workflow](#ga-release-workflow), substituting the patch version.
+Once merged and tagged, forward-port the fix to `main` (via cherry-pick or a
+follow-up PR) unless it already originated there.
 
 ---
 
