@@ -285,11 +285,43 @@ assert_pods_ready() {
   local ns="${3:-$NAMESPACE}"
 
   if ! kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout="$TIMEOUT_PODS" >/dev/null 2>&1; then
-    local status
-    status=$(kubectl get pods -n "$ns" --no-headers 2>&1)
-    tap_not_ok "$desc" "Timeout waiting for pods. Current state: ${status}"
-    must_gather "$ns" "pods-not-ready"
-    return 1
+    # CI resource-contention recovery (twin of ci-pipeline.yml's "Recover pods
+    # that raced the migration/CA-sync Jobs" step for the ArgoCD flow -- see
+    # that step's comment for the full RCA): a burst of ~14 controllers +
+    # postgres/valkey starting simultaneously on a constrained runner can
+    # transiently starve the node, causing a controller's in-cluster
+    # apiserver dial to time out during startup, or a TLS leaf-cert Secret /
+    # inter-service-ca ConfigMap mount to race the cert-manager Certificate
+    # or sync hook Job that produces it (both self-heal once the burst
+    # subsides / the dependency appears, but a pod already in
+    # CrashLoopBackOff needs a delete to force an immediate re-schedule
+    # rather than waiting out its exponential backoff). Poll across multiple
+    # recovery passes instead of failing fast on the first timeout.
+    local recovered=false
+    for attempt in 1 2 3; do
+      local crashing
+      crashing=$(kubectl get pods -n "$ns" \
+        -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[*].state.waiting.reason}{"\n"}{end}' 2>/dev/null | \
+        awk '/CrashLoopBackOff/{print $1}')
+      if [[ -z "$crashing" ]]; then
+        echo "# Recovery: no crash-looping pods found on attempt ${attempt}/3" >&2
+        break
+      fi
+      echo "# Recovery attempt ${attempt}/3: restarting crash-looping pods: ${crashing}" >&2
+      # shellcheck disable=SC2086
+      kubectl delete pod -n "$ns" $crashing >/dev/null 2>&1 || true
+      if kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout=90s >/dev/null 2>&1; then
+        recovered=true
+        break
+      fi
+    done
+    if ! $recovered; then
+      local status
+      status=$(kubectl get pods -n "$ns" --no-headers 2>&1)
+      tap_not_ok "$desc" "Timeout waiting for pods. Current state: ${status}"
+      must_gather "$ns" "pods-not-ready"
+      return 1
+    fi
   fi
 
   local actual
