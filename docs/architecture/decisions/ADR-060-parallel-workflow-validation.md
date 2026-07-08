@@ -1,21 +1,30 @@
 # ADR-060: Parallel Workflow Validation
 
 **Date**: May 9, 2026
-**Status**: Approved
+**Status**: Superseded — Pattern 1 (typed-result-slot parallelism) retired by Issue #1642; see [Update: Post-#1481/#1642](#update-post-1481-1642) below
 **Version**: 1.0
-**Authority**: AUTHORITATIVE for workflow registration validation concurrency patterns
+**Authority**: AUTHORITATIVE for workflow registration validation concurrency patterns (historical — Pattern 2 remains active for `ValidateDependencies` callers outside registration)
 **Related**: DD-WE-006 (Schema-Declared Dependencies), DD-WORKFLOW-016 (Action Type Taxonomy), ADR-058 (Webhook-Driven Registration), BR-STORAGE-014 (Workflow Catalog Management)
 **GitHub Issue**: [#1070](https://github.com/jordigilh/kubernaut/issues/1070)
 
 ---
 
+## Update: Post-#1481/#1642
+
+Both of the two checks this ADR parallelized alongside action-type taxonomy have since been removed from `HandleCreateWorkflow`:
+
+- **Issue #1481** removed step 5c, schema-declared dependency existence validation (`ValidateDependencies`). Kubernetes now validates dependency existence exclusively at runtime when the WorkflowExecution's Job/PipelineRun attempts to mount the volume/workspace (BR-WORKFLOW-008).
+- **Issue #1642** removed step 5b, execution bundle existence validation (`ValidateBundleExists`). A pre-flight registry check running from the DataStorage pod's own network/credential context cannot validate self-signed or credential-required private registries reachable only by the actual workflow execution environment, so the check unconditionally blocked otherwise-valid registrations. Kubernetes now fails fast at Job/PipelineRun image-pull time instead, extending the same BR-WORKFLOW-008 pattern.
+
+With only the action-type taxonomy check remaining, Pattern 1 (typed-result-slot + `sync.WaitGroup`) no longer parallelizes anything and has been collapsed back into a direct sequential call in `validateExternalChecks`. The historical context below (Context, Decision, Consequences, Alternatives) is preserved for reference but no longer describes the current implementation of `HandleCreateWorkflow`. Pattern 2 (`errgroup` inside `ValidateDependencies`) remains relevant wherever that validator is still invoked outside the registration path.
+
 ## Context
 
-`HandleCreateWorkflow` performs three independent external validation checks during workflow registration:
+`HandleCreateWorkflow` performed three independent external validation checks during workflow registration:
 
 1. **Action-type taxonomy** (PostgreSQL query via `ActionTypeExists`)
-2. **Execution bundle existence** (OCI registry HEAD via `ValidateBundleExists`)
-3. **Schema-declared dependencies** (Kubernetes API GETs via `ValidateDependencies`)
+2. **Execution bundle existence** (OCI registry HEAD via `ValidateBundleExists`) — removed, Issue #1642
+3. **Schema-declared dependencies** (Kubernetes API GETs via `ValidateDependencies`) — removed, Issue #1481
 
 Prior to this change, these checks ran sequentially. Each call could take 50-500ms depending on backend latency, making worst-case registration latency the sum of all three (up to 1.5s+). Since the checks are independent, parallelization reduces wall-clock time to the duration of the slowest check.
 
@@ -48,7 +57,7 @@ A 10-second `context.WithTimeout` wraps the entire `validateExternalChecks` call
 
 - Registration latency reduced from sum-of-three to max-of-three (typically 30-60% improvement)
 - Per-phase Prometheus histograms (`datastorage_workflow_validation_duration_seconds`) provide observability into individual backend latencies
-- Error priority contract is preserved and locked by unit tests (UT-WF-1070-001 through 005)
+- Error priority contract was preserved and locked by unit tests (UT-WF-1070-001, -002, -004; -003 was removed with the bundle-not-found error type it covered — Issue #1642)
 
 ### Negative
 
