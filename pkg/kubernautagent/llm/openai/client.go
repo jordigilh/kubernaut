@@ -27,6 +27,7 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -125,9 +126,24 @@ func New(model, endpoint, apiKey string, opts ...Option) *Client {
 func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
 	resp, err := c.client.Chat(ctx, c.buildRequest(req))
 	if err != nil {
-		return llm.ChatResponse{}, err
+		return llm.ChatResponse{}, classifyErr(err)
 	}
 	return convertResponse(resp), nil
+}
+
+// classifyErr marks err non-retryable (kubernaut#1585) when it unwraps to
+// the shared openaicompat client's typed *openaicompat.APIError with a
+// permanent (400/401/403/404-class) StatusCode. Classification happens
+// here, at this package's own translation boundary, rather than in the
+// shared llm package, so the generic retry machinery never needs to
+// import a provider-specific error shape (DD-HAPI-019 Framework
+// Isolation).
+func classifyErr(err error) error {
+	var apiErr *openaicompat.APIError
+	if errors.As(err, &apiErr) && llm.IsNonRetryableHTTPStatus(apiErr.StatusCode) {
+		return llm.MarkNonRetryable(err)
+	}
+	return err
 }
 
 // StreamChat streams the response, forwarding text deltas via callback and
@@ -152,7 +168,7 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 		return llm.ChatResponse{}, callbackErr
 	}
 	if err != nil {
-		return llm.ChatResponse{}, err
+		return llm.ChatResponse{}, classifyErr(err)
 	}
 	return final, nil
 }
