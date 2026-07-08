@@ -351,4 +351,8 @@ const (
 	EventTypeCancelled        = "cancelled"
 	EventTypeAlignmentVerdict = "alignment_verdict"
 	EventTypeSessionEnded    = "session_ended"
+	// EventTypeReasoningContentDelta mirrors
+	// internal/kubernautagent/session.EventTypeReasoningContentDelta for wire
+	// compatibility (#1634, #1635, DD-LLM-009).
+	EventTypeReasoningContentDelta = "reasoning_content_delta"
 )

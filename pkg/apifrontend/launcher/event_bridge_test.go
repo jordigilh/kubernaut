@@ -14,6 +14,17 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
+// buildLongReasoningContentText builds a string of exactly n runes, reused by
+// the EmitReasoningContent truncation-limit test (#1635).
+func buildLongReasoningContentText(n int) string {
+	unit := "The alert KubePodCrashLooping is firing for pod web-frontend in namespace demo-webui. "
+	var sb strings.Builder
+	for sb.Len() < n {
+		sb.WriteString(unit)
+	}
+	return sb.String()[:n]
+}
+
 var _ = Describe("EventBridge", func() {
 	Describe("Context helpers", func() {
 		It("UT-AF-1258-014: EventBridgeFromContext returns nil for non-streaming context", func() {
@@ -404,6 +415,66 @@ var _ = Describe("EventBridge", func() {
 				To(Equal("Final answer: pod restarted successfully."))
 			Expect(evt.Metadata).NotTo(BeNil())
 			Expect(evt.Metadata["type"]).To(Equal("output"))
+		})
+	})
+
+	// #1635 / BR-AI-086 AC10: dedicated live-stream channel for KA's captured
+	// LLM reasoning/thinking content, distinct from EmitReasoning's
+	// orchestration-narration channel (metadata.type="reasoning"). Per
+	// DD-LLM-009, this mirrors EmitReasoning/EmitOutput's exact shape
+	// (emitWithLimit, 4096-rune limit, no-op on empty text).
+	Describe("EmitReasoningContent", func() {
+		It("UT-AF-1635-EB-001: writes TaskStatusUpdateEvent with metadata.type=reasoning_content", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-001", "ctx-rc-001", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitReasoningContent(ctx, "considering memory limits and recent deploys")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "EmitReasoningContent must produce TaskStatusUpdateEvent")
+			Expect(string(evt.TaskID)).To(Equal("task-rc-001"))
+			Expect(evt.ContextID).To(Equal("ctx-rc-001"))
+			Expect(evt.Status.Message).NotTo(BeNil())
+			Expect(evt.Status.Message.Parts).To(HaveLen(1))
+			Expect(evt.Status.Message.Parts[0].(a2a.TextPart).Text).
+				To(Equal("considering memory limits and recent deploys"))
+			Expect(evt.Metadata).NotTo(BeNil())
+			Expect(evt.Metadata["type"]).To(Equal("reasoning_content"),
+				"#1635: must be distinguishable from EmitReasoning's metadata.type=reasoning")
+		})
+
+		It("UT-AF-1635-EB-002: reasoning content up to 4096 runes is NOT truncated (same limit as EmitReasoning)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-002", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			longText := buildLongReasoningContentText(4000)
+			err := bridge.EmitReasoningContent(ctx, longText)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			text := evt.Status.Message.Parts[0].(a2a.TextPart).Text
+			Expect(text).To(Equal(longText))
+		})
+
+		It("UT-AF-1635-EB-003: EmitReasoningContentSafe is nil-safe when bridge absent", func() {
+			err := launcher.EmitReasoningContentSafe(context.Background(), "no bridge here")
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("UT-AF-1635-EB-004: EmitReasoningContent is a no-op on empty text (redacted-reasoning parity with EmitReasoning)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-004", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitReasoningContent(ctx, "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(BeEmpty(),
+				"#1635: a redacted turn's empty text must produce zero events, matching EmitReasoning's existing behavior")
 		})
 	})
 

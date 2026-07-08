@@ -331,6 +331,32 @@ data:
             kind: "Deployment"
             name: "web-frontend"
             api_version: "apps/v1"
+
+      # #1637: two-step interactive flow proving live event relay for pooled
+      # kubernaut_message calls. Turn 1 opens the interactive session (via
+      # kubernaut_investigate on a pre-existing RR); turn 2 (same shared A2A
+      # contextId, see a2aMessageStreamWithContext) drives it forward via
+      # kubernaut_message, embedding the "mock_reasoning_capture" keyword so
+      # KA's own mock-LLM (test/services/mock-llm/scenarios/scenario_mock_keywords.go)
+      # returns a captured reasoning block, which the fix in this PR relays
+      # live to turn 2's SSE stream as a reasoning_content event.
+      - name: "af_investigate_reasoning_capture"
+        keywords: ["start reasoning capture investigation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            rr_id: "rr-reasoning-e2e-1637"
+
+      - name: "af_drive_reasoning_capture"
+        keywords: ["drive reasoning capture turn"]
+        match_last_only: true
+        repeat_tool_call: true
+        tool_call:
+          name: "kubernaut_message"
+          arguments:
+            rr_id: "rr-reasoning-e2e-1637"
+            message: "continue the analysis mock_reasoning_capture"
 ---
 apiVersion: v1
 kind: Service

@@ -88,10 +88,18 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 
 	inv.emitLLMResponseAudit(ctx, correlationID, resp)
 
+	// #1634: field name must be "text" — this is what AF's FormatEventForUser
+	// (pkg/apifrontend/tools/ka_investigate_bridge.go) reads. A prior
+	// "content_preview" key here meant AF silently dropped every one of
+	// these events (extractJSONField returned "", emitEventToA2A no-opped).
 	emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
-		"content_preview": truncatePreview(resp.Message.Content, 200),
+		"text":            truncatePreview(resp.Message.Content, 200),
 		"tool_call_count": len(resp.ToolCalls),
 	})
+	// #1635 / BR-AI-086 AC10: live-stream captured reasoning content via a
+	// dedicated event type, distinct from the orchestration-narration event
+	// above (DD-LLM-009).
+	emitReasoningContentEvent(ctx, resp.Message.Reasoning, turn, string(phase))
 
 	if len(resp.ToolCalls) > 0 {
 		toolMessages, sentinel, budgetExhausted := inv.processToolCalls(ctx, messages, resp, turn, string(phase), correlationID)

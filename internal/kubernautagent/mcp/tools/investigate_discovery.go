@@ -60,7 +60,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	// Step 3: Enrich context with the HTTP investigation session so that
 	// workflow discovery can emit audit events with session_id and stream
 	// events to the subscriber (#1384: Bug A fix).
-	ctx = t.enrichDiscoveryContext(ctx, input.RRID)
+	ctx = t.enrichLiveEventContext(ctx, input.RRID, "discover_workflows")
 
 	// Step 4: Run Phase 3 workflow discovery using the structured RCA.
 	// The investigator resolves enrichment internally when its enricher is wired,
@@ -199,11 +199,14 @@ func (t *InvestigateTool) resolveDiscoverySignal(ctx context.Context, rrID strin
 	return signal
 }
 
-// enrichDiscoveryContext attaches the HTTP investigation session ID (and its
-// lazy audit sink, when available) to ctx so workflow discovery emits audit
-// events with session_id and streams events to the subscriber (#1384: Bug A
-// fix).
-func (t *InvestigateTool) enrichDiscoveryContext(ctx context.Context, rrID string) context.Context {
+// enrichLiveEventContext attaches the HTTP investigation session ID (and its
+// lazy audit sink, when available) to ctx so the calling interactive action
+// emits audit events with session_id and streams live KA events to any
+// subscriber. Originally added for discover_workflows (#1384: Bug A fix);
+// reused by handleMessage (#1639) so kubernaut_message turns get the same
+// live-streaming wiring — action is used only for the debug log line
+// (e.g. "discover_workflows", "message").
+func (t *InvestigateTool) enrichLiveEventContext(ctx context.Context, rrID, action string) context.Context {
 	if t.httpCompleter == nil {
 		return ctx
 	}
@@ -215,7 +218,7 @@ func (t *InvestigateTool) enrichDiscoveryContext(ctx context.Context, rrID strin
 	if ls, ok := t.autoMgr.GetSessionLazySink(httpSessionID); ok {
 		ctx = session.WithLazySink(ctx, ls)
 	}
-	t.logger.V(1).Info("discover_workflows: enriched context with HTTP session",
+	t.logger.V(1).Info(action+": enriched context with HTTP session",
 		"rr_id", rrID, "http_session_id", httpSessionID)
 	return ctx
 }

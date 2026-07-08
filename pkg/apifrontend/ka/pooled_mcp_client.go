@@ -176,7 +176,20 @@ func (c *PooledMCPClient) StartInvestigation(_ context.Context, _ StartInvestiga
 // error response parsing and security redaction consistently with SDKMCPClient.
 // On stale-session errors (#1386), it evicts the dead entry and retries once
 // with a fresh session from the pool factory.
+//
+// #1637/DD-AF-009: for the duration of the call, attaches ctx to the pooled
+// entry's EventRelay (if any) so that WatchTerminalEvents — the sole
+// consumer of the session's residual event channel after a
+// kubernaut_investigate handoff — can relay KA's mid-call notifications
+// (reasoning_content_delta, reasoning_delta, tool_call_start, error, ...)
+// live to this call's EventBridge instead of dropping them. A session
+// acquired directly (never handed off from an investigate call) has no
+// relay (RelayFor returns nil) and this is a no-op, matching prior behavior.
 func (c *PooledMCPClient) callPooledTool(ctx context.Context, session PoolSession, name string, args map[string]any, rrID, username string) (json.RawMessage, error) {
+	if relay := c.pool.RelayFor(rrID, username); relay != nil {
+		detach := relay.Attach(ctx)
+		defer detach()
+	}
 	raw, err := c.doCallTool(ctx, session, name, args)
 	if err != nil && isStaleSessionError(err) {
 		c.logger.Info("stale MCP session detected, evicting and retrying",
