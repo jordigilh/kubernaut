@@ -13,6 +13,11 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    # DD-PLATFORM-003: renders in ArgoCD's "-1" sync-wave alongside the
+    # DataStorage Deployment that hard-requires this secret at startup
+    # (no fallback, by AU-9 design -- see comment above).
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   secretName: datastorage-signing-cert
   duration: 8760h   # 365 days

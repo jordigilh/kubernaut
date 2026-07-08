@@ -1,0 +1,301 @@
+suite: ArgoCD infra-first sync-wave phased deployment (DD-PLATFORM-003)
+templates:
+  - templates/infrastructure/postgresql.yaml
+  - templates/infrastructure/valkey.yaml
+  - templates/datastorage/datastorage.yaml
+  - templates/datastorage/certificate.yaml
+  - templates/rbac/datastorage-rbac.yaml
+  - templates/interservice/ca.yaml
+  - templates/interservice/leaf-certs.yaml
+  - templates/hooks/migration-job.yaml
+  - templates/hooks/interservice-ca-sync-job.yaml
+  - templates/gateway/gateway.yaml
+set:
+  # kubernaut.tls.issuerName requires an explicit issuerRef.name when there is
+  # no live cluster access to auto-discover an Issuer/ClusterIssuer (helm
+  # template / helm-unittest / GitOps rendering all fall into this path).
+  tls:
+    certManager:
+      issuerRef:
+        name: test-issuer
+tests:
+  # ── PostgreSQL: all 4 resources in wave "-1" ────────────────────────────
+  - it: "PostgreSQL ServiceAccount is pinned to sync-wave -1"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: ServiceAccount
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "PostgreSQL Service is pinned to sync-wave -1"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "PostgreSQL Deployment is pinned to sync-wave -1"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "PostgreSQL PVC is pinned to sync-wave -1"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: PersistentVolumeClaim
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+
+  # ── Valkey: all 4 resources in wave "-1" ────────────────────────────────
+  - it: "Valkey ServiceAccount is pinned to sync-wave -1"
+    template: templates/infrastructure/valkey.yaml
+    documentSelector:
+      path: kind
+      value: ServiceAccount
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "Valkey Service is pinned to sync-wave -1"
+    template: templates/infrastructure/valkey.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "Valkey Deployment is pinned to sync-wave -1"
+    template: templates/infrastructure/valkey.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "Valkey PVC is pinned to sync-wave -1"
+    template: templates/infrastructure/valkey.yaml
+    documentSelector:
+      path: kind
+      value: PersistentVolumeClaim
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+
+  # ── DataStorage: ConfigMap + Deployment + Service in wave "-1" ──────────
+  - it: "DataStorage ConfigMap is pinned to sync-wave -1"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "DataStorage Deployment is pinned to sync-wave -1"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "DataStorage Service is pinned to sync-wave -1"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: metadata.name
+      value: data-storage-service
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  # ── DataStorage ServiceAccount: only the SA, not the RBAC bindings ──────
+  - it: "data-storage-sa ServiceAccount is pinned to sync-wave -1"
+    template: templates/rbac/datastorage-rbac.yaml
+    documentSelector:
+      path: kind
+      value: ServiceAccount
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "data-storage-client ClusterRole is NOT pinned to a sync-wave (RBAC record, not a startup dependency)"
+    template: templates/rbac/datastorage-rbac.yaml
+    documentSelector:
+      path: metadata.name
+      value: data-storage-client
+    asserts:
+      - notExists:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+
+  # ── cert-manager mode: CA chain + leaf certs + signing cert in wave "-1" ─
+  - it: "cert-manager mode: bootstrap Issuer is pinned to sync-wave -1"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/ca.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-interservice-bootstrap-issuer
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "cert-manager mode: root CA Certificate is pinned to sync-wave -1"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/ca.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-interservice-ca
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "cert-manager mode: CA-type Issuer is pinned to sync-wave -1"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/ca.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-interservice-ca-issuer
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "cert-manager mode: gateway-tls leaf Certificate is pinned to sync-wave -1"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-tls
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "cert-manager mode: datastorage-tls leaf Certificate is pinned to sync-wave -1"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: datastorage-tls
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "cert-manager mode: kubernautagent-tls leaf Certificate is pinned to sync-wave -1"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernautagent-tls
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "cert-manager mode: datastorage-signing-cert Certificate is pinned to sync-wave -1"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/datastorage/certificate.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  # ── cert-manager mode: hook Jobs run in the same infra-first wave ───────
+  - it: "cert-manager mode: db-migration Job is pinned to sync-wave -1 (not 0)"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/hooks/migration-job.yaml
+    documentSelector:
+      path: kind
+      value: Job
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook"]
+          value: Sync
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "cert-manager mode: db-migration ConfigMap is pinned to sync-wave -1 (not 0)"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/hooks/migration-job.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "cert-manager mode: interservice-ca-sync Job is pinned to sync-wave -1 (not 0)"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/hooks/interservice-ca-sync-job.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook"]
+          value: Sync
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  # ── Regression: application controllers keep the implicit default wave ──
+  - it: "gateway Deployment has no sync-wave annotation (stays in the default wave 0)"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notExists:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]

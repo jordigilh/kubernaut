@@ -20,15 +20,15 @@ metadata:
     #
     # sync-wave override is equally required: ArgoCD also translates
     # "helm.sh/hook-weight": "2" into argocd.argoproj.io/sync-wave: "2", and
-    # regular (unannotated) chart resources -- including every Deployment --
-    # default to sync-wave "0". A positive wave places this Job in a *later*
-    # wave than those Deployments, and ArgoCD gates wave N+1 on wave N being
-    # Healthy -- recreating the exact same deadlock one level down. Pinning
-    # sync-wave to "0" puts this Job in the same wave as the Deployments so
-    # it actually runs concurrently with them, as intended.
+    # a positive wave would place this Job *after* PostgreSQL (DD-PLATFORM-003:
+    # sync-wave "-1"), which it depends on, but also after every default-wave
+    # "0" Deployment, recreating the exact same deadlock one level down.
+    # DD-PLATFORM-003 pins this to "-1" (not "0"): it must run in the same
+    # "infra-first" wave as PostgreSQL and DataStorage, both of which it is a
+    # hard prerequisite for, ahead of every other application controller.
     "argocd.argoproj.io/hook": Sync
     "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation,HookSucceeded
-    "argocd.argoproj.io/sync-wave": "0"
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 3
@@ -152,13 +152,13 @@ metadata:
     "helm.sh/hook": post-install,post-upgrade
     "helm.sh/hook-weight": "1"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
-    # DD-PLATFORM-002: see the db-migration Job annotation above -- this
+    # DD-PLATFORM-002/003: see the db-migration Job annotation above -- this
     # ConfigMap is consumed by that Job and must render in the same ArgoCD
-    # "Sync" phase and wave (not PostSync, not a later wave) so both are
-    # available together, concurrently with the rest of the manifests.
+    # "Sync" phase and sync-wave ("-1", not PostSync, not a later wave) so
+    # both are available together, ahead of every application controller.
     "argocd.argoproj.io/hook": Sync
     "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation,HookSucceeded
-    "argocd.argoproj.io/sync-wave": "0"
+    "argocd.argoproj.io/sync-wave": "-1"
 data:
   {{- range $path, $_ := .Files.Glob "migrations/*.sql" }}
   {{ base $path }}: |

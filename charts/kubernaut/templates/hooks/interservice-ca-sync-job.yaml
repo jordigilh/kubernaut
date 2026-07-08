@@ -29,16 +29,16 @@ metadata:
     #
     # sync-wave override is equally required: ArgoCD also translates
     # "helm.sh/hook-weight": "5" into argocd.argoproj.io/sync-wave: "5", and
-    # regular (unannotated) chart resources -- including the leaf
-    # Certificates this Job's own retry loop waits on, and every Deployment
-    # that mounts the resulting ConfigMap -- default to sync-wave "0". A
-    # positive wave places this Job in a *later* wave than those resources,
-    # and ArgoCD gates wave N+1 on wave N being Healthy -- recreating the
-    # exact same deadlock one level down. Pinning sync-wave to "0" puts this
-    # Job in the same wave so it actually runs concurrently, as intended.
+    # a positive wave would place this Job *after* the leaf Certificates it
+    # waits on (DD-PLATFORM-003: sync-wave "-1"), but also after every
+    # default-wave "0" Deployment that mounts the resulting ConfigMap,
+    # recreating the exact same deadlock one level down. DD-PLATFORM-003
+    # pins this to "-1" (not "0"): it must run in the same "infra-first" wave
+    # as the CA/Certificate chain it reads from, ahead of every application
+    # controller that mounts the ConfigMap it produces.
     "argocd.argoproj.io/hook": Sync
     "argocd.argoproj.io/hook-delete-policy": BeforeHookCreation,HookSucceeded
-    "argocd.argoproj.io/sync-wave": "0"
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   ttlSecondsAfterFinished: 86400
   backoffLimit: 3

@@ -1,4 +1,9 @@
 {{- if .Values.postgresql.enabled }}
+# DD-PLATFORM-003: PostgreSQL renders in ArgoCD's "-1" sync-wave (ahead of the
+# default "0" application controllers) -- db-migration and DataStorage's own
+# wait-for-postgres initContainer both need it Ready before their wave can
+# proceed, and running it concurrently with ~14 application controllers was
+# a measured contributor to CI resource-contention pod restarts.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -7,6 +12,8 @@ metadata:
   labels:
     app: postgresql
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 automountServiceAccountToken: false
 ---
 apiVersion: v1
@@ -17,6 +24,8 @@ metadata:
   labels:
     app: postgresql
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   type: ClusterIP
   ports:
@@ -35,6 +44,8 @@ metadata:
   labels:
     app: postgresql
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   replicas: {{ .Values.postgresql.replicas | default 1 }}
   selector:
@@ -116,6 +127,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
     "helm.sh/resource-policy": keep
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   accessModes:
     - ReadWriteOnce

@@ -157,6 +157,11 @@ readiness probes pass.
 
 - DD-PLATFORM-001: introduced the `interservice-ca-sync` hook whose ArgoCD
   incompatibility this DD fixes.
+- DD-PLATFORM-003: changes the `argocd.argoproj.io/sync-wave` value on both
+  Jobs from `"0"` (set here) to `"-1"`, as part of a broader infra-first
+  phased-deployment split. The `argocd.argoproj.io/hook: Sync` fix in *this*
+  DD -- which is what actually breaks the PostSync/health deadlock -- is
+  unchanged and still in effect; only the wave *number* is superseded.
 - Issue #334 / PR #1619: introduced the RBAC-scoping and
   `datastorage-signing-cert` auto-provisioning pattern.
 - Issue #1617: umbrella GitOps/ArgoCD operational readiness tracking issue;
