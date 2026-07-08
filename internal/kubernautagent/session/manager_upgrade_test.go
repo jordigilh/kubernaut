@@ -260,7 +260,18 @@ var _ = Describe("Fix #1390: Jump-In Session Upgrade (BR-INTERACTIVE-004, BR-REL
 
 		Context("UT-KA-1390-027 [SC-24]: store.Update with StatusCompleted + interactiveUpgrade=true forces StatusUserDriving", func() {
 			It("should force user_driving and set InteractiveHold when upgrade flag was set before completion", func() {
+				// Issue #1631: the investigation function must not return until
+				// UpgradeToInteractive has run, otherwise the goroutine can win the
+				// race and call store.Update(StatusCompleted) before the upgrade
+				// flag is set — collapsing this into the UT-KA-1390-029 scenario
+				// (ErrSessionTerminal) instead of exercising the intended
+				// "upgrade before completion" ordering. Same ready/proceed gate
+				// used by UT-KA-1390-008 above.
+				ready := make(chan struct{})
+				proceed := make(chan struct{})
 				id, err := manager.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
+					close(ready)
+					<-proceed
 					return &katypes.InvestigationResult{
 						RCASummary:      "Autonomous RCA — investigator did not see upgrade flag",
 						Confidence:      0.9,
@@ -269,7 +280,9 @@ var _ = Describe("Fix #1390: Jump-In Session Upgrade (BR-INTERACTIVE-004, BR-REL
 				}, map[string]string{"remediation_id": "rr-upgrade-027"})
 				Expect(err).NotTo(HaveOccurred())
 
+				<-ready
 				Expect(manager.UpgradeToInteractive(id, "testuser", nil)).To(Succeed())
+				close(proceed)
 
 				Eventually(func() session.Status {
 					s, _ := manager.GetSession(id)
