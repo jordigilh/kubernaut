@@ -73,17 +73,30 @@ func (r *LLMRuntimeConfig) Validate(provider string) error {
 		if isEmptyPhaseOverride(override) {
 			return fmt.Errorf("phaseModels[%q]: at least one override field must be set", phase)
 		}
+		if override.Reasoning != nil {
+			effectiveProvider := override.Provider
+			if effectiveProvider == "" {
+				effectiveProvider = provider
+			}
+			if err := types.ValidateReasoningConfig(fmt.Sprintf("phaseModels[%q]", phase), override.Reasoning, effectiveProvider); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
 
 // isEmptyPhaseOverride reports whether a phase-model override sets none of
 // its fields (or is nil), which is rejected as a no-op configuration error.
+// Reasoning counts as a real (non-empty) field per #1616/BR-AI-086: a
+// phase override that tunes only reasoning is a legitimate, non-trivial
+// configuration, not an accidental no-op.
 func isEmptyPhaseOverride(override *LLMOverrideConfig) bool {
 	return override == nil || (override.Provider == "" && override.Endpoint == "" &&
 		override.Model == "" && override.APIKeyFile == "" &&
 		override.AzureAPIVersion == "" && override.VertexProject == "" &&
-		override.VertexLocation == "" && override.BedrockRegion == "")
+		override.VertexLocation == "" && override.BedrockRegion == "" &&
+		override.Reasoning == nil)
 }
 
 // Validate checks required fields and value constraints for the static config.

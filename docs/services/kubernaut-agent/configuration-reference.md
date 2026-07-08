@@ -255,6 +255,7 @@ struct type used by `ai.alignmentCheck.llm` (§7.1), but here it lives in the
 | `vertexProject` | string | (empty) | Overrides static Vertex project for this phase when non-empty. Hot-reloadable. |
 | `vertexLocation` | string | (empty) | Overrides static Vertex location for this phase when non-empty. Hot-reloadable. |
 | `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
+| `reasoning` | object (`LLMReasoningConfig`) | `null` | Overrides base `ai.llm.reasoning` for this phase when non-nil (#1616, BR-AI-086). **Tuning field, not identity** — the restart-required identity check below never inspects this field, so a reload that changes *only* `reasoning` (no `provider`/`model` change, for this phase or any other) is always accepted. Validated with the same effort-vocabulary and Anthropic-contradiction rules as the base field, against this override's *effective* provider (its own `provider`, falling back to base `ai.llm.provider`). |
 
 An override's *effective identity* is `provider` (falling back to base
 `ai.llm.provider` when empty) + `model` (falling back to base runtime `model`
@@ -320,6 +321,7 @@ When `enabled` is true and `llm` is nil, startup logs **error-level** diagnostic
 | `vertexProject` | string | (empty) | Overrides static Vertex project when non-empty. |
 | `vertexLocation` | string | (empty) | Overrides static Vertex location when non-empty. |
 | `bedrockRegion` | string | (empty) | Reserved (#1582) — not currently consumed. |
+| `reasoning` | object (`LLMReasoningConfig`) | `null` | Overrides base `ai.llm.reasoning` for the shadow/alignment-checker LLM when non-nil (#1616, BR-AI-086). Since this whole section is static (no hot-reload), there is no identity-lock interaction to consider — a change here, like any other field in this table, simply requires a restart. Validated with the same effort-vocabulary and Anthropic-contradiction rules as the base field, against this override's *effective* provider (its own `provider`, falling back to base `ai.llm.provider`). |
 
 Overrides do not duplicate `tlsCaFile` here; TLS trust stays on `ai.llm.tlsCaFile` for the LLM client's transport chain.
 

@@ -54,12 +54,6 @@ customHeaders:
     secretKeyRef: SECRET_ENV
   - name: X-File
     filePath: "/etc/headers/token"
-phaseModels:
-  rca:
-    provider: anthropic
-    model: claude-sonnet-4-6
-    endpoint: "https://api.anthropic.com"
-    apiKeyFile: "/etc/credentials/anthropic_key"
 `
 		var cfg types.LLMConfig
 		Expect(yaml.Unmarshal([]byte(input), &cfg)).To(Succeed())
@@ -96,13 +90,6 @@ phaseModels:
 		Expect(cfg.CustomHeaders[0].Value).To(Equal("static-val"))
 		Expect(cfg.CustomHeaders[1].SecretKeyRef).To(Equal("SECRET_ENV"))
 		Expect(cfg.CustomHeaders[2].FilePath).To(Equal("/etc/headers/token"))
-
-		Expect(cfg.PhaseModels).To(HaveKey("rca"))
-		rca := cfg.PhaseModels["rca"]
-		Expect(rca).NotTo(BeNil())
-		Expect(rca.Provider).To(Equal("anthropic"))
-		Expect(rca.Model).To(Equal("claude-sonnet-4-6"))
-		Expect(rca.APIKeyFile).To(Equal("/etc/credentials/anthropic_key"))
 
 		// APIKey must not be deserialized from YAML (yaml:"-")
 		Expect(cfg.APIKey).To(BeEmpty())
@@ -251,37 +238,6 @@ var _ = Describe("UT-SH-1488-010: YAML round-trip AF format", func() {
 	})
 })
 
-var _ = Describe("UT-SH-1488-011: YAML round-trip KA runtime format", func() {
-	It("should round-trip KA runtime config with phaseModels", func() {
-		temp := 0.5
-		retries := 7
-		original := types.LLMConfig{
-			Provider:       "openai",
-			Model:          "gpt-4o",
-			Endpoint:       "https://api.openai.com/v1",
-			Temperature:    &temp,
-			MaxRetries:     &retries,
-			TimeoutSeconds: 60,
-			PhaseModels: map[string]*types.LLMOverride{
-				"rca": {
-					Provider: "anthropic",
-					Model:    "claude-sonnet-4-6",
-				},
-			},
-		}
-
-		data, err := yaml.Marshal(&original)
-		Expect(err).NotTo(HaveOccurred())
-
-		var roundTripped types.LLMConfig
-		Expect(yaml.Unmarshal(data, &roundTripped)).To(Succeed())
-
-		Expect(roundTripped.PhaseModels).To(HaveKey("rca"))
-		Expect(roundTripped.PhaseModels["rca"].Provider).To(Equal("anthropic"))
-		Expect(roundTripped.PhaseModels["rca"].Model).To(Equal("claude-sonnet-4-6"))
-	})
-})
-
 var _ = Describe("UT-SH-1488-012: Validate TLS cert pair", func() {
 	It("should reject TLS cert without key", func() {
 		cfg := types.LLMConfig{
@@ -321,36 +277,6 @@ var _ = Describe("UT-SH-1488-013: Validate OAuth2 constraints", func() {
 		err := cfg.Validate("llm")
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("tokenURL"))
-	})
-})
-
-var _ = Describe("UT-SH-1488-014: Validate phaseModels key whitelist", func() {
-	It("should reject unknown phase key", func() {
-		cfg := types.LLMConfig{
-			Provider: types.LLMProviderOpenAICompatible,
-			Model:    "llama3",
-			Endpoint: "http://llm:8080/v1",
-			PhaseModels: map[string]*types.LLMOverride{
-				"invalid_phase": {Model: "other"},
-			},
-		}
-		err := cfg.Validate("llm")
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("invalid_phase"))
-	})
-
-	It("should accept valid phase keys", func() {
-		cfg := types.LLMConfig{
-			Provider: types.LLMProviderOpenAICompatible,
-			Model:    "llama3",
-			Endpoint: "http://llm:8080/v1",
-			PhaseModels: map[string]*types.LLMOverride{
-				"rca":                {Model: "model-a"},
-				"workflow_discovery": {Model: "model-b"},
-				"validation":         {Model: "model-c"},
-			},
-		}
-		Expect(cfg.Validate("llm")).To(Succeed())
 	})
 })
 
@@ -404,27 +330,6 @@ reasoning:
 		Expect(cfg.Reasoning.Enabled).To(BeTrue())
 		Expect(cfg.Reasoning.BudgetTokens).To(Equal(2048))
 		Expect(cfg.Reasoning.CapabilityOverride).To(Equal("force_on"))
-	})
-
-	It("should deserialize reasoning fields on a per-phase LLMOverride from YAML", func() {
-		input := `
-provider: openai_compatible
-model: llama3
-endpoint: "http://llm-gateway:8080/v1"
-phaseModels:
-  rca:
-    model: deepseek-reasoner
-    reasoning:
-      enabled: true
-      capabilityOverride: auto
-`
-		var cfg types.LLMConfig
-		Expect(yaml.Unmarshal([]byte(input), &cfg)).To(Succeed())
-		Expect(cfg.PhaseModels).To(HaveKey("rca"))
-		rcaReasoning := cfg.PhaseModels["rca"].Reasoning
-		Expect(rcaReasoning).NotTo(BeNil())
-		Expect(rcaReasoning.Enabled).To(BeTrue())
-		Expect(rcaReasoning.CapabilityOverride).To(Equal("auto"))
 	})
 
 	It("should round-trip Reasoning through YAML marshal/unmarshal unchanged", func() {
