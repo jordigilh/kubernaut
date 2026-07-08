@@ -14,6 +14,14 @@ on:
         description: 'Image tag to test (default: builds from source)'
         required: false
         type: string
+      tls_mode:
+        description: 'TLS mode to test'
+        required: false
+        type: choice
+        default: hook
+        options:
+          - hook
+          - cert-manager
 
 permissions:
   contents: read
@@ -94,12 +102,21 @@ jobs:
             podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
           done
 
+      - name: Install cert-manager
+        if: inputs.tls_mode == 'cert-manager'
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.3/cert-manager.yaml
+          kubectl wait --for=condition=Available --timeout=120s deployment --all -n cert-manager
+          kubectl apply -f deploy/cert-manager/selfsigned-issuer.yaml
+          kubectl wait --for=condition=Ready --timeout=60s clusterissuer/selfsigned-issuer
+
       - name: Run smoke tests
         run: |
           scripts/helm-smoke-test.sh \
             --platform kind \
             --image-tag "${{ steps.tag.outputs.tag }}-amd64" \
-            --chart-path charts/kubernaut/
+            --chart-path charts/kubernaut/ \
+            --tls-mode "${{ inputs.tls_mode || 'hook' }}"
 
       - name: Collect diagnostics on failure
         if: failure()

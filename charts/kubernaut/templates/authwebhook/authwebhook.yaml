@@ -116,7 +116,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.authwebhook | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.authwebhook | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.authwebhook "matchLabels" (dict "app" "authwebhook")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.authwebhook "global" .Values.global) | nindent 6 }}
       {{- if eq .Values.tls.mode "hook" }}
       initContainers:
@@ -248,9 +248,7 @@ spec:
             - name: config
               mountPath: /etc/authwebhook
               readOnly: true
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
           resources:
             {{- toYaml .Values.authwebhook.resources | nindent 12 }}
           livenessProbe:
@@ -278,7 +276,4 @@ spec:
         - name: config
           configMap:
             name: authwebhook-config
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}

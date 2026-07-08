@@ -372,7 +372,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.kubernautAgent | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.kubernautAgent | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.kubernautAgent "matchLabels" (dict "app" "kubernaut-agent")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.kubernautAgent "global" .Values.global) | nindent 6 }}
       containers:
         - name: kubernaut-agent
@@ -420,9 +420,7 @@ spec:
             - name: tls-certs
               mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
               readOnly: true
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             # BR-PLATFORM-005: short-TTL projected token, replacing the SA's
             # disabled default automount (see ServiceAccount above).
             - name: sa-token
@@ -478,10 +476,7 @@ spec:
           secret:
             secretName: kubernautagent-tls
             optional: true
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         # BR-PLATFORM-005: 1-hour TTL projected token replacing the default
         # (much longer-lived) automounted SA token for this high-risk component.
         - name: sa-token

@@ -173,7 +173,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.aianalysis | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.aianalysis | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.aianalysis "matchLabels" (dict "app" "aianalysis-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.aianalysis "global" .Values.global) | nindent 6 }}
       containers:
         - name: aianalysis
@@ -216,9 +216,7 @@ spec:
             - name: rego-policies
               mountPath: /etc/aianalysis/policies
               readOnly: true
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
           resources:
             {{- toYaml .Values.aianalysis.resources | nindent 12 }}
       volumes:
@@ -228,10 +226,7 @@ spec:
         - name: rego-policies
           configMap:
             name: {{ .Values.aianalysis.policies.existingConfigMap | default "aianalysis-policies" }}
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
 ---
 apiVersion: v1
 kind: Service

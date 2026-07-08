@@ -102,6 +102,9 @@
 | ID | Title | Scope | Status | Date | Impact |
 |---|-------|-------|--------|------|--------|
 | DD-PLATFORM-001 | [cert-manager Inter-Service mTLS Auto-Provisioning](./DD-PLATFORM-001-cert-manager-interservice-mtls.md) | Helm chart (all services) | ✅ Approved | 2026-07-07 | Dedicated internal CA closes SC-8 gap for cert-manager mode |
+| DD-PLATFORM-002 | [Fix ArgoCD PostSync/Health Deadlock for post-install Hook Jobs](./DD-PLATFORM-002-argocd-postsync-health-deadlock.md) | Helm chart (db-migration, interservice-ca-sync) | ✅ Approved | 2026-07-07 | argocd.argoproj.io/hook: Sync override breaks PostSync/health circular dependency |
+| DD-PLATFORM-003 | [Infra-First ArgoCD Sync Wave (Phased Deployment)](./DD-PLATFORM-003-argocd-infra-first-sync-wave.md) | Helm chart (PostgreSQL, Valkey, DataStorage, certs, hook Jobs) | ✅ Approved | 2026-07-07 | sync-wave "-1" for infra/certs/DataStorage reduces CI contention and closes TLS-cert mount race |
+| DD-PLATFORM-004 | [Anti-Affinity and PDB Enabled by Default](./DD-PLATFORM-004-chart-default-hardening.md) | Helm chart (all services) | ✅ Approved | 2026-07-08 | Soft anti-affinity + PDB (maxUnavailable: 1) on by default, matching Kubernaut Operator parity |
 
 **Note**: DD-* prefix is used for detailed design decisions with comprehensive alternatives analysis, implementation strategy, and validation plans. ADR-* prefix is used for architectural records.
 

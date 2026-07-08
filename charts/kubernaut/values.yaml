@@ -88,9 +88,9 @@ tls:
 gateway:
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   config:
@@ -195,8 +195,8 @@ datastorage:
     memoryTarget: 80
   pdb:
     enabled: true
-    minAvailable: 1
-    # maxUnavailable: ""
+    # minAvailable: 1
+    maxUnavailable: 1
   logging:
     level: "INFO"
   dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.
@@ -263,9 +263,9 @@ datastorage:
 aianalysis:
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   rego:
@@ -289,9 +289,9 @@ aianalysis:
 signalprocessing:
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   # -- Unified Rego policy externalization (ADR-060, #415).
@@ -340,9 +340,9 @@ signalprocessing:
 remediationorchestrator:
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   resources:
@@ -419,9 +419,9 @@ workflowexecution:
   workflowNamespace: kubernaut-workflows  # namespace for Job/PipelineRun execution
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   config:
@@ -452,9 +452,9 @@ workflowexecution:
 notification:
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   # -- Slack quickstart shortcut.
@@ -485,9 +485,9 @@ notification:
 effectivenessmonitor:
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   config:
@@ -556,9 +556,9 @@ kubernautAgent:
     #       username: "preferred_username"
     #       groups: "groups"
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   resources:
@@ -640,9 +640,9 @@ kubernautAgent:
 authwebhook:
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   logging:
     level: "INFO"
   resources:
@@ -709,6 +709,10 @@ valkey:
 fleetmetadatacache:
   enabled: false
   replicas: 1
+  pdb:
+    enabled: true
+    # minAvailable: 1
+    maxUnavailable: 1
   image:
     repository: quay.io/kubernaut-ai/fleetmetadatacache
     tag: v1.6.0
@@ -870,6 +874,10 @@ networkPolicies:
 apifrontend:
   enabled: true
   replicas: 1
+  pdb:
+    enabled: true
+    # minAvailable: 1
+    maxUnavailable: 1
   # -- HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core
   # API — no CRD gate needed, unlike ServiceMonitor/PrometheusRule. Ported from the Kubernaut
   # Operator's APIFrontendHPA (kubernaut-operator/internal/resources/hpa.go).
@@ -1049,9 +1057,9 @@ console:
   enabled: false
   replicas: 1
   pdb:
-    enabled: false
+    enabled: true
     # minAvailable: 1
-    # maxUnavailable: ""
+    maxUnavailable: 1
   auth:
     # -- Pre-created Secret with keys: client-id, client-secret, cookie-secret
     # (generate cookie-secret with: openssl rand -base64 32 | head -c 32 | base64).

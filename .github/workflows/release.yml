@@ -446,13 +446,19 @@ jobs:
   # ========================================
 
   helm-smoke-test:
-    name: Helm Smoke Tests (Kind)
+    name: Helm Smoke Tests (Kind, tls=${{ matrix.tls_mode }})
     needs: [prepare, build-amd64]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # #334 + DD-PLATFORM-001: release gate must cover cert-manager mode
+        # too, not just the hook-mode default.
+        tls_mode: [hook, cert-manager]
     env:
       KIND_EXPERIMENTAL_PROVIDER: podman
-      KIND_CLUSTER_NAME: helm-smoke-release
+      KIND_CLUSTER_NAME: helm-smoke-release-${{ matrix.tls_mode }}
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
@@ -505,12 +511,21 @@ jobs:
             podman save "${IMAGE}" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
           done
 
+      - name: Install cert-manager
+        if: matrix.tls_mode == 'cert-manager'
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.20.3/cert-manager.yaml
+          kubectl wait --for=condition=Available --timeout=120s deployment --all -n cert-manager
+          kubectl apply -f deploy/cert-manager/selfsigned-issuer.yaml
+          kubectl wait --for=condition=Ready --timeout=60s clusterissuer/selfsigned-issuer
+
       - name: Run smoke tests
         run: |
           scripts/helm-smoke-test.sh \
             --platform kind \
             --image-tag "${{ needs.prepare.outputs.version }}-amd64" \
-            --chart-path charts/kubernaut/
+            --chart-path charts/kubernaut/ \
+            --tls-mode "${{ matrix.tls_mode }}"
 
       - name: Collect diagnostics on failure
         if: failure()
@@ -531,7 +546,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: helm-smoke-diagnostics-${{ github.run_id }}
+          name: helm-smoke-diagnostics-${{ matrix.tls_mode }}-${{ github.run_id }}
           path: /tmp/kind-smoke-logs/
           retention-days: 7
           if-no-files-found: warn

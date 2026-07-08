@@ -1,14 +1,13 @@
-{{- $remediationorchestratorOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.remediationorchestrator.fleet.oauth2) | fromYaml }}
-{{- $remediationorchestratorFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.remediationorchestrator.fleet) | fromYaml }}
+{{- $remediationorchestratorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.remediationorchestrator.fleet "oauth2" .Values.remediationorchestrator.fleet.oauth2) | fromYaml }}
 {{- if .Values.remediationorchestrator.fleet.enabled }}
-{{- if not $remediationorchestratorFleet.mcpGatewayEndpoint }}
+{{- if not $remediationorchestratorFleetPreamble.config.mcpGatewayEndpoint }}
 {{- fail "remediationorchestrator.fleet.mcpGatewayEndpoint is required when remediationorchestrator.fleet.enabled=true (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
 {{- end }}
 {{- if .Values.remediationorchestrator.fleet.oauth2.enabled }}
-{{- if not $remediationorchestratorOauth2.tokenURL }}
+{{- if not $remediationorchestratorFleetPreamble.oauth2.tokenURL }}
 {{- fail "remediationorchestrator.fleet.oauth2.tokenURL is required when remediationorchestrator.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
-{{- if not $remediationorchestratorOauth2.credentialsSecretRef }}
+{{- if not $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}
 {{- fail "remediationorchestrator.fleet.oauth2.credentialsSecretRef is required when remediationorchestrator.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
 {{- end }}
 {{- end }}
@@ -79,11 +78,11 @@ data:
       {{- else if eq (default "fleetmetadatacache" .Values.remediationorchestrator.fleet.backend) "fleetmetadatacache" }}
       endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
       {{- end }}
-      mcpGatewayEndpoint: {{ $remediationorchestratorFleet.mcpGatewayEndpoint | quote }}
-      {{- if $remediationorchestratorFleet.mcpGatewayType }}
-      mcpGatewayType: {{ $remediationorchestratorFleet.mcpGatewayType | quote }}
+      mcpGatewayEndpoint: {{ $remediationorchestratorFleetPreamble.config.mcpGatewayEndpoint | quote }}
+      {{- if $remediationorchestratorFleetPreamble.config.mcpGatewayType }}
+      mcpGatewayType: {{ $remediationorchestratorFleetPreamble.config.mcpGatewayType | quote }}
       {{- end }}
-      tlsCAFile: {{ $remediationorchestratorFleet.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      tlsCAFile: {{ $remediationorchestratorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). FleetConfig.TokenPath
            consumes this (Issue #1556) and Validate() hard-requires it when backend=acm. */}}
       {{- if .Values.remediationorchestrator.fleet.tokenSecretRef }}
@@ -92,15 +91,15 @@ data:
       {{- if .Values.remediationorchestrator.fleet.oauth2.enabled }}
       oauth2:
         enabled: true
-        tokenURL: {{ $remediationorchestratorOauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ $remediationorchestratorOauth2.credentialsSecretRef | quote }}
-        {{- if $remediationorchestratorOauth2.scopes }}
+        tokenURL: {{ $remediationorchestratorFleetPreamble.oauth2.tokenURL | quote }}
+        credentialsSecretRef: {{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef | quote }}
+        {{- if $remediationorchestratorFleetPreamble.oauth2.scopes }}
         scopes:
-          {{- range $remediationorchestratorOauth2.scopes }}
+          {{- range $remediationorchestratorFleetPreamble.oauth2.scopes }}
           - {{ . | quote }}
           {{- end }}
         {{- end }}
-        tlsCAFile: {{ $remediationorchestratorOauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+        tlsCAFile: {{ $remediationorchestratorFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{- end }}
     {{- end }}
 ---
@@ -249,7 +248,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.remediationorchestrator | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.remediationorchestrator | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.remediationorchestrator "matchLabels" (dict "app" "remediationorchestrator-controller")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.remediationorchestrator "global" .Values.global) | nindent 6 }}
       containers:
         - name: remediationorchestrator-controller
@@ -297,12 +296,10 @@ spec:
             - name: config
               mountPath: /etc/config
               readOnly: true
-            - name: tls-ca
-              mountPath: /etc/tls-ca
-              readOnly: true
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
             - name: oauth2-credentials
-              mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorOauth2.credentialsSecretRef }}"
+              mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
             {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
@@ -316,14 +313,11 @@ spec:
         - name: config
           configMap:
             name: remediationorchestrator-config
-        - name: tls-ca
-          configMap:
-            name: inter-service-ca
-            optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
-            secretName: {{ $remediationorchestratorOauth2.credentialsSecretRef }}
+            secretName: {{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}
         {{- end }}
         {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
         - name: fleet-acm-token

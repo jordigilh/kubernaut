@@ -1,4 +1,10 @@
 ---
+# DD-PLATFORM-003: DataStorage (ConfigMap + Deployment + Service) renders in
+# ArgoCD's "-1" sync-wave -- it is the sole dependency of ~11 other
+# application controllers (ADR-032 data-access-layer isolation) and of the
+# db-migration / interservice-ca-sync hook Jobs, so bringing it up ahead of
+# the default "0" wave both prevents a repeat of the CI resource-contention
+# failure and guarantees it is Ready before any dependent controller starts.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,6 +13,8 @@ metadata:
   labels:
     app: datastorage
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 data:
   config.yaml: |
     server:
@@ -77,6 +85,8 @@ metadata:
   labels:
     app: datastorage
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   replicas: {{ .Values.datastorage.replicas }}
   selector:
@@ -95,7 +105,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.datastorage | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.datastorage | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.datastorage "matchLabels" (dict "app" "datastorage")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.datastorage "global" .Values.global) | nindent 6 }}
       terminationGracePeriodSeconds: 90
       initContainers:
@@ -215,6 +225,8 @@ metadata:
   labels:
     app: datastorage
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   type: {{ .Values.datastorage.service.type }}
   ports:

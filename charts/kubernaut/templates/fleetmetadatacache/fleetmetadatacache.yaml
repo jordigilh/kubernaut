@@ -1,13 +1,12 @@
 {{- if .Values.fleetmetadatacache.enabled }}
-{{- $fmcOauth2 := include "kubernaut.fleet.oauth2" (dict "root" $ "svc" .Values.fleetmetadatacache.oauth2) | fromYaml }}
-{{- $fmcFleet := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.fleetmetadatacache) | fromYaml }}
-{{- if not $fmcFleet.mcpGatewayEndpoint }}
+{{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
+{{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
 {{- fail "fleetmetadatacache.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
 {{- end }}
-{{- if not $fmcOauth2.tokenURL }}
+{{- if not $fmcFleetPreamble.oauth2.tokenURL }}
 {{- fail "fleetmetadatacache.oauth2.tokenURL is required when fleetmetadatacache.enabled=true — MCP Gateway requires OAuth2 authentication (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
-{{- if not $fmcOauth2.credentialsSecretRef }}
+{{- if not $fmcFleetPreamble.oauth2.credentialsSecretRef }}
 {{- fail "fleetmetadatacache.oauth2.credentialsSecretRef is required when fleetmetadatacache.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
 {{- end }}
 ---
@@ -19,14 +18,14 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
     server:
       apiAddr: ":8080"
       metricsAddr: ":8081"
     mcpGateway:
-      endpoint: {{ $fmcFleet.mcpGatewayEndpoint | quote }}
+      endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
       gatewayType: {{ .Values.fleetmetadatacache.gatewayType | quote }}
       namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
     valkey:
@@ -35,7 +34,7 @@ data:
       interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
       keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
     oauth2:
-      tokenUrl: {{ $fmcOauth2.tokenURL | quote }}
+      tokenUrl: {{ $fmcFleetPreamble.oauth2.tokenURL | quote }}
       credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
 ---
 apiVersion: apps/v1
@@ -46,7 +45,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.fleetmetadatacache.replicas }}
   selector:
@@ -59,20 +58,17 @@ spec:
         app.kubernetes.io/component: fleet-metadata-cache
     spec:
       serviceAccountName: fleetmetadatacache
+      {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
-        runAsNonRoot: true
-        seccompProfile:
-          type: RuntimeDefault
+        {{- include "kubernaut.podSecurityContext" .Values.fleetmetadatacache | nindent 8 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.fleetmetadatacache "matchLabels" (dict "app.kubernetes.io/name" "fleetmetadatacache")) | nindent 6 }}
+      {{- include "kubernaut.scheduling" (dict "component" .Values.fleetmetadatacache "global" .Values.global) | nindent 6 }}
       containers:
         - name: fleetmetadatacache
           image: "{{ .Values.fleetmetadatacache.image.repository }}:{{ .Values.fleetmetadatacache.image.tag }}"
           imagePullPolicy: {{ .Values.fleetmetadatacache.image.pullPolicy }}
           securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop:
-                - ALL
+            {{- include "kubernaut.containerSecurityContext" .Values.fleetmetadatacache | nindent 12 }}
           args:
             - "--config=/etc/fleetmetadatacache/config.yaml"
           ports:
@@ -109,7 +105,7 @@ spec:
             name: fleetmetadatacache-config
         - name: oauth2-credentials
           secret:
-            secretName: {{ $fmcOauth2.credentialsSecretRef }}
+            secretName: {{ $fmcFleetPreamble.oauth2.credentialsSecretRef }}
 ---
 apiVersion: v1
 kind: Service
@@ -119,7 +115,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
-    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
   selector:
@@ -142,6 +138,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
+    {{- include "kubernaut.labels" . | nindent 4 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -149,6 +146,7 @@ metadata:
   name: fleetmetadatacache
   labels:
     app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
 {{- if eq .Values.fleetmetadatacache.gatewayType "kuadrant" }}
   - apiGroups: ["mcp.kuadrant.io"]
@@ -172,6 +170,7 @@ metadata:
   name: fleetmetadatacache
   labels:
     app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -189,6 +188,7 @@ metadata:
   labels:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
+    {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:

@@ -1,4 +1,9 @@
 {{- if .Values.valkey.enabled }}
+# DD-PLATFORM-003: Valkey renders in ArgoCD's "-1" sync-wave (ahead of the
+# default "0" application controllers) -- DataStorage needs it Ready before
+# its own wave can proceed, and running it concurrently with ~14 application
+# controllers was a measured contributor to CI resource-contention pod
+# restarts.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -7,6 +12,8 @@ metadata:
   labels:
     app: valkey
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 automountServiceAccountToken: false
 ---
 apiVersion: v1
@@ -17,6 +24,8 @@ metadata:
   labels:
     app: valkey
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   type: ClusterIP
   ports:
@@ -35,6 +44,8 @@ metadata:
   labels:
     app: valkey
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   replicas: {{ .Values.valkey.replicas | default 1 }}
   selector:
@@ -47,20 +58,16 @@ spec:
     spec:
       serviceAccountName: valkey
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
-      {{- $pscDefaults := dict "seccompProfile" (dict "type" "RuntimeDefault") }}
-      {{- $pscOverride := .Values.valkey.podSecurityContext | default dict }}
       securityContext:
-        {{- toYaml (merge $pscOverride $pscDefaults) | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.valkey | nindent 6 }}
+        {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.valkey.podSecurityContext "defaults" (dict "seccompProfile" (dict "type" "RuntimeDefault"))) | nindent 8 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.valkey "matchLabels" (dict "app" "valkey")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.valkey "global" .Values.global) | nindent 6 }}
       containers:
         - name: valkey
           image: {{ .Values.valkey.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
-          {{- $cscDefaults := dict "allowPrivilegeEscalation" false }}
-          {{- $cscOverride := .Values.valkey.containerSecurityContext | default dict }}
           securityContext:
-            {{- toYaml (merge $cscOverride $cscDefaults) | nindent 12 }}
+            {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.valkey.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false)) | nindent 12 }}
           ports:
             - name: valkey
               containerPort: 6379
@@ -98,6 +105,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
   annotations:
     "helm.sh/resource-policy": keep
+    "argocd.argoproj.io/sync-wave": "-1"
 spec:
   accessModes:
     - ReadWriteOnce
