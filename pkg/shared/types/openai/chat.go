@@ -20,6 +20,12 @@ type ChatCompletionRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
 	Tools    []Tool    `json:"tools,omitempty"`
+	// Stream requests the Server-Sent Events streaming variant of the Chat
+	// Completions protocol (#1637): the mock must honor this and respond
+	// with SSE chunks rather than a single JSON body, since real
+	// OpenAI-compatible streaming clients (pkg/shared/llm/openaicompat)
+	// parse the response as SSE regardless of what was actually sent.
+	Stream bool `json:"stream,omitempty"`
 }
 
 // ChatCompletionResponse represents an OpenAI-compatible chat completion response.
