@@ -5060,6 +5060,8 @@ components:
             Only present for effectiveness.metrics.assessed events.
             Phase A (V1.0): cpu_before/cpu_after populated. Other fields nullable pending
             Phase B metrics assessor expansion (additional PromQL queries).
+            Cluster-scoped fields (node_*, pv_*) populated for Node/PersistentVolume
+            targets only (Issue #193, DD-EM-005 v1.1); null for namespace-scoped targets.
           properties:
             cpu_before:
               type: number
@@ -5113,6 +5115,68 @@ components:
               format: double
               nullable: true
               description: Request throughput (requests/second) after remediation
+            node_not_ready_before:
+              type: number
+              format: double
+              nullable: true
+              description: |
+                Node Ready condition status=false flag before remediation (1=not ready, 0=ready).
+                Cluster-scoped (Issue #193, DD-EM-005).
+            node_not_ready_after:
+              type: number
+              format: double
+              nullable: true
+              description: Node Ready condition status=false flag after remediation (1=not ready, 0=ready). Cluster-scoped (Issue #193, DD-EM-005).
+            node_memory_pressure_before:
+              type: number
+              format: double
+              nullable: true
+              description: Node MemoryPressure condition flag before remediation (1=pressure, 0=none). Cluster-scoped (Issue #193, DD-EM-005).
+            node_memory_pressure_after:
+              type: number
+              format: double
+              nullable: true
+              description: Node MemoryPressure condition flag after remediation (1=pressure, 0=none). Cluster-scoped (Issue #193, DD-EM-005).
+            node_disk_pressure_before:
+              type: number
+              format: double
+              nullable: true
+              description: Node DiskPressure condition flag before remediation (1=pressure, 0=none). Cluster-scoped (Issue #193, DD-EM-005).
+            node_disk_pressure_after:
+              type: number
+              format: double
+              nullable: true
+              description: Node DiskPressure condition flag after remediation (1=pressure, 0=none). Cluster-scoped (Issue #193, DD-EM-005).
+            pv_phase_failed_before:
+              type: number
+              format: double
+              nullable: true
+              description: PersistentVolume Failed phase flag before remediation (1=failed, 0=not failed). Cluster-scoped (Issue #193, DD-EM-005).
+            pv_phase_failed_after:
+              type: number
+              format: double
+              nullable: true
+              description: PersistentVolume Failed phase flag after remediation (1=failed, 0=not failed). Cluster-scoped (Issue #193, DD-EM-005).
+            pv_phase_pending_before:
+              type: number
+              format: double
+              nullable: true
+              description: PersistentVolume Pending phase flag before remediation (1=pending, 0=not pending). Cluster-scoped (Issue #193, DD-EM-005).
+            pv_phase_pending_after:
+              type: number
+              format: double
+              nullable: true
+              description: PersistentVolume Pending phase flag after remediation (1=pending, 0=not pending). Cluster-scoped (Issue #193, DD-EM-005).
+            pv_usage_ratio_before:
+              type: number
+              format: double
+              nullable: true
+              description: PersistentVolume used/capacity usage ratio before remediation (0.0-1.0+). Cluster-scoped (Issue #193, DD-EM-005).
+            pv_usage_ratio_after:
+              type: number
+              format: double
+              nullable: true
+              description: PersistentVolume used/capacity usage ratio after remediation (0.0-1.0+). Cluster-scoped (Issue #193, DD-EM-005).
 
         alert_resolution:
           type: object
@@ -6856,6 +6920,64 @@ components:
           format: double
           description: Error rate after remediation (0.0-1.0)
           example: 0.019
+        throughputBeforeRps:
+          type: number
+          format: double
+          description: Request throughput (requests/second) before remediation
+          example: 150.0
+        throughputAfterRps:
+          type: number
+          format: double
+          description: Request throughput (requests/second) after remediation
+          example: 148.0
+        nodeNotReadyBefore:
+          type: number
+          format: double
+          description: Node Ready condition status=false flag before remediation (1=not ready, 0=ready). Cluster-scoped (Issue #193, DD-EM-005).
+        nodeNotReadyAfter:
+          type: number
+          format: double
+          description: Node Ready condition status=false flag after remediation (1=not ready, 0=ready). Cluster-scoped (Issue #193, DD-EM-005).
+        nodeMemoryPressureBefore:
+          type: number
+          format: double
+          description: Node MemoryPressure condition flag before remediation (1=pressure, 0=none). Cluster-scoped (Issue #193, DD-EM-005).
+        nodeMemoryPressureAfter:
+          type: number
+          format: double
+          description: Node MemoryPressure condition flag after remediation (1=pressure, 0=none). Cluster-scoped (Issue #193, DD-EM-005).
+        nodeDiskPressureBefore:
+          type: number
+          format: double
+          description: Node DiskPressure condition flag before remediation (1=pressure, 0=none). Cluster-scoped (Issue #193, DD-EM-005).
+        nodeDiskPressureAfter:
+          type: number
+          format: double
+          description: Node DiskPressure condition flag after remediation (1=pressure, 0=none). Cluster-scoped (Issue #193, DD-EM-005).
+        pvPhaseFailedBefore:
+          type: number
+          format: double
+          description: PersistentVolume Failed phase flag before remediation (1=failed, 0=not failed). Cluster-scoped (Issue #193, DD-EM-005).
+        pvPhaseFailedAfter:
+          type: number
+          format: double
+          description: PersistentVolume Failed phase flag after remediation (1=failed, 0=not failed). Cluster-scoped (Issue #193, DD-EM-005).
+        pvPhasePendingBefore:
+          type: number
+          format: double
+          description: PersistentVolume Pending phase flag before remediation (1=pending, 0=not pending). Cluster-scoped (Issue #193, DD-EM-005).
+        pvPhasePendingAfter:
+          type: number
+          format: double
+          description: PersistentVolume Pending phase flag after remediation (1=pending, 0=not pending). Cluster-scoped (Issue #193, DD-EM-005).
+        pvUsageRatioBefore:
+          type: number
+          format: double
+          description: PersistentVolume used/capacity usage ratio before remediation (0.0-1.0+). Cluster-scoped (Issue #193, DD-EM-005).
+        pvUsageRatioAfter:
+          type: number
+          format: double
+          description: PersistentVolume used/capacity usage ratio after remediation (0.0-1.0+). Cluster-scoped (Issue #193, DD-EM-005).
 
     # ========================================
     # ActionType Taxonomy (BR-WORKFLOW-007)

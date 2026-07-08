@@ -248,6 +248,21 @@ type MetricsAssessedData struct {
 	ThroughputBeforeRPS *float64
 	// ThroughputAfterRPS is the request throughput (req/s) after remediation (nil if unavailable).
 	ThroughputAfterRPS *float64
+
+	// Cluster-scoped fields (Issue #193, DD-EM-005 v1.1): populated only for
+	// Node/PersistentVolume SignalTarget.Kind, nil for namespace-scoped assessments.
+	NodeNotReadyBefore       *float64
+	NodeNotReadyAfter        *float64
+	NodeMemoryPressureBefore *float64
+	NodeMemoryPressureAfter  *float64
+	NodeDiskPressureBefore   *float64
+	NodeDiskPressureAfter    *float64
+	PVPhaseFailedBefore      *float64
+	PVPhaseFailedAfter       *float64
+	PVPhasePendingBefore     *float64
+	PVPhasePendingAfter      *float64
+	PVUsageRatioBefore       *float64
+	PVUsageRatioAfter        *float64
 }
 
 // RecordHealthAssessed records the effectiveness.health.assessed audit event with
@@ -418,9 +433,55 @@ func (m *Manager) RecordMetricsAssessed(ctx context.Context, ea *eav1.Effectiven
 	if metricsData.ThroughputAfterRPS != nil {
 		md.ThroughputAfterRps = ogenclient.NewOptNilFloat64(*metricsData.ThroughputAfterRPS)
 	}
+	populateClusterScopedMetricDeltas(&md, metricsData)
 	payload.MetricDeltas = ogenclient.NewOptEffectivenessAssessmentAuditPayloadMetricDeltas(md)
 
 	return m.storeEvent(ctx, cfg, ea, payload, result)
+}
+
+// populateClusterScopedMetricDeltas Opt-wraps the cluster-scoped (Node,
+// PersistentVolume) metric_deltas fields from metricsData into md. Extracted
+// from RecordMetricsAssessed (Issue #193, DD-EM-005 v1.1) to keep the
+// function within the project's line-length convention -- pure code motion
+// alongside the new field mappings, no behavior change to the existing
+// namespace-scoped fields above.
+func populateClusterScopedMetricDeltas(md *ogenclient.EffectivenessAssessmentAuditPayloadMetricDeltas, metricsData MetricsAssessedData) {
+	if metricsData.NodeNotReadyBefore != nil {
+		md.NodeNotReadyBefore = ogenclient.NewOptNilFloat64(*metricsData.NodeNotReadyBefore)
+	}
+	if metricsData.NodeNotReadyAfter != nil {
+		md.NodeNotReadyAfter = ogenclient.NewOptNilFloat64(*metricsData.NodeNotReadyAfter)
+	}
+	if metricsData.NodeMemoryPressureBefore != nil {
+		md.NodeMemoryPressureBefore = ogenclient.NewOptNilFloat64(*metricsData.NodeMemoryPressureBefore)
+	}
+	if metricsData.NodeMemoryPressureAfter != nil {
+		md.NodeMemoryPressureAfter = ogenclient.NewOptNilFloat64(*metricsData.NodeMemoryPressureAfter)
+	}
+	if metricsData.NodeDiskPressureBefore != nil {
+		md.NodeDiskPressureBefore = ogenclient.NewOptNilFloat64(*metricsData.NodeDiskPressureBefore)
+	}
+	if metricsData.NodeDiskPressureAfter != nil {
+		md.NodeDiskPressureAfter = ogenclient.NewOptNilFloat64(*metricsData.NodeDiskPressureAfter)
+	}
+	if metricsData.PVPhaseFailedBefore != nil {
+		md.PvPhaseFailedBefore = ogenclient.NewOptNilFloat64(*metricsData.PVPhaseFailedBefore)
+	}
+	if metricsData.PVPhaseFailedAfter != nil {
+		md.PvPhaseFailedAfter = ogenclient.NewOptNilFloat64(*metricsData.PVPhaseFailedAfter)
+	}
+	if metricsData.PVPhasePendingBefore != nil {
+		md.PvPhasePendingBefore = ogenclient.NewOptNilFloat64(*metricsData.PVPhasePendingBefore)
+	}
+	if metricsData.PVPhasePendingAfter != nil {
+		md.PvPhasePendingAfter = ogenclient.NewOptNilFloat64(*metricsData.PVPhasePendingAfter)
+	}
+	if metricsData.PVUsageRatioBefore != nil {
+		md.PvUsageRatioBefore = ogenclient.NewOptNilFloat64(*metricsData.PVUsageRatioBefore)
+	}
+	if metricsData.PVUsageRatioAfter != nil {
+		md.PvUsageRatioAfter = ogenclient.NewOptNilFloat64(*metricsData.PVUsageRatioAfter)
+	}
 }
 
 // buildBasePayload constructs the common payload fields shared by all component events.
