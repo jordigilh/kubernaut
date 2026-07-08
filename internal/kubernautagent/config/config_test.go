@@ -598,6 +598,32 @@ var _ = Describe("AlignmentCheck EffectiveLLM merge — BR-AI-601", func() {
 			Expect(sOut.OAuth2.TokenURL).To(Equal("https://auth.example.com/token"))
 		})
 	})
+
+	Describe("UT-AI-1616-006 (CM-6): EffectiveLLM applies the shadow override's Reasoning when set", func() {
+		It("should override Reasoning, not inherit the base's", func() {
+			base.Reasoning = &types.LLMReasoningConfig{Enabled: true, Effort: "low"}
+			cfg := config.AlignmentCheckConfig{
+				LLM: &config.LLMOverrideConfig{
+					Reasoning: &types.LLMReasoningConfig{Enabled: true, Effort: "high"},
+				},
+			}
+			sOut, _ := cfg.EffectiveLLM(base, runtime)
+			Expect(sOut.Reasoning).NotTo(BeNil())
+			Expect(sOut.Reasoning.Effort).To(Equal("high"), "the shadow override's Reasoning must win over the base's")
+		})
+	})
+
+	Describe("UT-AI-1616-007 (CM-6): EffectiveLLM falls back to base Reasoning when the shadow override has none", func() {
+		It("should leave base Reasoning unchanged when the shadow override does not set it", func() {
+			baseReasoning := &types.LLMReasoningConfig{Enabled: true, Effort: "medium"}
+			base.Reasoning = baseReasoning
+			cfg := config.AlignmentCheckConfig{
+				LLM: &config.LLMOverrideConfig{Model: "claude-3-opus"},
+			}
+			sOut, _ := cfg.EffectiveLLM(base, runtime)
+			Expect(sOut.Reasoning).To(Equal(baseReasoning), "base Reasoning must be preserved when the shadow override doesn't set it")
+		})
+	})
 })
 
 var _ = Describe("FleetConfig.AlignmentCheck — BR-AI-601", func() {

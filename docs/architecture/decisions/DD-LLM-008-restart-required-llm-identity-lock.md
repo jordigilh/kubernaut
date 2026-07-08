@@ -60,6 +60,8 @@ Provider + Model, evaluated per LLM configuration scope:
 
 Every other hot-reloadable field keeps working exactly as before this DD: `temperature`, `maxRetries`, `timeoutSeconds`, `endpoint`, `apiKeyFile`/API key rotation, `customHeaders`, and non-identity phase overrides (adding/removing/tuning a phase override whose effective identity equals — and continues to equal — the base identity).
 
+`reasoning`/`effort` (base `ai.llm.reasoning` and, since #1616/BR-AI-086, `phaseModels.<phase>.reasoning`) is explicitly named here rather than left implicit: it is a tuning field, never identity, by construction — `validatePhaseIdentity` compares only `Provider`/`Model` between the boot snapshot and a reload candidate and has never inspected `Reasoning`. A reload that changes only a phase's `reasoning`/`effort` is therefore always accepted, even for a phase whose `provider`/`model` were pinned by an earlier override.
+
 ### AF
 
 No production logic changed for the reload path itself. `cmd/apifrontend/main.go`'s previously-anonymous config-watcher callback was extracted into a named `configReloadCallback(cfg *config.Config) func([]byte) error` purely to make the following invariant independently testable: parsing and validating a candidate config (for CM-02 audit/drift-detection purposes) never mutates the live `*config.Config` passed to `startConfigWatcher`, regardless of what fields the candidate changes. `TestConfigReloadNeverMutatesLiveConfig`-equivalent coverage lives in `cmd/apifrontend/reload_identity_test.go`.

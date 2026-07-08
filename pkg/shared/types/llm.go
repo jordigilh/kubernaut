@@ -18,29 +18,17 @@ const (
 	LLMProviderOpenAICompatible = "openai_compatible"
 )
 
-// validPhaseNames enumerates the phase keys accepted in PhaseModels.
-var validPhaseNames = map[string]bool{
-	"rca":                true,
-	"workflow_discovery": true,
-	"validation":         true,
-}
-
-// IsValidPhaseName reports whether name is an accepted PhaseModels key.
-func IsValidPhaseName(name string) bool {
-	return validPhaseNames[name]
-}
-
 // LLMConfig is the shared LLM configuration type used by both the API Frontend
 // and Kubernaut Agent. It covers the union of all fields from both services.
 // KA internally decides which fields are hot-reloadable vs restart-only; the
 // type itself is agnostic to that split.
 type LLMConfig struct {
-	Provider        string                  `yaml:"provider"`
-	Model           string                  `yaml:"model"`
-	Endpoint        string                  `yaml:"endpoint,omitempty"`
-	APIKeyFile      string                  `yaml:"apiKeyFile,omitempty"`
-	VertexProject   string                  `yaml:"vertexProject,omitempty"`
-	VertexLocation  string                  `yaml:"vertexLocation,omitempty"`
+	Provider       string `yaml:"provider"`
+	Model          string `yaml:"model"`
+	Endpoint       string `yaml:"endpoint,omitempty"`
+	APIKeyFile     string `yaml:"apiKeyFile,omitempty"`
+	VertexProject  string `yaml:"vertexProject,omitempty"`
+	VertexLocation string `yaml:"vertexLocation,omitempty"`
 	// AzureAPIVersion, when non-empty, switches provider: openai/
 	// openai_compatible into Azure OpenAI mode for both AF and KA (#1600):
 	// the shared openaicompat client uses Azure's deployment-scoped URL
@@ -55,19 +43,18 @@ type LLMConfig struct {
 	// rejected at client construction until that issue lands. Retained
 	// here (rather than removed) because it is the intended re-entry point
 	// once wired.
-	AzureAPIVersion string                  `yaml:"azureApiVersion,omitempty"`
-	BedrockRegion   string                  `yaml:"bedrockRegion,omitempty"`
-	Temperature     *float64                `yaml:"temperature,omitempty"`
-	MaxRetries      *int                    `yaml:"maxRetries,omitempty"`
-	TimeoutSeconds  int                     `yaml:"timeoutSeconds,omitempty"`
-	TLSCaFile       string                  `yaml:"tlsCaFile,omitempty"`
-	TLSCertFile     string                  `yaml:"tlsCertFile,omitempty"`
-	TLSKeyFile      string                  `yaml:"tlsKeyFile,omitempty"`
-	OAuth2          LLMOAuth2Config         `yaml:"oauth2,omitempty"`
-	CircuitBreaker  LLMCircuitBreaker       `yaml:"circuitBreaker,omitempty"`
-	CustomHeaders   []LLMHeaderDef          `yaml:"customHeaders,omitempty"`
-	PhaseModels     map[string]*LLMOverride `yaml:"phaseModels,omitempty"`
-	Reasoning       *LLMReasoningConfig     `yaml:"reasoning,omitempty"`
+	AzureAPIVersion string              `yaml:"azureApiVersion,omitempty"`
+	BedrockRegion   string              `yaml:"bedrockRegion,omitempty"`
+	Temperature     *float64            `yaml:"temperature,omitempty"`
+	MaxRetries      *int                `yaml:"maxRetries,omitempty"`
+	TimeoutSeconds  int                 `yaml:"timeoutSeconds,omitempty"`
+	TLSCaFile       string              `yaml:"tlsCaFile,omitempty"`
+	TLSCertFile     string              `yaml:"tlsCertFile,omitempty"`
+	TLSKeyFile      string              `yaml:"tlsKeyFile,omitempty"`
+	OAuth2          LLMOAuth2Config     `yaml:"oauth2,omitempty"`
+	CircuitBreaker  LLMCircuitBreaker   `yaml:"circuitBreaker,omitempty"`
+	CustomHeaders   []LLMHeaderDef      `yaml:"customHeaders,omitempty"`
+	Reasoning       *LLMReasoningConfig `yaml:"reasoning,omitempty"`
 	// Resolved at runtime from APIKeyFile. Not serialized.
 	APIKey string `yaml:"-"`
 }
@@ -159,28 +146,6 @@ type LLMHeaderDef struct {
 	FilePath     string `yaml:"filePath,omitempty"`
 }
 
-// LLMOverride allows per-phase or per-component LLM configuration overrides.
-// Non-empty fields win over the base LLMConfig values.
-type LLMOverride struct {
-	Provider        string              `yaml:"provider,omitempty"`
-	Endpoint        string              `yaml:"endpoint,omitempty"`
-	Model           string              `yaml:"model,omitempty"`
-	APIKeyFile      string              `yaml:"apiKeyFile,omitempty"`
-	AzureAPIVersion string              `yaml:"azureApiVersion,omitempty"`
-	VertexProject   string              `yaml:"vertexProject,omitempty"`
-	VertexLocation  string              `yaml:"vertexLocation,omitempty"`
-	BedrockRegion   string              `yaml:"bedrockRegion,omitempty"`
-	Reasoning       *LLMReasoningConfig `yaml:"reasoning,omitempty"`
-}
-
-// IsEmpty reports whether all override fields are zero-valued.
-func (o *LLMOverride) IsEmpty() bool {
-	return o.Provider == "" && o.Endpoint == "" && o.Model == "" &&
-		o.APIKeyFile == "" && o.AzureAPIVersion == "" &&
-		o.VertexProject == "" && o.VertexLocation == "" && o.BedrockRegion == "" &&
-		o.Reasoning == nil
-}
-
 // DefaultLLMTimeoutSeconds is the fallback HTTP timeout for LLM requests.
 const DefaultLLMTimeoutSeconds = 120
 
@@ -223,34 +188,50 @@ func (c *LLMConfig) Validate(prefix string) error {
 	if err := c.validateCircuitBreaker(prefix); err != nil {
 		return err
 	}
-	if err := c.validateReasoning(prefix); err != nil {
-		return err
-	}
-	return c.validatePhaseModels(prefix)
+	return c.validateReasoning(prefix)
 }
 
-// validateReasoning checks Reasoning.Effort against the canonical
+// validateReasoning checks the base LLMConfig's own Reasoning against the
+// canonical vocabulary and Anthropic-contradiction rule, using c.Provider as
+// the effective provider. Thin wrapper over ValidateReasoningConfig — see
+// that function for the shared rule. Also used, with a different effective
+// provider, to validate per-phase and per-alignment-check Reasoning
+// overrides (#1616, BR-AI-086) via LLMOverrideConfig in
+// internal/kubernautagent/config, avoiding duplicating this logic there.
+func (c *LLMConfig) validateReasoning(prefix string) error {
+	return ValidateReasoningConfig(prefix, c.Reasoning, c.Provider)
+}
+
+// ValidateReasoningConfig checks r.Effort against the canonical
 // provider-agnostic vocabulary and fails closed on a known contradiction:
-// "none" while Enabled for an Anthropic-family provider, which has no
-// "thinking enabled with zero effort" wire state (#1604). This is
+// "none" while Enabled for an Anthropic-family effectiveProvider, which has
+// no "thinking enabled with zero effort" wire state (#1604). This is
 // deliberately NOT the same as the compatibility-floor graceful-degrade
 // principle (DD-LLM-005) — that principle covers models/providers we
-// cannot possibly identify; this is a known, deterministic contradiction
-// on a provider we always recognize, so it must be observable at startup
+// cannot possibly identify; this is a known, deterministic contradiction on
+// a provider we always recognize, so it must be observable at startup
 // rather than silently reinterpreted at runtime.
-func (c *LLMConfig) validateReasoning(prefix string) error {
-	if c.Reasoning == nil {
+//
+// r may be nil (no reasoning configured — always valid). effectiveProvider
+// is the provider that will actually serve this reasoning config: the base
+// LLMConfig.Provider for base validation, or an override's own Provider
+// (falling back to the base provider) for per-phase/per-alignment-check
+// overrides (#1616) — Reasoning is a tuning field, not identity, so its
+// effective provider can differ from the override's own Provider field
+// being unset.
+func ValidateReasoningConfig(prefix string, r *LLMReasoningConfig, effectiveProvider string) error {
+	if r == nil {
 		return nil
 	}
-	if !validReasoningEfforts[c.Reasoning.Effort] {
+	if !validReasoningEfforts[r.Effort] {
 		return fmt.Errorf("%s.reasoning.effort must be one of \"\", \"none\", \"minimal\", \"low\", \"medium\", \"high\", \"xhigh\"; got %q",
-			prefix, c.Reasoning.Effort)
+			prefix, r.Effort)
 	}
-	if c.Reasoning.Enabled && c.Reasoning.Effort == "none" && anthropicFamilyProviders[c.Provider] {
+	if r.Enabled && r.Effort == "none" && anthropicFamilyProviders[effectiveProvider] {
 		return fmt.Errorf("%s.reasoning: effort: none is not supported for provider %q while reasoning is enabled "+
 			"(Anthropic has no \"thinking enabled with zero effort\" state); use enabled: false to fully disable "+
 			"reasoning, or effort: minimal for Anthropic's lowest real tier",
-			prefix, c.Provider)
+			prefix, effectiveProvider)
 	}
 	return nil
 }
@@ -358,20 +339,6 @@ func (c *LLMConfig) validateCircuitBreaker(prefix string) error {
 	}
 	if c.CircuitBreaker.Timeout <= 0 {
 		return fmt.Errorf("%s.circuitBreaker.timeout must be positive", prefix)
-	}
-	return nil
-}
-
-// validatePhaseModels checks that every PhaseModels key is a known phase name
-// and every override has at least one non-empty field.
-func (c *LLMConfig) validatePhaseModels(prefix string) error {
-	for phase, override := range c.PhaseModels {
-		if !IsValidPhaseName(phase) {
-			return fmt.Errorf("%s.phaseModels: unknown phase %q", prefix, phase)
-		}
-		if override == nil || override.IsEmpty() {
-			return fmt.Errorf("%s.phaseModels[%q]: at least one override field must be set", prefix, phase)
-		}
 	}
 	return nil
 }
