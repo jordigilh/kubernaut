@@ -180,9 +180,43 @@ tests:
         pdb:
           enabled: true
           maxUnavailable: 1
-      # datastorage.pdb defaults to enabled=true; disable it here so the only
-      # PDB that could possibly render is the (guarded) fleetmetadatacache one.
+      # DD-PLATFORM-004: pdb.enabled defaults to true for every other service;
+      # disable them all here so the only PDB that could possibly render is
+      # the (guarded) fleetmetadatacache one.
+      gateway:
+        pdb:
+          enabled: false
       datastorage:
+        pdb:
+          enabled: false
+      aianalysis:
+        pdb:
+          enabled: false
+      signalprocessing:
+        pdb:
+          enabled: false
+      remediationorchestrator:
+        pdb:
+          enabled: false
+      workflowexecution:
+        pdb:
+          enabled: false
+      notification:
+        pdb:
+          enabled: false
+      effectivenessmonitor:
+        pdb:
+          enabled: false
+      kubernautAgent:
+        pdb:
+          enabled: false
+      authwebhook:
+        pdb:
+          enabled: false
+      apifrontend:
+        pdb:
+          enabled: false
+      console:
         pdb:
           enabled: false
     asserts:

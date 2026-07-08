@@ -62,7 +62,7 @@ spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.fleetmetadatacache | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.fleetmetadatacache | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.fleetmetadatacache "matchLabels" (dict "app.kubernetes.io/name" "fleetmetadatacache")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.fleetmetadatacache "global" .Values.global) | nindent 6 }}
       containers:
         - name: fleetmetadatacache

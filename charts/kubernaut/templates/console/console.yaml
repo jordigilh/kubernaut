@@ -115,7 +115,7 @@ spec:
       automountServiceAccountToken: false
       securityContext:
         {{- include "kubernaut.podSecurityContext" .Values.console | nindent 8 }}
-      {{- include "kubernaut.affinity" .Values.console | nindent 6 }}
+      {{- include "kubernaut.affinity" (dict "component" .Values.console "matchLabels" (dict "app" "console")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.console "global" .Values.global) | nindent 6 }}
       containers:
         - name: oauth2-proxy

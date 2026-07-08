@@ -407,15 +407,23 @@ subjects:
 {{- end }}
 
 {{/*
-Render optional affinity and topologySpreadConstraints for a component pod spec.
-Usage: {{ include "kubernaut.affinity" .Values.gateway | nindent 6 }}
+Render affinity and topologySpreadConstraints for a component pod spec.
+DD-PLATFORM-004: injects a default soft (preferred, weight 100) pod
+anti-affinity spreading replicas across nodes by the given matchLabels,
+merged with any user-supplied .affinity override — user values win on
+conflicting keys, sibling keys (e.g. nodeAffinity, or an explicit empty
+preferredDuringSchedulingIgnoredDuringExecution: [] to opt out) merge
+additively. Ported from the Kubernaut Operator's preferredPodAntiAffinity
+(kubernaut-operator/internal/resources/deployments.go).
+Usage: {{ include "kubernaut.affinity" (dict "component" .Values.gateway "matchLabels" (dict "app" "gateway")) | nindent 6 }}
 */}}
 {{- define "kubernaut.affinity" -}}
-{{- with .affinity }}
+{{- $component := .component -}}
+{{- $defaultAntiAffinity := dict "podAntiAffinity" (dict "preferredDuringSchedulingIgnoredDuringExecution" (list (dict "weight" 100 "podAffinityTerm" (dict "topologyKey" "kubernetes.io/hostname" "labelSelector" (dict "matchLabels" .matchLabels))))) -}}
+{{- $userAffinity := $component.affinity | default dict -}}
 affinity:
-  {{- toYaml . | nindent 2 }}
-{{- end }}
-{{- with .topologySpreadConstraints }}
+  {{- toYaml (merge $userAffinity $defaultAntiAffinity) | nindent 2 }}
+{{- with $component.topologySpreadConstraints }}
 topologySpreadConstraints:
   {{- toYaml . | nindent 2 }}
 {{- end }}
