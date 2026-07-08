@@ -111,11 +111,18 @@ func (r *WorkflowExecutionReconciler) MarkCompleted(ctx context.Context, wfe *wo
 	// AFTER: 1 atomic API call (50% reduction)
 	// ========================================
 	if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
-		return r.applyCompletedTransition(ctx, wfe, completionTime, durationVal, summary, logger)
+		return r.applyCompletedTransition(wfe, completionTime, durationVal, summary)
 	}); err != nil {
 		logger.Error(err, "Failed to atomically update status to Completed")
 		return ctrl.Result{}, err
 	}
+
+	// Issue #1597: audit recorded exactly once, AFTER the phase-transition
+	// AtomicStatusUpdate above has durably committed. Previously this call
+	// lived inside that closure and re-fired on every RetryOnConflict retry,
+	// producing duplicate workflow.completed audit events for one logical
+	// completion. See DD-WE-009.
+	r.recordTerminalAudit(ctx, wfe, "workflow.completed", r.AuditManager.RecordWorkflowCompleted, logger)
 
 	// Day 7: Record metrics (BR-WE-008)
 	// DD-METRICS-001: Use injected metrics instead of global function
@@ -169,12 +176,15 @@ func completionTimeAndDuration(wfe *workflowexecutionv1alpha1.WorkflowExecution,
 
 // applyCompletedTransition is the AtomicStatusUpdate callback body for
 // MarkCompleted: transitions the phase to Completed (P0: Phase State
-// Machine), persists completion time/duration/ExecutionStatus, sets the
-// TektonPipelineComplete/Ready conditions (BR-WE-006, Issue #79 Phase 7b),
-// and records the workflow.completed audit event (BR-WE-005, ADR-032).
+// Machine), persists completion time/duration/ExecutionStatus, and sets the
+// TektonPipelineComplete/Ready conditions (BR-WE-006, Issue #79 Phase 7b).
 // Extracted from MarkCompleted (Wave 6 6e-ii GREEN: funlen remediation) —
-// pure code motion, no behavior change.
-func (r *WorkflowExecutionReconciler) applyCompletedTransition(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, completionTime *metav1.Time, durationVal *metav1.Duration, summary []*workflowexecutionv1alpha1.ExecutionStatusSummary, logger logr.Logger) error {
+// pure code motion, no behavior change. Issue #1597: the workflow.completed
+// audit event is recorded by the caller (MarkCompleted) via
+// recordTerminalAudit AFTER this closure commits, not inside it — see
+// DD-WE-009 for why bundling audit into the retryable closure caused
+// duplicate audit writes on conflict retries.
+func (r *WorkflowExecutionReconciler) applyCompletedTransition(wfe *workflowexecutionv1alpha1.WorkflowExecution, completionTime *metav1.Time, durationVal *metav1.Duration, summary []*workflowexecutionv1alpha1.ExecutionStatusSummary) error {
 	if err := r.PhaseManager.TransitionTo(wfe, wephase.Completed); err != nil {
 		return fmt.Errorf("failed to transition to Completed: %w", err)
 	}
@@ -194,18 +204,6 @@ func (r *WorkflowExecutionReconciler) applyCompletedTransition(ctx context.Conte
 
 	// Issue #79 Phase 7b: Set Ready condition on terminal transitions
 	weconditions.SetReady(wfe, true, weconditions.ReasonReady, "Workflow execution completed")
-
-	// Day 8: Record audit event for workflow completion (BR-WE-005, ADR-032)
-	if err := r.AuditManager.RecordWorkflowCompleted(ctx, wfe); err != nil {
-		logger.V(1).Info("Failed to record workflow.completed audit event", "error", err)
-		weconditions.SetAuditRecorded(wfe, false,
-			weconditions.ReasonAuditFailed,
-			fmt.Sprintf("Failed to record audit event: %v", err))
-	} else {
-		weconditions.SetAuditRecorded(wfe, true,
-			weconditions.ReasonAuditSucceeded,
-			"Audit event workflow.completed recorded to DataStorage")
-	}
 
 	return nil
 }
@@ -251,11 +249,16 @@ func (r *WorkflowExecutionReconciler) MarkFailed(ctx context.Context, wfe *workf
 		summary:        summary,
 	}
 	if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
-		return r.applyFailedStatusTransition(ctx, wfe, failedTransition, logger)
+		return r.applyFailedStatusTransition(wfe, failedTransition)
 	}); err != nil {
 		logger.Error(err, "Failed to atomically update status to Failed")
 		return ctrl.Result{}, err
 	}
+
+	// Issue #1597: audit recorded exactly once, AFTER the phase-transition
+	// AtomicStatusUpdate above has durably committed (see MarkCompleted /
+	// DD-WE-009 for the full rationale).
+	r.recordTerminalAudit(ctx, wfe, "workflow.failed", r.AuditManager.RecordWorkflowFailed, logger)
 
 	// Day 7: Record metrics (BR-WE-008)
 	// DD-METRICS-001: Use injected metrics instead of global function
@@ -361,13 +364,14 @@ type failedStatusTransition struct {
 
 // applyFailedStatusTransition is the AtomicStatusUpdate callback body for
 // MarkFailed: transitions the phase to Failed (P0: Phase State Machine),
-// persists completion time/duration/FailureDetails/ExecutionStatus, sets the
-// TektonPipelineComplete/Ready conditions (BR-WE-006, Issue #79 Phase 7b),
-// and records the workflow.failed audit event (BR-WE-005, ADR-032, P3:
-// Audit Manager pattern). Extracted from MarkFailed (Wave 6 6e-ii GREEN:
-// funlen/gocyclo/gocognit remediation) — pure code motion, no behavior
-// change.
-func (r *WorkflowExecutionReconciler) applyFailedStatusTransition(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, t failedStatusTransition, logger logr.Logger) error {
+// persists completion time/duration/FailureDetails/ExecutionStatus, and sets
+// the TektonPipelineComplete/Ready conditions (BR-WE-006, Issue #79 Phase
+// 7b). Extracted from MarkFailed (Wave 6 6e-ii GREEN: funlen/gocyclo/gocognit
+// remediation) — pure code motion, no behavior change. Issue #1597: the
+// workflow.failed audit event is recorded by the caller (MarkFailed) via
+// recordTerminalAudit AFTER this closure commits, not inside it (see
+// DD-WE-009).
+func (r *WorkflowExecutionReconciler) applyFailedStatusTransition(wfe *workflowexecutionv1alpha1.WorkflowExecution, t failedStatusTransition) error {
 	if err := r.PhaseManager.TransitionTo(wfe, wephase.Failed); err != nil {
 		return fmt.Errorf("failed to transition to Failed: %w", err)
 	}
@@ -386,19 +390,6 @@ func (r *WorkflowExecutionReconciler) applyFailedStatusTransition(ctx context.Co
 
 	// Issue #79 Phase 7b: Set Ready condition on terminal transitions
 	weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
-
-	// Day 8: Record audit event for workflow failure (BR-WE-005, ADR-032)
-	// Uses Audit Manager (P3: Audit Manager pattern)
-	if err := r.AuditManager.RecordWorkflowFailed(ctx, wfe); err != nil {
-		logger.V(1).Info("Failed to record workflow.failed audit event", "error", err)
-		weconditions.SetAuditRecorded(wfe, false,
-			weconditions.ReasonAuditFailed,
-			fmt.Sprintf("Failed to record audit event: %v", err))
-	} else {
-		weconditions.SetAuditRecorded(wfe, true,
-			weconditions.ReasonAuditSucceeded,
-			"Audit event workflow.failed recorded to DataStorage")
-	}
 
 	return nil
 }
@@ -479,9 +470,14 @@ func (r *WorkflowExecutionReconciler) MarkFailedAsDeduplicated(ctx context.Conte
 
 // markFailedInternal is the shared core for MarkFailedWithReason and
 // MarkFailedAsDeduplicated. It performs the AtomicStatusUpdate with phase
-// transition, completion time, failure details, conditions, audit, and metrics.
+// transition, completion time, failure details, conditions, and metrics.
 // The optional extraUpdates callback runs inside the atomic closure to set
 // method-specific fields (e.g., DeduplicatedBy for the M5 constraint).
+// Issue #1597: the workflow.failed audit event is recorded via
+// recordTerminalAudit AFTER the AtomicStatusUpdate below commits, not inside
+// its closure (see DD-WE-009) — audit calls inside a RetryOnConflict closure
+// re-fire on every conflict-triggered retry, producing duplicate audit
+// writes for one logical transition.
 func (r *WorkflowExecutionReconciler) markFailedInternal(
 	ctx context.Context,
 	wfe *workflowexecutionv1alpha1.WorkflowExecution,
@@ -507,27 +503,51 @@ func (r *WorkflowExecutionReconciler) markFailedInternal(
 		weconditions.SetExecutionCreated(wfe, false, conditionReason, conditionMessage)
 		weconditions.SetReady(wfe, false, weconditions.ReasonNotReady, "Workflow execution failed")
 
-		if err := r.AuditManager.RecordWorkflowFailed(ctx, wfe); err != nil {
-			logger.V(1).Info("Failed to record workflow.failed audit event", "error", err)
-			weconditions.SetAuditRecorded(wfe, false,
-				weconditions.ReasonAuditFailed,
-				fmt.Sprintf("Failed to record audit event: %v", err))
-		} else {
-			weconditions.SetAuditRecorded(wfe, true,
-				weconditions.ReasonAuditSucceeded,
-				"Audit event workflow.failed recorded to DataStorage")
-		}
-
 		return nil
 	}); err != nil {
 		logger.Error(err, "Failed to atomically update status to Failed")
 		return err
 	}
 
+	r.recordTerminalAudit(ctx, wfe, "workflow.failed", r.AuditManager.RecordWorkflowFailed, logger)
+
 	if r.Metrics != nil {
 		r.Metrics.RecordWorkflowFailure(0)
 	}
 	return nil
+}
+
+// recordTerminalAudit (Issue #1597) records a terminal-transition audit
+// event exactly once, AFTER the caller's primary AtomicStatusUpdate has
+// durably committed the phase transition, then persists the outcome via a
+// second, idempotent AtomicStatusUpdate that only touches the AuditRecorded
+// condition. This replaces the prior pattern of calling auditFn and setting
+// AuditRecorded INSIDE the primary AtomicStatusUpdate's RetryOnConflict
+// closure, which re-ran the audit call on every conflict-triggered retry —
+// producing duplicate audit writes for a single logical transition. See
+// DD-WE-009 and DD-PERF-001 (the atomic-status-update mandate targets status
+// *field* consolidation, not audit-call bundling).
+func (r *WorkflowExecutionReconciler) recordTerminalAudit(
+	ctx context.Context,
+	wfe *workflowexecutionv1alpha1.WorkflowExecution,
+	eventName string,
+	auditFn func(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error,
+	logger logr.Logger,
+) {
+	succeeded, reason, message := true, weconditions.ReasonAuditSucceeded,
+		fmt.Sprintf("Audit event %s recorded to DataStorage", eventName)
+	if err := auditFn(ctx, wfe); err != nil {
+		logger.V(1).Info(fmt.Sprintf("Failed to record %s audit event", eventName), "error", err)
+		succeeded, reason, message = false, weconditions.ReasonAuditFailed,
+			fmt.Sprintf("Failed to record audit event: %v", err)
+	}
+
+	if err := r.StatusManager.AtomicStatusUpdate(ctx, wfe, func() error {
+		weconditions.SetAuditRecorded(wfe, succeeded, reason, message)
+		return nil
+	}); err != nil {
+		logger.Error(err, "Failed to persist AuditRecorded condition", "event", eventName)
+	}
 }
 
 // ========================================
