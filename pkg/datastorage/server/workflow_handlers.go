@@ -243,9 +243,9 @@ func (ve *validationError) writeTo(w http.ResponseWriter, logger logr.Logger) {
 	response.WriteRFC7807Error(w, ve.status, ve.errorType, ve.title, ve.detail, logger)
 }
 
-// validateExternalChecks runs Steps 5a–5c (action-type, bundle-exists,
-// dependency validation) in parallel and returns the highest-priority
-// error, preserving the original sequential error contract.
+// validateExternalChecks runs Steps 5a and 5c (action-type, dependency
+// validation) in parallel and returns the highest-priority error, preserving
+// the original sequential error contract.
 //
 // A 10-second timeout budget bounds the total wall-clock time for all
 // external calls, preventing a degraded backend from consuming the
@@ -253,6 +253,13 @@ func (ve *validationError) writeTo(w http.ResponseWriter, logger logr.Logger) {
 //
 // Issue #1070: Typed-result-slot pattern — each goroutine writes to its
 // own slot; after all goroutines complete we check slots in priority order.
+//
+// Issue #1642: Step 5b (bundle-exists, OCI pre-flight check) was removed —
+// a registry existence check from the DataStorage pod's own network/
+// credential context cannot validate self-signed or credential-required
+// private registries reachable only by the actual workflow execution
+// environment. Kubernetes now fails fast at Job/PipelineRun image-pull
+// time instead (BR-WORKFLOW-008).
 func (h *Handler) validateExternalChecks(
 	ctx context.Context,
 	schemaParser *schema.Parser,
@@ -261,7 +268,6 @@ func (h *Handler) validateExternalChecks(
 ) *validationError {
 	const (
 		slotActionType = iota
-		slotBundle
 		slotDependency
 		slotCount
 
@@ -316,31 +322,6 @@ func (h *Handler) validateExternalChecks(
 				return
 			}
 			dsmetrics.WorkflowValidationDuration.WithLabelValues("action_type", "ok").Observe(time.Since(start).Seconds())
-		}()
-	}
-
-	// 5b: Validate execution bundle image exists in the registry (skip for ansible — Git repo)
-	if workflow.ExecutionBundle != nil && *workflow.ExecutionBundle != "" &&
-		workflow.ExecutionEngine != models.ExecutionEngineAnsible && h.schemaExtractor != nil {
-		bundleRef := *workflow.ExecutionBundle
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			start := time.Now()
-			if err := h.schemaExtractor.ValidateBundleExists(ctx, bundleRef); err != nil {
-				dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "error").Observe(time.Since(start).Seconds())
-				h.logger.Error(err, "Execution bundle image not found in registry",
-					"execution_bundle", bundleRef,
-				)
-				setSlot(slotBundle, &validationError{
-					status:    http.StatusBadRequest,
-					errorType: "bundle-not-found",
-					title:     "Execution Bundle Not Found",
-					detail:    "execution.bundle image could not be resolved; verify the image reference is correct",
-				})
-				return
-			}
-			dsmetrics.WorkflowValidationDuration.WithLabelValues("bundle_exists", "ok").Observe(time.Since(start).Seconds())
 		}()
 	}
 

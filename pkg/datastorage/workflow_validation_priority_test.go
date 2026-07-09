@@ -46,10 +46,15 @@ import (
 // Validation order (as defined in HandleCreateWorkflow):
 //   Step 3:  Schema validation         → type = validation-error
 //   Step 5a: Action-type taxonomy      → type = validation-error
-//   Step 5b: Bundle-exists (OCI)       → type = bundle-not-found
 //   Step 5c: Dependency validation     → type = dependency-validation-error
 //
-// These tests wire all validators so every step *would* fail,
+// Issue #1642: Step 5b (bundle-exists, OCI) was removed — a pre-flight
+// registry check from the DataStorage pod's own network/credential context
+// cannot validate self-signed or credential-required private registries
+// reachable only by the actual workflow execution environment. Kubernetes
+// now fails fast at Job/PipelineRun image-pull time instead (BR-WORKFLOW-008).
+//
+// These tests wire all remaining validators so every step *would* fail,
 // then assert only the highest-priority error is returned.
 // ========================================
 
@@ -97,8 +102,8 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 
 		It("UT-WF-1070-001: schema validation error beats all downstream failures", func() {
 			schemaYAML := validSchemaForPriorityTests()
-			failingPuller := oci.NewMockImagePullerWithFailingExists(schemaYAML, fmt.Errorf("bundle not found"))
-			extractor := oci.NewSchemaExtractor(failingPuller, schema.NewParser())
+			puller := oci.NewMockImagePuller(schemaYAML)
+			extractor := oci.NewSchemaExtractor(puller, schema.NewParser())
 
 			handler := server.NewHandler(
 				server.WithActionTypeValidator(rejectingActionTypeValidator()),
@@ -120,10 +125,10 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 				"Schema validation must be the first error, regardless of downstream failures")
 		})
 
-		It("UT-WF-1070-002: action-type error beats bundle-not-found and dependency errors", func() {
+		It("UT-WF-1070-002: action-type error beats dependency-validation error", func() {
 			schemaYAML := validSchemaForPriorityTests()
-			failingPuller := oci.NewMockImagePullerWithFailingExists(schemaYAML, fmt.Errorf("bundle not found"))
-			extractor := oci.NewSchemaExtractor(failingPuller, schema.NewParser())
+			puller := oci.NewMockImagePuller(schemaYAML)
+			extractor := oci.NewSchemaExtractor(puller, schema.NewParser())
 
 			handler := server.NewHandler(
 				server.WithActionTypeValidator(rejectingActionTypeValidator()),
@@ -142,41 +147,15 @@ var _ = Describe("Issue #1070: HandleCreateWorkflow Validation Error Priority", 
 			Expect(rr.Code).To(Equal(http.StatusBadRequest))
 			problem := parseRFC7807(rr)
 			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/validation-error"),
-				"Action-type rejection must take priority over bundle and dependency errors")
+				"Action-type rejection must take priority over dependency errors")
 			Expect(problem["detail"]).To(ContainSubstring("action_type"),
 				"Error detail should mention action_type")
 		})
 
-		It("UT-WF-1070-003: bundle-not-found beats dependency-validation-error", func() {
-			schemaYAML := validSchemaForPriorityTests()
-			failingPuller := oci.NewMockImagePullerWithFailingExists(schemaYAML, fmt.Errorf("bundle image not in registry"))
-			extractor := oci.NewSchemaExtractor(failingPuller, schema.NewParser())
-
-			acceptingValidator := &mockActionTypeValidator{
-				existsFn: func(_ context.Context, _ string) (bool, error) {
-					return true, nil
-				},
-			}
-
-			handler := server.NewHandler(
-				server.WithActionTypeValidator(acceptingValidator),
-				server.WithSchemaExtractor(extractor),
-				server.WithDependencyValidator(
-					&mockDependencyValidator{err: fmt.Errorf("secret missing-secret not found")},
-					"test-ns",
-				),
-			)
-
-			req := makeRequest(schemaYAML)
-			rr := httptest.NewRecorder()
-
-			handler.HandleCreateWorkflow(rr, req)
-
-			Expect(rr.Code).To(Equal(http.StatusBadRequest))
-			problem := parseRFC7807(rr)
-			Expect(problem["type"]).To(Equal("https://kubernaut.ai/problems/bundle-not-found"),
-				"Bundle-not-found must take priority over dependency validation error")
-		})
+		// UT-WF-1070-003 ("bundle-not-found beats dependency-validation-error")
+		// was removed by Issue #1642 along with the bundle-exists pre-flight
+		// check itself — there is no longer a bundle-not-found error type to
+		// take priority over anything at registration time.
 
 		It("UT-WF-1070-004: dependency-validation-error returned when no higher-priority failures", func() {
 			schemaYAML := validSchemaForPriorityTests()

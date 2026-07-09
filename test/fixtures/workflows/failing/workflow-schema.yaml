@@ -22,7 +22,7 @@ spec:
   
   execution:
     engine: tekton
-    bundle: quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0@sha256:5d880ed9f9387988bc222ecc2206441ff3b7495a07e0f212583742e2a8193755
+    bundle: quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0@sha256:8f57121ab1df255cd2ae644ae38680e19217c3117b320da660efc3c7cefa0dce
   
   parameters:
     - name: TARGET_RESOURCE_NAME
