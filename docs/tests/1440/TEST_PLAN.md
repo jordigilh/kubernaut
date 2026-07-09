@@ -209,7 +209,7 @@ Applied during each TDD REFACTOR phase.
 |-----------------------------------------|----------|--------------------------------------------------------------|
 | AutonomousSessionManager interface change breaks mocks | Medium | Minimal extension; update all implementors in same PR      |
 | Signal resolver thin context for MCP-only sessions | Low | RR CRD fallback sufficient for interactive; enrichment happens in KA investigator |
-| Race between MCP start and AA submit (duplicate sessions) | Low | LeaseSessionManager enforces one driver; GetLatest* picks newest |
+| Race between MCP start and AA submit (duplicate sessions) | Low | LeaseSessionManager enforces one driver; GetLatest* picks newest. **Revised (2026-07, #1654):** the driver-uniqueness guarantee is MCP-lease-scoped only — it does not prevent two `session.Manager` (HTTP-side) sessions with the same `remediation_id` metadata (a fallback session from MCP `action=start` alongside AA's own autonomous investigation session). `E2E-FP-1456-001` RCA found this materializes in practice: completion logic that stopped at the first matching session left the sibling non-terminal. Fixed by making `ForceCompleteByRemediationID` complete every non-terminal sibling and `CompleteHTTPSession` always attempt both completion paths — see [#1654](https://github.com/jordigilh/kubernaut/issues/1654). |
 | E2E flakiness in Kind cluster           | Medium   | `Eventually()` with generous timeouts; fallback to IT level  |
 
 ## 14. Status

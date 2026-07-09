@@ -727,6 +727,7 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithLogger(d.logger.WithName("select-workflow")),
 		mcptools.WithHTTPSessionCompleter(d.autoMgr),
 		mcptools.WithMutexProvider(investigateTool),
+		mcptools.WithSelectWorkflowTimeoutTracker(d.timeoutMgr),
 	}
 	if d.enricher != nil {
 		swOpts = append(swOpts, mcptools.WithEnrichmentRunner(d.enricher))
@@ -738,6 +739,7 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithCompleteNoActionLogger(d.logger.WithName("complete-no-action")),
 		mcptools.WithCompleteNoActionHTTPCompleter(d.autoMgr),
 		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
+		mcptools.WithCompleteNoActionTimeoutTracker(d.timeoutMgr),
 	)
 
 	return investigateTool, selectWfTool, completeNoActionTool
