@@ -15817,9 +15817,9 @@ func (s *AuditEvent) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.ClusterName.Set {
-			e.FieldStart("cluster_name")
-			s.ClusterName.Encode(e)
+		if s.ClusterID.Set {
+			e.FieldStart("cluster_id")
+			s.ClusterID.Encode(e)
 		}
 	}
 	{
@@ -15933,7 +15933,7 @@ var jsonFieldsNameOfAuditEvent = [31]string{
 	11: "correlation_id",
 	12: "parent_event_id",
 	13: "namespace",
-	14: "cluster_name",
+	14: "cluster_id",
 	15: "severity",
 	16: "duration_ms",
 	17: "parent_event_date",
@@ -16111,15 +16111,15 @@ func (s *AuditEvent) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"namespace\"")
 			}
-		case "cluster_name":
+		case "cluster_id":
 			if err := func() error {
-				s.ClusterName.Reset()
-				if err := s.ClusterName.Decode(d); err != nil {
+				s.ClusterID.Reset()
+				if err := s.ClusterID.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cluster_name\"")
+				return errors.Wrap(err, "decode field \"cluster_id\"")
 			}
 		case "severity":
 			if err := func() error {
@@ -20962,9 +20962,9 @@ func (s *AuditEventRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.ClusterName.Set {
-			e.FieldStart("cluster_name")
-			s.ClusterName.Encode(e)
+		if s.ClusterID.Set {
+			e.FieldStart("cluster_id")
+			s.ClusterID.Encode(e)
 		}
 	}
 	{
@@ -21030,7 +21030,7 @@ var jsonFieldsNameOfAuditEventRequest = [23]string{
 	11: "correlation_id",
 	12: "parent_event_id",
 	13: "namespace",
-	14: "cluster_name",
+	14: "cluster_id",
 	15: "severity",
 	16: "duration_ms",
 	17: "parent_event_date",
@@ -21200,15 +21200,15 @@ func (s *AuditEventRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"namespace\"")
 			}
-		case "cluster_name":
+		case "cluster_id":
 			if err := func() error {
-				s.ClusterName.Reset()
-				if err := s.ClusterName.Decode(d); err != nil {
+				s.ClusterID.Reset()
+				if err := s.ClusterID.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cluster_name\"")
+				return errors.Wrap(err, "decode field \"cluster_id\"")
 			}
 		case "severity":
 			if err := func() error {
@@ -42336,9 +42336,9 @@ func (s *ReconstructionResponse) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.ClusterName.Set {
-			e.FieldStart("cluster_name")
-			s.ClusterName.Encode(e)
+		if s.ClusterID.Set {
+			e.FieldStart("cluster_id")
+			s.ClusterID.Encode(e)
 		}
 	}
 }
@@ -42348,7 +42348,7 @@ var jsonFieldsNameOfReconstructionResponse = [5]string{
 	1: "validation",
 	2: "reconstructed_at",
 	3: "correlation_id",
-	4: "cluster_name",
+	4: "cluster_id",
 }
 
 // Decode decodes ReconstructionResponse from json.
@@ -42402,15 +42402,15 @@ func (s *ReconstructionResponse) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"correlation_id\"")
 			}
-		case "cluster_name":
+		case "cluster_id":
 			if err := func() error {
-				s.ClusterName.Reset()
-				if err := s.ClusterName.Decode(d); err != nil {
+				s.ClusterID.Reset()
+				if err := s.ClusterID.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cluster_name\"")
+				return errors.Wrap(err, "decode field \"cluster_id\"")
 			}
 		default:
 			return d.Skip()
