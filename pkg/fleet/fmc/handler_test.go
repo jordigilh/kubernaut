@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -66,9 +67,9 @@ func (m *mockClusterRegistry) Get(id string) (registry.ClusterInfo, bool) {
 	return registry.ClusterInfo{}, false
 }
 func (m *mockClusterRegistry) WatchClusters() <-chan registry.ClusterEvent { return nil }
-func (m *mockClusterRegistry) Ready() bool                                { return true }
-func (m *mockClusterRegistry) Start(_ context.Context) error              { return nil }
-func (m *mockClusterRegistry) Stop()                                      {}
+func (m *mockClusterRegistry) Ready() bool                                 { return true }
+func (m *mockClusterRegistry) Start(_ context.Context) error               { return nil }
+func (m *mockClusterRegistry) Stop()                                       {}
 
 // mockPinger implements fmc.Pinger for testing readiness checks.
 type mockPinger struct {
@@ -108,7 +109,7 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 		checker = &mockScopeChecker{managed: make(map[string]bool)}
 		reg = &mockClusterRegistry{
 			clusters: []registry.ClusterInfo{
-				{ID: "prod-east", Name: "Production East"},
+				{ID: "prod-east"},
 			},
 		}
 		handler := fmc.NewHandler(checker, reg, logr.Discard())
@@ -187,7 +188,7 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 
 		It("UT-FMC-API-020 [SC-7]: returns managed=false for unknown cluster without hitting cache", func() {
 			reg.clusters = []registry.ClusterInfo{
-				{ID: "prod-east", Name: "Production East"},
+				{ID: "prod-east"},
 			}
 			checker.managed["unknown-cluster/apps/v1/Deployment/default/nginx"] = true
 
@@ -266,8 +267,8 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 
 		It("UT-FMC-API-011 [CM-6]: cluster list returns registered clusters — federated configuration is auditable", func() {
 			reg.clusters = []registry.ClusterInfo{
-				{ID: "prod-east", Name: "Production East"},
-				{ID: "prod-west", Name: "Production West"},
+				{ID: "prod-east"},
+				{ID: "prod-west"},
 			}
 
 			w := doGet(mux, "/api/v1/clusters")
@@ -277,13 +278,19 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			Expect(json.NewDecoder(w.Body).Decode(&resp)).To(Succeed())
 			Expect(resp.Clusters).To(HaveLen(2))
 			Expect(resp.Clusters[0].ID).To(Equal("prod-east"))
-			Expect(resp.Clusters[0].Name).To(Equal("Production East"))
 			Expect(resp.Clusters[1].ID).To(Equal("prod-west"))
 		})
 
 		It("UT-FMC-API-012 [SI-10]: rejects non-GET method on cluster listing endpoint", func() {
 			w := doPost(mux, "/api/v1/clusters")
 			Expect(w.Code).To(Equal(http.StatusMethodNotAllowed))
+		})
+
+		// Issue #1651: ClusterInfoResponse.Name was removed — non-unique,
+		// unsafe for disambiguation. ID-only.
+		It("UT-FMC-1651-001: Name field has been removed from ClusterInfoResponse", func() {
+			_, found := reflect.TypeOf(fmc.ClusterInfoResponse{}).FieldByName("Name")
+			Expect(found).To(BeFalse(), "ClusterInfoResponse.Name must not exist (issue #1651: non-unique, unsafe for disambiguation)")
 		})
 
 		It("UT-FMC-API-013 [SI-10]: response Content-Type is application/json", func() {
