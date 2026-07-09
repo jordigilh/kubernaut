@@ -18,7 +18,7 @@ ARG GOOS=linux
 ARG GOARCH=${TARGETARCH}
 ARG GOFLAGS=""
 ENV GOTOOLCHAIN=auto
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -61,7 +61,7 @@ USER 65534
 EXPOSE 8443 8081 9090
 ENTRYPOINT ["/apifrontend"]
 
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut-apifrontend" \
@@ -96,7 +96,7 @@ USER 1001
 EXPOSE 8443 8081 9090
 ENTRYPOINT ["/usr/local/bin/apifrontend"]
 
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut-apifrontend" \
