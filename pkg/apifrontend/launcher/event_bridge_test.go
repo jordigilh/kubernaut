@@ -1255,3 +1255,83 @@ var _ = Describe("RR Context Enrichment — #1423 (AU-3, SI-4, SC-7)", func() {
 		})
 	})
 })
+
+// Fleet cluster_id propagation — #1409 (SI-4, SI-10, AU-3).
+var _ = Describe("RR Context Fleet cluster_id — #1409 (SI-4, SI-10, AU-3)", func() {
+
+	Describe("RRContext.ClusterID structural carry (SI-4: cross-cluster correlation)", func() {
+		It("UT-AF-1409-001: RRContext carries ClusterID through to status event metadata", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-001", "ctx-1409-001", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:      "rr-fleet-001",
+				Namespace: "demo-gateway",
+				ClusterID: "cluster-east-1",
+				Phase:     "Investigating",
+			})
+
+			Expect(bridge.EmitStatus(ctx, "Investigation starting...")).To(Succeed())
+			Expect(queue.events).To(HaveLen(1))
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("cluster_id", "cluster-east-1"),
+				"SI-4: cluster_id enables cross-cluster signal correlation in fleet deployments")
+
+			rc := launcher.RRContextSafe(ctx)
+			Expect(rc).NotTo(BeNil())
+			Expect(rc.ClusterID).To(Equal("cluster-east-1"),
+				"RRContextSafe must round-trip ClusterID for downstream artifact consumers (e.g. emitDecisionEvent)")
+		})
+
+		It("UT-AF-1409-001b: status events omit cluster_id entirely for local-hub RRs (no false attribution)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-001b", "ctx-1409-001b", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{RRID: "rr-local-001", Phase: "Investigating"})
+			Expect(bridge.EmitStatus(ctx, "Investigation starting...")).To(Succeed())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).NotTo(HaveKey("cluster_id"),
+				"SI-10: empty-string cluster_id must not appear as noise for single-cluster deployments")
+		})
+	})
+
+	Describe("mergeRRContext caller precedence for cluster_id (SI-10: server-sourced authority)", func() {
+		It("UT-AF-1409-002: caller-supplied cluster_id metadata takes precedence over RR context", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-002", "ctx-1409-002", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			bridge.SetRRContext(&launcher.RRContext{
+				RRID:      "rr-fleet-002",
+				ClusterID: "cluster-from-context",
+				Phase:     "Investigating",
+			})
+
+			callerMeta := map[string]any{
+				"type":       launcher.MetaTypeStatus,
+				"cluster_id": "cluster-from-caller",
+			}
+			Expect(bridge.EmitStatusWithMeta(ctx, "Caller-scoped update", callerMeta)).To(Succeed())
+
+			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(evt.Metadata).To(HaveKeyWithValue("cluster_id", "cluster-from-caller"),
+				"SI-10: caller-provided cluster_id always takes precedence over merged defaults")
+		})
+	})
+
+	Describe("RRContextSafe nil-safety (SC-7: boundary protection)", func() {
+		It("UT-AF-1409-001c: RRContextSafe returns nil when no bridge is present in context", func() {
+			Expect(launcher.RRContextSafe(context.Background())).To(BeNil())
+		})
+
+		It("UT-AF-1409-001d: RRContextSafe returns nil when a bridge is present but SetRRContext was never called", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-001d", "ctx-1409-001d", nil)
+			Expect(launcher.RRContextSafe(ctx)).To(BeNil())
+		})
+	})
+})

@@ -26,6 +26,10 @@
     "completed_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "cluster_id": {
+      "type": "string",
+      "description": "Fleet cluster identifier for the RemediationRequest, when applicable (ADR-065)."
     }
   },
   "additionalProperties": true

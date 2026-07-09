@@ -396,6 +396,14 @@ func emitDecisionEvent(ctx context.Context, bridge *EventBridge, fc *genai.Funct
 		data = map[string]any{}
 	}
 
+	// SI-10: caller-supplied cluster_id (already present in the LLM-produced
+	// payload) takes precedence over the server-side RRContext value.
+	if rc := bridge.RRContext(); rc != nil && rc.ClusterID != "" {
+		if _, exists := data["cluster_id"]; !exists {
+			data["cluster_id"] = rc.ClusterID
+		}
+	}
+
 	summary, _ := data["summary"].(string)
 	if summary == "" {
 		summary = "Remediation decision"
