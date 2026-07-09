@@ -26,8 +26,6 @@ import "context"
 type ClusterInfo struct {
 	// ID is the unique identifier (CR name in the MCP Gateway).
 	ID string
-	// Name is the human-readable cluster display name.
-	Name string
 	// MCPEndpoint is the URL to reach the cluster's MCP server through the gateway.
 	MCPEndpoint string
 	// ToolPrefix is the prefix used by the MCP Gateway for this cluster's tools.

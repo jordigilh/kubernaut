@@ -1,10 +1,18 @@
 # ADR-065: Fleet Cluster Identity on RemediationRequest CRD
 
-**Status**: Implemented
-**Date**: 2026-06-12 (Proposed) | 2026-06-13 (Accepted) | 2026-06-19 (Implemented)
+**Status**: Partially superseded (see amendment below)
+**Date**: 2026-06-12 (Proposed) | 2026-06-13 (Accepted) | 2026-06-19 (Implemented) | 2026-07-08 (Amended)
 **Deciders**: Architecture Team
 **Context**: Fleet remediation requires per-RR cluster identity (#54, #1409)
-**Related**: ADR-064 (Multi-Cluster MCP Gateway), ADR-068 (Fleet Federation Architecture), Issue #54, Issue #1409
+**Related**: ADR-064 (Multi-Cluster MCP Gateway), ADR-068 (Fleet Federation Architecture), Issue #54, Issue #1409, Issue #1651
+
+> **Amendment (2026-07-08, Issue #1651)**: `ClusterName` was removed from `RemediationRequestSpec`
+> (and the corresponding `ClusterInfo.Name` / `kubernaut.ai/cluster-name` annotation from the fleet
+> registry). It never shipped in a release, was not guaranteed unique across clusters, and was
+> therefore unsafe for disambiguation. `ClusterID` remains the sole supported cluster identifier;
+> callers that need a display name must resolve it themselves from `ClusterID`. All schema and
+> code samples below referencing `ClusterName` are historical and no longer reflect the current
+> implementation.
 
 ## Context
 

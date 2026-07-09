@@ -112,8 +112,8 @@ func (s *BufferedDSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent
 		req.ActorType.SetTo(bActorType)
 		req.ActorID.SetTo(bActorID)
 	}
-	if event.ClusterName != "" {
-		req.ClusterName.SetTo(event.ClusterName)
+	if event.ClusterID != "" {
+		req.ClusterID.SetTo(event.ClusterID)
 	}
 
 	if ed, ok := buildEventData(event); ok {

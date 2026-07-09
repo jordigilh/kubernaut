@@ -178,7 +178,7 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	audit.SetClusterName(event, clusterName)
+	audit.SetClusterID(event, clusterName)
 	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
 	event.EventData = ogenclient.NewNotificationMessageSentPayloadAuditEventRequestEventData(payload)
 
@@ -251,7 +251,7 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	audit.SetClusterName(event, clusterName)
+	audit.SetClusterID(event, clusterName)
 	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
 	event.EventData = ogenclient.NewNotificationMessageFailedPayloadAuditEventRequestEventData(payload)
 
@@ -312,7 +312,7 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	audit.SetClusterName(event, clusterName)
+	audit.SetClusterID(event, clusterName)
 	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
 	event.EventData = ogenclient.NewNotificationMessageAcknowledgedPayloadAuditEventRequestEventData(payload)
 
@@ -374,7 +374,7 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, notification.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	audit.SetClusterName(event, clusterName)
+	audit.SetClusterID(event, clusterName)
 	// V3.0: OGEN - Use constructor to create discriminated union (DD-AUDIT-004 v1.4)
 	event.EventData = ogenclient.NewNotificationMessageEscalatedPayloadAuditEventRequestEventData(payload)
 

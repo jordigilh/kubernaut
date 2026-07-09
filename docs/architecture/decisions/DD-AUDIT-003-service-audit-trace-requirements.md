@@ -2,10 +2,14 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: July 1, 2026
-**Version**: 2.3
+**Last Reviewed**: July 8, 2026
+**Version**: 2.4
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 14 services
+
+**Recent Changes** (v2.4 - July 8, 2026):
+- **Column Rename**: `audit_events.cluster_name` renamed to `cluster_id` (migration 014). The column was never populated by any shipped release; its actual intent was always the unique cluster identifier, not a non-unique display name. All per-service wiring references, `AuditEventRequest.ClusterID`, and `ReconstructionResponse.ClusterID` updated accordingly.
+- **Authority**: DD-AUDIT-003 v2.2, SOC2 CC8.1, Issue #1651
 
 **Recent Changes** (v2.3 - July 1, 2026):
 - **Fleet Metadata Cache (FMC) Declaration**: FMC (Issue #54, ADR-068) was introduced without an explicit audit-scope declaration, leaving it absent from the service inventory below even though the codebase confirms it emits zero audit events (`grep -r "audit\|AuditEvent" pkg/fleet/fmc/ cmd/fleetmetadatacache/` returns no matches). Added as service #13 under "NO Audit Traces Needed": read-only scope-check/cluster-listing cache with no CRD writes, no external notifications, no LLM calls -- same category as Context API / Dynamic Toolset
@@ -1019,11 +1023,11 @@ context_api:
 
 ### Requirement
 
-Every audit event originating from or targeting a **remote cluster** MUST populate the `cluster_name` field (ADR-034 schema column) with the cluster identifier from the RemediationRequest or NormalizedSignal.
+Every audit event originating from or targeting a **remote cluster** MUST populate the `cluster_id` field (ADR-034 schema column, renamed from `cluster_name` in issue #1651) with the cluster identifier from the RemediationRequest or NormalizedSignal.
 
 ### Rationale
 
-SOC2 CC8.1 requires complete remediation request reconstruction from audit traces alone. In a fleet (multi-cluster) deployment, an auditor must be able to determine which cluster a remediation targeted. Without `cluster_name` in audit events, fleet remediations are indistinguishable from local hub remediations in the audit trail, violating CC8.1 completeness.
+SOC2 CC8.1 requires complete remediation request reconstruction from audit traces alone. In a fleet (multi-cluster) deployment, an auditor must be able to determine which cluster a remediation targeted. Without `cluster_id` in audit events, fleet remediations are indistinguishable from local hub remediations in the audit trail, violating CC8.1 completeness.
 
 ### Per-Service Requirements
 
@@ -1035,21 +1039,21 @@ SOC2 CC8.1 requires complete remediation request reconstruction from audit trace
 | Workflow Execution (WE) | `rr.Spec.ClusterID` via WFE spec | All `Emit*()` functions in audit manager | Propagated from RR by RO WFE creator |
 | Effectiveness Monitor (EM) | `rr.Spec.ClusterID` via EA spec | All `Emit*()` functions in audit manager | Propagated from RR by RO EA creator |
 | Notification (NT) | `rr.Spec.ClusterID` via NR spec | All `Emit*()` functions in audit manager | Propagated from RR by RO NR creator |
-| API Frontend (AF) | `CreateRRArgs.ClusterName` | `audit.Event.ClusterName` → `AuditEventRequest.ClusterName` | Uses `audit.Event` struct; `StoreAdapter.Emit()` copies to `req.ClusterName` |
-| Kubernaut Agent (KA) | `SessionContext.Signal.ClusterName` via `audit.WithClusterName(ctx)` | `AuditEvent.ClusterName` → `AuditEventRequest.ClusterName` | Context-injected in `launchInvestigation`; `StoreBestEffort` inherits from context |
+| API Frontend (AF) | `CreateRRArgs.ClusterID` | `audit.Event.ClusterID` → `AuditEventRequest.ClusterID` | Uses `audit.Event` struct; `StoreAdapter.Emit()` copies to `req.ClusterID` |
+| Kubernaut Agent (KA) | `SessionContext.Signal.ClusterID` via `audit.WithClusterID(ctx)` | `AuditEvent.ClusterID` → `AuditEventRequest.ClusterID` | Context-injected in `launchInvestigation`; `StoreBestEffort` inherits from context |
 
 ### Backward Compatibility
 
-- `cluster_name` remains nullable in the ADR-034 schema for single-cluster backward compatibility
-- Empty `cluster_name` indicates local hub cluster (ADR-065 convention)
+- `cluster_id` remains nullable in the ADR-034 schema for single-cluster backward compatibility
+- Empty `cluster_id` indicates local hub cluster (ADR-065 convention)
 - Existing single-cluster audit events are unaffected
 
 ### Reconstruction Impact
 
 The reconstruction pipeline (`pkg/datastorage/reconstruction/`) MUST:
-1. Read `cluster_name` from audit events (already retrieved by `query.go`)
-2. Map `cluster_name` to `ReconstructedRRFields.Spec.ClusterID` (currently discarded in `mapper.go`)
-3. Include `cluster_name` in the `ReconstructionResponse` struct
+1. Read `cluster_id` from audit events (already retrieved by `query.go`)
+2. Map `cluster_id` to `ReconstructedRRFields.Spec.ClusterID` (`mapper.go`)
+3. Include `cluster_id` in the `ReconstructionResponse` struct
 
 ### KA Narrative vs Table Inconsistency
 
@@ -1071,7 +1075,7 @@ AF's internal `audit.Event` to OpenAPI-typed `AuditEventRequest` payloads.
 | **Tools** | `tool.executed` | AU-2, AC-6 | MCP/K8s tool execution with RBAC |
 | **MCP** | `mcp.session_init`, `mcp.session_closed`, `mcp.tool_failed` | AU-2 | MCP protocol sessions |
 | **Triage** | `triage.started`, `triage.completed`, `severity_triage.completed`, `severity_triage.failed` | CC8.1 | Signal severity classification |
-| **Remediation** | `rr.created`, `rr.deduplicated` | CC8.1 | RR lifecycle (carries `cluster_name` for fleet) |
+| **Remediation** | `rr.created`, `rr.deduplicated` | CC8.1 | RR lifecycle (carries `cluster_id` for fleet) |
 | **KA Delegation** | `ka.delegated`, `ka.result_received` | CC8.1 | KA investigation delegation |
 | **User Decisions** | `user.decision` | CC8.1, AU-3 | Operator workflow accept/reject |
 | **Resilience** | `ratelimit.denied`, `circuitbreaker.trip` | SI-10 | Protective mechanisms |
@@ -1084,8 +1088,8 @@ AF's internal `audit.Event` to OpenAPI-typed `AuditEventRequest` payloads.
 ### Fleet Cluster Provenance (v2.2)
 
 Events emitted during RR creation (`rr.created`, `rr.deduplicated`) carry
-`cluster_name` from `CreateRRArgs.ClusterName` via `audit.Event.ClusterName`.
-The `StoreAdapter` copies this to `AuditEventRequest.ClusterName` for
+`cluster_id` from `CreateRRArgs.ClusterID` via `audit.Event.ClusterID`.
+The `StoreAdapter` copies this to `AuditEventRequest.ClusterID` for
 persistence in the unified audit table, enabling fleet-scoped CC8.1 reconstruction.
 
 ### Implementation Files

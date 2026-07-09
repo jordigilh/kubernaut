@@ -39,14 +39,14 @@ import (
 // Pyramid Invariant: E2E proves the journey.
 // This test exercises the complete fleet federation path from factory to Valkey:
 //
-//   fleet.NewScopeChecker (factory)
-//     -> FederatedScopeChecker (local/remote router)
-//       -> fmc.HTTPClient (production HTTP client)
-//         -> real HTTP transport
-//           -> fmc.Handler (production handler)
-//             -> registry.EAIGWRegistry.Get (real envtest K8s API)
-//             -> scopecache.Client (real business logic)
-//               -> ValkeyCacheReader (real Valkey)
+//	fleet.NewScopeChecker (factory)
+//	  -> FederatedScopeChecker (local/remote router)
+//	    -> fmc.HTTPClient (production HTTP client)
+//	      -> real HTTP transport
+//	        -> fmc.Handler (production handler)
+//	          -> registry.EAIGWRegistry.Get (real envtest K8s API)
+//	          -> scopecache.Client (real business logic)
+//	            -> ValkeyCacheReader (real Valkey)
 //
 // All components are real production code. The only stub is localAlwaysFalse
 // which isolates the remote (Valkey) path.
@@ -84,7 +84,7 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 		Expect(clusterReg.Start(ctx)).To(Succeed(), "EAIGWRegistry should start against envtest")
 
 		By("Creating Backend 'e2e-cluster' in envtest")
-		createBackend(ctx, "e2e-cluster", "E2E Cluster")
+		createBackend(ctx, "e2e-cluster")
 		Eventually(func() bool {
 			_, ok := clusterReg.Get("e2e-cluster")
 			return ok

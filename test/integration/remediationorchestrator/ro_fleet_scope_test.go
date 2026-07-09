@@ -49,7 +49,7 @@ type staticClusterRegistry struct {
 func newStaticClusterRegistry(ids ...string) *staticClusterRegistry {
 	r := &staticClusterRegistry{clusters: make(map[string]registry.ClusterInfo, len(ids))}
 	for _, id := range ids {
-		r.clusters[id] = registry.ClusterInfo{ID: id, Name: id}
+		r.clusters[id] = registry.ClusterInfo{ID: id}
 	}
 	return r
 }

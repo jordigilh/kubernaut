@@ -404,12 +404,12 @@ var _ = Describe("StoreAdapter", func() {
 		})
 	})
 
-	Describe("DD-AUDIT-003 v2.2: ClusterName propagation (CC8.1)", func() {
-		It("UT-AF-FLEET-001: propagates ClusterName to AuditEventRequest [CC8.1, AU-3]", func() {
+	Describe("DD-AUDIT-003 v2.2: ClusterID propagation (CC8.1)", func() {
+		It("UT-AF-FLEET-001: propagates ClusterID to AuditEventRequest [CC8.1, AU-3]", func() {
 			adapter.Emit(context.Background(), &audit.Event{
-				Type:        audit.EventRRCreated,
-				ClusterName: "prod-east",
-				UserID:      "sre-user",
+				Type:      audit.EventRRCreated,
+				ClusterID: "prod-east",
+				UserID:    "sre-user",
 				Detail: map[string]string{
 					"rr_name":      "rr-highcpu-1",
 					"rr_namespace": "kubernaut-system",
@@ -417,13 +417,13 @@ var _ = Describe("StoreAdapter", func() {
 			})
 			evt := store.lastEvent()
 			Expect(evt).NotTo(BeNil())
-			Expect(evt.ClusterName.IsSet()).To(BeTrue(),
-				"CC8.1: StoreAdapter must propagate Event.ClusterName to AuditEventRequest.ClusterName")
-			Expect(evt.ClusterName.Value).To(Equal("prod-east"),
-				"CC8.1: ClusterName value must match the source event")
+			Expect(evt.ClusterID.IsSet()).To(BeTrue(),
+				"CC8.1: StoreAdapter must propagate Event.ClusterID to AuditEventRequest.ClusterID")
+			Expect(evt.ClusterID.Value).To(Equal("prod-east"),
+				"CC8.1: ClusterID value must match the source event")
 		})
 
-		It("UT-AF-FLEET-002: leaves ClusterName unset for single-cluster events (backward compat)", func() {
+		It("UT-AF-FLEET-002: leaves ClusterID unset for single-cluster events (backward compat)", func() {
 			adapter.Emit(context.Background(), &audit.Event{
 				Type:   audit.EventRRCreated,
 				UserID: "sre-user",
@@ -433,24 +433,24 @@ var _ = Describe("StoreAdapter", func() {
 			})
 			evt := store.lastEvent()
 			Expect(evt).NotTo(BeNil())
-			Expect(evt.ClusterName.IsSet()).To(BeFalse(),
-				"Single-cluster events must not set ClusterName on the request")
+			Expect(evt.ClusterID.IsSet()).To(BeFalse(),
+				"Single-cluster events must not set ClusterID on the request")
 		})
 
-		It("UT-AF-FLEET-003: propagates ClusterName for deduplicated events [CC8.1]", func() {
+		It("UT-AF-FLEET-003: propagates ClusterID for deduplicated events [CC8.1]", func() {
 			adapter.Emit(context.Background(), &audit.Event{
-				Type:        audit.EventRRDeduplicated,
-				ClusterName: "prod-west",
-				UserID:      "sre-user",
+				Type:      audit.EventRRDeduplicated,
+				ClusterID: "prod-west",
+				UserID:    "sre-user",
 				Detail: map[string]string{
 					"existing_rr": "rr-existing-1",
 				},
 			})
 			evt := store.lastEvent()
 			Expect(evt).NotTo(BeNil())
-			Expect(evt.ClusterName.IsSet()).To(BeTrue())
-			Expect(evt.ClusterName.Value).To(Equal("prod-west"),
-				"CC8.1: ClusterName must be propagated for deduplicated events too")
+			Expect(evt.ClusterID.IsSet()).To(BeTrue())
+			Expect(evt.ClusterID.Value).To(Equal("prod-west"),
+				"CC8.1: ClusterID must be propagated for deduplicated events too")
 		})
 	})
 })

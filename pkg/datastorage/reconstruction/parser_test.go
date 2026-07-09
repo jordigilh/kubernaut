@@ -104,9 +104,9 @@ var _ = Describe("Audit Event Parser", func() {
 	Context("PARSER-RO-COMPLETED: Parse orchestrator.lifecycle.completed events (CC8.1)", func() {
 		It("should extract outcome and duration from completion event", func() {
 			event := ogenclient.AuditEvent{
-				EventType:     "orchestrator.lifecycle.completed",
+				EventType:      "orchestrator.lifecycle.completed",
 				EventTimestamp: testTimestamp,
-				CorrelationID: "test-rr-name",
+				CorrelationID:  "test-rr-name",
 				EventData: ogenclient.AuditEventEventData{
 					RemediationOrchestratorAuditPayload: ogenclient.RemediationOrchestratorAuditPayload{
 						Outcome:    ogenclient.NewOptRemediationOrchestratorAuditPayloadOutcome(ogenclient.RemediationOrchestratorAuditPayloadOutcomeSuccess),
@@ -132,9 +132,9 @@ var _ = Describe("Audit Event Parser", func() {
 	Context("PARSER-RO-FAILED: Parse orchestrator.lifecycle.failed events (CC8.1)", func() {
 		It("should extract error_details from failure event", func() {
 			event := ogenclient.AuditEvent{
-				EventType:     "orchestrator.lifecycle.failed",
+				EventType:      "orchestrator.lifecycle.failed",
 				EventTimestamp: testTimestamp,
-				CorrelationID: "test-rr-name",
+				CorrelationID:  "test-rr-name",
 				EventData: ogenclient.AuditEventEventData{
 					RemediationOrchestratorAuditPayload: ogenclient.RemediationOrchestratorAuditPayload{
 						Outcome:      ogenclient.NewOptRemediationOrchestratorAuditPayloadOutcome(ogenclient.RemediationOrchestratorAuditPayloadOutcomeFailed),
@@ -164,41 +164,41 @@ var _ = Describe("Audit Event Parser", func() {
 	})
 
 	// ========================================
-	// PARSER-CLUSTER-01: ClusterName extraction from event envelope [AU-2, CC8.1]
+	// PARSER-CLUSTER-01: ClusterID extraction from event envelope [AU-2, CC8.1]
 	// BR-AUDIT-005 v2.0 / DD-AUDIT-003 v2.2: Fleet cluster-scoped audit
 	// ========================================
-	Context("PARSER-CLUSTER-01: Extract ClusterName from event envelope (DD-AUDIT-003 v2.2)", func() {
-		It("should extract ClusterName from gateway.signal.received event [CC8.1]", func() {
+	Context("PARSER-CLUSTER-01: Extract ClusterID from event envelope (DD-AUDIT-003 v2.2)", func() {
+		It("should extract ClusterID from gateway.signal.received event [CC8.1]", func() {
 			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
-			event.ClusterName.SetTo("prod-east")
+			event.ClusterID.SetTo("prod-east")
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData.ClusterName).To(Equal("prod-east"),
-				"CC8.1: Parser must extract cluster_name from event envelope for fleet reconstruction")
+			Expect(parsedData.ClusterID).To(Equal("prod-east"),
+				"CC8.1: Parser must extract cluster_id from event envelope for fleet reconstruction")
 		})
 
-		It("should extract ClusterName from orchestrator.lifecycle.created event [CC8.1]", func() {
+		It("should extract ClusterID from orchestrator.lifecycle.created event [CC8.1]", func() {
 			event := createOrchestratorLifecycleCreatedEvent(testTimestamp, testUUID)
-			event.ClusterName.SetTo("prod-west")
+			event.ClusterID.SetTo("prod-west")
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData.ClusterName).To(Equal("prod-west"),
-				"CC8.1: Parser must extract cluster_name for orchestrator events")
+			Expect(parsedData.ClusterID).To(Equal("prod-west"),
+				"CC8.1: Parser must extract cluster_id for orchestrator events")
 		})
 
-		It("should return empty ClusterName for single-cluster events (backward compat)", func() {
+		It("should return empty ClusterID for single-cluster events (backward compat)", func() {
 			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
-			// ClusterName intentionally NOT set (single-cluster deployment)
+			// ClusterID intentionally NOT set (single-cluster deployment)
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(parsedData.ClusterName).To(BeEmpty(),
-				"Single-cluster events must have empty ClusterName for backward compatibility")
+			Expect(parsedData.ClusterID).To(BeEmpty(),
+				"Single-cluster events must have empty ClusterID for backward compatibility")
 		})
 	})
 })

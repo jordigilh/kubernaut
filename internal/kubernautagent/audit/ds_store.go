@@ -67,8 +67,8 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 	if event.ParentEventID != nil {
 		req.ParentEventID.SetTo(*event.ParentEventID)
 	}
-	if event.ClusterName != "" {
-		req.ClusterName.SetTo(event.ClusterName)
+	if event.ClusterID != "" {
+		req.ClusterID.SetTo(event.ClusterID)
 	}
 
 	if ed, ok := buildEventData(event); ok {

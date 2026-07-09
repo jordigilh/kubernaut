@@ -172,7 +172,7 @@ const createAuditEventSQL = `
 		event_id, event_version, event_timestamp, event_date, event_type,
 		event_category, event_action, event_outcome,
 		correlation_id, parent_event_id, parent_event_date,
-		resource_type, resource_id, namespace, cluster_name,
+		resource_type, resource_id, namespace, cluster_id,
 		actor_id, actor_type, actor_ip,
 		severity, duration_ms, error_code, error_message,
 		retention_days, is_sensitive, event_data,
@@ -199,7 +199,7 @@ func execCreateInsert(ctx context.Context, tx *sql.Tx, event *AuditEvent, eventD
 	parentEventID := sqlutil.ToNullUUID(event.ParentEventID)
 	parentEventDate := sqlutil.ToNullTime(event.ParentEventDate)
 	namespace := sqlutil.ToNullStringValue(event.ResourceNamespace)
-	clusterName := sqlutil.ToNullStringValue(event.ClusterID)
+	clusterID := sqlutil.ToNullStringValue(event.ClusterID)
 	errorCode := sqlutil.ToNullStringValue(event.ErrorCode)
 	errorMessage := sqlutil.ToNullStringValue(event.ErrorMessage)
 	severity := sqlutil.ToNullStringValue(event.Severity)
@@ -226,7 +226,7 @@ func execCreateInsert(ctx context.Context, tx *sql.Tx, event *AuditEvent, eventD
 		event.ResourceType,
 		event.ResourceID,
 		namespace,
-		clusterName,
+		clusterID,
 		event.ActorID,
 		event.ActorType,
 		actorIP,

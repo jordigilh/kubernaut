@@ -117,7 +117,7 @@ func scanQueryRow(rows *sql.Rows) (*AuditEvent, error) {
 		&eventDataJSON,
 		&event.EventDate,
 		&cols.namespace,
-		&cols.clusterName,
+		&cols.clusterID,
 		&cols.durationMs,   // DD-TESTING-001: Added for top-level field validation
 		&cols.errorCode,    // DD-TESTING-001: Added for error validation
 		&cols.errorMessage, // DD-TESTING-001: Added for error validation
@@ -154,7 +154,7 @@ type queryNullableColumns struct {
 	parentEventID                      sql.NullString
 	actorID, actorType, actorIP        sql.NullString
 	resourceType, resourceID           sql.NullString
-	severity, namespace, clusterName   sql.NullString
+	severity, namespace, clusterID     sql.NullString
 	errorCode, errorMessage            sql.NullString // DD-TESTING-001: Error fields
 	durationMs                         sql.NullInt64  // DD-TESTING-001: Performance tracking (BR-SP-090)
 	eventHash, previousEventHash       sql.NullString
@@ -205,8 +205,8 @@ func applyQueryIdentityColumns(event *AuditEvent, cols queryNullableColumns) {
 	if cols.namespace.Valid {
 		event.ResourceNamespace = cols.namespace.String
 	}
-	if cols.clusterName.Valid {
-		event.ClusterID = cols.clusterName.String
+	if cols.clusterID.Valid {
+		event.ClusterID = cols.clusterID.String
 	}
 }
 

@@ -321,37 +321,63 @@ func (m *Manager) GetSessionLazySink(id string) (*LazySink, bool) {
 	return sess.lazySink, true
 }
 
-// ForceCompleteByRemediationID locates any session (Running, UserDriving, or
-// Completed) matching the given remediation ID and forces it to StatusCompleted
-// with the provided result. Cancels the investigation goroutine if still running.
+// ForceCompleteByRemediationID locates every non-terminal session (Running,
+// Pending, or UserDriving) matching the given remediation ID and forces each
+// one to StatusCompleted with the provided result, cancelling its
+// investigation goroutine if still running.
 //
 // This is the fallback path for MCP tools (complete_no_action, action:complete,
 // select_workflow) when TransitionToUserDriving was not called or failed because
 // the autonomous investigation started after MCP session acquisition, or had
 // already completed before takeover.
+//
+// #1654: iterates over ALL matching non-terminal sessions rather than
+// returning after the first. Duplicate sessions for the same remediation_id
+// can coexist (e.g. an MCP action=start fallback session alongside AA's own
+// autonomous investigation session) — completing only the first one found
+// left the other stuck non-terminal, with AA (or the inactivity timer)
+// waiting on a session that would never transition. Returns
+// ErrSessionNotFound only when no non-terminal session matched at all.
 func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.InvestigationResult) error {
 	m.store.mu.Lock()
-	for _, sess := range m.store.sessions {
-		if sess.Metadata["remediation_id"] == rrID && !IsTerminal(sess.Status) {
-			prevStatus := sess.Status
-			if sess.cancel != nil {
-				sess.cancel()
-			}
-			sess.Status = StatusCompleted
-			if result != nil {
-				sess.Result = result
-			}
-			sess.lazySink.Set(nil)
-			if sess.eventChan != nil {
-				close(sess.eventChan)
-				sess.eventChan = nil
-			}
-			m.store.mu.Unlock()
-			m.logger.Info("Force-completed session by remediation ID",
-				"remediation_id", rrID, "previous_status", string(prevStatus))
-			return nil
+	type completedSession struct {
+		id            string
+		prevStatus    Status
+		correlationID string
+	}
+	var completed []completedSession
+	for id, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID || IsTerminal(sess.Status) {
+			continue
 		}
+		prevStatus := sess.Status
+		if sess.cancel != nil {
+			sess.cancel()
+		}
+		sess.Status = StatusCompleted
+		if result != nil {
+			sess.Result = result
+		}
+		sess.lazySink.Set(nil)
+		if sess.eventChan != nil {
+			close(sess.eventChan)
+			sess.eventChan = nil
+		}
+		completed = append(completed, completedSession{id: id, prevStatus: prevStatus, correlationID: rrID})
 	}
 	m.store.mu.Unlock()
-	return ErrSessionNotFound
+
+	if len(completed) == 0 {
+		return ErrSessionNotFound
+	}
+
+	for _, c := range completed {
+		m.logger.Info("Force-completed session by remediation ID",
+			"remediation_id", rrID, "session_id", c.id, "previous_status", string(c.prevStatus))
+		m.emitSessionEvent(context.Background(), sessionEventParams{
+			EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
+			Outcome: audit.OutcomeSuccess, SessionID: c.id, CorrelationID: c.correlationID,
+		}, nil, "completion_mode", "force_complete", "previous_status", string(c.prevStatus))
+	}
+	return nil
 }

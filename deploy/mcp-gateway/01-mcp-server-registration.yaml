@@ -14,8 +14,6 @@ metadata:
   labels:
     kubernaut.ai/managed: "true"
     app.kubernetes.io/part-of: kubernaut
-  annotations:
-    kubernaut.ai/cluster-name: "Hub Cluster (local)"
 spec:
   endpoints:
     - fqdn:
