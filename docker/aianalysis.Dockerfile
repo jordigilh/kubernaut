@@ -23,7 +23,7 @@ ARG TARGETARCH
 ARG GOOS=linux
 ARG GOARCH=${TARGETARCH}
 ARG GOFLAGS=""
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -66,7 +66,7 @@ USER 65534
 EXPOSE 9090 8081
 ENTRYPOINT ["/aianalysis-controller"]
 
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
@@ -104,7 +104,7 @@ USER 1001
 EXPOSE 9090 8081
 ENTRYPOINT ["/usr/local/bin/aianalysis-controller"]
 
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
