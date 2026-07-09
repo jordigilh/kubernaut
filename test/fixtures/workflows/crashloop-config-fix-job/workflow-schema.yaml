@@ -22,7 +22,13 @@ spec:
   
   execution:
     engine: job
-    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:v1.0.0-exec@sha256:03d07597052ebeb1e08721a768411b05211026dd571c6fdd1b78a8db2c7cc531
+    # Issue #1650: pinned to an immutable "legacy-v1.5.2-exec" tag (not the
+    # shared/mutable "v1.0.0-exec" tag main uses) because main's Issue #1542
+    # rebuilt that tag with a real-remediation script requiring different
+    # parameters (CONFIGMAP_NAME/KEY/VALUE) than this release/v1.5 branch's
+    # mock LLM injects (NAMESPACE/DEPLOYMENT_NAME). This tag+digest preserves
+    # the v1.5.2-era simulation script this branch's test infra expects.
+    bundle: quay.io/kubernaut-cicd/test-workflows/crashloop-config-fix-job:legacy-v1.5.2-exec@sha256:449cec99ee184a2c9071fcfec6c43c861d963b3f431c8af81b4cbbc8bd8037a7
   
   parameters:
     - name: TARGET_RESOURCE_NAME
