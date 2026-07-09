@@ -178,7 +178,7 @@ func (m *Manager) RecordComponentAssessed(ctx context.Context, ea *eav1.Effectiv
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if ea.Spec.ClusterID != "" {
-		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+		pkgaudit.SetClusterID(event, ea.Spec.ClusterID)
 	}
 	event.EventData = cfg.newEventDataFn(payload)
 
@@ -371,7 +371,7 @@ func (m *Manager) RecordAlertDecayDetected(ctx context.Context, ea *eav1.Effecti
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if ea.Spec.ClusterID != "" {
-		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+		pkgaudit.SetClusterID(event, ea.Spec.ClusterID)
 	}
 	event.EventData = cfg.newEventDataFn(payload)
 
@@ -520,7 +520,7 @@ func (m *Manager) storeEvent(ctx context.Context, cfg componentEventConfig, ea *
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if ea.Spec.ClusterID != "" {
-		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+		pkgaudit.SetClusterID(event, ea.Spec.ClusterID)
 	}
 	event.EventData = cfg.newEventDataFn(payload)
 
@@ -605,7 +605,7 @@ func (m *Manager) RecordHashComputed(ctx context.Context, ea *eav1.Effectiveness
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if ea.Spec.ClusterID != "" {
-		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+		pkgaudit.SetClusterID(event, ea.Spec.ClusterID)
 	}
 	event.EventData = cfg.newEventDataFn(payload)
 
@@ -680,7 +680,7 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if ea.Spec.ClusterID != "" {
-		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+		pkgaudit.SetClusterID(event, ea.Spec.ClusterID)
 	}
 	event.EventData = ogenclient.NewAuditEventRequestEventDataEffectivenessAssessmentScheduledAuditEventRequestEventData(payload)
 
@@ -730,7 +730,7 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 	event.Namespace = ogenclient.NewOptNilString(ea.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if ea.Spec.ClusterID != "" {
-		pkgaudit.SetClusterName(event, ea.Spec.ClusterID)
+		pkgaudit.SetClusterID(event, ea.Spec.ClusterID)
 	}
 	event.EventData = ogenclient.NewAuditEventRequestEventDataEffectivenessAssessmentCompletedAuditEventRequestEventData(payload)
 

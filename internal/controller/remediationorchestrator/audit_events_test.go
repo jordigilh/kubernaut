@@ -424,8 +424,8 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		})
 	})
 
-	Context("DD-AUDIT-003 v2.2: Fleet ClusterName in audit events (CC8.1)", func() {
-		It("IT-RO-FLEET-001: lifecycle.started event includes ClusterName for fleet RRs [CC8.1, AU-3]", func() {
+	Context("DD-AUDIT-003 v2.2: Fleet ClusterID in audit events (CC8.1)", func() {
+		It("IT-RO-FLEET-001: lifecycle.started event includes ClusterID for fleet RRs [CC8.1, AU-3]", func() {
 			rr := newRemediationRequest("fleet-rr", "default", "")
 			rr.Spec.ClusterID = "prod-east"
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
@@ -438,13 +438,13 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			lifecycleEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
 			Expect(lifecycleEvents).ToNot(BeEmpty(), "Expected lifecycle.started event")
 			event := lifecycleEvents[0]
-			Expect(event.ClusterName.IsSet()).To(BeTrue(),
-				"CC8.1: Fleet RR lifecycle event must include ClusterName")
-			Expect(event.ClusterName.Value).To(Equal("prod-east"),
-				"CC8.1: ClusterName must match RR.Spec.ClusterID")
+			Expect(event.ClusterID.IsSet()).To(BeTrue(),
+				"CC8.1: Fleet RR lifecycle event must include ClusterID")
+			Expect(event.ClusterID.Value).To(Equal("prod-east"),
+				"CC8.1: ClusterID must match RR.Spec.ClusterID")
 		})
 
-		It("IT-RO-FLEET-002: lifecycle.started event has no ClusterName for hub-only RRs", func() {
+		It("IT-RO-FLEET-002: lifecycle.started event has no ClusterID for hub-only RRs", func() {
 			rr := newRemediationRequest("hub-rr", "default", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
@@ -458,11 +458,11 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			lifecycleEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleStarted)
 			Expect(lifecycleEvents).ToNot(BeEmpty(), "Expected lifecycle.started event")
 			event := lifecycleEvents[0]
-			Expect(event.ClusterName.IsSet()).To(BeFalse(),
-				"Hub-only RRs must not set ClusterName (backward compat)")
+			Expect(event.ClusterID.IsSet()).To(BeFalse(),
+				"Hub-only RRs must not set ClusterID (backward compat)")
 		})
 
-		It("IT-RO-FLEET-003: phase transition event includes ClusterName for fleet RRs [CC8.1]", func() {
+		It("IT-RO-FLEET-003: phase transition event includes ClusterID for fleet RRs [CC8.1]", func() {
 			rr := newRemediationRequest("fleet-phase-rr", "default", remediationv1.PhasePending)
 			rr.Spec.ClusterID = "prod-west"
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
@@ -478,9 +478,9 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			transitionEvents := mockAuditStore.GetEventsByType(roaudit.EventTypeLifecycleTransitioned)
 			Expect(transitionEvents).ToNot(BeEmpty(), "Expected lifecycle.transitioned event")
 			event := transitionEvents[0]
-			Expect(event.ClusterName.IsSet()).To(BeTrue(),
-				"CC8.1: Phase transition events must include ClusterName for fleet RRs")
-			Expect(event.ClusterName.Value).To(Equal("prod-west"))
+			Expect(event.ClusterID.IsSet()).To(BeTrue(),
+				"CC8.1: Phase transition events must include ClusterID for fleet RRs")
+			Expect(event.ClusterID.Value).To(Equal("prod-west"))
 		})
 	})
 })

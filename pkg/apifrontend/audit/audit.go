@@ -53,15 +53,15 @@ const (
 	EventAgentCardAccessed EventType = "discovery.agent_card_accessed"
 
 	// New from Issue #1021 catalog (Issue #1156)
-	EventSessionCompleted EventType = "session.completed"
-	EventTriageStarted    EventType = "triage.started"
-	EventTriageCompleted  EventType = "triage.completed"
-	EventRRCreated        EventType = "rr.created"
-	EventRRDeduplicated   EventType = "rr.deduplicated"
-	EventKADelegated              EventType = "ka.delegated"
-	EventKAResultReceived         EventType = "ka.result_received"
-	EventUserDecision             EventType = "user.decision"
-	EventInvestigationTimeout     EventType = "investigation.timeout"
+	EventSessionCompleted     EventType = "session.completed"
+	EventTriageStarted        EventType = "triage.started"
+	EventTriageCompleted      EventType = "triage.completed"
+	EventRRCreated            EventType = "rr.created"
+	EventRRDeduplicated       EventType = "rr.deduplicated"
+	EventKADelegated          EventType = "ka.delegated"
+	EventKAResultReceived     EventType = "ka.result_received"
+	EventUserDecision         EventType = "user.decision"
+	EventInvestigationTimeout EventType = "investigation.timeout"
 )
 
 // Event represents a SOC2-compatible audit event.
@@ -72,7 +72,7 @@ type Event struct {
 	RequestID     string            `json:"request_id,omitempty"`
 	UserID        string            `json:"user_id,omitempty"`
 	SourceIP      string            `json:"source_ip,omitempty"`
-	ClusterName   string            `json:"cluster_name,omitempty"`
+	ClusterID     string            `json:"cluster_id,omitempty"`
 	Detail        map[string]string `json:"detail,omitempty"`
 }
 
@@ -90,4 +90,3 @@ type ClosableEmitter interface {
 	Emitter
 	Close(ctx context.Context) error
 }
-

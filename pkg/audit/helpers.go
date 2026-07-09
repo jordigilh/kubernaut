@@ -80,9 +80,11 @@ func SetNamespace(e *ogenclient.AuditEventRequest, namespace string) {
 	e.Namespace.SetTo(namespace)
 }
 
-// SetClusterName sets the cluster name
-func SetClusterName(e *ogenclient.AuditEventRequest, clusterName string) {
-	e.ClusterName.SetTo(clusterName)
+// SetClusterID sets the cluster identifier (issue #1651: renamed from
+// SetClusterName — the field was never populated as a display name in any
+// shipped release; its actual intent is the unique cluster identifier).
+func SetClusterID(e *ogenclient.AuditEventRequest, clusterID string) {
+	e.ClusterID.SetTo(clusterID)
 }
 
 // SetDuration sets the operation duration in milliseconds

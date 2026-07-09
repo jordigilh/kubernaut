@@ -196,7 +196,7 @@ type AuditEvent struct {
 	CorrelationID string
 	SessionID     string
 	ActingUser    string
-	ClusterName   string
+	ClusterID     string
 	ParentEventID *uuid.UUID
 	Data          map[string]interface{}
 	ActorID       string
@@ -250,20 +250,20 @@ func ActorFromContext(ctx context.Context) (actorID, actorType string, ok bool) 
 	return v.ID, v.Type, true
 }
 
-type clusterNameContextKey struct{}
+type clusterIDContextKey struct{}
 
-// WithClusterName returns a context carrying the cluster name for audit events (DD-AUDIT-003 v2.2).
-// All audit events emitted via StoreBestEffort on this context will inherit the cluster name.
-func WithClusterName(ctx context.Context, clusterName string) context.Context {
-	if clusterName == "" {
+// WithClusterID returns a context carrying the cluster ID for audit events (DD-AUDIT-003 v2.2).
+// All audit events emitted via StoreBestEffort on this context will inherit the cluster ID.
+func WithClusterID(ctx context.Context, clusterID string) context.Context {
+	if clusterID == "" {
 		return ctx
 	}
-	return context.WithValue(ctx, clusterNameContextKey{}, clusterName)
+	return context.WithValue(ctx, clusterIDContextKey{}, clusterID)
 }
 
-// ClusterNameFromContext extracts the cluster name from the context.
-func ClusterNameFromContext(ctx context.Context) (string, bool) {
-	v, ok := ctx.Value(clusterNameContextKey{}).(string)
+// ClusterIDFromContext extracts the cluster ID from the context.
+func ClusterIDFromContext(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(clusterIDContextKey{}).(string)
 	return v, ok
 }
 
@@ -332,9 +332,9 @@ func inheritActorFromContext(ctx context.Context, event *AuditEvent) {
 
 func StoreBestEffort(ctx context.Context, store AuditStore, event *AuditEvent, logger logr.Logger) {
 	inheritActorFromContext(ctx, event)
-	if event.ClusterName == "" {
-		if cn, ok := ClusterNameFromContext(ctx); ok {
-			event.ClusterName = cn
+	if event.ClusterID == "" {
+		if cn, ok := ClusterIDFromContext(ctx); ok {
+			event.ClusterID = cn
 		}
 	}
 	if err := store.StoreAudit(ctx, event); err != nil {

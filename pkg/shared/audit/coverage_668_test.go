@@ -155,13 +155,13 @@ var _ = Describe("BR-STORAGE-001: shared pkg/audit coverage (issue 668)", func()
 	})
 
 	Describe("OpenAPI audit helpers (BR-STORAGE-001)", func() {
-		It("SetClusterName SetDuration and SetSeverity set OptNil fields on AuditEventRequest (BR-STORAGE-001)", func() {
+		It("SetClusterID SetDuration and SetSeverity set OptNil fields on AuditEventRequest (BR-STORAGE-001)", func() {
 			req := audit.NewAuditEventRequest()
-			audit.SetClusterName(req, "kind-local")
+			audit.SetClusterID(req, "kind-local")
 			audit.SetDuration(req, 42)
 			audit.SetSeverity(req, "warning")
 
-			cn, ok := req.ClusterName.Get()
+			cn, ok := req.ClusterID.Get()
 			Expect(ok).To(BeTrue())
 			Expect(cn).To(Equal("kind-local"))
 

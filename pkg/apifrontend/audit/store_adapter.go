@@ -58,8 +58,8 @@ func (a *StoreAdapter) Emit(ctx context.Context, e *Event) {
 		req.ActorIP.SetTo(e.SourceIP)
 	}
 
-	if e.ClusterName != "" {
-		req.ClusterName.SetTo(e.ClusterName)
+	if e.ClusterID != "" {
+		req.ClusterID.SetTo(e.ClusterID)
 	}
 
 	if !hasTypedPayload(e.Type) {

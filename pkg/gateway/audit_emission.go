@@ -177,7 +177,7 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 	audit.SetNamespace(event, signal.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if signal.ClusterID != "" {
-		audit.SetClusterName(event, signal.ClusterID)
+		audit.SetClusterID(event, signal.ClusterID)
 	}
 
 	// Event data with Gateway-specific fields + RR reconstruction fields
@@ -262,7 +262,7 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 	audit.SetNamespace(event, signal.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if signal.ClusterID != "" {
-		audit.SetClusterName(event, signal.ClusterID)
+		audit.SetClusterID(event, signal.ClusterID)
 	}
 
 	// Event data with RR reconstruction fields (same as signal.received for consistency)
@@ -327,7 +327,7 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 	audit.SetNamespace(event, signal.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if signal.ClusterID != "" {
-		audit.SetClusterName(event, signal.ClusterID)
+		audit.SetClusterID(event, signal.ClusterID)
 	}
 
 	// Use structured audit payload (eliminates map[string]interface{})
@@ -404,7 +404,7 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 	audit.SetNamespace(event, signal.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if signal.ClusterID != "" {
-		audit.SetClusterName(event, signal.ClusterID)
+		audit.SetClusterID(event, signal.ClusterID)
 	}
 
 	// BR-AUDIT-005 Gap #7: Standardized error_details

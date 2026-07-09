@@ -161,7 +161,7 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	audit.SetNamespace(event, wfe.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if wfe.Spec.ClusterID != "" {
-		audit.SetClusterName(event, wfe.Spec.ClusterID)
+		audit.SetClusterID(event, wfe.Spec.ClusterID)
 	}
 
 	// Gap #5: Use structured audit payload (eliminates map[string]interface{})
@@ -245,7 +245,7 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	audit.SetNamespace(event, wfe.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if wfe.Spec.ClusterID != "" {
-		audit.SetClusterName(event, wfe.Spec.ClusterID)
+		audit.SetClusterID(event, wfe.Spec.ClusterID)
 	}
 
 	// Gap #6: Use structured audit payload (eliminates map[string]interface{})
@@ -353,7 +353,7 @@ func (m *Manager) recordAuditEvent(
 	audit.SetNamespace(event, wfe.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if wfe.Spec.ClusterID != "" {
-		audit.SetClusterName(event, wfe.Spec.ClusterID)
+		audit.SetClusterID(event, wfe.Spec.ClusterID)
 	}
 
 	// Build structured event data (type-safe per DD-AUDIT-004)
@@ -550,7 +550,7 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 	audit.SetNamespace(event, wfe.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if wfe.Spec.ClusterID != "" {
-		audit.SetClusterName(event, wfe.Spec.ClusterID)
+		audit.SetClusterID(event, wfe.Spec.ClusterID)
 	}
 
 	// Build structured event data (type-safe per DD-AUDIT-004)

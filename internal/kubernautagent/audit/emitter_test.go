@@ -294,56 +294,56 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 		})
 	})
 
-	Describe("DD-AUDIT-003 v2.2: WithClusterName context pattern (CC8.1)", func() {
-		It("UT-KA-FLEET-001: WithClusterName/ClusterNameFromContext round-trip", func() {
-			ctx := audit.WithClusterName(context.Background(), "prod-east")
-			name, ok := audit.ClusterNameFromContext(ctx)
-			Expect(ok).To(BeTrue(), "ClusterNameFromContext must return true for injected context")
+	Describe("DD-AUDIT-003 v2.2: WithClusterID context pattern (CC8.1)", func() {
+		It("UT-KA-FLEET-001: WithClusterID/ClusterIDFromContext round-trip", func() {
+			ctx := audit.WithClusterID(context.Background(), "prod-east")
+			name, ok := audit.ClusterIDFromContext(ctx)
+			Expect(ok).To(BeTrue(), "ClusterIDFromContext must return true for injected context")
 			Expect(name).To(Equal("prod-east"))
 		})
 
-		It("UT-KA-FLEET-002: ClusterNameFromContext returns false for empty context", func() {
-			_, ok := audit.ClusterNameFromContext(context.Background())
-			Expect(ok).To(BeFalse(), "ClusterNameFromContext must return false when no cluster name in context")
+		It("UT-KA-FLEET-002: ClusterIDFromContext returns false for empty context", func() {
+			_, ok := audit.ClusterIDFromContext(context.Background())
+			Expect(ok).To(BeFalse(), "ClusterIDFromContext must return false when no cluster ID in context")
 		})
 
-		It("UT-KA-FLEET-003: WithClusterName with empty string returns original context", func() {
-			ctx := audit.WithClusterName(context.Background(), "")
-			_, ok := audit.ClusterNameFromContext(ctx)
-			Expect(ok).To(BeFalse(), "Empty cluster name should not be stored in context")
+		It("UT-KA-FLEET-003: WithClusterID with empty string returns original context", func() {
+			ctx := audit.WithClusterID(context.Background(), "")
+			_, ok := audit.ClusterIDFromContext(ctx)
+			Expect(ok).To(BeFalse(), "Empty cluster ID should not be stored in context")
 		})
 
-		It("UT-KA-FLEET-004: StoreBestEffort inherits ClusterName from context when event field is empty", func() {
+		It("UT-KA-FLEET-004: StoreBestEffort inherits ClusterID from context when event field is empty", func() {
 			store := &mockAuditStore{}
-			ctx := audit.WithClusterName(context.Background(), "prod-west")
+			ctx := audit.WithClusterID(context.Background(), "prod-west")
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-fleet")
 
 			audit.StoreBestEffort(ctx, store, event, logr.Discard())
 			Expect(store.events).To(HaveLen(1))
-			Expect(store.events[0].ClusterName).To(Equal("prod-west"),
-				"CC8.1: StoreBestEffort must inherit ClusterName from context")
+			Expect(store.events[0].ClusterID).To(Equal("prod-west"),
+				"CC8.1: StoreBestEffort must inherit ClusterID from context")
 		})
 
-		It("UT-KA-FLEET-005: StoreBestEffort preserves explicit ClusterName on event", func() {
+		It("UT-KA-FLEET-005: StoreBestEffort preserves explicit ClusterID on event", func() {
 			store := &mockAuditStore{}
-			ctx := audit.WithClusterName(context.Background(), "context-cluster")
+			ctx := audit.WithClusterID(context.Background(), "context-cluster")
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-fleet")
-			event.ClusterName = "explicit-cluster"
+			event.ClusterID = "explicit-cluster"
 
 			audit.StoreBestEffort(ctx, store, event, logr.Discard())
 			Expect(store.events).To(HaveLen(1))
-			Expect(store.events[0].ClusterName).To(Equal("explicit-cluster"),
-				"CC8.1: Explicit ClusterName on event must not be overridden by context")
+			Expect(store.events[0].ClusterID).To(Equal("explicit-cluster"),
+				"CC8.1: Explicit ClusterID on event must not be overridden by context")
 		})
 
-		It("UT-KA-FLEET-006: StoreBestEffort leaves ClusterName empty when no context and no event field", func() {
+		It("UT-KA-FLEET-006: StoreBestEffort leaves ClusterID empty when no context and no event field", func() {
 			store := &mockAuditStore{}
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-fleet")
 
 			audit.StoreBestEffort(context.Background(), store, event, logr.Discard())
 			Expect(store.events).To(HaveLen(1))
-			Expect(store.events[0].ClusterName).To(BeEmpty(),
-				"Single-cluster scenario: ClusterName must remain empty")
+			Expect(store.events[0].ClusterID).To(BeEmpty(),
+				"Single-cluster scenario: ClusterID must remain empty")
 		})
 	})
 
