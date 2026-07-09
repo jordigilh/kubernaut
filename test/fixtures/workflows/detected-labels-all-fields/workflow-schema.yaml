@@ -33,7 +33,7 @@ spec:
   
   execution:
     engine: tekton
-    bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:c4fc636f28d46f94c3f4a211f4dc07f60545891818ee45262e860b0825296ba0
+    bundle: quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0@sha256:a663ba9ddf8a074025723a4fbbef5542f520deb4e5eaf9814e07775456ecd7e0
   
   parameters:
     - name: TARGET_RESOURCE_NAME
