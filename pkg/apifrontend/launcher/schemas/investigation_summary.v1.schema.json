@@ -12,6 +12,10 @@
     "rr_id": {
       "type": "string"
     },
+    "cluster_id": {
+      "type": "string",
+      "description": "Fleet cluster identifier for the RemediationRequest, when applicable (ADR-065)."
+    },
     "summary": {
       "type": "string"
     },

@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -121,6 +122,95 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			}()
 		}
 		wg.Wait()
+	})
+
+	Describe("Cluster-aware dedup fingerprinting (#1409, AC-4: information-flow isolation)", func() {
+		It("UT-AF-1409-005: a cluster_id=\"a\" lookup never matches state fingerprinted under cluster_id=\"b\"", func() {
+			rrA := newTypedRRWithFingerprint("prod", "rr-cluster-a", "Executing", "Deployment", "web")
+			rrA.Spec.ClusterID = "cluster-a"
+			rrA.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-a", gwtypes.ResourceIdentifier{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+			})
+			client := newTypedFakeClient(rrA)
+
+			result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: "cluster-b",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Exists).To(BeFalse(),
+				"AC-4: cluster-b's dedup check must not match cluster-a's remediation state (no cross-cluster conflation)")
+		})
+
+		It("UT-AF-1409-005b: a cluster_id=\"a\" lookup matches state fingerprinted under the same cluster_id", func() {
+			rrA := newTypedRRWithFingerprint("prod", "rr-cluster-a", "Executing", "Deployment", "web")
+			rrA.Spec.ClusterID = "cluster-a"
+			rrA.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-a", gwtypes.ResourceIdentifier{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+			})
+			client := newTypedFakeClient(rrA)
+
+			result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: "cluster-a",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Exists).To(BeTrue())
+			Expect(result.RRID).To(Equal("rr-cluster-a"))
+			Expect(result.ClusterID).To(Equal("cluster-a"))
+		})
+
+		It("UT-AF-1409-005c: empty cluster_id (local hub) preserves pre-#1409 backward-compatible matching", func() {
+			rr := newTypedRRWithFingerprint("prod", "rr-local", "Executing", "Deployment", "web")
+			client := newTypedFakeClient(rr)
+
+			result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Exists).To(BeTrue())
+		})
+
+		// IT-AF-1409-006 is the Wiring Manifest's designated proof for the
+		// "cluster_id arg -> cluster-aware fingerprint -> dedup lookup result"
+		// row. It calls HandleCheckExistingRR directly because that IS the
+		// kubernaut_check_existing_remediation tool's production entry point
+		// (NewCheckExistingRemediationTool's functiontool closure is a
+		// zero-logic pass-through, same as the neighboring UT-AF-1409-005/005b
+		// tests and IT-AF-1409-010 below) — there is no additional MCP/HTTP
+		// transport layer to cross for this internal (ADK-only, non-MCP) tool.
+		It("IT-AF-1409-006: AC-4 — kubernaut_check_existing_remediation enforces cluster-scoped information-flow isolation end-to-end", func() {
+			rrEast := newTypedRRWithFingerprint("prod", "rr-east-006", "Executing", "Deployment", "web")
+			rrEast.Spec.ClusterID = "cluster-east-006"
+			rrEast.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-east-006", gwtypes.ResourceIdentifier{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+			})
+			client := newTypedFakeClient(rrEast)
+
+			sameClusterResult, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: "cluster-east-006",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sameClusterResult.Exists).To(BeTrue(),
+				"AC-4: a live, non-terminal remediation must be found when checked from its own cluster")
+			Expect(sameClusterResult.ClusterID).To(Equal("cluster-east-006"))
+
+			differentClusterResult, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: "cluster-west-006",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(differentClusterResult.Exists).To(BeFalse(),
+				"AC-4: a live, non-terminal remediation on cluster-east must never be reported as covering an identically-named target checked from cluster-west (no cross-cluster conflation)")
+		})
+
+		It("IT-AF-1409-010: SI-10 — oversized cluster_id rejected at the kubernaut_check_existing_remediation tool boundary before fingerprint computation", func() {
+			client := newTypedFakeClient()
+
+			_, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", ClusterID: strings.Repeat("a", 254),
+			})
+			Expect(err).To(HaveOccurred(),
+				"SI-10: validate.ClusterID must be wired into HandleCheckExistingRR, not dead code")
+			Expect(err.Error()).To(ContainSubstring("cluster_id"))
+		})
 	})
 
 	It("UT-AF-052-048: mismatched fingerprint not reported as existing", func() {

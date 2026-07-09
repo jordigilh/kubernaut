@@ -19,6 +19,10 @@ type CheckExistingRRArgs struct {
 	Namespace string `json:"namespace"`
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
+	// ClusterID scopes the dedup fingerprint to a specific fleet cluster
+	// (#1409, AC-4). Empty string preserves pre-#1409 local-hub matching
+	// behavior for backward compatibility.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // CheckExistingRRResult is the output of kubernaut_check_existing_remediation.
@@ -27,6 +31,8 @@ type CheckExistingRRResult struct {
 	RRID     string `json:"rr_id,omitempty"`
 	Phase    string `json:"phase,omitempty"`
 	Severity string `json:"severity,omitempty"`
+	// ClusterID attributes the existing RR to its cluster of origin (#1409).
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // HandleCheckExistingRR checks whether a non-terminal RemediationRequest already
@@ -53,8 +59,11 @@ func HandleCheckExistingRR(ctx context.Context, client crclient.Client, controll
 	if args.Name == "" {
 		return CheckExistingRRResult{}, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
 	}
+	if err := validate.ClusterID(args.ClusterID); err != nil {
+		return CheckExistingRRResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 
-	fingerprint := rrFingerprint(args.Namespace, args.Kind, args.Name)
+	fingerprint := rrFingerprintWithCluster(args.ClusterID, args.Namespace, args.Kind, args.Name)
 
 	var list remediationv1.RemediationRequestList
 	if err := client.List(ctx, &list, crclient.InNamespace(controllerNS)); err != nil {
@@ -69,9 +78,10 @@ func HandleCheckExistingRR(ctx context.Context, client crclient.Client, controll
 		phase := string(item.Status.OverallPhase)
 		if !IsTerminalPhase(phase) {
 			return CheckExistingRRResult{
-				Exists: true,
-				RRID:   item.Name,
-				Phase:  phase,
+				Exists:    true,
+				RRID:      item.Name,
+				Phase:     phase,
+				ClusterID: item.Spec.ClusterID,
 			}, nil
 		}
 	}

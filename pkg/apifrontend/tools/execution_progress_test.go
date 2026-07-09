@@ -21,7 +21,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 	Describe("BuildProgressSnapshot — UT-AF-1403-001..003", func() {
 		DescribeTable("constructs correct payload",
 			func(phase, rrName, startedAt, completedAt string, expectCompletedAt bool) {
-				snapshot := tools.BuildProgressSnapshot(phase, rrName, startedAt, completedAt)
+				snapshot := tools.BuildProgressSnapshot(phase, rrName, startedAt, completedAt, "")
 				Expect(snapshot).NotTo(BeNil())
 				Expect(snapshot["type"]).To(Equal("execution_progress"))
 				Expect(snapshot["schema_version"]).To(Equal("1.0"))
@@ -38,6 +38,20 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 			Entry("UT-AF-1403-002: terminal phase with completed_at", "Completed", "rr-abc123", "2026-06-11T10:00:00Z", "2026-06-11T10:05:00Z", true),
 			Entry("UT-AF-1403-003: non-terminal phase omits completed_at", "Analyzing", "rr-def456", "2026-06-11T09:30:00Z", "", false),
 		)
+	})
+
+	Describe("BuildProgressSnapshot cluster attribution — UT-AF-1409-007/008", func() {
+		It("UT-AF-1409-007: AU-3 — carries cluster_id when the RR being watched has one", func() {
+			snapshot := tools.BuildProgressSnapshot("Executing", "rr-fleet-001", "2026-06-11T10:00:00Z", "", "cluster-fleet-b")
+			Expect(snapshot).To(HaveKeyWithValue("cluster_id", "cluster-fleet-b"),
+				"AU-3: execution_progress must carry cluster attribution for Console multi-cluster context")
+		})
+
+		It("UT-AF-1409-008: AU-3 — omits cluster_id entirely for local-hub RRs (no false attribution)", func() {
+			snapshot := tools.BuildProgressSnapshot("Executing", "rr-local-001", "2026-06-11T10:00:00Z", "", "")
+			Expect(snapshot).NotTo(HaveKey("cluster_id"),
+				"AU-3: local-hub RRs must not carry an empty-string cluster_id (false attribution noise)")
+		})
 	})
 
 	Describe("FetchStabilizationWindow (typed client) — UT-AF-1403-004..005", func() {
@@ -317,7 +331,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 	Describe("Progress artifact DataPart JSON structure — UT-AF-1403-011", func() {
 		It("UT-AF-1403-011: DataPart payload is JSON-serializable with expected fields", func() {
-			snapshot := tools.BuildProgressSnapshot("Verifying", "rr-xyz789", "2026-06-11T10:00:00Z", "")
+			snapshot := tools.BuildProgressSnapshot("Verifying", "rr-xyz789", "2026-06-11T10:00:00Z", "", "")
 			data, err := json.Marshal(snapshot)
 			Expect(err).NotTo(HaveOccurred())
 

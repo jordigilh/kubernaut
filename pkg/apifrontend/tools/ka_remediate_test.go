@@ -202,4 +202,56 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				"AU-3: status events after HandleRemediate must carry rr_id from RR context")
 		})
 	})
+
+	Describe("Fleet cluster_id end-to-end wiring (#1409)", func() {
+		It("IT-AF-1409-002: AU-3, SI-4 — kubernaut_remediate correctly attributes and correlates cluster identity end-to-end", func() {
+			tc := newTypedFakeClient()
+			rec := &auditRecorder{}
+			q := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), q, a2a.NewTaskID(), "ctx-it-1409-002", nil)
+
+			result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: "kubernaut-system",
+				Auditor:      rec,
+			}, &tools.RemediateArgs{
+				Namespace:  "prod",
+				Kind:       "Deployment",
+				Name:       "web-fleet",
+				APIVersion: "apps/v1",
+				ClusterID:  "cluster-fleet-it-002",
+			}, "user")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+			Expect(result.ClusterID).To(Equal("cluster-fleet-it-002"))
+
+			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
+			Expect(created.Spec.ClusterID).To(Equal("cluster-fleet-it-002"),
+				"AU-3, SI-4: cluster_id must reach the RR spec for cross-cluster correlation")
+
+			var auditSaw bool
+			for _, e := range rec.events {
+				if e.Detail["cluster_id"] == "cluster-fleet-it-002" {
+					auditSaw = true
+					break
+				}
+			}
+			Expect(auditSaw).To(BeTrue(),
+				"AU-3: emitCreateRRAudit's Detail map must attribute cluster_id for the AF-originated fleet RR")
+
+			Expect(launcher.EmitStatusSafe(ctx, "post-remediate status")).To(Succeed())
+			var eventSaw bool
+			for _, evt := range q.Events() {
+				statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok || statusEvt.Metadata == nil {
+					continue
+				}
+				if statusEvt.Metadata["cluster_id"] == "cluster-fleet-it-002" {
+					eventSaw = true
+				}
+			}
+			Expect(eventSaw).To(BeTrue(),
+				"AU-3, SI-4: A2A status events must carry cluster_id from RRContext for Console cross-cluster correlation")
+		})
+	})
 })

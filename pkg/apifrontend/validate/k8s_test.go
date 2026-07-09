@@ -225,3 +225,24 @@ var _ = Describe("EscalationReason validation (UT-VALIDATE-1418)", func() {
 		Entry("empty string", "", "whitespace-only"),
 	)
 })
+
+var _ = Describe("ClusterID (UT-AF-1409-009)", func() {
+	DescribeTable("UT-AF-1409-009: valid cluster_id values accepted (optional, length-bounded)",
+		func(clusterID string) {
+			Expect(validate.ClusterID(clusterID)).To(Succeed())
+		},
+		Entry("empty (optional field, no cluster attribution)", ""),
+		Entry("simple identifier", "cluster-fleet-a"),
+		Entry("exactly 253 chars", strings.Repeat("a", 253)),
+	)
+
+	DescribeTable("UT-AF-1409-009b: oversized cluster_id rejected [SI-10]",
+		func(clusterID string, substr string) {
+			err := validate.ClusterID(clusterID)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(substr))
+		},
+		Entry("254 chars (over max)", strings.Repeat("a", 254), "exceeds max length"),
+		Entry("way over max", strings.Repeat("a", 1000), "exceeds max length"),
+	)
+})

@@ -79,6 +79,10 @@ type RRContext struct {
 	Target    string `json:"target"`
 	AlertName string `json:"alert_name"`
 	Phase     string `json:"phase"`
+	// ClusterID is the fleet cluster identifier (ADR-065). Empty for local-hub
+	// (single-cluster) RRs, in which case it is omitted from event metadata
+	// entirely (#1409, SI-10: no false attribution via empty-string noise).
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // EventBridge enables tool handlers to emit progressive A2A events directly to
@@ -139,6 +143,7 @@ func (b *EventBridge) mergeRRContext(meta map[string]any) map[string]any {
 		"target":     b.rrCtx.Target,
 		"alert_name": b.rrCtx.AlertName,
 		"phase":      b.rrCtx.Phase,
+		"cluster_id": b.rrCtx.ClusterID,
 	}
 	for k, v := range fields {
 		if v == "" {
@@ -159,6 +164,32 @@ func SetRRContextSafe(ctx context.Context, rc *RRContext) {
 		return
 	}
 	bridge.SetRRContext(rc)
+}
+
+// RRContext returns a copy of the bridge's stored RR context, or nil if
+// SetRRContext has not been called. Thread-safe: protected by the bridge
+// mutex. Used by artifact producers (e.g. emitDecisionEvent) and callers
+// outside this package that need to read back server-sourced fields such
+// as ClusterID (#1409) without a data race on the underlying pointer.
+func (b *EventBridge) RRContext() *RRContext {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.rrCtx == nil {
+		return nil
+	}
+	rc := *b.rrCtx
+	return &rc
+}
+
+// RRContextSafe is a nil-safe helper that returns a copy of the RR context
+// stored on the EventBridge in ctx. Returns nil when no bridge is present or
+// no context has been set yet.
+func RRContextSafe(ctx context.Context) *RRContext {
+	bridge := EventBridgeFromContext(ctx)
+	if bridge == nil {
+		return nil
+	}
+	return bridge.RRContext()
 }
 
 // UpdatePhaseSafe updates the phase on the EventBridge from context. Nil-safe.

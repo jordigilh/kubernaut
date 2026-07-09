@@ -235,7 +235,7 @@ func (s *watchLoopState) handleRREvent(ctx, watchCtx context.Context, deps watch
 			progressMeta["stabilization_window"] = timing.StabilizationWindow
 		}
 	}
-	snapshot := BuildProgressSnapshot(phase, deps.Args.Name, s.startedAt, completedAt)
+	snapshot := BuildProgressSnapshot(phase, deps.Args.Name, s.startedAt, completedAt, rrObj.Spec.ClusterID)
 	_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
 
 	if IsTerminalPhase(phase) {
