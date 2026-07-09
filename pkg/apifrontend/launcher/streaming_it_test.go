@@ -215,6 +215,43 @@ var _ = Describe("IT-AF-1399: A2A Streaming Pipeline Wiring", func() {
 		})
 	})
 
+	Describe("Fleet cluster_id propagation (#1409)", func() {
+		It("IT-AF-1409-009: cluster_id reaches the investigation_summary DataPart through the streaming pipeline", func() {
+			convert := launcher.BuildStreamingPartConverterForTest()
+			part := &genai.Part{
+				FunctionCall: &genai.FunctionCall{
+					Name: "kubernaut_present_decision",
+					Args: map[string]any{
+						"session_id": "sess-it-1409-009",
+						"summary":    "Disk pressure detected",
+						"rca":        map[string]any{"severity": "high", "confidence": 0.85, "explanation": "disk full"},
+						"options":    []any{map[string]any{"workflow_id": "wf-1", "name": "Evict Pod"}},
+					},
+				},
+			}
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-it-1409-009", "ctx-it-1409-009", nil)
+			launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-it-1409-009", ClusterID: "cluster-fleet-it"})
+
+			result, err := convert(ctx, nil, part)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil())
+
+			Expect(queue.events).To(HaveLen(1))
+			artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+			Expect(ok).To(BeTrue(), "AU-3: decision must emit TaskArtifactUpdateEvent")
+
+			dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+			Expect(ok).To(BeTrue())
+			Expect(dp.Data).To(HaveKeyWithValue("cluster_id", "cluster-fleet-it"),
+				"SI-10, AU-3: cluster_id must reach the investigation_summary DataPart through the wired streaming pipeline")
+
+			err = launcher.ValidatePayloadForTest("investigation_summary", dp.Data)
+			Expect(err).NotTo(HaveOccurred(),
+				"SI-10: emitted DataPart.Data with cluster_id must still pass schema validation")
+		})
+	})
+
 	Describe("outputMetaTools routing preserved", func() {
 		It("IT-AF-1399-005: kubernaut_watch FunctionResponse still uses status type", func() {
 			convert := launcher.BuildPartConverterForTest()

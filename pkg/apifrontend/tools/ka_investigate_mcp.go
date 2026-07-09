@@ -30,6 +30,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
@@ -88,6 +89,11 @@ type InvestigateMCPArgs struct {
 	Namespace  string `json:"namespace,omitempty"`
 	Kind       string `json:"kind,omitempty"`
 	Name       string `json:"name,omitempty"`
+	// ClusterID identifies the fleet cluster the target resource lives on
+	// (#1409, ADR-065). Only meaningful when creating a new RR (ignored for
+	// the rr_id takeover path, since the cluster identity is read back from
+	// the existing RR object instead). Empty for the local hub cluster.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
@@ -268,17 +274,49 @@ func resolveInvestigationRR(ctx context.Context, cfg *InvestigateConfig, args *I
 		return "", fmt.Errorf("rr_id is required for MCP investigation")
 	}
 
-	// For the existing-RR path (rr_id provided as input), set minimal RR context.
-	// Resource metadata may not be available without a K8s read; rr_id + phase
-	// is sufficient for Console escape-hatch buttons (#1423).
+	// For the existing-RR path (rr_id provided as input, i.e. a takeover of
+	// an autonomous investigation), attempt to fetch the full RemediationRequest
+	// to reconstruct complete context for Console banner population (#1423,
+	// #1409). Falls back to minimal rr_id+phase context if the fetch is
+	// unavailable or fails (SI-17: fail-safe degradation, not fail-closed —
+	// a takeover session must still proceed even when the RR can't be read).
 	if !hasResourceArgs {
-		launcher.SetRRContextSafe(ctx, &launcher.RRContext{
-			RRID:  args.RRID,
-			Phase: "Investigating",
-		})
+		setTakeoverRRContext(ctx, cfg, args.RRID)
 	}
 
 	return rrSeverity, nil
+}
+
+// setTakeoverRRContext seeds the EventBridge RR context for the takeover
+// (rr_id-only) path. On success, reconstructs the complete context
+// (namespace, kind, target, alert_name, cluster_id) from the fetched RR
+// object, closing the #1423 gap where takeover sessions previously carried
+// only rr_id+phase. On any failure (no client/namespace configured, or the
+// fetch itself errors), degrades to the minimal rr_id+phase context instead
+// of failing the tool call (SI-17, AU-2: failure is logged, not silent).
+func setTakeoverRRContext(ctx context.Context, cfg *InvestigateConfig, rrID string) {
+	if cfg.Client != nil && cfg.Namespace != "" {
+		var rr remediationv1.RemediationRequest
+		err := cfg.Client.Get(ctx, crclient.ObjectKey{Namespace: cfg.Namespace, Name: rrID}, &rr)
+		if err == nil {
+			launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+				RRID:      rrID,
+				Namespace: rr.Spec.TargetResource.Namespace,
+				Kind:      rr.Spec.TargetResource.Kind,
+				Target:    remediationrequest.FormatResourceDisplay(rr.Spec.TargetResource.Kind, rr.Spec.TargetResource.Name),
+				AlertName: rr.Spec.SignalName,
+				Phase:     "Investigating",
+				ClusterID: rr.Spec.ClusterID,
+			})
+			return
+		}
+		logr.FromContextOrDiscard(ctx).Info("takeover RR context fetch failed, degrading to minimal context",
+			"rr_id", rrID, "error", err)
+	}
+	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
+		RRID:  rrID,
+		Phase: "Investigating",
+	})
 }
 
 // createRRForInvestigation creates a new RemediationRequest from
@@ -312,6 +350,7 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 		Name:          args.Name,
 		APIVersion:    args.APIVersion,
 		ClusterScoped: clusterScoped,
+		ClusterID:     args.ClusterID,
 	}
 	createUser := ""
 	if identity != nil {
@@ -323,14 +362,7 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 	}
 	args.RRID = result.RRID
 
-	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
-		RRID:      result.RRID,
-		Namespace: args.Namespace,
-		Kind:      args.Kind,
-		Target:    remediationrequest.FormatResourceDisplay(args.Kind, args.Name),
-		AlertName: result.SignalName,
-		Phase:     "Investigating",
-	})
+	launcher.SetRRContextSafe(ctx, newlyCreatedRRContext(result.RRID, args.Namespace, args.Kind, args.Name, result.SignalName, result.ClusterID))
 
 	return result.Severity, nil
 }
@@ -669,6 +701,9 @@ func NewInvestigateMCPTool(cfg *InvestigateConfig, mapper meta.RESTMapper) (tool
 			"Provide rr_id to resume an existing investigation, or " +
 			"api_version/kind/name (and optional namespace for namespaced resources) " +
 			"to create a new investigation. " +
+			"For fleet (multi-cluster) deployments, also provide cluster_id when creating a new " +
+			"investigation to identify which cluster the resource lives on; omit for the local hub cluster " +
+			"(ignored when resuming via rr_id, since cluster identity is read from the existing request). " +
 			"This tool blocks until the investigation completes and returns " +
 			"the root-cause analysis summary. Live progress events stream " +
 			"to the user automatically while the investigation runs.",

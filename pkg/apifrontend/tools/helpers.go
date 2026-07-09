@@ -8,6 +8,9 @@ import (
 	"strings"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // AuditableInput is an opt-in interface that tool argument types can implement
@@ -101,6 +104,27 @@ func buildForbiddenMsg(msg string) string {
 		return fmt.Sprintf("you lack access to %s -- contact your cluster administrator for RBAC permissions", action)
 	}
 	return "you lack access to this resource -- contact your cluster administrator for RBAC permissions"
+}
+
+// newlyCreatedRRContext builds the EventBridge RRContext seeded immediately
+// after a new RemediationRequest is created (#1409, #1423). It is shared by
+// the three create-path tools (kubernaut_investigate_alert, kubernaut_remediate,
+// kubernaut_investigate's create branch), which previously each constructed
+// an identical launcher.RRContext literal inline. Phase is always
+// "Investigating" here since this only runs immediately after a fresh
+// creation — the takeover (rr_id-only) path has its own distinct source
+// (a fetched RemediationRequest, not a CreateRRResult) and is not a
+// candidate for this helper.
+func newlyCreatedRRContext(rrID, namespace, kind, name, alertName, clusterID string) *launcher.RRContext {
+	return &launcher.RRContext{
+		RRID:      rrID,
+		Namespace: namespace,
+		Kind:      kind,
+		Target:    remediationrequest.FormatResourceDisplay(kind, name),
+		AlertName: alertName,
+		Phase:     "Investigating",
+		ClusterID: clusterID,
+	}
 }
 
 // IsTerminalPhase returns true if the given RR phase is terminal.

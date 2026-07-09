@@ -409,6 +409,11 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	afRemediateNS = map[string]string{
 		"autonomous":  fmt.Sprintf("fp-auto-%s", uuid.New().String()[:8]),
 		"interactive": fmt.Sprintf("fp-int-%s", uuid.New().String()[:8]),
+		// fleet: dedicated namespace for E2E-AF-1409-001 (#1409 ADR-065), which
+		// exercises kubernaut_remediate with a fleet cluster_id argument chained
+		// into kubernaut_present_decision to prove cluster_id reaches the
+		// SSE-visible investigation_summary artifact end-to-end.
+		"fleet": fmt.Sprintf("fp-fleet-%s", uuid.New().String()[:8]),
 	}
 	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
 	for key, ns := range afRemediateNS {
@@ -1263,11 +1268,11 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		"kubernaut-agent",
 		"gateway",
 		"event-exporter",
-		"mock-slack",    // Accepts Slack webhook POSTs so notifications reach terminal phase
-		"prometheus",    // ADR-EM-001: Prometheus for EM metric comparison
-		"alertmanager",  // ADR-EM-001: AlertManager for EM alert resolution
-		"apifrontend",   // Issue #1189: AF as FP signal source
-		"dex",           // Issue #1189: OIDC provider for AF authentication
+		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase
+		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
+		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
+		"apifrontend",  // Issue #1189: AF as FP signal source
+		"dex",          // Issue #1189: OIDC provider for AF authentication
 	}
 	if !skipMockLLM() {
 		deployments = append(deployments, "mock-llm")
