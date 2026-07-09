@@ -116,7 +116,13 @@ type RemediationRequestSpec struct {
 | GW CRD population | CRDCreator.Create() | pkg/gateway/processing/crd_creator.go | IT-GW-FLEET-001 |
 | GW cluster-aware fingerprint | CalculateClusterAwareFingerprint | pkg/gateway/types/fingerprint.go | IT-GW-FLEET-002 |
 | KA SignalContext population | ResolveSignalContext() | internal/kubernautagent/mcp/adapters/signal_resolver.go | IT-KA-FLEET-001 |
-| AF RR creation | CreateRR tool | pkg/apifrontend/tools/af_create_rr.go | IT-AF-FLEET (pending) |
+| AF RR creation (cluster_id LLM arg) | HandleCreateRR / HandleInvestigateAlert / HandleRemediate / HandleInvestigationMCP | pkg/apifrontend/tools/{af_create_rr,af_investigate_alert,ka_remediate,ka_investigate_mcp}.go | IT-AF-1409-001..005 |
+| AF cluster-aware dedup | HandleCheckExistingRR (rrFingerprintWithCluster) | pkg/apifrontend/tools/af_check_existing_rr.go | UT-AF-1409-005/005b/005c, IT-AF-1409-006 |
+| AF takeover context reconstruction | resolveInvestigationRR / setTakeoverRRContext | pkg/apifrontend/tools/ka_investigate_mcp.go | UT-AF-1409-011/012/013 |
+| AF EventBridge RRContext.ClusterID | RRContext / mergeRRContext / RRContextSafe | pkg/apifrontend/launcher/event_bridge.go | UT-AF-1409-001/001b/001c/001d/002 |
+| AF investigation_summary artifact | emitDecisionEvent | pkg/apifrontend/launcher/part_converter.go | UT-AF-1409-006/006b/006c, IT-AF-1409-009 |
+| AF execution_progress artifact | BuildProgressSnapshot / crd_tools_watch.go | pkg/apifrontend/tools/execution_progress.go | UT-AF-1409-007/008, IT-AF-1409-007/007b |
+| AF Console context banner (full journey) | A2A `message/send` -> investigation_summary DataPart | test/e2e/fullpipeline/10_af_fleet_cluster_id_test.go | E2E-AF-1409-001 |
 
 ---
 
@@ -138,6 +144,7 @@ type RemediationRequestSpec struct {
 | IT-GW-FLEET-003 | Backward compat (empty clusterID when no cluster label) | PASS |
 | IT-KA-FLEET-001 | Fleet tools visible in RCA phase after AppendFleetToolsToRCA | PASS |
 | IT-KA-FLEET-002 | Empty fleet tools do not corrupt phase map | PASS |
+| UT/IT/E2E-AF-1409-* | AF cluster_id threading: RRContext, dedup, takeover reconstruction, investigation_summary/execution_progress artifacts, Console banner journey — see [docs/tests/1409/TEST_PLAN.md](../../tests/1409/TEST_PLAN.md) | PASS (full pyramid: 13 UT, 10 IT, 1 E2E — E2E verified against a live Kind cluster) |
 
 ---
 
