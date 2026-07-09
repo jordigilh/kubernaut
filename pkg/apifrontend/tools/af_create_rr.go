@@ -54,9 +54,6 @@ type CreateRRArgs struct {
 	// ClusterID is the cluster identifier from Thanos external_labels.
 	// Empty string indicates local hub cluster (ADR-065).
 	ClusterID string `json:"cluster_id,omitempty"`
-	// ClusterName is the human-readable display name for the cluster.
-	// Populated from the MCP Gateway Backend CRD displayName (ADR-065).
-	ClusterName string `json:"cluster_name,omitempty"`
 }
 
 // CreateRRResult is the output of RR creation.
@@ -291,7 +288,6 @@ func buildRRObject(controllerNS string, args *CreateRRArgs, fingerprint, signalN
 			TargetType:        "kubernetes",
 			TargetResource:    buildTypedTargetResource(args),
 			ClusterID:         args.ClusterID,
-			ClusterName:       args.ClusterName,
 		},
 	}
 
@@ -317,9 +313,9 @@ func emitCreateRRAudit(ctx context.Context, d *ToolDeps, args *CreateRRArgs, use
 	}
 	if res.AlreadyExists {
 		d.Auditor.Emit(ctx, &audit.Event{
-			Type:        audit.EventRRDeduplicated,
-			UserID:      username,
-			ClusterName: args.ClusterName,
+			Type:      audit.EventRRDeduplicated,
+			UserID:    username,
+			ClusterID: args.ClusterID,
 			Detail: map[string]string{
 				"namespace":   d.ControllerNS,
 				"kind":        args.Kind,
@@ -330,9 +326,9 @@ func emitCreateRRAudit(ctx context.Context, d *ToolDeps, args *CreateRRArgs, use
 		return
 	}
 	d.Auditor.Emit(ctx, &audit.Event{
-		Type:        audit.EventRRCreated,
-		UserID:      username,
-		ClusterName: args.ClusterName,
+		Type:      audit.EventRRCreated,
+		UserID:    username,
+		ClusterID: args.ClusterID,
 		Detail: map[string]string{
 			"namespace": d.ControllerNS,
 			"kind":      args.Kind,

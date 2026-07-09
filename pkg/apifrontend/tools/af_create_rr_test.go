@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -597,7 +598,14 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	})
 
 	Describe("Multi-Cluster ClusterID propagation (ADR-065, BR-INTEGRATION-065)", func() {
-		It("UT-AF-065-001: populates ClusterID and ClusterName on created RR", func() {
+		// Issue #1651: ClusterName was removed from CreateRRArgs — it is
+		// non-unique and unsafe for cluster disambiguation. ClusterID only.
+		It("UT-AF-1651-001: ClusterName field has been removed from CreateRRArgs", func() {
+			_, found := reflect.TypeOf(tools.CreateRRArgs{}).FieldByName("ClusterName")
+			Expect(found).To(BeFalse(), "CreateRRArgs.ClusterName must not exist (issue #1651: non-unique, unsafe for disambiguation)")
+		})
+
+		It("UT-AF-065-001: populates ClusterID on created RR", func() {
 			tc := newTypedFakeClient()
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
@@ -609,14 +617,12 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Description: "test",
 				APIVersion:  "apps/v1",
 				ClusterID:   "prod-east-1",
-				ClusterName: "Production US-East",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeFalse())
 
 			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
 			Expect(created.Spec.ClusterID).To(Equal("prod-east-1"))
-			Expect(created.Spec.ClusterName).To(Equal("Production US-East"))
 		})
 
 		It("UT-AF-065-002: empty ClusterID indicates local hub (backward compat)", func() {
@@ -635,7 +641,6 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
 			Expect(created.Spec.ClusterID).To(BeEmpty())
-			Expect(created.Spec.ClusterName).To(BeEmpty())
 		})
 
 		It("UT-AF-065-003: different clusters produce different fingerprints (no cross-cluster dedup)", func() {
