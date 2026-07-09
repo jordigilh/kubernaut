@@ -66,7 +66,7 @@ const reconstructionEventsQuery = `
 		event_id, event_version, event_type, event_category, event_action,
 		correlation_id, event_timestamp, event_outcome, severity,
 		resource_type, resource_id, actor_type, actor_id, parent_event_id,
-		event_data, event_date, namespace, cluster_name,
+		event_data, event_date, namespace, cluster_id,
 		duration_ms, error_code, error_message
 	FROM audit_events
 	WHERE correlation_id = $1
@@ -168,7 +168,7 @@ func scanReconstructionRow(rows *sql.Rows) (ogenclient.AuditEvent, []byte, sql.N
 		eventID       sql.NullString // UUID as string
 		parentEventID sql.NullString // UUID as string
 		namespace     sql.NullString
-		clusterName   sql.NullString
+		clusterID     sql.NullString
 		severity      sql.NullString
 		resourceType  sql.NullString
 		resourceID    sql.NullString
@@ -198,7 +198,7 @@ func scanReconstructionRow(rows *sql.Rows) (ogenclient.AuditEvent, []byte, sql.N
 		&eventDataJSON,
 		&eventDate,
 		&namespace,
-		&clusterName,
+		&clusterID,
 		&durationMs,
 		&errorCode,
 		&errorMessage,
@@ -211,7 +211,7 @@ func scanReconstructionRow(rows *sql.Rows) (ogenclient.AuditEvent, []byte, sql.N
 		eventID:       eventID,
 		parentEventID: parentEventID,
 		namespace:     namespace,
-		clusterName:   clusterName,
+		clusterID:     clusterID,
 		severity:      severity,
 		resourceType:  resourceType,
 		resourceID:    resourceID,
@@ -231,7 +231,7 @@ type nullableReconstructionColumns struct {
 	eventID       sql.NullString
 	parentEventID sql.NullString
 	namespace     sql.NullString
-	clusterName   sql.NullString
+	clusterID     sql.NullString
 	severity      sql.NullString
 	resourceType  sql.NullString
 	resourceID    sql.NullString
@@ -270,8 +270,8 @@ func applyNullableReconstructionFields(event *ogenclient.AuditEvent, cols nullab
 	if cols.actorID.Valid {
 		event.ActorID.SetTo(cols.actorID.String)
 	}
-	if cols.clusterName.Valid {
-		event.ClusterName.SetTo(cols.clusterName.String)
+	if cols.clusterID.Valid {
+		event.ClusterID.SetTo(cols.clusterID.String)
 	}
 	if cols.severity.Valid {
 		event.Severity.SetTo(cols.severity.String)

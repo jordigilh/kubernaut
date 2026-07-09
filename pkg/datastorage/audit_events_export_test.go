@@ -55,7 +55,7 @@ var _ = Describe("AuditEventsRepository.Export", func() {
 		"event_id", "event_version", "event_type", "event_timestamp",
 		"event_category", "event_action", "event_outcome", "correlation_id",
 		"parent_event_id", "parent_event_date", "resource_type", "resource_id",
-		"namespace", "cluster_name", "actor_id", "actor_type", "actor_ip",
+		"namespace", "cluster_id", "actor_id", "actor_type", "actor_ip",
 		"severity", "duration_ms", "error_code", "error_message",
 		"retention_days", "is_sensitive", "event_data",
 		"event_hash", "previous_event_hash", "hash_algorithm", "legal_hold",

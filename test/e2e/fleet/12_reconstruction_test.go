@@ -37,7 +37,7 @@ import (
 )
 
 // E2E-FLEET-CC81-001: SOC2 CC8.1 Fleet Reconstruction Compliance
-// Validates that ReconstructRemediationRequest returns cluster_name
+// Validates that ReconstructRemediationRequest returns cluster_id
 // for fleet-scoped remediations, proving end-to-end cluster provenance
 // through the audit pipeline.
 //
@@ -48,7 +48,7 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 		correlationID string
 	)
 
-	It("should include cluster_name in reconstruction response for fleet RRs", func() {
+	It("should include cluster_id in reconstruction response for fleet RRs", func() {
 		By("Finding a completed RemediationRequest with ClusterID set")
 		rrList := &remediationv1.RemediationRequestList{}
 		Eventually(func(g Gomega) {
@@ -83,14 +83,14 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			resp = reconResp
 		}, 30*time.Second, 2*time.Second).Should(Succeed())
 
-		By("Verifying cluster_name is present in reconstruction response")
-		Expect(resp.ClusterName.Set).To(BeTrue(),
-			"CC8.1 violation: cluster_name missing from reconstruction response for fleet RR %s", rrName)
-		Expect(resp.ClusterName.Value).ToNot(BeEmpty(),
-			"CC8.1 violation: cluster_name is empty for fleet RR %s", rrName)
+		By("Verifying cluster_id is present in reconstruction response")
+		Expect(resp.ClusterID.Set).To(BeTrue(),
+			"CC8.1 violation: cluster_id missing from reconstruction response for fleet RR %s", rrName)
+		Expect(resp.ClusterID.Value).ToNot(BeEmpty(),
+			"CC8.1 violation: cluster_id is empty for fleet RR %s", rrName)
 
-		GinkgoWriter.Printf("CC8.1 PASS: cluster_name=%q in reconstruction for %s\n",
-			resp.ClusterName.Value, rrName)
+		GinkgoWriter.Printf("CC8.1 PASS: cluster_id=%q in reconstruction for %s\n",
+			resp.ClusterID.Value, rrName)
 
 		By("Verifying YAML contains clusterID in spec")
 		Expect(resp.RemediationRequestYaml).To(ContainSubstring("clusterID:"),
@@ -114,7 +114,7 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 	})
 
 	Context("reconstruction without fleet cluster context", func() {
-		It("should return empty cluster_name for hub-only RRs", func() {
+		It("should return empty cluster_id for hub-only RRs", func() {
 			// Deliberately create a hub-only RR rather than opportunistically
 			// scanning existing RRs for one without spec.clusterID: every RR
 			// in this suite is fleet-scoped (DD-TEST-014: fleet E2E targets
@@ -193,10 +193,10 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 				resp = reconResp
 			}, 30*time.Second, 2*time.Second).Should(Succeed())
 
-			Expect(resp.ClusterName.Set).To(BeFalse(),
-				"hub-only RR should not have cluster_name set")
+			Expect(resp.ClusterID.Set).To(BeFalse(),
+				"hub-only RR should not have cluster_id set")
 
-			GinkgoWriter.Printf("Backward compat PASS: hub-only RR %s has no cluster_name\n", hubRRName)
+			GinkgoWriter.Printf("Backward compat PASS: hub-only RR %s has no cluster_id\n", hubRRName)
 		})
 	})
 })

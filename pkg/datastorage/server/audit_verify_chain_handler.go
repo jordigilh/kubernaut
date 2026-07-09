@@ -197,7 +197,7 @@ func (s *Server) queryVerifyChainEvents(ctx context.Context, correlationID strin
 			event_id, event_timestamp, event_type,
 			event_category, event_action, event_outcome,
 			correlation_id, parent_event_id, parent_event_date,
-			resource_type, resource_id, namespace, cluster_name,
+			resource_type, resource_id, namespace, cluster_id,
 			actor_id, actor_type, actor_ip,
 			severity, duration_ms, error_code, error_message,
 			retention_days, is_sensitive, event_data,
@@ -263,7 +263,7 @@ func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
 		&event.ResourceType,
 		&event.ResourceID,
 		&cols.namespace,
-		&cols.clusterName,
+		&cols.clusterID,
 		&event.ActorID,
 		&event.ActorType,
 		&cols.actorIP,
@@ -305,9 +305,9 @@ func scanVerifyChainEvent(rows *sql.Rows) (*repository.AuditEvent, error) {
 // can take them as a single argument (100go.co anti-pattern: functions with
 // 8+ parameters).
 type verifyChainNullableColumns struct {
-	namespace, clusterName, actorIP, severity sql.NullString
-	durationMs                                sql.NullInt32
-	errorCode, errorMessage                   sql.NullString
+	namespace, clusterID, actorIP, severity sql.NullString
+	durationMs                              sql.NullInt32
+	errorCode, errorMessage                 sql.NullString
 }
 
 // assignVerifyChainNullableFields copies the sql.Null* columns scanned by
@@ -316,7 +316,7 @@ type verifyChainNullableColumns struct {
 // remediation) — pure code motion, no behavior change.
 func assignVerifyChainNullableFields(event *repository.AuditEvent, cols verifyChainNullableColumns) {
 	event.ResourceNamespace = cols.namespace.String
-	event.ClusterID = cols.clusterName.String
+	event.ClusterID = cols.clusterID.String
 	event.ActorIP = cols.actorIP.String
 	event.Severity = cols.severity.String
 	event.DurationMs = int(cols.durationMs.Int32)
