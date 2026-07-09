@@ -699,3 +699,84 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 			"AU-3: alert_check in_progress detail must include signal name for audit traceability")
 	})
 })
+
+var _ = Describe("Fleet cluster_id in execution_progress — IT-AF-1409-007 (#1409)", func() {
+	var ctx context.Context
+
+	BeforeEach(func() {
+		ctx = context.Background()
+	})
+
+	It("IT-AF-1409-007: AU-3, SI-4 — execution_progress artifact carries cluster_id from the live RR through the watch loop", func() {
+		rr := newTypedRR("payments", "rr-fleet-1", "Pending")
+		rr.Spec.ClusterID = "cluster-fleet-it-007"
+		wc := newWatchClient(rr)
+
+		queue := &bridgeQueue{}
+		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1409-007", "ctx-it-1409-007", nil)
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			updateRRPhase(ctx, wc, "payments", "rr-fleet-1", "Executing")
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-fleet-1", "Completed", "success", "done")
+		}()
+
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-fleet-1"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		events := queue.Events()
+		var sawClusterID bool
+		for _, evt := range events {
+			artifactEvt, ok := evt.(*a2a.TaskArtifactUpdateEvent)
+			if !ok {
+				continue
+			}
+			for _, part := range artifactEvt.Artifact.Parts {
+				dp, ok := part.(a2a.DataPart)
+				if !ok {
+					continue
+				}
+				if dp.Data["cluster_id"] == "cluster-fleet-it-007" {
+					sawClusterID = true
+				}
+			}
+		}
+		Expect(sawClusterID).To(BeTrue(),
+			"AU-3, SI-4: execution_progress artifact must carry cluster_id from the live RemediationRequest through the wired watch loop")
+	})
+
+	It("IT-AF-1409-007b: AU-3 — execution_progress artifact omits cluster_id for local-hub RRs", func() {
+		rr := newTypedRR("payments", "rr-local-1", "Pending")
+		wc := newWatchClient(rr)
+
+		queue := &bridgeQueue{}
+		ctx = launcher.WithEventBridge(ctx, queue, "task-it-1409-007b", "ctx-it-1409-007b", nil)
+
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			updateRRTerminal(ctx, wc, "payments", "rr-local-1", "Completed", "success", "done")
+		}()
+
+		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-local-1"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).To(Equal("completed"))
+
+		events := queue.Events()
+		for _, evt := range events {
+			artifactEvt, ok := evt.(*a2a.TaskArtifactUpdateEvent)
+			if !ok {
+				continue
+			}
+			for _, part := range artifactEvt.Artifact.Parts {
+				dp, ok := part.(a2a.DataPart)
+				if !ok {
+					continue
+				}
+				Expect(dp.Data).NotTo(HaveKey("cluster_id"),
+					"AU-3: local-hub RRs must not carry a false-attribution cluster_id in execution_progress")
+			}
+		}
+	})
+})

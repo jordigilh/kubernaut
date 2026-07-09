@@ -19,7 +19,6 @@ import (
 	apiprom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
-	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // AlertISSignaler creates an InvestigationSession CRD to signal interactive
@@ -57,6 +56,9 @@ type InvestigateAlertArgs struct {
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
 	Namespace  string `json:"namespace,omitempty"`
+	// ClusterID identifies the fleet cluster the target resource lives on
+	// (#1409, ADR-065). Empty for the local hub cluster.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // InvestigateAlertResult is the output of kubernaut_investigate_alert.
@@ -122,6 +124,7 @@ func HandleInvestigateAlert(
 		ClusterScoped:      clusterScoped,
 		Description:        fmt.Sprintf("Alert-driven investigation: %s", args.AlertName),
 		SignalNameOverride: args.AlertName,
+		ClusterID:          args.ClusterID,
 	}
 
 	result, err := HandleCreateRR(ctx, &ToolDeps{Client: cfg.Client, DynClient: cfg.DynClient, ControllerNS: cfg.ControllerNS, Triager: cfg.Triager, Auditor: cfg.Auditor}, createArgs, username)
@@ -131,14 +134,7 @@ func HandleInvestigateAlert(
 
 	signalInteractiveIfConfigured(ctx, cfg.Signaler, result.RRID, username)
 
-	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
-		RRID:      result.RRID,
-		Namespace: args.Namespace,
-		Kind:      args.Kind,
-		Target:    remediationrequest.FormatResourceDisplay(args.Kind, args.Name),
-		AlertName: args.AlertName,
-		Phase:     "Investigating",
-	})
+	launcher.SetRRContextSafe(ctx, newlyCreatedRRContext(result.RRID, args.Namespace, args.Kind, args.Name, args.AlertName, result.ClusterID))
 
 	return InvestigateAlertResult{
 		RRID:           result.RRID,
@@ -216,7 +212,7 @@ func resolveInvestigateAlertScope(ctx context.Context, mapper meta.RESTMapper, a
 }
 
 // validateAlertIfConfigured checks alertName exists in Prometheus when
-// promClient is configured (graceful degradation when nil — validation is
+// promClient is configured (graceful degradation when nil, validation is
 // skipped and alertValidated is reported false).
 func validateAlertIfConfigured(ctx context.Context, promClient apiprom.Client, alertName string, incFailure func(string)) (bool, error) {
 	if promClient == nil {
@@ -303,6 +299,8 @@ func NewInvestigateAlertTool(cfg InvestigateAlertConfig) (tool.Tool, error) {
 		Description: "Create an investigation for a specific Prometheus alert targeting a Kubernetes resource. " +
 			"Provide alert_name (the Prometheus alert name), api_version, kind, and name of the target resource. " +
 			"For namespaced resources, also provide namespace. " +
+			"For fleet (multi-cluster) deployments, also provide cluster_id to identify which cluster the " +
+			"resource lives on; omit for the local hub cluster. " +
 			"The backend validates the alert exists and creates a RemediationRequest.",
 	}, func(ctx tool.Context, args InvestigateAlertArgs) (InvestigateAlertResult, error) {
 		return HandleInvestigateAlert(ctx, cfg, &args, usernameFromContext(ctx))

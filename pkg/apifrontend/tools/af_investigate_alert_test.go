@@ -345,6 +345,21 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("alert_name"))
 		})
+
+		It("IT-AF-1409-010: SI-10 — oversized cluster_id rejected at the kubernaut_investigate_alert tool boundary before reaching the RR spec", func() {
+			_, err := tools.HandleInvestigateAlert(context.Background(), baseCfg(),
+				&tools.InvestigateAlertArgs{
+					AlertName:  "KubePodCrashLooping",
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "web",
+					Namespace:  "prod",
+					ClusterID:  fmt.Sprintf("%0254d", 0),
+				}, "user")
+			Expect(err).To(HaveOccurred(),
+				"SI-10: validate.ClusterID must be wired into the kubernaut_investigate_alert tool boundary, not dead code")
+			Expect(err.Error()).To(ContainSubstring("cluster_id"))
+		})
 	})
 
 	Describe("Metrics wiring (UT-AF-1372-050..051)", func() {
@@ -519,6 +534,58 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			}
 			Expect(found).To(BeTrue(),
 				"AU-3: status events after HandleInvestigateAlert must carry rr_id from RR context")
+		})
+	})
+
+	Describe("Fleet cluster_id end-to-end wiring (#1409)", func() {
+		It("IT-AF-1409-001: AU-3, SI-4 — kubernaut_investigate_alert correctly attributes and correlates cluster identity end-to-end", func() {
+			tc := newTypedFakeClient()
+			rec := &auditRecorder{}
+			q := &bridgeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), q, a2a.NewTaskID(), "ctx-it-1409-001", nil)
+
+			result, err := tools.HandleInvestigateAlert(ctx, tools.InvestigateAlertConfig{
+				Client:       tc,
+				ControllerNS: "kubernaut-system",
+				Auditor:      rec,
+			}, &tools.InvestigateAlertArgs{
+				AlertName:  "KubePodCrashLooping",
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       "web",
+				Namespace:  "prod",
+				ClusterID:  "cluster-fleet-it-001",
+			}, "user")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+
+			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
+			Expect(created.Spec.ClusterID).To(Equal("cluster-fleet-it-001"),
+				"AU-3, SI-4: cluster_id must reach the RR spec for cross-cluster correlation")
+
+			var auditSaw bool
+			for _, e := range rec.events {
+				if e.Detail["cluster_id"] == "cluster-fleet-it-001" {
+					auditSaw = true
+					break
+				}
+			}
+			Expect(auditSaw).To(BeTrue(),
+				"AU-3: emitCreateRRAudit's Detail map must attribute cluster_id for the AF-originated fleet RR")
+
+			Expect(launcher.EmitStatusSafe(ctx, "post-alert-investigate status")).To(Succeed())
+			var eventSaw bool
+			for _, evt := range q.Events() {
+				statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+				if !ok || statusEvt.Metadata == nil {
+					continue
+				}
+				if statusEvt.Metadata["cluster_id"] == "cluster-fleet-it-001" {
+					eventSaw = true
+				}
+			}
+			Expect(eventSaw).To(BeTrue(),
+				"AU-3, SI-4: A2A status events must carry cluster_id from RRContext for Console cross-cluster correlation")
 		})
 	})
 })
