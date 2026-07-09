@@ -18,6 +18,7 @@ package v1alpha1_test
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -35,8 +36,15 @@ func TestRemediationRequestTypes(t *testing.T) {
 
 var _ = Describe("RemediationRequestSpec Multi-Cluster Fields (ADR-065, BR-INTEGRATION-065)", func() {
 
+	// Issue #1651: ClusterName was removed because it is non-unique and unsafe
+	// for cluster disambiguation. ClusterID is the sole supported identifier.
+	It("UT-CRD-1651-001: ClusterName field has been removed from RemediationRequestSpec", func() {
+		_, found := reflect.TypeOf(v1alpha1.RemediationRequestSpec{}).FieldByName("ClusterName")
+		Expect(found).To(BeFalse(), "RemediationRequestSpec.ClusterName must not exist (issue #1651: non-unique, unsafe for disambiguation)")
+	})
+
 	Describe("Backward Compatibility", func() {
-		It("UT-CRD-065-001: deserializes pre-federation JSON without ClusterID/ClusterName", func() {
+		It("UT-CRD-065-001: deserializes pre-federation JSON without ClusterID", func() {
 			oldJSON := `{
 				"signalFingerprint": "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 				"signalName": "CrashLoopBackOff",
@@ -53,12 +61,11 @@ var _ = Describe("RemediationRequestSpec Multi-Cluster Fields (ADR-065, BR-INTEG
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(spec.ClusterID).To(BeEmpty(), "ClusterID should default to empty for old payloads")
-			Expect(spec.ClusterName).To(BeEmpty(), "ClusterName should default to empty for old payloads")
 			Expect(spec.SignalFingerprint).To(Equal("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"))
 			Expect(spec.TargetResource.Kind).To(Equal("Pod"))
 		})
 
-		It("UT-CRD-065-002: omits ClusterID/ClusterName from JSON when empty", func() {
+		It("UT-CRD-065-002: omits ClusterID from JSON when empty", func() {
 			spec := v1alpha1.RemediationRequestSpec{
 				SignalFingerprint: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 				SignalName:        "CrashLoopBackOff",
@@ -79,7 +86,7 @@ var _ = Describe("RemediationRequestSpec Multi-Cluster Fields (ADR-065, BR-INTEG
 	})
 
 	Describe("Multi-Cluster Serialization", func() {
-		It("UT-CRD-065-003: round-trips ClusterID and ClusterName through JSON", func() {
+		It("UT-CRD-065-003: round-trips ClusterID through JSON", func() {
 			spec := v1alpha1.RemediationRequestSpec{
 				SignalFingerprint: "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
 				SignalName:        "HighMemoryUsage",
@@ -90,7 +97,6 @@ var _ = Describe("RemediationRequestSpec Multi-Cluster Fields (ADR-065, BR-INTEG
 				FiringTime:        metav1.Now(),
 				ReceivedTime:      metav1.Now(),
 				ClusterID:         "prod-east-1",
-				ClusterName:       "Production US-East",
 			}
 
 			data, err := json.Marshal(spec)
@@ -101,7 +107,6 @@ var _ = Describe("RemediationRequestSpec Multi-Cluster Fields (ADR-065, BR-INTEG
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(roundTripped.ClusterID).To(Equal("prod-east-1"))
-			Expect(roundTripped.ClusterName).To(Equal("Production US-East"))
 		})
 
 		It("UT-CRD-065-004: includes ClusterID in JSON when populated", func() {
@@ -115,14 +120,12 @@ var _ = Describe("RemediationRequestSpec Multi-Cluster Fields (ADR-065, BR-INTEG
 				FiringTime:        metav1.Now(),
 				ReceivedTime:      metav1.Now(),
 				ClusterID:         "staging-west",
-				ClusterName:       "Staging US-West",
 			}
 
 			data, err := json.Marshal(spec)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(string(data)).To(ContainSubstring(`"clusterID":"staging-west"`))
-			Expect(string(data)).To(ContainSubstring(`"clusterName":"Staging US-West"`))
 		})
 
 		It("UT-CRD-065-005: empty ClusterID indicates local hub cluster", func() {
