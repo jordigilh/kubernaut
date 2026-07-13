@@ -1,0 +1,32 @@
+# Trivy vulnerability exceptions for the must-gather image
+#
+# DD-PLATFORM-003: kubectl was bumped v1.31.0 -> v1.36.2 (Issue #1663), which
+# resolved 18 of 23 CVEs flagged in GH Actions run 29058480982 (job
+# 86711219020), including the sole CRITICAL. The 5 entries below have no fix
+# available in ANY currently published kubectl release: Kubernetes has not
+# yet adopted the golang.org/x/net >= 0.55.0 or Go >= 1.25.12/1.26.5 patch
+# versions that carry the actual upstream fix (verified 2026-07-13 against
+# kubectl v1.31.14 through v1.36.2, the latest stable, and kubernetes/kubernetes
+# @master). Time-bound (exp:) so this resurfaces in CI for re-triage instead
+# of silently suppressing indefinitely. Tracked in Issue #1662.
+#
+# Re-run before the expiration date:
+#   1. Check if a newer kubectl release ships golang.org/x/net >= 0.55.0 and
+#      Go >= 1.25.12/1.26.5 (`go version -m` on the released binary).
+#   2. If yes: bump cmd/must-gather/Dockerfile and remove these entries.
+#   3. If no: re-verify no fix exists yet and extend the expiration date.
+
+# golang.org/x/net/html: Arbitrary code execution via Cross-Site Scripting (fixed 0.55.0; kubectl v1.36.2 ships 0.49.0)
+CVE-2026-25681 exp:2026-10-11
+
+# golang.org/x/net/html: Cross-Site Scripting via HTML parsing bypass (fixed 0.55.0; kubectl v1.36.2 ships 0.49.0)
+CVE-2026-27136 exp:2026-10-11
+
+# net/http/internal/http2 (vendored in x/net): DoS via malformed SETTINGS_MAX_FRAME_SIZE frame (fixed 0.53.0; kubectl v1.36.2 ships 0.49.0)
+CVE-2026-33814 exp:2026-10-11
+
+# golang.org/x/net/idna: Privilege escalation via incorrect Punycode label processing (fixed 0.55.0; kubectl v1.36.2 ships 0.49.0)
+CVE-2026-39821 exp:2026-10-11
+
+# stdlib os.Root: Symlink following vulnerability allows directory traversal (fixed 1.25.12/1.26.5; kubectl v1.36.2 built with Go 1.26.4)
+CVE-2026-39822 exp:2026-10-11
