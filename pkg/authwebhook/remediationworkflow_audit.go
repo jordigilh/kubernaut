@@ -156,12 +156,8 @@ func buildWorkflowContentPayload(spec rwv1alpha1.RemediationWorkflowSpec) api.Re
 		RollbackParameters: buildContentParameters(spec.RollbackParameters),
 	}
 
-	if spec.Description.WhenNotToUse != "" {
-		content.Description.WhenNotToUse.SetTo(spec.Description.WhenNotToUse)
-	}
-	if spec.Description.Preconditions != "" {
-		content.Description.Preconditions.SetTo(spec.Description.Preconditions)
-	}
+	setOptString(&content.Description.WhenNotToUse, spec.Description.WhenNotToUse)
+	setOptString(&content.Description.Preconditions, spec.Description.Preconditions)
 
 	if len(spec.CustomLabels) > 0 {
 		content.CustomLabels.SetTo(api.RemediationWorkflowContentPayloadCustomLabels(spec.CustomLabels))
@@ -173,18 +169,10 @@ func buildWorkflowContentPayload(spec rwv1alpha1.RemediationWorkflowSpec) api.Re
 	content.Execution = api.RemediationWorkflowContentExecution{
 		EngineConfig: engineConfigRaw(spec.Execution),
 	}
-	if spec.Execution.Engine != "" {
-		content.Execution.Engine.SetTo(spec.Execution.Engine)
-	}
-	if spec.Execution.Bundle != "" {
-		content.Execution.Bundle.SetTo(spec.Execution.Bundle)
-	}
-	if spec.Execution.BundleDigest != "" {
-		content.Execution.BundleDigest.SetTo(spec.Execution.BundleDigest)
-	}
-	if spec.Execution.ServiceAccountName != "" {
-		content.Execution.ServiceAccountName.SetTo(spec.Execution.ServiceAccountName)
-	}
+	setOptString(&content.Execution.Engine, spec.Execution.Engine)
+	setOptString(&content.Execution.Bundle, spec.Execution.Bundle)
+	setOptString(&content.Execution.BundleDigest, spec.Execution.BundleDigest)
+	setOptString(&content.Execution.ServiceAccountName, spec.Execution.ServiceAccountName)
 
 	if spec.Dependencies != nil {
 		content.Dependencies.SetTo(api.RemediationWorkflowContentDependencies{
@@ -194,6 +182,23 @@ func buildWorkflowContentPayload(spec rwv1alpha1.RemediationWorkflowSpec) api.Re
 	}
 
 	return content
+}
+
+// setOptString assigns val to opt only when non-empty, deduping the
+// empty-means-absent guard repeated across every genuinely-optional CRD
+// string field mapped onto an ogen Opt wrapper below.
+func setOptString(opt *api.OptString, val string) {
+	if val != "" {
+		opt.SetTo(val)
+	}
+}
+
+// setOptFloat64 assigns *val to opt only when val is non-nil, deduping the
+// pointer-means-absent guard shared by Parameter.Minimum/Maximum.
+func setOptFloat64(opt *api.OptFloat64, val *float64) {
+	if val != nil {
+		opt.SetTo(*val)
+	}
 }
 
 func engineConfigRaw(execution rwv1alpha1.RemediationWorkflowExecution) []byte {
@@ -239,15 +244,9 @@ func buildContentParameters(params []rwv1alpha1.RemediationWorkflowParameter) []
 			Enum:        p.Enum,
 			DependsOn:   p.DependsOn,
 		}
-		if p.Pattern != "" {
-			cp.Pattern.SetTo(p.Pattern)
-		}
-		if p.Minimum != nil {
-			cp.Minimum.SetTo(*p.Minimum)
-		}
-		if p.Maximum != nil {
-			cp.Maximum.SetTo(*p.Maximum)
-		}
+		setOptString(&cp.Pattern, p.Pattern)
+		setOptFloat64(&cp.Minimum, p.Minimum)
+		setOptFloat64(&cp.Maximum, p.Maximum)
 		if p.Default != nil {
 			cp.Default = p.Default.Raw
 		}
