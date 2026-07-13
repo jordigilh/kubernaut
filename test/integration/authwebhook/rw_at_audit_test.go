@@ -226,6 +226,22 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 			events := flushAndQuery(uid, authwebhook.EventTypeRWAdmittedCreate)
 			Expect(events).To(HaveLen(1))
 			Expect(events[0].CorrelationID).To(Equal(uid))
+
+			// IT-AW-311-001 (#1661 Change 2): workflow_content/content_hash must
+			// survive the full round-trip — AW emit -> audit store -> DS Postgres
+			// persistence -> query API -> JSONB decode — proving the audit trail
+			// alone can reconstruct the exact workflow definition (SOC2 CC8.1).
+			payload, ok := events[0].EventData.GetRemediationWorkflowWebhookAuditPayload()
+			Expect(ok).To(BeTrue(), "event_data should decode as RemediationWorkflowWebhookAuditPayload")
+			Expect(payload.WorkflowContent.IsSet()).To(BeTrue(),
+				"workflow_content should be queryable from DS after round-trip persistence")
+			Expect(payload.WorkflowContent.Value.Version).To(Equal(rw.Spec.Version))
+			Expect(payload.WorkflowContent.Value.ActionType).To(Equal(rw.Spec.ActionType))
+			Expect(payload.WorkflowContent.Value.Parameters).To(HaveLen(1))
+			Expect(payload.WorkflowContent.Value.Parameters[0].Name).To(Equal("NAMESPACE"))
+			Expect(payload.ContentHash.IsSet()).To(BeTrue())
+			Expect(payload.ContentHash.Value).To(MatchRegexp("^[0-9a-f]{64}$"),
+				"content_hash must be a SHA-256 hex digest (64 lowercase hex chars)")
 		})
 
 		It("IT-AW-1111-002: remediationworkflow.admitted.update persisted to DS", func() {
