@@ -66,7 +66,12 @@ spec:
               Workflow name is derived from the CRD's metadata.name (not duplicated in spec).
             properties:
               actionType:
-                description: ActionType is the action type from the taxonomy (PascalCase).
+                description: |-
+                  ActionType is the action type from the taxonomy (PascalCase).
+                  Pattern requires an uppercase leading letter followed by alphanumerics
+                  only (no underscores/hyphens/spaces), matching ActionType.spec.name's
+                  own PascalCase contract so the two stay in lockstep. Issue #1661.
+                pattern: ^[A-Z][A-Za-z0-9]*$
                 type: string
               customLabels:
                 additionalProperties:
@@ -209,6 +214,11 @@ spec:
                     information
                   properties:
                     email:
+                      description: |-
+                        Email must contain exactly one "@" with a non-empty local part, domain,
+                        and TLD, and no whitespace. Intentionally permissive (not full RFC 5322)
+                        since this is a contact-hint field, not an auth credential. Issue #1661.
+                      pattern: ^[^\s@]+@[^\s@]+\.[^\s@]+$
                       type: string
                     name:
                       type: string
@@ -305,8 +315,13 @@ spec:
                   type: object
                 type: array
               version:
-                description: Version is the semantic version (e.g., "1.0.0")
+                description: |-
+                  Version is the semantic version (e.g., "1.0.0").
+                  Pattern enforces semver-core (MAJOR.MINOR.PATCH, numeric, no leading "v")
+                  with optional "-<pre-release>" and "+<build>" suffixes per semver.org §9-10.
+                  Issue #1661 (CRD schema format hardening).
                 maxLength: 50
+                pattern: ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$
                 type: string
             required:
             - actionType

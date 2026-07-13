@@ -27,16 +27,24 @@ import (
 // Declared as a Kubernetes resource; registered via kubectl apply (BR-WORKFLOW-006).
 // Workflow name is derived from the CRD's metadata.name (not duplicated in spec).
 type RemediationWorkflowSpec struct {
-	// Version is the semantic version (e.g., "1.0.0")
+	// Version is the semantic version (e.g., "1.0.0").
+	// Pattern enforces semver-core (MAJOR.MINOR.PATCH, numeric, no leading "v")
+	// with optional "-<pre-release>" and "+<build>" suffixes per semver.org §9-10.
+	// Issue #1661 (CRD schema format hardening).
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=50
+	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`
 	Version string `json:"version"`
 
 	// Description is a structured description for LLM and operator consumption
 	Description RemediationWorkflowDescription `json:"description"`
 
 	// ActionType is the action type from the taxonomy (PascalCase).
+	// Pattern requires an uppercase leading letter followed by alphanumerics
+	// only (no underscores/hyphens/spaces), matching ActionType.spec.name's
+	// own PascalCase contract so the two stay in lockstep. Issue #1661.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[A-Z][A-Za-z0-9]*$`
 	ActionType string `json:"actionType"`
 
 	// Labels contains mandatory matching/filtering criteria for discovery
@@ -92,7 +100,12 @@ type RemediationWorkflowDescription struct {
 
 // RemediationWorkflowMaintainer contains maintainer contact information
 type RemediationWorkflowMaintainer struct {
-	Name  string `json:"name"`
+	Name string `json:"name"`
+
+	// Email must contain exactly one "@" with a non-empty local part, domain,
+	// and TLD, and no whitespace. Intentionally permissive (not full RFC 5322)
+	// since this is a contact-hint field, not an auth credential. Issue #1661.
+	// +kubebuilder:validation:Pattern=`^[^\s@]+@[^\s@]+\.[^\s@]+$`
 	Email string `json:"email"`
 }
 
