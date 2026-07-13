@@ -247,7 +247,10 @@ func (h *RemediationWorkflowHandler) validateActionTypeExists(ctx context.Contex
 		}
 	}
 
-	return fmt.Errorf("action_type %q is not an active entry in the action type taxonomy", actionType)
+	// Wording matches DS's now-superseded validateActionType detail message
+	// (pkg/datastorage/server/workflow_create_handlers.go) so operators see
+	// the same denial text regardless of which gate rejected the request.
+	return fmt.Errorf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", actionType)
 }
 
 // handleDelete processes DELETE operations: disables the workflow in DS.
