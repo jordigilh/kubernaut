@@ -4769,6 +4769,188 @@ components:
           type: string
           description: Reason for denial (only set when action=denied)
           example: "data storage registration failed"
+        workflow_content:
+          $ref: '#/components/schemas/RemediationWorkflowContentPayload'
+        content_hash:
+          type: string
+          description: |
+            SHA-256 hash of workflow_content, computed locally by AuthWebhook over
+            the same clean CRD content it sends to DataStorage (identical algorithm
+            to DataStorage's own content_hash / deterministic workflow_id
+            derivation, #1661 Change 8a). Set whenever workflow_content is set,
+            including on denied events (no DataStorage round-trip required).
+          example: "3f786850e387550fdab836ed7e6dc881de23001bd934f0c64dd25f4f169eb5f"
+
+    RemediationWorkflowContentPayload:
+      type: object
+      description: |
+        Full RemediationWorkflow spec snapshot, mirroring RemediationWorkflowSpec
+        (api/remediationworkflow/v1alpha1/remediationworkflow_types.go) field-for-field
+        so the audit trail can reconstruct the exact workflow definition independent of
+        etcd or DataStorage's cache (#1661). Deliberately more permissive than
+        DataStorage's own search/discovery schemas (e.g. MandatoryLabels' enums) —
+        audit capture must never fail just because content the CRD itself allows falls
+        outside an unrelated endpoint's stricter validation.
+      required: [version, description, actionType, labels, execution, parameters]
+      properties:
+        version:
+          type: string
+          description: "Semantic version (e.g., 1.0.0). spec.version."
+          example: "1.0.0"
+        description:
+          $ref: '#/components/schemas/StructuredDescription'
+        actionType:
+          type: string
+          description: "Action type from the taxonomy (PascalCase). spec.actionType."
+          example: "ScaleReplicas"
+        labels:
+          $ref: '#/components/schemas/RemediationWorkflowContentLabels'
+        customLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Operator-defined key-value labels for additional filtering. spec.customLabels."
+        detectedLabels:
+          description: |
+            Author-declared infrastructure requirements. spec.detectedLabels — the CRD
+            declares this `+kubebuilder:pruning:PreserveUnknownFields` (opaque JSON), so
+            it is captured verbatim rather than forced into a rigid shape.
+        execution:
+          $ref: '#/components/schemas/RemediationWorkflowContentExecution'
+        dependencies:
+          $ref: '#/components/schemas/RemediationWorkflowContentDependencies'
+        maintainers:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentMaintainer'
+          description: "spec.maintainers."
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentParameter'
+          description: "Workflow input parameters. spec.parameters."
+        rollbackParameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentParameter'
+          description: "Parameters needed for rollback. spec.rollbackParameters."
+
+    RemediationWorkflowContentLabels:
+      type: object
+      description: |
+        Mandatory matching/filtering criteria. spec.labels. Structurally mirrors
+        RemediationWorkflowLabels without DS's search-endpoint enum restrictions
+        (MandatoryLabels) — the CRD itself does not enum-constrain these values.
+      required: [severity, environment, component, priority]
+      properties:
+        severity:
+          type: array
+          items:
+            type: string
+          description: "Severity level(s) this workflow is designed for."
+        environment:
+          type: array
+          items:
+            type: string
+          description: "Target environment(s)."
+        component:
+          type: array
+          items:
+            type: string
+          description: "Kubernetes resource type(s)."
+        priority:
+          type: string
+          description: "Business priority level."
+        cluster:
+          type: array
+          items:
+            type: string
+          description: "BR-FLEET-003 (#1511): cluster classification(s) this workflow is eligible for."
+
+    RemediationWorkflowContentExecution:
+      type: object
+      description: "Execution engine configuration. spec.execution."
+      properties:
+        engine:
+          type: string
+          description: "Execution engine type (tekton, job, ansible)."
+        bundle:
+          type: string
+          description: "Execution bundle or container image reference."
+        bundleDigest:
+          type: string
+          description: "Digest of the execution bundle."
+        engineConfig:
+          description: |
+            Engine-specific configuration. spec.execution.engineConfig — opaque JSON
+            (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level), captured
+            verbatim.
+        serviceAccountName:
+          type: string
+          description: "Pre-existing ServiceAccount for the execution resource."
+
+    RemediationWorkflowContentDependencies:
+      type: object
+      description: "Infrastructure resources required by the workflow. spec.dependencies."
+      properties:
+        secrets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentResourceDependency'
+        configMaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentResourceDependency'
+
+    RemediationWorkflowContentResourceDependency:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    RemediationWorkflowContentMaintainer:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+
+    RemediationWorkflowContentParameter:
+      type: object
+      description: "Workflow input/rollback parameter definition. spec.parameters[] / spec.rollbackParameters[]."
+      required: [name, type, required, description]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          description: "Parameter type (string, integer, boolean, array, float)."
+        required:
+          type: boolean
+        description:
+          type: string
+        enum:
+          type: array
+          items:
+            type: string
+        pattern:
+          type: string
+        minimum:
+          type: number
+        maximum:
+          type: number
+        default:
+          description: |
+            Default value. spec.parameters[].default — opaque JSON
+            (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level; may be any
+            JSON type, not just an object), captured verbatim.
+        dependsOn:
+          type: array
+          items:
+            type: string
 
     AuthwebhookWorkflowRegistrationFailedPayload:
       type: object

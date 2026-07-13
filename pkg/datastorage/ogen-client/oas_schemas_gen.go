@@ -25394,6 +25394,144 @@ func (o OptRemediationOrchestratorAuditPayloadOutcome) Or(d RemediationOrchestra
 	return d
 }
 
+// NewOptRemediationWorkflowContentDependencies returns new OptRemediationWorkflowContentDependencies with value set to v.
+func NewOptRemediationWorkflowContentDependencies(v RemediationWorkflowContentDependencies) OptRemediationWorkflowContentDependencies {
+	return OptRemediationWorkflowContentDependencies{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationWorkflowContentDependencies is optional RemediationWorkflowContentDependencies.
+type OptRemediationWorkflowContentDependencies struct {
+	Value RemediationWorkflowContentDependencies
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationWorkflowContentDependencies was set.
+func (o OptRemediationWorkflowContentDependencies) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationWorkflowContentDependencies) Reset() {
+	var v RemediationWorkflowContentDependencies
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationWorkflowContentDependencies) SetTo(v RemediationWorkflowContentDependencies) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationWorkflowContentDependencies) Get() (v RemediationWorkflowContentDependencies, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationWorkflowContentDependencies) Or(d RemediationWorkflowContentDependencies) RemediationWorkflowContentDependencies {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationWorkflowContentPayload returns new OptRemediationWorkflowContentPayload with value set to v.
+func NewOptRemediationWorkflowContentPayload(v RemediationWorkflowContentPayload) OptRemediationWorkflowContentPayload {
+	return OptRemediationWorkflowContentPayload{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationWorkflowContentPayload is optional RemediationWorkflowContentPayload.
+type OptRemediationWorkflowContentPayload struct {
+	Value RemediationWorkflowContentPayload
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationWorkflowContentPayload was set.
+func (o OptRemediationWorkflowContentPayload) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationWorkflowContentPayload) Reset() {
+	var v RemediationWorkflowContentPayload
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationWorkflowContentPayload) SetTo(v RemediationWorkflowContentPayload) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationWorkflowContentPayload) Get() (v RemediationWorkflowContentPayload, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationWorkflowContentPayload) Or(d RemediationWorkflowContentPayload) RemediationWorkflowContentPayload {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationWorkflowContentPayloadCustomLabels returns new OptRemediationWorkflowContentPayloadCustomLabels with value set to v.
+func NewOptRemediationWorkflowContentPayloadCustomLabels(v RemediationWorkflowContentPayloadCustomLabels) OptRemediationWorkflowContentPayloadCustomLabels {
+	return OptRemediationWorkflowContentPayloadCustomLabels{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationWorkflowContentPayloadCustomLabels is optional RemediationWorkflowContentPayloadCustomLabels.
+type OptRemediationWorkflowContentPayloadCustomLabels struct {
+	Value RemediationWorkflowContentPayloadCustomLabels
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationWorkflowContentPayloadCustomLabels was set.
+func (o OptRemediationWorkflowContentPayloadCustomLabels) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationWorkflowContentPayloadCustomLabels) Reset() {
+	var v RemediationWorkflowContentPayloadCustomLabels
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationWorkflowContentPayloadCustomLabels) SetTo(v RemediationWorkflowContentPayloadCustomLabels) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationWorkflowContentPayloadCustomLabels) Get() (v RemediationWorkflowContentPayloadCustomLabels, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationWorkflowContentPayloadCustomLabels) Or(d RemediationWorkflowContentPayloadCustomLabels) RemediationWorkflowContentPayloadCustomLabels {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptRemediationWorkflowParameters returns new OptRemediationWorkflowParameters with value set to v.
 func NewOptRemediationWorkflowParameters(v RemediationWorkflowParameters) OptRemediationWorkflowParameters {
 	return OptRemediationWorkflowParameters{
@@ -30015,6 +30153,480 @@ func (*RemediationWorkflow) enableWorkflowRes()    {}
 func (*RemediationWorkflow) getWorkflowByIDRes()   {}
 func (*RemediationWorkflow) updateWorkflowRes()    {}
 
+// Infrastructure resources required by the workflow. spec.dependencies.
+// Ref: #/components/schemas/RemediationWorkflowContentDependencies
+type RemediationWorkflowContentDependencies struct {
+	Secrets    []RemediationWorkflowContentResourceDependency `json:"secrets"`
+	ConfigMaps []RemediationWorkflowContentResourceDependency `json:"configMaps"`
+}
+
+// GetSecrets returns the value of Secrets.
+func (s *RemediationWorkflowContentDependencies) GetSecrets() []RemediationWorkflowContentResourceDependency {
+	return s.Secrets
+}
+
+// GetConfigMaps returns the value of ConfigMaps.
+func (s *RemediationWorkflowContentDependencies) GetConfigMaps() []RemediationWorkflowContentResourceDependency {
+	return s.ConfigMaps
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *RemediationWorkflowContentDependencies) SetSecrets(val []RemediationWorkflowContentResourceDependency) {
+	s.Secrets = val
+}
+
+// SetConfigMaps sets the value of ConfigMaps.
+func (s *RemediationWorkflowContentDependencies) SetConfigMaps(val []RemediationWorkflowContentResourceDependency) {
+	s.ConfigMaps = val
+}
+
+// Execution engine configuration. spec.execution.
+// Ref: #/components/schemas/RemediationWorkflowContentExecution
+type RemediationWorkflowContentExecution struct {
+	// Execution engine type (tekton, job, ansible).
+	Engine OptString `json:"engine"`
+	// Execution bundle or container image reference.
+	Bundle OptString `json:"bundle"`
+	// Digest of the execution bundle.
+	BundleDigest OptString `json:"bundleDigest"`
+	// Engine-specific configuration. spec.execution.engineConfig — opaque JSON
+	// (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level), captured
+	// verbatim.
+	EngineConfig jx.Raw `json:"engineConfig"`
+	// Pre-existing ServiceAccount for the execution resource.
+	ServiceAccountName OptString `json:"serviceAccountName"`
+}
+
+// GetEngine returns the value of Engine.
+func (s *RemediationWorkflowContentExecution) GetEngine() OptString {
+	return s.Engine
+}
+
+// GetBundle returns the value of Bundle.
+func (s *RemediationWorkflowContentExecution) GetBundle() OptString {
+	return s.Bundle
+}
+
+// GetBundleDigest returns the value of BundleDigest.
+func (s *RemediationWorkflowContentExecution) GetBundleDigest() OptString {
+	return s.BundleDigest
+}
+
+// GetEngineConfig returns the value of EngineConfig.
+func (s *RemediationWorkflowContentExecution) GetEngineConfig() jx.Raw {
+	return s.EngineConfig
+}
+
+// GetServiceAccountName returns the value of ServiceAccountName.
+func (s *RemediationWorkflowContentExecution) GetServiceAccountName() OptString {
+	return s.ServiceAccountName
+}
+
+// SetEngine sets the value of Engine.
+func (s *RemediationWorkflowContentExecution) SetEngine(val OptString) {
+	s.Engine = val
+}
+
+// SetBundle sets the value of Bundle.
+func (s *RemediationWorkflowContentExecution) SetBundle(val OptString) {
+	s.Bundle = val
+}
+
+// SetBundleDigest sets the value of BundleDigest.
+func (s *RemediationWorkflowContentExecution) SetBundleDigest(val OptString) {
+	s.BundleDigest = val
+}
+
+// SetEngineConfig sets the value of EngineConfig.
+func (s *RemediationWorkflowContentExecution) SetEngineConfig(val jx.Raw) {
+	s.EngineConfig = val
+}
+
+// SetServiceAccountName sets the value of ServiceAccountName.
+func (s *RemediationWorkflowContentExecution) SetServiceAccountName(val OptString) {
+	s.ServiceAccountName = val
+}
+
+// Mandatory matching/filtering criteria. spec.labels. Structurally mirrors
+// RemediationWorkflowLabels without DS's search-endpoint enum restrictions
+// (MandatoryLabels) — the CRD itself does not enum-constrain these values.
+// Ref: #/components/schemas/RemediationWorkflowContentLabels
+type RemediationWorkflowContentLabels struct {
+	// Severity level(s) this workflow is designed for.
+	Severity []string `json:"severity"`
+	// Target environment(s).
+	Environment []string `json:"environment"`
+	// Kubernetes resource type(s).
+	Component []string `json:"component"`
+	// Business priority level.
+	Priority string `json:"priority"`
+	// BR-FLEET-003 (#1511): cluster classification(s) this workflow is eligible for.
+	Cluster []string `json:"cluster"`
+}
+
+// GetSeverity returns the value of Severity.
+func (s *RemediationWorkflowContentLabels) GetSeverity() []string {
+	return s.Severity
+}
+
+// GetEnvironment returns the value of Environment.
+func (s *RemediationWorkflowContentLabels) GetEnvironment() []string {
+	return s.Environment
+}
+
+// GetComponent returns the value of Component.
+func (s *RemediationWorkflowContentLabels) GetComponent() []string {
+	return s.Component
+}
+
+// GetPriority returns the value of Priority.
+func (s *RemediationWorkflowContentLabels) GetPriority() string {
+	return s.Priority
+}
+
+// GetCluster returns the value of Cluster.
+func (s *RemediationWorkflowContentLabels) GetCluster() []string {
+	return s.Cluster
+}
+
+// SetSeverity sets the value of Severity.
+func (s *RemediationWorkflowContentLabels) SetSeverity(val []string) {
+	s.Severity = val
+}
+
+// SetEnvironment sets the value of Environment.
+func (s *RemediationWorkflowContentLabels) SetEnvironment(val []string) {
+	s.Environment = val
+}
+
+// SetComponent sets the value of Component.
+func (s *RemediationWorkflowContentLabels) SetComponent(val []string) {
+	s.Component = val
+}
+
+// SetPriority sets the value of Priority.
+func (s *RemediationWorkflowContentLabels) SetPriority(val string) {
+	s.Priority = val
+}
+
+// SetCluster sets the value of Cluster.
+func (s *RemediationWorkflowContentLabels) SetCluster(val []string) {
+	s.Cluster = val
+}
+
+// Ref: #/components/schemas/RemediationWorkflowContentMaintainer
+type RemediationWorkflowContentMaintainer struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// GetName returns the value of Name.
+func (s *RemediationWorkflowContentMaintainer) GetName() string {
+	return s.Name
+}
+
+// GetEmail returns the value of Email.
+func (s *RemediationWorkflowContentMaintainer) GetEmail() string {
+	return s.Email
+}
+
+// SetName sets the value of Name.
+func (s *RemediationWorkflowContentMaintainer) SetName(val string) {
+	s.Name = val
+}
+
+// SetEmail sets the value of Email.
+func (s *RemediationWorkflowContentMaintainer) SetEmail(val string) {
+	s.Email = val
+}
+
+// Workflow input/rollback parameter definition. spec.parameters[] / spec.rollbackParameters[].
+// Ref: #/components/schemas/RemediationWorkflowContentParameter
+type RemediationWorkflowContentParameter struct {
+	Name string `json:"name"`
+	// Parameter type (string, integer, boolean, array, float).
+	Type        string     `json:"type"`
+	Required    bool       `json:"required"`
+	Description string     `json:"description"`
+	Enum        []string   `json:"enum"`
+	Pattern     OptString  `json:"pattern"`
+	Minimum     OptFloat64 `json:"minimum"`
+	Maximum     OptFloat64 `json:"maximum"`
+	// Default value. spec.parameters[].default — opaque JSON
+	// (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level; may be any
+	// JSON type, not just an object), captured verbatim.
+	Default   jx.Raw   `json:"default"`
+	DependsOn []string `json:"dependsOn"`
+}
+
+// GetName returns the value of Name.
+func (s *RemediationWorkflowContentParameter) GetName() string {
+	return s.Name
+}
+
+// GetType returns the value of Type.
+func (s *RemediationWorkflowContentParameter) GetType() string {
+	return s.Type
+}
+
+// GetRequired returns the value of Required.
+func (s *RemediationWorkflowContentParameter) GetRequired() bool {
+	return s.Required
+}
+
+// GetDescription returns the value of Description.
+func (s *RemediationWorkflowContentParameter) GetDescription() string {
+	return s.Description
+}
+
+// GetEnum returns the value of Enum.
+func (s *RemediationWorkflowContentParameter) GetEnum() []string {
+	return s.Enum
+}
+
+// GetPattern returns the value of Pattern.
+func (s *RemediationWorkflowContentParameter) GetPattern() OptString {
+	return s.Pattern
+}
+
+// GetMinimum returns the value of Minimum.
+func (s *RemediationWorkflowContentParameter) GetMinimum() OptFloat64 {
+	return s.Minimum
+}
+
+// GetMaximum returns the value of Maximum.
+func (s *RemediationWorkflowContentParameter) GetMaximum() OptFloat64 {
+	return s.Maximum
+}
+
+// GetDefault returns the value of Default.
+func (s *RemediationWorkflowContentParameter) GetDefault() jx.Raw {
+	return s.Default
+}
+
+// GetDependsOn returns the value of DependsOn.
+func (s *RemediationWorkflowContentParameter) GetDependsOn() []string {
+	return s.DependsOn
+}
+
+// SetName sets the value of Name.
+func (s *RemediationWorkflowContentParameter) SetName(val string) {
+	s.Name = val
+}
+
+// SetType sets the value of Type.
+func (s *RemediationWorkflowContentParameter) SetType(val string) {
+	s.Type = val
+}
+
+// SetRequired sets the value of Required.
+func (s *RemediationWorkflowContentParameter) SetRequired(val bool) {
+	s.Required = val
+}
+
+// SetDescription sets the value of Description.
+func (s *RemediationWorkflowContentParameter) SetDescription(val string) {
+	s.Description = val
+}
+
+// SetEnum sets the value of Enum.
+func (s *RemediationWorkflowContentParameter) SetEnum(val []string) {
+	s.Enum = val
+}
+
+// SetPattern sets the value of Pattern.
+func (s *RemediationWorkflowContentParameter) SetPattern(val OptString) {
+	s.Pattern = val
+}
+
+// SetMinimum sets the value of Minimum.
+func (s *RemediationWorkflowContentParameter) SetMinimum(val OptFloat64) {
+	s.Minimum = val
+}
+
+// SetMaximum sets the value of Maximum.
+func (s *RemediationWorkflowContentParameter) SetMaximum(val OptFloat64) {
+	s.Maximum = val
+}
+
+// SetDefault sets the value of Default.
+func (s *RemediationWorkflowContentParameter) SetDefault(val jx.Raw) {
+	s.Default = val
+}
+
+// SetDependsOn sets the value of DependsOn.
+func (s *RemediationWorkflowContentParameter) SetDependsOn(val []string) {
+	s.DependsOn = val
+}
+
+// Full RemediationWorkflow spec snapshot, mirroring RemediationWorkflowSpec
+// (api/remediationworkflow/v1alpha1/remediationworkflow_types.go) field-for-field
+// so the audit trail can reconstruct the exact workflow definition independent of
+// etcd or DataStorage's cache (#1661). Deliberately more permissive than
+// DataStorage's own search/discovery schemas (e.g. MandatoryLabels' enums) —
+// audit capture must never fail just because content the CRD itself allows falls
+// outside an unrelated endpoint's stricter validation.
+// Ref: #/components/schemas/RemediationWorkflowContentPayload
+type RemediationWorkflowContentPayload struct {
+	// Semantic version (e.g., 1.0.0). spec.version.
+	Version     string                `json:"version"`
+	Description StructuredDescription `json:"description"`
+	// Action type from the taxonomy (PascalCase). spec.actionType.
+	ActionType string                           `json:"actionType"`
+	Labels     RemediationWorkflowContentLabels `json:"labels"`
+	// Operator-defined key-value labels for additional filtering. spec.customLabels.
+	CustomLabels OptRemediationWorkflowContentPayloadCustomLabels `json:"customLabels"`
+	// Author-declared infrastructure requirements. spec.detectedLabels — the CRD
+	// declares this `+kubebuilder:pruning:PreserveUnknownFields` (opaque JSON), so
+	// it is captured verbatim rather than forced into a rigid shape.
+	DetectedLabels jx.Raw                                    `json:"detectedLabels"`
+	Execution      RemediationWorkflowContentExecution       `json:"execution"`
+	Dependencies   OptRemediationWorkflowContentDependencies `json:"dependencies"`
+	// Spec.maintainers.
+	Maintainers []RemediationWorkflowContentMaintainer `json:"maintainers"`
+	// Workflow input parameters. spec.parameters.
+	Parameters []RemediationWorkflowContentParameter `json:"parameters"`
+	// Parameters needed for rollback. spec.rollbackParameters.
+	RollbackParameters []RemediationWorkflowContentParameter `json:"rollbackParameters"`
+}
+
+// GetVersion returns the value of Version.
+func (s *RemediationWorkflowContentPayload) GetVersion() string {
+	return s.Version
+}
+
+// GetDescription returns the value of Description.
+func (s *RemediationWorkflowContentPayload) GetDescription() StructuredDescription {
+	return s.Description
+}
+
+// GetActionType returns the value of ActionType.
+func (s *RemediationWorkflowContentPayload) GetActionType() string {
+	return s.ActionType
+}
+
+// GetLabels returns the value of Labels.
+func (s *RemediationWorkflowContentPayload) GetLabels() RemediationWorkflowContentLabels {
+	return s.Labels
+}
+
+// GetCustomLabels returns the value of CustomLabels.
+func (s *RemediationWorkflowContentPayload) GetCustomLabels() OptRemediationWorkflowContentPayloadCustomLabels {
+	return s.CustomLabels
+}
+
+// GetDetectedLabels returns the value of DetectedLabels.
+func (s *RemediationWorkflowContentPayload) GetDetectedLabels() jx.Raw {
+	return s.DetectedLabels
+}
+
+// GetExecution returns the value of Execution.
+func (s *RemediationWorkflowContentPayload) GetExecution() RemediationWorkflowContentExecution {
+	return s.Execution
+}
+
+// GetDependencies returns the value of Dependencies.
+func (s *RemediationWorkflowContentPayload) GetDependencies() OptRemediationWorkflowContentDependencies {
+	return s.Dependencies
+}
+
+// GetMaintainers returns the value of Maintainers.
+func (s *RemediationWorkflowContentPayload) GetMaintainers() []RemediationWorkflowContentMaintainer {
+	return s.Maintainers
+}
+
+// GetParameters returns the value of Parameters.
+func (s *RemediationWorkflowContentPayload) GetParameters() []RemediationWorkflowContentParameter {
+	return s.Parameters
+}
+
+// GetRollbackParameters returns the value of RollbackParameters.
+func (s *RemediationWorkflowContentPayload) GetRollbackParameters() []RemediationWorkflowContentParameter {
+	return s.RollbackParameters
+}
+
+// SetVersion sets the value of Version.
+func (s *RemediationWorkflowContentPayload) SetVersion(val string) {
+	s.Version = val
+}
+
+// SetDescription sets the value of Description.
+func (s *RemediationWorkflowContentPayload) SetDescription(val StructuredDescription) {
+	s.Description = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *RemediationWorkflowContentPayload) SetActionType(val string) {
+	s.ActionType = val
+}
+
+// SetLabels sets the value of Labels.
+func (s *RemediationWorkflowContentPayload) SetLabels(val RemediationWorkflowContentLabels) {
+	s.Labels = val
+}
+
+// SetCustomLabels sets the value of CustomLabels.
+func (s *RemediationWorkflowContentPayload) SetCustomLabels(val OptRemediationWorkflowContentPayloadCustomLabels) {
+	s.CustomLabels = val
+}
+
+// SetDetectedLabels sets the value of DetectedLabels.
+func (s *RemediationWorkflowContentPayload) SetDetectedLabels(val jx.Raw) {
+	s.DetectedLabels = val
+}
+
+// SetExecution sets the value of Execution.
+func (s *RemediationWorkflowContentPayload) SetExecution(val RemediationWorkflowContentExecution) {
+	s.Execution = val
+}
+
+// SetDependencies sets the value of Dependencies.
+func (s *RemediationWorkflowContentPayload) SetDependencies(val OptRemediationWorkflowContentDependencies) {
+	s.Dependencies = val
+}
+
+// SetMaintainers sets the value of Maintainers.
+func (s *RemediationWorkflowContentPayload) SetMaintainers(val []RemediationWorkflowContentMaintainer) {
+	s.Maintainers = val
+}
+
+// SetParameters sets the value of Parameters.
+func (s *RemediationWorkflowContentPayload) SetParameters(val []RemediationWorkflowContentParameter) {
+	s.Parameters = val
+}
+
+// SetRollbackParameters sets the value of RollbackParameters.
+func (s *RemediationWorkflowContentPayload) SetRollbackParameters(val []RemediationWorkflowContentParameter) {
+	s.RollbackParameters = val
+}
+
+// Operator-defined key-value labels for additional filtering. spec.customLabels.
+type RemediationWorkflowContentPayloadCustomLabels map[string]string
+
+func (s *RemediationWorkflowContentPayloadCustomLabels) init() RemediationWorkflowContentPayloadCustomLabels {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/RemediationWorkflowContentResourceDependency
+type RemediationWorkflowContentResourceDependency struct {
+	Name string `json:"name"`
+}
+
+// GetName returns the value of Name.
+func (s *RemediationWorkflowContentResourceDependency) GetName() string {
+	return s.Name
+}
+
+// SetName sets the value of Name.
+func (s *RemediationWorkflowContentResourceDependency) SetName(val string) {
+	s.Name = val
+}
+
 // Workflow parameters (JSONB).
 type RemediationWorkflowParameters map[string]jx.Raw
 
@@ -30119,7 +30731,14 @@ type RemediationWorkflowWebhookAuditPayload struct {
 	// Catalog registration status (Active, Disabled, etc.).
 	CatalogStatus OptString `json:"catalog_status"`
 	// Reason for denial (only set when action=denied).
-	DenialReason OptString `json:"denial_reason"`
+	DenialReason    OptString                            `json:"denial_reason"`
+	WorkflowContent OptRemediationWorkflowContentPayload `json:"workflow_content"`
+	// SHA-256 hash of workflow_content, computed locally by AuthWebhook over
+	// the same clean CRD content it sends to DataStorage (identical algorithm
+	// to DataStorage's own content_hash / deterministic workflow_id
+	// derivation, #1661 Change 8a). Set whenever workflow_content is set,
+	// including on denied events (no DataStorage round-trip required).
+	ContentHash OptString `json:"content_hash"`
 }
 
 // GetEventType returns the value of EventType.
@@ -30152,6 +30771,16 @@ func (s *RemediationWorkflowWebhookAuditPayload) GetDenialReason() OptString {
 	return s.DenialReason
 }
 
+// GetWorkflowContent returns the value of WorkflowContent.
+func (s *RemediationWorkflowWebhookAuditPayload) GetWorkflowContent() OptRemediationWorkflowContentPayload {
+	return s.WorkflowContent
+}
+
+// GetContentHash returns the value of ContentHash.
+func (s *RemediationWorkflowWebhookAuditPayload) GetContentHash() OptString {
+	return s.ContentHash
+}
+
 // SetEventType sets the value of EventType.
 func (s *RemediationWorkflowWebhookAuditPayload) SetEventType(val RemediationWorkflowWebhookAuditPayloadEventType) {
 	s.EventType = val
@@ -30180,6 +30809,16 @@ func (s *RemediationWorkflowWebhookAuditPayload) SetCatalogStatus(val OptString)
 // SetDenialReason sets the value of DenialReason.
 func (s *RemediationWorkflowWebhookAuditPayload) SetDenialReason(val OptString) {
 	s.DenialReason = val
+}
+
+// SetWorkflowContent sets the value of WorkflowContent.
+func (s *RemediationWorkflowWebhookAuditPayload) SetWorkflowContent(val OptRemediationWorkflowContentPayload) {
+	s.WorkflowContent = val
+}
+
+// SetContentHash sets the value of ContentHash.
+func (s *RemediationWorkflowWebhookAuditPayload) SetContentHash(val OptString) {
+	s.ContentHash = val
 }
 
 // Admission action performed.
