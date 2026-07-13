@@ -18,6 +18,8 @@ package authwebhook
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -150,8 +152,9 @@ func (h *RemediationWorkflowHandler) handleUpdate(ctx context.Context, req admis
 }
 
 // registerWorkflow is the shared implementation for CREATE and UPDATE operations.
-// Both operations follow the same flow: unmarshal → authenticate → marshal clean
-// content → register with DS → emit audit → async status update.
+// Both operations follow the same flow: unmarshal → marshal clean content (also
+// used as the audit content_hash input) → authenticate → register with DS →
+// emit audit → async status update.
 // All error paths return admission.Denied and emit denied audit events (SOC2 CC8.1).
 func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req admission.Request, operation, auditEventType string) admission.Response {
 	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", operation, "name", req.Name, "namespace", req.Namespace)
@@ -159,15 +162,33 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	rw := &rwv1alpha1.RemediationWorkflow{}
 	if err := json.Unmarshal(req.Object.Raw, rw); err != nil {
 		logger.Error(err, "Failed to unmarshal RemediationWorkflow")
-		h.emitDeniedAudit(ctx, req, "unmarshal failed")
+		h.emitDeniedAudit(ctx, req, "unmarshal failed", nil, "")
 		return admission.Denied(fmt.Sprintf("failed to unmarshal RemediationWorkflow: %v", err))
 	}
+
+	// DD-WORKFLOW-017: Build clean content for DS that excludes Kubernetes runtime
+	// metadata (UID, resourceVersion, creationTimestamp). Including these would make
+	// the content hash non-deterministic across CRD delete+recreate cycles, breaking
+	// BR-WORKFLOW-006 re-enable detection (disabled + same hash → re-enable).
+	//
+	// #1661 Change 2: computed early (right after unmarshal succeeds, before auth/
+	// ActionType checks) — this is a pure, local, side-effect-free marshal with no
+	// authorization implications, so every denial path below can attach the
+	// attempted workflow_content + content_hash for forensics (BR-AUDIT-005 v2.0
+	// #7, SOC2 CC7.2), not just the DS-registration-failure path.
+	content, err := marshalCleanCRDContent(rw)
+	if err != nil {
+		logger.Error(err, "Failed to marshal CRD content for DS")
+		h.emitDeniedAudit(ctx, req, "marshal failed", &rw.Spec, "")
+		return admission.Denied(fmt.Sprintf("failed to marshal CRD content: %v", err))
+	}
+	contentHash := computeContentHash(string(content))
 
 	// SOC2 CC8.1: Extract authenticated user identity for attribution
 	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
 	if err != nil {
 		logger.Error(err, "Authentication failed")
-		h.emitDeniedAudit(ctx, req, fmt.Sprintf("authentication failed: %v", err))
+		h.emitDeniedAudit(ctx, req, fmt.Sprintf("authentication failed: %v", err), &rw.Spec, contentHash)
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
 
@@ -177,25 +198,14 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	// Postgres-backed taxonomy check (superseded, DD-WORKFLOW-016 GAP-4).
 	if err := h.validateActionTypeExists(ctx, rw.Spec.ActionType, req.Namespace); err != nil {
 		logger.Error(err, "ActionType existence check failed", "actionType", rw.Spec.ActionType)
-		h.emitDeniedAudit(ctx, req, err.Error())
+		h.emitDeniedAudit(ctx, req, err.Error(), &rw.Spec, contentHash)
 		return admission.Denied(err.Error())
-	}
-
-	// DD-WORKFLOW-017: Build clean content for DS that excludes Kubernetes runtime
-	// metadata (UID, resourceVersion, creationTimestamp). Including these would make
-	// the content hash non-deterministic across CRD delete+recreate cycles, breaking
-	// BR-WORKFLOW-006 re-enable detection (disabled + same hash → re-enable).
-	content, err := marshalCleanCRDContent(rw)
-	if err != nil {
-		logger.Error(err, "Failed to marshal CRD content for DS")
-		h.emitDeniedAudit(ctx, req, "marshal failed")
-		return admission.Denied(fmt.Sprintf("failed to marshal CRD content: %v", err))
 	}
 
 	result, err := h.dsClient.CreateWorkflowInline(ctx, string(content), "crd", authCtx.Username)
 	if err != nil {
 		logger.Error(err, "DS CreateWorkflowInline failed")
-		h.emitDeniedAudit(ctx, req, fmt.Sprintf("data storage registration failed: %v", err))
+		h.emitDeniedAudit(ctx, req, fmt.Sprintf("data storage registration failed: %v", err), &rw.Spec, contentHash)
 		return admission.Denied(fmt.Sprintf("data storage registration failed: %v", err))
 	}
 
@@ -205,7 +215,7 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 		"previously_existed", result.PreviouslyExisted,
 	)
 
-	h.emitAdmitAudit(ctx, req, auditEventType, result.WorkflowID, rw.Name)
+	h.emitAdmitAudit(ctx, req, auditEventType, result.WorkflowID, rw.Name, &rw.Spec, contentHash)
 
 	// ADR-058: Update CRD .status asynchronously after admission to avoid blocking
 	// the API server. The status subresource is used so this doesn't conflict with
@@ -276,7 +286,9 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 
 	if workflowID == "" {
 		logger.Info("No workflowId in CRD status — skipping DS disable (workflow may not have been registered)")
-		h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedDelete, "", rw.Name)
+		// #1661 Change 2: delete stays unchanged — it only disables an
+		// already-audited workflow_id, so there is no new content to capture.
+		h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedDelete, "", rw.Name, nil, "")
 		return admission.Allowed("delete allowed (no workflowId in status)")
 	}
 
@@ -293,8 +305,10 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 		)
 	}
 
-	// Emit DELETE audit event
-	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedDelete, workflowID, rw.Name)
+	// Emit DELETE audit event. #1661 Change 2: no workflow_content/content_hash —
+	// delete stays unchanged (the CREATE/UPDATE audit trail already has the last
+	// known content for this workflow_id).
+	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedDelete, workflowID, rw.Name, nil, "")
 
 	// Issue #418 Fix A: Only refresh the count when the DS disable succeeded.
 	// Writing the count after a failed disable would actively reinforce stale data.
@@ -472,5 +486,17 @@ func marshalCleanCRDContent(rw *rwv1alpha1.RemediationWorkflow) ([]byte, error) 
 		Spec:       rw.Spec,
 	}
 	return json.Marshal(clean)
+}
+
+// computeContentHash returns the SHA-256 hex digest of content. Identical
+// algorithm to DataStorage's own computeContentHash
+// (pkg/datastorage/server/workflow_discovery_handlers.go) applied to the same
+// clean CRD content bytes marshalCleanCRDContent produces, so AW's locally
+// computed hash matches DS's exactly with zero divergence risk (#1661 Change
+// 2 — AW no longer depends on a DS round-trip to attach content_hash to its
+// own audit events, including on denied paths).
+func computeContentHash(content string) string {
+	hash := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(hash[:])
 }
 
