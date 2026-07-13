@@ -368,6 +368,9 @@ jobs:
           - must-gather
           - db-migrate
     steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
       - name: Scan for CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -376,6 +379,10 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          version: v0.72.0
+          # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
+          # with no fix available yet in any published kubectl release.
+          trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
@@ -415,6 +422,9 @@ jobs:
           - must-gather
           - db-migrate
     steps:
+      - name: Checkout code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
       - name: Scan for CVEs (Trivy)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -423,6 +433,10 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          version: v0.72.0
+          # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
+          # with no fix available yet in any published kubectl release.
+          trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0

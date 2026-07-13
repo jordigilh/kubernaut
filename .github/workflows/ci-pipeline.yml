@@ -516,6 +516,7 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          version: v0.72.0
 
       - name: Save image to tarball
         run: |
@@ -627,6 +628,7 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          version: v0.72.0
 
       - name: Save image to tarball
         run: |
