@@ -379,6 +379,7 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          version: v0.72.0
           # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
           # with no fix available yet in any published kubectl release.
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
@@ -432,6 +433,7 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          version: v0.72.0
           # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
           # with no fix available yet in any published kubectl release.
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
