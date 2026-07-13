@@ -210,13 +210,13 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 
 		It("IT-AW-1111-001: remediationworkflow.admitted.create persisted to DS", func() {
 			uid := uniqueID("rw-create")
-			actionType := uniqueID("ITScaleCreate")
+			actionType := uniqueActionType("ITScaleCreate")
 
 			// DD-WORKFLOW-016: Register the action type in the taxonomy before
 			// creating the RW, otherwise DS rejects with 403 (FK constraint).
-			atSetupUID := uniqueID("at-setup-create")
-			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
-			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+			// #1661: Also creates the ActionType CRD in etcd (Active), required
+			// by AW's own RW-to-ActionType existence gate.
+			createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueID("at-setup-create"))
 
 			rw := buildRW(uniqueID("it-rw-create"), actionType)
 
@@ -230,11 +230,9 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 
 		It("IT-AW-1111-002: remediationworkflow.admitted.update persisted to DS", func() {
 			uid := uniqueID("rw-update")
-			actionType := uniqueID("ITScaleUpdate")
+			actionType := uniqueActionType("ITScaleUpdate")
 
-			atSetupUID := uniqueID("at-setup-update")
-			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
-			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+			createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueID("at-setup-update"))
 
 			rw := buildRW(uniqueID("it-rw-update"), actionType)
 
@@ -247,11 +245,9 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 		})
 
 		It("IT-AW-1111-003: remediationworkflow.admitted.delete persisted to DS", func() {
-			actionType := uniqueID("ITScaleDelete")
+			actionType := uniqueActionType("ITScaleDelete")
 
-			atSetupUID := uniqueID("at-setup-delete")
-			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
-			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+			createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueID("at-setup-delete"))
 
 			rw := buildRW(uniqueID("it-rw-delete"), actionType)
 
@@ -424,12 +420,9 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 			// no live K8s CRDs (direct invocation doesn't create CRDs), but the
 			// force-disable path requires baseURL which NewDSClientAdapterFromClient
 			// doesn't set → orphan recovery fails → denied audit emitted.
-			atName := uniqueID("ITDeniedDel")
+			atName := uniqueActionType("ITDeniedDel")
 			at := buildAT(atName)
-
-			atCreateUID := uniqueID("at-dep-create")
-			createResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, at, atCreateUID))
-			Expect(createResp.Allowed).To(BeTrue(), "AT CREATE should succeed for dependency setup")
+			createActiveActionTypeCRD(ctx, k8sClient, atHandler, at, uniqueID("at-dep-create"))
 
 			rwName := uniqueID("it-rw-dependent")
 			rw := buildRW(rwName, atName)

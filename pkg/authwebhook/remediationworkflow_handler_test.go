@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -34,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
@@ -208,6 +210,31 @@ func buildUpdateAdmissionRequest(rw *rwv1alpha1.RemediationWorkflow) admission.R
 
 func fakeK8sKey(namespace, name string) types.NamespacedName {
 	return types.NamespacedName{Namespace: namespace, Name: name}
+}
+
+// fakeK8sWithRWAndActiveActionType builds a fake client seeded with rw and an
+// Active ActionType CRD matching rw.Spec.ActionType, plus the ".spec.name"
+// field index registered on the real manager (cmd/authwebhook/main.go).
+// Required so that the #1661 ActionType-existence gate in registerWorkflow
+// lets these CREATE/UPDATE flows reach DS, matching production where every
+// RW references an already-registered, Active ActionType.
+func fakeK8sWithRWAndActiveActionType(rw *rwv1alpha1.RemediationWorkflow) client.Client {
+	scheme := runtime.NewScheme()
+	_ = rwv1alpha1.AddToScheme(scheme)
+	_ = atv1alpha1.AddToScheme(scheme)
+
+	at := buildActionType("gate-actiontype", rw.Spec.ActionType, rw.Namespace)
+	at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
+
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(rw, at).
+		WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}, &atv1alpha1.ActionType{}).
+		WithIndex(&atv1alpha1.ActionType{}, ".spec.name", func(obj client.Object) []string {
+			a := obj.(*atv1alpha1.ActionType)
+			return []string{a.Spec.Name}
+		}).
+		Build()
 }
 
 // ========================================
@@ -742,15 +769,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-INTEGRITY-001: CREATE patches new UUID into CRD status on supersede", func() {
 		It("should populate CRD .status with the NEW workflow UUID when DS indicates supersede", func() {
 			rw := buildRemediationWorkflow("integrity-supersede", "kubernaut-system")
-
-			scheme := runtime.NewScheme()
-			_ = rwv1alpha1.AddToScheme(scheme)
-
-			fakeK8s := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(rw).
-				WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
-				Build()
+			fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
 
 			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 
@@ -791,15 +810,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-INTEGRITY-002: CREATE patches same UUID into CRD status on re-enable", func() {
 		It("should populate CRD .status with the ORIGINAL UUID when DS re-enables", func() {
 			rw := buildRemediationWorkflow("integrity-reenable", "kubernaut-system")
-
-			scheme := runtime.NewScheme()
-			_ = rwv1alpha1.AddToScheme(scheme)
-
-			fakeK8s := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(rw).
-				WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
-				Build()
+			fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
 
 			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 
@@ -870,15 +881,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-013: CREATE updates CRD status asynchronously", func() {
 		It("should populate .status with DS registration result via k8sClient.Status().Update()", func() {
 			rw := buildRemediationWorkflow("scale-memory-status", "kubernaut-system")
-
-			scheme := runtime.NewScheme()
-			_ = rwv1alpha1.AddToScheme(scheme)
-
-			fakeK8s := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(rw).
-				WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
-				Build()
+			fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
 
 			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 

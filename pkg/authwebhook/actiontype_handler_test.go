@@ -785,6 +785,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	Describe("UT-AT-300-011: RW CREATE triggers async activeWorkflowCount update", func() {
 		It("should update ActionType CRD status.activeWorkflowCount after RW CREATE", func() {
 			at := buildActionType("scale-memory-at", "ScaleMemory", "kubernaut-system")
+			at.Status.CatalogStatus = sharedtypes.CatalogStatusActive // #1661: RW CREATE gate requires an Active ActionType
 			scheme := newATScheme()
 
 			fakeK8s := fake.NewClientBuilder().

@@ -171,6 +171,16 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
 
+	// #1661: AW is the sole control gate for the RW-to-ActionType relationship.
+	// Validate directly against etcd (via the .spec.name field indexer already
+	// registered in cmd/authwebhook/main.go) instead of delegating to DS's
+	// Postgres-backed taxonomy check (superseded, DD-WORKFLOW-016 GAP-4).
+	if err := h.validateActionTypeExists(ctx, rw.Spec.ActionType, req.Namespace); err != nil {
+		logger.Error(err, "ActionType existence check failed", "actionType", rw.Spec.ActionType)
+		h.emitDeniedAudit(ctx, req, err.Error())
+		return admission.Denied(err.Error())
+	}
+
 	// DD-WORKFLOW-017: Build clean content for DS that excludes Kubernetes runtime
 	// metadata (UID, resourceVersion, creationTimestamp). Including these would make
 	// the content hash non-deterministic across CRD delete+recreate cycles, breaking
@@ -206,6 +216,38 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
 
 	return admission.Allowed("workflow registered in catalog")
+}
+
+// validateActionTypeExists checks whether an Active ActionType CRD exists for
+// actionType in namespace, using the ".spec.name" field indexer already
+// registered on the manager (cmd/authwebhook/main.go). AW is now the sole
+// control gate for the RW-to-ActionType relationship, replacing DS's
+// Postgres-backed action_type_taxonomy lookup (#1661).
+//
+// h.k8sClient is nil in unit tests that don't exercise this gate (production
+// always wires a real cache-backed client in cmd/authwebhook/main.go); the
+// check is skipped rather than denied in that case, matching the existing
+// best-effort precedent of refreshActionTypeWorkflowCount.
+func (h *RemediationWorkflowHandler) validateActionTypeExists(ctx context.Context, actionType, namespace string) error {
+	if h.k8sClient == nil {
+		return nil
+	}
+
+	atList := &atv1alpha1.ActionTypeList{}
+	if err := h.k8sClient.List(ctx, atList,
+		client.InNamespace(namespace),
+		client.MatchingFields{".spec.name": actionType},
+	); err != nil {
+		return fmt.Errorf("action type lookup failed for %q: %w", actionType, err)
+	}
+
+	for i := range atList.Items {
+		if atList.Items[i].Status.CatalogStatus == sharedtypes.CatalogStatusActive {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("action_type %q is not an active entry in the action type taxonomy", actionType)
 }
 
 // handleDelete processes DELETE operations: disables the workflow in DS.

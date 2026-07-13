@@ -120,27 +120,6 @@ var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (
 		}
 	}
 
-	atAdmissionRequest := func(at *atv1alpha1.ActionType, uid string) admission.Request {
-		atJSON, err := json.Marshal(at)
-		Expect(err).ToNot(HaveOccurred())
-		return admission.Request{
-			AdmissionRequest: admissionv1.AdmissionRequest{
-				UID: types.UID(uid),
-				Kind: metav1.GroupVersionKind{
-					Group: "kubernaut.ai", Version: "v1alpha1", Kind: "ActionType",
-				},
-				Name:      at.Name,
-				Namespace: at.Namespace,
-				Operation: admissionv1.Create,
-				UserInfo: authv1.UserInfo{
-					Username: "it-cluster-user@kubernaut.ai",
-					UID:      "it-cluster-uid",
-				},
-				Object: runtime.RawExtension{Raw: atJSON},
-			},
-		}
-	}
-
 	rwAdmissionRequest := func(rw *rwv1alpha1.RemediationWorkflow, uid string) admission.Request {
 		rwJSON, err := json.Marshal(rw)
 		Expect(err).ToNot(HaveOccurred())
@@ -185,9 +164,10 @@ var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (
 	}
 
 	It("IT-AW-1511-001a: cluster labels present on the CRD survive to DS's labels JSONB unmodified", func() {
-		actionType := uniqueName("ITClusterCreate")
-		atResp := atHandler.Handle(ctx, atAdmissionRequest(buildAT(actionType), uniqueName("at-setup-cluster")))
-		Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+		actionType := uniqueActionType("ITClusterCreate")
+		// #1661: Creates the ActionType CRD in etcd (Active), required by AW's
+		// own RW-to-ActionType existence gate, in addition to DS registration.
+		createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueName("at-setup-cluster"))
 
 		rwName := uniqueName("it-rw-cluster")
 		rw := buildRWWithCluster(rwName, actionType, []string{"production", "staging-eu"})
@@ -203,9 +183,8 @@ var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (
 	})
 
 	It("IT-AW-1511-001b: absent cluster labels round-trip as empty (backward compatible, non-fleet)", func() {
-		actionType := uniqueName("ITNoClusterCreate")
-		atResp := atHandler.Handle(ctx, atAdmissionRequest(buildAT(actionType), uniqueName("at-setup-nocluster")))
-		Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+		actionType := uniqueActionType("ITNoClusterCreate")
+		createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueName("at-setup-nocluster"))
 
 		rwName := uniqueName("it-rw-nocluster")
 		rw := buildRWWithCluster(rwName, actionType, nil) // non-fleet: no cluster labels set

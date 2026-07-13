@@ -23,14 +23,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	admissionv1 "k8s.io/api/admission/v1"
+	authv1 "k8s.io/api/authentication/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+// uniqueActionType generates a unique action type name that satisfies the
+// PascalCase-only kubebuilder Pattern on ActionType.spec.name / RW's
+// spec.actionType (#1661 CRD schema hardening): no hyphens, so it also
+// doubles as a valid (lowercase) DNS-1123 CRD metadata.name for the AT
+// objects createActiveActionTypeCRD creates directly via k8sClient.
+func uniqueActionType(prefix string) string {
+	return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
+}
+
 // createAndWaitForCRD creates a CRD and waits for it to be ready
 // Per TESTING_GUIDELINES.md: Use Eventually() for K8s eventual consistency
 func createAndWaitForCRD(ctx context.Context, k8sClient client.Client, obj client.Object) {
@@ -42,6 +61,62 @@ func createAndWaitForCRD(ctx context.Context, k8sClient client.Client, obj clien
 		return k8sClient.Get(ctx, client.ObjectKeyFromObject(obj), obj)
 	}, 10*time.Second, 500*time.Millisecond).Should(Succeed(),
 		"CRD should be retrievable after creation")
+}
+
+// createActiveActionTypeCRD creates an ActionType CRD directly via k8sClient
+// (etcd), then calls atHandler.Handle to register it in DS's Postgres
+// taxonomy, and waits for the handler's async status-update goroutine to mark
+// the CRD Active before returning.
+//
+// #1661: AW's RemediationWorkflow admission gate now validates
+// spec.actionType directly against etcd (an Active ActionType CRD must
+// exist), in addition to DS's pre-existing Postgres-backed taxonomy check.
+// Calling atHandler.Handle alone (bypassing the real API server) never
+// creates the CRD, so any test that subsequently admits a dependent RW must
+// use this helper instead of invoking atHandler.Handle directly.
+func createActiveActionTypeCRD(
+	ctx context.Context,
+	k8sClient client.Client,
+	atHandler *authwebhook.ActionTypeHandler,
+	at *atv1alpha1.ActionType,
+	uid string,
+) {
+	// #1661 CRD schema hardening requires spec.name to stay PascalCase, but
+	// metadata.name must be a lowercase DNS-1123 label; callers often reuse
+	// the same (PascalCase) string for both, so normalize the object name here
+	// rather than pushing this K8s-naming detail onto every call site.
+	at.ObjectMeta.Name = strings.ToLower(at.ObjectMeta.Name)
+
+	Expect(k8sClient.Create(ctx, at)).To(Succeed(), "ActionType CRD creation should succeed")
+
+	atJSON, err := json.Marshal(at)
+	Expect(err).ToNot(HaveOccurred())
+	resp := atHandler.Handle(ctx, admission.Request{
+		AdmissionRequest: admissionv1.AdmissionRequest{
+			UID: types.UID(uid),
+			Kind: metav1.GroupVersionKind{
+				Group: "kubernaut.ai", Version: "v1alpha1", Kind: "ActionType",
+			},
+			Name:      at.Name,
+			Namespace: at.Namespace,
+			Operation: admissionv1.Create,
+			UserInfo: authv1.UserInfo{
+				Username: "it-actiontype-setup@kubernaut.ai",
+				UID:      "it-actiontype-setup-uid",
+			},
+			Object: runtime.RawExtension{Raw: atJSON},
+		},
+	})
+	Expect(resp.Allowed).To(BeTrue(), "ActionType CREATE should be allowed: %s", resp.Result)
+
+	Eventually(func() sharedtypes.CatalogStatus {
+		updated := &atv1alpha1.ActionType{}
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(at), updated); err != nil {
+			return ""
+		}
+		return updated.Status.CatalogStatus
+	}, 10*time.Second, 200*time.Millisecond).Should(Equal(sharedtypes.CatalogStatusActive),
+		"ActionType CRD status.catalogStatus should become Active after admission")
 }
 
 // updateStatusAndWaitForWebhook updates CRD status and waits for webhook mutation
