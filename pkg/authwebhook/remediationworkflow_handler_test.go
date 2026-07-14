@@ -29,6 +29,7 @@ import (
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	authv1 "k8s.io/api/authentication/v1"
@@ -210,6 +211,21 @@ func buildUpdateAdmissionRequest(rw *rwv1alpha1.RemediationWorkflow) admission.R
 
 func fakeK8sKey(namespace, name string) types.NamespacedName {
 	return types.NamespacedName{Namespace: namespace, Name: name}
+}
+
+// expectedLocalWorkflowID derives the workflow_id AW is expected to compute
+// locally (#1661 Change 8a) for the most recently stored admitted audit
+// event, by re-deriving DeterministicUUID from that event's already-asserted
+// content_hash. This lets tests assert against AW's own local computation
+// without duplicating marshalCleanCRDContent's (unexported) canonicalization
+// logic.
+func expectedLocalWorkflowID(mockAudit *MockAuditStoreRW) string {
+	ExpectWithOffset(1, mockAudit.StoredEvents).ToNot(BeEmpty())
+	event := mockAudit.StoredEvents[len(mockAudit.StoredEvents)-1]
+	payload, ok := event.EventData.GetRemediationWorkflowWebhookAuditPayload()
+	ExpectWithOffset(1, ok).To(BeTrue())
+	ExpectWithOffset(1, payload.ContentHash.IsSet()).To(BeTrue())
+	return contenthash.DeterministicUUID(payload.ContentHash.Value)
 }
 
 // fakeK8sWithRWAndActiveActionType builds a fake client seeded with rw and an
@@ -763,27 +779,32 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	})
 
 	// ========================================
-	// UT-AW-INTEGRITY-001: CREATE patches new UUID on supersede
-	// BR-WORKFLOW-006: When DS supersedes an old workflow, AW patches the new UUID
+	// UT-AW-INTEGRITY-001: CREATE patches the locally-computed UUID regardless
+	// of what DS's response reports for supersession (#1661 Change 8a).
+	// BR-WORKFLOW-006.
 	// ========================================
-	Describe("UT-AW-INTEGRITY-001: CREATE patches new UUID into CRD status on supersede", func() {
-		It("should populate CRD .status with the NEW workflow UUID when DS indicates supersede", func() {
+	Describe("UT-AW-INTEGRITY-001: CREATE patches the locally-computed UUID into CRD status, ignoring DS's supersede response", func() {
+		It("should populate CRD .status with AW's own deterministic UUID, not DS's reported newUUID/supersededUUID", func() {
 			rw := buildRemediationWorkflow("integrity-supersede", "kubernaut-system")
 			fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
 
 			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 
-			newUUID := "new-uuid-after-supersede"
-			supersededUUID := "old-uuid-superseded"
+			// #1661 Change 8a: DS's reported WorkflowID/SupersededID are no
+			// longer authoritative for .status.workflowId -- AW computes its
+			// own deterministic UUID locally regardless of what DS's
+			// (still-Postgres-backed, until Change 8c) supersede logic
+			// reports. Deliberately implausible strings prove AW ignores
+			// them entirely.
 			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
 				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:        newUUID,
+					WorkflowID:        "new-uuid-after-supersede",
 					WorkflowName:      "integrity-supersede",
 					Version:           "1.0.0",
 					Status:            string(sharedtypes.CatalogStatusActive),
 					PreviouslyExisted: false,
 					Superseded:        true,
-					SupersededID:      supersededUUID,
+					SupersededID:      "old-uuid-superseded",
 				}, nil
 			}
 
@@ -791,6 +812,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			resp := handlerWithK8s.Handle(ctx, admReq)
 			Expect(resp.Allowed).To(BeTrue())
 
+			expectedID := expectedLocalWorkflowID(mockAudit)
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
 				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-supersede"), updated)
@@ -798,26 +820,26 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					return ""
 				}
 				return updated.Status.WorkflowID
-			}, 5*time.Second, 100*time.Millisecond).Should(Equal(newUUID),
-				"CRD status should contain the NEW UUID from the supersede, not the old one")
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(expectedID),
+				"CRD status should contain AW's own locally-computed UUID (#1661 Change 8a), not DS's reported one")
 		})
 	})
 
 	// ========================================
-	// UT-AW-INTEGRITY-002: CREATE patches same UUID on re-enable
-	// BR-WORKFLOW-006: When DS re-enables a disabled workflow, AW patches the original UUID
+	// UT-AW-INTEGRITY-002: CREATE patches the same locally-computed UUID on
+	// re-registration, independent of DS's re-enable response (#1661 Change 8a).
+	// BR-WORKFLOW-006.
 	// ========================================
-	Describe("UT-AW-INTEGRITY-002: CREATE patches same UUID into CRD status on re-enable", func() {
-		It("should populate CRD .status with the ORIGINAL UUID when DS re-enables", func() {
+	Describe("UT-AW-INTEGRITY-002: CREATE patches the locally-computed UUID into CRD status, ignoring DS's re-enable response", func() {
+		It("should populate CRD .status with AW's own deterministic UUID, not DS's reported originalUUID", func() {
 			rw := buildRemediationWorkflow("integrity-reenable", "kubernaut-system")
 			fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
 
 			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 
-			originalUUID := "original-uuid-reenabled"
 			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
 				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:        originalUUID,
+					WorkflowID:        "original-uuid-reenabled",
 					WorkflowName:      "integrity-reenable",
 					Version:           "1.0.0",
 					Status:            string(sharedtypes.CatalogStatusActive),
@@ -830,6 +852,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			resp := handlerWithK8s.Handle(ctx, admReq)
 			Expect(resp.Allowed).To(BeTrue())
 
+			expectedID := expectedLocalWorkflowID(mockAudit)
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
 				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)
@@ -837,13 +860,13 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					return ""
 				}
 				return updated.Status.WorkflowID
-			}, 5*time.Second, 100*time.Millisecond).Should(Equal(originalUUID),
-				"CRD status should contain the ORIGINAL UUID from the re-enable")
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(expectedID),
+				"CRD status should contain AW's own locally-computed UUID (#1661 Change 8a), not DS's reported one")
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
 			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)).To(Succeed())
 			Expect(updated.Status.PreviouslyExisted).To(BeTrue(),
-				"PreviouslyExisted should be true for re-enabled workflows")
+				"PreviouslyExisted should be true for re-enabled workflows (still sourced from DS's response)")
 		})
 	})
 
@@ -879,12 +902,15 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// UT-AW-299-013: CREATE populates CRD .status via async k8sClient update
 	// ========================================
 	Describe("UT-AW-299-013: CREATE updates CRD status asynchronously", func() {
-		It("should populate .status with DS registration result via k8sClient.Status().Update()", func() {
+		It("should populate .status with the locally-computed workflow ID via k8sClient.Status().Update()", func() {
 			rw := buildRemediationWorkflow("scale-memory-status", "kubernaut-system")
 			fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
 
 			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 
+			// #1661 Change 8a: DS's reported WorkflowID is deliberately
+			// implausible -- AW's .status.workflowId write is sourced from
+			// its own local deterministic computation, not this value.
 			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
 				return &authwebhook.WorkflowRegistrationResult{
 					WorkflowID:        "uuid-status-test-001",
@@ -899,6 +925,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			resp := handlerWithK8s.Handle(ctx, admReq)
 			Expect(resp.Allowed).To(BeTrue())
 
+			expectedID := expectedLocalWorkflowID(mockAudit)
 			// Wait for async goroutine to complete
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
@@ -907,7 +934,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 					return ""
 				}
 				return updated.Status.WorkflowID
-			}, 5*time.Second, 100*time.Millisecond).Should(Equal("uuid-status-test-001"))
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(expectedID))
 
 			// Verify all status fields
 			updated := &rwv1alpha1.RemediationWorkflow{}

@@ -18,8 +18,6 @@ package authwebhook
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -27,6 +25,7 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	admissionv1 "k8s.io/api/admission/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -182,7 +181,14 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 		h.emitDeniedAudit(ctx, req, "marshal failed", &rw.Spec, "")
 		return admission.Denied(fmt.Sprintf("failed to marshal CRD content: %v", err))
 	}
-	contentHash := computeContentHash(string(content))
+	contentHash := contenthash.ComputeContentHash(string(content))
+
+	// #1661 Change 8a: workflow_id is computed locally from the same
+	// deterministic algorithm DS has always used (DeterministicUUID applied
+	// to the content hash), rather than trusted from a DS response. This is
+	// a pure relocation of an existing computation, so every pre-existing
+	// workflow_id remains stable across the migration (DD-WORKFLOW-018).
+	workflowID := contenthash.DeterministicUUID(contentHash)
 
 	// SOC2 CC8.1: Extract authenticated user identity for attribution
 	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
@@ -208,6 +214,14 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 		h.emitDeniedAudit(ctx, req, fmt.Sprintf("data storage registration failed: %v", err), &rw.Spec, contentHash)
 		return admission.Denied(fmt.Sprintf("data storage registration failed: %v", err))
 	}
+
+	// #1661 Change 8a: workflow_id is authoritative from AW's own local
+	// computation (above), not DS's response -- overridden here so every
+	// downstream consumer of result (the audit event below, and
+	// updateCRDStatus's .status.workflowId write) sees the locally-computed,
+	// stable value instead of whatever DS's (still Postgres-backed, until
+	// Change 8c removes this call entirely) response happened to return.
+	result.WorkflowID = workflowID
 
 	logger.Info("Workflow registered in DS",
 		"workflow_id", result.WorkflowID,
@@ -487,16 +501,3 @@ func marshalCleanCRDContent(rw *rwv1alpha1.RemediationWorkflow) ([]byte, error) 
 	}
 	return json.Marshal(clean)
 }
-
-// computeContentHash returns the SHA-256 hex digest of content. Identical
-// algorithm to DataStorage's own computeContentHash
-// (pkg/datastorage/server/workflow_discovery_handlers.go) applied to the same
-// clean CRD content bytes marshalCleanCRDContent produces, so AW's locally
-// computed hash matches DS's exactly with zero divergence risk (#1661 Change
-// 2 — AW no longer depends on a DS round-trip to attach content_hash to its
-// own audit events, including on denied paths).
-func computeContentHash(content string) string {
-	hash := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(hash[:])
-}
-
