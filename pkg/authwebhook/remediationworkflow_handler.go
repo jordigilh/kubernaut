@@ -175,13 +175,12 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	// authorization implications, so every denial path below can attach the
 	// attempted workflow_content + content_hash for forensics (BR-AUDIT-005 v2.0
 	// #7, SOC2 CC7.2), not just the DS-registration-failure path.
-	content, err := marshalCleanCRDContent(rw)
+	content, contentHash, err := computeRWContentHash(rw)
 	if err != nil {
 		logger.Error(err, "Failed to marshal CRD content for DS")
 		h.emitDeniedAudit(ctx, req, "marshal failed", &rw.Spec, "")
 		return admission.Denied(fmt.Sprintf("failed to marshal CRD content: %v", err))
 	}
-	contentHash := contenthash.ComputeContentHash(string(content))
 
 	// #1661 Change 8a: workflow_id is computed locally from the same
 	// deterministic algorithm DS has always used (DeterministicUUID applied
@@ -204,6 +203,20 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	// Postgres-backed taxonomy check (superseded, DD-WORKFLOW-016 GAP-4).
 	if err := h.validateActionTypeExists(ctx, rw.Spec.ActionType, req.Namespace); err != nil {
 		logger.Error(err, "ActionType existence check failed", "actionType", rw.Spec.ActionType)
+		h.emitDeniedAudit(ctx, req, err.Error(), &rw.Spec, contentHash)
+		return admission.Denied(err.Error())
+	}
+
+	// #1661 Change 8b: today's "same version + different content" 409 (DS's
+	// contentIntegrityError, pkg/datastorage/server/workflow_create_handlers.go)
+	// moves to a local, zero-dependency check against the UPDATE admission
+	// request's own OldObject -- no DS round-trip and no etcd List() needed.
+	// RemediationWorkflowSpec has no identity field of its own (DS's schema
+	// parser sets spec.WorkflowName = crd.Metadata.Name), so this scenario can
+	// only ever happen on the one live object being updated. CREATE has no
+	// OldObject, so the check is a no-op there.
+	if err := validateContentIntegrity(operation, req.OldObject.Raw, rw.Spec.Version, contentHash); err != nil {
+		logger.Error(err, "Content-integrity check failed")
 		h.emitDeniedAudit(ctx, req, err.Error(), &rw.Spec, contentHash)
 		return admission.Denied(err.Error())
 	}
@@ -275,6 +288,57 @@ func (h *RemediationWorkflowHandler) validateActionTypeExists(ctx context.Contex
 	// (pkg/datastorage/server/workflow_create_handlers.go) so operators see
 	// the same denial text regardless of which gate rejected the request.
 	return fmt.Errorf("action_type '%s' is not in the action type taxonomy (DD-WORKFLOW-016)", actionType)
+}
+
+// validateContentIntegrity rejects an UPDATE that keeps spec.version unchanged
+// while the content hash changes -- the same "content changed without a
+// version bump" rule DS's Postgres-backed contentIntegrityError enforced
+// (pkg/datastorage/server/workflow_create_handlers.go), now evaluated locally
+// from the admission request's own OldObject (#1661 Change 8b). oldObjectRaw
+// is empty for CREATE (no prior state to compare against), so the check is a
+// no-op there.
+func validateContentIntegrity(operation string, oldObjectRaw []byte, newVersion, newContentHash string) error {
+	if operation != "UPDATE" || len(oldObjectRaw) == 0 {
+		return nil
+	}
+
+	oldRW := &rwv1alpha1.RemediationWorkflow{}
+	if err := json.Unmarshal(oldObjectRaw, oldRW); err != nil {
+		// Best-effort: an unparsable OldObject shouldn't block the update --
+		// the ActionType/DS checks around this one already guard correctness.
+		return nil
+	}
+	if oldRW.Spec.Version != newVersion {
+		return nil
+	}
+
+	_, oldHash, err := computeRWContentHash(oldRW)
+	if err != nil {
+		return nil
+	}
+	if oldHash == newContentHash {
+		return nil
+	}
+
+	// Wording matches DS's now-superseded contentIntegrityError.Error()
+	// (pkg/datastorage/server/workflow_create_handlers.go) verbatim -- including
+	// the "active" qualifier, which stays accurate here too, since there is
+	// exactly one live CRD per name and it is always the "active" one -- so
+	// operators see no behavioral difference regardless of which gate denies.
+	return fmt.Errorf(
+		"active workflow %q version %q already has different content (hash %s→%s); bump the version to register new content",
+		oldRW.Name, newVersion, shortHash(oldHash), shortHash(newContentHash),
+	)
+}
+
+// shortHash truncates a content hash to its first 12 characters for
+// human-readable denial messages, matching DS's contentIntegrityError.Error()
+// formatting precedent.
+func shortHash(hash string) string {
+	if len(hash) > 12 {
+		return hash[:12]
+	}
+	return hash
 }
 
 // handleDelete processes DELETE operations: disables the workflow in DS.
@@ -466,6 +530,18 @@ func (h *RemediationWorkflowHandler) updateATWorkflowCountWithRetry(ctx context.
 		}
 	}
 	return fmt.Errorf("conflict after %d retries", maxStatusUpdateRetries)
+}
+
+// computeRWContentHash marshals rw's clean CRD content and hashes it in one
+// step. Shared by registerWorkflow (new object) and validateContentIntegrity
+// (old object, #1661 Change 8b REFACTOR) so both compute the hash the exact
+// same way with no duplicated marshal+hash call sites.
+func computeRWContentHash(rw *rwv1alpha1.RemediationWorkflow) ([]byte, string, error) {
+	content, err := marshalCleanCRDContent(rw)
+	if err != nil {
+		return nil, "", err
+	}
+	return content, contenthash.ComputeContentHash(string(content)), nil
 }
 
 // marshalCleanCRDContent produces a JSON representation of the CRD that only
