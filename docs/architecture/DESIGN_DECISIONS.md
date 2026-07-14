@@ -93,9 +93,10 @@
 | DD-HOLMESGPT-013 | Vendor Local SDK Copy | ✅ Approved | [Date] | [DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md](decisions/DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md) |
 | DD-HOLMESGPT-014 | MinimalDAL Stateless Architecture | ✅ Approved | [Date] | [DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md](decisions/DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md) |
 | DD-HAPI-001 | Custom Labels Auto-Append Architecture | ✅ Approved | 2025-11-30 | [DD-HAPI-001-custom-labels-auto-append.md](decisions/DD-HAPI-001-custom-labels-auto-append.md) |
-| DD-HAPI-002 | Workflow Parameter Validation Architecture | ✅ Approved | 2025-12-01 | [DD-HAPI-002-workflow-parameter-validation.md](decisions/DD-HAPI-002-workflow-parameter-validation.md) |
+| DD-HAPI-002 | Workflow Parameter Validation Architecture | ⚠️ Superseded by DD-KA-001 | 2025-12-01 | [DD-HAPI-002-workflow-parameter-validation.md](decisions/DD-HAPI-002-workflow-parameter-validation.md) |
 | DD-HAPI-003 | Mandatory OpenAPI Client Usage | ✅ Approved | 2025-12-29 | [DD-HAPI-003-mandatory-openapi-client-usage.md](decisions/DD-HAPI-003-mandatory-openapi-client-usage.md) |
 | DD-HAPI-005 | Python OpenAPI Client Auto-Regeneration Pattern | ✅ Approved | 2025-12-29 | [DD-HAPI-005-python-openapi-client-regeneration.md](decisions/DD-HAPI-005-python-openapi-client-regeneration.md) |
+| DD-KA-001 | Workflow Response Validation Architecture (supersedes DD-HAPI-002; collapses to one validation layer) | ✅ Approved | 2026-07-14 | [DD-KA-001-workflow-response-validation-architecture.md](decisions/DD-KA-001-workflow-response-validation-architecture.md) |
 | DD-EMBEDDING-001 | Embedding Service as MCP Playbook Catalog Server (Python Microservice) | ✅ Approved | 2025-11-14 | [DD-EMBEDDING-001-embedding-service-implementation.md](decisions/DD-EMBEDDING-001-embedding-service-implementation.md) |
 | DD-PLAYBOOK-001 | Mandatory Playbook Label Schema (7 Labels) | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-001-mandatory-label-schema.md](decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) |
 | DD-PLAYBOOK-002 | MCP Playbook Catalog Architecture | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md](decisions/DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md) |

@@ -492,6 +492,101 @@ For each of the 8 fields:
 
 ---
 
+## Extension: `workflow_content` Field Mapping (Issue #1661, 2026-07-14)
+
+> **Scope note**: unlike Fields #1-8 above, `workflow_content` does not reconstruct a `RemediationRequest` CRD
+> field -- it reconstructs a **`RemediationWorkflow`** CRD's exact admitted spec, independent of etcd or Data
+> Storage's cache (SOC2 CC8.1). It is documented here because it follows the same authoritative
+> field-mapping-and-reconstruction-algorithm pattern as Fields #1-8, and because the cross-event join it enables
+> (workflow execution events joining back to workflow admission events) directly supports the same audit
+> completeness goal (BR-AUDIT-005 v2.0) this document governs.
+
+### Field #9: `workflow_content` + `content_hash` (RemediationWorkflow CRD reconstruction)
+
+**Source CRD**: `RemediationWorkflow.spec` (not RemediationRequest)
+
+**Audit Event Capture**:
+```yaml
+event_type: remediationworkflow.admitted.create   # also: .update, .denied (best-effort)
+event_category: authwebhook
+event_data:
+  workflow_name: "fix-security-context-job"
+  content_hash: "3f9a1c...e02b"          # ← NEW: SHA-256 of the marshaled clean CRD content
+  workflow_content:                       # ← NEW: full RemediationWorkflowSpec, field-for-field
+    version: "1.1.0"
+    action_type: "RestartPod"
+    description:
+      what: "Restarts a Pod stuck in CrashLoopBackOff"
+      when_to_use: "..."
+    labels:
+      severity: ["critical", "high"]
+      environment: ["production"]
+      component: ["api-server"]
+      priority: "P1"
+      cluster: ["prod-east"]
+    maintainers:
+      - name: "platform-team"
+        email: "platform@example.com"
+    parameters:
+      - name: "namespace"
+        type: "string"
+        required: true
+    rollback_parameters: []
+```
+
+**Implementation**:
+- **File**: `pkg/authwebhook/remediationworkflow_audit.go` (`buildWorkflowContentPayload`, `attachWorkflowContent`)
+- **Schema**: `RemediationWorkflowContentPayload` in `api/openapi/data-storage-v1.yaml` -- fully decomposed/typed
+  (not an opaque JSON blob), mirroring `RemediationWorkflowSpec` field-for-field, consistent with this document's
+  "structured, not raw JSON" precedent for Fields #1-8.
+- **Hash algorithm**: SHA-256 hex digest of the same clean-CRD-content bytes DS's own `computeContentHash` hashes,
+  computed locally by AuthWebhook (zero divergence risk, no DS round-trip required to attach it).
+- **Coverage**: emitted on `create`/`update` unconditionally, and on `denied` best-effort (whenever `rw.Spec`
+  unmarshaled successfully, even if the request was ultimately denied) -- extending audit forensic value beyond
+  the strict SOC2 CC8.1 floor, per DD-WORKFLOW-018 Change 2.
+
+**Reconstruction Logic**:
+```go
+// Reconstruct a RemediationWorkflow's exact admitted spec at any point in its history --
+// including versions superseded or CRDs since deleted, independent of etcd or DS's cache.
+event := getLatestAuditEvent(ctx, "remediationworkflow.admitted.create", "remediationworkflow.admitted.update",
+	byDetail("workflow_id", workflowID))
+spec := event.EventData["workflow_content"].(RemediationWorkflowContentPayload)
+```
+
+### Cross-Event Join: Execution Events → Workflow Admission Events
+
+`WorkflowExecutionAuditPayload` (`workflowexecution.execution.started`/`.workflow.completed`/`.failed`) carries
+`workflow_name` and `action_type` for direct human readability (DD-WORKFLOW-018 Change 8/9), but the durable,
+collision-free join key back to the exact admitted workflow definition remains `workflow_id`, present on both
+sides:
+
+```sql
+-- "What did the workflow that executed for remediation X actually look like when it was admitted?"
+SELECT
+    exec.event_data->>'workflow_name'  AS executed_workflow_name,
+    exec.event_data->>'action_type'    AS executed_action_type,
+    admit.event_data->'workflow_content' AS admitted_workflow_spec,
+    admit.event_data->>'content_hash'    AS admitted_content_hash
+FROM audit_events exec
+JOIN audit_events admit
+    ON admit.event_data->>'workflow_id' = exec.event_data->>'workflow_id'
+   AND admit.event_type IN ('remediationworkflow.admitted.create', 'remediationworkflow.admitted.update')
+WHERE exec.correlation_id = $1
+  AND exec.event_type = 'workflowexecution.execution.started'
+ORDER BY admit.created_at DESC
+LIMIT 1;
+```
+
+This join is what makes the CRD-embedded-snapshot design (DD-WORKFLOW-018 Change 8) auditable end-to-end without
+relying on the audit trail as an *execution-time* fallback (that alternative was considered and rejected -- see
+DD-WORKFLOW-018 Change 8's "Rejected Alternative" note): `WorkflowExecution` never queries `audit_events` to
+execute, but an auditor or incident-reconstruction query can always use `audit_events` after the fact to answer
+"what workflow definition actually ran," even for a `RemediationWorkflow` version since superseded or a CRD since
+deleted (DD-WORKFLOW-018's deletion-semantics decision: CRD DELETE never mutates historical audit rows).
+
+---
+
 ## Related Decisions
 
 - **ADR-034 v1.3**: [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) - Parent ADR establishing this as authoritative subdocument
