@@ -64,3 +64,60 @@ var _ = Describe("buildWorkflowExecutionAuditPayload retry-count (BR-WE-019 AC10
 		Expect(payload.RetryCount.Set).To(BeFalse(), "no spurious retry_count: 0 for the common zero-failure case")
 	})
 })
+
+// #1661 Change 3: ActionType/WorkflowName are resolved once during Pending
+// (mirrors the existing ExecutionEngine/ServiceAccountName precedent in
+// wfe.Status, DD-WE-005/Issue #650) and stay immutable thereafter, so they're
+// available to buildExecutionStartedPayload/buildWorkflowExecutionAuditPayload
+// on every subsequent Running/Completed/Failed reconcile without a fresh DS
+// call. Business value: workflowexecution.execution.started/.workflow.
+// completed/.failed become human-readable without joining back to the
+// remediationworkflow.admitted.create audit event by workflow_id (SOC2 AU-3
+// content-of-audit-records completeness). workflow_id remains the functional
+// execution/join key regardless -- these two fields are additive readability
+// only, never required for WFE to execute.
+var _ = Describe("buildExecutionStartedPayload / buildWorkflowExecutionAuditPayload — ActionType/WorkflowName (#1661 Change 3)", func() {
+	newTestWFE := func(actionType, workflowName string) *workflowexecutionv1alpha1.WorkflowExecution {
+		wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
+		wfe.Name = "wfe-actiontype-test"
+		wfe.Status.Phase = workflowexecutionv1alpha1.PhaseRunning
+		wfe.Status.ActionType = actionType
+		wfe.Status.WorkflowName = workflowName
+		return wfe
+	}
+
+	It("UT-WFE-140-001a: buildExecutionStartedPayload populates ActionType and WorkflowName from wfe.Status", func() {
+		wfe := newTestWFE("ScaleReplicas", "scale-memory-fix")
+
+		payload := buildExecutionStartedPayload(wfe, "test-pipelinerun")
+
+		Expect(payload.ActionType.IsSet()).To(BeTrue(),
+			"BUSINESS VALUE: execution.workflow.started should be human-readable without a DS/audit join (#1661 Change 3)")
+		Expect(payload.ActionType.Value).To(Equal("ScaleReplicas"))
+		Expect(payload.WorkflowName.IsSet()).To(BeTrue())
+		Expect(payload.WorkflowName.Value).To(Equal("scale-memory-fix"))
+	})
+
+	It("UT-WFE-140-001b: buildWorkflowExecutionAuditPayload populates ActionType and WorkflowName from wfe.Status (completed/failed events)", func() {
+		wfe := newTestWFE("RestartPod", "restart-pod-fix")
+
+		payload := buildWorkflowExecutionAuditPayload(wfe)
+
+		Expect(payload.ActionType.IsSet()).To(BeTrue())
+		Expect(payload.ActionType.Value).To(Equal("RestartPod"))
+		Expect(payload.WorkflowName.IsSet()).To(BeTrue())
+		Expect(payload.WorkflowName.Value).To(Equal("restart-pod-fix"))
+	})
+
+	It("UT-WFE-140-001c: both omit ActionType/WorkflowName when wfe.Status never resolved them (e.g. querier unavailable)", func() {
+		wfe := newTestWFE("", "")
+
+		startedPayload := buildExecutionStartedPayload(wfe, "test-pipelinerun")
+		completedPayload := buildWorkflowExecutionAuditPayload(wfe)
+
+		Expect(startedPayload.ActionType.IsSet()).To(BeFalse())
+		Expect(startedPayload.WorkflowName.IsSet()).To(BeFalse())
+		Expect(completedPayload.ActionType.IsSet()).To(BeFalse())
+		Expect(completedPayload.WorkflowName.IsSet()).To(BeFalse())
+	})
+})
