@@ -616,6 +616,28 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			"Audit trail must contain at least %d events (got %d): %d exactly-once + %d at-least-once",
 			expectedMinTotal, len(allAuditEvents), len(exactlyOnceEvents), len(atLeastOnceEvents))
 
+		// #1661 Change 3: workflowexecution.execution.started must carry
+		// event_data.action_type end-to-end through a real signal → workflow-execution
+		// flow, proving WFE.Status.ActionType (resolved once during Pending via
+		// resolveWorkflowCatalog, mirroring ExecutionEngine/ServiceAccountName) reaches
+		// the audit trail without requiring a fresh DS lookup at every execution event.
+		var executionStartedActionType string
+		for _, event := range allAuditEvents {
+			if event.EventType != "workflowexecution.execution.started" {
+				continue
+			}
+			payload, ok := event.EventData.GetWorkflowExecutionAuditPayload()
+			Expect(ok).To(BeTrue(), "workflowexecution.execution.started event_data should decode as WorkflowExecutionAuditPayload")
+			Expect(payload.ActionType.IsSet()).To(BeTrue(),
+				"workflowexecution.execution.started event_data.action_type should be populated (#1661 Change 3)")
+			executionStartedActionType = payload.ActionType.Value
+			break
+		}
+		Expect(executionStartedActionType).ToNot(BeEmpty(),
+			"Should have found workflowexecution.execution.started with a populated action_type")
+		GinkgoWriter.Printf("  ✅ #1661 Change 3: workflowexecution.execution.started event_data.action_type=%s\n",
+			executionStartedActionType)
+
 		// Verify temporal ordering: gateway.signal.received should be among the earliest events.
 		// Audit timestamps have second-level precision and services run on different pods,
 		// so cross-service clock skew can cause events from later pipeline stages to appear
