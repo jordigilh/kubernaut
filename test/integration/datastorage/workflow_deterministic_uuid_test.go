@@ -33,7 +33,7 @@ import (
 	"github.com/go-logr/logr"
 	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-	deterministicuuid "github.com/jordigilh/kubernaut/pkg/datastorage/uuid"
+	deterministicuuid "github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/test/testutil"
 )

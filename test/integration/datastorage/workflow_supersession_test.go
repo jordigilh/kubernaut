@@ -29,7 +29,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
-	deterministicuuid "github.com/jordigilh/kubernaut/pkg/datastorage/uuid"
+	deterministicuuid "github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/testutil"
 )

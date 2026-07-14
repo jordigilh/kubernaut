@@ -26,7 +26,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
-	deterministicuuid "github.com/jordigilh/kubernaut/pkg/datastorage/uuid"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 )
 
 // ========================================
@@ -62,11 +62,14 @@ type duplicateResult struct {
 // one wins the INSERT, and the other must discover the winner's committed row.
 func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.RemediationWorkflow) (*duplicateResult, error) {
 	repo := h.workflowIntegrityRepo
-	incomingHash := computeContentHash(workflow.Content)
+	incomingHash := contenthash.ComputeContentHash(workflow.Content)
 	workflow.ContentHash = incomingHash
 	// Issue #548: Derive workflow_id deterministically from content hash so that
 	// re-registering the same CRD content after a PVC wipe recovers the original ID.
-	workflow.WorkflowID = deterministicuuid.DeterministicUUID(incomingHash)
+	// #1661 Change 8a: this is the exact same shared algorithm AuthWebhook now
+	// computes locally (pkg/shared/contenthash) — one canonical implementation,
+	// not parallel copies.
+	workflow.WorkflowID = contenthash.DeterministicUUID(incomingHash)
 
 	active, err := repo.GetActiveByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
 	if err != nil {
@@ -317,7 +320,7 @@ func (h *Handler) buildWorkflowCommon(
 	}
 
 	workflow.CustomLabels = schemaParser.ExtractCustomLabels(parsedSchema)
-	workflow.ContentHash = computeContentHash(rawContent)
+	workflow.ContentHash = contenthash.ComputeContentHash(rawContent)
 
 	return workflow, nil
 }

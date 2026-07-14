@@ -14,22 +14,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package datastorage_test
+package contenthash_test
 
 import (
 	"github.com/google/uuid"
-	deterministicuuid "github.com/jordigilh/kubernaut/pkg/datastorage/uuid"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("DeterministicUUID (#548)", func() {
+// Relocated from pkg/datastorage/deterministic_uuid_test.go (#1661 Change 8a
+// REFACTOR): DeterministicUUID moved from pkg/datastorage/uuid into this
+// shared package so AuthWebhook can compute it locally too, without a
+// parallel copy. Test IDs (UT-DS-548-*) preserved unchanged — same algorithm,
+// same assertions, new home.
+var _ = Describe("DeterministicUUID (#548, relocated by #1661 Change 8a)", func() {
 
 	Context("UT-DS-548-001: produces a valid UUIDv5 from a SHA-256 content hash", func() {
 		It("should return a parseable UUID with version 5", func() {
 			contentHash := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-			result := deterministicuuid.DeterministicUUID(contentHash)
+			result := contenthash.DeterministicUUID(contentHash)
 
 			parsed, err := uuid.Parse(result)
 			Expect(err).NotTo(HaveOccurred(), "result should be a valid UUID")
@@ -53,8 +58,8 @@ var _ = Describe("DeterministicUUID (#548)", func() {
 
 		It("should return identical UUIDs for the same input across multiple calls", func() {
 			for _, h := range hashes {
-				first := deterministicuuid.DeterministicUUID(h)
-				second := deterministicuuid.DeterministicUUID(h)
+				first := contenthash.DeterministicUUID(h)
+				second := contenthash.DeterministicUUID(h)
 				Expect(first).To(Equal(second), "DeterministicUUID should be idempotent for hash %s", h)
 			}
 		})
@@ -63,8 +68,8 @@ var _ = Describe("DeterministicUUID (#548)", func() {
 	Context("UT-DS-548-003: different content hashes yield different UUIDs", func() {
 		DescribeTable("pairwise uniqueness",
 			func(hash1, hash2 string) {
-				uuid1 := deterministicuuid.DeterministicUUID(hash1)
-				uuid2 := deterministicuuid.DeterministicUUID(hash2)
+				uuid1 := contenthash.DeterministicUUID(hash1)
+				uuid2 := contenthash.DeterministicUUID(hash2)
 				Expect(uuid1).NotTo(Equal(uuid2), "different hashes must produce different UUIDs")
 			},
 			Entry("zeros vs ones",
@@ -82,7 +87,7 @@ var _ = Describe("DeterministicUUID (#548)", func() {
 	Context("UT-DS-548-004: UUID conforms to RFC 4122 v5 format", func() {
 		It("should have version nibble=5 and variant=RFC4122", func() {
 			contentHash := "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
-			result := deterministicuuid.DeterministicUUID(contentHash)
+			result := contenthash.DeterministicUUID(contentHash)
 
 			parsed, err := uuid.Parse(result)
 			Expect(err).NotTo(HaveOccurred())
@@ -94,11 +99,23 @@ var _ = Describe("DeterministicUUID (#548)", func() {
 	Context("UT-DS-548-005: empty content hash produces a valid UUID", func() {
 		It("should not panic and should return a valid UUIDv5", func() {
 			Expect(func() {
-				result := deterministicuuid.DeterministicUUID("")
+				result := contenthash.DeterministicUUID("")
 				parsed, err := uuid.Parse(result)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(parsed.Version()).To(Equal(uuid.Version(5)))
 			}).NotTo(Panic())
+		})
+	})
+
+	Context("UT-AW-320-001: ComputeContentHash produces a SHA-256 hex digest", func() {
+		It("should return a 64-char lowercase hex digest", func() {
+			result := contenthash.ComputeContentHash(`{"spec":{"version":"1.0.0"}}`)
+			Expect(result).To(MatchRegexp("^[0-9a-f]{64}$"))
+		})
+
+		It("should be deterministic for identical content", func() {
+			content := `{"spec":{"version":"1.0.0"}}`
+			Expect(contenthash.ComputeContentHash(content)).To(Equal(contenthash.ComputeContentHash(content)))
 		})
 	})
 })
