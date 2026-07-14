@@ -335,6 +335,23 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
+	// WorkflowName is the human-readable workflow name resolved from the DS
+	// workflow catalog at runtime by the WE controller. Set once during Pending
+	// phase via ResolveWorkflowCatalogMetadata (mirrors ExecutionEngine);
+	// immutable thereafter. Audit-readability only (#1661 Change 3) -- WorkflowID
+	// remains the functional/join key regardless of whether this is populated.
+	// +optional
+	WorkflowName string `json:"workflowName,omitempty"`
+
+	// ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g., ScaleReplicas,
+	// RestartPod) resolved from the DS workflow catalog at runtime by the WE
+	// controller. Set once during Pending phase via ResolveWorkflowCatalogMetadata
+	// (mirrors ExecutionEngine); immutable thereafter. Audit-readability only
+	// (#1661 Change 3), so execution.workflow.started/.completed/.failed events
+	// are human-readable without joining back to the admission audit event.
+	// +optional
+	ActionType string `json:"actionType,omitempty"`
+
 	// DeduplicatedBy stores the name of the original WorkflowExecution that owns
 	// the conflicting execution resource. Set atomically inside AtomicStatusUpdate
 	// when FailureDetails.Reason == Deduplicated (Issue #190, M5 constraint).

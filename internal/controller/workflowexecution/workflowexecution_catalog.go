@@ -70,6 +70,11 @@ func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context
 
 	wfe.Status.ExecutionEngine = meta.ExecutionEngine
 	wfe.Status.ServiceAccountName = meta.ServiceAccountName
+	// #1661 Change 3: audit-readability only (WorkflowID stays the functional/
+	// join key); resolved once here, immutable thereafter, same as the two
+	// fields above.
+	wfe.Status.WorkflowName = meta.WorkflowName
+	wfe.Status.ActionType = meta.ActionType
 	// BR-WE-019 / DD-WE-008: resolved once during Pending (this function is a
 	// no-op on subsequent reconciles per the idempotency guard above), applied
 	// to the Job's "workflow" container by resourcesFor(). nil when the

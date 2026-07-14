@@ -97,12 +97,12 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			_ = resp.Body.Close()
 		}
 
-	// Create test namespace with UUID for parallelism safety
-	namespace = fmt.Sprintf("we-gap56-test-%s", uuid.New().String()[:8])
-	testNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: namespace},
-	}
-	Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
+		// Create test namespace with UUID for parallelism safety
+		namespace = fmt.Sprintf("we-gap56-test-%s", uuid.New().String()[:8])
+		testNs := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		}
+		Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
 
 		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
 		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
@@ -135,6 +135,11 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			By("1. Creating WorkflowExecution CRD (BUSINESS LOGIC TRIGGER)")
 			// IT-WE-1033-001: Set workflow name in catalog querier for workflow_name audit assertion
 			testWorkflowQuerier.WorkflowName = "fix-security-context-job"
+			// IT-WE-140-001 (#1661 Change 3): Set action type in catalog querier; resolved once
+			// during Pending into wfe.Status.ActionType, then read by buildExecutionStartedPayload
+			// for the execution.started audit event assertion below.
+			testWorkflowQuerier.ActionType = "RestartPod"
+			DeferCleanup(func() { testWorkflowQuerier.ActionType = "" })
 			wfeName := fmt.Sprintf("gap56-happy-%s", uuid.New().String()[:8])
 			rrName := "test-rr-" + wfeName
 			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name
@@ -154,8 +159,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						Namespace:  namespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "k8s-restart-pod-v1", // Label-safe: no slashes
-						Version:        "v1.0.0",
+						WorkflowID:      "k8s-restart-pod-v1", // Label-safe: no slashes
+						Version:         "v1.0.0",
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
@@ -258,6 +263,16 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(execEventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
 			Expect(execEventData.PipelinerunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
 			Expect(execEventData.PipelinerunName.Value).To(HavePrefix("wfe-"), "PipelineRun name should start with 'wfe-' prefix")
+
+			// IT-WE-140-001 (#1661 Change 3): Validate action_type/workflow_name in the
+			// execution.started event, proving the full wiring: DS catalog querier →
+			// wfe.Status (resolved once during Pending) → audit payload (no fresh DS call).
+			Expect(execEventData.ActionType.IsSet()).To(BeTrue(),
+				"action_type should be set from wfe.Status.ActionType (resolved during Pending)")
+			Expect(execEventData.ActionType.Value).To(Equal("RestartPod"))
+			Expect(execEventData.WorkflowName.IsSet()).To(BeTrue(),
+				"workflow_name should be set from wfe.Status.WorkflowName (resolved during Pending)")
+			Expect(execEventData.WorkflowName.Value).To(Equal("fix-security-context-job"))
 		})
 	})
 
@@ -290,8 +305,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						Namespace:  namespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "k8s-scale-deployment-v1", // Label-safe: no slashes
-						Version:        "v1.0.0",
+						WorkflowID:      "k8s-scale-deployment-v1", // Label-safe: no slashes
+						Version:         "v1.0.0",
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),

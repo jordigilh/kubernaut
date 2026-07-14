@@ -273,6 +273,22 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	return nil
 }
 
+// setWorkflowIdentifiers sets payload.WorkflowName/ActionType from
+// wfe.Status.WorkflowName/ActionType when resolved. #1661 Change 3: both are
+// resolved once during Pending via resolveWorkflowCatalog (mirrors
+// ExecutionEngine/ServiceAccountName) and immutable thereafter, so every
+// execution event (started/completed/failed) can read them without a fresh
+// DS call. Audit-readability only -- WorkflowID remains the functional/join
+// key regardless of whether these are set (e.g. querier unavailable).
+func setWorkflowIdentifiers(payload *api.WorkflowExecutionAuditPayload, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
+	if wfe.Status.WorkflowName != "" {
+		payload.WorkflowName.SetTo(wfe.Status.WorkflowName)
+	}
+	if wfe.Status.ActionType != "" {
+		payload.ActionType.SetTo(wfe.Status.ActionType)
+	}
+}
+
 // buildExecutionStartedPayload builds the WorkflowExecutionAuditPayload for
 // an execution.workflow.started event (Gap #6), defaulting Phase to
 // "Pending" when the WFE phase is not yet set and including execution
@@ -294,6 +310,7 @@ func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecuti
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
 	}
 	payload.PipelinerunName.SetTo(pipelineRunName)
+	setWorkflowIdentifiers(&payload, wfe)
 
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
@@ -421,6 +438,7 @@ func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowE
 		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 	}
+	setWorkflowIdentifiers(&payload, wfe)
 
 	if wfe.Status.StartTime != nil {
 		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)

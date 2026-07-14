@@ -27,8 +27,8 @@ import (
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
@@ -38,8 +38,13 @@ import (
 // catalog in a single GetWorkflowByID call (Issue #650). Consolidates what was
 // previously 4 separate calls into one round-trip.
 type WorkflowCatalogMetadata struct {
-	ExecutionEngine       string
-	WorkflowName          string
+	ExecutionEngine string
+	WorkflowName    string
+	// ActionType is the DD-WORKFLOW-016 taxonomy action type from the DS
+	// catalog entry. Audit-readability only (#1661 Change 3) -- stashed on
+	// WorkflowExecution.Status alongside WorkflowName so execution events are
+	// human-readable without a DS/audit join.
+	ActionType            string
 	ExecutionBundle       string
 	ExecutionBundleDigest string
 	ServiceAccountName    string
@@ -319,8 +324,8 @@ func (q *OgenWorkflowQuerier) GetWorkflowSchemaMetadata(ctx context.Context, wor
 
 	meta := &SchemaMetadata{
 		Engine:                wf.ExecutionEngine,
-		WorkflowName:         wf.WorkflowName,
-		ExecutionBundle:      bundle,
+		WorkflowName:          wf.WorkflowName,
+		ExecutionBundle:       bundle,
 		ExecutionBundleDigest: digest,
 	}
 
@@ -371,6 +376,7 @@ func (q *OgenWorkflowQuerier) ResolveWorkflowCatalogMetadata(ctx context.Context
 	meta := &WorkflowCatalogMetadata{
 		ExecutionEngine: wf.ExecutionEngine,
 		WorkflowName:    wf.WorkflowName,
+		ActionType:      wf.ActionType,
 	}
 	if wf.ExecutionBundle.IsSet() {
 		meta.ExecutionBundle = wf.ExecutionBundle.Value

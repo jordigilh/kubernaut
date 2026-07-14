@@ -199,6 +199,15 @@ spec:
               Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for failure classification
               Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
             properties:
+              actionType:
+                description: |-
+                  ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g., ScaleReplicas,
+                  RestartPod) resolved from the DS workflow catalog at runtime by the WE
+                  controller. Set once during Pending phase via ResolveWorkflowCatalogMetadata
+                  (mirrors ExecutionEngine); immutable thereafter. Audit-readability only
+                  (#1661 Change 3), so execution.workflow.started/.completed/.failed events
+                  are human-readable without joining back to the admission audit event.
+                type: string
               blockClearance:
                 description: |-
                   BlockClearance tracks the clearing of PreviousExecutionFailed blocks
@@ -543,6 +552,14 @@ spec:
               startTime:
                 description: StartTime when execution started
                 format: date-time
+                type: string
+              workflowName:
+                description: |-
+                  WorkflowName is the human-readable workflow name resolved from the DS
+                  workflow catalog at runtime by the WE controller. Set once during Pending
+                  phase via ResolveWorkflowCatalogMetadata (mirrors ExecutionEngine);
+                  immutable thereafter. Audit-readability only (#1661 Change 3) -- WorkflowID
+                  remains the functional/join key regardless of whether this is populated.
                 type: string
             type: object
         type: object
