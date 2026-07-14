@@ -281,6 +281,30 @@ git push -u origin release/vX.Y
 If `release/vX.Y` already exists (from a previous patch), skip this step and
 pull it instead: `git checkout release/vX.Y && git pull origin release/vX.Y`.
 
+### Step 1a: Add Dependabot coverage (first patch only)
+
+Dependabot's `target-branch` option does not support wildcards
+([dependabot/dependabot-core#6890](https://github.com/dependabot/dependabot-core/issues/6890)
+is still open), so `.github/dependabot.yml` cannot express "all `release/**`
+branches" the way `ci-pipeline.yml`/`codeql.yml` do. Each actively maintained
+maintenance branch needs its own explicit `updates:` block per ecosystem
+(gomod, github-actions, docker).
+
+When you create a new `release/vX.Y` maintenance branch (Step 1 above), add
+three new blocks to `.github/dependabot.yml` — copy the existing
+`release/v1.5` blocks and change `target-branch` and the commit-message
+suffix to match the new branch (e.g. `deps(vX.Y)`).
+
+When a maintenance branch stops receiving patches (superseded by a newer
+minor, or end-of-support), remove its three blocks from `dependabot.yml` in
+the same PR that declares it retired — leaving stale blocks around just
+generates PRs against a branch nobody merges.
+
+Note: any `updates:` entry with a non-default `target-branch` is excluded
+from Dependabot's security-update PRs (those always target the default
+branch, `main`), so maintenance branches only get scheduled version updates
+via this config, not the separate security-alert flow.
+
 ### Step 2: Create the fix branch from the maintenance branch
 
 ```bash
