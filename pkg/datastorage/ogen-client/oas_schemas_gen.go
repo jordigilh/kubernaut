@@ -33264,6 +33264,13 @@ type WorkflowExecutionAuditPayload struct {
 	// Human-readable name of the selected workflow from the DataStorage catalog. Optional; present only
 	// when the catalog provides a name.
 	WorkflowName OptString `json:"workflow_name"`
+	// Action type from the DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod), resolved once
+	// during
+	// Pending from the DS catalog and stashed on WorkflowExecution.Status (mirrors ExecutionEngine/
+	// ServiceAccountName). Audit-readability only, so started/completed/failed events are human-readable
+	// without joining back to the remediationworkflow.admitted.create event by workflow_id (#1661 Change
+	// 3).
+	ActionType OptString `json:"action_type"`
 	// Kubernetes resource being acted upon (format depends on scope).
 	TargetResource string `json:"target_resource"`
 	// Current phase of the WorkflowExecution.
@@ -33314,6 +33321,11 @@ func (s *WorkflowExecutionAuditPayload) GetWorkflowVersion() string {
 // GetWorkflowName returns the value of WorkflowName.
 func (s *WorkflowExecutionAuditPayload) GetWorkflowName() OptString {
 	return s.WorkflowName
+}
+
+// GetActionType returns the value of ActionType.
+func (s *WorkflowExecutionAuditPayload) GetActionType() OptString {
+	return s.ActionType
 }
 
 // GetTargetResource returns the value of TargetResource.
@@ -33404,6 +33416,11 @@ func (s *WorkflowExecutionAuditPayload) SetWorkflowVersion(val string) {
 // SetWorkflowName sets the value of WorkflowName.
 func (s *WorkflowExecutionAuditPayload) SetWorkflowName(val OptString) {
 	s.WorkflowName = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *WorkflowExecutionAuditPayload) SetActionType(val OptString) {
+	s.ActionType = val
 }
 
 // SetTargetResource sets the value of TargetResource.
