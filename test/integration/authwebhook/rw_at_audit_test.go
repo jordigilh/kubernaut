@@ -430,21 +430,19 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 		})
 
 		It("IT-AW-1111-009: actiontype.denied.delete persisted on active dependents", func() {
-			// Create AT in DS, then register a RW referencing it. DS tracks the
-			// dependency. Attempting to delete the AT → DS returns denied (active
-			// dependents exist). The handler's orphan recovery cross-check sees
-			// no live K8s CRDs (direct invocation doesn't create CRDs), but the
-			// force-disable path requires baseURL which NewDSClientAdapterFromClient
-			// doesn't set → orphan recovery fails → denied audit emitted.
+			// #1661 Change 8d: the K8s-native live RemediationWorkflow list is
+			// now the SOLE dependents gate (DS's Postgres-backed tracking is
+			// gone). A dependent RW must therefore exist as a real CRD in
+			// etcd -- rwHandler.Handle alone (direct invocation, bypassing
+			// the real API server) never persists one -- so this test
+			// creates the RW via k8sClient.Create directly, mirroring
+			// createActiveActionTypeCRD's precedent for the AT side.
 			atName := uniqueActionType("ITDeniedDel")
 			at := buildAT(atName)
 			createActiveActionTypeCRD(ctx, k8sClient, atHandler, at, uniqueID("at-dep-create"))
 
-			rwName := uniqueID("it-rw-dependent")
-			rw := buildRW(rwName, atName)
-			rwCreateUID := uniqueID("rw-dep-create")
-			rwResp := rwHandler.Handle(ctx, rwAdmissionRequest(admissionv1.Create, rw, rwCreateUID))
-			Expect(rwResp.Allowed).To(BeTrue(), "RW CREATE should succeed for dependency setup")
+			rw := buildRW(uniqueID("it-rw-dependent"), atName)
+			Expect(k8sClient.Create(ctx, rw)).To(Succeed(), "dependent RW CRD creation should succeed")
 
 			deleteUID := uniqueID("at-denied-del")
 			resp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Delete, at, deleteUID))
@@ -455,20 +453,15 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 			Expect(events[0].CorrelationID).To(Equal(deleteUID))
 		})
 
-		It("IT-AW-1111-010: actiontype.denied.create persisted on DS registration failure", func() {
-			// AT handleCreate emits denied audit when CreateActionType DS call fails.
-			// Send a valid AT JSON with an empty spec.name — DS should reject it.
-			uid := uniqueID("at-denied-create")
-
-			at := buildAT("")
-			at.Spec.Name = "" // empty name to trigger DS validation failure
-
-			resp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, at, uid))
-			Expect(resp.Allowed).To(BeFalse(), "AT CREATE with empty name should be denied by DS")
-
-			events := flushAndQuery(uid, authwebhook.EventTypeATDeniedCreate)
-			Expect(events).To(HaveLen(1))
-			Expect(events[0].CorrelationID).To(Equal(uid))
-		})
+		// IT-AW-1111-010 ("actiontype.denied.create persisted on DS
+		// registration failure") is removed: #1661 Change 8d deleted
+		// ActionTypeHandler's DS round-trip entirely -- handleCreate no
+		// longer calls DS (or performs any local spec.name emptiness check
+		// of its own; that format constraint is enforced structurally by
+		// the apiserver's kubebuilder:validation:Pattern on
+		// ActionTypeSpec.Name, proven by IT-CRD-312-004a/b in
+		// crd_pattern_validation_test.go). There is no DS registration
+		// failure path left for a direct handler.Handle invocation to
+		// exercise.
 	})
 })
