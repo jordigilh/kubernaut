@@ -47,6 +47,11 @@ import (
 
 // workflowColumns is the authoritative column list derived from
 // RemediationWorkflow struct db: tags. Used by all tests in this file.
+//
+// Issue #1661 Change 7 (DD-WORKFLOW-018): actual_success_rate/
+// total_executions/successful_executions are deliberately excluded --
+// migration 015 dropped their backing columns; they no longer have a
+// `db:` tag (computed on demand from audit_events instead).
 var workflowColumns = []string{
 	"workflow_id", "workflow_name", "version", "schema_version",
 	"name", "description", "owner", "maintainer",
@@ -62,7 +67,6 @@ var workflowColumns = []string{
 	"is_latest_version", "previous_version", "deprecation_notice",
 	"version_notes", "change_summary", "approved_by", "approved_at",
 	"expected_success_rate", "expected_duration_seconds",
-	"actual_success_rate", "total_executions", "successful_executions",
 	"created_at", "updated_at", "created_by", "updated_by",
 }
 

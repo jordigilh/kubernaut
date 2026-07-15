@@ -47,7 +47,6 @@ import (
 // - Tests JSONB labels serialization/deserialization
 // - Tests version management (is_latest_version flag)
 // - Tests lifecycle status management
-// - Tests success metrics tracking
 //
 // Coverage Gap Addressed:
 // This file addresses the gap identified in TEST_COVERAGE_GAP_WORKFLOW_CATALOG.md

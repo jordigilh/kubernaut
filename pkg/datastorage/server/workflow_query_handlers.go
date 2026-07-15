@@ -142,6 +142,10 @@ func (h *Handler) HandleListWorkflows(w http.ResponseWriter, r *http.Request) {
 		workflowPtrs[i] = &workflows[i]
 	}
 
+	// Issue #1661 Change 7 (DD-WORKFLOW-018): total_executions/successful_executions/
+	// actual_success_rate are computed on demand from audit_events, not stored catalog columns.
+	h.overlaySuccessMetrics(r.Context(), workflowPtrs)
+
 	// Return results
 	response := models.WorkflowListResponse{
 		Workflows: workflowPtrs,
@@ -197,6 +201,10 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
+
+	// Issue #1661 Change 7 (DD-WORKFLOW-018): total_executions/successful_executions/
+	// actual_success_rate are computed on demand from audit_events, not stored catalog columns.
+	h.overlaySuccessMetrics(r.Context(), []*models.RemediationWorkflow{wf})
 
 	// BR-AUDIT-023: Emit discovery audit events when context filters are present.
 	h.emitWorkflowRetrievedAuditEvents(workflowID, filters, durationMs)

@@ -596,45 +596,6 @@ func applyListFilters(builder *sqlbuilder.Builder, filters *models.WorkflowSearc
 // UPDATE OPERATIONS
 // ========================================
 
-// UpdateSuccessMetrics updates workflow success metrics
-// BR-STORAGE-015: Track workflow success rate
-func (r *Repository) UpdateSuccessMetrics(ctx context.Context, workflowID, version string, totalExecutions, successfulExecutions int) error {
-	query := `
-		UPDATE remediation_workflow_catalog
-		SET
-			total_executions = $1,
-			successful_executions = $2,
-			actual_success_rate = CASE
-				WHEN $1 > 0 THEN CAST($2 AS FLOAT) / $1
-				ELSE 0
-			END,
-			last_executed_at = NOW(),
-			updated_at = NOW()
-		WHERE workflow_id = $3 AND version = $4
-	`
-
-	result, err := r.db.ExecContext(ctx, query, totalExecutions, successfulExecutions, workflowID, version)
-	if err != nil {
-		r.logger.Error(err, "failed to update workflow success metrics",
-			"workflow_id", workflowID,
-			"version", version)
-		return fmt.Errorf("failed to update workflow success metrics: %w", err)
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		return fmt.Errorf("workflow not found: workflow_id=%s version=%s", workflowID, version)
-	}
-
-	r.logger.Info("workflow success metrics updated",
-		"workflow_id", workflowID,
-		"version", version,
-		"total_executions", totalExecutions,
-		"successful_executions", successfulExecutions)
-
-	return nil
-}
-
 // UpdateStatus updates workflow status
 // BR-STORAGE-016: Workflow status management
 func (r *Repository) UpdateStatus(ctx context.Context, workflowID, version, status, reason, updatedBy string) error {

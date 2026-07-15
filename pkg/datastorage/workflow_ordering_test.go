@@ -76,8 +76,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 					"execution_engine", "execution_bundle",
 					"owner", "maintainer",
 					"is_latest_version",
-					"expected_success_rate", "actual_success_rate",
-					"total_executions", "successful_executions",
+					"expected_success_rate",
 					"created_at", "updated_at",
 					"detected_label_boost", "custom_label_boost", "label_penalty", "final_score",
 				}))
@@ -100,8 +99,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 					"execution_engine", "execution_bundle",
 					"owner", "maintainer",
 					"is_latest_version",
-					"expected_success_rate", "actual_success_rate",
-					"total_executions", "successful_executions",
+					"expected_success_rate",
 					"created_at", "updated_at",
 					"detected_label_boost", "custom_label_boost", "label_penalty", "final_score",
 				}))
@@ -129,8 +127,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 					"execution_engine", "execution_bundle",
 					"owner", "maintainer",
 					"is_latest_version",
-					"expected_success_rate", "actual_success_rate",
-					"total_executions", "successful_executions",
+					"expected_success_rate",
 					"created_at", "updated_at",
 				}))
 
@@ -154,8 +151,7 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 					"execution_engine", "execution_bundle",
 					"owner", "maintainer",
 					"is_latest_version",
-					"expected_success_rate", "actual_success_rate",
-					"total_executions", "successful_executions",
+					"expected_success_rate",
 					"created_at", "updated_at",
 				}))
 

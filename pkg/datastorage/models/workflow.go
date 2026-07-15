@@ -177,9 +177,16 @@ type RemediationWorkflow struct {
 	// ========================================
 	ExpectedSuccessRate     *float64 `json:"expectedSuccessRate,omitempty" db:"expected_success_rate" validate:"omitempty,min=0,max=1"`
 	ExpectedDurationSeconds *int     `json:"expectedDurationSeconds,omitempty" db:"expected_duration_seconds" validate:"omitempty,min=0"`
-	ActualSuccessRate       *float64 `json:"actualSuccessRate,omitempty" db:"actual_success_rate" validate:"omitempty,min=0,max=1"`
-	TotalExecutions         int      `json:"totalExecutions" db:"total_executions" validate:"min=0"`
-	SuccessfulExecutions    int      `json:"successfulExecutions" db:"successful_executions" validate:"min=0"`
+
+	// ActualSuccessRate/TotalExecutions/SuccessfulExecutions are computed
+	// on demand from audit_events by Handler.overlaySuccessMetrics
+	// (pkg/datastorage/server/workflow_success_metrics.go), not scanned
+	// from remediation_workflow_catalog (Issue #1661 Change 7,
+	// DD-WORKFLOW-018 -- migration 015 dropped their backing columns).
+	// Deliberately no `db:` tag: there is no column to scan them from.
+	ActualSuccessRate    *float64 `json:"actualSuccessRate,omitempty" validate:"omitempty,min=0,max=1"`
+	TotalExecutions      int      `json:"totalExecutions" validate:"min=0"`
+	SuccessfulExecutions int      `json:"successfulExecutions" validate:"min=0"`
 
 	// ========================================
 	// AUDIT TRAIL

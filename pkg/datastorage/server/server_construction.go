@@ -334,6 +334,7 @@ func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps
 		WithRemediationHistoryQuerier(catalogDeps.remHistoryQuerier),
 		WithActionTypeRepository(catalogDeps.actionTypeRepo),
 		WithWorkflowCache(wfCache),
+		WithSuccessMetricsRepository(auditDeps.auditEventsRepo),
 	)
 	opts = append(opts, deps.HandlerOpts...)
 	return NewHandler(opts...)

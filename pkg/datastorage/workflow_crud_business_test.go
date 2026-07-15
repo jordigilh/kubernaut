@@ -87,8 +87,7 @@ var _ = Describe("Workflow CRUD business-level gap closure (Wave 6 6f)", func() 
 				"execution_engine", "execution_bundle",
 				"owner", "maintainer",
 				"is_latest_version",
-				"expected_success_rate", "actual_success_rate",
-				"total_executions", "successful_executions",
+				"expected_success_rate",
 				"created_at", "updated_at",
 			}).AddRow(
 				"wf-1", "restart-pod", "v1", "1", "Restart Pod", []byte(`{"what":"restart"}`),
@@ -97,8 +96,7 @@ var _ = Describe("Workflow CRUD business-level gap closure (Wave 6 6f)", func() 
 				"tekton", []byte("{}"),
 				"team-a", "team-a",
 				true,
-				0.9, 0.85,
-				10, 8,
+				0.9,
 				time.Now(), time.Now(),
 			)
 			sqlMock.ExpectQuery(`SELECT .* FROM remediation_workflow_catalog WHERE workflow_id = \$1`).
@@ -137,55 +135,9 @@ var _ = Describe("Workflow CRUD business-level gap closure (Wave 6 6f)", func() 
 		})
 	})
 
-	Describe("UpdateSuccessMetrics", func() {
-		It("UT-DS-6f-005: computes actual_success_rate as successful/total via the SQL CASE expression", func() {
-			// BR-STORAGE-015: success-rate math must be correct so downstream workflow
-			// selection (which ranks by actual_success_rate) isn't fed bad data.
-			sqlMock.ExpectExec(`UPDATE remediation_workflow_catalog`).
-				WithArgs(10, 8, "wf-1", "v1").
-				WillReturnResult(sqlmock.NewResult(0, 1))
-
-			err := repo.UpdateSuccessMetrics(ctx, "wf-1", "v1", 10, 8)
-
-			Expect(err).ToNot(HaveOccurred())
-		})
-
-		It("UT-DS-6f-006: divide-by-zero guard — zero total_executions must not error out of the UPDATE itself", func() {
-			// The CASE WHEN $1 > 0 ... ELSE 0 guard lives in the SQL, not Go; this
-			// characterizes that a zero-total update still executes successfully
-			// (the CASE guard, not a Go-side error, prevents the division by zero).
-			sqlMock.ExpectExec(`UPDATE remediation_workflow_catalog`).
-				WithArgs(0, 0, "wf-1", "v1").
-				WillReturnResult(sqlmock.NewResult(0, 1))
-
-			err := repo.UpdateSuccessMetrics(ctx, "wf-1", "v1", 0, 0)
-
-			Expect(err).ToNot(HaveOccurred(), "BR-STORAGE-015: zero-execution workflows must update without a division-by-zero failure")
-		})
-
-		It("UT-DS-6f-007: zero rows affected returns an explicit \"workflow not found\" error", func() {
-			// BR-STORAGE-015: a workflow_id+version pair that doesn't exist must fail
-			// loudly and specifically, not silently report success on a no-op UPDATE.
-			sqlMock.ExpectExec(`UPDATE remediation_workflow_catalog`).
-				WithArgs(5, 3, "nonexistent", "v1").
-				WillReturnResult(sqlmock.NewResult(0, 0))
-
-			err := repo.UpdateSuccessMetrics(ctx, "nonexistent", "v1", 5, 3)
-
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("workflow not found"))
-		})
-
-		It("UT-DS-6f-008: propagates a database error from the UPDATE statement", func() {
-			sqlMock.ExpectExec(`UPDATE remediation_workflow_catalog`).
-				WithArgs(5, 3, "wf-1", "v1").
-				WillReturnError(errors.New("connection refused"))
-
-			err := repo.UpdateSuccessMetrics(ctx, "wf-1", "v1", 5, 3)
-
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).ToNot(ContainSubstring("workflow not found"),
-				"a real DB error must not be conflated with the explicit zero-rows-affected error")
-		})
-	})
+	// UpdateSuccessMetrics (UT-DS-6f-005..008) was removed by Issue #1661
+	// Change 7 (DD-WORKFLOW-018): success metrics are no longer a stored,
+	// UPDATE-maintained catalog column -- see
+	// pkg/datastorage/repository/audit_events_success_metrics_test.go for the
+	// on-demand audit_events aggregation that replaces it.
 })
