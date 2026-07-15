@@ -133,7 +133,7 @@ func TestBeforeExecuteCallback_SetsSessionIDFromContextID(t *testing.T) {
 	if sc == nil {
 		t.Fatal("IT-AF-1234-W40: CreateContext should be injected into context")
 	}
-	if sc.TaskID != "task-sid-test" { //nolint:staticcheck // SA5011 false positive: sc is guaranteed non-nil by the preceding t.Fatal guard
+	if sc.TaskID != "task-sid-test" {
 		t.Errorf("IT-AF-1234-W40: TaskID = %q, want %q", sc.TaskID, "task-sid-test")
 	}
 	if sc.SessionID != "ctx-abc-123" {

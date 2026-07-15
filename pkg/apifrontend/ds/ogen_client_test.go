@@ -19,7 +19,7 @@ func TestNewOgenClient_ConstructsWithTransport(t *testing.T) {
 	if client == nil {
 		t.Fatal("NewOgenClient() returned nil")
 	}
-	if client.client == nil { //nolint:staticcheck // SA5011 false positive: client is guaranteed non-nil by the preceding t.Fatal guard
+	if client.client == nil {
 		t.Fatal("NewOgenClient() internal client is nil")
 	}
 }

@@ -52,21 +52,19 @@ func TestNewReconciler_WiresDeps(t *testing.T) {
 	if r == nil {
 		t.Fatal("NewReconciler returned nil")
 	}
-	// SA5011 false positive on all 5 field accesses below: r is guaranteed
-	// non-nil by the t.Fatal guard above.
-	if r.Client != fakeClient { //nolint:staticcheck
+	if r.Client != fakeClient {
 		t.Error("Client not wired from deps")
 	}
-	if r.Scheme != scheme { //nolint:staticcheck
+	if r.Scheme != scheme {
 		t.Error("Scheme not wired from deps")
 	}
-	if r.Metrics != metrics { //nolint:staticcheck
+	if r.Metrics != metrics {
 		t.Error("Metrics not wired from deps")
 	}
-	if r.AuditManager != auditMgr { //nolint:staticcheck
+	if r.AuditManager != auditMgr {
 		t.Error("AuditManager not wired from deps")
 	}
-	if r.Config.ValidityWindow != cfg.ValidityWindow { //nolint:staticcheck
+	if r.Config.ValidityWindow != cfg.ValidityWindow {
 		t.Errorf("Config not wired from cfg: got %v, want %v", r.Config.ValidityWindow, cfg.ValidityWindow)
 	}
 }

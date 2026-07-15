@@ -115,7 +115,7 @@ func TestToError_UndefinedStatusCode(t *testing.T) {
 				t.Fatalf("expected HTTPError, got %T", err)
 			}
 
-			if httpErr.StatusCode != tt.expectedStatus { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+			if httpErr.StatusCode != tt.expectedStatus {
 				t.Errorf("expected status %d, got %d", tt.expectedStatus, httpErr.StatusCode)
 			}
 
@@ -154,7 +154,7 @@ func TestToError_BadRequestWithRFC7807(t *testing.T) {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
 
-	if httpErr.StatusCode != 400 { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.StatusCode != 400 {
 		t.Errorf("expected status 400, got %d", httpErr.StatusCode)
 	}
 
@@ -195,7 +195,7 @@ func TestToError_InternalServerErrorWithMessage(t *testing.T) {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
 
-	if httpErr.StatusCode != 500 { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.StatusCode != 500 {
 		t.Errorf("expected status 500, got %d", httpErr.StatusCode)
 	}
 
@@ -228,7 +228,7 @@ func TestToError_ErrorResponseWithoutDetails(t *testing.T) {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
 
-	if httpErr.StatusCode != 422 { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.StatusCode != 422 {
 		t.Errorf("expected status 422, got %d", httpErr.StatusCode)
 	}
 
@@ -304,7 +304,7 @@ func TestGetHTTPError(t *testing.T) {
 	if retrieved == nil {
 		t.Fatal("expected HTTPError, got nil")
 	}
-	if retrieved.StatusCode != 400 { //nolint:staticcheck // SA5011 false positive: retrieved is guaranteed non-nil by the preceding t.Fatal guard
+	if retrieved.StatusCode != 400 {
 		t.Errorf("expected status 400, got %d", retrieved.StatusCode)
 	}
 
@@ -434,7 +434,7 @@ func TestToError_DetailViaGetDetailAny_SetValue(t *testing.T) {
 	if httpErr == nil {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
-	if httpErr.Detail != "field is required" { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.Detail != "field is required" {
 		t.Errorf("expected detail %q, got %q", "field is required", httpErr.Detail)
 	}
 }
@@ -448,7 +448,7 @@ func TestToError_DetailViaGetDetailAny_PointerValue(t *testing.T) {
 	if httpErr == nil {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
-	if httpErr.Detail != "pointer detail" { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.Detail != "pointer detail" {
 		t.Errorf("expected detail %q, got %q", "pointer detail", httpErr.Detail)
 	}
 }
@@ -462,7 +462,7 @@ func TestToError_DetailViaGetDetailAny_NotSet(t *testing.T) {
 	if httpErr == nil {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
-	if httpErr.Detail != "" { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.Detail != "" {
 		t.Errorf("expected empty detail when not set, got %q", httpErr.Detail)
 	}
 }
@@ -476,7 +476,7 @@ func TestToError_DetailViaGetDetailAny_Nil(t *testing.T) {
 	if httpErr == nil {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
-	if httpErr.Detail != "" { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.Detail != "" {
 		t.Errorf("expected empty detail for nil GetDetail() result, got %q", httpErr.Detail)
 	}
 }
@@ -490,7 +490,7 @@ func TestToError_DetailViaExportedStringField(t *testing.T) {
 	if httpErr == nil {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
-	if httpErr.Detail != "namespace is required" { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.Detail != "namespace is required" {
 		t.Errorf("expected detail %q, got %q", "namespace is required", httpErr.Detail)
 	}
 }
@@ -504,7 +504,7 @@ func TestToError_DetailViaExportedOptStringField(t *testing.T) {
 	if httpErr == nil {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
-	if httpErr.Detail != "opt field detail" { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.Detail != "opt field detail" {
 		t.Errorf("expected detail %q, got %q", "opt field detail", httpErr.Detail)
 	}
 }
@@ -518,7 +518,7 @@ func TestToError_DetailViaExportedOptStringField_NotSet(t *testing.T) {
 	if httpErr == nil {
 		t.Fatalf("expected HTTPError, got %T", err)
 	}
-	if httpErr.Detail != "" { //nolint:staticcheck // SA5011 false positive: httpErr is guaranteed non-nil by the preceding t.Fatalf guard
+	if httpErr.Detail != "" {
 		t.Errorf("expected empty detail when OptString field not set, got %q", httpErr.Detail)
 	}
 }

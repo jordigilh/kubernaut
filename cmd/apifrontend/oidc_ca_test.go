@@ -62,7 +62,7 @@ func TestBuildOIDCHTTPClient_ValidCA(t *testing.T) {
 	if client == nil {
 		t.Fatal("expected non-nil client")
 	}
-	if client.Timeout != 10*time.Second { //nolint:staticcheck // SA5011 false positive: client is guaranteed non-nil by the preceding t.Fatal guard
+	if client.Timeout != 10*time.Second {
 		t.Errorf("Timeout = %v, want 10s", client.Timeout)
 	}
 	tr, ok := client.Transport.(*http.Transport)

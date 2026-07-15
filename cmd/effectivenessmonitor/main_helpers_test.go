@@ -46,7 +46,7 @@ func TestLoadEffectivenessMonitorConfig_DefaultsWhenPathEmpty(t *testing.T) {
 	}
 
 	want := config.DefaultConfig()
-	if cfg.Controller.MetricsAddr != want.Controller.MetricsAddr { //nolint:staticcheck // SA5011 false positive: cfg is guaranteed non-nil by the preceding t.Fatal guard
+	if cfg.Controller.MetricsAddr != want.Controller.MetricsAddr {
 		t.Errorf("Controller.MetricsAddr = %q, want %q", cfg.Controller.MetricsAddr, want.Controller.MetricsAddr)
 	}
 	if cfg.Assessment.ValidityWindow != want.Assessment.ValidityWindow {
