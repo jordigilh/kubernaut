@@ -45,22 +45,22 @@ import (
 // Mocks
 // ========================================
 
-// mockWorkflowCatalogClient implements authwebhook.WorkflowCatalogClient for unit tests.
+// mockWorkflowCatalogClient is a WorkflowCatalogClient-shaped test double.
+// #1661 Change 8c emptied the WorkflowCatalogClient interface (see its doc
+// comment in remediationworkflow_handler.go) -- CreateWorkflowInline/
+// DisableWorkflow below are no longer required by any interface and are no
+// longer reachable through h.dsClient, but are kept so existing "zero DS
+// calls" tests continue to prove that these hooks are never invoked.
 type mockWorkflowCatalogClient struct {
-	createFn  func(ctx context.Context, content, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error)
+	createFn  func(ctx context.Context, content, source, registeredBy string) error
 	disableFn func(ctx context.Context, workflowID, reason, updatedBy string) error
 }
 
-func (m *mockWorkflowCatalogClient) CreateWorkflowInline(ctx context.Context, content, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
+func (m *mockWorkflowCatalogClient) CreateWorkflowInline(ctx context.Context, content, source, registeredBy string) error {
 	if m.createFn != nil {
 		return m.createFn(ctx, content, source, registeredBy)
 	}
-	return &authwebhook.WorkflowRegistrationResult{
-		WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
-		WorkflowName: "test-workflow",
-		Version:      "1.0.0",
-		Status:       string(sharedtypes.CatalogStatusActive),
-	}, nil
+	return nil
 }
 
 func (m *mockWorkflowCatalogClient) DisableWorkflow(ctx context.Context, workflowID, reason, updatedBy string) error {
@@ -275,23 +275,14 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	// UT-AW-299-001: CREATE → DS registration → Allowed
 	// ========================================
-	Describe("UT-AW-299-001: CREATE handler forwards CRD spec to DS", func() {
-		It("should return Allowed and call DS CreateWorkflowInline", func() {
+	Describe("UT-AW-299-001: CREATE succeeds locally with zero DS calls (#1661 Change 8c)", func() {
+		It("should return Allowed without calling DS", func() {
 			// Arrange
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
-			var capturedContent string
-			var capturedSource string
-			var capturedBy string
-			mockDS.createFn = func(_ context.Context, content, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
-				capturedContent = content
-				capturedSource = source
-				capturedBy = registeredBy
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
-					WorkflowName: "scale-memory",
-					Version:      "1.0.0",
-					Status:       string(sharedtypes.CatalogStatusActive),
-				}, nil
+			dsCalled := false
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
+				dsCalled = true
+				return nil
 			}
 
 			admReq := buildCreateAdmissionRequest(rw)
@@ -301,30 +292,22 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			// Assert
 			Expect(resp.Allowed).To(BeTrue(),
-				"CREATE should be Allowed when DS returns success")
-			Expect(capturedContent).ToNot(BeEmpty(),
-				"DS client should receive the CRD content")
-			Expect(capturedSource).To(Equal("crd"),
-				"Source should be 'crd' for webhook-originated registrations")
-			Expect(capturedBy).To(Equal(testUserEmail),
-				"RegisteredBy should be the K8s user from admission request")
+				"CREATE should be Allowed")
+			Expect(dsCalled).To(BeFalse(),
+				"#1661 Change 8c: DS is never called -- registration is a pure local computation")
 		})
 	})
 
 	// ========================================
-	// UT-AW-299-002: DELETE → DS disable → Allowed
+	// UT-AW-299-002: DELETE succeeds locally with zero DS calls (#1661 Change 8c)
 	// ========================================
-	Describe("UT-AW-299-002: DELETE handler disables workflow in DS", func() {
-		It("should return Allowed and call DS DisableWorkflow", func() {
+	Describe("UT-AW-299-002: DELETE succeeds locally with zero DS calls (#1661 Change 8c)", func() {
+		It("should return Allowed without calling DS", func() {
 			// Arrange
 			rw := buildRemediationWorkflowWithStatus("scale-memory", "kubernaut-system", "550e8400-e29b-41d4-a716-446655440000")
-			var capturedID string
-			var capturedReason string
-			var capturedBy string
-			mockDS.disableFn = func(_ context.Context, workflowID, reason, updatedBy string) error {
-				capturedID = workflowID
-				capturedReason = reason
-				capturedBy = updatedBy
+			dsCalled := false
+			mockDS.disableFn = func(_ context.Context, _, _, _ string) error {
+				dsCalled = true
 				return nil
 			}
 
@@ -336,36 +319,8 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			// Assert
 			Expect(resp.Allowed).To(BeTrue(),
 				"DELETE should be Allowed")
-			Expect(capturedID).To(Equal("550e8400-e29b-41d4-a716-446655440000"),
-				"DS should receive the workflowId from CRD status")
-			Expect(capturedReason).To(ContainSubstring("CRD deleted"),
-				"Reason should indicate CRD deletion")
-			Expect(capturedBy).To(Equal(testUserEmail),
-				"UpdatedBy should be the K8s user")
-		})
-	})
-
-	// ========================================
-	// UT-AW-299-003: CREATE denied when DS unreachable
-	// ========================================
-	Describe("UT-AW-299-003: CREATE denied when DS is unreachable", func() {
-		It("should return Denied with DS connectivity error", func() {
-			// Arrange
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return nil, fmt.Errorf("connection refused: data storage service unavailable")
-			}
-
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
-			admReq := buildCreateAdmissionRequest(rw)
-
-			// Act
-			resp := handler.Handle(ctx, admReq)
-
-			// Assert
-			Expect(resp.Allowed).To(BeFalse(),
-				"CREATE should be Denied when DS is unreachable (fail-closed)")
-			Expect(resp.Result).To(HaveField("Message", ContainSubstring("data storage")),
-				"Denial message should help diagnose DS connectivity issue")
+			Expect(dsCalled).To(BeFalse(),
+				"#1661 Change 8c: DS is never called on DELETE -- the etcd removal is itself the terminal state")
 		})
 	})
 
@@ -375,14 +330,8 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-004: CREATE re-enables previously deleted workflow", func() {
 		It("should return Allowed when DS indicates re-enable", func() {
 			// Arrange
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:        "550e8400-e29b-41d4-a716-446655440000",
-					WorkflowName:      "scale-memory",
-					Version:           "1.0.0",
-					Status:            string(sharedtypes.CatalogStatusActive),
-					PreviouslyExisted: true,
-				}, nil
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
+				return nil
 			}
 
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
@@ -454,19 +403,19 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// UT-AW-299-007: CREATE denied emits denied audit event
 	// ========================================
 	Describe("UT-AW-299-007: CREATE denied emits denied audit event", func() {
-		It("should emit remediationworkflow.admitted.denied audit event", func() {
-			// Arrange
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return nil, fmt.Errorf("connection refused")
-			}
-
+		It("should emit remediationworkflow.admitted.denied audit event on auth failure", func() {
+			// Arrange. #1661 Change 8c removed the DS-registration-failure
+			// denial path entirely (there is no more DS call to fail); auth
+			// failure is the representative still-existing CREATE denial path.
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
 			admReq := buildCreateAdmissionRequest(rw)
+			admReq.UserInfo = authv1.UserInfo{}
 
 			// Act
-			handler.Handle(ctx, admReq)
+			resp := handler.Handle(ctx, admReq)
 
 			// Assert
+			Expect(resp.Allowed).To(BeFalse())
 			Expect(mockAudit.StoredEvents).To(HaveLen(1))
 			event := mockAudit.StoredEvents[0]
 			Expect(event.EventType).To(Equal("remediationworkflow.admitted.denied"))
@@ -484,54 +433,41 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			admReq := buildCreateAdmissionRequest(rw)
 			admReq.UserInfo.Groups = []string{"system:masters", "kubernaut-admins"}
 
-			var capturedBy string
-			mockDS.createFn = func(_ context.Context, _, _, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
-				capturedBy = registeredBy
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID: "test-id",
-					Status:     string(sharedtypes.CatalogStatusActive),
-				}, nil
-			}
-
 			// Act
 			resp := handler.Handle(ctx, admReq)
 
-			// Assert
+			// Assert: extraction success is observable via the audit event's
+			// actor attribution -- #1661 Change 8c removed the DS round-trip
+			// that this test previously used as its extraction probe.
 			Expect(resp.Allowed).To(BeTrue())
-			Expect(capturedBy).To(Equal(testUserEmail),
-				"Should pass K8s username to DS as registeredBy")
+			Expect(mockAudit.StoredEvents).To(HaveLen(1))
+			Expect(mockAudit.StoredEvents[0].ActorID.Value).To(Equal(testUserEmail),
+				"Should extract K8s username into audit event actor attribution")
 		})
 	})
 
 	// ========================================
-	// UT-AW-299-009: UPDATE operations now trigger DS registration (Issue #371)
-	// Replaces previous behavior: UPDATE was ignored, now forwards to DS.
+	// UT-AW-299-009: UPDATE succeeds locally with zero DS calls (#1661 Change 8c)
+	// Historically (Issue #371) UPDATE forwarded to DS; that round-trip is now
+	// removed entirely -- registration is a pure local computation.
 	// ========================================
-	Describe("UT-AW-299-009: UPDATE triggers DS registration (Issue #371)", func() {
-		It("should allow UPDATE and call DS CreateWorkflowInline", func() {
+	Describe("UT-AW-299-009: UPDATE succeeds locally with zero DS calls", func() {
+		It("should allow UPDATE without calling DS", func() {
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
 			admReq := buildUpdateAdmissionRequest(rw)
 
 			createCalled := false
-			mockDS.createFn = func(_ context.Context, content, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
 				createCalled = true
-				Expect(content).ToNot(BeEmpty(), "DS should receive CRD content")
-				Expect(source).To(Equal("crd"))
-				Expect(registeredBy).To(Equal(testUserEmail))
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
-					WorkflowName: "scale-memory",
-					Version:      "1.0.0",
-					Status:       string(sharedtypes.CatalogStatusActive),
-				}, nil
+				return nil
 			}
 
 			resp := handler.Handle(ctx, admReq)
 
 			Expect(resp.Allowed).To(BeTrue(),
-				"UPDATE should be Allowed after DS registration")
-			Expect(createCalled).To(BeTrue(),
-				"DS CreateWorkflowInline MUST be called for UPDATE operations (Issue #371)")
+				"UPDATE should be Allowed")
+			Expect(createCalled).To(BeFalse(),
+				"#1661 Change 8c: DS is never called for UPDATE -- registration is a pure local computation")
 		})
 	})
 
@@ -540,27 +476,28 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// Issue #371, BR-WORKFLOW-006: CRD UPDATE must forward spec to DS so
 	// version changes supersede old catalog entries.
 	// ========================================
-	Describe("UT-AW-371-001: UPDATE forwards CRD spec changes to DS", func() {
-		It("should call DS CreateWorkflowInline and return Allowed", func() {
+	Describe("UT-AW-371-001: UPDATE registers the updated content locally with zero DS calls", func() {
+		It("should return Allowed and carry the updated content in the audit event, without calling DS", func() {
 			rw := buildRemediationWorkflow("git-revert-v1", "kubernaut-system")
 			admReq := buildUpdateAdmissionRequest(rw)
 
-			var capturedContent string
-			mockDS.createFn = func(_ context.Context, content, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
-				capturedContent = content
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:   "new-uuid-after-update",
-					WorkflowName: "git-revert-v1",
-					Version:      "1.0.1",
-					Status:       string(sharedtypes.CatalogStatusActive),
-				}, nil
+			dsCalled := false
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
+				dsCalled = true
+				return nil
 			}
 
 			resp := handler.Handle(ctx, admReq)
 
 			Expect(resp.Allowed).To(BeTrue())
-			Expect(capturedContent).ToNot(BeEmpty(),
-				"DS should receive the updated CRD content for registration")
+			Expect(dsCalled).To(BeFalse(),
+				"#1661 Change 8c: DS is never called -- registration is a pure local computation")
+
+			Expect(mockAudit.StoredEvents).To(HaveLen(1))
+			payload, ok := mockAudit.StoredEvents[0].EventData.GetRemediationWorkflowWebhookAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.WorkflowContent.IsSet()).To(BeTrue(),
+				"the updated CRD content should still be captured, now via the audit trail (#1661 Change 2) instead of a DS round-trip")
 		})
 	})
 
@@ -574,14 +511,8 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			rw := buildRemediationWorkflow("git-revert-v1", "kubernaut-system")
 			admReq := buildUpdateAdmissionRequest(rw)
 
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:        "existing-uuid-idempotent",
-					WorkflowName:      "git-revert-v1",
-					Version:           "1.0.0",
-					Status:            string(sharedtypes.CatalogStatusActive),
-					PreviouslyExisted: true,
-				}, nil
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
+				return nil
 			}
 
 			resp := handler.Handle(ctx, admReq)
@@ -646,30 +577,12 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 		})
 	})
 
-	// ========================================
-	// UT-AW-773-003: UPDATE denies on DS registration failure + emits denied audit
-	// Issue #773: handleUpdate must match handleCreate strictness (SOC2 CC8.1)
-	// ========================================
-	Describe("UT-AW-773-003: UPDATE denied on DS registration failure", func() {
-		It("should return Denied and emit denied audit event when DS fails", func() {
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return nil, fmt.Errorf("connection refused: data storage service unavailable")
-			}
-
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
-			admReq := buildUpdateAdmissionRequest(rw)
-
-			resp := handler.Handle(ctx, admReq)
-
-			Expect(resp.Allowed).To(BeFalse(),
-				"UPDATE should be Denied when DS registration fails (fail-closed)")
-			Expect(resp.Result.Message).To(ContainSubstring("data storage"),
-				"Denial message should reference DS failure")
-
-			Expect(mockAudit.StoredEvents).To(HaveLen(1))
-			Expect(mockAudit.StoredEvents[0].EventType).To(Equal(authwebhook.EventTypeRWAdmittedDenied))
-		})
-	})
+	// NOTE: UT-AW-773-003 ("UPDATE denied on DS registration failure") was
+	// removed by #1661 Change 8c -- there is no more DS call in the UPDATE
+	// path for it to fail. The remaining denial paths (unmarshal, auth,
+	// ActionType-gate, content-integrity) are covered by UT-AW-773-001,
+	// UT-AW-773-002, rw_actiontype_gate_test.go, and rw_content_integrity_test.go
+	// respectively.
 
 	// ========================================
 	// UT-AW-773-004: UPDATE denies on marshal failure + emits denied audit
@@ -709,9 +622,9 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			rw.DeletionTimestamp = &now
 
 			dsCalled := false
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
 				dsCalled = true
-				return nil, fmt.Errorf("should not be called")
+				return fmt.Errorf("should not be called")
 			}
 
 			admReq := buildUpdateAdmissionRequest(rw)
@@ -751,30 +664,38 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	// UT-AW-299-011: CREATE includes source and registeredBy
 	// ========================================
-	Describe("UT-AW-299-011: CREATE includes source and registeredBy in DS request", func() {
-		It("should pass source='crd' and registeredBy from userInfo to DS", func() {
-			// Arrange
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
-			var capturedSource string
-			var capturedBy string
-			mockDS.createFn = func(_ context.Context, _, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
-				capturedSource = source
-				capturedBy = registeredBy
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID: "test-id",
-					Status:     string(sharedtypes.CatalogStatusActive),
-				}, nil
+	Describe("UT-AW-299-011: CREATE attributes registeredBy on the CRD status without a DS round-trip", func() {
+		It("should populate .status.registeredBy from userInfo with zero DS calls", func() {
+			// Arrange. #1661 Change 8c removed the DS request that used to
+			// carry source='crd'/registeredBy -- registeredBy is now written
+			// straight to .status by updateCRDStatus (see UT-AW-299-013).
+			rw := buildRemediationWorkflow("scale-memory-src", "kubernaut-system")
+			fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
+			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
+
+			dsCalled := false
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
+				dsCalled = true
+				return nil
 			}
 
 			admReq := buildCreateAdmissionRequest(rw)
 
 			// Act
-			resp := handler.Handle(ctx, admReq)
+			resp := handlerWithK8s.Handle(ctx, admReq)
 
 			// Assert
 			Expect(resp.Allowed).To(BeTrue())
-			Expect(capturedSource).To(Equal("crd"))
-			Expect(capturedBy).To(Equal(testUserEmail))
+			Expect(dsCalled).To(BeFalse(),
+				"#1661 Change 8c: DS is never called -- registration is a pure local computation")
+
+			Eventually(func() string {
+				updated := &rwv1alpha1.RemediationWorkflow{}
+				if err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-src"), updated); err != nil {
+					return ""
+				}
+				return updated.Status.RegisteredBy
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(testUserEmail))
 		})
 	})
 
@@ -796,16 +717,8 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			// (still-Postgres-backed, until Change 8c) supersede logic
 			// reports. Deliberately implausible strings prove AW ignores
 			// them entirely.
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:        "new-uuid-after-supersede",
-					WorkflowName:      "integrity-supersede",
-					Version:           "1.0.0",
-					Status:            string(sharedtypes.CatalogStatusActive),
-					PreviouslyExisted: false,
-					Superseded:        true,
-					SupersededID:      "old-uuid-superseded",
-				}, nil
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
+				return nil
 			}
 
 			admReq := buildCreateAdmissionRequest(rw)
@@ -827,30 +740,27 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 	// ========================================
 	// UT-AW-INTEGRITY-002: CREATE patches the same locally-computed UUID on
-	// re-registration, independent of DS's re-enable response (#1661 Change 8a).
+	// re-registration, with zero DS involvement (#1661 Change 8a + 8c).
 	// BR-WORKFLOW-006.
 	// ========================================
-	Describe("UT-AW-INTEGRITY-002: CREATE patches the locally-computed UUID into CRD status, ignoring DS's re-enable response", func() {
-		It("should populate CRD .status with AW's own deterministic UUID, not DS's reported originalUUID", func() {
+	Describe("UT-AW-INTEGRITY-002: CREATE patches the locally-computed UUID into CRD status, with zero DS calls", func() {
+		It("should populate CRD .status with AW's own deterministic UUID and PreviouslyExisted=false", func() {
 			rw := buildRemediationWorkflow("integrity-reenable", "kubernaut-system")
 			fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
 
 			handlerWithK8s := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:        "original-uuid-reenabled",
-					WorkflowName:      "integrity-reenable",
-					Version:           "1.0.0",
-					Status:            string(sharedtypes.CatalogStatusActive),
-					PreviouslyExisted: true,
-					Superseded:        false,
-				}, nil
+			dsCalled := false
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
+				dsCalled = true
+				return nil
 			}
 
 			admReq := buildCreateAdmissionRequest(rw)
 			resp := handlerWithK8s.Handle(ctx, admReq)
 			Expect(resp.Allowed).To(BeTrue())
+			Expect(dsCalled).To(BeFalse(),
+				"#1661 Change 8c: DS is never called -- registration is a pure local computation")
 
 			expectedID := expectedLocalWorkflowID(mockAudit)
 			Eventually(func() string {
@@ -861,12 +771,14 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				}
 				return updated.Status.WorkflowID
 			}, 5*time.Second, 100*time.Millisecond).Should(Equal(expectedID),
-				"CRD status should contain AW's own locally-computed UUID (#1661 Change 8a), not DS's reported one")
+				"CRD status should contain AW's own locally-computed UUID (#1661 Change 8a)")
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
 			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)).To(Succeed())
-			Expect(updated.Status.PreviouslyExisted).To(BeTrue(),
-				"PreviouslyExisted should be true for re-enabled workflows (still sourced from DS's response)")
+			Expect(updated.Status.PreviouslyExisted).To(BeFalse(),
+				"#1661 Change 8c: PreviouslyExisted is always false -- with no DS-side 'disabled' intermediate "+
+					"state, there is no local way (or need) to distinguish 'brand new' from 'recreated after "+
+					"deletion'; that history lives in audit_events instead (DD-WORKFLOW-018)")
 		})
 	})
 
@@ -911,14 +823,8 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			// #1661 Change 8a: DS's reported WorkflowID is deliberately
 			// implausible -- AW's .status.workflowId write is sourced from
 			// its own local deterministic computation, not this value.
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:        "uuid-status-test-001",
-					WorkflowName:      "scale-memory-status",
-					Version:           "1.0.0",
-					Status:            string(sharedtypes.CatalogStatusActive),
-					PreviouslyExisted: false,
-				}, nil
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
+				return nil
 			}
 
 			admReq := buildCreateAdmissionRequest(rw)

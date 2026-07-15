@@ -17,6 +17,7 @@ limitations under the License.
 package authwebhook
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -45,10 +46,12 @@ import (
 // This test proves the "generic pass-through" claim in DD-FLEET-002: the AW
 // RemediationWorkflow handler requires ZERO code changes for the new `cluster`
 // label dimension because it marshals the entire CRD spec (including the new
-// `Labels.Cluster` field) and forwards it to DS's inline registration endpoint,
-// where `workflowschema`/`schema.Parser.ExtractLabels` (already unit-tested in
-// UT-DS-1511-002/003) perform the actual extraction into the `labels` JSONB
-// column.
+// `Labels.Cluster` field) into its own admitted audit event's workflow_content
+// (#1661 Change 8c/DD-WORKFLOW-018: AW no longer forwards to a DS catalog at
+// all -- its own audit trail is the durable record of what was admitted).
+// `workflowschema`/`schema.Parser.ExtractLabels` (already unit-tested in
+// UT-DS-1511-002/003) remain responsible for DS's own discovery-side
+// extraction once Change 5 (informer-backed cache) lands.
 var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (BR-FLEET-003)", Label("integration", "authwebhook", "fleet"), func() {
 
 	var (
@@ -143,43 +146,51 @@ var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (
 		}
 	}
 
-	fetchWorkflowByName := func(name string) ogenclient.RemediationWorkflow {
-		var found ogenclient.RemediationWorkflow
+	// fetchContentLabelsByCorrelationID reads back the admitted audit event's
+	// workflow_content.labels for the given admission UID. #1661 Change 8c:
+	// AW no longer forwards to a DS catalog, so AW's own audit trail (not
+	// DS's ListWorkflows) is the durable, queryable record of what a CRD's
+	// spec.labels contained at admission time.
+	fetchContentLabelsByCorrelationID := func(correlationID string) ogenclient.RemediationWorkflowContentLabels {
+		flushCtx, flushCancel := context.WithTimeout(ctx, 5*time.Second)
+		defer flushCancel()
+		Expect(auditStore.Flush(flushCtx)).To(Succeed(), "audit store flush should succeed")
+
+		var payload ogenclient.RemediationWorkflowWebhookAuditPayload
 		Eventually(func() bool {
-			resp, err := dsClient.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
-				WorkflowName: ogenclient.OptString{Value: name, Set: true},
-			})
-			if err != nil {
+			events, err := queryAuditEvents(dsClient, correlationID, nil)
+			if err != nil || len(events) == 0 {
 				return false
 			}
-			list, ok := resp.(*ogenclient.WorkflowListResponse)
-			if !ok || len(list.Workflows) == 0 {
+			p, ok := events[0].EventData.GetRemediationWorkflowWebhookAuditPayload()
+			if !ok || !p.WorkflowContent.IsSet() {
 				return false
 			}
-			found = list.Workflows[0]
+			payload = p
 			return true
 		}, 15*time.Second, 500*time.Millisecond).Should(BeTrue(),
-			fmt.Sprintf("expected workflow %q to be discoverable via DS ListWorkflows after AW registration", name))
-		return found
+			fmt.Sprintf("expected an admitted audit event with workflow_content for correlation_id=%s", correlationID))
+		return payload.WorkflowContent.Value.Labels
 	}
 
-	It("IT-AW-1511-001a: cluster labels present on the CRD survive to DS's labels JSONB unmodified", func() {
+	It("IT-AW-1511-001a: cluster labels present on the CRD survive to the admitted audit event's workflow_content unmodified", func() {
 		actionType := uniqueActionType("ITClusterCreate")
 		// #1661: Creates the ActionType CRD in etcd (Active), required by AW's
-		// own RW-to-ActionType existence gate, in addition to DS registration.
+		// own RW-to-ActionType existence gate.
 		createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueName("at-setup-cluster"))
 
 		rwName := uniqueName("it-rw-cluster")
 		rw := buildRWWithCluster(rwName, actionType, []string{"production", "staging-eu"})
 
-		resp := rwHandler.Handle(ctx, rwAdmissionRequest(rw, uniqueName("rw-cluster-create")))
+		createUID := uniqueName("rw-cluster-create")
+		resp := rwHandler.Handle(ctx, rwAdmissionRequest(rw, createUID))
 		Expect(resp.Allowed).To(BeTrue(), "RW CREATE with cluster labels should be allowed (zero AW code changes): %s", resp.Result)
 
-		stored := fetchWorkflowByName(rwName)
-		Expect(stored.Labels.Cluster).To(ConsistOf("production", "staging-eu"),
-			"cluster labels submitted on the CRD must survive unmodified through AW to DS's labels JSONB")
+		labels := fetchContentLabelsByCorrelationID(createUID)
+		Expect(labels.Cluster).To(ConsistOf("production", "staging-eu"),
+			"cluster labels submitted on the CRD must survive unmodified into the admitted audit event's workflow_content")
 		// Regression guard: sibling mandatory dimensions are unaffected by the new field.
-		Expect(stored.Labels.Priority).To(BeEquivalentTo("P1"))
+		Expect(labels.Priority).To(BeEquivalentTo("P1"))
 	})
 
 	It("IT-AW-1511-001b: absent cluster labels round-trip as empty (backward compatible, non-fleet)", func() {
@@ -189,11 +200,12 @@ var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (
 		rwName := uniqueName("it-rw-nocluster")
 		rw := buildRWWithCluster(rwName, actionType, nil) // non-fleet: no cluster labels set
 
-		resp := rwHandler.Handle(ctx, rwAdmissionRequest(rw, uniqueName("rw-nocluster-create")))
+		createUID := uniqueName("rw-nocluster-create")
+		resp := rwHandler.Handle(ctx, rwAdmissionRequest(rw, createUID))
 		Expect(resp.Allowed).To(BeTrue(), "RW CREATE without cluster labels should be allowed: %s", resp.Result)
 
-		stored := fetchWorkflowByName(rwName)
-		Expect(stored.Labels.Cluster).To(BeEmpty(),
+		labels := fetchContentLabelsByCorrelationID(createUID)
+		Expect(labels.Cluster).To(BeEmpty(),
 			"non-fleet workflows must round-trip with empty cluster labels, not an error or fabricated value")
 	})
 })

@@ -73,9 +73,9 @@ var _ = Describe("RemediationWorkflow ActionType Existence Gate (#1661)", func()
 			fakeK8s := fakeK8sWithActionTypes() // no ActionType CRDs at all
 
 			dsCalled := false
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
 				dsCalled = true
-				return nil, nil
+				return nil
 			}
 
 			handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
@@ -108,9 +108,9 @@ var _ = Describe("RemediationWorkflow ActionType Existence Gate (#1661)", func()
 			fakeK8s := fakeK8sWithActionTypes(at)
 
 			dsCalled := false
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
 				dsCalled = true
-				return nil, nil
+				return nil
 			}
 
 			handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
@@ -136,21 +136,16 @@ var _ = Describe("RemediationWorkflow ActionType Existence Gate (#1661)", func()
 	// ========================================
 	// UT-AW-310-003: CREATE reaches DS when ActionType CRD exists and is Active
 	// ========================================
-	Describe("UT-AW-310-003: CREATE reaches DS when ActionType exists and is Active", func() {
-		It("should return Allowed and call DS", func() {
+	Describe("UT-AW-310-003: CREATE succeeds locally when ActionType exists and is Active", func() {
+		It("should return Allowed with zero DS calls (#1661 Change 8c)", func() {
 			at := buildActionType("scale-memory-at", "ScaleMemory", "kubernaut-system")
 			at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
 			fakeK8s := fakeK8sWithActionTypes(at)
 
 			dsCalled := false
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
 				dsCalled = true
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
-					WorkflowName: "scale-memory",
-					Version:      "1.0.0",
-					Status:       string(sharedtypes.CatalogStatusActive),
-				}, nil
+				return nil
 			}
 
 			handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
@@ -162,8 +157,8 @@ var _ = Describe("RemediationWorkflow ActionType Existence Gate (#1661)", func()
 
 			Expect(resp.Allowed).To(BeTrue(),
 				"CREATE should be Allowed when the matching ActionType CRD is Active")
-			Expect(dsCalled).To(BeTrue(),
-				"DS should be called once the etcd-native gate passes")
+			Expect(dsCalled).To(BeFalse(),
+				"#1661 Change 8c: DS is never called once the etcd-native gate passes -- registration is a pure local computation")
 		})
 	})
 })

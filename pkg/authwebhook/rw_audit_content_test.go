@@ -18,7 +18,6 @@ package authwebhook_test
 
 import (
 	"context"
-	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -122,13 +121,15 @@ var _ = Describe("RemediationWorkflow Audit Content Enrichment (#1661)", func() 
 	// UT-AW-311-003: DENIED event carries workflow_content when rw was unmarshaled
 	// ========================================
 	Describe("UT-AW-311-003: DENIED audit event carries workflow_content when rw.Spec was unmarshaled", func() {
-		It("should attach the attempted workflow_content best-effort on a DS registration failure denial", func() {
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				return nil, fmt.Errorf("connection refused")
-			}
-
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
-			admReq := buildCreateAdmissionRequest(rw)
+		It("should attach the attempted workflow_content best-effort on a content-integrity-violation denial", func() {
+			// #1661 Change 8c removed the DS-registration-failure denial path
+			// entirely (there is no more DS call to fail). The content-
+			// integrity check (Change 8b) is now the representative
+			// still-existing denial path that has rw.Spec available.
+			oldRW := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			newRW := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			newRW.Spec.Description.What = "Changed behavior without bumping spec.version"
+			admReq := buildUpdateAdmissionRequestDiff(oldRW, newRW)
 
 			resp := handler.Handle(ctx, admReq)
 

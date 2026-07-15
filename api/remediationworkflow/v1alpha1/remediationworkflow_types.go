@@ -209,11 +209,23 @@ type RemediationWorkflowParameter struct {
 
 // RemediationWorkflowStatus defines the observed state of RemediationWorkflow
 type RemediationWorkflowStatus struct {
-	// WorkflowID is the UUID assigned by Data Storage upon registration
+	// WorkflowID is the deterministic UUID derived from the workflow's content
+	// hash (DeterministicUUID(ComputeContentHash(spec))). Computed locally by
+	// AuthWebhook (#1661 Change 8a/8c) rather than assigned by Data Storage --
+	// stable across the etcd-single-source-of-truth migration (DD-WORKFLOW-018).
 	// +optional
 	WorkflowID string `json:"workflowId,omitempty"`
 
-	// CatalogStatus reflects the DS catalog lifecycle state.
+	// ContentHash is the sha256 hex digest of the workflow's clean CRD content
+	// (apiVersion/kind/metadata.name/spec), computed locally by AuthWebhook
+	// (#1661 Change 8c). Lets DELETE/UPDATE flows and downstream consumers
+	// verify content identity without any Data Storage round-trip.
+	// +optional
+	ContentHash string `json:"contentHash,omitempty"`
+
+	// CatalogStatus reflects the workflow's lifecycle state. Always "Active"
+	// once admitted -- there is no external catalog decision to defer to
+	// (#1661 Change 8c, DD-WORKFLOW-018).
 	// +optional
 	// +kubebuilder:validation:Enum=Active;Invalid;Pending;Deprecated;Archived;Disabled;Superseded
 	CatalogStatus sharedtypes.CatalogStatus `json:"catalogStatus,omitempty"`

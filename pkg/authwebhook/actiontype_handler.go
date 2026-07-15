@@ -23,9 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
-	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -33,16 +31,20 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // ActionTypeHandler handles admission requests for ActionType CRD
-// CREATE, UPDATE, and DELETE operations, bridging CRD lifecycle with the DS catalog.
-// BR-WORKFLOW-007, DD-ACTIONTYPE-001, ADR-059.
+// CREATE, UPDATE, and DELETE operations. #1661 Change 8d: CRD lifecycle is no
+// longer bridged to a DS action-type catalog -- registered/catalogStatus/
+// dependents-on-delete are all computed locally against the live etcd state
+// (via the cache-backed k8sClient), zero DS round-trips (DD-WORKFLOW-018).
+// BR-WORKFLOW-007.
 type ActionTypeHandler struct {
-	dsClient      ActionTypeCatalogClient
+	dsClient      ActionTypeCatalogClient // vestigial; see ActionTypeCatalogClient doc
 	auditStore    audit.AuditStore
 	k8sClient     client.Client
 	authenticator *Authenticator
@@ -92,24 +94,18 @@ func (h *ActionTypeHandler) handleCreate(ctx context.Context, req admission.Requ
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
 
-	result, err := h.dsClient.CreateActionType(ctx, at.Spec.Name, crdDescriptionToOgen(at.Spec.Description), authCtx.Username)
-	if err != nil {
-		logger.Error(err, "DS CreateActionType failed")
-		h.emitATDeniedAudit(ctx, req, fmt.Sprintf("DS registration failed: %v", err), "CREATE")
-		return admission.Denied(fmt.Sprintf("data storage registration failed: %v", err))
-	}
+	// #1661 Change 8d: registration is a pure local computation -- no DS
+	// round-trip. There is no external catalog state to defer to (see
+	// DD-WORKFLOW-018), so PreviouslyExisted is always false: once DELETE
+	// performs a true etcd removal with no "disabled" intermediate state,
+	// there is no local way (or need) to distinguish "brand new" from
+	// "recreated after deletion".
+	logger.Info("ActionType registered locally", "action_type", at.Spec.Name)
+	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedCreate, at.Spec.Name, false, "Active")
 
-	logger.Info("ActionType registered in DS",
-		"action_type", at.Spec.Name,
-		"status", result.Status,
-		"was_reenabled", result.WasReenabled,
-	)
+	go h.updateCRDStatusCreate(req.Namespace, req.Name, authCtx.Username)
 
-	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedCreate, at.Spec.Name, result.WasReenabled, "Active")
-
-	go h.updateCRDStatusCreate(req.Namespace, req.Name, authCtx.Username, result)
-
-	return admission.Allowed("action type registered in catalog")
+	return admission.Allowed("action type registered")
 }
 
 func (h *ActionTypeHandler) handleUpdate(ctx context.Context, req admission.Request) admission.Response {
@@ -138,20 +134,14 @@ func (h *ActionTypeHandler) handleUpdate(ctx context.Context, req admission.Requ
 		return admission.Allowed("no description change")
 	}
 
-	authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest)
-	if err != nil {
+	if _, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest); err != nil {
 		logger.Error(err, "Authentication failed")
 		return admission.Denied(fmt.Sprintf("authentication required: %v", err))
 	}
 
-	_, err = h.dsClient.UpdateActionType(ctx, newAT.Spec.Name, crdDescriptionToOgen(newAT.Spec.Description), authCtx.Username)
-	if err != nil {
-		logger.Error(err, "DS UpdateActionType failed")
-		h.emitATDeniedAudit(ctx, req, fmt.Sprintf("DS update failed: %v", err), "UPDATE")
-		return admission.Denied(fmt.Sprintf("data storage update failed: %v", err))
-	}
-
-	logger.Info("ActionType description updated in DS", "action_type", newAT.Spec.Name)
+	// #1661 Change 8d: description updates are local-only -- there is no DS
+	// catalog left to notify (DD-WORKFLOW-018).
+	logger.Info("ActionType description updated locally", "action_type", newAT.Spec.Name)
 	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedUpdate, newAT.Spec.Name, false, "Active")
 
 	return admission.Allowed("action type description updated")
@@ -166,103 +156,42 @@ func (h *ActionTypeHandler) handleDelete(ctx context.Context, req admission.Requ
 		return admission.Allowed("delete allowed (unmarshal failed, best-effort)")
 	}
 
-	username := req.UserInfo.Username
-	if authCtx, err := h.authenticator.ExtractUser(ctx, &req.AdmissionRequest); err == nil {
-		username = authCtx.Username
-	}
-
-	result, err := h.dsClient.DisableActionType(ctx, at.Spec.Name, username)
+	// #1661 Change 8d: the live etcd list (via the cache-backed k8sClient) is
+	// now the SOLE dependents gate -- DS's Postgres catalog stopped learning
+	// about RemediationWorkflow CRDs the moment Change 8c removed AW's
+	// CreateWorkflowInline call, making any DS-backed check permanently
+	// blind to workflows created afterward (DD-WORKFLOW-018,
+	// IT-AW-1111-009). There is no DS-side "orphan" state left to
+	// reconcile, so there is no recovery path to attempt: what K8s reports
+	// IS the dependents set.
+	dependents, err := listDependentWorkflowNames(ctx, h.k8sClient, at.Spec.Name, "")
 	if err != nil {
-		logger.Error(err, "DS DisableActionType failed")
-		h.emitATDeniedAudit(ctx, req, fmt.Sprintf("DS disable failed: %v", err), "DELETE")
-		return admission.Denied(fmt.Sprintf("data storage disable failed: %v", err))
-	}
-
-	if !result.Disabled {
-		msg := fmt.Sprintf("Cannot delete ActionType %q: %d active workflow(s) depend on it (%s)",
-			at.Spec.Name, result.DependentWorkflowCount,
-			strings.Join(result.DependentWorkflows, ", "))
-
-		// Issue #512: Cross-check with K8s to detect orphaned DS entries.
-		if recovered := h.attemptOrphanRecovery(ctx, logger, req, at, username, result); recovered {
-			return admission.Allowed("action type disabled in catalog (orphan recovery)")
-		}
-
-		logger.Info("ActionType disable denied", "reason", msg)
+		logger.Error(err, "Failed to list dependent RemediationWorkflows")
+		msg := fmt.Sprintf("failed to check dependent workflows: %v", err)
 		h.emitATDeniedAudit(ctx, req, msg, "DELETE")
 		return admission.Denied(msg)
 	}
 
-	logger.Info("ActionType disabled in DS", "action_type", at.Spec.Name)
+	if len(dependents) > 0 {
+		msg := fmt.Sprintf("Cannot delete ActionType %q: %d active workflow(s) depend on it (%s)",
+			at.Spec.Name, len(dependents), strings.Join(dependents, ", "))
+		logger.Info("ActionType delete denied", "reason", msg)
+		h.emitATDeniedAudit(ctx, req, msg, "DELETE")
+		return admission.Denied(msg)
+	}
+
+	logger.Info("ActionType has no dependent workflows, deletion allowed", "action_type", at.Spec.Name)
 	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedDelete, at.Spec.Name, false, "Disabled")
-	return admission.Allowed("action type disabled in catalog")
+	return admission.Allowed("action type deleted")
 }
 
-// attemptOrphanRecovery cross-checks DS-reported dependent workflows against
-// live K8s RemediationWorkflow CRDs. If some dependents no longer exist in K8s,
-// they are orphaned DS entries. The method calls ForceDisableActionType to clean
-// them up. Returns true if the action type was successfully disabled.
-// Issue #512: Prevents permanently undeletable ActionTypes.
-func (h *ActionTypeHandler) attemptOrphanRecovery(
-	ctx context.Context,
-	logger logr.Logger,
-	req admission.Request,
-	at *atv1alpha1.ActionType,
-	username string,
-	result *ActionTypeDisableResult,
-) bool {
-	if h.k8sClient == nil {
-		return false
-	}
-
-	rwList := &rwv1alpha1.RemediationWorkflowList{}
-	if err := h.k8sClient.List(ctx, rwList, client.InNamespace(req.Namespace)); err != nil {
-		logger.Error(err, "Failed to list RemediationWorkflows for orphan check")
-		return false
-	}
-
-	liveNames := make(map[string]struct{})
-	for i := range rwList.Items {
-		if rwList.Items[i].Spec.ActionType == at.Spec.Name {
-			liveNames[rwList.Items[i].Name] = struct{}{}
-		}
-	}
-
-	var orphaned []string
-	for _, depName := range result.DependentWorkflows {
-		if _, live := liveNames[depName]; !live {
-			orphaned = append(orphaned, depName)
-		}
-	}
-
-	if len(orphaned) == 0 {
-		return false
-	}
-
-	logger.Info("Orphaned DS workflows detected, attempting force-disable",
-		"orphaned", orphaned,
-		"live_count", len(liveNames),
-		"action_type", at.Spec.Name,
-	)
-
-	forceResult, err := h.dsClient.ForceDisableActionType(ctx, at.Spec.Name, username, orphaned)
-	if err != nil {
-		logger.Error(err, "Force-disable failed during orphan recovery")
-		return false
-	}
-	if !forceResult.Disabled {
-		logger.Info("Force-disable denied — non-orphaned workflows remain",
-			"remaining", forceResult.DependentWorkflows)
-		return false
-	}
-
-	logger.Info("ActionType disabled via orphan recovery", "action_type", at.Spec.Name)
-	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedDelete, at.Spec.Name, false, "disabled")
-	return true
-}
-
-// updateCRDStatusCreate writes the DS registration result into the CRD's .status subresource.
-func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy string, result *ActionTypeRegistrationResult) {
+// updateCRDStatusCreate writes the locally-computed registration outcome
+// into the CRD's .status subresource. #1661 Change 8d: catalogStatus is
+// always Active and previouslyExisted is always false -- there is no DS
+// response left to carry (see handleCreate for why). Uses RetryOnConflict
+// to handle the race between this goroutine and the API server committing
+// the newly-created object.
+func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy string) {
 	logger := ctrl.Log.WithName("at-webhook").WithValues("operation", "status-update", "name", name, "namespace", namespace)
 
 	if h.k8sClient == nil {
@@ -273,25 +202,29 @@ func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	at := &atv1alpha1.ActionType{}
-	if err := RetryGetCRD(ctx, h.k8sClient, types.NamespacedName{Namespace: namespace, Name: name}, at, 5); err != nil {
-		logger.Error(err, "Failed to fetch CRD for status update after retries")
+	key := types.NamespacedName{Namespace: namespace, Name: name}
+
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		at := &atv1alpha1.ActionType{}
+		if err := h.k8sClient.Get(ctx, key, at); err != nil {
+			return err
+		}
+
+		now := metav1.Now()
+		at.Status.Registered = true
+		at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
+		at.Status.RegisteredBy = registeredBy
+		at.Status.RegisteredAt = &now
+		at.Status.PreviouslyExisted = false
+
+		return h.k8sClient.Status().Update(ctx, at)
+	})
+	if err != nil {
+		logger.Error(err, "Failed to update CRD status after retries", "action_type", name)
 		return
 	}
 
-	now := metav1.Now()
-	at.Status.Registered = true
-	at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
-	at.Status.RegisteredBy = registeredBy
-	at.Status.RegisteredAt = &now
-	at.Status.PreviouslyExisted = result.WasReenabled
-
-	if err := h.k8sClient.Status().Update(ctx, at); err != nil {
-		logger.Error(err, "Failed to update CRD status", "action_type", at.Spec.Name)
-		return
-	}
-
-	logger.Info("ActionType CRD status updated", "action_type", at.Spec.Name, "was_reenabled", result.WasReenabled)
+	logger.Info("ActionType CRD status updated", "action_type", name)
 }
 
 // crdDescriptionToOgen converts a CRD ActionTypeDescription to the ogen-generated type.

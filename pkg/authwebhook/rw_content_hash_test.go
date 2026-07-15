@@ -61,18 +61,12 @@ var _ = Describe("UT-AW-320-001: AW-computed content hash/workflow ID match DS's
 
 	It("registerWorkflow's admitted audit event carries the locally-computed workflow ID, not DS's returned WorkflowID", func() {
 		ctx := context.Background()
-		mockDS := &mockWorkflowCatalogClient{
-			createFn: func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-				// Deliberately wrong/stale ID: proves registerWorkflow no
-				// longer trusts DS's response for workflow_id once AW
-				// computes it locally (#1661 Change 8a).
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:   "00000000-0000-0000-0000-000000000000",
-					WorkflowName: "scale-memory",
-					Version:      "1.0.0",
-				}, nil
-			},
-		}
+		// #1661 Change 8c emptied WorkflowCatalogClient entirely -- there is no
+		// longer any DS response for registerWorkflow to trust or distrust.
+		// createFn is left unset (never invoked) and the test below proves
+		// workflow_id is derived purely from the locally-computed content
+		// hash (#1661 Change 8a), independent of any DS interaction.
+		mockDS := &mockWorkflowCatalogClient{}
 		mockAudit := &MockAuditStoreRW{}
 		handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, nil)
 

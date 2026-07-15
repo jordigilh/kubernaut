@@ -95,9 +95,9 @@ var _ = Describe("RemediationWorkflow Content-Integrity Check on UPDATE (#1661 C
 			newRW.Spec.Description.What = "Changed behavior without bumping spec.version"
 
 			dsCalled := false
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
 				dsCalled = true
-				return nil, nil
+				return nil
 			}
 
 			handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, nil)
@@ -125,18 +125,13 @@ var _ = Describe("RemediationWorkflow Content-Integrity Check on UPDATE (#1661 C
 	// UT-AW-321-002: same version + same content -> idempotent, reaches DS
 	// ========================================
 	Describe("UT-AW-321-002: same spec.version with the same content hash is an idempotent re-apply", func() {
-		It("should return Allowed and still call DS (Change 8c has not landed yet)", func() {
+		It("should return Allowed with zero DS calls (#1661 Change 8c)", func() {
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
 
 			dsCalled := false
-			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
+			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
 				dsCalled = true
-				return &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:   "550e8400-e29b-41d4-a716-446655440000",
-					WorkflowName: "scale-memory",
-					Version:      "1.0.0",
-					Status:       "Active",
-				}, nil
+				return nil
 			}
 
 			handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, nil)
@@ -148,8 +143,8 @@ var _ = Describe("RemediationWorkflow Content-Integrity Check on UPDATE (#1661 C
 
 			Expect(resp.Allowed).To(BeTrue(),
 				"UPDATE should be Allowed when content is unchanged (idempotent re-apply)")
-			Expect(dsCalled).To(BeTrue(),
-				"DS should still be called for the idempotent case in this phase (Change 8c removes this call later)")
+			Expect(dsCalled).To(BeFalse(),
+				"#1661 Change 8c: DS is never called -- registration is now a pure local computation")
 		})
 	})
 })

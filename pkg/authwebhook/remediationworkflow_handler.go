@@ -37,41 +37,37 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-// WorkflowCatalogClient defines the DS REST API operations required by the AW
-// handler to register and manage workflows on behalf of CRD lifecycle events.
-// BR-WORKFLOW-006: Kubernetes-native workflow registration via CRD + AW bridge.
-type WorkflowCatalogClient interface {
-	CreateWorkflowInline(ctx context.Context, content, source, registeredBy string) (*WorkflowRegistrationResult, error)
-	DisableWorkflow(ctx context.Context, workflowID, reason, updatedBy string) error
-}
+// WorkflowCatalogClient is now an empty marker interface. #1661 Change 8c
+// removed both of its methods (CreateWorkflowInline, DisableWorkflow) --
+// registerWorkflow/handleDelete compute and patch everything locally with
+// zero DS round-trips. The dsClient field/constructor param below are kept
+// (rather than removed outright) to avoid an unrelated, high-blast-radius
+// signature change across every test call site and cmd/authwebhook/main.go
+// in this REFACTOR pass; full removal is deferred to Phase 55 alongside the
+// DS-side mutation handler deletion, once WorkflowCatalogClient has zero
+// remaining implementers to migrate.
+type WorkflowCatalogClient interface{}
 
-// ActionTypeWorkflowCounter retrieves the authoritative active workflow count from DS.
-// Used for best-effort cross-update of ActionType CRD status.activeWorkflowCount
-// after RW CREATE/DELETE (Phase 3c, BR-WORKFLOW-007).
-type ActionTypeWorkflowCounter interface {
-	GetActiveWorkflowCount(ctx context.Context, actionType string) (int, error)
-}
-
-// WorkflowRegistrationResult holds the DS response after registering or re-enabling a workflow.
-type WorkflowRegistrationResult struct {
-	WorkflowID        string
-	WorkflowName      string
-	Version           string
-	Status            string
-	PreviouslyExisted bool
-	Superseded        bool   // true when an active workflow was superseded by a new spec (different ContentHash)
-	SupersededID      string // UUID of the workflow that was superseded (for audit trail)
-}
+// ActionTypeWorkflowCounter is now an empty marker interface. #1661 Change 8d
+// removed its only method (GetActiveWorkflowCount) -- refreshActionTypeWorkflowCount
+// below counts live RemediationWorkflow CRDs directly via listDependentWorkflowNames,
+// zero DS round-trips. The atCounter field/WithActionTypeWorkflowCounter option are
+// kept (rather than removed outright) to avoid an unrelated, high-blast-radius
+// signature change across every test call site in this GREEN pass; full removal is
+// deferred to Phase 27 REFACTOR.
+type ActionTypeWorkflowCounter interface{}
 
 // RemediationWorkflowHandler handles admission requests for RemediationWorkflow CRD
-// CREATE and DELETE operations, bridging CRD lifecycle with the DS workflow catalog.
-// BR-WORKFLOW-006, DD-WEBHOOK-003, ADR-058.
+// CREATE, UPDATE, and DELETE operations. #1661 Change 8c: CRD lifecycle is no
+// longer bridged to a DS workflow catalog -- workflow_id/content_hash/
+// catalogStatus are computed locally and patched onto .status directly
+// (DD-WORKFLOW-018).
 //
-// CREATE: Extracts CRD spec, POSTs inline schema to DS, updates CRD .status
-// asynchronously via k8sClient.Status().Update().
-// DELETE: Extracts workflowId from status, PATCHes DS to disable.
+// CREATE/UPDATE: unmarshal → local content-hash/workflow-ID computation →
+// authenticate → validate → patch CRD .status asynchronously.
+// DELETE: audit who deleted it; no DS notification (etcd removal is terminal).
 type RemediationWorkflowHandler struct {
-	dsClient      WorkflowCatalogClient
+	dsClient      WorkflowCatalogClient // vestigial; see WorkflowCatalogClient doc
 	auditStore    audit.AuditStore
 	k8sClient     client.Client
 	authenticator *Authenticator
@@ -174,8 +170,11 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	// ActionType checks) — this is a pure, local, side-effect-free marshal with no
 	// authorization implications, so every denial path below can attach the
 	// attempted workflow_content + content_hash for forensics (BR-AUDIT-005 v2.0
-	// #7, SOC2 CC7.2), not just the DS-registration-failure path.
-	content, contentHash, err := computeRWContentHash(rw)
+	// #7, SOC2 CC7.2), not just the (now-removed, Change 8c) DS-registration-
+	// failure path. The marshaled content itself is only an intermediate input
+	// to the hash below -- Change 8c removed the DS call that used to consume
+	// it directly.
+	_, contentHash, err := computeRWContentHash(rw)
 	if err != nil {
 		logger.Error(err, "Failed to marshal CRD content for DS")
 		h.emitDeniedAudit(ctx, req, "marshal failed", &rw.Spec, "")
@@ -221,36 +220,26 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 		return admission.Denied(err.Error())
 	}
 
-	result, err := h.dsClient.CreateWorkflowInline(ctx, string(content), "crd", authCtx.Username)
-	if err != nil {
-		logger.Error(err, "DS CreateWorkflowInline failed")
-		h.emitDeniedAudit(ctx, req, fmt.Sprintf("data storage registration failed: %v", err), &rw.Spec, contentHash)
-		return admission.Denied(fmt.Sprintf("data storage registration failed: %v", err))
-	}
+	// #1661 Change 8c: registration is now a pure local computation -- no DS
+	// round-trip and no response struct to carry. workflowID/contentHash from
+	// above are the only two values .status needs; catalogStatus is always
+	// Active (there is no external catalog decision left to defer to; see
+	// DD-WORKFLOW-018), and PreviouslyExisted is always false -- once DELETE
+	// (Change 8c) performs a true etcd removal with no "disabled"
+	// intermediate state, there is no local way (or need) to distinguish
+	// "brand new" from "recreated after deletion"; that history lives in
+	// audit_events, not in CRD status.
+	logger.Info("Workflow registered locally", "workflow_id", workflowID, "workflow_name", rw.Name)
 
-	// #1661 Change 8a: workflow_id is authoritative from AW's own local
-	// computation (above), not DS's response -- overridden here so every
-	// downstream consumer of result (the audit event below, and
-	// updateCRDStatus's .status.workflowId write) sees the locally-computed,
-	// stable value instead of whatever DS's (still Postgres-backed, until
-	// Change 8c removes this call entirely) response happened to return.
-	result.WorkflowID = workflowID
-
-	logger.Info("Workflow registered in DS",
-		"workflow_id", result.WorkflowID,
-		"workflow_name", result.WorkflowName,
-		"previously_existed", result.PreviouslyExisted,
-	)
-
-	h.emitAdmitAudit(ctx, req, auditEventType, result.WorkflowID, rw.Name, &rw.Spec, contentHash)
+	h.emitAdmitAudit(ctx, req, auditEventType, workflowID, rw.Name, &rw.Spec, contentHash)
 
 	// ADR-058: Update CRD .status asynchronously after admission to avoid blocking
 	// the API server. The status subresource is used so this doesn't conflict with
 	// the spec stored by the API server.
-	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result)
+	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, contentHash, workflowID)
 
 	// Phase 3c: best-effort cross-update of ActionType CRD status.activeWorkflowCount
-	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
+	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace, "")
 
 	return admission.Allowed("workflow registered in catalog")
 }
@@ -370,44 +359,39 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 		return admission.Allowed("delete allowed (no workflowId in status)")
 	}
 
-	// Call DS to disable the workflow (best-effort — always allow DELETE)
-	disableOK := false
-	if err := h.dsClient.DisableWorkflow(ctx, workflowID, "CRD deleted", username); err != nil {
-		logger.Error(err, "DS DisableWorkflow failed (best-effort — allowing DELETE)",
-			"workflow_id", workflowID,
-		)
-	} else {
-		disableOK = true
-		logger.Info("Workflow disabled in DS",
-			"workflow_id", workflowID,
-		)
-	}
+	// #1661 Change 8c: DELETE is a true etcd removal -- there is no DS-side
+	// "disable" left to notify (DisableWorkflow is removed entirely). The CRD
+	// disappearing from etcd is itself the terminal state; DS's cache (once
+	// informer-backed, Change 5) naturally stops seeing it. AW's only
+	// remaining job here is auditing who deleted it (SOC2 CC8.1) and
+	// refreshing the parent ActionType's activeWorkflowCount.
+	logger.Info("Workflow deleted", "workflow_id", workflowID, "deleted_by", username)
 
 	// Emit DELETE audit event. #1661 Change 2: no workflow_content/content_hash —
 	// delete stays unchanged (the CREATE/UPDATE audit trail already has the last
 	// known content for this workflow_id).
 	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedDelete, workflowID, rw.Name, nil, "")
 
-	// Issue #418 Fix A: Only refresh the count when the DS disable succeeded.
-	// Writing the count after a failed disable would actively reinforce stale data.
-	// The finalizer reconciler (RWFinalizerName) handles the guaranteed path.
-	if disableOK {
-		go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
-	}
+	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace, rw.Name)
 
-	return admission.Allowed("workflow disabled in catalog")
+	return admission.Allowed("workflow deleted")
 }
 
-// updateCRDStatus writes the DS registration result into the CRD's .status subresource.
-// Runs asynchronously after admission completes so it doesn't block the API server response.
-// Uses a fresh context with a timeout since the admission context is cancelled after response.
+// updateCRDStatus writes the locally-computed registration outcome into the
+// CRD's .status subresource. Runs asynchronously after admission completes so
+// it doesn't block the API server response. Uses a fresh context with a
+// timeout since the admission context is cancelled after response.
+//
+// #1661 Change 8c: catalogStatus is always Active and previouslyExisted is
+// always false -- there is no DS response left to carry (see registerWorkflow
+// for why).
 //
 // Uses RetryOnConflict to handle the race between this goroutine and the API server
 // committing the spec change. On the UPDATE path, a plain GET succeeds immediately
 // (CRD already exists) but returns a stale resourceVersion; the subsequent Status().Update
 // gets a 409 Conflict once the API server commits the new resourceVersion. The retry
 // loop re-GETs the CRD (fresh resourceVersion) and retries the status write.
-func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registeredBy string, result *WorkflowRegistrationResult) {
+func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registeredBy, contentHash, workflowID string) {
 	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "status-update", "name", name, "namespace", namespace)
 
 	if h.k8sClient == nil {
@@ -427,16 +411,17 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 		}
 
 		now := metav1.Now()
-		rw.Status.WorkflowID = result.WorkflowID
-		rw.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
+		rw.Status.WorkflowID = workflowID
+		rw.Status.ContentHash = contentHash
+		rw.Status.CatalogStatus = sharedtypes.CatalogStatusActive
 		rw.Status.RegisteredBy = registeredBy
 		rw.Status.RegisteredAt = &now
-		rw.Status.PreviouslyExisted = result.PreviouslyExisted
+		rw.Status.PreviouslyExisted = false
 		setCondition(&rw.Status.Conditions, metav1.Condition{
 			Type:               rwv1alpha1.ConditionReady,
 			Status:             metav1.ConditionTrue,
 			Reason:             rwv1alpha1.ReasonRegistered,
-			Message:            "Workflow registered successfully in DataStorage catalog",
+			Message:            "Workflow registered successfully",
 			LastTransitionTime: now,
 		})
 
@@ -444,29 +429,31 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 	})
 	if err != nil {
 		logger.Error(err, "Failed to update CRD status after retries",
-			"workflow_id", result.WorkflowID,
+			"workflow_id", workflowID,
 		)
 		return
 	}
 
-	logger.Info("CRD status updated",
-		"workflow_id", result.WorkflowID,
-		"catalog_status", result.Status,
-		"previously_existed", result.PreviouslyExisted,
-	)
+	logger.Info("CRD status updated", "workflow_id", workflowID)
 }
 
-// refreshActionTypeWorkflowCount is a best-effort goroutine that queries DS for
-// the current active workflow count for the given actionType, then patches the
+// refreshActionTypeWorkflowCount is a best-effort goroutine that counts live
+// RemediationWorkflow CRDs referencing actionType, then patches the
 // corresponding ActionType CRD's status.activeWorkflowCount. Errors are logged
 // but never propagated — the RW admission result is already decided.
 //
 // Phase 3c (BR-WORKFLOW-007): keeps the kubectl get at WORKFLOWS column up-to-date.
-func (h *RemediationWorkflowHandler) refreshActionTypeWorkflowCount(actionType, namespace string) {
+// #1661 Change 8d: the count is now a direct K8s-native list against the
+// cache-backed client -- see listDependentWorkflowNames doc for why a DS-backed
+// count is permanently stale post Change 8c (DD-WORKFLOW-018). excludeRWName
+// is "" for CREATE/UPDATE (the just-admitted RW belongs in the count) and the
+// deleted RW's name for DELETE (still present in etcd behind its finalizer at
+// this point, so it must be excluded -- see listDependentWorkflowNames doc).
+func (h *RemediationWorkflowHandler) refreshActionTypeWorkflowCount(actionType, namespace, excludeRWName string) {
 	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "at-cross-update", "actionType", actionType)
 
-	if h.atCounter == nil || h.k8sClient == nil {
-		logger.V(1).Info("Cross-update skipped: atCounter or k8sClient not configured")
+	if h.k8sClient == nil {
+		logger.V(1).Info("Cross-update skipped: k8sClient not configured")
 		return
 	}
 
@@ -478,11 +465,12 @@ func (h *RemediationWorkflowHandler) refreshActionTypeWorkflowCount(actionType, 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	count, err := h.atCounter.GetActiveWorkflowCount(ctx, actionType)
+	dependents, err := listDependentWorkflowNames(ctx, h.k8sClient, actionType, excludeRWName)
 	if err != nil {
-		logger.Error(err, "Failed to fetch active workflow count from DS")
+		logger.Error(err, "Failed to list dependent RemediationWorkflows")
 		return
 	}
+	count := len(dependents)
 
 	atList := &atv1alpha1.ActionTypeList{}
 	if err := h.k8sClient.List(ctx, atList, client.InNamespace(namespace)); err != nil {
