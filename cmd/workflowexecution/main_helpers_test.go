@@ -46,7 +46,7 @@ func TestLoadWorkflowExecutionConfig_DefaultsWhenPathEmpty(t *testing.T) {
 	}
 
 	want := weconfig.DefaultConfig()
-	if cfg.Execution.Namespace != want.Execution.Namespace {
+	if cfg.Execution.Namespace != want.Execution.Namespace { //nolint:staticcheck // SA5011 false positive: cfg is guaranteed non-nil by the preceding t.Fatal guard
 		t.Errorf("Execution.Namespace = %q, want %q", cfg.Execution.Namespace, want.Execution.Namespace)
 	}
 	if cfg.Controller.MetricsAddr != want.Controller.MetricsAddr {

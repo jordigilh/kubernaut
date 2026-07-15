@@ -70,7 +70,7 @@ func TestNewJWKSCache_RegistersCBGaugeStateChange(t *testing.T) {
 	if cache == nil {
 		t.Fatal("expected non-nil cache")
 	}
-	if _, ok := cache.breakers["iss1"]; !ok {
+	if _, ok := cache.breakers["iss1"]; !ok { //nolint:staticcheck // SA5011 false positive: cache is guaranteed non-nil by the preceding t.Fatal guard
 		t.Error("expected breaker registered for iss1")
 	}
 }
