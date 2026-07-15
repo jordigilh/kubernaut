@@ -46,7 +46,14 @@ import (
 // ListActions returns action types from the taxonomy that have active workflows
 // matching the provided signal context filters (Step 1 of discovery protocol).
 // Returns action type entries with workflow counts, total count for pagination, and error.
+//
+// Issue #1661 Change 6 (DD-WORKFLOW-018): when r.cache is set, reads from the
+// Phase 28/29 informer-backed CRD cache instead of Postgres.
 func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.ActionTypeEntry, int, error) {
+	if r.cache != nil {
+		return r.listActionsFromCache(ctx, filters, offset, limit)
+	}
+
 	// Build the context filter WHERE clause for the workflow join
 	whereClause, args := buildContextFilterSQL(filters)
 
@@ -152,7 +159,14 @@ func actionTypeRowsToEntries(rows []actionTypeRow, logger logr.Logger) []models.
 // and signal context filters (Step 2 of discovery protocol).
 // #220: Results are scored and ordered by final_score DESC per DD-WORKFLOW-016.
 // Returns workflow list, total count for pagination, and error.
+//
+// Issue #1661 Change 6 (DD-WORKFLOW-018): when r.cache is set, reads from the
+// Phase 28/29 informer-backed CRD cache instead of Postgres.
 func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.RemediationWorkflow, int, error) {
+	if r.cache != nil {
+		return r.listWorkflowsByActionTypeFromCache(ctx, actionType, filters, offset, limit)
+	}
+
 	// Build context filter WHERE clause
 	whereClause, args := buildContextFilterSQL(filters)
 

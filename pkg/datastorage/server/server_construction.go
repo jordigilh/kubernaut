@@ -519,6 +519,13 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if wfCache != nil {
+		// Issue #1661 Change 6 (DD-WORKFLOW-018): switches ListActions/
+		// ListWorkflowsByActionType from Postgres to the informer-backed CRD
+		// cache. GetWorkflowWithContextFilters/GetByID (Step 3) are unaffected
+		// -- deferred per Phase 31 scope decision.
+		catalogDeps.workflowRepo.SetCache(wfCache)
+	}
 
 	handler := buildRESTHandler(deps, db, logger, auditDeps, catalogDeps, wfCache)
 

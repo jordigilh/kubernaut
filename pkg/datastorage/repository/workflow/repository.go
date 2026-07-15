@@ -19,6 +19,8 @@ package workflow
 import (
 	"github.com/go-logr/logr"
 	"github.com/jmoiron/sqlx"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/workflowcache"
 )
 
 // ========================================
@@ -57,6 +59,16 @@ const workflowCatalogColumns = "workflow_id, workflow_name, version, schema_vers
 type Repository struct {
 	db     *sqlx.DB
 	logger logr.Logger
+
+	// cache is the Issue #1661 Phase 28/29 informer-backed RemediationWorkflow/
+	// ActionType CRD view (DD-WORKFLOW-018). When set (via SetCache), ListActions
+	// and ListWorkflowsByActionType (Step 1/2 of the discovery protocol) read from
+	// it instead of issuing SQL against remediation_workflow_catalog/
+	// action_type_taxonomy. nil means "no cache wired" -- callers (tests,
+	// server_construction.go without K8sRestConfig) keep the existing SQL path
+	// unconditionally. GetWorkflowWithContextFilters/GetByID (Step 3) never
+	// consult the cache -- deferred per Phase 31 scope decision.
+	cache *workflowcache.Cache
 }
 
 // NewRepository creates a new workflow repository
@@ -66,4 +78,14 @@ func NewRepository(db *sqlx.DB, logger logr.Logger) *Repository {
 		db:     db,
 		logger: logger,
 	}
+}
+
+// SetCache wires the Issue #1661 Phase 28/29 informer-backed CRD cache into
+// the repository, switching ListActions/ListWorkflowsByActionType from SQL
+// to in-memory reads (DD-WORKFLOW-018). A nil cache is a no-op (keeps the
+// SQL path) -- callers should only pass a non-nil cache once it has
+// completed its initial sync (workflowcache.NewInformerCache blocks until
+// then).
+func (r *Repository) SetCache(cache *workflowcache.Cache) {
+	r.cache = cache
 }
