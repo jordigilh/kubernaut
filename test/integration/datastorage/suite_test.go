@@ -39,6 +39,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
 
+	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/cert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -103,6 +105,12 @@ var (
 
 	// DD-WE-006: K8s client for dependency validation (GW pattern: one shared envtest, all processes use it).
 	k8sClient client.Client
+
+	// Issue #1661 Phase 28: per-process *rest.Config for the shared envtest, valid in every
+	// parallel process (unlike sharedDSEnvConfig below, which is only populated in process 1).
+	// Consumers that need a *rest.Config directly (e.g. workflowcache.NewInformerCache, which
+	// builds its own controller-runtime cache rather than reusing k8sClient) must use this.
+	dsK8sRestConfig *rest.Config
 
 	// Shared envtest (process 1 only), stopped in AfterSuite Phase 2. Mimics Gateway integration.
 	sharedDSEnvTest   *envtest.Environment
@@ -330,10 +338,13 @@ var _ = SynchronizedBeforeSuite(
 
 		// 6. Start shared envtest (GW pattern: one instance, all processes use it via kubeconfig).
 		// Avoids four per-process envtest.Stop() calls in Phase 1 that cause CI hang/exit 2.
+		// Issue #1661 Phase 28: CRDDirectoryPaths now installs RemediationWorkflow/ActionType
+		// CRDs so the workflow cache IT (workflow_cache_test.go) can create real CRs.
 		GinkgoWriter.Println("🔧 [Process 1] Starting shared envtest for DD-WE-006 dependency validation...")
 		_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
 		sharedDSEnvTest = &envtest.Environment{
-			ErrorIfCRDPathMissing: false,
+			CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+			ErrorIfCRDPathMissing: true,
 			ControlPlane: envtest.ControlPlane{
 				APIServer: &envtest.APIServer{
 					SecureServing: envtest.SecureServing{
@@ -349,6 +360,8 @@ var _ = SynchronizedBeforeSuite(
 
 		// Create namespace and write kubeconfig so Phase 2 (all processes) can connect.
 		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(rwv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(atv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 		sharedK8sClient, err := client.New(sharedDSEnvConfig, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 		depNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-workflows"}}
@@ -409,13 +422,18 @@ var _ = SynchronizedBeforeSuite(
 		// DD-WE-006: K8s client from shared envtest (GW pattern). Process 1 uses sharedDSEnvConfig; others use kubeconfig from Phase 1.
 		GinkgoWriter.Printf("🔧 [Process %d] Connecting to shared envtest for K8s dependency validation...\n", processNum)
 		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
+		// Issue #1661 Phase 28: registered in every parallel process (each is a separate OS process).
+		Expect(rwv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(atv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 		if processNum == 1 {
-			k8sClient, err = client.New(sharedDSEnvConfig, client.Options{Scheme: scheme.Scheme})
+			dsK8sRestConfig = sharedDSEnvConfig
+			k8sClient, err = client.New(dsK8sRestConfig, client.Options{Scheme: scheme.Scheme})
 			Expect(err).ToNot(HaveOccurred(), "process 1: k8s client from shared envtest config")
 		} else {
 			cfg, err := clientcmd.BuildConfigFromFlags("", string(data))
 			Expect(err).ToNot(HaveOccurred(), "load kubeconfig from shared envtest")
-			k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+			dsK8sRestConfig = cfg
+			k8sClient, err = client.New(dsK8sRestConfig, client.Options{Scheme: scheme.Scheme})
 			Expect(err).ToNot(HaveOccurred(), "k8s client from kubeconfig")
 		}
 		GinkgoWriter.Printf("✅ [Process %d] K8s client ready (shared envtest)\n", processNum)
