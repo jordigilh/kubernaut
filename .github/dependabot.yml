@@ -1,5 +1,8 @@
 version: 2
 updates:
+  # ============================================================
+  # main (default branch)
+  # ============================================================
   - package-ecosystem: gomod
     directory: /
     schedule:
@@ -56,6 +59,82 @@ updates:
       - docker
     commit-message:
       prefix: "docker"
+    groups:
+      all-docker:
+        patterns:
+          - "*"
+
+  # ============================================================
+  # release/v1.5 (active maintenance branch)
+  #
+  # Dependabot's `target-branch` does not support wildcards/globs
+  # (https://github.com/dependabot/dependabot-core/issues/6890 -- still
+  # open), so each actively maintained release/* branch needs its own
+  # explicit block per ecosystem; it cannot be expressed as a single
+  # `release/**` pattern like the CI workflows use. Also note: any
+  # ecosystem block with a non-default target-branch is excluded from
+  # Dependabot's security-update PRs -- those always target the default
+  # branch (main) regardless of this config.
+  #
+  # Process: see "Dependabot on Maintenance Branches" in
+  # docs/development/release/RELEASE_GUIDE.md for adding/removing these
+  # blocks as release branches are cut/retired.
+  # ============================================================
+  - package-ecosystem: gomod
+    target-branch: release/v1.5
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - security
+    commit-message:
+      prefix: "deps(v1.5)"
+    ignore:
+      - dependency-name: "k8s.io/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "sigs.k8s.io/*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+    groups:
+      all-go-deps:
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    target-branch: release/v1.5
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: "ci(v1.5)"
+    groups:
+      all-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: docker
+    target-branch: release/v1.5
+    directories:
+      - "/docker"
+      - "/cmd/**"
+      - "/test/**"
+      - "/docs/architecture/spikes/**"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "docker(v1.5)"
     groups:
       all-docker:
         patterns:
