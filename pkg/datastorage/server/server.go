@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"k8s.io/client-go/rest"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/cert"
@@ -33,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/retention"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/workflowcache"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #493/#678: Conditional TLS
@@ -121,6 +123,19 @@ type Server struct {
 	// GAP-09 (Issue #1505) / SC-5: Optional per-IP rate limiter for the HTTP API.
 	// nil when disabled (default) — see appCfg.Server.RateLimit.Enabled.
 	ipLimiter *dsmiddleware.IPLimiter
+
+	// Issue #1661 Phase 29 / DD-WORKFLOW-018: cancel func for the workflow
+	// cache's informers, stopped during graceful shutdown. nil when
+	// ServerDeps.K8sRestConfig was not provided (e.g. most unit/integration
+	// tests that don't exercise workflow discovery).
+	cancelWorkflowCache func()
+}
+
+// WorkflowCache returns the informer-backed RemediationWorkflow/ActionType
+// CRD cache (Issue #1661 Phase 29 / DD-WORKFLOW-018), or nil if
+// ServerDeps.K8sRestConfig was not supplied when the server was built.
+func (s *Server) WorkflowCache() *workflowcache.Cache {
+	return s.handler.workflowCache
 }
 
 func defaultMaxBatchSize(v int) int {
@@ -153,6 +168,15 @@ type ServerDeps struct {
 	Authorizer    auth.Authorizer    // Permission checker (DD-AUTH-014)
 	AuthNamespace string             // Namespace for SAR checks (DD-AUTH-014)
 	HandlerOpts   []HandlerOption    // Optional handler options (e.g. WithSchemaExtractor)
+
+	// K8sRestConfig is the Kubernetes API server config used to build the
+	// Issue #1661 / DD-WORKFLOW-018 workflow cache (informer-backed view of
+	// RemediationWorkflow/ActionType CRDs). Optional: when nil, the workflow
+	// cache is not built and Server.WorkflowCache() returns nil -- existing
+	// callers (most unit/integration tests) are unaffected. cmd/datastorage/
+	// main.go always supplies this in production (buildK8sAuthDeps already
+	// builds the same rest.Config for DD-AUTH-014's auth middleware).
+	K8sRestConfig *rest.Config
 }
 
 // startupCleanups accumulates resource-release closures during NewServer so

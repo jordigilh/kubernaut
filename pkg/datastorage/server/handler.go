@@ -28,6 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
 	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/workflowcache"
 )
 
 // WorkflowLifecycleRepository defines the data access interface for workflow
@@ -77,16 +78,17 @@ type ActionTypeValidator interface {
 // REFACTOR: Enhanced with structured logging, request timing, and observability
 // V1.0: Embedding service removed (label-only search per CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md)
 type Handler struct {
-	sqlDB                   *sql.DB                           // For reconstruction queries (BR-AUDIT-006)
-	logger                  logr.Logger
-	workflowRepo            *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
-	workflowLifecycleRepo   WorkflowLifecycleRepository       // GAP-WF-1: Lifecycle ops (enable/disable/deprecate) - uses workflowRepo when nil
-	workflowIntegrityRepo   WorkflowContentIntegrityRepository // BR-WORKFLOW-006: Content hash integrity checking
-	actionTypeValidator     ActionTypeValidator                // GAP-4: DD-WORKFLOW-016 taxonomy validation
-	auditStore              audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
-	schemaExtractor         *oci.SchemaExtractor              // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
-	remediationHistoryRepo  RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
-	actionTypeRepo          *actiontyperepo.Repository        // BR-WORKFLOW-007: ActionType CRD lifecycle
+	sqlDB                  *sql.DB // For reconstruction queries (BR-AUDIT-006)
+	logger                 logr.Logger
+	workflowRepo           *repository.WorkflowRepository     // BR-STORAGE-013: Workflow catalog (label-only search)
+	workflowLifecycleRepo  WorkflowLifecycleRepository        // GAP-WF-1: Lifecycle ops (enable/disable/deprecate) - uses workflowRepo when nil
+	workflowIntegrityRepo  WorkflowContentIntegrityRepository // BR-WORKFLOW-006: Content hash integrity checking
+	actionTypeValidator    ActionTypeValidator                // GAP-4: DD-WORKFLOW-016 taxonomy validation
+	auditStore             audit.AuditStore                   // BR-AUDIT-023: Workflow search audit
+	schemaExtractor        *oci.SchemaExtractor               // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
+	remediationHistoryRepo RemediationHistoryQuerier          // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
+	actionTypeRepo         *actiontyperepo.Repository         // BR-WORKFLOW-007: ActionType CRD lifecycle
+	workflowCache          *workflowcache.Cache               // Issue #1661 Phase 29: informer-backed RW/ActionType CRD view (DD-WORKFLOW-018); nil until Change 6 (Phase 31-33) rewires discovery to consume it
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -176,6 +178,15 @@ func WithActionTypeRepository(repo *actiontyperepo.Repository) HandlerOption {
 	}
 }
 
+// WithWorkflowCache sets the informer-backed RemediationWorkflow/ActionType
+// CRD cache. Issue #1661 Phase 29 / DD-WORKFLOW-018. nil is valid (no
+// K8sRestConfig supplied) and matches the pre-Phase-29 behavior.
+func WithWorkflowCache(cache *workflowcache.Cache) HandlerOption {
+	return func(h *Handler) {
+		h.workflowCache = cache
+	}
+}
+
 // NewHandler creates a new REST API handler
 func NewHandler(opts ...HandlerOption) *Handler {
 	h := &Handler{
@@ -189,4 +200,3 @@ func NewHandler(opts ...HandlerOption) *Handler {
 
 	return h
 }
-

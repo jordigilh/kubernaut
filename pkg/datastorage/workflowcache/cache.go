@@ -70,6 +70,23 @@ type Cache struct {
 	reader client.Reader
 }
 
+// NewScheme builds the minimal runtime.Scheme this cache needs: just the
+// RemediationWorkflow and ActionType CRD types. Mirrors Gateway's
+// buildGatewayScheme (pkg/gateway/server_constructors.go) -- callers (e.g.
+// cmd/datastorage/main.go) build the scheme once and pass it to
+// NewInformerCache, rather than this package reaching for the shared
+// client-go scheme.Scheme global.
+func NewScheme() (*runtime.Scheme, error) {
+	scheme := runtime.NewScheme()
+	if err := rwv1alpha1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("failed to register RemediationWorkflow scheme: %w", err)
+	}
+	if err := atv1alpha1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("failed to register ActionType scheme: %w", err)
+	}
+	return scheme, nil
+}
+
 // NewInformerCache builds and starts a controller-runtime cache watching
 // RemediationWorkflow and ActionType CRDs cluster-wide, blocking until the
 // initial sync completes (bounded by syncTimeout). The returned
@@ -198,4 +215,3 @@ func (c *Cache) ListActionTypes(ctx context.Context) ([]atv1alpha1.ActionType, e
 	}
 	return list.Items, nil
 }
-

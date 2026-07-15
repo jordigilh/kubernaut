@@ -502,6 +502,10 @@ func buildServerWithRetry(p serverParams, logger logr.Logger) (*server.Server, e
 			Authenticator: p.authDeps.authenticator,
 			Authorizer:    p.authDeps.authorizer,
 			AuthNamespace: p.authDeps.authNamespace,
+			// Issue #1661 Phase 29 / DD-WORKFLOW-018: same rest.Config already
+			// built for DD-AUTH-014's auth middleware, reused to build the
+			// informer-backed RemediationWorkflow/ActionType CRD cache.
+			K8sRestConfig: p.authDeps.k8sConfig,
 		})
 		if err == nil {
 			logger.Info("Successfully connected to PostgreSQL and Redis",

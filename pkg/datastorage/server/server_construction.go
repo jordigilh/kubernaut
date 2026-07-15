@@ -41,6 +41,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/workflowcache"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #493/#678: Conditional TLS
 )
 
@@ -278,14 +279,49 @@ func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowC
 	}
 }
 
+// buildWorkflowCache constructs the Issue #1661 Phase 29 / DD-WORKFLOW-018
+// informer-backed RemediationWorkflow/ActionType CRD cache when
+// deps.K8sRestConfig is supplied, blocking until the initial sync completes.
+// Returns (nil, nil, nil) when K8sRestConfig is nil -- preserves existing
+// behavior for the many unit/integration tests that build a Server without
+// a Kubernetes dependency. cmd/datastorage/main.go always supplies
+// K8sRestConfig in production, so DS fails fast (like Postgres/Redis above)
+// if etcd is unreachable at startup, rather than silently running with a
+// stale/empty catalog.
+//
+// The returned cancel func is registered with cleanups (unwound if a later
+// startup step fails) AND must also be stored on Server for the graceful
+// Shutdown() path, since cleanups only run on startup failure.
+func buildWorkflowCache(deps ServerDeps, logger logr.Logger, cleanups *startupCleanups) (*workflowcache.Cache, func(), error) {
+	if deps.K8sRestConfig == nil {
+		logger.Info("Workflow cache disabled (no K8sRestConfig supplied)")
+		return nil, nil, nil
+	}
+
+	scheme, err := workflowcache.NewScheme()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to build workflow cache scheme: %w", err)
+	}
+
+	wfCache, cancel, err := workflowcache.NewInformerCache(deps.K8sRestConfig, scheme, logger)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to build workflow cache: %w", err)
+	}
+	cleanups.add(cancel)
+
+	logger.Info("Workflow cache synced (Issue #1661 Phase 29, DD-WORKFLOW-018)")
+	return wfCache, cancel, nil
+}
+
 // buildRESTHandler assembles the READ API Handler from the audit write and
 // workflow catalog dependencies plus any caller-provided options (e.g.
 // WithSchemaExtractor).
 //
 // BR-AUDIT-006: Pass sqlDB for reconstruction queries.
 // GAP-WF-1: WithWorkflowLifecycleRepository enables enable/disable/deprecate handlers.
-func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps) *Handler {
-	opts := make([]HandlerOption, 0, 10+len(deps.HandlerOpts))
+// Issue #1661 Phase 29: wfCache is nil when ServerDeps.K8sRestConfig was not supplied.
+func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps, wfCache *workflowcache.Cache) *Handler {
+	opts := make([]HandlerOption, 0, 11+len(deps.HandlerOpts))
 	opts = append(opts,
 		WithLogger(logger),
 		WithWorkflowRepository(catalogDeps.workflowRepo),
@@ -297,6 +333,7 @@ func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps
 		WithSchemaExtractor(catalogDeps.schemaExtractor),
 		WithRemediationHistoryQuerier(catalogDeps.remHistoryQuerier),
 		WithActionTypeRepository(catalogDeps.actionTypeRepo),
+		WithWorkflowCache(wfCache),
 	)
 	opts = append(opts, deps.HandlerOpts...)
 	return NewHandler(opts...)
@@ -477,7 +514,13 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	}
 
 	catalogDeps := buildWorkflowCatalogDependencies(db, logger)
-	handler := buildRESTHandler(deps, db, logger, auditDeps, catalogDeps)
+
+	wfCache, cancelWorkflowCache, err := buildWorkflowCache(deps, logger, cleanups)
+	if err != nil {
+		return nil, err
+	}
+
+	handler := buildRESTHandler(deps, db, logger, auditDeps, catalogDeps, wfCache)
 
 	signer, openapiValidator, err := initSignerAndOpenAPIValidator(deps, auditDeps, logger)
 	if err != nil {
@@ -491,6 +534,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		retentionWorker: retentionWorker,
 		ipLimiter:       ipLimiter,
 	})
+	srv.cancelWorkflowCache = cancelWorkflowCache
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
 	srv.httpServer.Handler = srv.Handler()
