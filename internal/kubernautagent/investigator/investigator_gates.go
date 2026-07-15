@@ -395,6 +395,14 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 		result.ServiceAccountName = meta.ServiceAccountName
 	}
 	result.WorkflowVersion = meta.Version
+
+	// Issue #1661 Change 11a (DD-WORKFLOW-018): catalog-authoritative, not
+	// LLM-suppliable -- always overwrite from meta rather than the
+	// if-empty guards above, mirroring WorkflowVersion's unconditional
+	// assignment.
+	result.Dependencies = meta.Dependencies
+	result.Resources = meta.Resources
+	result.DeclaredParameterNames = meta.DeclaredParameterNames
 }
 
 // gvrToAPIVersion converts a GroupVersionResource to the apiVersion string

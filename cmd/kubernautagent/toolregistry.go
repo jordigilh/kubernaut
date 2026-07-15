@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -390,17 +391,52 @@ func buildWorkflowMeta(w ogenclient.RemediationWorkflow, schemaParser *dsschema.
 		meta.ServiceAccountName = w.ServiceAccountName.Value
 	}
 	if w.Content != "" {
-		parsed, err := schemaParser.Parse(w.Content)
-		if err != nil {
-			wfID := ""
-			if w.WorkflowId.Set {
-				wfID = w.WorkflowId.Value.String()
-			}
-			logger.Error(err, "failed to parse workflow schema Content, parameter validation will strip all LLM params (fail-closed)",
-				"workflow_id", wfID)
-		} else {
-			meta.Parameters = parsed.Parameters
-		}
+		applyParsedSchemaMeta(&meta, w, schemaParser, logger)
 	}
 	return meta
+}
+
+// applyParsedSchemaMeta parses w.Content and, on success, populates meta's
+// schema-derived fields: Parameters/DeclaredParameterNames (always),
+// Dependencies (always, nil when the schema declares none), and Resources
+// (best-effort -- an ExtractResources failure is logged but does not block
+// the other fields, since a malformed execution.resources section is
+// independent of parameter/dependency validity). A Parse failure leaves all
+// of these fields at their zero value (fail-closed: no unvalidated data).
+func applyParsedSchemaMeta(meta *parser.WorkflowMeta, w ogenclient.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) {
+	wfID := ""
+	if w.WorkflowId.Set {
+		wfID = w.WorkflowId.Value.String()
+	}
+
+	parsed, err := schemaParser.Parse(w.Content)
+	if err != nil {
+		logger.Error(err, "failed to parse workflow schema Content, parameter validation will strip all LLM params (fail-closed)",
+			"workflow_id", wfID)
+		return
+	}
+
+	meta.Parameters = parsed.Parameters
+	meta.DeclaredParameterNames = declaredParameterNames(parsed.Parameters)
+	meta.Dependencies = schemaParser.ExtractDependencies(parsed)
+
+	resources, resErr := schemaParser.ExtractResources(parsed)
+	if resErr != nil {
+		logger.Error(resErr, "failed to extract execution.resources from workflow schema, WorkflowMeta.Resources left nil",
+			"workflow_id", wfID)
+		return
+	}
+	meta.Resources = resources
+}
+
+// declaredParameterNames builds the defense-in-depth allowlist WorkflowExecution
+// uses to strip undeclared parameters before injecting them into execution
+// resources (Issue #1661 Change 11a, mirrors #243's WorkflowQuerier semantics:
+// nil means no schema available, empty means the schema declares zero params).
+func declaredParameterNames(params []models.WorkflowParameter) map[string]bool {
+	names := make(map[string]bool, len(params))
+	for _, p := range params {
+		names[p.Name] = true
+	}
+	return names
 }

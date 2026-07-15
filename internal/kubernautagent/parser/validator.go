@@ -23,6 +23,8 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -47,6 +49,25 @@ type WorkflowMeta struct {
 	Component             []string // MandatoryLabels.Component: GVK scope (apiVersion/Kind, e.g. apps/v1/Deployment), plain Kind legacy, or ["*"]
 	Parameters            []models.WorkflowParameter
 	CompiledPatterns      map[string]*regexp.Regexp
+
+	// Dependencies declares the Secrets/ConfigMaps the workflow's schema
+	// requires in the execution namespace (DD-WE-006). Nil when the schema
+	// declares no dependencies section. Issue #1661 Change 11a
+	// (DD-WORKFLOW-018): sourced here so enrichFromCatalog can place it on
+	// InvestigationResult, letting AA embed it in the CRD execution snapshot
+	// instead of WorkflowExecution re-fetching it from DataStorage.
+	Dependencies *models.WorkflowDependencies
+
+	// Resources declares the per-workflow Job container CPU/memory
+	// requests/limits (BR-WE-019 / DD-WE-008). Nil when the schema's
+	// execution.resources section is absent (BestEffort QoS preserved).
+	Resources *corev1.ResourceRequirements
+
+	// DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
+	// uses for defense-in-depth stripping of undeclared parameters (#243).
+	// nil means no schema content was parsed; empty means the schema
+	// declares zero parameters -- both are distinct from "unfiltered".
+	DeclaredParameterNames map[string]bool
 }
 
 // kaManagedParams are parameters injected by KA (not provided by the LLM).
