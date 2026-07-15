@@ -18,6 +18,7 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -25,7 +26,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -143,26 +148,26 @@ var _ = Describe("Response Mapper — #433", func() {
 		It("should map all optional fields to the response when populated", func() {
 			actionable := true
 			result := &katypes.InvestigationResult{
-				RCASummary:          "OOMKilled due to container memory limit exceeded",
-				Severity:            "critical",
-				SignalName:          "OOMKilled",
-				ContributingFactors: []string{"memory_limit_too_low", "memory_leak_in_app"},
-				CausalChain:         []string{"memory_leak", "oom_kill", "pod_restart"},
-				WorkflowID:          "oom-recovery-v1",
-				WorkflowVersion:     "1.2.0",
-				WorkflowRationale:   "Best match for OOM recovery",
-				ExecutionBundle:     "oci://registry/oom-recovery:v1",
+				RCASummary:            "OOMKilled due to container memory limit exceeded",
+				Severity:              "critical",
+				SignalName:            "OOMKilled",
+				ContributingFactors:   []string{"memory_limit_too_low", "memory_leak_in_app"},
+				CausalChain:           []string{"memory_leak", "oom_kill", "pod_restart"},
+				WorkflowID:            "oom-recovery-v1",
+				WorkflowVersion:       "1.2.0",
+				WorkflowRationale:     "Best match for OOM recovery",
+				ExecutionBundle:       "oci://registry/oom-recovery:v1",
 				ExecutionBundleDigest: "sha256:abc123",
-				ExecutionEngine:     "tekton",
-				ServiceAccountName:  "remediation-sa",
-				Confidence:          0.92,
-				Parameters:          map[string]interface{}{"memory_increase_pct": 50},
-				HumanReviewNeeded:   false,
-				IsActionable:        &actionable,
-				Warnings:            []string{"memory increase may affect pod scheduling"},
-				DetectedLabels:      map[string]interface{}{"app": "api-server", "team": "platform"},
-				RemediationTarget:   katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"},
-				DueDiligence:        &katypes.DueDiligenceReview{CausalCompleteness: "verified", TargetAccuracy: "high"},
+				ExecutionEngine:       "tekton",
+				ServiceAccountName:    "remediation-sa",
+				Confidence:            0.92,
+				Parameters:            map[string]interface{}{"memory_increase_pct": 50},
+				HumanReviewNeeded:     false,
+				IsActionable:          &actionable,
+				Warnings:              []string{"memory increase may affect pod scheduling"},
+				DetectedLabels:        map[string]interface{}{"app": "api-server", "team": "platform"},
+				RemediationTarget:     katypes.RemediationTarget{Kind: "Deployment", Name: "api-server", Namespace: "production"},
+				DueDiligence:          &katypes.DueDiligenceReview{CausalCompleteness: "verified", TargetAccuracy: "high"},
 				AlternativeWorkflows: []katypes.AlternativeWorkflow{
 					{WorkflowID: "oom-aggressive-v1", Confidence: 0.78, Rationale: "Aggressive recovery", ExecutionBundle: "oci://registry/oom-aggressive:v1"},
 					{WorkflowID: "oom-restart-v1", Confidence: 0.65, Rationale: "Simple restart"},
@@ -486,6 +491,96 @@ var _ = Describe("Response Mapper — #433", func() {
 			ss, ok := resp.(*agentclient.SessionStatus)
 			Expect(ok).To(BeTrue())
 			Expect(ss.Status).To(Equal("failed"))
+		})
+	})
+
+	// UT-KA-337-003 (Issue #1661 Change 11a, DD-WORKFLOW-018): the wire
+	// selected_workflow payload buildSelectedWorkflow returns must carry
+	// Dependencies/Resources/DeclaredParameterNames -- catalog-authoritative
+	// data enrichFromCatalog (UT-KA-337-002) placed on InvestigationResult --
+	// so AA can populate the CRD-embedded execution snapshot (Change 11b)
+	// without WorkflowExecution making its own DS round-trip.
+	Describe("UT-KA-337-003: selected_workflow carries Dependencies/Resources/DeclaredParameterNames", func() {
+		It("should include dependencies, resources, and declared_parameter_names keys when populated", func() {
+			result := &katypes.InvestigationResult{
+				RCASummary: "OOMKilled due to container memory limit exceeded",
+				WorkflowID: "oom-recovery-v1",
+				Confidence: 0.9,
+				Dependencies: &models.WorkflowDependencies{
+					Secrets: []models.ResourceDependency{{Name: "db-creds"}},
+				},
+				Resources: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+					Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+				},
+				DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true},
+			}
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return result, nil
+			}, map[string]string{"incident_id": "inc-deps-resources"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() session.Status {
+				sess, _ := manager.GetSession(id)
+				if sess == nil {
+					return ""
+				}
+				return sess.Status
+			}, 2*time.Second, 10*time.Millisecond).Should(Equal(session.StatusCompleted))
+
+			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{SessionID: id}
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			ir, ok := resp.(*agentclient.IncidentResponse)
+			Expect(ok).To(BeTrue())
+
+			sw, hasSW := ir.SelectedWorkflow.Get()
+			Expect(hasSW).To(BeTrue())
+			Expect(sw).To(HaveKey("dependencies"))
+			Expect(sw).To(HaveKey("resources"))
+			Expect(sw).To(HaveKey("declared_parameter_names"))
+
+			var deps models.WorkflowDependencies
+			Expect(json.Unmarshal([]byte(sw["dependencies"]), &deps)).To(Succeed())
+			Expect(deps.Secrets).To(HaveLen(1))
+			Expect(deps.Secrets[0].Name).To(Equal("db-creds"))
+
+			var declared map[string]bool
+			Expect(json.Unmarshal([]byte(sw["declared_parameter_names"]), &declared)).To(Succeed())
+			Expect(declared).To(Equal(map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true}))
+		})
+
+		It("should omit dependencies/resources/declared_parameter_names keys when unset", func() {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{
+					RCASummary: "CrashLoopBackOff",
+					WorkflowID: "restart-pod-v1",
+					Confidence: 0.8,
+				}, nil
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() session.Status {
+				sess, _ := manager.GetSession(id)
+				if sess == nil {
+					return ""
+				}
+				return sess.Status
+			}, 2*time.Second, 10*time.Millisecond).Should(Equal(session.StatusCompleted))
+
+			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{SessionID: id}
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			ir, ok := resp.(*agentclient.IncidentResponse)
+			Expect(ok).To(BeTrue())
+
+			sw, hasSW := ir.SelectedWorkflow.Get()
+			Expect(hasSW).To(BeTrue())
+			Expect(sw).NotTo(HaveKey("dependencies"))
+			Expect(sw).NotTo(HaveKey("resources"))
+			Expect(sw).NotTo(HaveKey("declared_parameter_names"))
 		})
 	})
 })
