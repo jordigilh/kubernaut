@@ -18,6 +18,7 @@ package datastorage_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -171,7 +172,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Empty remediation_id should be rejected")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions "required"
@@ -192,7 +194,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Whitespace-only remediation_id should be rejected")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions "required"
@@ -213,7 +216,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "256 character remediation_id should be rejected")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions "255 characters" limit
@@ -249,7 +253,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Empty notification_id should be rejected")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions "required"
@@ -270,7 +275,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Whitespace-only notification_id should be rejected")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions "required"
@@ -291,7 +297,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "256 character notification_id should be rejected")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions limit
@@ -327,7 +334,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Empty recipient should be rejected")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions "required"
@@ -348,7 +356,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Whitespace-only recipient should be rejected")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions "required"
@@ -363,7 +372,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.Recipient = strings.Repeat("a", 256)
 			err := validator.Validate(audit)
 			Expect(err).To(HaveOccurred())
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Expected ValidationError type")
 			Expect(valErr.FieldErrors["recipient"]).To(ContainSubstring("255 characters"))
 		})
@@ -392,7 +402,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Empty channel should fail validation")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions "required"
@@ -413,7 +424,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Invalid channel should fail validation")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error lists valid channels
@@ -434,7 +446,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Channel >50 characters should fail validation")
 
 			// CORRECTNESS: Error is ValidationError type
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Field error mentions 50-character limit
@@ -472,7 +485,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred
 			Expect(err).To(HaveOccurred(), "Empty message_summary should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["message_summary"]).To(ContainSubstring("required"),
 				"Field error should indicate message_summary is required")
@@ -489,7 +503,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred (whitespace trimmed = empty)
 			Expect(err).To(HaveOccurred(), "Whitespace-only message_summary should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["message_summary"]).To(ContainSubstring("required"),
 				"Whitespace-only message_summary should be treated as empty")
@@ -524,7 +539,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred
 			Expect(err).To(HaveOccurred(), "Empty status should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("required"),
 				"Field error should indicate status is required")
@@ -541,7 +557,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred
 			Expect(err).To(HaveOccurred(), "Invalid status should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("must be one of"),
 				"Field error should list valid status options")
@@ -558,7 +575,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred
 			Expect(err).To(HaveOccurred(), "Status >50 characters should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["status"]).To(ContainSubstring("50 characters"),
 				"Field error should mention 50-character maximum")
@@ -594,7 +612,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred
 			Expect(err).To(HaveOccurred(), "Zero sent_at should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["sent_at"]).To(ContainSubstring("required"),
 				"Field error should indicate sent_at is required")
@@ -611,7 +630,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred
 			Expect(err).To(HaveOccurred(), "sent_at >5 minutes in future should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["sent_at"]).To(ContainSubstring("cannot be in the future"),
 				"Field error should indicate future timestamp rejection")
@@ -659,7 +679,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred
 			Expect(err).To(HaveOccurred(), "Negative escalation_level should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["escalation_level"]).To(ContainSubstring("non-negative"),
 				"Field error should indicate non-negative constraint")
@@ -676,7 +697,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 
 			// CORRECTNESS: Error occurred
 			Expect(err).To(HaveOccurred(), "escalation_level >100 should fail validation")
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 			Expect(valErr.FieldErrors["escalation_level"]).To(ContainSubstring("at most 100"),
 				"Field error should indicate 100 maximum")
@@ -733,7 +755,8 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(err).To(HaveOccurred(), "Multiple invalid fields should fail validation")
 
 			// CORRECTNESS: Error is ValidationError with all field errors
-			valErr, ok := err.(*validation.ValidationError)
+			var valErr *validation.ValidationError
+			ok := errors.As(err, &valErr)
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Exactly 8 field errors (not fail-fast behavior)

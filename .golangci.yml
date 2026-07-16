@@ -89,6 +89,15 @@ linters:
                      # 24 findings remediated via mechanical rename (or, for
                      # locally-defined min()/max() helpers now redundant on
                      # Go 1.21+, removed in favor of the builtin).
+    - errorlint      # Validates error wrapping/comparison: %w vs %v in
+                     # fmt.Errorf, errors.Is/As vs == / type assertions (Issue
+                     # #1546 Tier 3). Directly complements AGENTS.md's "wrap
+                     # errors with %w" rule. ~76 findings remediated: ~30
+                     # mechanical %v->%w double-wrap fixes (2 with a combined
+                     # err/status message split into separate checks), 7
+                     # converted from == / != to errors.Is, 39 type
+                     # assertions converted to errors.As (mostly repeated
+                     # `err.(*SomeError)` patterns in Ginkgo test assertions).
 
   settings:
     govet:

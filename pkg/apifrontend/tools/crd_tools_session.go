@@ -51,7 +51,7 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 		return AwaitSessionResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return AwaitSessionResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return AwaitSessionResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if args.RRName == "" {
 		return AwaitSessionResult{}, fmt.Errorf("%w: rr_name is required", ErrInvalidInput)

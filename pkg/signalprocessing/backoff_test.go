@@ -18,6 +18,7 @@ package signalprocessing_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -228,7 +229,7 @@ func checkTransientError(err error) bool {
 	}
 
 	// Context deadline/cancellation (often network issues)
-	if err == context.DeadlineExceeded || err == context.Canceled {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return true
 	}
 

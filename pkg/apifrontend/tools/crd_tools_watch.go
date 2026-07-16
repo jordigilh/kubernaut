@@ -140,15 +140,15 @@ func (s *watchLoopState) run(ctx, watchCtx context.Context, deps watchDeps, rrCh
 func normalizeAndValidateWatchArgs(args *WatchArgs) error {
 	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	args.Namespace = ns
 	args.Name = name
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if err := validate.ResourceName(args.Name); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	return nil
 }

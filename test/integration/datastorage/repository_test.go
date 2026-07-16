@@ -17,6 +17,7 @@ limitations under the License.
 package datastorage
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -152,7 +153,8 @@ var _ = Describe("NotificationAudit Repository Integration", func() {
 				Expect(result).To(BeNil())
 
 				// ✅ BEHAVIOR TEST: Returns ValidationError
-				validationErr, ok := err.(*validation.ValidationError)
+				var validationErr *validation.ValidationError
+				ok := errors.As(err, &validationErr)
 				Expect(ok).To(BeTrue())
 				Expect(validationErr.FieldErrors).To(HaveKey("remediation_id"))
 			})
@@ -165,7 +167,8 @@ var _ = Describe("NotificationAudit Repository Integration", func() {
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
 
-				validationErr, ok := err.(*validation.ValidationError)
+				var validationErr *validation.ValidationError
+				ok := errors.As(err, &validationErr)
 				Expect(ok).To(BeTrue())
 				Expect(validationErr.FieldErrors).To(HaveKey("notification_id"))
 			})
@@ -184,7 +187,8 @@ var _ = Describe("NotificationAudit Repository Integration", func() {
 				Expect(result).To(BeNil())
 
 				// ✅ BEHAVIOR TEST: Returns RFC7807Problem with 409 Conflict
-				problem, ok := err.(*validation.RFC7807Problem)
+				var problem *validation.RFC7807Problem
+				ok := errors.As(err, &problem)
 				Expect(ok).To(BeTrue())
 				Expect(problem.Status).To(Equal(409))
 				Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/conflict"))
@@ -241,7 +245,8 @@ var _ = Describe("NotificationAudit Repository Integration", func() {
 				Expect(result).To(BeNil())
 
 				// ✅ BEHAVIOR TEST: Returns RFC7807Problem with 404 Not Found
-				problem, ok := err.(*validation.RFC7807Problem)
+				var problem *validation.RFC7807Problem
+				ok := errors.As(err, &problem)
 				Expect(ok).To(BeTrue())
 				Expect(problem.Status).To(Equal(404))
 				Expect(problem.Type).To(Equal("https://kubernaut.ai/problems/not-found"))

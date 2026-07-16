@@ -28,6 +28,7 @@ package a2av2migration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"sync"
@@ -187,7 +188,7 @@ func TestTestDouble_ErrorInjection(t *testing.T) {
 	}
 
 	events, err := collectEvents(exec.Execute(context.Background()))
-	if err != testErr {
+	if !errors.Is(err, testErr) {
 		t.Fatalf("expected testErr, got %v", err)
 	}
 	if len(events) != 1 {
@@ -342,7 +343,7 @@ func TestTestDouble_CollectAllWithErrors(t *testing.T) {
 	if errs[0] != nil {
 		t.Errorf("first event should have no error")
 	}
-	if errs[1] != testErr {
+	if !errors.Is(errs[1], testErr) {
 		t.Errorf("second event should carry testErr")
 	}
 

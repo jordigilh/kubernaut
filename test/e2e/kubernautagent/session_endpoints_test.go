@@ -17,6 +17,7 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -483,7 +484,8 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 				"Polling a non-existent session must return an error")
 
 			// CORRECTNESS: Error should indicate session not found
-			apiErr, ok := err.(*agentclient.APIError)
+			var apiErr *agentclient.APIError
+			ok := errors.As(err, &apiErr)
 			Expect(ok).To(BeTrue(), "Error should be an APIError type")
 			Expect(apiErr.StatusCode).To(Equal(http.StatusNotFound),
 				"Non-existent session should return HTTP 404")
@@ -515,7 +517,8 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Expect(err).To(HaveOccurred(),
 				"Getting result for a non-existent session must return an error")
 
-			apiErr, ok := err.(*agentclient.APIError)
+			var apiErr *agentclient.APIError
+			ok := errors.As(err, &apiErr)
 			Expect(ok).To(BeTrue(), "Error should be an APIError type")
 			Expect(apiErr.StatusCode).To(Equal(http.StatusNotFound),
 				"Non-existent session result should return HTTP 404")

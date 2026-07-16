@@ -174,7 +174,7 @@ func HandleListAlerts(ctx context.Context, client prom.Client, args ListAlertsAr
 func validateListAlertsArgs(args ListAlertsArgs) error {
 	if args.Namespace != "" {
 		if err := validate.Namespace(args.Namespace); err != nil {
-			return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}
 	}
 	if args.Severity != "" && !validAlertSeverities[strings.ToLower(args.Severity)] {
@@ -268,7 +268,7 @@ func HandleGetAlertDetails(ctx context.Context, client prom.Client, args GetAler
 	}
 	if args.Namespace != "" {
 		if err := validate.Namespace(args.Namespace); err != nil {
-			return GetAlertDetailsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+			return GetAlertDetailsResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}
 	}
 

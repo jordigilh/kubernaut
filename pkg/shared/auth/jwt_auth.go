@@ -170,7 +170,7 @@ func (a *JWTAuthenticator) ValidateToken(ctx context.Context, token string) (str
 func (a *JWTAuthenticator) ValidateTokenFull(ctx context.Context, rawToken string) (UserInfo, error) {
 	issuer, err := extractUnverifiedIssuer(rawToken)
 	if err != nil {
-		return UserInfo{}, fmt.Errorf("%w: %v", ErrTokenMalformed, err)
+		return UserInfo{}, fmt.Errorf("%w: %w", ErrTokenMalformed, err)
 	}
 
 	provider, ok := a.providers[issuer]
@@ -191,7 +191,7 @@ func (a *JWTAuthenticator) ValidateTokenFull(ctx context.Context, rawToken strin
 		jwt.WithValidate(true),
 	)
 	if err != nil {
-		return UserInfo{}, fmt.Errorf("%w: %v", ErrTokenInvalid, err)
+		return UserInfo{}, fmt.Errorf("%w: %w", ErrTokenInvalid, err)
 	}
 
 	claims, err := tokenToClaimsMap(verifiedToken)

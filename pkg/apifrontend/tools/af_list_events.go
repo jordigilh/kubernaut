@@ -50,7 +50,7 @@ func HandleListEvents(ctx context.Context, client dynamic.Interface, args ListEv
 		return ListEventsResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return ListEventsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return ListEventsResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	list, err := client.Resource(eventsGVR).Namespace(args.Namespace).List(ctx, metav1.ListOptions{})

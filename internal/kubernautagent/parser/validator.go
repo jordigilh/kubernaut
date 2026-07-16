@@ -17,6 +17,7 @@ limitations under the License.
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -460,7 +461,8 @@ func (v *Validator) SelfCorrect(result *katypes.InvestigationResult, maxAttempts
 		lastErr = validationErr
 
 		var errStrings []string
-		if paramErr, ok := validationErr.(*ParameterValidationError); ok {
+		var paramErr *ParameterValidationError
+		if errors.As(validationErr, &paramErr) {
 			errStrings = paramErr.Result.Errors
 		} else {
 			errStrings = []string{validationErr.Error()}

@@ -692,8 +692,11 @@ func startRedis() {
 	Eventually(func() error {
 		testCmd := exec.Command("podman", "exec", redisContainer, "redis-cli", "ping")
 		output, err := testCmd.CombinedOutput()
-		if err != nil || string(output) != "PONG\n" {
-			return fmt.Errorf("Redis not ready: %v", err)
+		if err != nil {
+			return fmt.Errorf("Redis not ready: %w", err)
+		}
+		if string(output) != "PONG\n" {
+			return fmt.Errorf("Redis not ready: unexpected response %q", string(output))
 		}
 		return nil
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")

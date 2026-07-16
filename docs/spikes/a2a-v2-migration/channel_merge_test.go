@@ -19,6 +19,7 @@ package a2av2migration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"sync"
@@ -576,7 +577,7 @@ func TestChannelMerge_ErrorPropagation(t *testing.T) {
 	for _, err := range channelMergeExecute(ctx, failingInner, bridgeCh) {
 		if err != nil {
 			sawError = true
-			if err != testErr {
+			if !errors.Is(err, testErr) {
 				t.Fatalf("expected testErr, got %v", err)
 			}
 			break

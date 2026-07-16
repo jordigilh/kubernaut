@@ -340,7 +340,7 @@ func ParseBundleDigest(bundle string) (fullRef string, digest string, err error)
 	}
 
 	if _, decodeErr := hex.DecodeString(hexPart); decodeErr != nil {
-		return "", "", fmt.Errorf("sha256 digest contains invalid hex characters: %v", decodeErr)
+		return "", "", fmt.Errorf("sha256 digest contains invalid hex characters: %w", decodeErr)
 	}
 
 	return bundle, hexPart, nil

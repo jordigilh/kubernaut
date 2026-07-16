@@ -17,6 +17,8 @@ limitations under the License.
 package parser_test
 
 import (
+	"errors"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -155,7 +157,8 @@ var _ = Describe("BR-HAPI-191: SelfCorrect with Parameter Validation (#1170)", f
 			})
 
 			Expect(err).NotTo(HaveOccurred())
-			paramErr, ok := receivedErr.(*parser.ParameterValidationError)
+			var paramErr *parser.ParameterValidationError
+			ok := errors.As(receivedErr, &paramErr)
 			Expect(ok).To(BeTrue(), "correctionFn should receive *ParameterValidationError")
 			Expect(paramErr.Result.Errors).To(ContainElement(ContainSubstring("REPLICA_COUNT")),
 				"Validation error should identify the failing parameter")

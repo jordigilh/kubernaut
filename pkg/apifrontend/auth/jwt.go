@@ -179,7 +179,7 @@ func (v *JWTValidator) Ready() bool {
 func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIdentity, error) {
 	token, err := josejwt.ParseSigned(rawToken, []jose.SignatureAlgorithm{jose.RS256, jose.ES256})
 	if err != nil {
-		return v.fallbackToTokenReview(ctx, rawToken, fmt.Errorf("%w: %v", ErrMalformedToken, err))
+		return v.fallbackToTokenReview(ctx, rawToken, fmt.Errorf("%w: %w", ErrMalformedToken, err))
 	}
 
 	issuer, err := extractIssuerUnsafe(token)
@@ -481,7 +481,7 @@ func evaluateCELRule(rule compiledRule, identity *UserIdentity) error {
 		"user": userMap,
 	})
 	if err != nil {
-		return fmt.Errorf("%w: evaluation error: %v", ErrCELValidation, err)
+		return fmt.Errorf("%w: evaluation error: %w", ErrCELValidation, err)
 	}
 
 	if out.Value() != true {

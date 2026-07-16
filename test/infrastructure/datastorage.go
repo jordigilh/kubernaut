@@ -1807,7 +1807,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 		testCmd := exec.CommandContext(context.Background(), "podman", "exec", infra.RedisContainer, "redis-cli", "ping")
 		testOutput, err := testCmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("redis not ready: %v, output: %s", err, string(testOutput))
+			return fmt.Errorf("redis not ready: %w, output: %s", err, string(testOutput))
 		}
 		return nil
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")

@@ -726,8 +726,11 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		"variables": "ansible_connection: local\nansible_python_interpreter: /usr/bin/python3",
 	}
 	_, hostStatus, err := awxAPIRequest("POST", fmt.Sprintf("%s/api/v2/inventories/%d/hosts/", awxBaseURL, cfg.InventoryID), hostBody, "")
-	if err != nil || (hostStatus != http.StatusCreated && hostStatus != http.StatusBadRequest) {
-		return nil, fmt.Errorf("failed to add host to inventory: HTTP %d, err: %v", hostStatus, err)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add host to inventory: %w", err)
+	}
+	if hostStatus != http.StatusCreated && hostStatus != http.StatusBadRequest {
+		return nil, fmt.Errorf("failed to add host to inventory: HTTP %d", hostStatus)
 	}
 
 	// 5. Create success job template
