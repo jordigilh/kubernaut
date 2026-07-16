@@ -1252,6 +1252,11 @@ rules:
 - apiGroups: ["authorization.k8s.io"]
   resources: ["subjectaccessreviews"]
   verbs: ["create"]
+# Issue #1661 Phase 29 (DD-WORKFLOW-018): informer-backed read-only cache of
+# RemediationWorkflow/ActionType CRDs (etcd is the single source of truth).
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationworkflows", "actiontypes"]
+  verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
