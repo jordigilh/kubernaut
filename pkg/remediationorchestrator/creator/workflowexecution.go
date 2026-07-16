@@ -94,25 +94,7 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 				UID:        rr.UID,
 			},
 			// WorkflowRef: Direct pass-through from AIAnalysis (BR-ORCH-025)
-			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
-				Version:               ai.Status.SelectedWorkflow.Version,
-				ExecutionBundle:       ai.Status.SelectedWorkflow.ExecutionBundle,
-				ExecutionBundleDigest: ai.Status.SelectedWorkflow.ExecutionBundleDigest,
-				EngineConfig:          ai.Status.SelectedWorkflow.EngineConfig,
-				// Issue #1661 Change 11d (DD-WORKFLOW-018): the five CRD-embedded
-				// execution-snapshot fields, pass-through from the AIAnalysis
-				// snapshot KA/AA already validated (Change 11a/11b), so
-				// WorkflowExecution stops re-fetching this data from DataStorage
-				// (Change 11e). Supersedes Issue #518 (ExecutionEngine) and Issue
-				// #650 (ServiceAccountName), which previously kept these off the
-				// WFE spec and resolved them at runtime from the DS catalog.
-				ExecutionEngine:        ai.Status.SelectedWorkflow.ExecutionEngine,
-				ServiceAccountName:     ai.Status.SelectedWorkflow.ServiceAccountName,
-				Dependencies:           ai.Status.SelectedWorkflow.Dependencies,
-				Resources:              ai.Status.SelectedWorkflow.Resources,
-				DeclaredParameterNames: ai.Status.SelectedWorkflow.DeclaredParameterNames,
-			},
+			WorkflowRef: buildWorkflowRef(ai.Status.SelectedWorkflow),
 			// TargetResource: String format "namespace/kind/name" (per API contract)
 			// BR-HAPI-191: Prefer LLM-identified RemediationTarget (e.g., Deployment)
 			// over the RR's TargetResource (e.g., Pod) when available.
@@ -125,6 +107,29 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 			Rationale:       ai.Status.SelectedWorkflow.Rationale,
 			ExecutionConfig: c.buildExecutionConfig(rr),
 		},
+	}
+}
+
+// buildWorkflowRef maps the AIAnalysis-selected workflow snapshot onto WorkflowRef.
+// Issue #1661 Change 11d (DD-WORKFLOW-018): the five CRD-embedded execution-snapshot
+// fields (ExecutionEngine, ServiceAccountName, Dependencies, Resources,
+// DeclaredParameterNames) are a pass-through from the AIAnalysis snapshot that KA/AA
+// already validated (Change 11a/11b), so WorkflowExecution stops re-fetching this data
+// from DataStorage (Change 11e). Supersedes Issue #518 (ExecutionEngine) and Issue #650
+// (ServiceAccountName), which previously kept these off the WFE spec and resolved them
+// at runtime from the DS catalog.
+func buildWorkflowRef(sw *aianalysisv1.SelectedWorkflow) workflowexecutionv1.WorkflowRef {
+	return workflowexecutionv1.WorkflowRef{
+		WorkflowID:             sw.WorkflowID,
+		Version:                sw.Version,
+		ExecutionBundle:        sw.ExecutionBundle,
+		ExecutionBundleDigest:  sw.ExecutionBundleDigest,
+		EngineConfig:           sw.EngineConfig,
+		ExecutionEngine:        sw.ExecutionEngine,
+		ServiceAccountName:     sw.ServiceAccountName,
+		Dependencies:           sw.Dependencies,
+		Resources:              sw.Resources,
+		DeclaredParameterNames: sw.DeclaredParameterNames,
 	}
 }
 
@@ -233,7 +238,8 @@ func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv
 }
 
 // buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.
-// Issue #650: Service account is not part of ExecutionConfig or WFE spec.
+// Issue #650 / #1661 Change 11d: ServiceAccountName is carried on WorkflowRef
+// (see buildWorkflowRef), not on ExecutionConfig -- this only carries timeouts.
 func (c *WorkflowExecutionCreator) buildExecutionConfig(rr *remediationv1.RemediationRequest) *workflowexecutionv1.ExecutionConfig {
 	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration > 0 {
 		return &workflowexecutionv1.ExecutionConfig{
