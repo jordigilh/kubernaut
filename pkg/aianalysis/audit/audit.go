@@ -635,7 +635,7 @@ func buildAnalysisFailedPayload(analysis *aianalysisv1.AIAnalysis, errorDetails 
 		EventType:        EventTypeAnalysisFailed,
 		AnalysisName:     analysis.Name,
 		Namespace:        analysis.Namespace,
-		Phase:            toAIAnalysisAuditPayloadPhase(string(analysis.Status.Phase)),
+		Phase:            toAIAnalysisAuditPayloadPhase(analysis.Status.Phase),
 		ApprovalRequired: analysis.Status.ApprovalRequired,
 		DegradedMode:     analysis.Status.DegradedMode,
 		WarningsCount:    len(analysis.Status.Warnings),

@@ -34,8 +34,8 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	gateway "github.com/jordigilh/kubernaut/pkg/gateway"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // =============================================================================
@@ -126,7 +126,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount")
-		
+
 		// Get token for E2E ServiceAccount
 		e2eToken, err := infrastructure.GetServiceAccountToken(
 			ctx,
@@ -356,11 +356,11 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			Expect(gatewayPayload.Fingerprint).To(Equal(event.ResourceID.Value),
 				"fingerprint in event_data should match resource_id")
 
-		// Field 16: severity
-		// Gateway passes through raw severity per DD-SEVERITY-001
-		// SignalProcessing will normalize severity in its audit events
-		Expect(string(gatewayPayload.Severity.Value)).To(Equal("warning"),
-			"severity should be raw pass-through value per DD-SEVERITY-001")
+			// Field 16: severity
+			// Gateway passes through raw severity per DD-SEVERITY-001
+			// SignalProcessing will normalize severity in its audit events
+			Expect(gatewayPayload.Severity.Value).To(Equal("warning"),
+				"severity should be raw pass-through value per DD-SEVERITY-001")
 
 			// Field 17: resource_kind
 			Expect(gatewayPayload.ResourceKind.Value).To(Equal("Pod"),
@@ -410,7 +410,7 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 			// ✅ OUTCOME 5: Signal metadata for operations
 			Expect(gatewayPayload.SignalName).To(Equal("AuditTestAlert"),
 				"Business outcome: alert_name enables filtering audit by alert type")
-			Expect(string(gatewayPayload.Severity.Value)).To(Equal("warning"),
+			Expect(gatewayPayload.Severity.Value).To(Equal("warning"),
 				"Business outcome: Gateway passes through RAW severity (DD-SEVERITY-001). No normalization. SignalProcessing performs Rego-based normalization.")
 
 			// ✅ OUTCOME 6: SOC2 compliance - 7-year audit trail

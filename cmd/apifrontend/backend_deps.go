@@ -247,7 +247,7 @@ func buildKAClientDeps(ctx context.Context, cfg *config.Config, deps *backendDep
 	deps.DedicatedClient = mcpClient
 	deps.InvestigationRegistry = tools.NewMonitorRegistry()
 
-	kaRESTAuth := http.RoundTripper(kaTransport)
+	kaRESTAuth := kaTransport
 	if cfg.Agent.KABearerTokenFile != "" {
 		kaRESTAuth = &bearerTokenTransport{
 			base:      kaTransport,
@@ -515,7 +515,7 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 	deps.fleetResilientClient = mcpFleetClient
 
 	clusterRegistry, err := registry.NewClusterRegistry(
-		registry.MCPGatewayType(cfg.Fleet.EffectiveMCPGatewayType()),
+		cfg.Fleet.EffectiveMCPGatewayType(),
 		deps.k8sDynClient,
 		registry.RegistryConfig{},
 		registry.NewMetrics(),

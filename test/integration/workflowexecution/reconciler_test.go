@@ -386,9 +386,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for workflowexecution.execution.started audit event via ogen client")
-		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-		auditClient := dsClients.OpenAPIClient
+			By("Querying DataStorage API for workflowexecution.execution.started audit event via ogen client")
+			// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: Gap #6 uses "workflowexecution" category and weaudit.EventTypeExecutionStarted event type
 			eventCategory := "workflowexecution" // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
@@ -456,9 +456,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for workflowexecution.workflow.completed audit event via ogen client")
-		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-		auditClient := dsClients.OpenAPIClient
+			By("Querying DataStorage API for workflowexecution.workflow.completed audit event via ogen client")
+			// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeCompleted event type
 			eventCategory := "workflowexecution"
@@ -521,9 +521,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for workflowexecution.workflow.failed audit event via ogen client")
-		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-		auditClient := dsClients.OpenAPIClient
+			By("Querying DataStorage API for workflowexecution.workflow.failed audit event via ogen client")
+			// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeFailed event type
 			eventCategory := "workflowexecution"
@@ -588,9 +588,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for audit events with correlation ID via ogen client")
-		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-		auditClient := dsClients.OpenAPIClient
+			By("Querying DataStorage API for audit events with correlation ID via ogen client")
+			// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: Use "workflowexecution" category
 			eventCategory := "workflowexecution"
@@ -759,17 +759,17 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-			By("Simulating completion")
-			now := metav1.Now()
-			Eventually(func() error {
-				fresh, fetchErr := getWFE(wfe.Name, wfe.Namespace)
-				if fetchErr != nil {
-					return fetchErr
-				}
-				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
-				fresh.Status.CompletionTime = &now
-				return k8sClient.Status().Update(ctx, fresh)
-			}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+				By("Simulating completion")
+				now := metav1.Now()
+				Eventually(func() error {
+					fresh, fetchErr := getWFE(wfe.Name, wfe.Namespace)
+					if fetchErr != nil {
+						return fetchErr
+					}
+					fresh.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
+					fresh.Status.CompletionTime = &now
+					return k8sClient.Status().Update(ctx, fresh)
+				}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 
 				By("Verifying PipelineRun still exists immediately after completion (cooldown active)")
 				// Use Eventually to verify PipelineRun exists (allows for controller reconciliation timing)
@@ -912,7 +912,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				// Use Eventually to wait for controller to process the completion and record metrics
 				Eventually(func() string {
 					updated, _ := getWFE(wfe.Name, wfe.Namespace)
-					return string(updated.Status.Phase)
+					return updated.Status.Phase
 				}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
 					"Controller should reconcile completion and record duration metric")
 

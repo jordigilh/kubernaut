@@ -85,7 +85,7 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 // motion, no behavior change.
 func (r *Reconciler) transitionToTimedOut(ctx context.Context, rr *remediationv1.RemediationRequest) (remediationv1.RemediationPhase, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-	timeoutPhase := remediationv1.RemediationPhase(rr.Status.OverallPhase)
+	timeoutPhase := rr.Status.OverallPhase
 	oldPhase := rr.Status.OverallPhase
 
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {

@@ -25,7 +25,6 @@ import (
 	"time"
 
 	adkanthropic "github.com/Alcova-AI/adk-anthropic-go"
-	"github.com/anthropics/anthropic-sdk-go"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
@@ -84,7 +83,7 @@ func newVertexAIModel(ctx context.Context, cfg types.LLMConfig) (m model.LLM, er
 	if cfg.Endpoint != "" {
 		adkCfg.BaseURL = cfg.Endpoint
 	}
-	return adkanthropic.NewModel(ctx, anthropic.Model(cfg.Model), adkCfg)
+	return adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
 }
 
 func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
@@ -117,7 +116,7 @@ func newAnthropicModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, err
 	if cfg.Endpoint != "" {
 		adkCfg.BaseURL = cfg.Endpoint
 	}
-	return adkanthropic.NewModel(ctx, anthropic.Model(cfg.Model), adkCfg)
+	return adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
 }
 
 // BuildLLMHTTPClient constructs an HTTP client with the transport chain

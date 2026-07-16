@@ -54,7 +54,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
+						Name:      rrName,        // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
@@ -94,7 +94,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			By("Waiting for Completed phase (terminal)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying final status fields")
@@ -103,14 +103,14 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
 			// Staging environment should auto-approve per Rego policy
-		Expect(analysis.Status.ApprovalRequired).To(BeFalse())
-		// Should have a selected workflow from KA mock
-		Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
-		// DD-WORKFLOW-002 v3.0: Test assertions use actual UUIDs from DataStorage
-		// Mock LLM returns workflow for CrashLoopBackOff → crashloop-config-fix-v1 (production environment)
-		expectedWorkflowID := workflowUUIDs["crashloop-config-fix-v1:production"]
-		Expect(expectedWorkflowID).NotTo(BeEmpty(), "crashloop-config-fix-v1:production UUID must be seeded")
-		Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal(expectedWorkflowID))
+			Expect(analysis.Status.ApprovalRequired).To(BeFalse())
+			// Should have a selected workflow from KA mock
+			Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
+			// DD-WORKFLOW-002 v3.0: Test assertions use actual UUIDs from DataStorage
+			// Mock LLM returns workflow for CrashLoopBackOff → crashloop-config-fix-v1 (production environment)
+			expectedWorkflowID := workflowUUIDs["crashloop-config-fix-v1:production"]
+			Expect(expectedWorkflowID).NotTo(BeEmpty(), "crashloop-config-fix-v1:production UUID must be seeded")
+			Expect(analysis.Status.SelectedWorkflow.WorkflowID).To(Equal(expectedWorkflowID))
 		})
 
 		It("should require approval for production environment - BR-AI-013", func() {
@@ -131,7 +131,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			By("Waiting for completion")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying approval required for production")
@@ -152,7 +152,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      rrName, // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
+						Name:      rrName,        // ✅ UNIQUE per test run (DD-AUDIT-CORRELATION-001)
 						Namespace: testNamespace, // DD-TEST-002: Use dynamic namespace
 					},
 					RemediationID: rrName, // Match RemediationRequestRef.Name for correlation consistency
@@ -263,7 +263,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			By("Waiting for Completed phase (annotations must not break reconciliation)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 		})
 
@@ -314,7 +314,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 			By("Waiting for Completed phase (backward compatibility)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 		})
 	})

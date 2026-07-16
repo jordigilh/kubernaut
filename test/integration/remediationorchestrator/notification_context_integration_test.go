@@ -215,7 +215,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 		nr := &notificationv1.NotificationRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, nr)).To(Succeed())
 
-		Expect(nr.Spec.Context.Analysis.Outcome).To(Equal(string(rr.Status.Outcome)))
+		Expect(nr.Spec.Context.Analysis.Outcome).To(Equal(rr.Status.Outcome))
 		Expect(nr.Spec.Context.Workflow.WorkflowID).To(Equal(ai.Status.SelectedWorkflow.WorkflowID))
 		Expect(nr.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name))
 		Expect(nr.Spec.Context.Lineage.AIAnalysis).To(Equal(ai.Name))

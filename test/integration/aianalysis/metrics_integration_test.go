@@ -141,7 +141,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
 		})
@@ -195,7 +195,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
 				"AIAnalysis should complete successfully with mock returning success")
 
@@ -375,7 +375,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 60*time.Second, 500*time.Millisecond).Should(Or(Equal("Completed"), Equal("AwaitingApproval")))
 
 			// 3. Verify Rego evaluation metrics were emitted

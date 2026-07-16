@@ -94,7 +94,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 	waitForTerminalPhase := func(analysis *aianalysisv1.AIAnalysis) {
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-			return string(analysis.Status.Phase)
+			return analysis.Status.Phase
 		}, timeout, interval).Should(
 			SatisfyAny(Equal("Completed"), Equal("Failed")),
 			"CR should reach a terminal phase (Completed or Failed)")
@@ -221,7 +221,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			By("Waiting for reconciliation to start processing")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(
 				SatisfyAny(Equal("Investigating"), Equal("Analyzing"), Equal("Completed"), Equal("Failed")),
 				"CR should progress past Pending phase")

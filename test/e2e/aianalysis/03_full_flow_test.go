@@ -59,7 +59,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-001",
-							Severity:        "warning",
+							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
@@ -101,7 +101,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			// Per reconciliation-phases.md v2.1: Pending → Investigating → Analyzing → Completed
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying final status")
@@ -152,7 +152,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			By("Waiting for completion")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying approval required")
@@ -180,7 +180,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-002",
-							Severity:        "warning",
+							Severity:         "warning",
 							SignalName:       "OOMKilled",
 							Environment:      "staging", // Non-production = auto-approve
 							BusinessPriority: "P2",
@@ -209,7 +209,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			By("Waiting for completion")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying auto-approved (no approval required)")
@@ -236,7 +236,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-fingerprint-004",
-							Severity:        "warning",
+							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P2",
@@ -265,7 +265,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			By("Waiting for completion")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying approval required due to data quality")
@@ -321,7 +321,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			By("Waiting for Failed phase (BR-HAPI-197 AC-4: confidence 0.35 < 0.7 threshold -> Failed/LowConfidence)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Failed"))
 
 			By("Verifying failure reason per BR-HAPI-197 AC-4")
@@ -395,7 +395,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			By("Waiting for phase to reach Failed or Completed (self-correction loop + HTTP round-trips need headroom)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, 60*time.Second, interval).Should(Or(Equal("Failed"), Equal("Completed")))
 
 			By("Verifying ValidationAttemptsHistory populated with 3 attempts")

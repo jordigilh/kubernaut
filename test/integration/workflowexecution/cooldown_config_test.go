@@ -105,7 +105,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			Eventually(func() string {
 				updated2 := &workflowexecutionv1alpha1.WorkflowExecution{}
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe2), updated2)
-				return string(updated2.Status.Phase)
+				return updated2.Status.Phase
 			}, 3*time.Second, 100*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhasePending)))
 
 			By("Verifying second WorkflowExecution is blocked by cooldown")
@@ -113,7 +113,7 @@ var _ = Describe("Custom Cooldown Configuration", Label("config", "cooldown"), f
 			Consistently(func() string {
 				updated2 := &workflowexecutionv1alpha1.WorkflowExecution{}
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(wfe2), updated2)
-				return string(updated2.Status.Phase)
+				return updated2.Status.Phase
 			}, 5*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhasePending)))
 
 			By("Waiting for cooldown period to expire")

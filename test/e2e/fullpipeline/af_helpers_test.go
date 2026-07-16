@@ -239,7 +239,7 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 		}
 		for _, we := range weList.Items {
 			if strings.Contains(we.Name, rrName) || we.Spec.RemediationRequestRef.Name == rrName {
-				phase := string(we.Status.Phase)
+				phase := we.Status.Phase
 				if phase == "Failed" {
 					Fail(fmt.Sprintf("WorkflowExecution %s failed (phase=Failed)", we.Name))
 				}
@@ -425,4 +425,3 @@ func fpPostSignalToGateway(reason, podName, podNamespace string) string {
 		"Gateway response must include remediationRequestName for signal %q", reason)
 	return rrName
 }
-

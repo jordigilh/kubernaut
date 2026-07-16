@@ -90,7 +90,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			By("Waiting for WorkflowExecution to transition to Completed")
 			Eventually(func() string {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Verifying ExecutionTotal{outcome='Completed'} incremented")
@@ -142,7 +142,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			By("Waiting for WorkflowExecution to transition to Failed")
 			Eventually(func() string {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			By("Verifying ExecutionTotal{outcome='Failed'} incremented")
@@ -194,7 +194,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			By("Verifying successful completion and duration recording")
 			Eventually(func() string {
 				updated, _ := getWFE(wfeSuccess.Name, wfeSuccess.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			GinkgoWriter.Println("✅ BR-WE-008: Duration histogram recorded for successful completion")
@@ -222,7 +222,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			By("Verifying failed completion and duration recording")
 			Eventually(func() string {
 				updated, _ := getWFE(wfeFailed.Name, wfeFailed.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			GinkgoWriter.Println("✅ BR-WE-008: Duration histogram recorded for failed execution")
@@ -265,7 +265,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			Eventually(func() string {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Verifying only valid label values are used")
@@ -305,7 +305,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			Eventually(func() string {
 				updated, _ := getWFE(wfeSuccess.Name, wfeSuccess.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Creating failed workflow")
@@ -323,7 +323,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			Eventually(func() string {
 				updated, _ := getWFE(wfeFailed.Name, wfeFailed.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			By("Verifying counters allow success rate calculation")

@@ -106,7 +106,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 10*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			// Verify status fields set by controller
@@ -164,7 +164,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 10*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			// Delete - controller will handle cleanup
@@ -228,7 +228,7 @@ var _ = Describe("WorkflowExecution CRD Lifecycle", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 30*time.Second, 200*time.Millisecond).Should(Equal("Running"))
 
 			// Get the associated PipelineRun name

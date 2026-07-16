@@ -71,7 +71,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)),
 				"Controller should dispatch to JobExecutor and create a Job")
 
@@ -94,7 +94,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
 				"WFE should transition to Completed when Job succeeds")
 
@@ -118,7 +118,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Getting the created Job")
@@ -134,7 +134,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)),
 				"WFE should transition to Failed when Job fails")
 
@@ -212,7 +212,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying Job exists")
@@ -267,7 +267,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying the Job name is deterministic")
@@ -347,7 +347,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying Job exists")
@@ -403,7 +403,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Getting and deleting the Job externally")
@@ -450,7 +450,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Simulating normal Job completion (NOT external deletion)")
@@ -464,7 +464,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
 				"WFE should complete normally (not trigger external deletion logic)")
 
@@ -600,7 +600,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Simulating Job failure")
@@ -661,7 +661,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying Job exists for first WFE")
@@ -681,7 +681,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)),
 				"Second WFE should fail due to Job name collision (resource locked)")
 
@@ -712,7 +712,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Creating second WFE for SAME target (will fail)")
@@ -728,7 +728,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			By("Verifying first WFE remains Running (unaffected)")
@@ -748,7 +748,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
 				"First WFE should complete successfully despite second WFE's failure")
 

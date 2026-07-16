@@ -165,7 +165,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-audit-fingerprint",
-							Severity:        "warning",
+							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "production",
 							BusinessPriority: "P1",
@@ -183,12 +183,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-		By("Waiting for reconciliation to complete")
-		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
-		Eventually(func() string {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-			return string(analysis.Status.Phase)
-		}).Should(Equal("Completed"))
+			By("Waiting for reconciliation to complete")
+			// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return analysis.Status.Phase
+			}).Should(Equal("Completed"))
 
 			remediationID := analysis.Spec.RemediationID
 
@@ -199,11 +199,11 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			// can fail if audit buffer (1s flush interval) hasn't finished flushing all events yet.
 			// Solution: Eventually checks for the MINIMUM expected event count (3 phase transitions).
 			var events []dsgen.AuditEvent
-		Eventually(func() int {
-			var err error
-			events, err = queryAllAuditEventTypes(remediationID) // Query all AI Analysis event types
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
+			Eventually(func() int {
+				var err error
+				events, err = queryAllAuditEventTypes(remediationID) // Query all AI Analysis event types
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for audit events (error: %v)\n", err)
 					return 0
 				}
 				// Count phase transition events specifically (most reliable indicator of completion)
@@ -314,17 +314,17 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-		By("Waiting for reconciliation to complete")
-		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
-		Eventually(func() string {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-			return string(analysis.Status.Phase)
-		}).Should(Equal("Completed"))
+			By("Waiting for reconciliation to complete")
+			// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return analysis.Status.Phase
+			}).Should(Equal("Completed"))
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for phase transition events to appear in Data Storage")
-		phaseEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition, 1)
+			By("Waiting for phase transition events to appear in Data Storage")
+			phaseEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition, 1)
 
 			By("Validating phase transition event_data structure")
 			for _, event := range phaseEvents {
@@ -359,7 +359,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-audit-ka",
-							Severity:        "warning",
+							Severity:         "warning",
 							SignalName:       "HighMemory",
 							Environment:      "development",
 							BusinessPriority: "P1",
@@ -376,19 +376,19 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-		By("Waiting for reconciliation to complete")
-		// Accepts Completed or Failed: when the mock LLM default fallback targets
-		// a resource absent from Kind, #704 HardFail triggers rca_incomplete which
-		// the reconciler maps to Failed. The audit events are recorded regardless.
-		Eventually(func() string {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-			return string(analysis.Status.Phase)
-		}).Should(SatisfyAny(Equal("Completed"), Equal("Failed")))
+			By("Waiting for reconciliation to complete")
+			// Accepts Completed or Failed: when the mock LLM default fallback targets
+			// a resource absent from Kind, #704 HardFail triggers rca_incomplete which
+			// the reconciler maps to Failed. The audit events are recorded regardless.
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return analysis.Status.Phase
+			}).Should(SatisfyAny(Equal("Completed"), Equal("Failed")))
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for AI agent call events to appear in Data Storage")
-		kaEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeAIAgentCall, 1)
+			By("Waiting for AI agent call events to appear in Data Storage")
+			kaEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeAIAgentCall, 1)
 
 			By("Validating AI agent API call event_data structure")
 			for _, event := range kaEvents {
@@ -426,7 +426,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      "e2e-audit-rego",
-							Severity:        "warning",
+							Severity:         "warning",
 							SignalName:       "CrashLoopBackOff",
 							Environment:      "staging", // Auto-approve in staging
 							BusinessPriority: "P1",
@@ -444,17 +444,17 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-		By("Waiting for reconciliation to complete")
-		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
-		Eventually(func() string {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-			return string(analysis.Status.Phase)
-		}).Should(Equal("Completed"))
+			By("Waiting for reconciliation to complete")
+			// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return analysis.Status.Phase
+			}).Should(Equal("Completed"))
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for Rego evaluation events to appear in Data Storage")
-		regoEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeRegoEvaluation, 1)
+			By("Waiting for Rego evaluation events to appear in Data Storage")
+			regoEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeRegoEvaluation, 1)
 
 			By("Validating Rego evaluation event_data structure")
 			event := regoEvents[0] // Should be only one Rego evaluation per analysis
@@ -508,12 +508,12 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-		By("Waiting for reconciliation to complete")
-		// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
-		Eventually(func() string {
-			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-			return string(analysis.Status.Phase)
-		}).Should(Equal("Completed"))
+			By("Waiting for reconciliation to complete")
+			// Uses SetDefaultEventuallyTimeout(30s) from suite_test.go (per RCA Jan 31, 2026)
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
+				return analysis.Status.Phase
+			}).Should(Equal("Completed"))
 
 			By("Verifying approval is required for production")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
@@ -522,8 +522,8 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 
 			remediationID := analysis.Spec.RemediationID
 
-		By("Waiting for approval decision events to appear in Data Storage")
-		approvalEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeApprovalDecision, 1)
+			By("Waiting for approval decision events to appear in Data Storage")
+			approvalEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeApprovalDecision, 1)
 
 			By("Validating approval decision event_data structure")
 			event := approvalEvents[0]

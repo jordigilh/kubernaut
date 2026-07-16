@@ -419,7 +419,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			By("verifying AA progresses past Investigating (sanity)")
 			Eventually(func(g Gomega) {
 				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-				g.Expect(string(analysis.Status.Phase)).NotTo(Equal(string(aianalysisv1.PhaseInvestigating)),
+				g.Expect(analysis.Status.Phase).NotTo(Equal(string(aianalysisv1.PhaseInvestigating)),
 					"AA should have left Investigating phase after completed poll")
 			}, completionTimeout, interval).Should(Succeed())
 		})

@@ -78,7 +78,7 @@ var _ = Describe("E2E-FP-1390-001: Session Upgrade Journey", Label("e2e", "fullp
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
-					phase := string(aa.Status.Phase)
+					phase := aa.Status.Phase
 					return phase == "Investigating" || phase == "Analyzing" || phase == "Completed"
 				}
 			}

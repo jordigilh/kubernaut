@@ -231,7 +231,7 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
-	if !phase.CanTransition(phase.Phase(oldPhase), newPhase) {
+	if !phase.CanTransition(oldPhase, newPhase) {
 		logger.Error(nil, "Invalid phase transition rejected by state machine",
 			"currentPhase", oldPhase,
 			"requestedPhase", newPhase)

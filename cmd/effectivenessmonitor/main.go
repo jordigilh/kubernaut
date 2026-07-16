@@ -476,7 +476,7 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 	}
 
 	clusterRegistry, err := registry.NewClusterRegistry(
-		registry.MCPGatewayType(cfg.Fleet.EffectiveMCPGatewayType()),
+		cfg.Fleet.EffectiveMCPGatewayType(),
 		dynClient,
 		registry.RegistryConfig{},
 		registry.NewMetrics(),

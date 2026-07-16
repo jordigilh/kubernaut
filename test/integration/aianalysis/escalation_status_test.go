@@ -107,7 +107,7 @@ var _ = Describe("Escalation Status Write (#1449)", Label("integration", "escala
 				"IR-5: operator_escalation must be persisted — this was the root cause of #1449")
 			Expect(persisted.Status.NeedsHumanReview).To(BeTrue(),
 				"IR-5: NeedsHumanReview must be persisted for escalation routing")
-			Expect(string(persisted.Status.Phase)).To(Equal("Failed"),
+			Expect(persisted.Status.Phase).To(Equal("Failed"),
 				"AU-12: Phase=Failed must be persisted for audit trail")
 			Expect(persisted.Status.SubReason).To(Equal("OperatorEscalation"),
 				"AU-12: SubReason must be persisted for structured audit reporting")

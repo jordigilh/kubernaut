@@ -132,7 +132,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			By("Verifying WFE transitioned to Running (race handled gracefully)")
 			Eventually(func() string {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			finalWFE, err := getWFE(wfe.Name, wfe.Namespace)
@@ -168,7 +168,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			By("Verifying controller detects existing PipelineRun and adopts it")
 			Eventually(func() string {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)),
 				"WFE should transition to Running using existing PipelineRun")
 
@@ -213,7 +213,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			By("Verifying second WFE is marked Failed/Deduplicated")
 			Eventually(func() string {
 				updated, _ := getWFE(wfe2.Name, wfe2.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)),
 				"Second WFE should fail due to PipelineRun conflict")
 

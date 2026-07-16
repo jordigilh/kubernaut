@@ -95,7 +95,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Terminal-phase housekeeping (Issue #88, #265)
-	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
+	if phase.IsTerminal(rr.Status.OverallPhase) {
 		return r.handleTerminalPhaseHousekeeping(ctx, rr, logger)
 	}
 
@@ -118,7 +118,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Issue #666: Check phase handler registry first
-	currentPhase := phase.Phase(rr.Status.OverallPhase)
+	currentPhase := rr.Status.OverallPhase
 	if h, ok := r.phaseRegistry.Lookup(currentPhase); ok {
 		intent, err := h.Handle(ctx, rr)
 		if err != nil {
@@ -201,7 +201,7 @@ func (r *Reconciler) shouldSkipPendingReconcile(rr *remediationv1.RemediationReq
 	// Log when we proceed during active orchestration (helps understand behavior)
 	if rr.Status.ObservedGeneration == rr.Generation &&
 		rr.Status.OverallPhase != "" &&
-		!phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
+		!phase.IsTerminal(rr.Status.OverallPhase) {
 		logger.V(1).Info("✅ PROCEEDING: Active orchestration phase",
 			"phase", rr.Status.OverallPhase,
 			"generation", rr.Generation,

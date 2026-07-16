@@ -250,7 +250,7 @@ var _ = Describe("FP-MCP-006: CRD InteractiveSession and CompletedAt", Label("e2
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
-					phase := string(aa.Status.Phase)
+					phase := aa.Status.Phase
 					hasSession := aa.Status.KASession != nil && aa.Status.KASession.ID != ""
 					return hasSession && (phase == "Investigating" || phase == "Analyzing" || phase == "Completed")
 				}
@@ -455,17 +455,17 @@ var _ = Describe("FP-MCP-005: discover_workflows and select_workflow", Label("e2
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
 
-	By("Calling discover_workflows (with retry — KA session may need time after takeover)")
-	Eventually(func(g Gomega) {
-		discoverCtx, discoverCancel := context.WithTimeout(ctx, 15*time.Second)
-		defer discoverCancel()
-		result, err = infrastructure.CallInvestigate(discoverCtx, setup.Session, map[string]any{
-			"rr_id":  rrName,
-			"action": "discover_workflows",
-		})
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
-	}, 60*time.Second, 5*time.Second).Should(Succeed())
+		By("Calling discover_workflows (with retry — KA session may need time after takeover)")
+		Eventually(func(g Gomega) {
+			discoverCtx, discoverCancel := context.WithTimeout(ctx, 15*time.Second)
+			defer discoverCancel()
+			result, err = infrastructure.CallInvestigate(discoverCtx, setup.Session, map[string]any{
+				"rr_id":  rrName,
+				"action": "discover_workflows",
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result.IsError).To(BeFalse(), "discover_workflows should succeed")
+		}, 60*time.Second, 5*time.Second).Should(Succeed())
 
 		text := infrastructure.ExtractToolResultText(result)
 		GinkgoWriter.Printf("  DiscoverWorkflows response (first 300 chars): %.300s\n", text)
@@ -484,8 +484,12 @@ var _ = Describe("FP-MCP-005: discover_workflows and select_workflow", Label("e2
 
 		By("Extracting workflow_id from discovery results")
 		var discovery struct {
-			Recommended  *struct{ WorkflowID string `json:"workflow_id"` } `json:"recommended"`
-			Alternatives []struct{ WorkflowID string `json:"workflow_id"` } `json:"alternatives"`
+			Recommended *struct {
+				WorkflowID string `json:"workflow_id"`
+			} `json:"recommended"`
+			Alternatives []struct {
+				WorkflowID string `json:"workflow_id"`
+			} `json:"alternatives"`
 		}
 		Expect(json.Unmarshal([]byte(resp), &discovery)).To(Succeed(), "parse discovery JSON")
 

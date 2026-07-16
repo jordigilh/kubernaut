@@ -361,7 +361,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 			payload, ok := req.EventData.GetAIAgentAlignmentVerdictPayload()
 			Expect(ok).To(BeTrue())
-			Expect(string(payload.Result)).To(Equal("suspicious"))
+			Expect(payload.Result).To(Equal("suspicious"))
 			Expect(payload.Summary.Value).To(ContainSubstring("2 steps flagged"))
 			Expect(payload.Flagged).To(Equal(2))
 			Expect(payload.Total).To(Equal(15))
@@ -384,7 +384,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 			payload, ok := recorder.calls[0].EventData.GetAIAgentAlignmentVerdictPayload()
 			Expect(ok).To(BeTrue())
-			Expect(string(payload.Result)).To(Equal("aligned"))
+			Expect(payload.Result).To(Equal("aligned"))
 			Expect(payload.Flagged).To(Equal(0))
 			Expect(payload.Total).To(Equal(10))
 		})

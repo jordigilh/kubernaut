@@ -168,7 +168,7 @@ func applyOptionalContextFields(event *audit.AuditEvent, req ogenclient.AuditEve
 		event.Severity = &req.Severity.Value
 	}
 	if req.DurationMs.IsSet() {
-		durationValue := int(req.DurationMs.Value)
+		durationValue := req.DurationMs.Value
 		event.DurationMs = &durationValue
 	}
 	if req.ActorIP.IsSet() {

@@ -97,7 +97,7 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 			// and return the oomkilled_predictive scenario response.
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"),
 				"AA should complete investigation with proactive signal mode")
 
@@ -160,7 +160,7 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 			By("Waiting for AA to complete standard RCA investigation")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"),
 				"AA should complete standard RCA with reactive signal mode")
 
