@@ -154,7 +154,7 @@ func NewSignalProcessing(name, namespace string, opts ...SignalProcessingOpts) *
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID: types.UID(fmt.Sprintf("%s-uid", name)),
+			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: signalprocessingv1.SignalProcessingSpec{
 			RemediationRequestRef: signalprocessingv1.ObjectReference{
@@ -247,7 +247,7 @@ func NewAIAnalysis(name, namespace string, opts ...AIAnalysisOpts) *aianalysisv1
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID: types.UID(fmt.Sprintf("%s-uid", name)),
+			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: aianalysisv1.AIAnalysisSpec{
 			RemediationID: "test-remediation",
@@ -284,10 +284,14 @@ func NewCompletedAIAnalysis(name, namespace string) *aianalysisv1.AIAnalysis {
 		Phase:            aianalysisv1.PhaseCompleted,
 		ApprovalRequired: false,
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "pod-restart-workflow",
-			Version:         "v1.0.0",
-			ExecutionBundle:  "kubernaut/workflows/pod-restart:v1.0.0",
+			WorkflowID:            "pod-restart-workflow",
+			Version:               "v1.0.0",
+			ExecutionBundle:       "kubernaut/workflows/pod-restart:v1.0.0",
 			ExecutionBundleDigest: "sha256:abc123",
+			// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
+			// required field on validateSelectedWorkflow -- RO no longer has a DS
+			// fallback to resolve it at WFE-creation time.
+			ExecutionEngine: "job",
 			Confidence:      0.95,
 			Rationale:       "High confidence match for pod restart scenario",
 			Parameters: map[string]string{
@@ -303,12 +307,13 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 		Phase:            aianalysisv1.PhaseCompleted,
 		ApprovalRequired: true,
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "deployment-rollback-workflow",
-			Version:         "v1.0.0",
-			ExecutionBundle:  "kubernaut/workflows/deployment-rollback:v1.0.0",
+			WorkflowID:            "deployment-rollback-workflow",
+			Version:               "v1.0.0",
+			ExecutionBundle:       "kubernaut/workflows/deployment-rollback:v1.0.0",
 			ExecutionBundleDigest: "sha256:def456",
-			Confidence:      0.65, // Low confidence triggers approval
-			Rationale:       "Moderate confidence - human review recommended",
+			ExecutionEngine:       "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence:            0.65,  // Low confidence triggers approval
+			Rationale:             "Moderate confidence - human review recommended",
 			Parameters: map[string]string{
 				"TARGET_DEPLOYMENT": "test-deployment",
 			},
@@ -324,7 +329,7 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 		RecommendedActions: []aianalysisv1.RecommendedAction{
 			{
 				WorkflowId: "deployment-rollback",
-				Rationale: "Moderate confidence suggests human review",
+				Rationale:  "Moderate confidence suggests human review",
 			},
 		},
 	}
@@ -352,13 +357,13 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID: types.UID(fmt.Sprintf("%s-uid", name)),
+			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID:      "pod-restart-workflow",
-				Version:         "v1.0.0",
-				ExecutionBundle:  "kubernaut/workflows/pod-restart:v1.0.0",
+				WorkflowID:            "pod-restart-workflow",
+				Version:               "v1.0.0",
+				ExecutionBundle:       "kubernaut/workflows/pod-restart:v1.0.0",
 				ExecutionBundleDigest: "sha256:abc123",
 			},
 			TargetResource: fmt.Sprintf("%s/Pod/test-pod", namespace),
@@ -436,7 +441,7 @@ func NewNotificationRequest(name, namespace string, opts ...NotificationRequestO
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
-			UID: types.UID(fmt.Sprintf("%s-uid", name)),
+			UID:       types.UID(fmt.Sprintf("%s-uid", name)),
 		},
 		Spec: notificationv1.NotificationRequestSpec{
 			Type:     notifType,

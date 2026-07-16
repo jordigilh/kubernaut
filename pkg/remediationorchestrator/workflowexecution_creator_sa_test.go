@@ -80,6 +80,9 @@ var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", f
 					WorkflowID:      "wf-uuid-123",
 					Version:         "1.0.0",
 					ExecutionBundle: "quay.io/test:v1@sha256:abc123",
+					// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made
+					// this a required field on validateSelectedWorkflow.
+					ExecutionEngine: "job",
 				},
 			},
 		}

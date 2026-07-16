@@ -234,6 +234,9 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 		Version:         "v1",
 		ExecutionBundle: "test-image:latest",
 		Confidence:      confidence,
+		// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
+		// required field on validateSelectedWorkflow.
+		ExecutionEngine: "job",
 	}
 	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 		Summary:  "Test root cause",

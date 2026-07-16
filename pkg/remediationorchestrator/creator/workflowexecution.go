@@ -64,6 +64,14 @@ func validateSelectedWorkflow(ai *aianalysisv1.AIAnalysis) error {
 	if ai.Status.SelectedWorkflow.ExecutionBundle == "" {
 		return fmt.Errorf("selectedWorkflow.executionBundle is required")
 	}
+	// Issue #1661 Change 11d (DD-WORKFLOW-018): once WorkflowExecution stops
+	// resolving ExecutionEngine from DataStorage at runtime (Change 11e), an
+	// empty value here would silently fall back to the wrong engine instead of
+	// failing closed. Fail here, at CRD-creation time, while the cause is still
+	// attributable to a specific AIAnalysis/KA selection.
+	if ai.Status.SelectedWorkflow.ExecutionEngine == "" {
+		return fmt.Errorf("selectedWorkflow.executionEngine is required")
+	}
 	return nil
 }
 
@@ -92,6 +100,18 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 				ExecutionBundle:       ai.Status.SelectedWorkflow.ExecutionBundle,
 				ExecutionBundleDigest: ai.Status.SelectedWorkflow.ExecutionBundleDigest,
 				EngineConfig:          ai.Status.SelectedWorkflow.EngineConfig,
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): the five CRD-embedded
+				// execution-snapshot fields, pass-through from the AIAnalysis
+				// snapshot KA/AA already validated (Change 11a/11b), so
+				// WorkflowExecution stops re-fetching this data from DataStorage
+				// (Change 11e). Supersedes Issue #518 (ExecutionEngine) and Issue
+				// #650 (ServiceAccountName), which previously kept these off the
+				// WFE spec and resolved them at runtime from the DS catalog.
+				ExecutionEngine:        ai.Status.SelectedWorkflow.ExecutionEngine,
+				ServiceAccountName:     ai.Status.SelectedWorkflow.ServiceAccountName,
+				Dependencies:           ai.Status.SelectedWorkflow.Dependencies,
+				Resources:              ai.Status.SelectedWorkflow.Resources,
+				DeclaredParameterNames: ai.Status.SelectedWorkflow.DeclaredParameterNames,
 			},
 			// TargetResource: String format "namespace/kind/name" (per API contract)
 			// BR-HAPI-191: Prefer LLM-identified RemediationTarget (e.g., Deployment)
@@ -101,11 +121,8 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 			ClusterID:      rr.Spec.ClusterID,
 			Parameters:     ai.Status.SelectedWorkflow.Parameters,
 			// Audit fields from AIAnalysis
-			Confidence: ai.Status.SelectedWorkflow.Confidence,
-			Rationale:  ai.Status.SelectedWorkflow.Rationale,
-			// Issue #518: ExecutionEngine removed from spec — resolved at runtime by
-			// the WE controller from the DS catalog via WorkflowQuerier.
-			// Issue #650: ServiceAccountName is not on WFE spec; resolved at runtime from DS.
+			Confidence:      ai.Status.SelectedWorkflow.Confidence,
+			Rationale:       ai.Status.SelectedWorkflow.Rationale,
 			ExecutionConfig: c.buildExecutionConfig(rr),
 		},
 	}

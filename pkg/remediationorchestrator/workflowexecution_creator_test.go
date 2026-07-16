@@ -22,6 +22,8 @@ import (
 	"errors"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +37,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -155,6 +158,44 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			// Issue #91: labels removed; parent tracked via spec.remediationRequestRef + ownerRef
 			Expect(created.Labels).To(BeNil())
 			Expect(created.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+		})
+	})
+
+	Describe("CRD-embedded execution snapshot pass-through (Issue #1661 Change 11d)", func() {
+		// Authority: DD-WORKFLOW-018. Now that WorkflowRef carries these five
+		// fields (Change 11c) and WorkflowExecution will stop re-fetching them
+		// from DataStorage (Change 11e), RO's buildWorkflowExecution must be the
+		// one production call site that copies them from the CRD-embedded
+		// AIAnalysis.Status.SelectedWorkflow snapshot into WorkflowRef.
+		It("UT-RO-341-001: copies Dependencies/Resources/DeclaredParameterNames/ExecutionEngine/ServiceAccountName from SelectedWorkflow into WorkflowRef", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("test-snapshot-passthrough", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-snapshot-passthrough", "default")
+			ai.Status.SelectedWorkflow.ExecutionEngine = "job"
+			ai.Status.SelectedWorkflow.ServiceAccountName = "workflow-runner-sa"
+			ai.Status.SelectedWorkflow.Dependencies = &sharedtypes.WorkflowDependencies{
+				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+			}
+			ai.Status.SelectedWorkflow.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+			}
+			ai.Status.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"TARGET_POD": true}
+			ctx := context.Background()
+
+			name, err := weCreator.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			created := &workflowexecutionv1.WorkflowExecution{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)).To(Succeed())
+
+			Expect(created.Spec.WorkflowRef.ExecutionEngine).To(Equal("job"),
+				"Issue #1661 Change 11d: ExecutionEngine must pass through to WorkflowRef")
+			Expect(created.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-runner-sa"))
+			Expect(created.Spec.WorkflowRef.Dependencies).To(Equal(ai.Status.SelectedWorkflow.Dependencies))
+			Expect(created.Spec.WorkflowRef.Resources).To(Equal(ai.Status.SelectedWorkflow.Resources))
+			Expect(created.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_POD": true}))
 		})
 	})
 
@@ -362,6 +403,15 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				"ExecutionBundle is empty",
 				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ExecutionBundle = "" },
 				"executionBundle is required"),
+			Entry("empty ExecutionEngine",
+				// UT-RO-341-002 (Issue #1661 Change 11d, DD-WORKFLOW-018): once WFE
+				// stops resolving ExecutionEngine from DS at runtime (Change 11e),
+				// an empty value here would silently default to the wrong engine
+				// instead of failing closed -- so RO must reject it up front,
+				// mirroring the existing WorkflowID/ExecutionBundle checks.
+				"ExecutionEngine is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ExecutionEngine = "" },
+				"executionEngine is required"),
 		)
 
 		It("should return error when client Create fails per BR-ORCH-025", func() {
