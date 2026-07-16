@@ -37,13 +37,15 @@ import (
 // ========================================
 
 // WorkflowRepository is a compatibility wrapper around workflow.Repository
-// DEPRECATED: Use workflow.NewRepository directly
+//
+// Deprecated: Use workflow.NewRepository directly.
 type WorkflowRepository struct {
 	*workflow.Repository
 }
 
 // NewWorkflowRepository creates a new workflow repository
-// DEPRECATED: Use workflow.NewRepository directly
+//
+// Deprecated: Use workflow.NewRepository directly.
 func NewWorkflowRepository(db *sqlx.DB, logger logr.Logger) *WorkflowRepository {
 	return &WorkflowRepository{
 		Repository: workflow.NewRepository(db, logger),

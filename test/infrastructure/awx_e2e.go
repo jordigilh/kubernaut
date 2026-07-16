@@ -612,13 +612,14 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		}
 		break
 	}
-	if orgCreated {
+	switch {
+	case orgCreated:
 		cfg.OrganizationID = int(orgResult["id"].(float64))
-	} else if orgStatus == http.StatusUnauthorized {
+	case orgStatus == http.StatusUnauthorized:
 		return nil, fmt.Errorf("AWX authentication failed after 12 attempts (HTTP 401) — admin superuser was never created by the operator")
-	} else if orgStatus == http.StatusBadRequest || orgStatus == http.StatusConflict {
+	case orgStatus == http.StatusBadRequest || orgStatus == http.StatusConflict:
 		cfg.OrganizationID = 1
-	} else {
+	default:
 		return nil, fmt.Errorf("failed to create organization: HTTP %d (expected 201 or 400/409)", orgStatus)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Organization ID: %d\n", cfg.OrganizationID)
@@ -794,11 +795,12 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 			"ask_credential_on_launch": true,
 		}
 		dtResult, dtStatus, dtErr := awxAPIRequest("POST", awxBaseURL+"/api/v2/job_templates/", dtBody, "")
-		if dtErr != nil {
+		switch {
+		case dtErr != nil:
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to create template %s (non-fatal): %v\n", dt.name, dtErr)
-		} else if dtStatus != http.StatusCreated {
+		case dtStatus != http.StatusCreated:
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Template %s returned HTTP %d (non-fatal)\n", dt.name, dtStatus)
-		} else {
+		default:
 			templateID := int(dtResult["id"].(float64))
 			_, _ = fmt.Fprintf(writer, "   ✅ %s Template ID: %d\n", dt.name, templateID)
 		}

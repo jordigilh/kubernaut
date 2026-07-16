@@ -367,6 +367,12 @@ func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Conf
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (cleanupHotReload) always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ADR-030: YAML-based configuration via -config flag
 	var configPath string
 	flag.StringVar(&configPath, "config", awconfig.DefaultConfigPath, "Path to YAML configuration file (ADR-030)")
@@ -391,6 +397,7 @@ func main() {
 	setupLog.Info("Starting webhook server", "port", cfg.Webhook.Port)
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

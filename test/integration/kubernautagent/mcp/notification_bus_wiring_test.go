@@ -88,9 +88,7 @@ var _ = Describe("Notification Bus Wiring — GAP-13 / BR-INTERACTIVE-005", Labe
 			Expect(result.IsError).To(BeFalse())
 
 			By("Waiting for warning interval to fire (1s into 4s timeout)")
-			Eventually(func() int32 {
-				return logMessagesReceived.Load()
-			}, 3*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 1),
+			Eventually(logMessagesReceived.Load, 3*time.Second, 200*time.Millisecond).Should(BeNumerically(">=", 1),
 				"MCP client should receive at least one LoggingMessage notification")
 
 			By("Asserting the warning message content")

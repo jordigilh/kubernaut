@@ -109,6 +109,19 @@ linters:
                      # polling" contract, Kubebuilder webhook soft-fail) and
                      # carry scoped //nolint:nilerr comments -- no blanket
                      # exclusion.
+    - gocritic       # Diagnostics for bugs, performance, and style issues
+                     # (Issue #1546 Tier 4). 30 findings remediated: 10
+                     # exitAfterDefer (all 10 controller/service main.go
+                     # entry points refactored to the run()-returns-int
+                     # pattern so os.Exit no longer skips deferred cleanup —
+                     # a real shutdown-hygiene bug, not just style), 7
+                     # ifElseChain and 1 singleCaseSwitch (switch rewrites),
+                     # 5 deprecatedComment (Deprecated: casing/paragraph
+                     # fixes), 3 unlambda (func literals replaced with a
+                     # matching-signature named function reference), 2
+                     # assignOp (x = x * n -> x *= n), and 1 appendAssign
+                     # (in-place slice filter idiom restructured to satisfy
+                     # the checker without changing behavior).
 
   settings:
     govet:
@@ -288,6 +301,16 @@ linters:
       - path: _test\.go
         linters:
           - noctx
+      # gocritic appendAssign: test/infrastructure/ builds derived CLI-arg
+      # slices (kubectl args, container lists) from a common base slice that
+      # is never read/mutated again afterward. Verified safe for all 12
+      # occurrences: each base is a fresh literal/short slice with cap==len,
+      # so append always reallocates rather than aliasing across the
+      # multiple derived slices built from it (Issue #1546 Tier 4).
+      - path: ^test/infrastructure/
+        linters:
+          - gocritic
+        text: "appendAssign"
 
 issues:
   max-issues-per-linter: 0

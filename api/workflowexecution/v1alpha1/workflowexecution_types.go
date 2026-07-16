@@ -281,7 +281,8 @@ type WorkflowExecutionStatus struct {
 	ExecutionStatus *ExecutionStatusSummary `json:"executionStatus,omitempty"`
 
 	// FailureReason explains why execution failed (if applicable)
-	// DEPRECATED: Use FailureDetails for structured failure information
+	//
+	// Deprecated: Use FailureDetails for structured failure information.
 	// +optional
 	FailureReason string `json:"failureReason,omitempty"`
 

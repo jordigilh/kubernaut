@@ -246,7 +246,8 @@ func WriteMockLLMConfigFile(configPath string, workflowUUIDs map[string]string, 
 }
 
 // UpdateMockLLMWithUUIDs sends the actual workflow UUIDs to Mock LLM
-// DEPRECATED: Use WriteMockLLMConfigFile for DD-TEST-011 v2.0 file-based pattern
+//
+// Deprecated: Use WriteMockLLMConfigFile for DD-TEST-011 v2.0 file-based pattern.
 // Pattern: DD-WORKFLOW-002 v3.0 UUID synchronization
 // DataStorage auto-generates UUIDs, so Mock LLM must be updated with actual values
 // This ensures LLM responses contain UUIDs that exist in DataStorage catalog

@@ -203,7 +203,7 @@ func AwaitISPhaseActive(ctx context.Context, client crclient.Client, namespace, 
 		case <-time.After(interval):
 		}
 
-		interval = interval * 2
+		interval *= 2
 		if interval > isPhaseMaxInterval {
 			interval = isPhaseMaxInterval
 		}

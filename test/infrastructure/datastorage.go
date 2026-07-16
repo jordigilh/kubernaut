@@ -1132,7 +1132,7 @@ spec:
 // ApplyMigrations is an exported wrapper for applying ALL migrations to a namespace.
 // This is useful for re-applying migrations after PostgreSQL restarts (e.g., in DLQ tests).
 //
-// DEPRECATED: Use ApplyAllMigrations() for DS full schema, or ApplyAuditMigrations() for audit-only.
+// Deprecated: Use ApplyAllMigrations() for DS full schema, or ApplyAuditMigrations() for audit-only.
 // This function is kept for backward compatibility.
 func ApplyMigrations(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	// Delegate to shared migration library

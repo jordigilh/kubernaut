@@ -228,6 +228,13 @@ func setupNotificationReconciler(
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (kubelog.Sync, stopHotReload)
+	// always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ========================================
 	// ADR-030: Configuration Management
 	// MANDATORY: Use -config flag with K8s env substitution
@@ -252,7 +259,7 @@ func main() {
 	mgr, err := buildManager(cfg, controllerNS)
 	if err != nil {
 		logger.Error(err, "Unable to start manager")
-		os.Exit(1)
+		return 1
 	}
 
 	// ========================================
@@ -261,7 +268,7 @@ func main() {
 	ds, err := buildDeliveryServices(cfg, logger)
 	if err != nil {
 		logger.Error(err, "Failed to initialize delivery services")
-		os.Exit(1)
+		return 1
 	}
 
 	// Initialize data sanitization
@@ -276,7 +283,7 @@ func main() {
 	auditStore, err := buildAuditStore(cfg)
 	if err != nil {
 		logger.Error(err, "Failed to create audit store")
-		os.Exit(1)
+		return 1
 	}
 
 	// Create audit manager (direct usage, no wrapper needed)
@@ -294,7 +301,7 @@ func main() {
 	ob, err := buildDeliveryOrchestrator(mgr, cfg, ds, sanitizer, controllerNS, logger)
 	if err != nil {
 		logger.Error(err, "Failed to build delivery orchestrator")
-		os.Exit(1)
+		return 1
 	}
 
 	reconciler := setupNotificationReconciler(mgr, cfg, ds, auditStore, auditManager, ob, logger)
@@ -317,7 +324,7 @@ func main() {
 
 	if err := mgr.Start(ctx); err != nil {
 		logger.Error(err, "Problem running manager")
-		os.Exit(1)
+		return 1
 	}
 
 	// ========================================
@@ -327,9 +334,10 @@ func main() {
 	logger.Info("Shutting down notification controller, flushing remaining audit events")
 	if err := auditStore.Close(); err != nil {
 		logger.Error(err, "Failed to close audit store gracefully")
-		os.Exit(1)
+		return 1
 	}
 	logger.Info("Audit store closed successfully, all events flushed")
+	return 0
 }
 
 // buildManager constructs the controller-runtime manager with the

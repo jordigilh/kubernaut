@@ -199,9 +199,7 @@ var _ = Describe("FileWatcher", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Wait for reload
-			Eventually(func() int32 {
-				return callCount.Load()
-			}, 3*time.Second, 100*time.Millisecond).Should(Equal(int32(2)))
+			Eventually(callCount.Load, 3*time.Second, 100*time.Millisecond).Should(Equal(int32(2)))
 
 			Expect(lastContent.Load().(string)).To(Equal("updated content"))
 			Expect(watcher.GetReloadCount()).To(Equal(int64(2)))
@@ -259,9 +257,7 @@ var _ = Describe("FileWatcher", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Wait for reload attempt
-			Eventually(func() int64 {
-				return watcher.GetErrorCount()
-			}, 3*time.Second, 100*time.Millisecond).Should(Equal(int64(1)))
+			Eventually(watcher.GetErrorCount, 3*time.Second, 100*time.Millisecond).Should(Equal(int64(1)))
 
 			// Should still have old content
 			Expect(watcher.GetLastHash()).To(Equal(initialHash))

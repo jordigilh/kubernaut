@@ -404,6 +404,12 @@ func configureAIAnalysisTLSAndHotReload(ctx context.Context, cfg *config.Config,
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (cleanupHotReload) always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ========================================
 	// ADR-030: Configuration via YAML file
 	// Single -config flag; all functional config in YAML ConfigMap
@@ -437,7 +443,7 @@ func main() {
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
 
 	// ========================================
@@ -462,10 +468,11 @@ func main() {
 		setupLog.Info("Flushing audit events on shutdown (DD-007, ADR-032 §2, BR-AI-091)")
 		if err := auditStore.Close(); err != nil {
 			setupLog.Error(err, "FATAL: Failed to close audit store - audit loss detected")
-			os.Exit(1)
+			return 1
 		}
 		setupLog.Info("Audit store closed successfully, all events flushed")
 	}
 
 	setupLog.Info("AIAnalysis controller shutdown complete")
+	return 0
 }

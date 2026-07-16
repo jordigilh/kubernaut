@@ -245,6 +245,13 @@ func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Co
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (stopConfigWatcher, stopHotReload)
+	// always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ========================================
 	// ADR-030: Configuration via YAML file
 	// Single --config flag; all functional config in YAML ConfigMap
@@ -272,11 +279,11 @@ func main() {
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
+		return 1
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
+		return 1
 	}
 
 	setupLog.Info("starting manager")
@@ -287,7 +294,7 @@ func main() {
 
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
 
 	// ========================================
@@ -297,9 +304,10 @@ func main() {
 	setupLog.Info("Shutting down remediation orchestrator, flushing remaining audit events")
 	if err := auditStore.Close(); err != nil {
 		setupLog.Error(err, "Failed to close audit store gracefully")
-		os.Exit(1)
+		return 1
 	}
 	setupLog.Info("Audit store closed successfully, all events flushed")
+	return 0
 }
 
 // buildManager constructs the controller-runtime manager with the

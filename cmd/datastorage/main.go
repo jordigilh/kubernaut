@@ -65,6 +65,13 @@ import (
 // ========================================
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (kubelog.Sync, cancel, stopHotReload)
+	// always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// Bootstrap logger at INFO for config loading
 	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
 	logger := kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
@@ -88,13 +95,13 @@ func main() {
 			"example_local", "export CONFIG_PATH=config/data-storage.yaml",
 			"example_k8s", "Set in Deployment manifest",
 		)
-		os.Exit(1)
+		return 1
 	}
 	cfg, err := loadDataStorageConfig(cfgPath, logger)
 	if err != nil {
 		// loadDataStorageConfig already logs the specific failure (file load,
 		// secrets, or validation) before returning.
-		os.Exit(1)
+		return 1
 	}
 
 	// Issue #875: Apply config-driven log level using shared LoggingConfig mapping
@@ -124,7 +131,7 @@ func main() {
 	authDeps, err := buildK8sAuthDeps(logger)
 	if err != nil {
 		logger.Error(err, "Failed to build Kubernetes auth dependencies (DD-AUTH-014)")
-		os.Exit(1)
+		return 1
 	}
 
 	// Create HTTP server with database connection + Redis for DLQ (SOC2 Gap #9),
@@ -136,7 +143,7 @@ func main() {
 	}, logger)
 	if err != nil {
 		logger.Error(err, "Failed to create server after all retries")
-		os.Exit(1)
+		return 1
 	}
 
 	// DD-007: Graceful shutdown timeout — read from config file (ADR-030).
@@ -158,6 +165,7 @@ func main() {
 	runAndWaitForShutdown(ctx, cfg, srv, obs, shutdownTimeout, logger)
 
 	logger.Info("Data Storage service stopped (ADR-030 + DD-007)")
+	return 0
 }
 
 // logEffectiveServerConfig logs clamp warnings for shutdownTimeout/maxBodySize,

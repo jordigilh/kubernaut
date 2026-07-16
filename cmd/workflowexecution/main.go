@@ -185,6 +185,13 @@ func initWorkflowExecutionServices(cfg *weconfig.Config, mgr ctrl.Manager) (audi
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (stopTLSWatcher, stopLogLevelWatcher,
+	// wireShutdownHooks, fleetGate.Stop) always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ========================================
 	// CONFIGURATION LOADING (ADR-030)
 	// Only --config flag is supported. All other settings are in the YAML config file.
@@ -257,13 +264,13 @@ func main() {
 	})
 	if err = reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
-		os.Exit(1)
+		return 1
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := registerHealthChecks(mgr, executorRegistry, fleetGate); err != nil {
 		setupLog.Error(err, "unable to set up health checks")
-		os.Exit(1)
+		return 1
 	}
 
 	// Issue #875: Log level hot-reload via FileWatcher
@@ -281,8 +288,9 @@ func main() {
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func readSecretKeyDirect(clientset kubernetes.Interface, namespace, name, key string) (string, error) {

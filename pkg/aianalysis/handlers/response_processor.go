@@ -518,11 +518,12 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	// BR-HAPI-197: No human review needed for resolved problems
 	analysis.Status.NeedsHumanReview = false
 
-	if resp.Analysis != "" {
+	switch {
+	case resp.Analysis != "":
 		analysis.Status.Message = resp.Analysis
-	} else if len(resp.Warnings) > 0 {
+	case len(resp.Warnings) > 0:
 		analysis.Status.Message = strings.Join(resp.Warnings, "; ")
-	} else {
+	default:
 		analysis.Status.Message = "Problem self-resolved. No remediation required."
 	}
 
@@ -570,11 +571,12 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 	analysis.Status.NeedsHumanReview = false
 	analysis.Status.Actionability = aianalysis.ActionabilityNotActionable
 
-	if resp.Analysis != "" {
+	switch {
+	case resp.Analysis != "":
 		analysis.Status.Message = resp.Analysis
-	} else if len(resp.Warnings) > 0 {
+	case len(resp.Warnings) > 0:
 		analysis.Status.Message = strings.Join(resp.Warnings, "; ")
-	} else {
+	default:
 		analysis.Status.Message = "Alert not actionable. No remediation warranted."
 	}
 
@@ -901,8 +903,9 @@ func hasSubstantiveRCA(rca agentclient.IncidentResponseRootCauseAnalysis) bool {
 }
 
 // mapWarningsToSubReason extracts SubReason from KA warnings
-// DEPRECATED: Use mapEnumToSubReason when HumanReviewReason is available
-// Kept for backward compatibility with older KA versions
+//
+// Deprecated: Use mapEnumToSubReason when HumanReviewReason is available.
+// Kept for backward compatibility with older KA versions.
 func mapWarningsToSubReason(warnings []string) string {
 	warningsStr := strings.ToLower(strings.Join(warnings, " "))
 

@@ -359,11 +359,9 @@ func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer
 			if attempt%5 == 0 {
 				_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Status %d (waiting for 200 OK)...\n", attempt, resp.StatusCode)
 			}
-		} else {
+		} else if attempt%5 == 0 {
 			// Log every 5th connection error for debugging
-			if attempt%5 == 0 {
-				_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Connection failed (%v), retrying...\n", attempt, err)
-			}
+			_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Connection failed (%v), retrying...\n", attempt, err)
 		}
 		time.Sleep(1 * time.Second)
 	}

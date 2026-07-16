@@ -171,9 +171,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 
 			registry.Stop("sess-stop-001")
 
-			Eventually(func() int32 {
-				return closerCalled.Load()
-			}, 2*time.Second).Should(BeNumerically(">=", 1))
+			Eventually(closerCalled.Load, 2*time.Second).Should(BeNumerically(">=", 1))
 
 			Expect(registry.Active("sess-stop-001")).To(BeFalse())
 		})

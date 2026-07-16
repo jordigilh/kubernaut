@@ -1093,6 +1093,7 @@ func getSignalProcessingGitHash() string {
 }
 
 // GetProjectRoot returns the absolute path to the project root.
+//
 // Deprecated: Use the shared getProjectRoot() from shared_integration_utils.go
 // and CollectE2EBinaryCoverage from coverage.go instead.
 // Kept temporarily for backward compatibility.

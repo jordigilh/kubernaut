@@ -74,6 +74,13 @@ func init() {
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (stopCAWatcher, fleetGate.Stop,
+	// stopHotReload, fleet client Close) always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ADR-030: Configuration via YAML file. Single --config flag; all
 	// functional config lives in the YAML ConfigMap.
 	var configPath string
@@ -96,7 +103,7 @@ func main() {
 	if err != nil {
 		setupLog.Error(err, "Failed to load configuration -- aborting startup",
 			"configPath", configPath)
-		os.Exit(1)
+		return 1
 	}
 
 	// Manager, audit store, and metrics (DD-AUDIT-003, DD-API-001, DD-METRICS-001).
@@ -105,7 +112,7 @@ func main() {
 	mgr, auditStore, emMetrics, err := initCoreDependencies(cfg, controllerNS, setupLog)
 	if err != nil {
 		setupLog.Error(err, "Failed to initialize core dependencies")
-		os.Exit(1)
+		return 1
 	}
 
 	// Issue #484: Create signal context early so the CA file watcher
@@ -117,7 +124,7 @@ func main() {
 	promClient, amClient, stopCAWatcher, err := initExternalDependencies(ctx, cfg, setupLog)
 	if err != nil {
 		setupLog.Error(err, "Failed to initialize external dependencies")
-		os.Exit(1)
+		return 1
 	}
 	defer stopCAWatcher()
 
@@ -133,7 +140,7 @@ func main() {
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to wire controller")
-		os.Exit(1)
+		return 1
 	}
 	if fleetResilientClient != nil {
 		defer func() {
@@ -155,7 +162,7 @@ func main() {
 
 	if err := registerHealthChecks(mgr, fleetGate); err != nil {
 		setupLog.Error(err, "unable to set up health checks")
-		os.Exit(1)
+		return 1
 	}
 
 	// Issue #748/#756/#875: TLS security profile, CA file hot-reload, and
@@ -165,8 +172,9 @@ func main() {
 
 	if err := runManagerUntilShutdown(ctx, mgr, auditStore, setupLog); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // runManagerUntilShutdown starts mgr and blocks until ctx is cancelled, then

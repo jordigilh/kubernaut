@@ -224,8 +224,7 @@ func parseValuePair(metric map[string]string, valuePair [2]interface{}) (Sample,
 	sample.Metric = metric
 
 	// Parse timestamp
-	switch ts := valuePair[0].(type) {
-	case float64:
+	if ts, ok := valuePair[0].(float64); ok {
 		sample.Timestamp = time.Unix(int64(ts), 0)
 	}
 

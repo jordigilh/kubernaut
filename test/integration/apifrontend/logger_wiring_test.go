@@ -171,9 +171,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 		updated := append(initial, '\n')
 		Expect(os.WriteFile(cfgPath, updated, 0o644)).To(Succeed())
 
-		Eventually(func() string {
-			return buf.String()
-		}, 5*time.Second, 100*time.Millisecond).Should(ContainSubstring("config validated but NOT applied"))
+		Eventually(buf.String, 5*time.Second, 100*time.Millisecond).Should(ContainSubstring("config validated but NOT applied"))
 
 		Expect(buf.String()).NotTo(ContainSubstring("level=INFO"))
 	})

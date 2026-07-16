@@ -284,7 +284,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		})
 
 		It("TC-E2E-A2A-MET-02: af_tool_calls_total includes result=success label", func() {
-			Eventually(func() string { return scrapeMetrics() }, 60*time.Second, 3*time.Second).
+			Eventually(scrapeMetrics, 60*time.Second, 3*time.Second).
 				Should(MatchRegexp(`af_tool_calls_total\{[^}]*result="success"`),
 					"should have successful tool call observations (contributed by parallel tests)")
 		})

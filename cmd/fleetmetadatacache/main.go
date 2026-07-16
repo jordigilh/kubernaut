@@ -256,6 +256,13 @@ func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan 
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (zapLogger.Sync, cancel, deps.close)
+	// always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	var configPath string
 	flag.StringVar(&configPath, "config", fmcconfig.DefaultConfigPath, "Path to YAML config file (ADR-030)")
 	flag.Parse()
@@ -267,11 +274,11 @@ func main() {
 	cfg, err := fmcconfig.LoadFromFile(configPath)
 	if err != nil {
 		logger.Error(err, "Failed to load configuration", "path", configPath)
-		os.Exit(1)
+		return 1
 	}
 	if err := cfg.Validate(); err != nil {
 		logger.Error(err, "Invalid configuration")
-		os.Exit(1)
+		return 1
 	}
 
 	logger.Info("FMC starting",
@@ -299,4 +306,5 @@ func main() {
 	servers := buildFMCServers(cfg, deps, &ready, logger)
 
 	runFMCServers(ctx, cancel, sigCh, deps, servers, logger)
+	return 0
 }

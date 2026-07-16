@@ -262,12 +262,13 @@ func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 	outcome := withDefault(entry.Outcome, "unknown")
 
 	var scoreText string
-	if entry.AssessmentReason == eav1.AssessmentReasonSpecDrift {
+	switch {
+	case entry.AssessmentReason == eav1.AssessmentReasonSpecDrift:
 		scoreText = "INCONCLUSIVE (spec drift)"
-	} else if entry.EffectivenessScore != nil {
+	case entry.EffectivenessScore != nil:
 		level := EffectivenessLevel(entry.EffectivenessScore)
 		scoreText = fmt.Sprintf("%.2f (%s)", *entry.EffectivenessScore, level)
-	} else {
+	default:
 		scoreText = "N/A"
 	}
 

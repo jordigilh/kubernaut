@@ -602,15 +602,16 @@ func (j *JobExecutor) buildStatusSummary(ctx context.Context, c ExecutorClient, 
 		RetryCount: j.countPodCreationAttempts(ctx, c, job),
 	}
 
-	if job.Status.Succeeded > 0 {
+	switch {
+	case job.Status.Succeeded > 0:
 		summary.Status = corev1.ConditionTrue
 		summary.Reason = "Succeeded"
 		summary.CompletedTasks = 1
-	} else if job.Status.Failed > 0 {
+	case job.Status.Failed > 0:
 		summary.Status = corev1.ConditionFalse
 		summary.Reason = "Failed"
 		summary.Message = fmt.Sprintf("%d pod(s) failed", job.Status.Failed)
-	} else if job.Status.Active > 0 {
+	case job.Status.Active > 0:
 		summary.Status = corev1.ConditionUnknown
 		summary.Reason = "Running"
 		summary.Message = fmt.Sprintf("%d pod(s) active", job.Status.Active)
