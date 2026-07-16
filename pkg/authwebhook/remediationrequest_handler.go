@@ -157,29 +157,29 @@ func (h *RemediationRequestStatusHandler) InjectDecoder(d admission.Decoder) err
 	return nil
 }
 
-// timeoutConfigChanged compares old and new TimeoutConfig to detect changes
-func timeoutConfigChanged(old, new *remediationv1.TimeoutConfig) bool {
+// timeoutConfigChanged compares old and updated TimeoutConfig to detect changes
+func timeoutConfigChanged(old, updated *remediationv1.TimeoutConfig) bool {
 	// Both nil - no change
-	if old == nil && new == nil {
+	if old == nil && updated == nil {
 		return false
 	}
 
 	// One nil, other not - changed
-	if old == nil || new == nil {
+	if old == nil || updated == nil {
 		return true
 	}
 
 	// Compare each field
-	if !durationEqual(old.Global, new.Global) {
+	if !durationEqual(old.Global, updated.Global) {
 		return true
 	}
-	if !durationEqual(old.Processing, new.Processing) {
+	if !durationEqual(old.Processing, updated.Processing) {
 		return true
 	}
-	if !durationEqual(old.Analyzing, new.Analyzing) {
+	if !durationEqual(old.Analyzing, updated.Analyzing) {
 		return true
 	}
-	if !durationEqual(old.Executing, new.Executing) {
+	if !durationEqual(old.Executing, updated.Executing) {
 		return true
 	}
 

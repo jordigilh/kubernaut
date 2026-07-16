@@ -104,9 +104,9 @@ func WithInactivityTimeout(timeout time.Duration) LeaseOption {
 }
 
 // WithMaxConcurrentSessions sets the session capacity limit (SEC-03).
-func WithMaxConcurrentSessions(max int) LeaseOption {
+func WithMaxConcurrentSessions(maxSessions int) LeaseOption {
 	return func(m *LeaseSessionManager) {
-		m.maxSessions = max
+		m.maxSessions = maxSessions
 	}
 }
 

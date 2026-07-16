@@ -875,11 +875,11 @@ func (m *MockSlackServer) GetRequests() []SlackWebhookRequest {
 	m.RequestsMu.Lock()
 	defer m.RequestsMu.Unlock()
 
-	copy := make([]SlackWebhookRequest, len(m.Requests))
+	requestsCopy := make([]SlackWebhookRequest, len(m.Requests))
 	for i, req := range m.Requests {
-		copy[i] = req
+		requestsCopy[i] = req
 	}
-	return copy
+	return requestsCopy
 }
 
 // Reset clears all recorded requests and resets failure mode

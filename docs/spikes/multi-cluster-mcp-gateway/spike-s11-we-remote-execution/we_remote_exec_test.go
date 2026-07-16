@@ -67,11 +67,11 @@ func extractText(result *mcp.CallToolResult) string {
 	return ""
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
 		return s
 	}
-	return s[:max] + "..."
+	return s[:maxLen] + "..."
 }
 
 var _ = Describe("Spike S11 — WE Remote Execution via K8s MCP Server", Ordered, func() {

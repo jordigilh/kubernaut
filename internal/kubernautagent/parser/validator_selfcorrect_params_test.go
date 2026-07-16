@@ -85,13 +85,13 @@ var _ = Describe("BR-HAPI-191: SelfCorrect with Parameter Validation (#1170)", f
 
 	BeforeEach(func() {
 		v = parser.NewValidator([]string{"test-workflow"})
-		min := float64(1)
-		max := float64(10)
+		minVal := float64(1)
+		maxVal := float64(10)
 		v.SetWorkflowMeta("test-workflow", parser.WorkflowMeta{
 			ExecutionEngine: "tekton",
 			ExecutionBundle: "quay.io/test/bundle:v1",
 			Parameters: []models.WorkflowParameter{
-				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &min, Maximum: &max},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &minVal, Maximum: &maxVal},
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "STRATEGY", Type: "string", Required: false, Description: "Strategy", Enum: []string{"rolling", "recreate"}},
 			},

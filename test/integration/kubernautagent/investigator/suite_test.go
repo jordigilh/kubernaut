@@ -79,8 +79,8 @@ type capturingAuditStore struct {
 	events []*audit.AuditEvent
 }
 
-func newCapturingAuditStore(real audit.AuditStore) *capturingAuditStore {
-	return &capturingAuditStore{real: real}
+func newCapturingAuditStore(delegate audit.AuditStore) *capturingAuditStore {
+	return &capturingAuditStore{real: delegate}
 }
 
 func (c *capturingAuditStore) StoreAudit(ctx context.Context, event *audit.AuditEvent) error {

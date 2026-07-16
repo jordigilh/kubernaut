@@ -461,18 +461,18 @@ func (r *Repository) ActionTypeExists(ctx context.Context, actionType string) (b
 }
 
 // descriptionDiff returns the list of field names that differ between two descriptions.
-func descriptionDiff(old, new models.ActionTypeDescription) []string {
+func descriptionDiff(old, updated models.ActionTypeDescription) []string {
 	var changed []string
-	if old.What != new.What {
+	if old.What != updated.What {
 		changed = append(changed, "what")
 	}
-	if old.WhenToUse != new.WhenToUse {
+	if old.WhenToUse != updated.WhenToUse {
 		changed = append(changed, "whenToUse")
 	}
-	if old.WhenNotToUse != new.WhenNotToUse {
+	if old.WhenNotToUse != updated.WhenNotToUse {
 		changed = append(changed, "whenNotToUse")
 	}
-	if old.Preconditions != new.Preconditions {
+	if old.Preconditions != updated.Preconditions {
 		changed = append(changed, "preconditions")
 	}
 	return changed

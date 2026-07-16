@@ -81,7 +81,14 @@ linters:
     - wastedassign   # Flags dead assignments overwritten before use (Issue
                      # #1546 Tier 2). Verified 0 findings repo-wide.
     - unconvert      # Flags unnecessary type conversions (Issue #1546 Tier
-                     # 2). Verified 0 findings repo-wide.
+                     # 2). 117 findings auto-remediated via `unconvert -apply`;
+                     # generated ogen-client code is excluded implicitly (same
+                     # as golangci-lint's default generated-file skip).
+    - predeclared    # Flags parameters/variables shadowing Go builtins (max,
+                     # min, new, close, copy, real, etc.) (Issue #1546 Tier 3).
+                     # 24 findings remediated via mechanical rename (or, for
+                     # locally-defined min()/max() helpers now redundant on
+                     # Go 1.21+, removed in favor of the builtin).
 
   settings:
     govet:

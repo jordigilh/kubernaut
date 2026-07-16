@@ -259,22 +259,22 @@ func extractJSON(s string) string {
 
 const truncationMarker = "…[truncated]…"
 
-func truncateHeadTail(s string, max int) string {
-	if max <= 0 {
+func truncateHeadTail(s string, maxLen int) string {
+	if maxLen <= 0 {
 		return s
 	}
 	runes := []rune(s)
-	if len(runes) <= max {
+	if len(runes) <= maxLen {
 		return s
 	}
-	head := max / 2
-	tail := max - head
+	head := maxLen / 2
+	tail := maxLen - head
 	return string(runes[:head]) + truncationMarker + string(runes[len(runes)-tail:])
 }
 
 // TruncateHeadTail is the exported version for testing.
-func TruncateHeadTail(s string, max int) string {
-	return truncateHeadTail(s, max)
+func TruncateHeadTail(s string, maxLen int) string {
+	return truncateHeadTail(s, maxLen)
 }
 
 func (e *Evaluator) emitShadowRequest(ctx context.Context, step Step, promptLen int) {

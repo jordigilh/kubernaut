@@ -536,10 +536,3 @@ func assertLabel(t *testing.T, labels map[string]string, key, want string) {
 		t.Errorf("label %q: got %q, want %q", key, got, want)
 	}
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

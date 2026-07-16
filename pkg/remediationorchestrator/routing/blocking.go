@@ -799,14 +799,14 @@ func (r *RoutingEngine) calculateScopeBackoff(retryCount int32) time.Duration {
 	if base <= 0 {
 		base = 5 // default: 5 seconds (ADR-053)
 	}
-	max := r.config.ScopeBackoffMax
-	if max <= 0 {
-		max = 300 // default: 300 seconds = 5 minutes (ADR-053)
+	maxBackoff := r.config.ScopeBackoffMax
+	if maxBackoff <= 0 {
+		maxBackoff = 300 // default: 300 seconds = 5 minutes (ADR-053)
 	}
 
 	config := backoff.Config{
 		BasePeriod:    time.Duration(base) * time.Second,
-		MaxPeriod:     time.Duration(max) * time.Second,
+		MaxPeriod:     time.Duration(maxBackoff) * time.Second,
 		Multiplier:    2.0,
 		JitterPercent: 10,
 	}
