@@ -69,6 +69,10 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 
 	if ctx.Err() != nil {
 		emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
+		// nolint:nilerr // intentional: cancellation is a documented normal
+		// outcome for this function (see doc comment above), not a failure
+		// -- ctx.Err() is converted into a typed cancelled result, not
+		// propagated as err (Issue #1546 Tier 3).
 		return buildCancelledResult(messages, turn, string(phase), tokens), messages, true, nil
 	}
 
@@ -205,6 +209,9 @@ func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (
 	// ctx.Err() verbatim.
 	if errors.Is(err, context.Canceled) || (errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil) {
 		emitToSink(ctx, session.EventTypeCancelled, p.turn, p.phase, nil)
+		// nolint:nilerr // intentional: cancellation (see #1612 rationale
+		// above) is converted into a typed cancelled result, not
+		// propagated as err (Issue #1546 Tier 3).
 		return llm.ChatResponse{}, buildCancelledResult(p.messages, p.turn, p.phase, p.tokens), nil
 	}
 	failEvent := audit.NewEvent(audit.EventTypeResponseFailed, p.correlationID)

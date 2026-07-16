@@ -190,10 +190,20 @@ func resolveInvestigateAlertScope(ctx context.Context, mapper meta.RESTMapper, a
 
 	gv, parseErr := schema.ParseGroupVersion(args.APIVersion)
 	if parseErr != nil {
+		logr.FromContextOrDiscard(ctx).Info("cannot parse apiVersion, falling back to namespace-based scope heuristic",
+			"apiVersion", args.APIVersion, "error", parseErr.Error())
+		// nolint:nilerr // intentional: already documented above ("falling
+		// back to ... when the mapper is unavailable or the kind/apiVersion
+		// can't be resolved") -- an unparseable apiVersion degrades to the
+		// heuristic, it doesn't fail the tool call (Issue #1546 Tier 3).
 		return clusterScoped, nil
 	}
 	mapping, mapErr := mapper.RESTMapping(schema.GroupKind{Group: gv.Group, Kind: args.Kind}, gv.Version)
 	if mapErr != nil {
+		logr.FromContextOrDiscard(ctx).Info("RESTMapping failed, falling back to namespace-based scope heuristic",
+			"kind", args.Kind, "apiVersion", args.APIVersion, "error", mapErr.Error())
+		// nolint:nilerr // same documented fallback idiom as above (Issue
+		// #1546 Tier 3).
 		return clusterScoped, nil
 	}
 

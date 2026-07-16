@@ -764,6 +764,10 @@ func (a *AnsibleExecutor) Cleanup(
 	jobID, err := parseAWXJobID(wfe.Status.ExecutionRef.Name)
 	if err != nil {
 		a.Logger.Info("Cannot parse AWX job ID for cleanup, skipping", "executionRef", wfe.Status.ExecutionRef.Name)
+		// nolint:nilerr // intentional: best-effort finalizer cleanup (see
+		// func doc) must not block resource deletion on an unparseable
+		// legacy/malformed executionRef; already logged above (Issue
+		// #1546 Tier 3).
 		return nil
 	}
 

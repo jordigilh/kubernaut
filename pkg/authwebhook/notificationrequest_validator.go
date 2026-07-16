@@ -92,6 +92,10 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	if err != nil {
 		// Allow DELETE to proceed even if we can't capture attribution
 		// (audit failure should not block business operations)
+		// nolint:nilerr // intentional: Kubebuilder ValidateDelete contract
+		// -- nil error lets the DELETE proceed; admission.Warnings is the
+		// non-blocking surfacing mechanism for the degraded-attribution
+		// condition, not a swallowed failure (Issue #1546 Tier 3).
 		return admission.Warnings{"audit attribution unavailable"}, nil
 	}
 
@@ -99,6 +103,8 @@ func (v *NotificationRequestValidator) ValidateDelete(ctx context.Context, obj r
 	if err != nil {
 		// Allow DELETE to proceed even if authentication fails
 		// (audit failure should not block business operations)
+		// nolint:nilerr // same Kubebuilder ValidateDelete contract as
+		// above (Issue #1546 Tier 3).
 		return admission.Warnings{"authentication unavailable"}, nil
 	}
 

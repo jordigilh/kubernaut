@@ -98,6 +98,17 @@ linters:
                      # converted from == / != to errors.Is, 39 type
                      # assertions converted to errors.As (mostly repeated
                      # `err.(*SomeError)` patterns in Ginkgo test assertions).
+    - nilerr         # Flags functions that check err != nil but still return
+                     # a nil error (Issue #1546 Tier 3) -- a subtler, riskier
+                     # sibling of nilnil since it can mask a real failure
+                     # rather than just return an ambiguous value. 18 findings
+                     # reviewed individually against their callers/doc
+                     # comments; all fell into 3 documented idioms (context-
+                     # cancellation-as-typed-result, ogen typed-HTTP-error
+                     # responses, wait.PollUntilContextTimeout's "keep
+                     # polling" contract, Kubebuilder webhook soft-fail) and
+                     # carry scoped //nolint:nilerr comments -- no blanket
+                     # exclusion.
 
   settings:
     govet:

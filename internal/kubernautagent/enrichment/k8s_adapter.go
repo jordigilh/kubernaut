@@ -101,6 +101,8 @@ func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace, a
 
 		ownerMapping, err := a.resolveOwnerMapping(ownerRef)
 		if err != nil {
+			a.logger.Info("owner chain walk stopped: cannot resolve owner mapping, returning partial chain",
+				"ownerKind", ownerRef.Kind, "ownerName", ownerRef.Name, "error", err.Error())
 			break
 		}
 
@@ -119,11 +121,18 @@ func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace, a
 		ownerClient := a.scopedClient(ownerMapping, namespace)
 		ownerObj, err := ownerClient.Get(ctx, ownerRef.Name, metav1.GetOptions{})
 		if err != nil {
+			a.logger.Info("owner chain walk stopped: cannot get owner object, returning partial chain",
+				"ownerKind", ownerRef.Kind, "ownerName", ownerRef.Name, "error", err.Error())
 			break
 		}
 		current = ownerObj
 	}
 
+	// nolint:nilerr // intentional partial-result idiom: a RESTMapping/Get
+	// failure partway up the chain stops the walk (logged above) but
+	// returns the entries collected so far with a nil error, not a
+	// zero-value chain -- callers use whatever ancestry was resolved
+	// instead of losing it to a single broken hop (Issue #1546 Tier 3).
 	return chain, nil
 }
 

@@ -876,9 +876,7 @@ func (m *MockSlackServer) GetRequests() []SlackWebhookRequest {
 	defer m.RequestsMu.Unlock()
 
 	requestsCopy := make([]SlackWebhookRequest, len(m.Requests))
-	for i, req := range m.Requests {
-		requestsCopy[i] = req
-	}
+	copy(requestsCopy, m.Requests)
 	return requestsCopy
 }
 

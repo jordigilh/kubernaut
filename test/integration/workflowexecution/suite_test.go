@@ -575,6 +575,11 @@ func waitForWFEPhase(name, namespace string, expectedPhase string, timeout time.
 		var err error
 		wfe, err = getWFE(name, namespace)
 		if err != nil {
+			// nolint:nilerr // intentional: wait.PollUntilContextTimeout
+			// condition-function contract -- returning a non-nil error here
+			// would abort polling immediately on a single transient Get
+			// failure; (false, nil) means "not ready yet, keep polling" and
+			// the outer timeout is the real backstop (Issue #1546 Tier 3).
 			return false, nil // Keep waiting on error
 		}
 		return wfe.Status.Phase == expectedPhase, nil
@@ -597,6 +602,9 @@ func waitForPipelineRunCreation(wfeName, wfeNamespace string, timeout time.Durat
 			"kubernaut.ai/workflow-execution": wfeName,
 		})
 		if err != nil {
+			// nolint:nilerr // intentional: wait.PollUntilContextTimeout
+			// condition-function contract, same as waitForWFEPhase above
+			// (Issue #1546 Tier 3).
 			return false, nil
 		}
 		if len(prList.Items) > 0 {
@@ -647,6 +655,12 @@ func deleteWFEAndWait(wfe *workflowexecutionv1alpha1.WorkflowExecution, timeout 
 
 		if err != nil {
 			// Object not found = deletion complete
+			// nolint:nilerr // intentional: wait.PollUntilContextTimeout
+			// condition-function contract -- any Get error here (in
+			// practice always NotFound in this envtest suite) is treated
+			// as "deletion complete" rather than propagated, so a single
+			// transient Get failure doesn't abort the poll (Issue #1546
+			// Tier 3).
 			return true, nil
 		}
 
@@ -701,6 +715,9 @@ func waitForJobCreation(wfeName string, timeout time.Duration) (*batchv1.Job, er
 			"kubernaut.ai/workflow-execution": wfeName,
 		})
 		if err != nil {
+			// nolint:nilerr // intentional: wait.PollUntilContextTimeout
+			// condition-function contract, same as waitForWFEPhase/
+			// waitForPipelineRunCreation above (Issue #1546 Tier 3).
 			return false, nil
 		}
 		if len(jobList.Items) > 0 {

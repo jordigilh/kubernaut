@@ -373,6 +373,10 @@ func StopMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.W
 	output, err := checkCmd.Output()
 	if err != nil || len(output) == 0 || string(output) == "\n" {
 		_, _ = fmt.Fprintf(writer, "ℹ️  Mock LLM container does not exist, nothing to stop\n")
+		// nolint:nilerr // intentional: idempotent cleanup per the DD-TEST-002
+		// doc comment above -- a podman-ps failure (or empty output) means
+		// "already stopped", not a teardown error; already surfaced to the
+		// writer above (Issue #1546 Tier 3).
 		return nil
 	}
 

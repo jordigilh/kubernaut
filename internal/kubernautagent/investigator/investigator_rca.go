@@ -63,6 +63,9 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		}
 	}
 	if parseErr != nil && ctx.Err() != nil {
+		// nolint:nilerr // intentional: cancellation is converted into a
+		// typed Cancelled result, not propagated as err -- matches the
+		// same idiom in investigator_loop.go (Issue #1546 Tier 3).
 		return &katypes.InvestigationResult{
 			Cancelled:      true,
 			CancelledPhase: string(katypes.PhaseRCA),
