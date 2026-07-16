@@ -145,7 +145,7 @@ func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) erro
 	for _, at := range e2eActionTypes {
 		yaml := buildActionTypeYAML(at, namespace)
 
-		cmd := exec.Command("kubectl", "apply",
+		cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-f", "-")
 		cmd.Stdin = strings.NewReader(yaml)
@@ -160,7 +160,7 @@ func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) erro
 
 	_, _ = fmt.Fprintf(output, "\n⏳ Waiting for ActionTypes to register in DataStorage...\n")
 	for _, at := range e2eActionTypes {
-		cmd := exec.Command("kubectl", "wait",
+		cmd := exec.CommandContext(context.Background(), "kubectl", "wait",
 			"--kubeconfig", kubeconfigPath,
 			"--for=jsonpath={.status.registered}=true",
 			fmt.Sprintf("actiontype/%s", at.MetadataName),

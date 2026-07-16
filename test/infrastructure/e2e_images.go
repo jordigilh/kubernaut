@@ -71,7 +71,7 @@ func resolvePrebuiltCIArtifact(serviceName string, writer io.Writer) (string, bo
 	}
 
 	localImageName := fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
-	checkCmd := exec.Command("podman", "image", "exists", localImageName)
+	checkCmd := exec.CommandContext(context.Background(), "podman", "image", "exists", localImageName)
 	if checkCmd.Run() != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  KUBERNAUT_CI_ARTIFACT_TAG set but no pre-loaded image found for %s (falling back)\n", serviceName)
 		return "", false
@@ -140,7 +140,7 @@ func PullImageFromRegistry(serviceName string, writer io.Writer) (string, error)
 	_, _ = fmt.Fprintf(writer, "📥 Pulling image from registry: %s\n", fullImageName)
 
 	// Pull image using podman (GitHub Actions uses podman for Kind)
-	pullCmd := exec.Command("podman", "pull", fullImageName)
+	pullCmd := exec.CommandContext(context.Background(), "podman", "pull", fullImageName)
 	pullCmd.Stdout = writer
 	pullCmd.Stderr = writer
 	pullStartTime := time.Now()
@@ -230,7 +230,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	localImageName := fmt.Sprintf("localhost/%s", fullImageName)
 
 	// Check if image already exists (cache hit) - DD-TEST-002 optimization
-	checkCmd := exec.Command("podman", "image", "exists", localImageName)
+	checkCmd := exec.CommandContext(context.Background(), "podman", "image", "exists", localImageName)
 	if checkCmd.Run() == nil {
 		_, _ = fmt.Fprintf(writer, "   ✅ Image already exists (using cache): %s\n", fullImageName)
 		return localImageName, nil
@@ -313,7 +313,7 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 	registry := os.Getenv("IMAGE_REGISTRY")
 	if registry != "" && strings.Contains(imageName, registry) {
 		_, _ = fmt.Fprintf(writer, "📦 CI mode: Pulling registry image for Kind load: %s\n", imageName)
-		pullCmd := exec.Command("podman", "pull", imageName)
+		pullCmd := exec.CommandContext(context.Background(), "podman", "pull", imageName)
 		pullCmd.Stdout = writer
 		pullCmd.Stderr = writer
 		if err := pullCmd.Run(); err != nil {
@@ -335,7 +335,7 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 	// Create temporary tar file
 	tmpFile := fmt.Sprintf("/tmp/%s-%s.tar", serviceName, imageTag)
 	_, _ = fmt.Fprintf(writer, "   📦 Exporting image to: %s\n", tmpFile)
-	saveCmd := exec.Command("podman", "save", "-o", tmpFile, imageName)
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "-o", tmpFile, imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 	if err := saveCmd.Run(); err != nil {
@@ -344,7 +344,7 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 
 	// Load tar file into Kind
 	_, _ = fmt.Fprintf(writer, "   📦 Importing archive into Kind cluster...\n")
-	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", clusterName)
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", tmpFile, "--name", clusterName)
 	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
@@ -365,7 +365,7 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 	// Problem: Image exists in both Podman storage AND Kind = 2x disk usage
 	// Solution: Once in Kind, we don't need the Podman copy anymore
 	_, _ = fmt.Fprintf(writer, "   🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -385,7 +385,7 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   📥 Pre-loading external image: %s\n", imageName)
 
-	pullCmd := exec.Command("podman", "pull", "--quiet", imageName)
+	pullCmd := exec.CommandContext(context.Background(), "podman", "pull", "--quiet", imageName)
 	pullCmd.Stdout = writer
 	pullCmd.Stderr = writer
 	if err := pullCmd.Run(); err != nil {
@@ -395,7 +395,7 @@ func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error
 	sanitized := strings.NewReplacer("/", "_", ":", "_").Replace(imageName)
 	tmpFile := fmt.Sprintf("/tmp/preload-%s.tar", sanitized)
 
-	saveCmd := exec.Command("podman", "save", "-o", tmpFile, imageName)
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "-o", tmpFile, imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 	if err := saveCmd.Run(); err != nil {
@@ -404,14 +404,14 @@ func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error
 
 	// Remove Podman copy immediately after save — the tar has the bits and
 	// keeping both wastes disk during the Kind load that follows.
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
 	}
 
-	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", clusterName)
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", tmpFile, "--name", clusterName)
 	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
@@ -474,7 +474,7 @@ func CleanupE2EImage(imageName string, writer io.Writer) error {
 	}
 
 	_, _ = fmt.Fprintf(writer, "🗑️  Removing E2E image: %s\n", imageName)
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
 	if err := rmiCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove image (may not exist): %v\n", err)
 		return err
@@ -545,7 +545,7 @@ func VerifyImageExistsInRegistry(registryImage string, writer io.Writer) (bool, 
 		inspectURL = "docker://" + registryImage
 	}
 
-	cmd := exec.Command("skopeo", "inspect", "--raw", inspectURL)
+	cmd := exec.CommandContext(context.Background(), "skopeo", "inspect", "--raw", inspectURL)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {

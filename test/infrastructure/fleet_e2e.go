@@ -2261,7 +2261,7 @@ func WaitForFleetReady(tokenFunc func() (string, error), nodePort int, toolPrefi
 	body, _ := json.Marshal(initReq)
 
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequest("POST", gatewayURL, bytes.NewReader(body))
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, gatewayURL, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/event-stream")
 

@@ -87,7 +87,12 @@ func GetKeycloakClientCredentialsToken(cfg KeycloakFleetTokenConfig) (string, er
 	}
 
 	client := keycloakHTTPClient(cfg.HTTPClient)
-	resp, err := client.PostForm(cfg.TokenEndpoint, data)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, cfg.TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to build keycloak client_credentials token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("keycloak client_credentials token request failed: %w", err)
 	}
@@ -144,7 +149,12 @@ func ExchangeKeycloakToken(tokenEndpoint, requesterClientID, requesterClientSecr
 	}
 
 	client := keycloakHTTPClient(nil)
-	resp, err := client.PostForm(tokenEndpoint, data)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, tokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to build keycloak token-exchange request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("keycloak token-exchange request failed: %w", err)
 	}
@@ -343,7 +353,11 @@ func waitForKeycloakReady(hostPort int, writer io.Writer) error {
 	realmURL := fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet", hostPort)
 	deadline := time.Now().Add(150 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(realmURL)
+		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, realmURL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build Keycloak realm request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintln(writer, "  ✅ Keycloak kubernaut-fleet realm reachable (HTTPS)")

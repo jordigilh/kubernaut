@@ -52,7 +52,7 @@ func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check database connectivity
-	if err := s.db.Ping(); err != nil {
+	if err := s.db.PingContext(r.Context()); err != nil {
 		s.logger.Error(err, "Readiness probe failed - database unreachable")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = fmt.Fprint(w, `{"status":"not_ready","reason":"database_unreachable"}`)

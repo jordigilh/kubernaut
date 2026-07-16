@@ -122,7 +122,11 @@ func TestBuildResilientTransport_DependencyNameInMetrics(t *testing.T) {
 	client := &http.Client{Transport: cbt}
 
 	for i := 0; i < 5; i++ {
-		resp, err := client.Get(backend.URL)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, backend.URL, http.NoBody)
+		if err != nil {
+			t.Fatalf("failed to build request: %v", err)
+		}
+		resp, err := client.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 		}
@@ -1559,7 +1563,7 @@ func TestPreflightSessionChecks_ListsDeniedVerbs(t *testing.T) {
 			ct := r.Header.Get("Content-Type")
 			// K8s client may send protobuf or JSON. For JSON bodies,
 			// deny verbs containing "delete" or "create".
-			denied := false
+			var denied bool
 			if strings.Contains(ct, "json") || strings.Contains(ct, "application/json") {
 				denied = strings.Contains(bodyStr, `"delete"`) || strings.Contains(bodyStr, `"create"`)
 			} else {

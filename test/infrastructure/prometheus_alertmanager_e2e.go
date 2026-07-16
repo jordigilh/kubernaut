@@ -402,7 +402,11 @@ func waitForHTTPReady(url, serviceName string, timeout time.Duration, writer io.
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(url)
+		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build readiness request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintf(writer, "  ✅ %s is ready\n", serviceName)
@@ -441,7 +445,12 @@ func WaitForPrometheusCadvisorTarget(promURL string, timeout time.Duration, writ
 
 	var lastErr string
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(promURL + "/api/v1/targets")
+		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, promURL+"/api/v1/targets", http.NoBody)
+		if reqErr != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			time.Sleep(2 * time.Second)
 			continue
@@ -548,7 +557,12 @@ func InjectAlerts(amURL string, alerts []TestAlert) error {
 		return fmt.Errorf("failed to marshal alerts: %w", err)
 	}
 
-	resp, err := http.Post(amURL+"/api/v2/alerts", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, amURL+"/api/v2/alerts", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build POST alerts request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to POST alerts to AlertManager: %w", err)
 	}
@@ -566,7 +580,11 @@ func InjectAlerts(amURL string, alerts []TestAlert) error {
 // stale alerts from being batched with newly injected alerts (the Gateway only
 // processes Alerts[0] in each AlertManager webhook batch).
 func ResolveActiveAlerts(amURL string) error {
-	resp, err := http.Get(amURL + "/api/v2/alerts?active=true&silenced=false&inhibited=false")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, amURL+"/api/v2/alerts?active=true&silenced=false&inhibited=false", http.NoBody)
+	if err != nil {
+		return fmt.Errorf("failed to build active alerts request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to query active alerts: %w", err)
 	}
@@ -601,7 +619,12 @@ func ResolveActiveAlerts(amURL string) error {
 		return fmt.Errorf("failed to marshal resolved alerts: %w", err)
 	}
 
-	postResp, err := http.Post(amURL+"/api/v2/alerts", "application/json", bytes.NewReader(body))
+	postReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, amURL+"/api/v2/alerts", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build POST resolved alerts request: %w", err)
+	}
+	postReq.Header.Set("Content-Type", "application/json")
+	postResp, err := http.DefaultClient.Do(postReq)
 	if err != nil {
 		return fmt.Errorf("failed to POST resolved alerts: %w", err)
 	}
@@ -616,7 +639,11 @@ func ResolveActiveAlerts(amURL string) error {
 // HasActiveAlerts returns true if AlertManager has any active (non-silenced,
 // non-inhibited) alerts. Useful for polling until stale alerts are fully resolved.
 func HasActiveAlerts(amURL string) bool {
-	resp, err := http.Get(amURL + "/api/v2/alerts?active=true&silenced=false&inhibited=false")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, amURL+"/api/v2/alerts?active=true&silenced=false&inhibited=false", http.NoBody)
+	if err != nil {
+		return true
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return true
 	}
@@ -709,11 +736,12 @@ func InjectMetrics(promURL string, metrics []TestMetric) error {
 		return fmt.Errorf("failed to marshal OTLP metrics: %w", err)
 	}
 
-	resp, err := http.Post(
-		promURL+"/api/v1/otlp/v1/metrics",
-		"application/json",
-		bytes.NewReader(body),
-	)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, promURL+"/api/v1/otlp/v1/metrics", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build OTLP metrics request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to POST OTLP metrics to Prometheus: %w", err)
 	}
@@ -762,7 +790,7 @@ type otlpScope struct {
 }
 
 type otlpMetric struct {
-	Name  string   `json:"name"`
+	Name  string     `json:"name"`
 	Gauge *otlpGauge `json:"gauge,omitempty"`
 	Sum   *otlpSum   `json:"sum,omitempty"`
 }

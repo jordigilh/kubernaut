@@ -82,7 +82,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(output, "\n📦 PHASE 1: Creating Kind cluster...\n")
 
-	createCmd := exec.Command("kind", "create", "cluster",
+	createCmd := exec.CommandContext(context.Background(), "kind", "create", "cluster",
 		"--name", clusterName,
 		"--config", configPath,
 		"--kubeconfig", kubeconfigPath,
@@ -96,7 +96,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// Create kubernaut-system namespace (required by PostgreSQL deployment in Phase 2)
 	_, _ = fmt.Fprintf(output, "\n📁 Creating controller namespace %s...\n", WorkflowExecutionNamespace)
-	nsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	nsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"create", "namespace", WorkflowExecutionNamespace)
 	if err := nsCmd.Run(); err != nil {
 		// Ignore if already exists
@@ -276,7 +276,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
 	_, _ = fmt.Fprintf(output, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
-	depSecretCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret",
+	depSecretCmd := exec.CommandContext(context.Background(), "kubectl", "create", "secret", "generic", "e2e-dep-secret",
 		"--from-literal=token=e2e-test-value",
 		"--namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
@@ -300,7 +300,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// Create execution namespace
 	_, _ = fmt.Fprintf(output, "  📁 Creating execution namespace %s...\n", ExecutionNamespace)
-	execNsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
+	execNsCmd := exec.CommandContext(context.Background(), "kubectl", "create", "namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
 	execNsCmd.Stdout = output
 	execNsCmd.Stderr = output
@@ -325,7 +325,7 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 
 	// Build Data Storage image
 	_, _ = fmt.Fprintln(output, "    Building Data Storage image...")
-	buildCmd := exec.Command("podman", "build",
+	buildCmd := exec.CommandContext(context.Background(), "podman", "build",
 		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"-t", "kubernaut-datastorage:latest",
 		"-f", "docker/data-storage.Dockerfile", ".")
@@ -334,7 +334,7 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 	buildCmd.Stderr = output
 	if err := buildCmd.Run(); err != nil {
 		// Try docker as fallback
-		buildCmd = exec.Command("docker", "build",
+		buildCmd = exec.CommandContext(context.Background(), "docker", "build",
 			"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 			"-t", "kubernaut-datastorage:latest",
 			"-f", "docker/data-storage.Dockerfile", ".")
@@ -403,7 +403,7 @@ data:
       level: info
       format: json
 `
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(configMapManifest)
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -432,7 +432,7 @@ stringData:
   redis-secrets.yaml: |
     password: ""
 `
-	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd = exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(secretManifest)
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -546,7 +546,7 @@ spec:
     targetPort: 8080
     name: http
 `, GetImagePullPolicy())
-	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd = exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(deploymentManifest)
 	cmd.Stdout = output
 	cmd.Stderr = output

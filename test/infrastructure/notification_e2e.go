@@ -246,7 +246,7 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
 	manifest := notificationControllerManifest(namespace, notificationImageName, enableCoverage)
 
-	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -432,7 +432,7 @@ func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
 		return fmt.Errorf("NotificationRequest CRD not found at %s", crdPath)
 	}
 
-	applyCmd := exec.Command("kubectl", "apply", "-f", crdPath)
+	applyCmd := exec.CommandContext(context.Background(), "kubectl", "apply", "-f", crdPath)
 	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 	applyCmd.Stdout = writer
 	applyCmd.Stderr = writer

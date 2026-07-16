@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -212,7 +213,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	); err != nil {
 		// Print container logs for debugging
 		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
-		logsCmd := exec.Command("podman", "logs", WEIntegrationDataStorageContainer)
+		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", WEIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
@@ -278,7 +279,7 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 	if err := PullImageWithRetry(migrationsImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull migrations image: %w", err)
 	}
-	cmd := exec.Command("podman", "run", "--rm",
+	cmd := exec.CommandContext(context.Background(), "podman", "run", "--rm",
 		"--name", WEIntegrationMigrationsContainer,
 		"-v", fmt.Sprintf("%s:/migrations:ro", migrationsDir),
 		"-e", "PGHOST=host.containers.internal",
@@ -313,7 +314,7 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 
 	// DataStorage connects to PostgreSQL and Redis via host.containers.internal
 	// This allows containers to reach services on the host via port mapping
-	cmd := exec.Command("podman", "run",
+	cmd := exec.CommandContext(context.Background(), "podman", "run",
 		"-d",
 		"--name", WEIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", WEIntegrationDataStoragePort),

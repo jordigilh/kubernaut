@@ -638,7 +638,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// STEP 2: Apply CRDs first
 	_, _ = fmt.Fprintln(writer, "📋 Applying CRDs...")
-	cmd := exec.Command("kubectl", "apply",
+	cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "config/crd/bases/")
 	cmd.Dir = workspaceRoot
@@ -651,7 +651,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
 	dsURL := fmt.Sprintf("https://data-storage-service.%s.svc.cluster.local:8080", namespace)
 	manifest := authWebhookManifest(namespace, imageTag, dsURL)
-	cmd = exec.Command("kubectl", "apply",
+	cmd = exec.CommandContext(context.Background(), "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -677,7 +677,7 @@ func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer
 	// In production, use cert-manager
 
 	// Generate private key
-	cmd := exec.Command("openssl", "genrsa", "-out", "/tmp/webhook-key.pem", "2048")
+	cmd := exec.CommandContext(context.Background(), "openssl", "genrsa", "-out", "/tmp/webhook-key.pem", "2048")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Key generation failed: %s\n", output)
 		return fmt.Errorf("openssl genrsa failed: %w", err)
@@ -685,7 +685,7 @@ func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer
 
 	// Generate certificate with SAN (Subject Alternative Names) for webhook service
 	// This is required for Kubernetes to trust the webhook certificate
-	cmd = exec.Command("openssl", "req", "-new", "-x509",
+	cmd = exec.CommandContext(context.Background(), "openssl", "req", "-new", "-x509",
 		"-key", "/tmp/webhook-key.pem",
 		"-out", "/tmp/webhook-cert.pem",
 		"-days", "365",
@@ -697,7 +697,7 @@ func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer
 	}
 
 	// Create and apply secret with certificates using a single command
-	cmd = exec.Command("kubectl", "create", "secret", "tls", "authwebhook-tls",
+	cmd = exec.CommandContext(context.Background(), "kubectl", "create", "secret", "tls", "authwebhook-tls",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"--cert=/tmp/webhook-cert.pem",
@@ -715,7 +715,7 @@ func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer
 // This must be called AFTER the deployment is applied (webhook configurations must exist)
 func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 	// Base64 encode the certificate for CA bundle
-	caBundleOutput, err := exec.Command("bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
+	caBundleOutput, err := exec.CommandContext(context.Background(), "bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
 	if err != nil {
 		return fmt.Errorf("failed to base64 encode CA bundle: %w", err)
 	}
@@ -725,7 +725,7 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   🔧 Patching MutatingWebhookConfiguration webhooks...")
 	webhookNames := []string{"workflowexecution.mutate.kubernaut.ai", "remediationapprovalrequest.mutate.kubernaut.ai", "remediationrequest.mutate.kubernaut.ai"}
 	for i, webhookName := range webhookNames {
-		patchCmd := exec.Command("kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
+		patchCmd := exec.CommandContext(context.Background(), "kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
 			"--kubeconfig", kubeconfigPath,
 			"--type=json",
 			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
@@ -740,7 +740,7 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   🔧 Patching ValidatingWebhookConfiguration webhooks...")
 	validatingWebhookNames := []string{"notificationrequest.validate.kubernaut.ai", "remediationworkflow.validate.kubernaut.ai", "actiontype.validate.kubernaut.ai"}
 	for i, vwName := range validatingWebhookNames {
-		patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
+		patchCmd := exec.CommandContext(context.Background(), "kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
 			"--kubeconfig", kubeconfigPath,
 			"--type=json",
 			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
@@ -908,7 +908,7 @@ spec:
           name: postgresql-init
 `, nodePort)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -984,7 +984,7 @@ spec:
           timeoutSeconds: 5
 `, nodePort)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1212,7 +1212,7 @@ spec:
           path: /coverdata
 `, namespace, nodePort, imageTag, pullPolicy)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

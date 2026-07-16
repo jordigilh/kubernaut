@@ -88,7 +88,7 @@ func DeployAWXInNamespace(ctx context.Context, namespace, kubeconfigPath string,
 
 	// Step 2: Wait for operator controller to be ready.
 	_, _ = fmt.Fprintf(writer, "  Waiting for AWX Operator controller...\n")
-	waitCmd := exec.Command("kubectl", "rollout", "status",
+	waitCmd := exec.CommandContext(context.Background(), "kubectl", "rollout", "status",
 		"deployment/awx-operator-controller-manager",
 		"-n", namespace,
 		"--kubeconfig", kubeconfigPath,
@@ -149,7 +149,7 @@ namespace: %s
 		return fmt.Errorf("failed to write kustomization.yaml: %w", writeErr)
 	}
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-k", tmpDir)
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-k", tmpDir)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -194,7 +194,7 @@ spec:
           echo "AWX database ready."
 `, namespace, AWXDatabaseUser, AWXDatabasePass, AWXDatabaseName)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "--server-side", "--field-manager=e2e-test", "-f", "-")
 	cmd.Stdin = strings.NewReader(dbInitManifest)
 	cmd.Stdout = writer
@@ -243,7 +243,7 @@ stringData:
 `, namespace, AWXDatabaseName, AWXDatabaseUser, AWXDatabasePass,
 		AWXInstanceName, AWXAdminPass, AWXSecretKey)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "--server-side", "--field-manager=e2e-test", "-f", "-")
 	cmd.Stdin = strings.NewReader(secretsManifest)
 	cmd.Stdout = writer
@@ -315,7 +315,7 @@ spec:
       memory: 256Mi
 `, AWXInstanceName, namespace, AWXNodePort, AWXAdminUser, AWXImageVersion)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "--server-side", "--field-manager=e2e-test", "-f", "-")
 	cmd.Stdin = strings.NewReader(awxCR)
 	cmd.Stdout = writer
@@ -523,7 +523,7 @@ func awxAPIRequest(method, url string, body interface{}, token string) (map[stri
 		reqBody = bytes.NewReader(jsonBody)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(context.Background(), method, url, reqBody)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -942,7 +942,7 @@ ansible:
 
 	// Rollout restart the WE controller to pick up the new config
 	_, _ = fmt.Fprintf(writer, "   🔄 Restarting WE controller...\n")
-	restartCmd := exec.Command("kubectl", "rollout", "restart",
+	restartCmd := exec.CommandContext(context.Background(), "kubectl", "rollout", "restart",
 		"deployment/workflowexecution-controller",
 		"-n", namespace,
 		"--kubeconfig", kubeconfigPath,
@@ -954,7 +954,7 @@ ansible:
 	}
 
 	// Wait for rollout to complete
-	waitCmd := exec.Command("kubectl", "rollout", "status",
+	waitCmd := exec.CommandContext(context.Background(), "kubectl", "rollout", "status",
 		"deployment/workflowexecution-controller",
 		"-n", namespace,
 		"--kubeconfig", kubeconfigPath,

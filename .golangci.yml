@@ -56,6 +56,32 @@ linters:
                      # findings repo-wide.
     - loggercheck    # Validates structured logr key-value pair arity/typing.
                      # Verified 0 findings repo-wide.
+    - bodyclose      # Flags HTTP response bodies that may not be closed on
+                     # all paths (Issue #1546 Tier 2). Real leak risk given
+                     # heavy outbound HTTP usage (LLM APIs, Prometheus,
+                     # AlertManager clients). Two verified false positives on
+                     # generic gobreaker.NewCircuitBreaker[*http.Response]
+                     # constructors carry scoped //nolint:bodyclose comments.
+    - noctx          # Flags HTTP requests / DB calls / net.Listen / exec.Command
+                     # missing context.Context propagation (Issue #1546 Tier 2).
+                     # Production code (cmd/pkg/internal) and test/ helper
+                     # libraries (test/infrastructure/, test/testutil/,
+                     # test/services/) are held to this: they drive real Kind
+                     # clusters/containers and a hung/uncancellable call there
+                     # is a genuine CI-hygiene risk (leaked kubectl subprocesses,
+                     # stalled E2E runs), not just a style nit. Only _test.go
+                     # Ginkgo spec files are excluded below (see exclusions).
+    - nilnil         # Flags functions returning (nil, nil) — classic source
+                     # of downstream nil-pointer bugs (Issue #1546 Tier 2).
+                     # Three verified, well-documented "not configured/not
+                     # applicable" sentinel idioms (single- or well-guarded
+                     # multi-caller, all correctly err-checked before nil-
+                     # checked) carry scoped //nolint:nilnil comments; test
+                     # doubles are excluded below.
+    - wastedassign   # Flags dead assignments overwritten before use (Issue
+                     # #1546 Tier 2). Verified 0 findings repo-wide.
+    - unconvert      # Flags unnecessary type conversions (Issue #1546 Tier
+                     # 2). Verified 0 findings repo-wide.
 
   settings:
     govet:
@@ -216,6 +242,25 @@ linters:
       - path: (_test\.go|^test/)
         linters:
           - containedctx
+      # nilnil: test doubles/mocks legitimately return (nil, nil) to satisfy
+      # an interface with "do nothing" behavior (e.g. a nop resolver used
+      # only to test structural wiring, never exercised for data flow).
+      # Production code sentinel idioms are handled with scoped //nolint
+      # comments instead, so each one gets an explicit, reviewed justification.
+      - path: (_test\.go|^test/)
+        linters:
+          - nilnil
+      # noctx: only Ginkgo/Gomega *_test.go spec files are exempted — these are
+      # almost always one-shot calls against an in-process httptest.Server,
+      # already bounded by an http.Client.Timeout and the outer `go test
+      # -timeout`. test/infrastructure/ and other non-_test.go helper
+      # libraries are NOT exempted: they orchestrate real subprocesses
+      # (kubectl/podman/kind) and real network calls (Kind pods, Postgres,
+      # Keycloak, AWX) where an uncancellable hang can leak subprocesses or
+      # stall CI for the full outer job timeout (Issue #1546 Tier 2).
+      - path: _test\.go
+        linters:
+          - noctx
 
 issues:
   max-issues-per-linter: 0

@@ -328,7 +328,7 @@ func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
 		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
-		crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 		crdCmd.Stdout = writer
 		crdCmd.Stderr = writer
 		if err := crdCmd.Run(); err != nil {
@@ -347,10 +347,11 @@ func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
 // created so that it triggers HardFail as expected.
 //
 // Resources created:
-//   production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
-//               ambiguous-pod, failed-analysis-pod (Pods), batch-job-pvc-expired (PVC)
-//   staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
-//               re-enrichment to worker/staging preserves pdbProtected detection)
+//
+//	production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
+//	            ambiguous-pod, failed-analysis-pod (Pods), batch-job-pvc-expired (PVC)
+//	staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
+//	            re-enrichment to worker/staging preserves pdbProtected detection)
 //
 // Note: an empty enrichment: {} YAML section in the KA ConfigMap will zero out the
 // HAPI defaults (MaxRetries=3 → 0), silently disabling retry+fail-hard. The E2E
@@ -1064,7 +1065,7 @@ spec:
     app: kubernaut-agent
 `, namespace, namespace, namespace, jwtConfigSection, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
 
-	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1076,7 +1077,7 @@ spec:
 
 	// Wait for pod readiness
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Kubernaut Agent pod to be ready...")
-	waitCmd := exec.Command("kubectl", "rollout", "status", "deployment/kubernaut-agent",
+	waitCmd := exec.CommandContext(context.Background(), "kubectl", "rollout", "status", "deployment/kubernaut-agent",
 		"-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer

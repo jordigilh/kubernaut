@@ -46,7 +46,7 @@ func TestIntegration_BurstOpensCB(t *testing.T) {
 
 	// Trip it with 3 failures
 	for i := 0; i < 3; i++ {
-		_, _ = cbt.RoundTrip(req)
+		closeIfPresent(cbt.RoundTrip(req))
 	}
 
 	if cbt.State() != gobreaker.StateOpen {

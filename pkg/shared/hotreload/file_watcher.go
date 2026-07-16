@@ -127,8 +127,13 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 }
 
 // Stop gracefully stops the file watcher.
-// Safe to call multiple times or before Start.
+// Safe to call multiple times, before Start, or on a nil receiver (defense
+// in depth for callers of the sharedtls.StartCAFileWatcher nilnil idiom,
+// which returns a nil *FileWatcher when no watcher is configured).
 func (w *FileWatcher) Stop() {
+	if w == nil {
+		return
+	}
 	w.stopOnce.Do(func() { close(w.stopCh) })
 	if w.started.Load() {
 		<-w.doneCh

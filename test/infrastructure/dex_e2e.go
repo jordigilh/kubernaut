@@ -35,10 +35,10 @@ const dexImage = "ghcr.io/dexidp/dex:latest"
 
 // DexE2EConfig holds the DEX E2E user credentials for token acquisition.
 type DexE2EConfig struct {
-	TokenEndpoint string       // e.g. https://localhost:5556/dex/token
+	TokenEndpoint string // e.g. https://localhost:5556/dex/token
 	ClientID      string
 	ClientSecret  string
-	Username      string       // email for static password user
+	Username      string // email for static password user
 	Password      string
 	HTTPClient    *http.Client // optional TLS-aware client; defaults to InsecureSkipVerify for HTTPS
 }
@@ -68,7 +68,12 @@ func GetDexIDToken(cfg DexE2EConfig) (string, error) {
 	}
 
 	client := dexHTTPClient(cfg.HTTPClient)
-	resp, err := client.PostForm(cfg.TokenEndpoint, data)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, cfg.TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to build DEX token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("DEX token request failed: %w", err)
 	}
@@ -270,7 +275,11 @@ func waitForDexReady(hostPort int, writer io.Writer) error {
 	healthzURL := fmt.Sprintf("https://localhost:%d/dex/healthz", hostPort)
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(healthzURL)
+		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, healthzURL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build DEX healthz request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintln(writer, "  ✅ DEX OIDC endpoint reachable (HTTPS)")

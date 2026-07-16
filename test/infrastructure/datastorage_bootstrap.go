@@ -285,7 +285,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 
 	if err := buildCmd.Run(); err != nil {
 		// Check if image was actually built despite error (podman cleanup issue)
-		checkAgain := exec.Command("podman", "image", "exists", imageName)
+		checkAgain := exec.CommandContext(context.Background(), "podman", "image", "exists", imageName)
 		if checkAgain.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
 			return imageName, nil
@@ -418,7 +418,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	if err := waitForDSBootstrapHTTPHealth(infra, 30*time.Second, writer); err != nil {
 		// Print container logs for debugging
 		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
-		logsCmd := exec.Command("podman", "logs", infra.DataStorageContainer)
+		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", infra.DataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
@@ -473,10 +473,10 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	}
 
 	for _, container := range containers {
-		stopCmd := exec.Command("podman", "stop", container)
+		stopCmd := exec.CommandContext(context.Background(), "podman", "stop", container)
 		_ = stopCmd.Run() // Ignore errors
 
-		rmCmd := exec.Command("podman", "rm", container)
+		rmCmd := exec.CommandContext(context.Background(), "podman", "rm", container)
 		_ = rmCmd.Run() // Ignore errors
 	}
 
@@ -484,7 +484,7 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	// Base images (postgres, redis) are NOT removed - they're shared and cached
 	if infra.DataStorageImageName != "" {
 		_, _ = fmt.Fprintf(writer, "🗑️  Removing kubernaut-built DataStorage image: %s\n", infra.DataStorageImageName)
-		rmiCmd := exec.Command("podman", "rmi", infra.DataStorageImageName)
+		rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", infra.DataStorageImageName)
 		if err := rmiCmd.Run(); err != nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove image (may not exist): %v\n", err)
 		} else {
@@ -493,7 +493,7 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	}
 
 	// Remove network
-	networkCmd := exec.Command("podman", "network", "rm", infra.Network)
+	networkCmd := exec.CommandContext(context.Background(), "podman", "network", "rm", infra.Network)
 	_ = networkCmd.Run() // Ignore errors
 
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage Infrastructure stopped and cleaned up\n")
@@ -514,10 +514,10 @@ func cleanupDSBootstrapContainers(infra *DSBootstrapInfra, writer io.Writer) {
 	}
 
 	for _, container := range containers {
-		stopCmd := exec.Command("podman", "stop", container)
+		stopCmd := exec.CommandContext(context.Background(), "podman", "stop", container)
 		_ = stopCmd.Run() // Ignore errors
 
-		rmCmd := exec.Command("podman", "rm", container)
+		rmCmd := exec.CommandContext(context.Background(), "podman", "rm", container)
 		_ = rmCmd.Run() // Ignore errors
 	}
 }
@@ -525,13 +525,13 @@ func cleanupDSBootstrapContainers(infra *DSBootstrapInfra, writer io.Writer) {
 // createDSBootstrapNetwork creates the test network
 func createDSBootstrapNetwork(infra *DSBootstrapInfra, writer io.Writer) error {
 	// Check if network already exists
-	checkCmd := exec.Command("podman", "network", "exists", infra.Network)
+	checkCmd := exec.CommandContext(context.Background(), "podman", "network", "exists", infra.Network)
 	if checkCmd.Run() == nil {
 		return nil // Network exists
 	}
 
 	// Create network
-	cmd := exec.Command("podman", "network", "create", infra.Network)
+	cmd := exec.CommandContext(context.Background(), "podman", "network", "create", infra.Network)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
@@ -542,7 +542,7 @@ func createDSBootstrapNetwork(infra *DSBootstrapInfra, writer io.Writer) error {
 func PullImageWithRetry(image string, maxRetries int, writer io.Writer) error {
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		cmd := exec.Command("podman", "pull", image)
+		cmd := exec.CommandContext(context.Background(), "podman", "pull", image)
 		cmd.Stdout = writer
 		cmd.Stderr = writer
 		if err := cmd.Run(); err != nil {
@@ -571,7 +571,7 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
 	}
 
-	cmd := exec.Command("podman", "run", "-d",
+	cmd := exec.CommandContext(context.Background(), "podman", "run", "-d",
 		"--name", infra.PostgresContainer,
 		"--network", infra.Network,
 		"-p", fmt.Sprintf("%d:5432", cfg.PostgresPort),
@@ -599,11 +599,11 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 	}
 	defer func() { _ = db.Close() }()
 
-	if err := db.Ping(); err != nil {
+	ctx := context.Background()
+	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
-	ctx := context.Background()
 	return RunGooseMigrations(ctx, db, migrationsDir, writer)
 }
 
@@ -616,7 +616,7 @@ func startDSBootstrapRedis(infra *DSBootstrapInfra, writer io.Writer) error {
 		return fmt.Errorf("failed to pull Redis image: %w", err)
 	}
 
-	cmd := exec.Command("podman", "run", "-d",
+	cmd := exec.CommandContext(context.Background(), "podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"--network", infra.Network,
 		"-p", fmt.Sprintf("%d:6379", cfg.RedisPort),
@@ -630,7 +630,7 @@ func startDSBootstrapRedis(infra *DSBootstrapInfra, writer io.Writer) error {
 // waitForDSBootstrapRedisReady waits for Redis to be ready
 func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) error {
 	for i := 1; i <= 10; i++ {
-		cmd := exec.Command("podman", "exec", infra.RedisContainer,
+		cmd := exec.CommandContext(context.Background(), "podman", "exec", infra.RedisContainer,
 			"redis-cli", "ping")
 		output, err := cmd.Output()
 		if err == nil && strings.Contains(string(output), "PONG") {
@@ -759,7 +759,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 
 	args = append(args, imageName)
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(context.Background(), "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -775,7 +775,11 @@ func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(infra.HealthURL + "/readyz")
+		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, infra.HealthURL+"/readyz", http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build readyz request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			return nil

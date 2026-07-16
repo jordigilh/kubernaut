@@ -452,7 +452,7 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 
 	// Build with GOFLAGS=-cover for E2E coverage
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
-	cmd := exec.Command(containerCmd, "build",
+	cmd := exec.CommandContext(context.Background(), containerCmd, "build",
 		"--no-cache", // Force fresh build to include latest code changes
 		"-t", imageName,
 		"-f", dockerfilePath,
@@ -527,7 +527,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 	}
 
 	// Apply both CRDs in a single kubectl call (OPTIMIZATION #2)
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "-f", spCRDPath, "-f", rrCRDPath)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -541,7 +541,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 
 	// Check SignalProcessing CRD
 	for i := 0; i < 30; i++ {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "signalprocessings.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			_, _ = fmt.Fprintln(writer, "  ✓ SignalProcessing CRD established")
@@ -555,7 +555,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 
 	// Check RemediationRequest CRD
 	for i := 0; i < 30; i++ {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "remediationrequests.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			_, _ = fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
@@ -580,7 +580,7 @@ metadata:
     app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: signalprocessing
 `
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -702,7 +702,7 @@ data:
       PredictedNodeNotReady: NodeNotReady
 `
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(unifiedPolicy)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -782,7 +782,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	imageName := GetSignalProcessingCoverageFullImageName()
 
 	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
-	saveCmd := exec.Command("podman", "save",
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save",
 		"-o", tmpFile,
 		imageName,
 	)
@@ -793,7 +793,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Loading coverage image into Kind...")
-	loadCmd := exec.Command("kind", "load", "image-archive",
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive",
 		tmpFile,
 		"--name", clusterName,
 	)
@@ -809,7 +809,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -1039,7 +1039,7 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName stri
 	imagePullPolicy := GetImagePullPolicy()
 	manifest := signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPolicy)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1084,7 +1084,7 @@ func GetSignalProcessingImageTag() string {
 }
 
 func getSignalProcessingGitHash() string {
-	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	cmd := exec.CommandContext(context.Background(), "git", "rev-parse", "--short", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return "unknown"

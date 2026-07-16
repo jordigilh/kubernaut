@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -200,7 +201,7 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	if err := PullImageWithRetry(migrationsImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull migrations image: %w", err)
 	}
-	migrationsCmd := exec.Command("podman", "run", "--rm",
+	migrationsCmd := exec.CommandContext(context.Background(), "podman", "run", "--rm",
 		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
 		"-e", fmt.Sprintf("PGPORT=%d", NTIntegrationPostgresPort),
 		"-e", fmt.Sprintf("PGUSER=%s", NTIntegrationDBUser),
@@ -274,7 +275,7 @@ echo "Migrations complete!"`)
 	); err != nil {
 		// Print container logs for debugging
 		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
-		logsCmd := exec.Command("podman", "logs", NTIntegrationDataStorageContainer)
+		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", NTIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
@@ -318,7 +319,7 @@ func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
 	}, writer)
 
 	// Remove network (ignore errors)
-	networkCmd := exec.Command("podman", "network", "rm", NTIntegrationNetwork)
+	networkCmd := exec.CommandContext(context.Background(), "podman", "network", "rm", NTIntegrationNetwork)
 	_ = networkCmd.Run()
 
 	_, _ = fmt.Fprintf(writer, "✅ Notification Integration Infrastructure stopped and cleaned up\n")
@@ -338,7 +339,7 @@ func startNotificationDataStorage(imageTag string, writer io.Writer) error {
 	configDir := filepath.Join(projectRoot, "test", "integration", "notification", "config")
 	configMount := fmt.Sprintf("%s:/etc/datastorage:ro", configDir)
 
-	cmd := exec.Command("podman", "run", "-d",
+	cmd := exec.CommandContext(context.Background(), "podman", "run", "-d",
 		"--name", NTIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", NTIntegrationDataStoragePort),
 		"-p", fmt.Sprintf("%d:8081", NTIntegrationHealthPort),

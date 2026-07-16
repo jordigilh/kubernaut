@@ -55,13 +55,13 @@ type TestWorkflow struct {
 	WorkflowID      string // Must match Mock LLM workflow_id in scenarios registry
 	Name            string
 	Description     string
-	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
-	Severity        string // Metadata only: "critical", "high", "warning", "info" (ADR-066 canonical values)
+	ActionType      string   // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
+	Severity        string   // Metadata only: "critical", "high", "warning", "info" (ADR-066 canonical values)
 	Component       []string // Metadata only: e.g. []string{"deployment"}, []string{"pod"} (actual value from fixture)
-	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from fixture)
-	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from fixture)
-	SchemaImage     string // Legacy: retained for fixture directory name mapping
-	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
+	Environment     string   // Metadata only + map key: "staging", "production", "test" (actual value from fixture)
+	Priority        string   // Metadata only: "P0", "P1", "P2", "P3" (actual value from fixture)
+	SchemaImage     string   // Legacy: retained for fixture directory name mapping
+	ExecutionEngine string   // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
 	// SchemaParameters defines workflow input parameters per ADR-043 (BR-HAPI-191)
 	// Used to generate valid workflow-schema.yaml content that DataStorage will parse
 	// and store in the parameters JSONB column for KA validation and MCP tool results
@@ -225,7 +225,7 @@ func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []
 			return nil, fmt.Errorf("read fixture %s: %w", wf.FixtureDir, err)
 		}
 
-		cmd := exec.Command("kubectl", "apply",
+		cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-n", namespace,
 			"-f", "-")
@@ -272,7 +272,7 @@ func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []
 func waitForWorkflowUUID(kubeconfigPath, namespace, name string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		cmd := exec.Command("kubectl", "get",
+		cmd := exec.CommandContext(context.Background(), "kubectl", "get",
 			fmt.Sprintf("remediationworkflow/%s", name),
 			"-n", namespace,
 			"--kubeconfig", kubeconfigPath,

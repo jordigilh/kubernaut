@@ -25,6 +25,16 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
+// closeIfPresent closes resp.Body when a response was returned, discarding
+// err. Shared by tests that call RoundTrip directly (bypassing http.Client)
+// purely to observe circuit-breaker side effects (state, audit events),
+// where the response body itself is irrelevant to the assertion.
+func closeIfPresent(resp *http.Response, _ error) {
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+}
+
 func newResponse(status int) *http.Response {
 	return &http.Response{
 		StatusCode: status,

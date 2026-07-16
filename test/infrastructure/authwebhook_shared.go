@@ -123,7 +123,7 @@ func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconf
 
 	// STEP 2: Apply ALL CRDs (required for webhook registration)
 	_, _ = fmt.Fprintln(writer, "\n📋 STEP 2: Applying ALL CRDs...")
-	cmd := exec.Command("kubectl", "apply",
+	cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "config/crd/bases/")
 	cmd.Dir = workspaceRoot
@@ -137,7 +137,7 @@ func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconf
 	_, _ = fmt.Fprintln(writer, "\n🚀 STEP 3: Deploying AuthWebhook service...")
 	dsURL := fmt.Sprintf("https://data-storage-service.%s.svc.cluster.local:8080", namespace)
 	manifest := authWebhookManifest(namespace, awImageName, dsURL)
-	cmd = exec.Command("kubectl", "apply",
+	cmd = exec.CommandContext(context.Background(), "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -179,14 +179,14 @@ func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconf
 // Production deployments should use cert-manager
 func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) error {
 	// Generate private key
-	cmd := exec.Command("openssl", "genrsa", "-out", "/tmp/webhook-key.pem", "2048")
+	cmd := exec.CommandContext(context.Background(), "openssl", "genrsa", "-out", "/tmp/webhook-key.pem", "2048")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ❌ Key generation failed: %s\n", output)
 		return fmt.Errorf("openssl genrsa failed: %w", err)
 	}
 
 	// Generate certificate with SAN (Subject Alternative Names) for webhook service
-	cmd = exec.Command("openssl", "req", "-new", "-x509",
+	cmd = exec.CommandContext(context.Background(), "openssl", "req", "-new", "-x509",
 		"-key", "/tmp/webhook-key.pem",
 		"-out", "/tmp/webhook-cert.pem",
 		"-days", "365",
@@ -198,12 +198,12 @@ func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) er
 	}
 
 	// Delete existing secret if present (idempotent re-run support)
-	delCmd := exec.Command("kubectl", "delete", "secret", "authwebhook-tls",
+	delCmd := exec.CommandContext(context.Background(), "kubectl", "delete", "secret", "authwebhook-tls",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace, "--ignore-not-found")
 	_, _ = delCmd.CombinedOutput()
 
-	cmd = exec.Command("kubectl", "create", "secret", "tls", "authwebhook-tls",
+	cmd = exec.CommandContext(context.Background(), "kubectl", "create", "secret", "tls", "authwebhook-tls",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"--cert=/tmp/webhook-cert.pem",
@@ -220,7 +220,7 @@ func generateWebhookCerts(kubeconfigPath, namespace string, writer io.Writer) er
 // Must be called AFTER webhook configurations are created
 func patchWebhookConfigsWithCABundle(kubeconfigPath string, writer io.Writer) error {
 	// Base64 encode the certificate for CA bundle
-	caBundleOutput, err := exec.Command("bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
+	caBundleOutput, err := exec.CommandContext(context.Background(), "bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
 	if err != nil {
 		return fmt.Errorf("failed to base64 encode CA bundle: %w", err)
 	}
@@ -234,7 +234,7 @@ func patchWebhookConfigsWithCABundle(kubeconfigPath string, writer io.Writer) er
 		"remediationrequest.mutate.kubernaut.ai", // Gap #8: TimeoutConfig mutation tracking
 	}
 	for i, webhookName := range webhookNames {
-		patchCmd := exec.Command("kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
+		patchCmd := exec.CommandContext(context.Background(), "kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
 			"--kubeconfig", kubeconfigPath,
 			"--type=json",
 			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
@@ -251,7 +251,7 @@ func patchWebhookConfigsWithCABundle(kubeconfigPath string, writer io.Writer) er
 		"actiontype.validate.kubernaut.ai",
 	}
 	for i, vwName := range validatingWebhookNames {
-		patchCmd := exec.Command("kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
+		patchCmd := exec.CommandContext(context.Background(), "kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
 			"--kubeconfig", kubeconfigPath,
 			"--type=json",
 			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))

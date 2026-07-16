@@ -329,7 +329,11 @@ func WaitForMockLLMHealthy(ctx context.Context, port int, writer io.Writer) erro
 		default:
 		}
 
-		resp, err := http.Get(healthURL)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build Mock LLM health request: %w", reqErr)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintf(writer, "✅ Mock LLM health check passed (attempt %d/%d)\n", i+1, maxRetries)

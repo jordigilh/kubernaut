@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -161,7 +162,7 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 		args = append(args, "-c", fmt.Sprintf("max_connections=%d", cfg.MaxConnections))
 	}
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(context.Background(), "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
@@ -194,7 +195,7 @@ func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writ
 	// ============================================================================
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
-		cmd := exec.Command("podman", "exec", containerName,
+		cmd := exec.CommandContext(context.Background(), "podman", "exec", containerName,
 			"pg_isready", "-U", dbUser, "-d", dbName)
 		if cmd.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL accepting connections (attempt %d/%d)\n", i, maxAttempts)
@@ -222,7 +223,7 @@ func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writ
 	_, _ = fmt.Fprintf(writer, "   ⏳ Verifying database is queryable...\n")
 	maxQueryAttempts := 10
 	for i := 1; i <= maxQueryAttempts; i++ {
-		testQueryCmd := exec.Command("podman", "exec", containerName,
+		testQueryCmd := exec.CommandContext(context.Background(), "podman", "exec", containerName,
 			"psql", "-U", dbUser, "-d", dbName, "-c", "SELECT 1;")
 		testQueryCmd.Stdout = writer
 		testQueryCmd.Stderr = writer
@@ -284,7 +285,7 @@ func StartRedis(cfg RedisConfig, writer io.Writer) error {
 
 	args = append(args, redisImage)
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(context.Background(), "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
@@ -306,7 +307,7 @@ func StartRedis(cfg RedisConfig, writer io.Writer) error {
 func WaitForRedisReady(containerName string, writer io.Writer) error {
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
-		cmd := exec.Command("podman", "exec", containerName, "redis-cli", "ping")
+		cmd := exec.CommandContext(context.Background(), "podman", "exec", containerName, "redis-cli", "ping")
 		output, err := cmd.CombinedOutput()
 		if err == nil && string(output) == "PONG\n" {
 			_, _ = fmt.Fprintf(writer, "   ✅ Redis ready (attempt %d/%d)\n", i, maxAttempts)
@@ -334,13 +335,20 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 //	    return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 //	}
 func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
 	attempt := 0
 
 	for time.Now().Before(deadline) {
 		attempt++
-		resp, err := client.Get(healthURL)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build health check request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -417,7 +425,7 @@ func MustGatherContainerLogs(serviceName string, containerNames []string, writer
 
 	for _, container := range containerNames {
 		// Check if container exists
-		checkCmd := exec.Command("podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
+		checkCmd := exec.CommandContext(context.Background(), "podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
 		output, err := checkCmd.Output()
 		if err != nil || len(output) == 0 || string(output) == "\n" {
 			_, _ = fmt.Fprintf(writer, "   ⏭️  Skipping %s (container not found)\n", container)
@@ -426,7 +434,7 @@ func MustGatherContainerLogs(serviceName string, containerNames []string, writer
 
 		// Extract container logs
 		logFile := filepath.Join(mustGatherDir, fmt.Sprintf("%s_%s.log", serviceName, container))
-		logCmd := exec.Command("podman", "logs", container)
+		logCmd := exec.CommandContext(context.Background(), "podman", "logs", container)
 		logOutput, err := logCmd.CombinedOutput()
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to get logs for %s: %v\n", container, err)
@@ -440,7 +448,7 @@ func MustGatherContainerLogs(serviceName string, containerNames []string, writer
 
 		// Extract container inspect JSON (configuration and state)
 		inspectFile := filepath.Join(mustGatherDir, fmt.Sprintf("%s_%s_inspect.json", serviceName, container))
-		inspectCmd := exec.Command("podman", "inspect", container)
+		inspectCmd := exec.CommandContext(context.Background(), "podman", "inspect", container)
 		inspectOutput, err := inspectCmd.Output()
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to inspect %s: %v\n", container, err)
@@ -475,20 +483,20 @@ func CleanupContainers(containerNames []string, writer io.Writer) {
 	for _, container := range containerNames {
 		// Stop container (immediate stop for faster cleanup)
 		// Use --time=0 to force immediate stop without waiting for graceful shutdown
-		stopCmd := exec.Command("podman", "stop", "--time=0", container)
+		stopCmd := exec.CommandContext(context.Background(), "podman", "stop", "--time=0", container)
 		stopCmd.Stdout = writer
 		stopCmd.Stderr = writer
 		_ = stopCmd.Run() // Ignore errors (container might not exist)
 
 		// Remove container (force) - this should handle containers in any state
-		rmCmd := exec.Command("podman", "rm", "-f", container)
+		rmCmd := exec.CommandContext(context.Background(), "podman", "rm", "-f", container)
 		rmCmd.Stdout = writer
 		rmCmd.Stderr = writer
 		_ = rmCmd.Run() // Ignore errors (container might not exist)
 
 		// Verify container is gone (retry up to 3 times for race conditions)
 		for attempt := 0; attempt < 3; attempt++ {
-			checkCmd := exec.Command("podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
+			checkCmd := exec.CommandContext(context.Background(), "podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
 			output, _ := checkCmd.Output()
 			if len(output) == 0 || string(output) == "\n" {
 				break // Container successfully removed
@@ -496,7 +504,7 @@ func CleanupContainers(containerNames []string, writer io.Writer) {
 			// Container still exists, try removing again
 			if attempt < 2 {
 				time.Sleep(100 * time.Millisecond)
-				rmRetry := exec.Command("podman", "rm", "-f", container)
+				rmRetry := exec.CommandContext(context.Background(), "podman", "rm", "-f", container)
 				rmRetry.Stdout = writer
 				rmRetry.Stderr = writer
 				_ = rmRetry.Run()
@@ -563,7 +571,7 @@ func RunMigrations(cfg MigrationsConfig, writer io.Writer) error {
 	// Add image
 	args = append(args, cfg.MigrationsImage)
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(context.Background(), "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
@@ -686,7 +694,7 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	// Add image (may be registry image if IMAGE_REGISTRY/IMAGE_TAG are set)
 	runArgs = append(runArgs, actualImage)
 
-	cmd := exec.Command("podman", runArgs...)
+	cmd := exec.CommandContext(context.Background(), "podman", runArgs...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -924,7 +932,7 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	tarFile := fmt.Sprintf("/tmp/%s-%d.tar", safeImageName, time.Now().UnixNano())
 
 	// Step 1: Save podman image to tar archive
-	saveCmd := exec.Command("podman", "save", imageName, "-o", tarFile)
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save", imageName, "-o", tarFile)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 
@@ -933,7 +941,7 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	}
 
 	// Step 2: Load tar archive into Kind cluster
-	loadCmd := exec.Command("kind", "load", "image-archive", tarFile, "--name", clusterName)
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", tarFile, "--name", clusterName)
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 

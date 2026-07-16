@@ -2190,7 +2190,7 @@ func mcpInitializeHTTP(baseURL string, user *auth.UserIdentity) string {
 		},
 	}
 	body, _ := json.Marshal(initReq)
-	req, _ := http.NewRequest("POST", baseURL, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	setTestIdentityHeaders(req, user)
@@ -2204,7 +2204,7 @@ func mcpInitializeHTTP(baseURL string, user *auth.UserIdentity) string {
 		"jsonrpc": "2.0",
 		"method":  "notifications/initialized",
 	})
-	nReq, _ := http.NewRequest("POST", baseURL, bytes.NewReader(notif))
+	nReq, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL, bytes.NewReader(notif))
 	nReq.Header.Set("Content-Type", "application/json")
 	nReq.Header.Set("Accept", "application/json, text/event-stream")
 	nReq.Header.Set("Mcp-Session-Id", sessionID)
@@ -2233,7 +2233,7 @@ func mcpCallToolHTTPClient(client *http.Client, baseURL, sessionID, toolName str
 		},
 	}
 	body, _ := json.Marshal(callReq)
-	req, _ := http.NewRequest("POST", baseURL, bytes.NewReader(body))
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("Mcp-Session-Id", sessionID)

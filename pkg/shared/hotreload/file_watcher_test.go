@@ -375,5 +375,17 @@ var _ = Describe("FileWatcher", func() {
 				watcher.Stop()
 			}).NotTo(Panic())
 		})
+
+		It("UT-HR-1356-003: should not panic when Stop() is called on a nil *FileWatcher", func() {
+			// Defense-in-depth for the sharedtls.StartCAFileWatcher nilnil idiom
+			// (Issue #1546 Tier 2): callers receive a nil *FileWatcher when no
+			// watcher was needed, and must currently remember to nil-check
+			// before calling Stop(). This guards the case where a caller forgets.
+			var watcher *prodhotreload.FileWatcher
+
+			Expect(func() {
+				watcher.Stop()
+			}).NotTo(Panic())
+		})
 	})
 })

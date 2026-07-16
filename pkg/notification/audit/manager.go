@@ -142,7 +142,7 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 
 	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
 	// MANDATORY: Use RemediationRequest.Name as correlation_id (not UID)
-	correlationID := ""
+	var correlationID string
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
 		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name
@@ -212,7 +212,7 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 	}
 
 	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
-	correlationID := ""
+	var correlationID string
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
 		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name
@@ -280,7 +280,7 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 	}
 
 	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
-	correlationID := ""
+	var correlationID string
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
 		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name
@@ -341,7 +341,7 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 	}
 
 	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
-	correlationID := ""
+	var correlationID string
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
 		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name

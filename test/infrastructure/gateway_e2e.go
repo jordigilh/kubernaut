@@ -187,7 +187,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// Install RemediationRequest CRD
 	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml"
-	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
 	crdCmd.Stderr = writer
 	if err := crdCmd.Run(); err != nil {
@@ -435,7 +435,7 @@ func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 	// 2. Install RemediationRequest CRD (reuse from signalprocessing.go)
 	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml" // Updated to new API group
-	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
 	crdCmd.Stderr = writer
 	if err := crdCmd.Run(); err != nil {
@@ -538,7 +538,7 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   Building Gateway image via shared build utilities (DD-TEST-001)...")
 
 	buildScript := filepath.Join(projectRoot, "scripts", "build-service-image.sh")
-	buildCmd := exec.Command(buildScript,
+	buildCmd := exec.CommandContext(context.Background(), buildScript,
 		"gateway",
 		"--kind",
 		"--cluster", clusterName,
@@ -828,7 +828,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := gatewayRBACManifest()
-	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = strings.NewReader(rbacManifest)
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -841,7 +841,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := gatewayWorkloadManifest(gatewayImageName, false)
-	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = strings.NewReader(workloadManifest)
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer
@@ -850,7 +850,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 	}
 
 	_, _ = fmt.Fprintln(writer, "   Waiting for Gateway pod (may take up to 5 minutes for RBAC + initial startup)...")
-	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=gateway",
 		"-n", namespace,
@@ -887,7 +887,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 	// Build with GOFLAGS=-cover for E2E coverage
 	// Using go-toolset:1.26 (no dnf update) reduces build time from 10min to 2-3min
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
-	cmd := exec.Command(containerCmd, "build",
+	cmd := exec.CommandContext(context.Background(), containerCmd, "build",
 		"--no-cache", // Force fresh build to include latest code changes
 		"-t", imageName,
 		"-f", dockerfilePath,
@@ -915,7 +915,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	imageName := GetGatewayCoverageFullImageName()
 
 	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
-	saveCmd := exec.Command("podman", "save",
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save",
 		"-o", tmpFile,
 		imageName,
 	)
@@ -926,7 +926,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Loading coverage image into Kind...")
-	loadCmd := exec.Command("kind", "load", "image-archive",
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive",
 		tmpFile,
 		"--name", clusterName,
 	)
@@ -942,7 +942,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -967,7 +967,7 @@ func GatewayCoverageManifest(imageName string) string {
 func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName string, writer io.Writer) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := gatewayRBACManifest()
-	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = strings.NewReader(rbacManifest)
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -980,7 +980,7 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName strin
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := gatewayWorkloadManifest(gatewayImageName, true)
-	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = strings.NewReader(workloadManifest)
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer

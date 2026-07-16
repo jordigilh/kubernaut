@@ -211,7 +211,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		_, _ = fmt.Fprintf(writer, "  ├── %s\n", crdFile)
 		crdArgs = append(crdArgs, "-f", crdPath)
 	}
-	cmd := exec.Command("kubectl", crdArgs...)
+	cmd := exec.CommandContext(context.Background(), "kubectl", crdArgs...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -614,7 +614,7 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 	}
 
 	for _, kind := range crdKinds {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 			"delete", kind, "--all-namespaces", "--all", "--ignore-not-found", "--wait=false")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -628,13 +628,13 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 	}
 
 	// Delete test namespaces matching known patterns (fp-am-*, fp-event-*)
-	nsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	nsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}")
 	nsOut, err := nsCmd.Output()
 	if err == nil {
 		for _, ns := range strings.Fields(string(nsOut)) {
 			if strings.HasPrefix(ns, "fp-am-") || strings.HasPrefix(ns, "fp-event-") {
-				delCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+				delCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 					"delete", "namespace", ns, "--ignore-not-found", "--wait=false")
 				if delOut, delErr := delCmd.CombinedOutput(); delErr != nil {
 					_, _ = fmt.Fprintf(writer, "  ⚠️  namespace %s: %s\n", ns, strings.TrimSpace(string(delOut)))
@@ -782,7 +782,7 @@ func deployFullPipelineAAController(ctx context.Context, namespace, kubeconfigPa
 func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, gatewayImageName string, writer io.Writer) error {
 	manifest := gatewayManifest(gatewayImageName, false)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -791,7 +791,7 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 	}
 
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Gateway pod ready...")
-	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=gateway", "-n", namespace, "--timeout=300s")
 	waitCmd.Stdout = writer
@@ -1263,11 +1263,11 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		"kubernaut-agent",
 		"gateway",
 		"event-exporter",
-		"mock-slack",    // Accepts Slack webhook POSTs so notifications reach terminal phase
-		"prometheus",    // ADR-EM-001: Prometheus for EM metric comparison
-		"alertmanager",  // ADR-EM-001: AlertManager for EM alert resolution
-		"apifrontend",   // Issue #1189: AF as FP signal source
-		"dex",           // Issue #1189: OIDC provider for AF authentication
+		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase
+		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
+		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
+		"apifrontend",  // Issue #1189: AF as FP signal source
+		"dex",          // Issue #1189: OIDC provider for AF authentication
 	}
 	if !skipMockLLM() {
 		deployments = append(deployments, "mock-llm")
@@ -1411,7 +1411,7 @@ func SetupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer
 	crtPath := filepath.Join(tmpDir, "ca.crt")
 
 	_, _ = fmt.Fprintln(writer, "  🔑 Generating self-signed CA key pair...")
-	genCmd := exec.Command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+	genCmd := exec.CommandContext(context.Background(), "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
 		"-keyout", keyPath, "-out", crtPath,
 		"-days", "365", "-subj", "/CN=Demo CA/O=Kubernaut")
 	genCmd.Stderr = writer
@@ -1420,7 +1420,7 @@ func SetupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer
 	}
 
 	_, _ = fmt.Fprintln(writer, "  📋 Creating CA Secret demo-ca-key-pair in cert-manager namespace...")
-	secretCmd := exec.Command("kubectl", "create", "secret", "tls", "demo-ca-key-pair",
+	secretCmd := exec.CommandContext(context.Background(), "kubectl", "create", "secret", "tls", "demo-ca-key-pair",
 		"--cert", crtPath, "--key", keyPath,
 		"-n", "cert-manager",
 		"--kubeconfig", kubeconfigPath,
@@ -1429,7 +1429,7 @@ func SetupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer
 	if err != nil {
 		return fmt.Errorf("failed to generate CA Secret YAML: %w", err)
 	}
-	applyCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	applyCmd := exec.CommandContext(context.Background(), "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
 	applyCmd.Stdin = strings.NewReader(string(secretYAML))
 	applyCmd.Stdout = writer
 	applyCmd.Stderr = writer
@@ -1445,7 +1445,7 @@ metadata:
 spec:
   ca:
     secretName: demo-ca-key-pair`
-	issuerCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	issuerCmd := exec.CommandContext(context.Background(), "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
 	issuerCmd.Stdin = strings.NewReader(issuerYAML)
 	issuerCmd.Stdout = writer
 	issuerCmd.Stderr = writer
@@ -1469,7 +1469,7 @@ spec:
     - demo-app
   duration: 2160h
   renewBefore: 360h`, namespace, namespace)
-	certCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
+	certCmd := exec.CommandContext(context.Background(), "kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
 	certCmd.Stdin = strings.NewReader(certYAML)
 	certCmd.Stdout = writer
 	certCmd.Stderr = writer
@@ -1478,7 +1478,7 @@ spec:
 	}
 
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Certificate to become Ready...")
-	waitCmd := exec.Command("kubectl", "wait",
+	waitCmd := exec.CommandContext(context.Background(), "kubectl", "wait",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"--for=condition=Ready",
@@ -1491,7 +1491,7 @@ spec:
 	}
 
 	_, _ = fmt.Fprintln(writer, "  🔥 Deleting CA Secret to trigger NotReady state...")
-	delCmd := exec.Command("kubectl", "delete", "secret", "demo-ca-key-pair",
+	delCmd := exec.CommandContext(context.Background(), "kubectl", "delete", "secret", "demo-ca-key-pair",
 		"-n", "cert-manager",
 		"--kubeconfig", kubeconfigPath,
 		"--ignore-not-found")
@@ -1503,7 +1503,7 @@ spec:
 
 	// Delete the issued TLS secret to force re-issuance attempt (which will fail)
 	_, _ = fmt.Fprintln(writer, "  🔄 Deleting issued TLS secret to trigger re-issuance attempt...")
-	delTLSCmd := exec.Command("kubectl", "delete", "secret", "demo-app-tls",
+	delTLSCmd := exec.CommandContext(context.Background(), "kubectl", "delete", "secret", "demo-app-tls",
 		"-n", namespace,
 		"--kubeconfig", kubeconfigPath,
 		"--ignore-not-found")
@@ -1571,7 +1571,7 @@ func CleanupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writ
 		{"delete", "clusterissuer", "demo-selfsigned-ca", "--ignore-not-found"},
 		{"delete", "secret", "demo-ca-key-pair", "-n", "cert-manager", "--ignore-not-found"},
 	} {
-		cmd := exec.Command("kubectl", append(args, "--kubeconfig", kubeconfigPath)...)
+		cmd := exec.CommandContext(context.Background(), "kubectl", append(args, "--kubeconfig", kubeconfigPath)...)
 		cmd.Stdout = writer
 		cmd.Stderr = writer
 		_ = cmd.Run()

@@ -658,7 +658,7 @@ func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io
 	buildCmd.Stderr = writer
 
 	if err := buildCmd.Run(); err != nil {
-		checkAgain := exec.Command("podman", "image", "exists", localImageName)
+		checkAgain := exec.CommandContext(context.Background(), "podman", "image", "exists", localImageName)
 		if checkAgain.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", localImageName)
 			return localImageName, nil

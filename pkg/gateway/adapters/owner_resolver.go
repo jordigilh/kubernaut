@@ -420,6 +420,14 @@ func (r *K8sOwnerResolver) verifyOwnerViaFallback(
 
 	logger.V(1).Info("Verified standalone resource via direct API (no controller owner)",
 		"kind", currentKind, "name", currentName, "level", level)
+	// nolint:nilnil // intentional "confirmed standalone" sentinel, not an error;
+	// the single caller (resolveOwnerStep) already checks verifyErr != nil before
+	// checking verifiedRef != nil, so no ambiguity risk exists today. NOTE: this
+	// #284 trust-but-verify fallback path currently has zero test coverage — a
+	// sentinel-error refactor (recommended by this linter) would be a better
+	// long-term fix, but doing so without first adding characterization tests
+	// would violate the coverage-before-refactor mandate; tracked as a follow-up
+	// rather than folded into Issue #1546 Tier 2's lint-gate scope.
 	return nil, nil
 }
 

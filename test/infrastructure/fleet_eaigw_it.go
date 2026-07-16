@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -169,7 +170,7 @@ func StartEAIGWContainer(servers []EAIGWMCPServerEntry, writer io.Writer) (*Cont
 	mcpAddr := fmt.Sprintf("127.0.0.1:%d", mcpPort)
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for MCP data-plane port: %s\n", mcpAddr)
 	if err := WaitForTCPPort(mcpAddr, 30*time.Second, writer); err != nil {
-		logsCmd := exec.Command("podman", "logs", cfg.Name)
+		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", cfg.Name)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()

@@ -81,6 +81,9 @@ func fileExists(path string) bool {
 // non-empty, or nil (meaning "use default transport") otherwise.
 func OutboundTransport(caFile string) (http.RoundTripper, error) {
 	if caFile == "" {
+		// nolint:nilnil // intentional "disabled" sentinel: nil http.RoundTripper
+		// is documented-safe (http.Client falls back to DefaultTransport), not an
+		// error condition (Issue #1546 Tier 2).
 		return nil, nil
 	}
 	return sharedtls.NewTLSTransport(caFile)

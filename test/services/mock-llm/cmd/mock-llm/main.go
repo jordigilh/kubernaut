@@ -55,7 +55,7 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	ln, err := net.Listen("tcp", cfg.ListenAddr())
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", cfg.ListenAddr())
 	if err != nil {
 		log.Fatalf("Failed to listen on %s: %v", cfg.ListenAddr(), err)
 	}

@@ -306,7 +306,7 @@ func BuildAFImage(writer io.Writer) (string, error) {
 func AFGenerateCerts(certDir string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	script := projectRoot + "/deploy/apifrontend/overlays/e2e/generate-certs.sh"
-	cmd := exec.Command("bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
+	cmd := exec.CommandContext(context.Background(), "bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {

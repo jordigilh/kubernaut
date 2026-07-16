@@ -75,7 +75,7 @@ func mapGatewaySignalFields(parsedData *ParsedAuditData, result *ReconstructedRR
 	}
 
 	result.Spec.SignalName = parsedData.SignalName
-	result.Spec.SignalType = string(parsedData.SignalType)
+	result.Spec.SignalType = parsedData.SignalType
 	result.Spec.SignalFingerprint = parsedData.SignalFingerprint // BR-AUDIT-005: deduplication identity
 	result.Spec.SignalLabels = parsedData.SignalLabels
 	result.Spec.SignalAnnotations = parsedData.SignalAnnotations

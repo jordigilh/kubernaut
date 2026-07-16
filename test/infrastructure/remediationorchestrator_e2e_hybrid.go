@@ -178,7 +178,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
 		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
-		crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 		crdCmd.Stdout = writer
 		crdCmd.Stderr = writer
 		if err := crdCmd.Run(); err != nil {
@@ -426,7 +426,7 @@ func BuildROImageWithCoverage(writer io.Writer) error {
 	// Build with coverage instrumentation
 	// Use localhost/ prefix to match Podman's default tagging
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
-	cmd := exec.Command("podman", "build",
+	cmd := exec.CommandContext(context.Background(), "podman", "build",
 		"--no-cache", // Force fresh build to include latest code changes
 		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"--build-arg", "GOFLAGS=-cover",
@@ -456,7 +456,7 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "📦 Loading RemediationOrchestrator coverage image into Kind cluster...")
 
 	// Save image to tar (following Gateway/DataStorage pattern for Kind+Podman compatibility)
-	saveCmd := exec.Command("podman", "save", "localhost/remediationorchestrator-controller:e2e-coverage", "-o", "/tmp/remediationorchestrator-e2e-coverage.tar")
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "localhost/remediationorchestrator-controller:e2e-coverage", "-o", "/tmp/remediationorchestrator-e2e-coverage.tar")
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 
@@ -465,7 +465,7 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 	}
 
 	// Load tar into Kind cluster
-	loadCmd := exec.Command("kind", "load", "image-archive", "/tmp/remediationorchestrator-e2e-coverage.tar", "--name", clusterName)
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", "/tmp/remediationorchestrator-e2e-coverage.tar", "--name", clusterName)
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 
@@ -479,7 +479,7 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintln(writer, "  🗑️  Removing Podman image to free disk space...")
-	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/remediationorchestrator-controller:e2e-coverage")
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", "localhost/remediationorchestrator-controller:e2e-coverage")
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -725,7 +725,7 @@ spec:
 func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := roRBACManifest()
-	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = bytes.NewReader([]byte(rbacManifest))
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -738,7 +738,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := roWorkloadManifest(imageName, verifyingTimeout...)
-	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = bytes.NewReader([]byte(workloadManifest))
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer
@@ -751,7 +751,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 	_, _ = fmt.Fprintln(writer, "   ⏳ Waiting for RemediationOrchestrator to be ready...")
 	deadline := time.Now().Add(3 * time.Minute) // Longer timeout for controller startup
 	for time.Now().Before(deadline) {
-		waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+		waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
 			"wait", "--for=condition=ready", "pod", "-l", "app=remediationorchestrator-controller",
 			"--timeout=10s")
 		if err := waitCmd.Run(); err == nil {
@@ -768,7 +768,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 1. Pod status
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Status:")
-	statusCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	statusCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
 		"get", "pods", "-l", "app=remediationorchestrator-controller", "-o", "wide")
 	statusCmd.Stdout = writer
 	statusCmd.Stderr = writer
@@ -777,7 +777,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 2. Pod describe (events, image status, readiness probe)
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Details & Events:")
-	describeCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	describeCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
 		"describe", "pod", "-l", "app=remediationorchestrator-controller")
 	describeCmd.Stdout = writer
 	describeCmd.Stderr = writer
@@ -786,7 +786,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 3. Pod logs (startup errors)
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Logs (last 50 lines):")
-	logsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	logsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
 		"logs", "-l", "app=remediationorchestrator-controller", "--tail=50", "--all-containers")
 	logsCmd.Stdout = writer
 	logsCmd.Stderr = writer
