@@ -28,11 +28,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
@@ -329,6 +330,10 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Version:         "v1.0.0",
 						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
 						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						ExecutionEngine: "ansible",
+						Dependencies: &sharedtypes.WorkflowDependencies{
+							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -349,12 +354,12 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
 					"WFE should reach Running — ephemeral AWX credential injection must succeed")
 
-		By("E2E-WE-015-005: Verifying ephemeral credential IDs in status")
-		runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
-			"WFE status should contain ephemeral credential IDs (#479)")
-		GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
+			By("E2E-WE-015-005: Verifying ephemeral credential IDs in status")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
+				"WFE status should contain ephemeral credential IDs (#479)")
+			GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
 
 			By("E2E-WE-015-005: Waiting for WFE to complete (playbook validates env var)")
 			Eventually(func() string {
@@ -400,6 +405,10 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Version:         "v1.0.0",
 						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
 						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						ExecutionEngine: "ansible",
+						Dependencies: &sharedtypes.WorkflowDependencies{
+							ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-ansible"}},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -473,6 +482,10 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Version:         "v1.0.0",
 						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
 						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						ExecutionEngine: "ansible",
+						Dependencies: &sharedtypes.WorkflowDependencies{
+							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -493,12 +506,12 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
 					"WFE should reach Running — AWX must not reject the launch with 400 about missing credentials")
 
-		By("E2E-WE-365-001: Verifying ephemeral credential IDs in status")
-		runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
-			"WFE status should contain ephemeral credential IDs (#479)")
-		GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
+			By("E2E-WE-365-001: Verifying ephemeral credential IDs in status")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
+				"WFE status should contain ephemeral credential IDs (#479)")
+			GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
 
 			By("E2E-WE-365-001: Verifying WFE completes (playbook validates env var from merged credentials)")
 			Eventually(func() string {
@@ -523,7 +536,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	})
 })
 
-// createAnsibleWFE builds a WorkflowExecution CRD for ansible workflows (engine resolved from DS at runtime).
+// createAnsibleWFE builds a WorkflowExecution CRD for ansible workflows.
 func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateName string) *workflowexecutionv1alpha1.WorkflowExecution {
 	engineCfgJSON, err := json.Marshal(map[string]string{
 		"playbookPath":    playbookPath,
@@ -548,6 +561,7 @@ func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateNa
 				Version:         "v1.0.0",
 				ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
 				EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+				ExecutionEngine: "ansible",
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{

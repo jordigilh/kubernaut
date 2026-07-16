@@ -159,10 +159,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: jobFailureUUID,
 						Version:    "v1.0.0",
-						// Spec seed — resolveExecutionBundle overrides from DS catalog
-						// (job-failing:v1.0.0-exec, which exits non-zero)
+						// placeholder-execution image (job-failing:v1.0.0-exec, which exits non-zero)
 						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						ExecutionEngine: "job",
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -245,10 +245,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: jobOomkillUUID,
 						Version:    "v1.0.0",
-						// Spec seed -- resolveExecutionBundle overrides from DS catalog
-						// (job-oomkill:v1.0.0-exec, which unconditionally exits 137)
+						// placeholder-execution image (job-oomkill:v1.0.0-exec, which unconditionally exits 137)
 						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						ExecutionEngine: "job",
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -363,6 +363,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						Version:    "v1.0.0",
 						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						ExecutionEngine: "job",
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -677,8 +678,8 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 // Test Helpers
 // ========================================
 
-// createTestJobWFE creates a WorkflowExecution for job-backend E2E (engine resolved from DS at runtime).
-// Issue #518: WorkflowID must be a valid UUID (resolved at runtime by the WE controller via DS).
+// createTestJobWFE creates a WorkflowExecution for job-backend E2E.
+// Issue #518: WorkflowID must be a valid UUID.
 // Uses the pre-built placeholder-execution image (echoes params and exits 0).
 func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	jobHelloWorldUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-hello-world"]
@@ -702,6 +703,7 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 				Version:    "v1.0.0",
 				ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 					infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+				ExecutionEngine: "job",
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{
