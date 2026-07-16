@@ -238,9 +238,15 @@ type WorkflowRef struct {
 	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
 
 	// DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
-	// uses for defense-in-depth stripping of undeclared parameters (#243).
+	// uses for defense-in-depth stripping of undeclared parameters (#243). Not
+	// "omitempty": nil (no schema, no filtering) and a non-nil empty map
+	// (schema declares zero allowed parameters, strip everything) are
+	// distinct, meaningful values (IT-WE-243-002 vs IT-WE-243-003) -- Go's
+	// encoding/json "omitempty" treats a zero-length map the same as nil and
+	// silently drops it from the wire payload, collapsing that distinction.
 	// +optional
-	DeclaredParameterNames map[string]bool `json:"declaredParameterNames,omitempty"`
+	// +nullable
+	DeclaredParameterNames map[string]bool `json:"declaredParameterNames"`
 }
 
 // ExecutionConfig contains minimal execution settings.

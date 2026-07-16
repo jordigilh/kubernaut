@@ -28,7 +28,6 @@ import (
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,49 +36,66 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 )
 
-// resolveSchemaMetadata fetches all workflow catalog artifacts from DS in a
-// single call (F6: consolidation of 3 DS round-trips into 1).
-// Returns nil metadata (not an error) when no querier is configured or when
-// the DS call fails — graceful degradation preserves execution without
-// filtering or engine config.
+// resolveSchemaMetadata builds executor.CreateOptions directly from
+// wfe.Spec.WorkflowRef. Issue #1661 Change 11e (DD-WORKFLOW-018): prior to
+// #1661 this fetched Dependencies/DeclaredParameterNames from a DataStorage
+// schema round-trip (F6: consolidation of 3 DS round-trips into 1);
+// WorkflowRef is now RO's already-validated, CRD-embedded snapshot (Change
+// 11c/11d) copied verbatim from AIAnalysis.Status.SelectedWorkflow, so there
+// is no DS entry left to fetch. The *weclient.SchemaMetadata return value is
+// always nil now (kept for signature stability at the call site,
+// resolvePendingSchemaAndEngine); the error return is likewise always nil
+// since building CreateOptions from the in-memory spec cannot fail.
 //
 // Issue #1481: dependency existence is no longer validated here (or anywhere
 // pre-execution) — a schema-declared Secret/ConfigMap dependency is mounted
 // as-is and Kubernetes validates its existence at runtime when the Job/
 // PipelineRun attempts to mount the volume (BR-WORKFLOW-008 covers the
-// resulting fail-fast/observability guarantees). The error return is kept
-// for signature stability at the call site (resolvePendingSchemaAndEngine);
-// it is currently always nil.
-func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
-	opts := weexecutor.CreateOptions{}
-	if r.WorkflowQuerier == nil {
-		return nil, opts, nil
+// resulting fail-fast/observability guarantees).
+func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
+	ref := wfe.Spec.WorkflowRef
+	opts := weexecutor.CreateOptions{
+		Dependencies:           convertWorkflowDependencies(ref.Dependencies),
+		DeclaredParameterNames: ref.DeclaredParameterNames,
 	}
+	return nil, opts, nil
+}
 
-	logger := log.FromContext(ctx)
-	meta, err := r.WorkflowQuerier.GetWorkflowSchemaMetadata(ctx, wfe.Spec.WorkflowRef.WorkflowID)
-	if err != nil {
-		logger.Error(err, "Failed to fetch workflow schema metadata from DS (non-fatal, continuing without filtering)",
-			"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-		if r.Metrics != nil {
-			r.Metrics.SchemaFetchFailures.Inc()
+// convertWorkflowDependencies adapts the CRD-embedded
+// sharedtypes.WorkflowDependencies (WorkflowRef.Dependencies) to the
+// models.WorkflowDependencies shape executor.CreateOptions and the
+// executors' volume/workspace builders expect. Issue #1661 Change 11e: this
+// is the sole remaining boundary between the two equivalent but
+// independently-named types (sharedtypes is CRD/kubebuilder-annotated for
+// AIAnalysis/WorkflowExecution; models is DataStorage's schema-parsing
+// type) now that DS is no longer in the resolution path.
+func convertWorkflowDependencies(deps *sharedtypes.WorkflowDependencies) *models.WorkflowDependencies {
+	if deps == nil {
+		return nil
+	}
+	converted := &models.WorkflowDependencies{}
+	if len(deps.Secrets) > 0 {
+		converted.Secrets = make([]models.ResourceDependency, len(deps.Secrets))
+		for i, s := range deps.Secrets {
+			converted.Secrets[i] = models.ResourceDependency{Name: s.Name}
 		}
-		return nil, opts, nil
 	}
-	if meta == nil {
-		return nil, opts, nil
+	if len(deps.ConfigMaps) > 0 {
+		converted.ConfigMaps = make([]models.ResourceDependency, len(deps.ConfigMaps))
+		for i, c := range deps.ConfigMaps {
+			converted.ConfigMaps[i] = models.ResourceDependency{Name: c.Name}
+		}
 	}
-
-	opts.Dependencies = meta.Dependencies
-	opts.DeclaredParameterNames = meta.DeclaredParameterNames
-	return meta, opts, nil
+	return converted
 }
 
 // ========================================
@@ -101,7 +117,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return result, err
 	}
 
-	schemaMeta, createOpts, engine, schemaResult, schemaErr, shouldReturn := r.resolvePendingSchemaAndEngine(ctx, wfe, logger)
+	createOpts, engine, schemaResult, schemaErr, shouldReturn := r.resolvePendingSchemaAndEngine(ctx, wfe, logger)
 	if shouldReturn {
 		return schemaResult, schemaErr
 	}
@@ -110,7 +126,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return cooldownResult, cooldownErr
 	}
 
-	resourceName, auditResult, auditErr, shouldReturn := r.recordPendingSelectionAudit(ctx, wfe, schemaMeta, logger)
+	resourceName, auditResult, auditErr, shouldReturn := r.recordPendingSelectionAudit(ctx, wfe, logger)
 	if shouldReturn {
 		return auditResult, auditErr
 	}
@@ -175,64 +191,39 @@ func (r *WorkflowExecutionReconciler) validateAndAnnouncePendingSpec(ctx context
 	return ctrl.Result{}, nil, false
 }
 
-// resolvePendingSchemaAndEngine resolves the workflow's catalog metadata
-// (schema, engineConfig, dependencies, execution bundle/SA) from DataStorage
-// in a single call (F6), then determines the execution engine (Issue #518:
-// catalog preferred, schema fallback). shouldReturn is true when the caller
-// must immediately return (result, err) — schema resolution failure or no
-// engine defined. Extracted from reconcilePending per
+// resolvePendingSchemaAndEngine builds executor.CreateOptions and resolves
+// the execution engine, both directly from wfe.Spec.WorkflowRef (Issue #1661
+// Change 11e). shouldReturn is true when the caller must immediately return
+// (result, err) — no engine defined. Extracted from reconcilePending per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
-func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (*weclient.SchemaMetadata, weexecutor.CreateOptions, string, ctrl.Result, error, bool) {
+func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (weexecutor.CreateOptions, string, ctrl.Result, error, bool) {
 	// ========================================
-	// Step 1.2: Resolve all workflow catalog metadata from DS in a single call (F6)
-	// Engine (#518), engineConfig (DD-WORKFLOW-017), dependencies (DD-WE-006),
-	// and declared parameter names (#243) are fetched together.
+	// Step 1.2: Build CreateOptions (dependencies, declared parameter names)
+	// from the CRD-embedded WorkflowRef snapshot (#243, DD-WE-006).
 	// ========================================
-	schemaMeta, createOpts, schemaErr := r.resolveSchemaMetadata(ctx, wfe)
+	_, createOpts, schemaErr := r.resolveSchemaMetadata(ctx, wfe)
 	if schemaErr != nil {
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
 			fmt.Sprintf("Workflow dependency validation failed: %v", schemaErr))
 		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", schemaErr.Error())
-		return nil, weexecutor.CreateOptions{}, "", ctrl.Result{}, markErr, true
+		return weexecutor.CreateOptions{}, "", ctrl.Result{}, markErr, true
 	}
 
-	// DD-WORKFLOW-017: Resolve engineConfig from schema before catalog (schema takes precedence).
-	if wfe.Spec.WorkflowRef.EngineConfig == nil && schemaMeta != nil && schemaMeta.EngineConfig != nil {
-		logger.Info("Resolved engineConfig from DS schema metadata",
-			"workflowID", wfe.Spec.WorkflowRef.WorkflowID)
-		wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: schemaMeta.EngineConfig}
-	}
-
-	// Step 1.3: Resolve execution bundle, SA, and engine from DS catalog (Issue #650).
-	// Called BEFORE setting engine from schema so the idempotency guard in
-	// resolveWorkflowCatalog doesn't skip the SA and bundle resolution that
-	// only the catalog provides.
+	// Step 1.3: Resolve execution engine/SA/resources from WorkflowRef (Issue #650/#518).
 	if _, catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil {
-		logger.Error(catalogErr, "Failed to resolve workflow catalog from DS (non-fatal)")
-	}
-
-	// Resolve execution engine: prefer catalog (includes SA + bundle), schema fallback (Issue #518).
-	if wfe.Status.ExecutionEngine == "" && schemaMeta != nil && schemaMeta.Engine != "" {
-		wfe.Status.ExecutionEngine = schemaMeta.Engine
-	}
-	engine := wfe.Status.ExecutionEngine
-	if engine == "" {
-		engineErr := fmt.Errorf("no engine defined in remediation workflow %s", wfe.Spec.WorkflowRef.WorkflowID)
-		if schemaMeta != nil && schemaMeta.WorkflowName != "" {
-			engineErr = fmt.Errorf("no engine defined in remediation workflow %s - %s",
-				schemaMeta.WorkflowName, wfe.Spec.WorkflowRef.WorkflowID)
-		}
-		logger.Error(engineErr, "Execution engine resolution failed")
+		logger.Error(catalogErr, "Failed to resolve workflow execution engine from WorkflowRef")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
-			fmt.Sprintf("Workflow catalog resolution failed: %v", engineErr))
-		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", engineErr.Error()); markErr != nil {
-			return schemaMeta, createOpts, "", ctrl.Result{}, markErr, true
+			fmt.Sprintf("Workflow catalog resolution failed: %v", catalogErr))
+		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", catalogErr.Error()); markErr != nil {
+			return createOpts, "", ctrl.Result{}, markErr, true
 		}
-		return schemaMeta, createOpts, "", ctrl.Result{}, nil, true
+		return createOpts, "", ctrl.Result{}, nil, true
 	}
-	logger.Info("Resolved execution engine from catalog", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 
-	return schemaMeta, createOpts, engine, ctrl.Result{}, nil, false
+	engine := wfe.Status.ExecutionEngine
+	logger.Info("Resolved execution engine from WorkflowRef", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+
+	return createOpts, engine, ctrl.Result{}, nil, false
 }
 
 // checkPendingCooldownOrBlock enforces the target-resource cooldown
@@ -278,7 +269,7 @@ func (r *WorkflowExecutionReconciler) checkPendingCooldownOrBlock(ctx context.Co
 // resource was deleted externally during Pending and the WFE was marked
 // Failed. Extracted from reconcilePending per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
-func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, schemaMeta *weclient.SchemaMetadata, logger logr.Logger) (string, ctrl.Result, error, bool) {
+func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (string, ctrl.Result, error, bool) {
 	resourceName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 	resourceExists := false
 	switch wfe.Status.ExecutionEngine {
@@ -314,11 +305,12 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 	}
 
 	if !resourceExists {
-		workflowName := ""
-		if schemaMeta != nil {
-			workflowName = schemaMeta.WorkflowName
-		}
-		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe, workflowName); err != nil {
+		// Issue #1661 Change 11e: WorkflowName is no longer resolved (WorkflowRef
+		// carries no such field; deferred per the escalated design-gap decision --
+		// workflow_id + the audit_events ledger already satisfies SOC2 CC8.1
+		// reconstruction, see IT-AW-1111-001). A fast-follow issue tracks wiring
+		// it end-to-end for audit readability.
+		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe, ""); err != nil {
 			logger.V(1).Info("Failed to record workflow.selection.completed audit event", "error", err)
 		}
 	} else {

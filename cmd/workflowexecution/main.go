@@ -54,7 +54,6 @@ import (
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -227,15 +226,6 @@ func main() {
 	// ClientFactory for cluster routing.
 	executorRegistry := buildExecutorRegistry(cfg, mgr, controllerNS, clientFactory, setupLog)
 
-	// DD-WE-006: Create WorkflowQuerier for fetching dependencies from DS
-	workflowQuerier, err := weclient.NewOgenWorkflowQuerierFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
-	if err != nil {
-		setupLog.Error(err, "Failed to create workflow querier (DD-WE-006) - continuing without dependency injection")
-		// Non-fatal: controller will run without dependency injection
-	} else {
-		setupLog.Info("Workflow querier initialized (DD-WE-006)", "dataStorageURL", cfg.DataStorage.URL)
-	}
-
 	// Setup WorkflowExecution controller using NewReconciler constructor
 	// which extracts infrastructure fields (Client, APIReader, Scheme, Recorder)
 	// from the manager automatically.
@@ -244,6 +234,11 @@ func main() {
 	// Dependency existence is now validated exclusively at runtime by
 	// Kubernetes when the Job/PipelineRun attempts to mount the volume
 	// (BR-WORKFLOW-008 covers the resulting fail-fast/observability guarantees).
+	//
+	// Issue #1661 Change 11e (DD-WORKFLOW-018): no WorkflowQuerier is wired
+	// here anymore -- the reconciler resolves engine/SA/resources/dependencies
+	// directly from WorkflowExecution.Spec.WorkflowRef's CRD-embedded
+	// execution snapshot instead of a DataStorage round-trip.
 	reconciler := workflowexecution.NewReconciler(mgr, workflowexecution.ReconcilerOptions{
 		ExecutionNamespace: cfg.Execution.Namespace,
 		CooldownPeriod:     cfg.Execution.CooldownPeriod,
@@ -253,9 +248,8 @@ func main() {
 		PhaseManager:       phaseManager,
 		AuditManager:       auditManager,
 		ExecutorRegistry:   executorRegistry,
-		WorkflowQuerier:    workflowQuerier,
 	})
-	if err = reconciler.SetupWithManager(mgr); err != nil {
+	if err := reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
 		os.Exit(1)
 	}

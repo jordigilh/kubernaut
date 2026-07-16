@@ -24,89 +24,49 @@ import (
 	"context"
 	"fmt"
 
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
 // ========================================
-// Issue #518: Runtime Execution Engine Resolution
+// Issue #1661 Change 11e (DD-WORKFLOW-018): CRD-Embedded Execution Snapshot
 // ========================================
 
-// resolveWorkflowCatalog fetches all workflow metadata from the DS catalog in a
-// single GetWorkflowByID call (Issue #650). Consolidates resolveExecutionEngine,
-// resolveExecutionBundle, resolveDependencies, and GetWorkflowEngineConfig.
+// resolveWorkflowCatalog copies the execution-engine snapshot from
+// wfe.Spec.WorkflowRef onto Status. Prior to #1661 this resolved
+// ExecutionEngine/ServiceAccountName/Resources/WorkflowName/ActionType from a
+// DataStorage catalog round-trip (Issue #518/#650) and additionally
+// overrode WorkflowRef.ExecutionBundle/EngineConfig at runtime from that
+// catalog entry. WorkflowRef is now RO's already-validated, CRD-embedded
+// snapshot (Change 11c/11d) copied verbatim from AIAnalysis.Status.SelectedWorkflow
+// -- there is no DS entry left to consult, and mutating the spec at runtime is
+// no longer appropriate. WorkflowName/ActionType are deliberately NOT set here:
+// WorkflowRef carries no such fields (KA's autonomous selection path never
+// emits them either), so Status.WorkflowName/ActionType simply remain empty. A
+// fast-follow issue tracks wiring these end-to-end for audit readability; they
+// are not required for SOC2 CC8.1 reconstruction, which joins on workflow_id
+// against the immutable workflow_content already captured in the Postgres
+// audit_events ledger (IT-AW-1111-001).
 // Idempotent: returns nil immediately if the engine is already resolved.
-func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
+func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
 	if wfe.Status.ExecutionEngine != "" {
 		return nil, nil
 	}
 
-	if r.WorkflowQuerier == nil {
-		return nil, fmt.Errorf("DataStorage workflow querier not available — cannot resolve workflow catalog for %s", wfe.Spec.WorkflowRef.WorkflowID)
+	ref := wfe.Spec.WorkflowRef
+	if ref.ExecutionEngine == "" {
+		return nil, fmt.Errorf("no engine defined in remediation workflow %s", ref.WorkflowID)
 	}
 
-	workflowID := wfe.Spec.WorkflowRef.WorkflowID
-	if workflowID == "" {
-		return nil, fmt.Errorf("workflowRef.workflowId is empty — cannot resolve workflow catalog")
-	}
-
-	logger := log.FromContext(ctx)
-
-	meta, err := r.WorkflowQuerier.ResolveWorkflowCatalogMetadata(ctx, workflowID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve workflow catalog from DS for workflow %s: %w", workflowID, err)
-	}
-
-	if meta.ExecutionEngine == "" {
-		label := workflowID
-		if meta.WorkflowName != "" {
-			label = fmt.Sprintf("%s - %s", meta.WorkflowName, workflowID)
-		}
-		return nil, fmt.Errorf("no engine defined in remediation workflow %s", label)
-	}
-
-	wfe.Status.ExecutionEngine = meta.ExecutionEngine
-	wfe.Status.ServiceAccountName = meta.ServiceAccountName
-	// #1661 Change 3: audit-readability only (WorkflowID stays the functional/
-	// join key); resolved once here, immutable thereafter, same as the two
-	// fields above.
-	wfe.Status.WorkflowName = meta.WorkflowName
-	wfe.Status.ActionType = meta.ActionType
+	wfe.Status.ExecutionEngine = ref.ExecutionEngine
+	wfe.Status.ServiceAccountName = ref.ServiceAccountName
 	// BR-WE-019 / DD-WE-008: resolved once during Pending (this function is a
 	// no-op on subsequent reconciles per the idempotency guard above), applied
 	// to the Job's "workflow" container by resourcesFor(). nil when the
-	// catalog entry declares none (BestEffort QoS, unchanged behavior).
-	wfe.Status.Resources = meta.Resources
+	// snapshot declares none (BestEffort QoS, unchanged behavior).
+	wfe.Status.Resources = ref.Resources
 
-	// WE-H1: In-memory spec mutation is acceptable here because ResolveWorkflowCatalogMetadata
-	// is called on every Pending-phase reconcile. If the controller requeues in Pending,
-	// the catalog lookup re-applies the override. Once the WFE leaves Pending, the bundle
-	// value is already consumed (execution resource created).
-	if meta.ExecutionBundle != "" {
-		if wfe.Spec.WorkflowRef.ExecutionBundle != meta.ExecutionBundle {
-			logger.Info("Overriding execution bundle from DS catalog",
-				"specBundle", wfe.Spec.WorkflowRef.ExecutionBundle,
-				"catalogBundle", meta.ExecutionBundle,
-				"workflowID", workflowID,
-			)
-		}
-		wfe.Spec.WorkflowRef.ExecutionBundle = meta.ExecutionBundle
-		if meta.ExecutionBundleDigest != "" {
-			wfe.Spec.WorkflowRef.ExecutionBundleDigest = meta.ExecutionBundleDigest
-		}
-	}
-
-	if wfe.Spec.WorkflowRef.EngineConfig == nil && meta.EngineConfig != nil {
-		logger.Info("Resolved engineConfig from DS catalog",
-			"workflowID", workflowID,
-			"engine", meta.ExecutionEngine)
-		wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: meta.EngineConfig}
-	}
-
-	return meta, nil
+	return nil, nil
 }
 
 // resolveExecutionEngine returns the cached execution engine from the WFE status.
