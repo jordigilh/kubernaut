@@ -281,8 +281,11 @@ func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflow
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, args...)
 	if errors.Is(err, sql.ErrNoRows) {
-		// Security gate: workflow exists but doesn't match context, or doesn't exist
-		// We intentionally don't distinguish these cases (DD-WORKFLOW-016: prevent info leakage)
+		// nolint:nilnil // intentional "not found" sentinel, not an error —
+		// security gate: workflow exists but doesn't match context, or doesn't
+		// exist. We intentionally don't distinguish these cases (DD-WORKFLOW-016:
+		// prevent info leakage). Caller already guards with `if x != nil`
+		// (Issue #1546 Tier 2).
 		return nil, nil
 	}
 	if err != nil {

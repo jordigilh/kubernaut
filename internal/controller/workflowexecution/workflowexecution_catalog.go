@@ -40,6 +40,10 @@ import (
 // resolveExecutionBundle, resolveDependencies, and GetWorkflowEngineConfig.
 // Idempotent: returns nil immediately if the engine is already resolved.
 func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
+	// nolint:nilnil // intentional "already resolved, nothing to do" sentinel,
+	// not an error — already documented above ("Idempotent: returns nil
+	// immediately..."); the sole caller discards the metadata value entirely
+	// and only checks the error (Issue #1546 Tier 2).
 	if wfe.Status.ExecutionEngine != "" {
 		return nil, nil
 	}

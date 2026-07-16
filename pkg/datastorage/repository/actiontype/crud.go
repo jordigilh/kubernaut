@@ -105,6 +105,10 @@ func (r *Repository) GetByName(ctx context.Context, actionType string) (*models.
 	).StructScan(&at)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			// nolint:nilnil // intentional "not found" sentinel, not an error —
+			// canonical repository idiom; documented in the GetByName doc
+			// comment above ("or nil if not found"); callers already guard
+			// with `if x != nil` before use (Issue #1546 Tier 2).
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get action type %q: %w", actionType, err)

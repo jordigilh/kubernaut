@@ -193,6 +193,9 @@ func (r *RemediationWorkflowReconciler) findActionTypeKey(ctx context.Context, a
 			return &key, nil
 		}
 	}
+	// nolint:nilnil // intentional "not found" sentinel, not an error —
+	// canonical Find* idiom; sole caller already guards with
+	// `if atKey == nil` before use (Issue #1546 Tier 2).
 	return nil, nil
 }
 

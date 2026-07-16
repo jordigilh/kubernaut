@@ -169,6 +169,10 @@ func (b *Builder) getControllerOwner(ctx context.Context, namespace, kind, name 
 		}
 	}
 
+	// nolint:nilnil // intentional "no controller owner" sentinel, not an
+	// error — already documented above ("Returns nil, nil if no controller
+	// owner found"); sole caller already guards with `if ownerRef == nil`
+	// before use (Issue #1546 Tier 2).
 	return nil, nil // No controller owner
 }
 

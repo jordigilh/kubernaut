@@ -330,16 +330,24 @@ func newRateLimitGuard(limiter *ratelimit.UserLimiter, auditor audit.Emitter) ll
 // <100/min). Each entry is 24 bytes (time.Time). Worst case at 100 RPM with 100% loss
 // is ~140KB/day — negligible for a long-running service. A periodic sweep is added as
 // defense-in-depth.
+//
+// nolint:nilnil // every (nil, nil) return below is the ADK
+// llmagent.BeforeToolCallback / AfterToolCallback contract's documented
+// "don't override, proceed normally" signal, not our design choice — see the
+// type doc: "To modify tool arguments and still run the tool, update args in
+// place and return (nil, nil)." A non-nil map short-circuits the actual tool
+// call, which these observability-only callbacks must never do
+// (Issue #1546 Tier 2).
 func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *prometheus.HistogramVec) (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 	var starts sync.Map
 	go sweepAbandonedToolCallStarts(&starts)
 
 	before := func(ctx tool.Context, _ tool.Tool, _ map[string]any) (map[string]any, error) {
 		if toolCalls == nil && toolDuration == nil {
-			return nil, nil
+			return nil, nil // nolint:nilnil
 		}
 		starts.Store(ctx.FunctionCallID(), time.Now())
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
@@ -353,7 +361,7 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 		if toolDuration != nil {
 			recordToolDuration(&starts, ctx, t, toolDuration)
 		}
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	return before, after
@@ -406,13 +414,17 @@ func NewMetricsToolCallbacksForTest(toolCalls *prometheus.CounterVec, toolDurati
 // newToolLoggingCallbacks returns Before/After callbacks that log tool call
 // start and completion at info level for operator observability (FedRAMP AU-12).
 // Uses sync.Map keyed by FunctionCallID to correlate start times.
+//
+// nolint:nilnil // (nil, nil) below is the ADK llmagent.BeforeToolCallback /
+// AfterToolCallback contract's documented "don't override, proceed normally"
+// signal — see newMetricsToolCallbacks above for the full rationale.
 func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 	var starts sync.Map
 
 	before := func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 		starts.Store(ctx.FunctionCallID(), time.Now())
 		logr.FromContextOrDiscard(ctx).Info("tool call started", "tool", t.Name(), "callID", ctx.FunctionCallID())
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
@@ -427,7 +439,7 @@ func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolC
 			}
 		}
 		logr.FromContextOrDiscard(ctx).Info("tool call completed", "tool", t.Name(), "callID", ctx.FunctionCallID(), "durationMs", durationMs, "result", result)
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	return before, after

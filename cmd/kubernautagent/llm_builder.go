@@ -228,6 +228,9 @@ func buildTransportChain(cfg types.LLMConfig) (http.RoundTripper, error) {
 		needsCustom = true
 	}
 
+	// nolint:nilnil // intentional "no custom transport" sentinel, not an
+	// error — all 3 callers already guard with `if chain != nil` before use
+	// (Issue #1546 Tier 2).
 	if !needsCustom {
 		return nil, nil
 	}

@@ -498,6 +498,11 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 			"namespace", signal.Namespace,
 			"kind", signal.Resource.Kind,
 			"name", signal.Resource.Name)
+		// nolint:nilnil // intentional "scope check passed, continue
+		// processing" sentinel, not an error — sole caller
+		// (signal_ingestion_process.go) already guards with
+		// `else if rejection != nil` before using the response (Issue #1546
+		// Tier 2).
 		return nil, nil
 	}
 

@@ -213,10 +213,16 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 // third return value reports whether the takeover request was fully handled
 // here (true) or should fall through to lease acquisition (false, meaning no
 // existing lease was found).
+// nolint:nilnil // the trailing `handled` bool already disambiguates this
+// (nil, nil, false): callers must (and do, see Takeover above) check
+// `handled` before touching session/err, so there is no scenario where a
+// nil session + nil error is misread as "found, no error" — that is
+// precisely the ambiguity a sentinel error would solve, already solved here
+// by the bool (Issue #1546 Tier 2).
 func (m *LeaseSessionManager) reconnectOrRejectExistingLease(rrID string, user UserInfo) (*InteractiveSession, error, bool) {
 	existingSessionID, ok := m.rrIndex.Load(rrID)
 	if !ok {
-		return nil, nil, false
+		return nil, nil, false // nolint:nilnil
 	}
 	raw, found := m.sessions.Load(existingSessionID)
 	if !found {
@@ -338,16 +344,19 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 	return nil
 }
 
+// nolint:nilnil // intentional "no active driver" sentinel, not an error —
+// canonical repository/lookup idiom; every caller already guards with
+// `if err != nil || sess == nil` before use (Issue #1546 Tier 2).
 func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error) {
 	raw, ok := m.rrIndex.Load(rrID)
 	if !ok {
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 	sessionID := raw.(string)
 
 	raw, ok = m.sessions.Load(sessionID)
 	if !ok {
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 	entry := raw.(*sessionEntry)
 

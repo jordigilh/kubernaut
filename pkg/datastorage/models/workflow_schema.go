@@ -294,6 +294,12 @@ type AnsibleEngineConfig struct {
 // Returns (nil, nil) when raw is empty, regardless of engine.
 // Returns error for unknown engines or invalid/incomplete ansible config.
 func ParseEngineConfig(engine string, raw json.RawMessage) (any, error) {
+	// nolint:nilnil // intentional "no config" sentinel, not an error —
+	// already documented above ("Returns (nil, nil) when raw is empty").
+	// Both callers (ansible.go, schema/parser.go) only act on the result
+	// when engine=="ansible", where an unexpected nil safely fails the
+	// `parsed.(*AnsibleEngineConfig)` type assertion with a clear error
+	// rather than silently succeeding (Issue #1546 Tier 2).
 	if len(raw) == 0 {
 		return nil, nil
 	}
@@ -308,6 +314,8 @@ func ParseEngineConfig(engine string, raw json.RawMessage) (any, error) {
 		}
 		return &cfg, nil
 	case "tekton", "job":
+		// nolint:nilnil // same "no config" sentinel as above — tekton/job
+		// engines don't have a typed engineConfig struct at all.
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("unknown engine %q: cannot parse engineConfig", engine)

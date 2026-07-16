@@ -125,12 +125,15 @@ func (r *Reconciler) fetchEffectivenessAssessmentForTracking(ctx context.Context
 		Namespace: ref.Namespace,
 	}, ea)
 	if err != nil {
+		// nolint:nilnil // intentional "nothing more to do" sentinel, not an
+		// error — already documented in the doc comment above; sole caller
+		// already guards with `if err != nil || ea == nil` (Issue #1546 Tier 2).
 		if apierrors.IsNotFound(err) {
 			logger.V(1).Info("EffectivenessAssessment not found (deleted)", "eaName", ref.Name)
 			return nil, nil
 		}
 		logger.Error(err, "Failed to fetch EffectivenessAssessment", "eaName", ref.Name)
-		return nil, nil // Non-fatal: don't block reconciliation
+		return nil, nil // nolint:nilnil // Non-fatal: don't block reconciliation
 	}
 	return ea, nil
 }

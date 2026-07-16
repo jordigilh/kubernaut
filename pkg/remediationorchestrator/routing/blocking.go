@@ -253,6 +253,11 @@ func (r *RoutingEngine) CheckPreAnalysisConditions(
 		return blocked, nil
 	}
 
+	// nolint:nilnil // intentional "not blocked" sentinel, not an error: nil
+	// *BlockingCondition + nil error unambiguously means every check passed.
+	// All callers already guard with `if blocked != nil` before use (see
+	// reconcile_loop.go), matching the Check*/Find* helper idiom used
+	// throughout this file (Issue #1546 Tier 2).
 	return nil, nil
 }
 
@@ -331,6 +336,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 		}
 	}
 
+	// nolint:nilnil // same "not blocked" sentinel as CheckPreAnalysisConditions above.
 	return nil, nil
 }
 
@@ -499,6 +505,10 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 		return nil, fmt.Errorf("failed to check for duplicate: %w", err)
 	}
 
+	// nolint:nilnil // intentional "not blocked" sentinel (not a duplicate / not
+	// the original), not an error — same file-wide idiom as
+	// CheckPreAnalysisConditions above. Caller (CheckPreAnalysisConditions /
+	// CheckPostAnalysisConditions) already guards with `if blocked != nil`.
 	if originalRR == nil {
 		return nil, nil // Not a duplicate
 	}
@@ -508,11 +518,11 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	// This prevents circular deadlocks (A blocks B, B blocks A).
 	if !rr.CreationTimestamp.IsZero() && !originalRR.CreationTimestamp.IsZero() {
 		if originalRR.CreationTimestamp.After(rr.CreationTimestamp.Time) {
-			return nil, nil // We are older → we are the original
+			return nil, nil // nolint:nilnil // We are older → we are the original
 		}
 		// Same timestamp: use name as secondary tiebreaker (lexicographic)
 		if originalRR.CreationTimestamp.Time.Equal(rr.CreationTimestamp.Time) && originalRR.Name > rr.Name {
-			return nil, nil // Same time, we sort first → we are the original
+			return nil, nil // nolint:nilnil // Same time, we sort first → we are the original
 		}
 	}
 
@@ -550,6 +560,8 @@ func (r *RoutingEngine) CheckResourceBusy(
 		return nil, fmt.Errorf("failed to check resource lock: %w", err)
 	}
 
+	// nolint:nilnil // intentional "not blocked" sentinel, not an error — same
+	// file-wide idiom as CheckPreAnalysisConditions above.
 	if activeWFE == nil {
 		return nil, nil // Resource not busy
 	}
@@ -559,7 +571,7 @@ func (r *RoutingEngine) CheckResourceBusy(
 	// should not block itself.
 	for _, ownerRef := range activeWFE.GetOwnerReferences() {
 		if ownerRef.UID == rr.UID {
-			return nil, nil // Our own WFE, not a conflict
+			return nil, nil // nolint:nilnil // Our own WFE, not a conflict
 		}
 	}
 
@@ -609,6 +621,8 @@ func (r *RoutingEngine) CheckRecentlyRemediated(
 		return nil, fmt.Errorf("failed to check recent remediation: %w", err)
 	}
 
+	// nolint:nilnil // intentional "not blocked" sentinel, not an error — same
+	// file-wide idiom as CheckPreAnalysisConditions above.
 	if recentWFE == nil {
 		return nil, nil // No recent remediation
 	}
@@ -911,6 +925,9 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 		}
 	}
 
+	// nolint:nilnil // intentional "not found" sentinel, not an error — the
+	// canonical Find* idiom (mirrors client.IgnoreNotFound patterns); callers
+	// already guard with `if x != nil` before use (Issue #1546 Tier 2).
 	return nil, nil // No active duplicate found
 }
 
@@ -964,6 +981,8 @@ func (r *RoutingEngine) FindActiveWFEForTarget(
 		}
 	}
 
+	// nolint:nilnil // intentional "not found" sentinel, not an error — same
+	// Find* idiom as FindActiveRRForFingerprint above.
 	return nil, nil // No active WFE found
 }
 

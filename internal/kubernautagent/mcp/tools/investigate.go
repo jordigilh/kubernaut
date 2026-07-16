@@ -179,6 +179,10 @@ func (NopAutonomousManager) StartInvestigation(context.Context, session.Investig
 	return "", nil
 }
 func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.InvestigationEvent, error) {
+	// nolint:nilnil // no-op test double, never the production
+	// AutonomousSessionManager (that's session.Manager) — nil channel/nil
+	// error here just means this stub method is unused by the tests that
+	// construct NopAutonomousManager (Issue #1546 Tier 2).
 	return nil, nil
 }
 func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool) { return nil, false }

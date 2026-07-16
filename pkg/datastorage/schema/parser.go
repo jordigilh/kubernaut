@@ -268,7 +268,9 @@ func validateWorkflowResources(resources *models.ResourcesSchema, engine string)
 // SchemaValidationError scoped to fieldPrefix on the first unparseable value.
 func parseResourceQuantities(fieldPrefix string, quantities map[string]string) (corev1.ResourceList, error) {
 	if len(quantities) == 0 {
-		return nil, nil
+		// Empty, non-nil map: behaviorally identical to nil (safe to
+		// range/len either way) but avoids an ambiguous nil-vs-error return.
+		return corev1.ResourceList{}, nil
 	}
 
 	result := make(corev1.ResourceList, len(quantities))
@@ -380,7 +382,7 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	// DD-WORKFLOW-001 v2.8: severity always stored as JSONB array. Supports "*" wildcard.
 	// DD-WORKFLOW-016: environment/severity are []string for JSONB array storage
 	labels := map[string]interface{}{
-		"severity": []string(schema.Labels.Severity),
+		"severity": schema.Labels.Severity,
 	}
 
 	// Add required labels
@@ -554,6 +556,10 @@ func (p *Parser) ExtractBundleDigest(schema *models.WorkflowSchema) *string {
 // through ParseAndValidate/Validate first, since registration-time
 // validation (validateWorkflowResources) already rejects invalid quantities.
 func (p *Parser) ExtractResources(schema *models.WorkflowSchema) (*corev1.ResourceRequirements, error) {
+	// nolint:nilnil // intentional "absent section" sentinel, not an error —
+	// already documented in the doc comment above ("Returns (nil, nil) when
+	// the section is absent"); callers must (and do) preserve the existing
+	// BestEffort QoS spec in that case (Issue #1546 Tier 2).
 	if schema == nil || schema.Execution == nil || schema.Execution.Resources == nil {
 		return nil, nil
 	}
