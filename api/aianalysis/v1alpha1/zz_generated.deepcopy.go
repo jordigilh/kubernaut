@@ -22,6 +22,7 @@ package v1alpha1
 
 import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -492,6 +493,27 @@ func (in *SelectedWorkflow) DeepCopyInto(out *SelectedWorkflow) {
 		in, out := &in.EngineConfig, &out.EngineConfig
 		*out = new(apiextensionsv1.JSON)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.Dependencies != nil {
+		in, out := &in.Dependencies, &out.Dependencies
+		*out = new(types.WorkflowDependencies)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Resources != nil {
+		in, out := &in.Resources, &out.Resources
+		*out = new(corev1.ResourceRequirements)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.DeclaredParameterNames != nil {
+		in, out := &in.DeclaredParameterNames, &out.DeclaredParameterNames
+		*out = make(map[string]bool, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
+	if in.SelectedAt != nil {
+		in, out := &in.SelectedAt, &out.SelectedAt
+		*out = (*in).DeepCopy()
 	}
 }
 

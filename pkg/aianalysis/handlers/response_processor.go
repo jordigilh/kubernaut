@@ -248,7 +248,22 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.
 			sw.EngineConfig = &apiextensionsv1.JSON{Raw: ecBytes}
 		}
 	}
+	stampWorkflowSnapshot(sw, swMap)
 	analysis.Status.SelectedWorkflow = sw
+}
+
+// stampWorkflowSnapshot populates the CRD-embedded execution snapshot fields
+// (Issue #1661 Change 11b, DD-WORKFLOW-018) and stamps SelectedAt, arming the
+// SelectedWorkflow write-once CEL guard (mirrors PostRCAContext/ADR-056).
+// Shared by all three population call sites — storeSelectedWorkflow,
+// preservePartialSelectedWorkflow, preserveLowConfidenceWorkflow — so every
+// terminal path that persists a SelectedWorkflow locks it the same way.
+func stampWorkflowSnapshot(sw *aianalysisv1.SelectedWorkflow, swMap map[string]interface{}) {
+	sw.Dependencies = extractWorkflowDependencies(swMap)
+	sw.Resources = extractResourceRequirements(swMap)
+	sw.DeclaredParameterNames = extractDeclaredParameterNames(swMap)
+	now := metav1.Now()
+	sw.SelectedAt = &now
 }
 
 // storeAlternativeWorkflows populates analysis.Status.AlternativeWorkflows
@@ -489,13 +504,15 @@ func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *ag
 	if swMap == nil {
 		return
 	}
-	analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+	sw := &aianalysisv1.SelectedWorkflow{
 		WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
 		ExecutionBundle: GetStringFromMap(swMap, "execution_bundle"),
 		Confidence:      GetFloat64FromMap(swMap, "confidence"),
 		Rationale:       GetStringFromMap(swMap, "rationale"),
 		ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
 	}
+	stampWorkflowSnapshot(sw, swMap)
+	analysis.Status.SelectedWorkflow = sw
 }
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
@@ -784,7 +801,7 @@ func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agen
 	if swMap == nil {
 		return
 	}
-	analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+	sw := &aianalysisv1.SelectedWorkflow{
 		WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
 		Version:               GetStringFromMap(swMap, "version"),
 		ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
@@ -796,9 +813,11 @@ func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agen
 	// Map parameters if present
 	if paramsRaw, ok := swMap["parameters"]; ok {
 		if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
-			analysis.Status.SelectedWorkflow.Parameters = convertMapToStringMap(paramsMapIface)
+			sw.Parameters = convertMapToStringMap(paramsMapIface)
 		}
 	}
+	stampWorkflowSnapshot(sw, swMap)
+	analysis.Status.SelectedWorkflow = sw
 }
 
 // setTotalAnalysisTime calculates and sets TotalAnalysisTime from StartedAt.

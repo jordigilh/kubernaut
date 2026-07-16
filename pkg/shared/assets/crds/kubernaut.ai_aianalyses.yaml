@@ -1124,6 +1124,43 @@ spec:
                     maximum: 1
                     minimum: 0
                     type: number
+                  declaredParameterNames:
+                    additionalProperties:
+                      type: boolean
+                    description: |-
+                      DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
+                      uses for defense-in-depth stripping of undeclared parameters (#243).
+                    type: object
+                  dependencies:
+                    description: |-
+                      Dependencies declares the Secrets/ConfigMaps the workflow's schema
+                      requires in the execution namespace (DD-WE-006).
+                    properties:
+                      configMaps:
+                        items:
+                          description: |-
+                            WorkflowResourceDependency identifies a required Kubernetes Secret or
+                            ConfigMap by name in the execution namespace.
+                          properties:
+                            name:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                      secrets:
+                        items:
+                          description: |-
+                            WorkflowResourceDependency identifies a required Kubernetes Secret or
+                            ConfigMap by name in the execution namespace.
+                          properties:
+                            name:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                    type: object
                   engineConfig:
                     description: |-
                       EngineConfig holds engine-specific configuration (BR-WE-016).
@@ -1154,6 +1191,75 @@ spec:
                   rationale:
                     description: Rationale explaining why this workflow was selected
                     type: string
+                  resources:
+                    description: |-
+                      Resources declares the per-workflow Job container CPU/memory
+                      requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                  selectedAt:
+                    description: |-
+                      SelectedAt records when this snapshot was first populated. Once
+                      non-nil, the entire SelectedWorkflow becomes immutable via the
+                      XValidation rule above — mirroring PostRCAContext's ADR-056 guard —
+                      to prevent tampering with the execution snapshot RO/WFE will trust.
+                    format: date-time
+                    type: string
                   serviceAccountName:
                     description: |-
                       ServiceAccountName is the pre-existing ServiceAccount resolved from the
@@ -1172,6 +1278,10 @@ spec:
                 - version
                 - workflowId
                 type: object
+                x-kubernetes-validations:
+                - message: 'selectedWorkflow is immutable once selectedAt is populated
+                    (Issue #1661, DD-WORKFLOW-018)'
+                  rule: '!has(oldSelf.selectedAt) || self == oldSelf'
               startedAt:
                 description: Timestamps
                 format: date-time

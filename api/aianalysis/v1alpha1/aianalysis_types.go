@@ -617,6 +617,7 @@ type RemediationTarget struct {
 
 // SelectedWorkflow contains the AI-selected workflow for execution
 // DD-CONTRACT-002: Output format for RO to create WorkflowExecution
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || self == oldSelf",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
 type SelectedWorkflow struct {
 	// Workflow identifier (catalog lookup key)
 	// +kubebuilder:validation:Required
@@ -658,6 +659,39 @@ type SelectedWorkflow struct {
 	// DS workflow catalog (Issue #650). Propagated to the WFE for pod execution.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
+	// ========================================
+	// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11b, DD-WORKFLOW-018)
+	// ========================================
+	// Dependencies/Resources/DeclaredParameterNames are catalog-authoritative
+	// schema data KA already validated during workflow selection (Change 11a).
+	// Embedding them here lets RemediationOrchestrator/WorkflowExecution trust
+	// this CRD snapshot instead of independently re-fetching the workflow from
+	// DataStorage — closing the gap where an in-flight remediation could
+	// observe a RemediationWorkflow that was updated or deleted after
+	// selection completed.
+
+	// Dependencies declares the Secrets/ConfigMaps the workflow's schema
+	// requires in the execution namespace (DD-WE-006).
+	// +optional
+	Dependencies *sharedtypes.WorkflowDependencies `json:"dependencies,omitempty"`
+
+	// Resources declares the per-workflow Job container CPU/memory
+	// requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
+	// uses for defense-in-depth stripping of undeclared parameters (#243).
+	// +optional
+	DeclaredParameterNames map[string]bool `json:"declaredParameterNames,omitempty"`
+
+	// SelectedAt records when this snapshot was first populated. Once
+	// non-nil, the entire SelectedWorkflow becomes immutable via the
+	// XValidation rule above — mirroring PostRCAContext's ADR-056 guard —
+	// to prevent tampering with the execution snapshot RO/WFE will trust.
+	// +optional
+	SelectedAt *metav1.Time `json:"selectedAt,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.
