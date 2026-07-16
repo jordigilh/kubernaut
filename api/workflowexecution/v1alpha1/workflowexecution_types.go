@@ -20,6 +20,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -203,6 +205,42 @@ type WorkflowRef struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
+
+	// ========================================
+	// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11c, DD-WORKFLOW-018)
+	// ========================================
+	// The five fields below are copied verbatim from
+	// AIAnalysis.Status.SelectedWorkflow (Change 11b) by RemediationOrchestrator
+	// when building this WorkflowExecution (Change 11d), letting WorkflowExecution
+	// stop re-fetching this data from DataStorage (Change 11e). No new per-field
+	// CEL rule is needed: WorkflowExecutionSpec's existing
+	// "self == oldSelf" XValidation (ADR-001) already covers WorkflowRef as a
+	// whole, including these fields.
+
+	// ExecutionEngine is the workflow's execution engine (e.g. "job", "tekton",
+	// "ansible"), resolved by KA/DataStorage at selection time.
+	// +optional
+	ExecutionEngine string `json:"executionEngine,omitempty"`
+
+	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
+	// workflow catalog at selection time (Issue #650). Used for pod execution.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
+	// Dependencies declares the Secrets/ConfigMaps the workflow's execution
+	// requires in the target namespace (DD-WE-006).
+	// +optional
+	Dependencies *sharedtypes.WorkflowDependencies `json:"dependencies,omitempty"`
+
+	// Resources declares the per-workflow Job container CPU/memory
+	// requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
+	// +optional
+	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
+	// uses for defense-in-depth stripping of undeclared parameters (#243).
+	// +optional
+	DeclaredParameterNames map[string]bool `json:"declaredParameterNames,omitempty"`
 }
 
 // ExecutionConfig contains minimal execution settings.

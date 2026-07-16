@@ -159,6 +159,43 @@ spec:
                   WorkflowRef contains the workflow catalog reference
                   Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
                 properties:
+                  declaredParameterNames:
+                    additionalProperties:
+                      type: boolean
+                    description: |-
+                      DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
+                      uses for defense-in-depth stripping of undeclared parameters (#243).
+                    type: object
+                  dependencies:
+                    description: |-
+                      Dependencies declares the Secrets/ConfigMaps the workflow's execution
+                      requires in the target namespace (DD-WE-006).
+                    properties:
+                      configMaps:
+                        items:
+                          description: |-
+                            WorkflowResourceDependency identifies a required Kubernetes Secret or
+                            ConfigMap by name in the execution namespace.
+                          properties:
+                            name:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                      secrets:
+                        items:
+                          description: |-
+                            WorkflowResourceDependency identifies a required Kubernetes Secret or
+                            ConfigMap by name in the execution namespace.
+                          properties:
+                            name:
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                    type: object
                   engineConfig:
                     description: |-
                       EngineConfig holds engine-specific configuration (BR-WE-016).
@@ -172,6 +209,77 @@ spec:
                     type: string
                   executionBundleDigest:
                     description: ExecutionBundleDigest for audit trail and reproducibility
+                    type: string
+                  executionEngine:
+                    description: |-
+                      ExecutionEngine is the workflow's execution engine (e.g. "job", "tekton",
+                      "ansible"), resolved by KA/DataStorage at selection time.
+                    type: string
+                  resources:
+                    description: |-
+                      Resources declares the per-workflow Job container CPU/memory
+                      requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
+                  serviceAccountName:
+                    description: |-
+                      ServiceAccountName is the pre-existing ServiceAccount resolved from the
+                      workflow catalog at selection time (Issue #650). Used for pod execution.
                     type: string
                   version:
                     description: Version of the workflow
