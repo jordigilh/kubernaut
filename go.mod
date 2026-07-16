@@ -9,7 +9,7 @@ require (
 	github.com/a2aproject/a2a-go/v2 v2.3.1
 	github.com/alicebob/miniredis/v2 v2.38.0
 	github.com/anthropics/anthropic-sdk-go v1.57.0
-	github.com/containers/kubernetes-mcp-server v0.0.64
+	github.com/containers/kubernetes-mcp-server v0.0.65
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-chi/chi/v5 v5.3.1

@@ -97,8 +97,8 @@ github.com/cloudevents/sdk-go/v2 v2.16.2 h1:ZYDFrYke4FD+jM8TZTJJO6JhKHzOQl2oqpFK
 github.com/cloudevents/sdk-go/v2 v2.16.2/go.mod h1:laOcGImm4nVJEU+PHnUrKL56CKmRL65RlQF0kRmW/kg=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 h1:aBangftG7EVZoUb69Os8IaYg++6uMOdKK83QtkkvJik=
 github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2/go.mod h1:qwXFYgsP6T7XnJtbKlf1HP8AjxZZyzxMmc+Lq5GjlU4=
-github.com/containers/kubernetes-mcp-server v0.0.64 h1:hH8XdzeHw+ul9QRyH608Asm+Z+Kpu58QQGOKGNz10H8=
-github.com/containers/kubernetes-mcp-server v0.0.64/go.mod h1:h4f3hPak+dRjDy6JRgLYlz1ghAWySlkLozWQnOPpcHs=
+github.com/containers/kubernetes-mcp-server v0.0.65 h1:g3A2oC9gvEc3BYPlDJleruCx3nnGviF67kFs58hLJsQ=
+github.com/containers/kubernetes-mcp-server v0.0.65/go.mod h1:h4f3hPak+dRjDy6JRgLYlz1ghAWySlkLozWQnOPpcHs=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
