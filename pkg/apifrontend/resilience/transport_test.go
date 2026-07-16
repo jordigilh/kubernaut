@@ -62,6 +62,7 @@ func TestRetryTransport_RetriesOn503AndSucceeds(t *testing.T) {
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
 	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
@@ -89,7 +90,8 @@ func TestRetryTransport_GivesUpAfterMaxAttempts(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
-	_, err := rt.RoundTrip(req)
+	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err == nil {
 		t.Fatal("RoundTrip() expected error after retry exhaustion")
 	}
@@ -118,6 +120,7 @@ func TestRetryTransport_DoesNotRetry400(t *testing.T) {
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
 	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
@@ -148,6 +151,7 @@ func TestRetryTransport_DoesNotRetryNonReplayableBody(t *testing.T) {
 		strings.NewReader("body"))
 	// No GetBody set — body is not replayable
 	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err == nil {
 		t.Fatalf("RoundTrip() expected error, got resp=%v", resp)
 	}
@@ -173,7 +177,8 @@ func TestRetryTransport_RespectsContextCancellation(t *testing.T) {
 	cancel() // Cancel immediately
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com/test", http.NoBody)
-	_, err := rt.RoundTrip(req)
+	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err == nil {
 		t.Fatal("RoundTrip() expected error on cancelled context")
 	}
@@ -204,7 +209,8 @@ func TestRetryTransport_IncrementsRetryMetric(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
-	_, err := rt.RoundTrip(req)
+	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
@@ -240,11 +246,12 @@ func TestCBTransport_OpensAfterConsecutiveFailures(t *testing.T) {
 
 	// Trip the breaker
 	for i := 0; i < failCount; i++ {
-		_, _ = cbt.RoundTrip(req)
+		closeIfPresent(cbt.RoundTrip(req))
 	}
 
 	// Next request should be rejected by open circuit
-	_, err := cbt.RoundTrip(req)
+	resp, err := cbt.RoundTrip(req)
+	closeIfPresent(resp, err)
 	if err == nil {
 		t.Fatal("expected error when CB is open")
 	}
@@ -270,12 +277,13 @@ func TestCBTransport_RejectsImmediatelyWhenOpen(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
 
 	// Trip it
-	_, _ = cbt.RoundTrip(req)
-	_, _ = cbt.RoundTrip(req)
+	closeIfPresent(cbt.RoundTrip(req))
+	closeIfPresent(cbt.RoundTrip(req))
 
 	// Now should fail fast without calling base
 	start := time.Now()
-	_, err := cbt.RoundTrip(req)
+	resp, err := cbt.RoundTrip(req)
+	closeIfPresent(resp, err)
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -307,8 +315,8 @@ func TestCBTransport_TransitionsHalfOpenToClosed(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
 
 	// Trip it
-	_, _ = cbt.RoundTrip(req)
-	_, _ = cbt.RoundTrip(req)
+	closeIfPresent(cbt.RoundTrip(req))
+	closeIfPresent(cbt.RoundTrip(req))
 
 	// Wait for half-open
 	time.Sleep(100 * time.Millisecond)
@@ -316,6 +324,7 @@ func TestCBTransport_TransitionsHalfOpenToClosed(t *testing.T) {
 	// Now allow success
 	shouldSucceed.Store(true)
 	resp, err := cbt.RoundTrip(req)
+	closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip in half-open error = %v", err)
 	}
@@ -325,6 +334,7 @@ func TestCBTransport_TransitionsHalfOpenToClosed(t *testing.T) {
 
 	// Should now be closed — next request should also succeed
 	resp, err = cbt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip after recovery error = %v", err)
 	}
@@ -354,8 +364,8 @@ func TestCBTransport_UpdatesStateGauge(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
-	_, _ = cbt.RoundTrip(req)
-	_, _ = cbt.RoundTrip(req)
+	closeIfPresent(cbt.RoundTrip(req))
+	closeIfPresent(cbt.RoundTrip(req))
 
 	// Check gauge was updated to "open" (value 2)
 	m := &dto.Metric{}
@@ -389,7 +399,8 @@ func TestCBTransport_RecordsDurationHistogram(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
-	_, err := cbt.RoundTrip(req)
+	resp, err := cbt.RoundTrip(req)
+	closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
@@ -437,8 +448,8 @@ func TestCBTransport_EmitsAuditOnStateChange(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
-	_, _ = cbt.RoundTrip(req)
-	_, _ = cbt.RoundTrip(req)
+	closeIfPresent(cbt.RoundTrip(req))
+	closeIfPresent(cbt.RoundTrip(req))
 
 	if atomic.LoadInt32(&auditCalls) != 1 {
 		t.Errorf("audit calls = %d, want 1", atomic.LoadInt32(&auditCalls))
@@ -481,6 +492,7 @@ func TestFullChain_ConcurrentLoad(t *testing.T) {
 			defer wg.Done()
 			req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
 			resp, err := cbt.RoundTrip(req)
+			defer closeIfPresent(resp, err)
 			if err != nil {
 				t.Errorf("concurrent RoundTrip error = %v", err)
 				return
@@ -517,6 +529,7 @@ func TestRetryTransport_HandlesECONNRESET(t *testing.T) {
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
 	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
@@ -548,6 +561,7 @@ func TestRetryTransport_HandlesEOF(t *testing.T) {
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
 	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
@@ -578,7 +592,8 @@ func TestRetryTransport_DoesNotRetryPOSTWithIdempotentOnly(t *testing.T) {
 		return io.NopCloser(bytes.NewReader([]byte(`{"key":"value"}`))), nil
 	}
 
-	_, err := rt.RoundTrip(req)
+	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err == nil {
 		t.Fatal("expected error for POST with connection reset")
 	}
@@ -613,6 +628,7 @@ func TestRetryTransport_RetriesPOSTWhenIdempotentOnlyFalse(t *testing.T) {
 	}
 
 	resp, err := rt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}

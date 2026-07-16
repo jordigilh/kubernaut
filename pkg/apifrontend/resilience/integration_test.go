@@ -55,7 +55,8 @@ func TestIntegration_BurstOpensCB(t *testing.T) {
 
 	// Next call should fail fast
 	callsBefore := callCount.Load()
-	_, err := cbt.RoundTrip(req)
+	resp, err := cbt.RoundTrip(req)
+	closeIfPresent(resp, err)
 	if err == nil {
 		t.Fatal("expected error on open CB")
 	}
@@ -92,8 +93,8 @@ func TestIntegration_CBRecovers(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com/test", http.NoBody)
 
 	// Trip it
-	_, _ = cbt.RoundTrip(req)
-	_, _ = cbt.RoundTrip(req)
+	closeIfPresent(cbt.RoundTrip(req))
+	closeIfPresent(cbt.RoundTrip(req))
 
 	if cbt.State() != gobreaker.StateOpen {
 		t.Fatalf("CB state = %v, want Open", cbt.State())
@@ -105,6 +106,7 @@ func TestIntegration_CBRecovers(t *testing.T) {
 	// Allow success
 	shouldSucceed.Store(true)
 	resp, err := cbt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip in half-open = %v", err)
 	}
@@ -153,6 +155,7 @@ func TestIntegration_RetrySucceedsOnTransient(t *testing.T) {
 	ctx := context.Background()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com/test", http.NoBody)
 	resp, err := cbt.RoundTrip(req)
+	defer closeIfPresent(resp, err)
 	if err != nil {
 		t.Fatalf("RoundTrip() error = %v", err)
 	}
@@ -190,7 +193,8 @@ func TestIntegration_RetryExhaustion(t *testing.T) {
 
 	ctx := context.Background()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com/test", http.NoBody)
-	_, err := cbt.RoundTrip(req)
+	resp, err := cbt.RoundTrip(req)
+	closeIfPresent(resp, err)
 	// After retry exhaustion, the retry transport returns an error.
 	// The CB transport propagates this error (it's not a response-level failure).
 	if err == nil {
@@ -225,8 +229,8 @@ func TestIntegration_TimeoutOpensCB(t *testing.T) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://example.com/test", http.NoBody)
 
 	// Trip with 2 timeouts
-	_, _ = cbt.RoundTrip(req)
-	_, _ = cbt.RoundTrip(req)
+	closeIfPresent(cbt.RoundTrip(req))
+	closeIfPresent(cbt.RoundTrip(req))
 
 	if cbt.State() != gobreaker.StateOpen {
 		t.Fatalf("CB state = %v, want Open", cbt.State())
@@ -242,7 +246,8 @@ func TestIntegration_TimeoutOpensCB(t *testing.T) {
 	}
 
 	// Next call fails fast
-	_, err := cbt.RoundTrip(req)
+	resp, err := cbt.RoundTrip(req)
+	closeIfPresent(resp, err)
 	if !errors.Is(err, gobreaker.ErrOpenState) {
 		t.Errorf("error = %v, want ErrOpenState", err)
 	}
