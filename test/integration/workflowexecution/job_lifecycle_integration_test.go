@@ -902,14 +902,10 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 // "workflow" container resources.
 var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 
-	AfterEach(func() {
-		// Prevent leaking Resources configuration into subsequent tests that
-		// don't set it explicitly (BestEffort QoS is the default elsewhere).
-		testWorkflowQuerier.Resources = nil
-	})
-
 	It("should apply catalog-resolved resources to the Job's workflow container (IT-WE-019-001)", func() {
-		testWorkflowQuerier.Resources = &corev1.ResourceRequirements{
+		targetResource := fmt.Sprintf("default/deployment/job-resources-%d", time.Now().UnixNano())
+		wfe := createUniqueJobWFE("resources", targetResource)
+		wfe.Spec.WorkflowRef.Resources = &corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("100m"),
 				corev1.ResourceMemory: resource.MustParse("128Mi"),
@@ -919,9 +915,6 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 				corev1.ResourceMemory: resource.MustParse("256Mi"),
 			},
 		}
-
-		targetResource := fmt.Sprintf("default/deployment/job-resources-%d", time.Now().UnixNano())
-		wfe := createUniqueJobWFE("resources", targetResource)
 
 		defer func() {
 			cleanupJobWFE(wfe)
@@ -966,8 +959,6 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 	})
 
 	It("should leave the workflow container BestEffort when the catalog declares no resources (backward compat)", func() {
-		testWorkflowQuerier.Resources = nil
-
 		targetResource := fmt.Sprintf("default/deployment/job-no-resources-%d", time.Now().UnixNano())
 		wfe := createUniqueJobWFE("no-resources", targetResource)
 

@@ -100,6 +100,12 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 					WorkflowID:      "wf-" + name,
 					Version:         "v1",
 					ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+					// Issue #1661 Change 11e: engine is read directly from
+					// WorkflowRef now, not resolved via WorkflowQuerier at
+					// runtime (the querier param threaded through
+					// buildReconciler below is vestigial -- Phase 51 REFACTOR
+					// removes it).
+					ExecutionEngine: "tekton",
 				},
 			},
 		}

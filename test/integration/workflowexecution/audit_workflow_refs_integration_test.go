@@ -107,9 +107,6 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
 		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
 		dsClient = dsClients.OpenAPIClient
-
-		// #518: Ensure engine mock is reset before each test to prevent leak from Job tests
-		testWorkflowQuerier.setEngine("tekton")
 	})
 
 	AfterEach(func() {
@@ -133,13 +130,6 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			// Per ADR-034 v1.5: All event types prefixed with "workflowexecution"
 
 			By("1. Creating WorkflowExecution CRD (BUSINESS LOGIC TRIGGER)")
-			// IT-WE-1033-001: Set workflow name in catalog querier for workflow_name audit assertion
-			testWorkflowQuerier.WorkflowName = "fix-security-context-job"
-			// IT-WE-140-001 (#1661 Change 3): Set action type in catalog querier; resolved once
-			// during Pending into wfe.Status.ActionType, then read by buildExecutionStartedPayload
-			// for the execution.started audit event assertion below.
-			testWorkflowQuerier.ActionType = "RestartPod"
-			DeferCleanup(func() { testWorkflowQuerier.ActionType = "" })
 			wfeName := fmt.Sprintf("gap56-happy-%s", uuid.New().String()[:8])
 			rrName := "test-rr-" + wfeName
 			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name
@@ -162,6 +152,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						WorkflowID:      "k8s-restart-pod-v1", // Label-safe: no slashes
 						Version:         "v1.0.0",
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
+						ExecutionEngine: "tekton",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
 					Parameters: map[string]string{
@@ -239,11 +230,15 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(eventData.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123"))
 			Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
 
-			// IT-WE-1033-001: Validate workflow_name in selection audit event (Issue #1033 Gap 2)
-			Expect(eventData.WorkflowName.IsSet()).To(BeTrue(),
-				"workflow_name should be set when catalog provides a name")
-			Expect(eventData.WorkflowName.Value).To(Equal("fix-security-context-job"),
-				"workflow_name should carry the human-readable name from the catalog")
+			// IT-WE-1661-001 (Issue #1661 Change 11e): WorkflowRef carries no
+			// WorkflowName field (unlike the retired DataStorage catalog querier),
+			// so the selection event omits workflow_name entirely. workflow_id
+			// alone -- joined against the immutable workflow_content already in
+			// the Postgres audit ledger -- satisfies SOC2 CC8.1 reconstruction; a
+			// fast-follow issue tracks wiring workflow_name end-to-end for
+			// audit-readability convenience only.
+			Expect(eventData.WorkflowName.IsSet()).To(BeFalse(),
+				"workflow_name is not carried by WorkflowRef and should be omitted from the selection event")
 
 			By("5. Validate workflowexecution.execution.started event structure (ADR-034 v1.5)")
 			executionEvents := filterEventsByType(allEvents, weaudit.EventTypeExecutionStarted)
@@ -264,15 +259,14 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(execEventData.PipelinerunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
 			Expect(execEventData.PipelinerunName.Value).To(HavePrefix("wfe-"), "PipelineRun name should start with 'wfe-' prefix")
 
-			// IT-WE-140-001 (#1661 Change 3): Validate action_type/workflow_name in the
-			// execution.started event, proving the full wiring: DS catalog querier →
-			// wfe.Status (resolved once during Pending) → audit payload (no fresh DS call).
-			Expect(execEventData.ActionType.IsSet()).To(BeTrue(),
-				"action_type should be set from wfe.Status.ActionType (resolved during Pending)")
-			Expect(execEventData.ActionType.Value).To(Equal("RestartPod"))
-			Expect(execEventData.WorkflowName.IsSet()).To(BeTrue(),
-				"workflow_name should be set from wfe.Status.WorkflowName (resolved during Pending)")
-			Expect(execEventData.WorkflowName.Value).To(Equal("fix-security-context-job"))
+			// IT-WE-1661-002 (Issue #1661 Change 11e): ActionType/WorkflowName are
+			// no longer resolved into wfe.Status (WorkflowRef carries neither
+			// field), so the execution.started event omits both. See the
+			// selection-event assertion above for the SOC2 CC8.1 rationale.
+			Expect(execEventData.ActionType.IsSet()).To(BeFalse(),
+				"action_type is not carried by WorkflowRef and should be omitted from the execution.started event")
+			Expect(execEventData.WorkflowName.IsSet()).To(BeFalse(),
+				"workflow_name is not carried by WorkflowRef and should be omitted from the execution.started event")
 		})
 	})
 
@@ -308,6 +302,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						WorkflowID:      "k8s-scale-deployment-v1", // Label-safe: no slashes
 						Version:         "v1.0.0",
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
+						ExecutionEngine: "tekton",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
 				},

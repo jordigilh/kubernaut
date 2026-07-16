@@ -55,9 +55,6 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 			})
 			Expect(err).ToNot(HaveOccurred())
 
-			DeferCleanup(func() { testWorkflowQuerier.setEngine("tekton") })
-			testWorkflowQuerier.setEngine("ansible")
-
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("ansible-it-%d", time.Now().UnixNano()),
@@ -69,6 +66,7 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 						WorkflowID:      "ansible-restart",
 						Version:         "1.0.0",
 						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+						ExecutionEngine: "ansible",
 						EngineConfig: &apiextensionsv1.JSON{
 							Raw: engineConfig,
 						},

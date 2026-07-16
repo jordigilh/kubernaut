@@ -22,11 +22,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	k8sretry "k8s.io/client-go/util/retry"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -89,25 +90,50 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 		Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 		defer func() { _ = k8sClient.Delete(ctx, wfe) }()
 
+		// RetryOnConflict below only re-runs the Get+mutate+Update body while
+		// Update returns a stale-resourceVersion Conflict (the live reconciler
+		// actively progresses this WFE's finalizer/status with ExecutionEngine
+		// now correctly resolved from WorkflowRef, racing these Get+Updates).
+		// Once Update instead returns the expected CEL-rejection Invalid error,
+		// RetryOnConflict treats it as terminal and returns it immediately --
+		// so this does not mask the immutability rejection under test.
 		By("mutating ExecutionEngine post-creation being rejected (ADR-001 spec immutability)")
 		mutated := &workflowexecutionv1alpha1.WorkflowExecution{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, mutated)).To(Succeed())
-		mutated.Spec.WorkflowRef.ExecutionEngine = "tekton"
-		err := k8sClient.Update(ctx, mutated)
+		err := k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			if getErr := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, mutated); getErr != nil {
+				return getErr
+			}
+			mutated.Spec.WorkflowRef.ExecutionEngine = "tekton"
+			return k8sClient.Update(ctx, mutated)
+		})
 		Expect(err).To(HaveOccurred())
 		Expect(apierrors.IsInvalid(err)).To(BeTrue())
 
 		By("mutating DeclaredParameterNames post-creation being rejected")
 		mutated2 := &workflowexecutionv1alpha1.WorkflowExecution{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, mutated2)).To(Succeed())
-		mutated2.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"OTHER": true}
-		err = k8sClient.Update(ctx, mutated2)
+		err = k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			if getErr := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, mutated2); getErr != nil {
+				return getErr
+			}
+			mutated2.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{"OTHER": true}
+			return k8sClient.Update(ctx, mutated2)
+		})
 		Expect(err).To(HaveOccurred())
 		Expect(apierrors.IsInvalid(err)).To(BeTrue())
 
 		By("re-submitting an identical spec succeeding (idempotent reconcile-retry safety)")
+		// RetryOnConflict: with WorkflowRef.ExecutionEngine now populated, the
+		// live reconciler actively progresses this WFE (finalizer/status
+		// updates), racing the Get+Update below and bumping resourceVersion
+		// out from under it -- retry on a stale-resourceVersion conflict
+		// rather than treating it as an assertion failure (same pattern as
+		// escalation_wiring_test.go / crd_typed_fields_integration_test.go).
 		identical := &workflowexecutionv1alpha1.WorkflowExecution{}
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, identical)).To(Succeed())
-		Expect(k8sClient.Update(ctx, identical)).To(Succeed())
+		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+			if err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: DefaultNamespace}, identical); err != nil {
+				return err
+			}
+			return k8sClient.Update(ctx, identical)
+		})).To(Succeed())
 	})
 })
