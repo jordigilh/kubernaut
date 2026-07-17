@@ -28,6 +28,11 @@ import (
 	"time"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	linux = "linux"
+)
+
 // EAIGWImage is the Envoy AI Gateway CLI image for fleet MCP routing.
 const EAIGWImage = "docker.io/envoyproxy/ai-gateway-cli:v1.0.0"
 
@@ -81,7 +86,7 @@ const (
 //     VM, so bridge networking + the host.containers.internal rewrite +
 //     conventional port mapping is used instead.
 func StartEAIGWContainer(servers []EAIGWMCPServerEntry, writer io.Writer) (*ContainerInstance, error) {
-	useHostNetwork := runtime.GOOS == "linux"
+	useHostNetwork := runtime.GOOS == linux
 
 	mcpServers := make(map[string]eaigwMCPServerConfig, len(servers))
 	for _, s := range servers {

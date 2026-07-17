@@ -602,7 +602,7 @@ skip_covered = false
 // when E2E_COVERAGE=true, or an empty string otherwise.
 // The indentation assumes container env section (8 spaces).
 func coverageEnvYAML(serviceName string) string {
-	if os.Getenv("E2E_COVERAGE") != "true" {
+	if os.Getenv("E2E_COVERAGE") != trueFixture {
 		return ""
 	}
 	return `- name: GOCOVERDIR
@@ -612,7 +612,7 @@ func coverageEnvYAML(serviceName string) string {
 // coverageVolumeMountYAML returns the YAML snippet for the /coverdata
 // volume mount when E2E_COVERAGE=true, or an empty string otherwise.
 func coverageVolumeMountYAML() string {
-	if os.Getenv("E2E_COVERAGE") != "true" {
+	if os.Getenv("E2E_COVERAGE") != trueFixture {
 		return ""
 	}
 	return `- name: coverdata
@@ -622,7 +622,7 @@ func coverageVolumeMountYAML() string {
 // coverageVolumeYAML returns the YAML snippet for the coverdata hostPath
 // volume when E2E_COVERAGE=true, or an empty string otherwise.
 func coverageVolumeYAML() string {
-	if os.Getenv("E2E_COVERAGE") != "true" {
+	if os.Getenv("E2E_COVERAGE") != trueFixture {
 		return ""
 	}
 	return `- name: coverdata

@@ -251,7 +251,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 
 	// DD-TEST-007: E2E Coverage Collection
 	// Support coverage instrumentation when E2E_COVERAGE=true or EnableCoverage flag is set
-	if cfg.EnableCoverage || os.Getenv("E2E_COVERAGE") == "true" {
+	if cfg.EnableCoverage || os.Getenv("E2E_COVERAGE") == trueFixture {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
 		_, _ = fmt.Fprintf(writer, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)\n")
 	}

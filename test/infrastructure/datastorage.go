@@ -40,6 +40,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	kubernautSystem = "kubernaut-system"
+)
+
 // CreateDataStorageCluster creates a Kind cluster for Data Storage E2E tests
 // This includes:
 // - Kind cluster (2 nodes: control-plane + worker)
@@ -328,7 +333,7 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 			// Collect pod logs to /tmp/kubernaut-must-gather/ for CI artifact collection
 			homeDir, _ := os.UserHomeDir()
 			kubeconfigPath := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
-			ns := "kubernaut-system"
+			ns := kubernautSystem
 			if len(namespace) > 0 && namespace[0] != "" {
 				ns = namespace[0]
 			}
@@ -509,7 +514,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		ImageName:        "kubernaut/datastorage",
 		DockerfilePath:   "docker/data-storage.Dockerfile",
 		BuildContextPath: "", // Empty = use project root (default)
-		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 	}
 	dsImageName, err := BuildImageForKind(cfg, writer)
 	if err != nil {
@@ -1159,11 +1164,9 @@ func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namesp
 	coverageVolumeYAML := ""
 	coverageSecurityContextYAML := ""
 
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		_, _ = fmt.Fprintf(writer, "   ✅ DD-TEST-007: Coverage instrumentation enabled\n")
-		coverageEnvYAML = `
-        - name: GOCOVERDIR
-          value: /coverdata`
+		coverageEnvYAML = coverageEnvYAMLFixture
 		coverageVolumeMountYAML = `
         - name: coverage
           mountPath: /coverdata`
@@ -1172,10 +1175,7 @@ func deployDataStorageServiceInNamespaceWithNodePort(ctx context.Context, namesp
         hostPath:
           path: /coverdata
           type: DirectoryOrCreate`
-		coverageSecurityContextYAML = `
-      securityContext:
-        runAsUser: 0
-        runAsGroup: 0`
+		coverageSecurityContextYAML = coverageSecurityContextYAMLFixture
 	}
 
 	manifest := fmt.Sprintf(`---
@@ -1520,7 +1520,7 @@ func buildDataStorageImage(writer io.Writer) error {
 
 	// E2E Coverage Collection (E2E_COVERAGE_COLLECTION.md)
 	// If E2E_COVERAGE=true, build with coverage instrumentation
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
 		_, _ = fmt.Fprintln(writer, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)")
 	}
@@ -2146,7 +2146,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, er
 
 	// E2E Coverage Collection (E2E_COVERAGE_COLLECTION.md)
 	// If E2E_COVERAGE=true, build with coverage instrumentation
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
 		_, _ = fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
 	}

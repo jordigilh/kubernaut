@@ -430,7 +430,7 @@ func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) erro
 	// Defense-in-depth: even if the host directory is 0777, DirectoryOrCreate may
 	// create a root-owned 0755 directory inside the Kind node. This ensures the
 	// container user (UID 1001) can always write coverage data.
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		ensureCoverdataWritableInKindNode(opts.ClusterName, writer)
 	}
 

@@ -43,7 +43,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001: Port 30083 (API), 30183 (Metrics)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// DD-TEST-007: Create coverdata directory BEFORE everything
 	projectRoot := getProjectRoot()
@@ -82,7 +82,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			ImageName:        "kubernaut/remediationorchestrator",
 			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",                                                     // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture || os.Getenv("GOCOVERDIR") != "",
 		}
 		roImage, err := BuildImageForKind(cfg, writer)
 		buildResults <- imageBuildResult{name: "RemediationOrchestrator (coverage)", image: roImage, err: err}
@@ -95,7 +95,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "", // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		dsImage, err := BuildImageForKind(cfg, writer)
 		buildResults <- imageBuildResult{name: "DataStorage", image: dsImage, err: err}
@@ -108,7 +108,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			ImageName:        "authwebhook",
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "", // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		awImage, err := BuildImageForKind(cfg, writer)
 		buildResults <- imageBuildResult{name: "AuthWebhook", image: awImage, err: err}
@@ -751,7 +751,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 	_, _ = fmt.Fprintln(writer, "   ⏳ Waiting for RemediationOrchestrator to be ready...")
 	deadline := time.Now().Add(3 * time.Minute) // Longer timeout for controller startup
 	for time.Now().Before(deadline) {
-		waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+		waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 			"wait", "--for=condition=ready", "pod", "-l", "app=remediationorchestrator-controller",
 			"--timeout=10s")
 		if err := waitCmd.Run(); err == nil {
@@ -768,7 +768,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 1. Pod status
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Status:")
-	statusCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	statusCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"get", "pods", "-l", "app=remediationorchestrator-controller", "-o", "wide")
 	statusCmd.Stdout = writer
 	statusCmd.Stderr = writer
@@ -777,7 +777,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 2. Pod describe (events, image status, readiness probe)
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Details & Events:")
-	describeCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	describeCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"describe", "pod", "-l", "app=remediationorchestrator-controller")
 	describeCmd.Stdout = writer
 	describeCmd.Stderr = writer
@@ -786,7 +786,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 3. Pod logs (startup errors)
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Logs (last 50 lines):")
-	logsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	logsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"logs", "-l", "app=remediationorchestrator-controller", "--tail=50", "--all-containers")
 	logsCmd.Stdout = writer
 	logsCmd.Stderr = writer

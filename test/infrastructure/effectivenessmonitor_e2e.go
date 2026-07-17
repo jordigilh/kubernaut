@@ -53,7 +53,7 @@ import (
 
 const (
 	// emE2ENamespace is the namespace where EM and dependencies are deployed
-	emE2ENamespace = "kubernaut-system"
+	emE2ENamespace = kubernautSystem
 
 	// emE2EKindConfig is the Kind cluster configuration file for EM E2E tests
 	emE2EKindConfig = "test/infrastructure/kind-effectivenessmonitor-config.yaml"
@@ -123,7 +123,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	}
 
 	buildResults := make(chan imageBuildResult, 3)
-	enableCoverage := os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != ""
+	enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture || os.Getenv("GOCOVERDIR") != ""
 
 	// Build EM controller
 	go func() {

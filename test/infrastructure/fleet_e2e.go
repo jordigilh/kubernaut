@@ -37,6 +37,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	kubeMcpServerRoute       = "kube-mcp-server-route"
+	kubeMcpServerRemoteRoute = "kube-mcp-server-remote-route"
+)
+
 // KubeMCPServerImage is the Go-native K8s MCP server image.
 // v0.0.63: supports HTTP mode, in-cluster auth, core toolsets.
 const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server:latest"
@@ -279,7 +285,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("fullpipeline base setup failed: %w", err)
 	}
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// ── Keycloak OIDC + RFC 8693 token-exchange provider (replaces Dex) ──
 	// Dex has no Standard Token Exchange (Spike S20); Keycloak is the same
@@ -1765,19 +1771,19 @@ stringData:
 	// every fleet test hardcodes "remote-cluster" as its target identity
 	// (not "prod-east"), so that name must be the one backed by the remote
 	// cluster for the suite to exercise genuinely remote reads end-to-end.
-	loopbackRouteName := "kube-mcp-server-route"
-	prodEastRouteName := "kube-mcp-server-route"
-	prodWestRouteName := "kube-mcp-server-route"
+	loopbackRouteName := kubeMcpServerRoute
+	prodEastRouteName := kubeMcpServerRoute
+	prodWestRouteName := kubeMcpServerRoute
 	var remoteRouteManifest string
 	if rb := authConfig.RemoteBridge; rb != nil {
 		_, _ = fmt.Fprintln(writer, "    Bridging prod-east to remote cluster's kube-mcp-server (DD-TEST-013)...")
 		if err := CreateServiceBridge(ctx, kubeconfigPath, namespace, rb.BridgeServiceName, rb.BridgeServicePort, rb.RemoteNodeIP, rb.RemoteNodePort, writer); err != nil {
 			return fmt.Errorf("prod-east remote bridge Service creation failed: %w", err)
 		}
-		prodEastRouteName = "kube-mcp-server-remote-route"
+		prodEastRouteName = kubeMcpServerRemoteRoute
 		if authConfig.AllRegistrationsRemote {
-			loopbackRouteName = "kube-mcp-server-remote-route"
-			prodWestRouteName = "kube-mcp-server-remote-route"
+			loopbackRouteName = kubeMcpServerRemoteRoute
+			prodWestRouteName = kubeMcpServerRemoteRoute
 		}
 		remoteRouteManifest = fmt.Sprintf(`---
 apiVersion: gateway.networking.k8s.io/v1
@@ -2550,7 +2556,7 @@ func patchAPIServerPodHostsForIssuer(ctx context.Context, nodeName, kubeconfigPa
 	var svcErr error
 	for time.Now().Before(svcDeadline) {
 		svcIPCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"get", "svc", host, "-n", "kubernaut-system", "-o", "jsonpath={.spec.clusterIP}")
+			"get", "svc", host, "-n", kubernautSystem, "-o", "jsonpath={.spec.clusterIP}")
 		svcIPOut, err := svcIPCmd.Output()
 		clusterIP = strings.TrimSpace(string(svcIPOut))
 		if err == nil && clusterIP != "" {

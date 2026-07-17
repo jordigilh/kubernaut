@@ -41,7 +41,7 @@ import (
 
 func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io.Writer) error {
 	ctx := context.Background()
-	namespace := "kubernaut-system" // Infrastructure always in kubernaut-system; tests use dynamic namespaces
+	namespace := kubernautSystem // Infrastructure always in kubernaut-system; tests use dynamic namespaces
 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 AIAnalysis E2E Infrastructure (HYBRID PARALLEL + DISK OPTIMIZATION)")
@@ -82,7 +82,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- imageBuildResult{"datastorage", imageName, err}
@@ -106,7 +106,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			ImageName:        "kubernaut/aianalysis",
 			DockerfilePath:   "docker/aianalysis.Dockerfile", // Dockerfile can have suffix (but this one doesn't)
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- imageBuildResult{"aianalysis", imageName, err}
@@ -159,7 +159,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// DD-TEST-007: Create coverdata directory BEFORE Kind cluster creation
 	// The Kind config extraMount uses ./coverdata relative to project root
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
 		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)

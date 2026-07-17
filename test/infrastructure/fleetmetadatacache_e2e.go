@@ -106,7 +106,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	_, _ = fmt.Fprintln(writer, "  Skips: Gateway, RemediationOrchestrator, and other Kubernaut services")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// ── Phase 1: Build fleetmetadatacache image (before cluster creation) ──
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building fleetmetadatacache image (NO CLUSTER YET)...")
@@ -115,7 +115,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		ImageName:        "fleetmetadatacache",
 		DockerfilePath:   "docker/fleetmetadatacache.Dockerfile",
 		BuildContextPath: "",
-		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 	}
 	fmcImage, err = BuildImageForKind(buildCfg, writer)
 	if err != nil {

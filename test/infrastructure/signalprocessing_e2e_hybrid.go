@@ -48,7 +48,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001: Port 30082 (API), 30182 (Metrics)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// DD-TEST-007: Create coverdata directory BEFORE everything
 	projectRoot := getProjectRoot()
@@ -101,7 +101,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
@@ -724,7 +724,7 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 		attempt++
 		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"rollout", "status", "deployment/signalprocessing-controller",
-			"-n", "kubernaut-system", "--timeout=5s")
+			"-n", kubernautSystem, "--timeout=5s")
 		if err := cmd.Run(); err == nil {
 			_, _ = fmt.Fprintln(writer, "  ✓ Controller ready")
 			return nil
@@ -735,14 +735,14 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 			_, _ = fmt.Fprintf(writer, "  ⏳ Controller not ready yet (attempt %d)...\n", attempt)
 			// Get pod status
 			podCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-				"get", "pods", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "-o", "wide")
+				"get", "pods", "-n", kubernautSystem, "-l", "app=signalprocessing-controller", "-o", "wide")
 			podCmd.Stdout = writer
 			podCmd.Stderr = writer
 			_ = podCmd.Run()
 
 			// Get pod logs (last 10 lines)
 			logsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-				"logs", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "--tail=10")
+				"logs", "-n", kubernautSystem, "-l", "app=signalprocessing-controller", "--tail=10")
 			logsCmd.Stdout = writer
 			logsCmd.Stderr = writer
 			_ = logsCmd.Run()
@@ -753,13 +753,13 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 	// Final diagnostic dump before failure
 	_, _ = fmt.Fprintln(writer, "  ❌ Controller not ready after timeout. Final diagnostics:")
 	describeCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"describe", "pod", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller")
+		"describe", "pod", "-n", kubernautSystem, "-l", "app=signalprocessing-controller")
 	describeCmd.Stdout = writer
 	describeCmd.Stderr = writer
 	_ = describeCmd.Run()
 
 	logsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"logs", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "--tail=50")
+		"logs", "-n", kubernautSystem, "-l", "app=signalprocessing-controller", "--tail=50")
 	logsCmd.Stdout = writer
 	logsCmd.Stderr = writer
 	_ = logsCmd.Run()

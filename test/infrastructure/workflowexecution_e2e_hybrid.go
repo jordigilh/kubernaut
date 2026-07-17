@@ -34,6 +34,16 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	arm642 = "arm64"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	arm64 = arm642
+)
+
 const (
 	// WorkflowExecutionClusterName is the default Kind cluster name
 	WorkflowExecutionClusterName = "workflowexecution-e2e"
@@ -43,7 +53,7 @@ const (
 	TektonPipelinesVersion = "v1.7.0"
 
 	// WorkflowExecutionNamespace is where the controller runs
-	WorkflowExecutionNamespace = "kubernaut-system"
+	WorkflowExecutionNamespace = kubernautSystem
 
 	// ExecutionNamespace is where PipelineRuns are created
 	ExecutionNamespace = "kubernaut-workflows"
@@ -81,7 +91,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to find project root: %w", err)
 	}
 
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		coverdataPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/coverdata")
 		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
 		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
@@ -116,7 +126,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
 	go func() {
 		// Disable coverage on ARM64 (Go runtime crash workaround)
-		enableCoverage := os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64"
+		enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH != arm64
 		cfg := E2EImageConfig{
 			ServiceName:      "workflowexecution", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/workflowexecution",
@@ -135,7 +145,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
@@ -148,7 +158,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			ImageName:        "authwebhook",
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
@@ -660,10 +670,10 @@ func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Write
 	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
 	// Root cause: taggedPointerPack fatal error in Go 1.25.3 (Red Hat) on ARM64
 	// TODO: Re-enable after switching to upstream Go builder (Solution B)
-	if os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH != arm64 {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
 		_, _ = fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
-	} else if os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH == "arm64" {
+	} else if os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH == arm64 {
 		_, _ = fmt.Fprintln(writer, "     ⚠️  Coverage disabled on ARM64 (Go runtime crash workaround)")
 	}
 
@@ -1158,7 +1168,7 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 }
 
 func deployWorkflowExecutionControllerDeployment(_ context.Context, namespace, kubeconfigPath, imageName string, output io.Writer) error {
-	coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
+	coverageEnabled := os.Getenv("E2E_COVERAGE") == trueFixture
 	_, _ = fmt.Fprintf(output, "   DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
 
 	// DD-TEST-007: Coverage-conditional sections injected into the YAML template

@@ -58,7 +58,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 			ImageName:        "kubernaut/notification",
 			DockerfilePath:   "docker/notification-controller.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- buildResult{name: "Notification", imageName: imageName, err: err}
@@ -71,7 +71,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 			ImageName:        "authwebhook",
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
@@ -107,7 +107,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 
 	// DD-TEST-007: Create coverdata directory for E2E coverage collection
 	var coverMounts []ExtraMount
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
 		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
@@ -243,7 +243,7 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	_, _ = fmt.Fprintf(writer, "   ✅ mock-webhook deployed (http://mock-webhook:8080)\n")
 
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification resources via inline YAML template...\n")
-	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
+	enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture
 	manifest := notificationControllerManifest(namespace, notificationImageName, enableCoverage)
 
 	cmd := exec.CommandContext(context.Background(), "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
@@ -326,7 +326,7 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 		DockerfilePath:   "docker/data-storage.Dockerfile",
 		KindClusterName:  clusterName,
 		BuildContextPath: "", // Empty = use project root (default)
-		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 	}
 	actualImageName, err := BuildAndLoadImageToKind(cfg, writer)
 	if err != nil {
@@ -561,9 +561,7 @@ func notificationControllerManifest(namespace, imageName string, enableCoverage 
 	coverageSecurityContextYAML := ""
 
 	if enableCoverage {
-		coverageEnvYAML = `
-        - name: GOCOVERDIR
-          value: /coverdata`
+		coverageEnvYAML = coverageEnvYAMLFixture
 		coverageVolumeMountYAML = `
         - name: coverdata
           mountPath: /coverdata`
@@ -572,10 +570,7 @@ func notificationControllerManifest(namespace, imageName string, enableCoverage 
         hostPath:
           path: /coverdata
           type: DirectoryOrCreate`
-		coverageSecurityContextYAML = `
-      securityContext:
-        runAsUser: 0
-        runAsGroup: 0`
+		coverageSecurityContextYAML = coverageSecurityContextYAMLFixture
 	}
 
 	slackWebhookURL := "http://mock-webhook:8080/webhook"

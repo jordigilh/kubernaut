@@ -74,7 +74,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			ImageName:        "kubernautagent",
 			DockerfilePath:   "docker/kubernautagent.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}

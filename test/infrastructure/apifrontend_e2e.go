@@ -47,7 +47,7 @@ const (
 	// AFDefaultClusterName is the Kind cluster name for apifrontend E2E tests.
 	AFDefaultClusterName = "apifrontend-e2e"
 	// AFDefaultNamespace is the Kubernetes namespace for AF E2E workloads.
-	AFDefaultNamespace = "kubernaut-system"
+	AFDefaultNamespace = kubernautSystem
 )
 
 // SetupAPIFrontendE2EInfrastructure is the top-level orchestrator for AF E2E tests.
@@ -385,7 +385,7 @@ func CollectAFE2EBinaryCoverage(clusterName string, writer io.Writer) error {
 		ServiceName:    "apifrontend",
 		ClusterName:    clusterName,
 		DeploymentName: "apifrontend",
-		Namespace:      "kubernaut-system",
+		Namespace:      kubernautSystem,
 		KubeconfigPath: kcPath,
 	}, writer)
 }

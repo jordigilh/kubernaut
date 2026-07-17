@@ -64,7 +64,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// DD-TEST-007: Create coverdata directory before Kind cluster creation
 	// Kind config references ./coverdata as extraMount, must exist before mount
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		_, _ = fmt.Fprintf(output, "\n📊 DD-TEST-007: Creating coverdata directory for E2E coverage...\n")
 		projectRoot, err := findProjectRoot()
 		if err != nil {

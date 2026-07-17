@@ -14,6 +14,11 @@ import (
 	"time"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	host2 = "host"
+)
+
 // ============================================================================
 // Generic Container Management (Reusable for Any Service)
 // ============================================================================
@@ -212,7 +217,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	// so cfg.Ports is just bookkeeping for ContainerInstance.Ports in that case.
 	// cfg.Ports format: map[containerPort]hostPort (e.g., 8080: 18120)
 	// Podman format: hostPort:containerPort (e.g., 18120:8080)
-	if cfg.Network != "host" {
+	if cfg.Network != host2 {
 		for containerPort, hostPort := range cfg.Ports {
 			args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
 		}

@@ -127,7 +127,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001 v2.7: Gateway :30080, DataStorage :30081")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 	projectRoot := getProjectRoot()
 	startTime := time.Now()
 
@@ -157,7 +157,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	extraMounts := []ExtraMount{}
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		extraMounts = append(extraMounts, ExtraMount{
 			HostPath:      coverdataPath,
 			ContainerPath: "/coverdata",
@@ -672,7 +672,7 @@ func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
 	sem := make(chan struct{}, 3)
 	var wg sync.WaitGroup
 
-	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
+	enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture
 
 	for _, baseCfg := range fullPipelineImageConfigs {
 		// Skip mock-llm build when SKIP_MOCK_LLM is set (local dev with real LLM)

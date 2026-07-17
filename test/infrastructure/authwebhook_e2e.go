@@ -33,6 +33,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 // SetupAuthWebhookInfrastructureParallel creates the full AuthWebhook E2E infrastructure with hybrid pattern.
 // This optimizes setup time by building images before cluster creation.
 //
@@ -80,7 +85,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		dsImageName, err := BuildImageForKind(cfg, writer)
 		if err != nil {
@@ -97,7 +102,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 			ImageName:        "authwebhook", // No repo prefix, just service name
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "", // Empty = project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		awImageName, err := BuildImageForKind(cfg, writer)
 		if err != nil {

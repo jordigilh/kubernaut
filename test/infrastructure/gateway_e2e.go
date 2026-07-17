@@ -27,6 +27,16 @@ import (
 	"time"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	e2eTestCoverage2 = "e2e-test-coverage"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	e2eTestCoverage = e2eTestCoverage2
+)
+
 // ========================================
 // GATEWAY E2E INFRASTRUCTURE
 // ========================================
@@ -86,7 +96,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	_, _ = fmt.Fprintln(writer, "  Authority: E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// DD-TEST-007: Create coverdata directory BEFORE cluster creation if coverage enabled
 	if enableCoverage {
@@ -639,10 +649,7 @@ func gatewayWorkloadManifest(imageName string, enableCoverage bool) string {
           hostPath:
             path: /coverdata
             type: DirectoryOrCreate`
-		coverageSecurityContextYAML = `
-      securityContext:
-        runAsUser: 0
-        runAsGroup: 0`
+		coverageSecurityContextYAML = coverageSecurityContextYAMLFixture
 	}
 
 	return fmt.Sprintf(`---
@@ -880,7 +887,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 	}
 
 	// Use unique image tag with coverage suffix
-	imageTag := "e2e-test-coverage"
+	imageTag := e2eTestCoverage
 	imageName := fmt.Sprintf("localhost/kubernaut-gateway:%s", imageTag)
 	_, _ = fmt.Fprintf(writer, "  📦 Building Gateway with coverage: %s\n", imageName)
 
@@ -902,7 +909,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 }
 
 func GetGatewayCoverageImageTag() string {
-	return "e2e-test-coverage"
+	return e2eTestCoverage
 }
 
 func GetGatewayCoverageFullImageName() string {
