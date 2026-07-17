@@ -196,7 +196,7 @@ var _ = Describe("AIAnalysis Full Reconciliation Integration", Label("integratio
 				// Check if retry annotation is set
 				_, hasRetry := analysis.Annotations["kubernaut.ai/retry-count"]
 				// Either completed or has retry annotation
-				return analysis.Status.Phase == "Completed" || hasRetry
+				return analysis.Status.Phase == aianalysisv1.PhaseCompleted || hasRetry
 			}, timeout, interval).Should(BeTrue())
 		})
 	})

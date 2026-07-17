@@ -43,6 +43,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	investigationInProgress = "Investigation in progress"
+)
+
 // drainEvents reads all available events from the FakeRecorder channel.
 func drainEvents(recorder *record.FakeRecorder) []string {
 	var collected []string
@@ -147,14 +152,14 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        statusManager,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    statusManager,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
@@ -210,7 +215,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			// Set phase to Investigating
 			testAnalysis.Status.Phase = aianalysis.PhaseInvestigating
-			testAnalysis.Status.Message = "Investigation in progress"
+			testAnalysis.Status.Message = investigationInProgress
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 
 			statusManager := aaStatus.NewManager(fakeClient, fakeClient)
@@ -222,14 +227,14 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        statusManager,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    statusManager,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
@@ -280,9 +285,9 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.Message = "Analysis in progress"
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pod",
+				WorkflowID:      "wf-restart-pod",
 				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
-				Confidence:     0.85,
+				Confidence:      0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 
@@ -295,14 +300,14 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        statusManager,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    statusManager,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
@@ -352,7 +357,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			// Set phase to Investigating
 			testAnalysis.Status.Phase = aianalysis.PhaseInvestigating
-			testAnalysis.Status.Message = "Investigation in progress"
+			testAnalysis.Status.Message = investigationInProgress
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 
 			statusManager := aaStatus.NewManager(fakeClient, fakeClient)
@@ -364,14 +369,14 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        statusManager,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    statusManager,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
@@ -421,9 +426,9 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pod",
+				WorkflowID:      "wf-restart-pod",
 				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
-				Confidence:     0.85,
+				Confidence:      0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 
@@ -436,14 +441,14 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        statusManager,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    statusManager,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
@@ -497,9 +502,9 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			// Set phase to Analyzing with a selected workflow
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pod",
+				WorkflowID:      "wf-restart-pod",
 				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
-				Confidence:     0.85,
+				Confidence:      0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 
@@ -512,14 +517,14 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        statusManager,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    statusManager,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
@@ -569,7 +574,7 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			// Set phase to Investigating
 			testAnalysis.Status.Phase = aianalysis.PhaseInvestigating
-			testAnalysis.Status.Message = "Investigation in progress"
+			testAnalysis.Status.Message = investigationInProgress
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 
 			statusManager := aaStatus.NewManager(fakeClient, fakeClient)
@@ -581,14 +586,14 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        statusManager,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    statusManager,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
@@ -649,14 +654,14 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			)
 
 			reconciler := &aianalysis.AIAnalysisReconciler{
-				Client:               fakeClient,
-				Scheme:               scheme,
-				Recorder:             recorder,
-				Log:                  ctrl.Log.WithName("test"),
-				Metrics:              testMetrics,
-				StatusManager:        statusManager,
-				AnalyzingHandler:     analyzingHandler,
-				AuditClient:          auditClient,
+				Client:           fakeClient,
+				Scheme:           scheme,
+				Recorder:         recorder,
+				Log:              ctrl.Log.WithName("test"),
+				Metrics:          testMetrics,
+				StatusManager:    statusManager,
+				AnalyzingHandler: analyzingHandler,
+				AuditClient:      auditClient,
 			}
 			reconciler.InvestigatingHandler.Store(investigatingHandler)
 
