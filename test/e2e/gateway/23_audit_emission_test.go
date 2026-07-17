@@ -38,6 +38,12 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	url118091             = "https://127.0.0.1:18091"
+	gatewayE2eAuditClient = "gateway-e2e-audit-client"
+)
+
 // =============================================================================
 // DD-AUDIT-003: Gateway → Data Storage Audit Integration Tests
 // =============================================================================
@@ -113,11 +119,11 @@ var _ = Describe("DD-AUDIT-003: Gateway → Data Storage Audit Integration", fun
 		// Per DD-TEST-001: All parallel processes share same Data Storage instance
 		dataStorageURL = os.Getenv("TEST_DATA_STORAGE_URL")
 		if dataStorageURL == "" {
-			dataStorageURL = "https://127.0.0.1:18091" // Issue #785: HTTPS (Kind hostPort maps to NodePort 30081)
+			dataStorageURL = url118091 // Issue #785: HTTPS (Kind hostPort maps to NodePort 30081)
 		}
 
 		// DD-AUTH-014: Create E2E ServiceAccount with DataStorage access permissions
-		e2eSAName := "gateway-e2e-audit-client"
+		e2eSAName := gatewayE2eAuditClient
 		err := infrastructure.CreateE2EServiceAccountWithDataStorageAccess(
 			ctx,
 			gatewayNamespace,
