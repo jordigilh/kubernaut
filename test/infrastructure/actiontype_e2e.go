@@ -133,10 +133,13 @@ func SeedActionTypesViaAPIWithTLS(dsURL, token, kubeconfigPath string, timeout t
 	return SeedActionTypesViaAPI(client, writer)
 }
 
-// SeedE2EActionTypes creates the ActionType CRs required by E2E test workflows.
-// Must be called AFTER CRDs are installed and the AuthWebhook is deployed, but
-// BEFORE SeedWorkflowsInDataStorage — the AW webhook registers each AT in the DB,
-// satisfying the action_type_taxonomy FK constraint for workflow registration.
+// SeedE2EActionTypes creates the ActionType CRs required by E2E test workflows,
+// via the real AuthWebhook admission path (kubectl apply -> AW admits -> AW
+// patches .status.registered=true locally, no DS round-trip as of #1661 Change
+// 8d). Must be called AFTER CRDs are installed and AuthWebhook is deployed, but
+// BEFORE SeedWorkflowsInDataStorage. Use this variant when the E2E suite already
+// deploys AuthWebhook and the test wants to prove the real admission path works;
+// otherwise use SeedActionTypesViaCRD, which has no AuthWebhook dependency.
 func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d E2E ActionType CRDs in %s\n", len(e2eActionTypes), namespace)
@@ -175,6 +178,45 @@ func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) erro
 	}
 
 	_, _ = fmt.Fprintf(output, "✅ All E2E ActionTypes seeded and registered\n\n")
+	return nil
+}
+
+// SeedActionTypesViaCRD creates the ActionType CRs required by E2E/integration
+// test workflows, directly against the K8s API -- with no dependency on
+// AuthWebhook being deployed. Use this instead of SeedE2EActionTypes for
+// suites that don't run AuthWebhook (e.g. Gateway, AIAnalysis, APIFrontend, KA,
+// SignalProcessing, WorkflowExecution-bundles E2E/IT suites, which exercise
+// their own component rather than AW's admission path): DataStorage's
+// informer-backed cache (pkg/datastorage/workflowcache, #1661 Phase 28-30)
+// observes the raw CRD directly and needs no admission-controller status patch
+// to make it discoverable.
+//
+// #1661 Phase 52 (Change 9, discovered gap): the sole DS-catalog-facing
+// replacement for SeedActionTypesViaAPI/SeedActionTypesViaAPIWithTLS, which
+// call DataStorage's Postgres-backed POST /api/v1/action-types endpoint
+// (removed in Phase 55).
+func SeedActionTypesViaCRD(kubeconfigPath, namespace string, output io.Writer) error {
+	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d action types via direct CRD creation (no AuthWebhook)\n", len(e2eActionTypes))
+	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	for _, at := range e2eActionTypes {
+		yaml := buildActionTypeYAML(at, namespace)
+
+		cmd := exec.Command("kubectl", "apply",
+			"--kubeconfig", kubeconfigPath,
+			"-f", "-")
+		cmd.Stdin = strings.NewReader(yaml)
+
+		cmdOutput, err := cmd.CombinedOutput()
+		if err != nil {
+			_, _ = fmt.Fprintf(output, "  ❌ %s: %s\n", at.SpecName, cmdOutput)
+			return fmt.Errorf("failed to apply ActionType %s: %w", at.SpecName, err)
+		}
+		_, _ = fmt.Fprintf(output, "  ✅ %s\n", at.SpecName)
+	}
+
+	_, _ = fmt.Fprintf(output, "✅ All action types seeded as CRDs (%d types, no AuthWebhook dependency)\n\n", len(e2eActionTypes))
 	return nil
 }
 
