@@ -179,7 +179,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 			Scopes:           fleetclient.DefaultFleetScopes(cfg.Integrations.Fleet.OAuth2.Scopes),
 			TokenTimeout:     10 * time.Second,
 		}
-		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 		fleetLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
 			"tokenURL", cfg.Integrations.Fleet.OAuth2.TokenURL,
 			"secretPath", basePath)

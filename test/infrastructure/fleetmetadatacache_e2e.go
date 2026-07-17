@@ -117,7 +117,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		BuildContextPath: "",
 		EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 	}
-	fmcImage, err = BuildImageForKind(buildCfg, writer)
+	fmcImage, err = BuildImageForKind(ctx, buildCfg, writer)
 	if err != nil {
 		return "", "", fmt.Errorf("fleetmetadatacache image build failed: %w", err)
 	}
@@ -145,7 +145,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 
 	// ── Phase 3: Load image into Kind ────────────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading image into Kind...")
-	if loadErr := LoadImageToKind(fmcImage, "fleetmetadatacache", clusterName, writer); loadErr != nil {
+	if loadErr := LoadImageToKind(ctx, fmcImage, "fleetmetadatacache", clusterName, writer); loadErr != nil {
 		return "", "", fmt.Errorf("failed to load fleetmetadatacache image: %w", loadErr)
 	}
 

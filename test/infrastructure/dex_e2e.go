@@ -361,6 +361,6 @@ func dexHTTPClient(c *http.Client) *http.Client {
 }
 
 // PreloadDexImage pulls the DEX image and loads it into the Kind cluster.
-func PreloadDexImage(clusterName string, writer io.Writer) error {
-	return PreloadExternalImage(dexImage, clusterName, writer)
+func PreloadDexImage(ctx context.Context, clusterName string, writer io.Writer) error {
+	return PreloadExternalImage(ctx, dexImage, clusterName, writer)
 }

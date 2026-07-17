@@ -263,7 +263,7 @@ func (s *Server) persistAuditEventsBatch(ctx context.Context, w http.ResponseWri
 	s.metrics.WriteDuration.WithLabelValues("audit_events_batch").Observe(duration)
 
 	if err != nil {
-		s.handleBatchWriteFailure(w, r, auditEvents, err, duration)
+		s.handleBatchWriteFailure(w, r, auditEvents, err, duration) //nolint:contextcheck // DD-009 per-item DLQ fallback is a last-resort integrity path; must not risk losing events to the same request context that saw the primary write fail
 		return
 	}
 

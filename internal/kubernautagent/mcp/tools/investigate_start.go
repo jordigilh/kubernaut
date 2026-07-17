@@ -63,7 +63,7 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		t.metrics.RecordInteractiveTakeover("start_success")
 	}
 
-	t.emitInteractiveStarted(sess.SessionID, input.RRID, user.Username)
+	t.emitInteractiveStarted(sess.SessionID, input.RRID, user.Username) //nolint:contextcheck // emitInteractiveStarted uses audit.StoreBestEffort by design (ADR-038); see investigate_autonomous.go doc comment
 	t.startTimeoutTracking(sess.SessionID)
 	t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 

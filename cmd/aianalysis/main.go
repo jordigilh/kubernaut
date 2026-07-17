@@ -249,7 +249,7 @@ func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisC
 		FlushInterval: cfg.DataStorage.Buffer.FlushInterval,
 		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
 	}
-	auditStore, err := sharedaudit.NewBufferedStore(
+	auditStore, err := sharedaudit.NewBufferedStore( //nolint:contextcheck // background audit writer goroutine is fire-and-forget by design; not tied to any single request
 		dsClient,
 		auditConfig,
 		"aianalysis",

@@ -304,7 +304,7 @@ func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
 		}
 		return nil, errors.New("internal server error")
 	}
-	err := h.sessions.CancelInvestigation(params.SessionID)
+	err := h.sessions.CancelInvestigation(params.SessionID) //nolint:contextcheck // CancelInvestigation->terminateSession cleans up a session whose original context may already be gone
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound{

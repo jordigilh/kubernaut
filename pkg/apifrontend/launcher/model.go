@@ -63,7 +63,7 @@ func NewModelFromConfig(ctx context.Context, cfg types.LLMConfig) (model.LLM, er
 	case types.LLMProviderAnthropic:
 		return newAnthropicModel(ctx, cfg)
 	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
-		return newOpenAICompatibleModel(cfg)
+		return newOpenAICompatibleModel(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q", cfg.Provider)
 	}
@@ -97,7 +97,7 @@ func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error)
 		}
 	}
 
-	httpClient, err := BuildLLMHTTPClient(cfg)
+	httpClient, err := BuildLLMHTTPClient(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	if err != nil {
 		return nil, fmt.Errorf("build HTTP client: %w", err)
 	}

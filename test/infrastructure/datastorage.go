@@ -516,7 +516,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		BuildContextPath: "", // Empty = use project root (default)
 		EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 	}
-	dsImageName, err := BuildImageForKind(cfg, writer)
+	dsImageName, err := BuildImageForKind(ctx, cfg, writer)
 	if err != nil {
 		return fmt.Errorf("DS image build failed: %w", err)
 	}
@@ -582,7 +582,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	// Goroutine 1: Load pre-built DataStorage image to Kind
 	go func() {
 		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := LoadImageToKind(dsImageName, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImageName, "datastorage", clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image load failed: %w", err)
 		}
@@ -2106,7 +2106,7 @@ func getContainerIP(containerName string) string {
 //   - error: Any errors during image build
 //
 // Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, error) {
+func buildDataStorageImageWithTag(ctx context.Context, imageTag string, writer io.Writer) (string, error) {
 	// CI/CD Optimization: Check if we can use a pre-built image from registry
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
@@ -2115,7 +2115,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, er
 		_, _ = fmt.Fprintf(writer, "  🔄 Registry mode: IMAGE_REGISTRY=%s IMAGE_TAG=%s\n", registry, tag)
 		_, _ = fmt.Fprintf(writer, "  🔍 Verifying DataStorage image in registry: %s\n", registryImage)
 
-		exists, err := VerifyImageExistsInRegistry(registryImage, writer)
+		exists, err := VerifyImageExistsInRegistry(ctx, registryImage, writer)
 		if err == nil && exists {
 			_, _ = fmt.Fprintf(writer, "  ✅ DataStorage image found in registry: %s\n", registryImage)
 			_, _ = fmt.Fprintf(writer, "  💡 Podman will auto-pull during container start (skipping local build)\n")
@@ -2153,7 +2153,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, er
 
 	buildArgs = append(buildArgs, ".")
 
-	buildCmd := exec.CommandContext(context.Background(), "podman", buildArgs...)
+	buildCmd := exec.CommandContext(ctx, "podman", buildArgs...)
 	buildCmd.Dir = workspaceRoot
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer

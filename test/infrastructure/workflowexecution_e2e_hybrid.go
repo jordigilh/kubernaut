@@ -134,7 +134,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			BuildContextPath: "",
 			EnableCoverage:   enableCoverage,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "WorkflowExecution (coverage)", imageName: imageName, err: err}
 	}()
 
@@ -147,7 +147,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
@@ -160,7 +160,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
 	}()
 
@@ -268,21 +268,21 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Load WorkflowExecution controller image
 	go func() {
 		wfeImage := builtImages["WorkflowExecution (coverage)"]
-		err := LoadImageToKind(wfeImage, "workflowexecution-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, wfeImage, "workflowexecution-controller", clusterName, writer)
 		loadResults <- loadResult{name: "WorkflowExecution coverage", err: err}
 	}()
 
 	// Load DataStorage image
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
@@ -299,7 +299,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			"quay.io/centos/centos:stream9",
 		}
 		for _, img := range thirdPartyImages {
-			if preloadErr := PreloadExternalImage(img, clusterName, writer); preloadErr != nil {
+			if preloadErr := PreloadExternalImage(ctx, img, clusterName, writer); preloadErr != nil {
 				loadResults <- loadResult{name: "AWX third-party images", err: fmt.Errorf("preload %s: %w", img, preloadErr)}
 				return
 			}

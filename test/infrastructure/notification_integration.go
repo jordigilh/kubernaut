@@ -113,7 +113,7 @@ const (
 //
 // Manual Infrastructure Control:
 //   import "github.com/jordigilh/kubernaut/test/infrastructure"
-//   infrastructure.StartNotificationIntegrationInfrastructure(os.Stdout)
+//   infrastructure.StartNotificationIntegrationInfrastructure(ctx, os.Stdout)
 //   defer infrastructure.StopNotificationIntegrationInfrastructure(os.Stdout)
 //
 // Health Check:
@@ -142,7 +142,7 @@ const (
 //
 // Returns:
 // - error: Any errors during infrastructure startup
-func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
+func StartNotificationIntegrationInfrastructure(ctx context.Context, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Notification Integration Test Infrastructure Setup\n")
 	_, _ = fmt.Fprintf(writer, "Per DD-TEST-002: Sequential Startup Pattern\n")
@@ -250,7 +250,7 @@ echo "Migrations complete!"`)
 	// ============================================================================
 	dsImageTag := GenerateInfraImageName("datastorage", "notification")
 	_, _ = fmt.Fprintf(writer, "🏗️  Resolving DataStorage image (%s)...\n", dsImageTag)
-	actualDSImage, err := buildDataStorageImageWithTag(dsImageTag, writer)
+	actualDSImage, err := buildDataStorageImageWithTag(ctx, dsImageTag, writer)
 	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}

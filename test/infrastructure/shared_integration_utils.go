@@ -616,7 +616,7 @@ type IntegrationDataStorageConfig struct {
 //	    RedisHost: "aianalysis_redis_1",
 //	    RedisPort: 6379,
 //	}
-//	if err := StartDataStorage(cfg, writer); err != nil {
+//	if err := StartDataStorage(ctx, cfg, writer); err != nil {
 //	    return err
 //	}
 //
@@ -624,7 +624,7 @@ type IntegrationDataStorageConfig struct {
 //	if err := WaitForHTTPHealth("http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
 //	    return err
 //	}
-func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error {
+func StartDataStorage(ctx context.Context, cfg IntegrationDataStorageConfig, writer io.Writer) error {
 	projectRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find project root: %w", err)
@@ -654,7 +654,7 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	// Per DD-INTEGRATION-001: Use docker/data-storage.Dockerfile (authoritative location)
 	// CI/CD Optimization: If IMAGE_REGISTRY + IMAGE_TAG are set, uses registry image (podman auto-pulls)
 	_, _ = fmt.Fprintf(writer, "   Resolving DataStorage image (%s)...\n", cfg.ImageTag)
-	actualImage, err := buildDataStorageImageWithTag(cfg.ImageTag, writer)
+	actualImage, err := buildDataStorageImageWithTag(ctx, cfg.ImageTag, writer)
 	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
@@ -843,7 +843,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 7: Start DataStorage (using shared utility)
-//       if err := StartDataStorage(IntegrationDataStorageConfig{
+//       if err := StartDataStorage(ctx, IntegrationDataStorageConfig{
 //           ContainerName: "myservice_datastorage_1",
 //           Port: 18096,
 //           Network: "myservice_test-network",

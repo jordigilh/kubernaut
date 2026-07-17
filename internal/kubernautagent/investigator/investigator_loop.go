@@ -504,5 +504,5 @@ func (inv *Investigator) emitCancellationAudit(ctx context.Context, result *katy
 			event.Data["accumulated_messages"] = s
 		}
 	}
-	audit.StoreBestEffort(context.Background(), inv.auditStore, event, inv.logger)
+	audit.StoreBestEffort(context.Background(), inv.auditStore, event, inv.logger) //nolint:contextcheck // audit.StoreBestEffort is intentionally fire-and-forget so a cancelled investigation context cannot drop the event
 }

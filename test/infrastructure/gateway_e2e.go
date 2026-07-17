@@ -134,7 +134,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 			BuildContextPath: "", // Empty = project root
 			EnableCoverage:   enableCoverage,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("gateway image build failed: %w", err)
 		}
@@ -150,7 +150,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 			BuildContextPath: "",             // Empty = project root
 			EnableCoverage:   enableCoverage, // Use parameter instead of env var
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image build failed: %w", err)
 		}
@@ -231,7 +231,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Goroutine 1: Load Gateway image (FIXED: Now uses split API!)
 	go func() {
-		err := loadGatewayImageToKind(gatewayImageName, clusterName, writer)
+		err := loadGatewayImageToKind(ctx, gatewayImageName, clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("gateway image load failed: %w", err)
 		}
@@ -240,7 +240,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Goroutine 2: Load DataStorage image using new split API
 	go func() {
-		err := LoadImageToKind(dataStorageImageName, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dataStorageImageName, "datastorage", clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("ds image load failed: %w", err)
 		}
@@ -255,7 +255,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 			"quay.io/jordigilh/redis:7-alpine",
 		}
 		for _, img := range thirdPartyImages {
-			if err := PreloadExternalImage(img, clusterName, writer); err != nil {
+			if err := PreloadExternalImage(ctx, img, clusterName, writer); err != nil {
 				results <- result{name: "Third-party images", err: fmt.Errorf("preload %s: %w", img, err)}
 				return
 			}
@@ -526,9 +526,9 @@ func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writ
 // This is Phase 3 of the hybrid E2E pattern (load after cluster creation).
 //
 // Pattern: Load pre-built image using LoadImageToKind() helper
-func loadGatewayImageToKind(imageName, clusterName string, writer io.Writer) error {
+func loadGatewayImageToKind(ctx context.Context, imageName, clusterName string, writer io.Writer) error {
 	// Use the consolidated LoadImageToKind() helper
-	return LoadImageToKind(imageName, "gateway", clusterName, writer)
+	return LoadImageToKind(ctx, imageName, "gateway", clusterName, writer)
 }
 
 // buildAndLoadGatewayImage builds Gateway Docker image using shared build utilities and loads it into Kind

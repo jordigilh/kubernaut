@@ -64,7 +64,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (WITH DYNAMIC TAG)")
 	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (FOR SOC2 CC8.1)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2 minutes (parallel)")
-	_, _ = fmt.Fprintln(writer, "  Using consolidated API: BuildImageForKind()")
+	_, _ = fmt.Fprintln(writer, "  Using consolidated API: BuildImageForKind(ctx, )")
 	_, _ = fmt.Fprintln(writer, "  Note: Notification controller NOT needed - only CRD validation required")
 
 	type imageBuildResult struct {
@@ -84,7 +84,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			BuildContextPath: "",                                                     // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture || os.Getenv("GOCOVERDIR") != "",
 		}
-		roImage, err := BuildImageForKind(cfg, writer)
+		roImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "RemediationOrchestrator (coverage)", image: roImage, err: err}
 	}()
 
@@ -97,7 +97,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			BuildContextPath: "", // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		dsImage, err := BuildImageForKind(cfg, writer)
+		dsImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "DataStorage", image: dsImage, err: err}
 	}()
 
@@ -110,7 +110,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			BuildContextPath: "", // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		awImage, err := BuildImageForKind(cfg, writer)
+		awImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "AuthWebhook", image: awImage, err: err}
 	}()
 
@@ -202,7 +202,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (with dynamic tag)")
 	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook image (SOC2 CC8.1 user attribution)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
-	_, _ = fmt.Fprintln(writer, "  Using consolidated API: LoadImageToKind()")
+	_, _ = fmt.Fprintln(writer, "  Using consolidated API: LoadImageToKind(ctx, )")
 	_, _ = fmt.Fprintln(writer, "  Note: OAuth2-Proxy pulled automatically from quay.io during deployment")
 
 	type loadResult struct {
@@ -214,21 +214,21 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Load RemediationOrchestrator coverage image using consolidated API
 	go func() {
 		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := LoadImageToKind(roImage, "remediationorchestrator-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, roImage, "remediationorchestrator-controller", clusterName, writer)
 		loadResults <- loadResult{name: "RemediationOrchestrator coverage", err: err}
 	}()
 
 	// Load DataStorage image using consolidated API
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 

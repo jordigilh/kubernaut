@@ -22,9 +22,9 @@ import (
 	"strings"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // ToolProxy wraps a registry.ToolRegistry, intercepting Execute calls
@@ -87,7 +87,7 @@ func NotifyRCAComplete(ctx context.Context, messages []llm.Message) {
 	if obs == nil {
 		return
 	}
-	obs.StartGroundingReview(messages)
+	obs.StartGroundingReview(messages) //nolint:contextcheck // StartGroundingReview runs its review in a separate goroutine by design; see its doc comment
 }
 
 // ToolsForPhase delegates directly to the inner registry.

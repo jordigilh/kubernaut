@@ -159,7 +159,7 @@ func buildDSClientDeps(ctx context.Context, cfg *config.Config, deps *backendDep
 		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ds-ca", watcher: dsWatcher})
 	}
 
-	deps.DSResilientTransport = buildResilientTransport(dsTransport, &cfg.Resilience.DS, "ds", metricsReg, auditor)
+	deps.DSResilientTransport = buildResilientTransport(dsTransport, &cfg.Resilience.DS, "ds", metricsReg, auditor) //nolint:contextcheck // circuit-breaker audit callback fires on state transitions, not tied to the request that triggered them
 
 	var dsAuthTransport http.RoundTripper = deps.DSResilientTransport
 	if cfg.Agent.DSBearerTokenFile != "" {
@@ -197,7 +197,7 @@ func buildKAClientDeps(ctx context.Context, cfg *config.Config, deps *backendDep
 		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "ka-ca", watcher: kaWatcher})
 	}
 
-	kaMCPResilient := buildResilientTransport(kaTransport, &cfg.Resilience.KA, "ka-mcp", metricsReg, auditor)
+	kaMCPResilient := buildResilientTransport(kaTransport, &cfg.Resilience.KA, "ka-mcp", metricsReg, auditor) //nolint:contextcheck // circuit-breaker audit callback fires on state transitions, not tied to the request that triggered them
 	var kaMCPAuth http.RoundTripper = kaMCPResilient
 	if cfg.Agent.KABearerTokenFile != "" {
 		kaMCPAuth = &bearerTokenTransport{
@@ -267,7 +267,7 @@ func buildKAClientDeps(ctx context.Context, cfg *config.Config, deps *backendDep
 		RetryInitBackoff:   cfg.Resilience.KA.RetryInitBackoff,
 		RetryMaxBackoff:    cfg.Resilience.KA.RetryMaxBackoff,
 		RetryableStatuses:  cfg.Resilience.KA.RetryableStatuses,
-		CBAuditFunc:        resilience.CircuitBreakerAuditFunc(auditor),
+		CBAuditFunc:        resilience.CircuitBreakerAuditFunc(auditor), //nolint:contextcheck // circuit-breaker audit callback fires on state transitions, not tied to the request that triggered them
 	}, &ka.ClientMetrics{
 		StateGauge:   metricsReg.CircuitBreakerState,
 		DurationHist: metricsReg.DownstreamDuration,
@@ -494,7 +494,7 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 			Scopes:           cfg.Fleet.OAuth2.Scopes,
 			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
 		}
-		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 
 	resilienceCfg := mcpclient.DefaultResilienceConfig()
@@ -597,7 +597,7 @@ func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger
 	case types.LLMProviderAnthropic:
 		return newAnthropicTriagerDirect(ctx, llmCfg, logger)
 	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
-		return newOpenAICompatibleTriager(llmCfg, logger)
+		return newOpenAICompatibleTriager(llmCfg, logger) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	default:
 		return nil, fmt.Errorf("unsupported triage LLM provider: %q", llmCfg.Provider)
 	}

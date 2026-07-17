@@ -364,9 +364,9 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 	case ActionMessage:
 		return t.handleMessage(ctx, input, user)
 	case ActionComplete:
-		return t.handleComplete(input, user)
+		return t.handleComplete(input, user) //nolint:contextcheck // emitInteractiveCompleted uses audit.StoreBestEffort by design (ADR-038); see investigate_autonomous.go doc comment
 	case ActionCancel:
-		return t.handleCancel(input, user)
+		return t.handleCancel(input, user) //nolint:contextcheck // emitInteractiveCompleted uses audit.StoreBestEffort by design (ADR-038); see investigate_autonomous.go doc comment
 	case ActionStatus:
 		return t.handleStatus(input, user)
 	case ActionReconnect:

@@ -231,7 +231,7 @@ func logEffectiveServerConfig(cfg *config.Config, logger logr.Logger) time.Durat
 // motion, no behavior change.
 func runAndWaitForShutdown(ctx context.Context, cfg *config.Config, srv *server.Server, obs *observabilityServers, shutdownTimeout time.Duration, logger logr.Logger) {
 	serverErrors := make(chan error, 1)
-	go func() {
+	go func() { //nolint:contextcheck // runAndWaitForShutdown's Start goroutine runs for the server's process lifetime; no per-request context applies
 		addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 		logger.Info("HTTP server listening",
 			"addr", addr,
@@ -255,13 +255,13 @@ func runAndWaitForShutdown(ctx context.Context, cfg *config.Config, srv *server.
 
 		healthCtx, healthCancel := context.WithTimeout(context.Background(), healthShutdownTimeout)
 		defer healthCancel()
-		if err := obs.health.Shutdown(healthCtx); err != nil {
+		if err := obs.health.Shutdown(healthCtx); err != nil { //nolint:contextcheck // shutdown uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
 			logger.Error(err, "Health server shutdown failed")
 		}
 
 		metricsCtx, metricsCancel := context.WithTimeout(context.Background(), metricsShutdownTimeout)
 		defer metricsCancel()
-		if err := obs.metrics.Shutdown(metricsCtx); err != nil {
+		if err := obs.metrics.Shutdown(metricsCtx); err != nil { //nolint:contextcheck // shutdown uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
 			logger.Error(err, "Metrics server shutdown failed")
 		}
 	}

@@ -84,7 +84,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"datastorage", imageName, err}
 	}()
 
@@ -96,7 +96,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
 	}()
 
@@ -108,7 +108,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"aianalysis", imageName, err}
 	}()
 
@@ -121,7 +121,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"mock-llm", imageName, err}
 	}()
 

@@ -133,7 +133,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 			DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile",
 			EnableCoverage: enableCoverage,
 		}
-		image, err := BuildImageForKind(cfg, writer)
+		image, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "EffectivenessMonitor", image: image, err: err}
 	}()
 
@@ -145,7 +145,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 			DockerfilePath: "docker/data-storage.Dockerfile",
 			EnableCoverage: enableCoverage,
 		}
-		image, err := BuildImageForKind(cfg, writer)
+		image, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "DataStorage", image: image, err: err}
 	}()
 
@@ -157,7 +157,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 			DockerfilePath: "docker/authwebhook.Dockerfile",
 			EnableCoverage: enableCoverage,
 		}
-		image, err := BuildImageForKind(cfg, writer)
+		image, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "AuthWebhook", image: image, err: err}
 	}()
 
@@ -202,7 +202,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 
 	// Load images into Kind
 	for name, image := range builtImages {
-		if err := LoadImageToKind(image, strings.ToLower(name), clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, image, strings.ToLower(name), clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load %s image: %w", name, err)
 		}
 	}
@@ -219,7 +219,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		if err := pullCmd.Run(); err != nil {
 			return fmt.Errorf("failed to pull %s: %w", img.image, err)
 		}
-		if err := LoadImageToKind(img.image, img.name, clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, img.image, img.name, clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load %s image: %w", img.image, err)
 		}
 	}

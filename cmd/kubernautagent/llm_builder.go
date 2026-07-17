@@ -54,7 +54,7 @@ func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Cli
 		vertexOpts = append(vertexOpts, anthropicfamily.WithHTTPTimeout(timeout))
 		vertexOpts = append(vertexOpts, anthropicReasoningOptions(cfg)...)
 
-		chain, err := buildTransportChain(cfg)
+		chain, err := buildTransportChain(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 		if err != nil {
 			return nil, fmt.Errorf("vertex_ai transport chain: %w", err)
 		}
@@ -67,9 +67,9 @@ func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Cli
 			cfg.VertexProject, cfg.VertexLocation,
 			vertexOpts...)
 	case types.LLMProviderAnthropic:
-		return buildAnthropicNativeClient(cfg)
+		return buildAnthropicNativeClient(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
-		return buildOpenAICompatClient(cfg)
+		return buildOpenAICompatClient(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q", cfg.Provider)
 	}

@@ -90,7 +90,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		TlsCaFile:        cfg.OAuth2.TlsCaFile,
 	}
 	opts := []mcpclient.Option{
-		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger),
+		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 	logger.Info("OAuth2 authentication configured for MCP Gateway",
 		"tokenURL", cfg.OAuth2.TokenURL,
@@ -247,10 +247,10 @@ func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan 
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-	if err := servers.api.Shutdown(shutdownCtx); err != nil {
+	if err := servers.api.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
 		logger.Error(err, "API server shutdown failed")
 	}
-	if err := servers.metrics.Shutdown(shutdownCtx); err != nil {
+	if err := servers.metrics.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
 		logger.Error(err, "Metrics server shutdown failed")
 	}
 }

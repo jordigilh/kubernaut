@@ -311,7 +311,7 @@ func wireFleetOwnerResolution(
 
 	fleetOpts := []fleetclient.Option{}
 	if serverCfg.Fleet.OAuth2.Enabled {
-		fleetOpts = append(fleetOpts, buildFleetOAuth2Option(serverCfg, logger.WithName("fleet-oauth2")))
+		fleetOpts = append(fleetOpts, buildFleetOAuth2Option(serverCfg, logger.WithName("fleet-oauth2"))) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 
 	resilienceCfg := fleetclient.DefaultResilienceConfig()

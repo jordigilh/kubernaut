@@ -63,7 +63,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"datastorage", imageName, err}
 	}()
 
@@ -76,7 +76,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
 	}()
 
@@ -88,7 +88,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"mock-llm", imageName, err}
 	}()
 
@@ -278,7 +278,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// DD-AUTH-MCP-001 v2.0: Pattern B validation with real OIDC provider.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5.8: Deploying DEX OIDC Provider (#1009)...")
-	if err := PreloadDexImage(clusterName, writer); err != nil {
+	if err := PreloadDexImage(ctx, clusterName, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to preload DEX image (non-fatal, Kind may pull): %v\n", err)
 	}
 	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {

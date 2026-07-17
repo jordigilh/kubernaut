@@ -145,7 +145,7 @@ func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Co
 	// ========================================
 	// AUDIT STORE INITIALIZATION (DD-AUDIT-003, DD-API-001)
 	// ========================================
-	auditStore, err := buildAuditStore(cfg)
+	auditStore, err := buildAuditStore(cfg) //nolint:contextcheck // background audit writer goroutine is fire-and-forget by design; not tied to any single request
 	if err != nil {
 		setupLog.Error(err, "Failed to create audit store")
 		os.Exit(1)
@@ -220,7 +220,7 @@ func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Co
 	stopConfigWatcher = setupFleetReadinessCheck(
 		ctx, mgr, routingEngine, fleetResilientClient, cfg, stopConfigWatcher, setupLog)
 
-	if err = roReconciler.SetupWithManager(mgr); err != nil {
+	if err = roReconciler.SetupWithManager(mgr); err != nil { //nolint:contextcheck // SetupWithManager is controller-runtime's reconciler-registration contract (no ctx param) called once at startup
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
 	}
@@ -524,7 +524,7 @@ func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger
 	// BR-ORCH-037 AC-037-08, Issue #590: Wire self-resolved notification toggle
 	roReconciler.SetNotifySelfResolved(cfg.Notifications.NotifySelfResolved)
 
-	wireClusterIdentity(roReconciler, mgr, logger)
+	wireClusterIdentity(roReconciler, mgr, logger) //nolint:contextcheck // wireClusterIdentity performs a one-time startup discovery call; no parent request context exists yet
 	wireDistributedLockManager(roReconciler, mgr, logger)
 
 	// ADR-068: Wire fleet config for federated scope fallback path
@@ -540,7 +540,7 @@ func buildReconciler(ctx context.Context, p reconcilerParams, logger logr.Logger
 
 	// #835, DD-INFRA-001: Start config file watcher for hot-reload.
 	// Only enabled when a config file is explicitly provided (not defaults).
-	stop := startReconcilerConfigWatcher(roReconciler, p.configPath, noop, logger)
+	stop := startReconcilerConfigWatcher(roReconciler, p.configPath, noop, logger) //nolint:contextcheck // startReconcilerConfigWatcher starts a process-lifetime file watcher at startup; no parent request context exists yet
 
 	return roReconciler, fleetResilientClient, stop, nil
 }
@@ -732,7 +732,7 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, cfg
 			Scopes:           cfg.Fleet.OAuth2.Scopes,
 			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
 		}
-		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 
 	resilienceCfg := mcpclient.DefaultResilienceConfig()

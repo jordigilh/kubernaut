@@ -149,7 +149,7 @@ func wireAuthWebhookAuditStore(ctx context.Context, cfg *awconfig.Config) audit.
 		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
 	}
 
-	auditStore, err := audit.NewBufferedStore(
+	auditStore, err := audit.NewBufferedStore( //nolint:contextcheck // background audit writer goroutine is fire-and-forget by design; not tied to any single request
 		dsClient,
 		auditConfig,
 		"authwebhook",
@@ -166,7 +166,7 @@ func wireAuthWebhookAuditStore(ctx context.Context, cfg *awconfig.Config) audit.
 		setupLog.Info("Flushing audit store before shutdown...")
 		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := auditStore.Flush(flushCtx); err != nil {
+		if err := auditStore.Flush(flushCtx); err != nil { //nolint:contextcheck // flush uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
 			setupLog.Error(err, "failed to flush audit store during shutdown")
 		} else {
 			setupLog.Info("Audit store flushed successfully")

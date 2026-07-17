@@ -390,6 +390,6 @@ func keycloakHTTPClient(c *http.Client) *http.Client {
 }
 
 // PreloadKeycloakImage pulls the Keycloak image and loads it into the Kind cluster.
-func PreloadKeycloakImage(clusterName string, writer io.Writer) error {
-	return PreloadExternalImage(keycloakImage, clusterName, writer)
+func PreloadKeycloakImage(ctx context.Context, clusterName string, writer io.Writer) error {
+	return PreloadExternalImage(ctx, keycloakImage, clusterName, writer)
 }

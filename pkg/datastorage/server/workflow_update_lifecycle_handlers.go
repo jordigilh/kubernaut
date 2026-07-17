@@ -84,7 +84,7 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BR-STORAGE-183: Audit workflow update (business logic operation)
-	h.auditWorkflowUpdateAsync(workflow, updateReq)
+	h.auditWorkflowUpdateAsync(workflow, updateReq) //nolint:contextcheck // auditWorkflowUpdateAsync emits in a background goroutine by design, decoupled from the request lifecycle
 
 	h.logger.Info("Workflow updated",
 		"workflow_id", workflowID,
@@ -380,7 +380,7 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 	workflow.DisabledBy = nil
 	workflow.DisabledReason = nil
 
-	h.auditWorkflowLifecycleChange(workflowID, "Active", workflow, "enable", nil)
+	h.auditWorkflowLifecycleChange(workflowID, "Active", workflow, "enable", nil) //nolint:contextcheck // auditWorkflowLifecycleChange emits in a background goroutine (BR-STORAGE-183); see doc comment
 
 	h.logger.Info("Workflow enabled",
 		"workflow_id", workflowID,
@@ -431,7 +431,7 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 
 	workflow.Status = "Deprecated"
 
-	h.auditWorkflowLifecycleChange(workflowID, "Deprecated", workflow, "deprecate", nil)
+	h.auditWorkflowLifecycleChange(workflowID, "Deprecated", workflow, "deprecate", nil) //nolint:contextcheck // auditWorkflowLifecycleChange emits in a background goroutine (BR-STORAGE-183); see doc comment
 
 	h.logger.Info("Workflow deprecated",
 		"workflow_id", workflowID,
@@ -486,7 +486,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 	workflow.DisabledReason = disableReq.Reason
 
 	// DD-AUDIT-002 V2.0.1: Workflow disable is a status update (captured via workflow.updated)
-	h.auditWorkflowLifecycleChange(workflowID, models.WorkflowStatusDisabled, workflow, "disable", func(fields *api.WorkflowCatalogUpdatedFields) {
+	h.auditWorkflowLifecycleChange(workflowID, models.WorkflowStatusDisabled, workflow, "disable", func(fields *api.WorkflowCatalogUpdatedFields) { //nolint:contextcheck // auditWorkflowLifecycleChange emits in a background goroutine (BR-STORAGE-183); see doc comment
 		fields.DisabledBy.SetTo(updatedBy)
 		fields.DisabledReason.SetTo(reason)
 	})

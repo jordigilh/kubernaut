@@ -368,7 +368,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 
 	_, _ = fmt.Fprintln(writer, "  📦 Pre-loading fleet external images...")
 	for _, img := range []string{KubeMCPServerImage, kuadrantControllerImage, kuadrantBrokerImage, valkeyImage} {
-		if loadErr := PreloadExternalImage(img, clusterName, writer); loadErr != nil {
+		if loadErr := PreloadExternalImage(ctx, img, clusterName, writer); loadErr != nil {
 			_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
 		}
 	}

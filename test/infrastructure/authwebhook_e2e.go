@@ -87,7 +87,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		dsImageName, err := BuildImageForKind(cfg, writer)
+		dsImageName, err := BuildImageForKind(ctx, cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image build failed: %w", err)
 		}
@@ -104,7 +104,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 			BuildContextPath: "", // Empty = project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		awImageName, err := BuildImageForKind(cfg, writer)
+		awImageName, err := BuildImageForKind(ctx, cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("AuthWebhook image build failed: %w", err)
 		}
@@ -191,7 +191,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Goroutine 1: Load pre-built DataStorage image
 	go func() {
-		err := LoadImageToKind(dsImageName, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImageName, "datastorage", clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image load failed: %w", err)
 		}
@@ -200,7 +200,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Goroutine 2: Load pre-built AuthWebhook image
 	go func() {
-		err := loadAuthWebhookImageOnly(awImageName, clusterName, writer)
+		err := loadAuthWebhookImageOnly(ctx, awImageName, clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("AuthWebhook image load failed: %w", err)
 		}
@@ -306,8 +306,8 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 // loadAuthWebhookImageOnly loads a pre-built AuthWebhook image to Kind cluster.
 // This is Phase 3 of the hybrid E2E pattern (load after cluster creation).
-func loadAuthWebhookImageOnly(imageName, clusterName string, writer io.Writer) error {
-	return LoadImageToKind(imageName, "authwebhook", clusterName, writer)
+func loadAuthWebhookImageOnly(ctx context.Context, imageName, clusterName string, writer io.Writer) error {
+	return LoadImageToKind(ctx, imageName, "authwebhook", clusterName, writer)
 }
 
 // authWebhookManifest generates the complete AuthWebhook multi-document YAML manifest.

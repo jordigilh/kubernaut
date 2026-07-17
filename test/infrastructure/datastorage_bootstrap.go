@@ -195,7 +195,7 @@ func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string
 	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
 	_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
 
-	exists, err := VerifyImageExistsInRegistry(registryImage, writer)
+	exists, err := VerifyImageExistsInRegistry(ctx, registryImage, writer)
 	if err != nil || !exists {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", err)
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")

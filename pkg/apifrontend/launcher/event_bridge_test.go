@@ -284,7 +284,7 @@ var _ = Describe("EventBridge", func() {
 
 		It("UT-AF-1258-031: bearer token in standalone text is redacted", func() {
 			input := "token=Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.Signature_value_here"
-			result := launcher.SanitizeBridgeTextForTest(input)
+			result := launcher.SanitizeBridgeTextForTest(context.Background(), input)
 			Expect(result).NotTo(ContainSubstring("eyJhbGci"),
 				"SC-7 violation: sanitizeBridgeText passes bearer token to output")
 		})
@@ -310,7 +310,7 @@ var _ = Describe("EventBridge", func() {
 		})
 
 		It("UT-AF-1258-033: newline and tab are preserved (legitimate formatting)", func() {
-			result := launcher.SanitizeBridgeTextForTest("line1\nline2\ttabbed")
+			result := launcher.SanitizeBridgeTextForTest(context.Background(), "line1\nline2\ttabbed")
 			Expect(result).To(Equal("line1\nline2\ttabbed"),
 				"SI-10 should not strip legitimate whitespace chars")
 		})
@@ -328,7 +328,7 @@ var _ = Describe("EventBridge", func() {
 
 		It("UT-AF-1258-035: long text is truncated after sanitization to bound memory", func() {
 			input := strings.Repeat("Hello world. ", 50) // ~650 chars of natural text
-			result := launcher.SanitizeBridgeTextForTest(input)
+			result := launcher.SanitizeBridgeTextForTest(context.Background(), input)
 			Expect(len([]rune(result))).To(BeNumerically("<=", 515),
 				"bridge text must be bounded to prevent memory exhaustion")
 			Expect(result).To(HaveSuffix("..."))
@@ -780,9 +780,9 @@ type spyBridgeMetrics struct {
 }
 
 func (s *spyBridgeMetrics) IncBridgeEvents()              { s.eventsInc++ }
-func (s *spyBridgeMetrics) IncBridgeWriteFailures()        { s.failuresInc++ }
-func (s *spyBridgeMetrics) IncBridgeStatusEvents()         { s.statusEventsInc++ }
-func (s *spyBridgeMetrics) IncBridgeStatusWriteFailures()  { s.statusFailuresInc++ }
+func (s *spyBridgeMetrics) IncBridgeWriteFailures()       { s.failuresInc++ }
+func (s *spyBridgeMetrics) IncBridgeStatusEvents()        { s.statusEventsInc++ }
+func (s *spyBridgeMetrics) IncBridgeStatusWriteFailures() { s.statusFailuresInc++ }
 
 // failingQueue always returns an error from Write.
 type failingQueue struct {

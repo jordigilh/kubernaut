@@ -128,7 +128,7 @@ var _ = SynchronizedBeforeSuite(
 
 		// Create Kind cluster (ONCE for all tests) - returns notification image name
 		var notificationImageName string
-		notificationImageName, err = infrastructure.CreateNotificationCluster(clusterName, kubeconfigPath, GinkgoWriter)
+		notificationImageName, err = infrastructure.CreateNotificationCluster(ctx, clusterName, kubeconfigPath, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(notificationImageName).ToNot(BeEmpty(), "Notification image name must not be empty")
 

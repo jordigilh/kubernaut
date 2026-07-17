@@ -159,7 +159,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 			// - No network transfer of layers (90%+ bandwidth savings)
 			// - Faster execution (~1s vs 10-30s for full pull)
 			// - Podman will pull automatically during container deployment
-			exists, verifyErr := VerifyImageExistsInRegistry(registryImage, writer)
+			exists, verifyErr := VerifyImageExistsInRegistry(context.Background(), registryImage, writer)
 
 			if verifyErr == nil && exists {
 				// Image verified in registry - no need to pull!

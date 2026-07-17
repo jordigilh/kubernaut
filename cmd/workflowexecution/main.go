@@ -455,7 +455,7 @@ func buildClientFactory(ctx context.Context, cfg *weconfig.Config, localClient c
 			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
 		}
 		fleetOpts = append(fleetOpts,
-			fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
+			fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 		)
 		logger.Info("fleet OAuth2 authentication configured (hot-reloadable)",
 			"tokenURL", cfg.Fleet.OAuth2.TokenURL,

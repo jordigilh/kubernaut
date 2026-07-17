@@ -675,7 +675,7 @@ func startRoutingWatcher(ctx context.Context, reconciler *notification.Notificat
 	}
 	routingWatcher, err := hotreload.NewFileWatcher(
 		routingConfigPath,
-		func(newContent string) error {
+		func(newContent string) error { //nolint:contextcheck // routing-config reload callback fires asynchronously on file-change events, independent of any request
 			return reconciler.ReloadRoutingFromContent(newContent)
 		},
 		ctrl.Log.WithName("routing-watcher"),

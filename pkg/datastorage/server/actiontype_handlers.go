@@ -134,7 +134,7 @@ func (h *Handler) HandleCreateActionType(w http.ResponseWriter, r *http.Request)
 		"was_reenabled", result.WasReenabled,
 	)
 
-	h.auditActionTypeCreate(req, result)
+	h.auditActionTypeCreate(req, result) //nolint:contextcheck // emitAuditEventsAsync is the standard non-blocking audit pattern (BR-AUDIT-024); see doc comment on emitAuditEventsAsync
 }
 
 // decodeAndValidateActionTypeCreateRequest decodes and validates the request
@@ -257,7 +257,7 @@ func (h *Handler) HandleUpdateActionType(w http.ResponseWriter, r *http.Request)
 		"updated_fields", result.UpdatedFields,
 	)
 
-	h.auditActionTypeUpdate(name, req.UpdatedBy, result)
+	h.auditActionTypeUpdate(name, req.UpdatedBy, result) //nolint:contextcheck // emitAuditEventsAsync is the standard non-blocking audit pattern (BR-AUDIT-024); see doc comment on emitAuditEventsAsync
 }
 
 // writeActionTypeUpdateError logs and maps an UpdateDescription error to the
@@ -333,7 +333,7 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 	}
 
 	if !result.Disabled {
-		h.writeActionTypeDisableDenied(w, name, req.DisabledBy, result)
+		h.writeActionTypeDisableDenied(w, name, req.DisabledBy, result) //nolint:contextcheck // emitAuditEventsAsync is the standard non-blocking audit pattern (BR-AUDIT-024); see doc comment on emitAuditEventsAsync
 		return
 	}
 
@@ -355,7 +355,7 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 	if h.auditStore != nil {
 		auditEvent, auditErr := dsaudit.NewActionTypeDisabledAuditEvent(name, req.DisabledBy, time.Now())
 		if auditErr == nil && auditEvent != nil {
-			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name)
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{auditEvent}, "action_type", name) //nolint:contextcheck // emitAuditEventsAsync is the standard non-blocking audit pattern (BR-AUDIT-024); see doc comment on emitAuditEventsAsync
 		}
 	}
 }

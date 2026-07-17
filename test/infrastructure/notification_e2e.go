@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) (string, error) {
+func CreateNotificationCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "Notification E2E Cluster Setup - Hybrid Parallel (DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -60,7 +60,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "Notification", imageName: imageName, err: err}
 	}()
 
@@ -73,7 +73,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
 	}()
 
@@ -151,14 +151,14 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 
 	// Load Notification image
 	go func() {
-		err := LoadImageToKind(notificationImageName, "notification", clusterName, writer)
+		err := LoadImageToKind(ctx, notificationImageName, "notification", clusterName, writer)
 		loadResults <- loadResult{name: "Notification", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
@@ -328,7 +328,7 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 		BuildContextPath: "", // Empty = use project root (default)
 		EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 	}
-	actualImageName, err := BuildAndLoadImageToKind(cfg, writer)
+	actualImageName, err := BuildAndLoadImageToKind(ctx, cfg, writer)
 	if err != nil {
 		return fmt.Errorf("failed to build+load Data Storage image: %w", err)
 	}

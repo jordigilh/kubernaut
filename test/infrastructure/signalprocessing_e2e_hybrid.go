@@ -90,7 +90,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 			BuildContextPath: "",
 			EnableCoverage:   true,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "SignalProcessing (coverage)", imageName: imageName, err: err}
 	}()
 
@@ -103,7 +103,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
@@ -188,14 +188,14 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// Load SignalProcessing coverage image
 	go func() {
 		spImage := builtImages["SignalProcessing (coverage)"]
-		err := LoadImageToKind(spImage, "signalprocessing-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, spImage, "signalprocessing-controller", clusterName, writer)
 		loadResults <- loadResult{name: "SignalProcessing coverage", err: err}
 	}()
 
 	// Load DataStorage image
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 

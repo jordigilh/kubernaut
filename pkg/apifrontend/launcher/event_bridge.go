@@ -258,7 +258,7 @@ func (b *EventBridge) EmitStatus(ctx context.Context, text string) error {
 // metadata. The text is sanitized and the metadata.type field controls how
 // A2A clients classify and render the event.
 func (b *EventBridge) EmitStatusWithMeta(ctx context.Context, text string, meta map[string]any) error {
-	text = sanitizeBridgeText(text)
+	text = sanitizeBridgeText(ctx, text)
 	if text == "" {
 		return nil
 	}
@@ -301,8 +301,10 @@ func (b *EventBridge) emitStatusEventWithMeta(ctx context.Context, text string, 
 // sanitizeBridgeText applies SI-10 input validation (control char stripping),
 // SC-7 boundary protection (secret redaction), and length truncation at 512 runes.
 // Used for ephemeral status messages ("Connecting to KA...") which are short by nature.
-func sanitizeBridgeText(text string) string {
-	return sanitizeTextWithLimit(context.Background(), text, maxBridgeTextLen)
+// Forwards the caller's ctx (rather than context.Background()) so truncation
+// logging in sanitizeTextWithLimit retains request-scoped logger fields (#1435).
+func sanitizeBridgeText(ctx context.Context, text string) string {
+	return sanitizeTextWithLimit(ctx, text, maxBridgeTextLen)
 }
 
 // sanitizeTextWithLimit applies SI-10 control-char stripping, SC-7 secret

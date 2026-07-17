@@ -137,7 +137,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building service images...")
 
 	var buildErr error
-	builtImages, buildErr = buildFullPipelineImages(writer)
+	builtImages, buildErr = buildFullPipelineImages(ctx, writer)
 	if buildErr != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 1 failed: %w", buildErr)
 	}
@@ -183,7 +183,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if os.Getenv("IMAGE_REGISTRY") != "" {
 		_, _ = fmt.Fprintln(writer, "  ⏭️  Skipping local image loading (CI/CD: IMAGE_REGISTRY is set, Kind pulls from registry)")
 	} else {
-		if err := loadFullPipelineImages(builtImages, clusterName, writer); err != nil {
+		if err := loadFullPipelineImages(ctx, builtImages, clusterName, writer); err != nil {
 			return builtImages, nil, nil, fmt.Errorf("PHASE 3 failed: %w", err)
 		}
 	}
@@ -655,7 +655,7 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 // buildFullPipelineImages builds all service images with a concurrency limit of 3
 // for local builds. In CI/CD mode (IMAGE_REGISTRY+IMAGE_TAG set), BuildImageForKind
 // returns the registry reference immediately without building.
-func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
+func buildFullPipelineImages(ctx context.Context, writer io.Writer) (map[string]string, error) {
 	// In CI/CD mode, all builds are instant (return registry refs)
 	isCI := IsRunningInCICD()
 	if isCI {
@@ -692,7 +692,7 @@ func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
 			sem <- struct{}{}        // acquire slot
 			defer func() { <-sem }() // release slot
 
-			imageName, err := BuildImageForKind(cfg, writer)
+			imageName, err := BuildImageForKind(ctx, cfg, writer)
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -719,12 +719,12 @@ func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
 
 // loadFullPipelineImages loads locally-built images into the Kind cluster.
 // Skipped automatically for registry images (LoadImageToKind checks internally).
-func loadFullPipelineImages(builtImages map[string]string, clusterName string, writer io.Writer) error {
+func loadFullPipelineImages(ctx context.Context, builtImages map[string]string, clusterName string, writer io.Writer) error {
 	// LoadImageToKind already checks if the image is a registry image and skips.
 	// We still iterate all images — the no-op is cheap.
 	var loadErrors []error
 	for serviceName, imageName := range builtImages {
-		if err := LoadImageToKind(imageName, serviceName, clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, imageName, serviceName, clusterName, writer); err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", serviceName, err)
 			loadErrors = append(loadErrors, fmt.Errorf("%s: %w", serviceName, err))
 		}

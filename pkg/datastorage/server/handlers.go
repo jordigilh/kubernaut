@@ -95,7 +95,7 @@ func (s *Server) PanicRecoveryMiddleware(next http.Handler) http.Handler {
 // returns HTTP 500 instead of re-panicking (SEC-M2).
 func (s *Server) panicRecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
+		defer func() { //nolint:contextcheck // false positive: this recover closure has no context-requiring call; r.Context() is already used correctly for request-scoped values (request_id)
 			if err := recover(); err != nil {
 				requestID := middleware.GetReqID(r.Context())
 

@@ -344,7 +344,7 @@ func initExternalDependencies(ctx context.Context, cfg *config.Config, logger lo
 	startupCtx, startupCancel := context.WithTimeout(context.Background(), cfg.External.ConnectionTimeout+5*time.Second)
 	defer startupCancel()
 
-	readiness := startup.CheckExternalServices(startupCtx, logger, startup.ExternalServicesConfig{
+	readiness := startup.CheckExternalServices(startupCtx, logger, startup.ExternalServicesConfig{ //nolint:contextcheck // best-effort external-service readiness probe at startup uses its own configured timeout budget (Issue #331: not fatal)
 		PrometheusEnabled:   cfg.External.PrometheusEnabled,
 		PrometheusURL:       cfg.External.PrometheusURL,
 		AlertManagerEnabled: cfg.External.AlertManagerEnabled,
@@ -424,7 +424,7 @@ func wireController(ctx context.Context, deps wireControllerDeps) (*mcpclient.Re
 		emReconciler.SetReaderFactory(readerFactory)
 	}
 
-	if err := emReconciler.SetupWithManager(mgr, cfg.Assessment.MaxConcurrentReconciles); err != nil {
+	if err := emReconciler.SetupWithManager(mgr, cfg.Assessment.MaxConcurrentReconciles); err != nil { //nolint:contextcheck // SetupWithManager is controller-runtime's reconciler-registration contract (no ctx param) called once at startup
 		return fleetResilientClient, fmt.Errorf("unable to create controller %q: %w", "EffectivenessMonitor", err)
 	}
 	return fleetResilientClient, nil
@@ -466,7 +466,7 @@ func buildFleetReaderFactory(ctx context.Context, localClient client.Client, dyn
 			Scopes:           cfg.Fleet.OAuth2.Scopes,
 			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
 		}
-		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+		opts = append(opts, mcpclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 
 	resilienceCfg := mcpclient.DefaultResilienceConfig()

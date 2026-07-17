@@ -109,14 +109,14 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 				DockerfilePath:   dockerfile,
 				BuildContextPath: buildCtx,
 			}
-			img, err := BuildImageForKind(cfg, writer)
+			img, err := BuildImageForKind(ctx, cfg, writer)
 			results <- buildResult{name, img, err}
 		}(svc.name, svc.image, svc.dockerfile, svc.buildCtx)
 	}
 
 	// DD-TEST-007: AF is always built locally with GOFLAGS=-cover
 	go func() {
-		img, err := BuildAFImage(writer)
+		img, err := BuildAFImage(ctx, writer)
 		results <- buildResult{"apifrontend", img, err}
 	}()
 
@@ -153,14 +153,14 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	if imageRegistry != "" {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading AF image into Kind (coverage build); others pull from GHCR...")
-		if err := LoadImageToKind(images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load apifrontend image: %w", err)
 		}
 		_, _ = fmt.Fprintln(writer, "  apifrontend loaded")
 	} else {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading images into Kind...")
 		for name, img := range images {
-			if err := LoadImageToKind(img, name, clusterName, writer); err != nil {
+			if err := LoadImageToKind(ctx, img, name, clusterName, writer); err != nil {
 				return fmt.Errorf("failed to load %s image: %w", name, err)
 			}
 			_, _ = fmt.Fprintf(writer, "  %s loaded\n", name)
@@ -209,7 +209,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	certDir := filepath.Join(os.TempDir(), "apifrontend-e2e-certs")
-	if err := AFGenerateCerts(certDir, writer); err != nil {
+	if err := AFGenerateCerts(ctx, certDir, writer); err != nil {
 		return fmt.Errorf("failed to generate AF certs: %w", err)
 	}
 	if err := AFCreateTLSSecrets(ctx, kubeconfigPath, namespace, certDir, writer); err != nil {
@@ -292,21 +292,21 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 
 // BuildAFImage builds the apifrontend container image locally with coverage
 // instrumentation (GOFLAGS=-cover).
-func BuildAFImage(writer io.Writer) (string, error) {
+func BuildAFImage(ctx context.Context, writer io.Writer) (string, error) {
 	cfg := E2EImageConfig{
 		ServiceName:    "apifrontend",
 		ImageName:      "apifrontend",
 		DockerfilePath: "docker/apifrontend.Dockerfile",
 		EnableCoverage: true,
 	}
-	return BuildImageForKind(cfg, writer)
+	return BuildImageForKind(ctx, cfg, writer)
 }
 
 // AFGenerateCerts runs the AF cert generation script.
-func AFGenerateCerts(certDir string, writer io.Writer) error {
+func AFGenerateCerts(ctx context.Context, certDir string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	script := projectRoot + "/deploy/apifrontend/overlays/e2e/generate-certs.sh"
-	cmd := exec.CommandContext(context.Background(), "bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
+	cmd := exec.CommandContext(ctx, "bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {

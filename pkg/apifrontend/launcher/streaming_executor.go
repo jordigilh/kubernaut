@@ -257,7 +257,7 @@ func (s *StreamingExecutor) handleSSEDisconnect(ctx context.Context, reqCtx *a2a
 		return
 	}
 
-	if uerr := s.sessionSvc.UpdatePhase(
+	if uerr := s.sessionSvc.UpdatePhase( //nolint:contextcheck // session phase update fires from a detached streaming-executor goroutine, independent of the original request context
 		context.Background(), sessionID,
 		isv1alpha1.SessionPhaseDisconnected,
 		"client SSE disconnect", username,

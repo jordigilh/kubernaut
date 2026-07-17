@@ -118,7 +118,7 @@ const (
 // - Metrics (port 19097): DataStorage metrics endpoint
 //
 // Returns error if any infrastructure component fails to start.
-func StartWEIntegrationInfrastructure(writer io.Writer) error {
+func StartWEIntegrationInfrastructure(ctx context.Context, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -200,7 +200,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 6: Start DataStorage LAST
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	if err := startWEDataStorage(projectRoot, writer); err != nil {
+	if err := startWEDataStorage(ctx, projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
@@ -213,7 +213,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	); err != nil {
 		// Print container logs for debugging
 		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
-		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", WEIntegrationDataStorageContainer)
+		logsCmd := exec.CommandContext(ctx, "podman", "logs", WEIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
@@ -295,7 +295,7 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 	return cmd.Run()
 }
 
-func startWEDataStorage(projectRoot string, writer io.Writer) error {
+func startWEDataStorage(ctx context.Context, projectRoot string, writer io.Writer) error {
 	// DD-TEST-001 v1.3: Use infrastructure image format for parallel test isolation
 	// Format: localhost/{infrastructure}:{consumer}-{uuid}
 	// Example: localhost/datastorage:workflowexecution-1884d074
@@ -303,7 +303,7 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 
 	_, _ = fmt.Fprintf(writer, "   Resolving DataStorage image (%s)...\n", dsImage)
 	// Use shared build function (includes --no-cache, coverage support, and registry optimization)
-	actualImage, err := buildDataStorageImageWithTag(dsImage, writer)
+	actualImage, err := buildDataStorageImageWithTag(ctx, dsImage, writer)
 	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
