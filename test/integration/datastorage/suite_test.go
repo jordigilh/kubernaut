@@ -394,11 +394,11 @@ var _ = SynchronizedBeforeSuite(
 		// that caused IT-DS-016-005/006 failures (partitioned audit_events
 		// cannot be correctly copied with CREATE TABLE LIKE).
 		GinkgoWriter.Printf("🔌 [Process %d] Connecting to PostgreSQL...\n", processNum)
-		connectPostgreSQL()
+		connectPostgreSQL(ctx)
 
 		// Connect to Redis
 		GinkgoWriter.Printf("🔌 [Process %d] Connecting to Redis...\n", processNum)
-		connectRedis()
+		connectRedis(ctx)
 
 		// Create repository and DLQ client instances
 		GinkgoWriter.Printf("🏗️  [Process %d] Creating repository and DLQ client...\n", processNum)
@@ -736,7 +736,7 @@ func mustConnectPostgreSQL() *sqlx.DB {
 	return tempDB
 }
 
-func connectPostgreSQL() {
+func connectPostgreSQL(ctx context.Context) {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
@@ -768,7 +768,7 @@ func connectPostgreSQL() {
 }
 
 // connectRedis establishes Redis connection
-func connectRedis() {
+func connectRedis(ctx context.Context) {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("REDIS_HOST")
 	if host == "" {

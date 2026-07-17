@@ -158,7 +158,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 	}
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-override")
+		namespace = createTestNamespace(ctx, "ro-override")
 		rrName = fmt.Sprintf("rr-ovr-%s", uuid.New().String()[:13])
 	})
 

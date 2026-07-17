@@ -39,7 +39,7 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("em-ar-e2e")
+		testNS = createTestNamespace(ctx, "em-ar-e2e")
 	})
 
 	AfterEach(func() {

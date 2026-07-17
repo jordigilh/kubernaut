@@ -110,7 +110,7 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 	var ns string
 
 	BeforeEach(func() {
-		ns = createTestNamespace("dedup-prop")
+		ns = createTestNamespace(ctx, "dedup-prop")
 	})
 
 	AfterEach(func() {

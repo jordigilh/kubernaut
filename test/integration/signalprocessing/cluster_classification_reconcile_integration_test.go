@@ -68,7 +68,7 @@ cluster := input.cluster.labels.environment if {
 	})
 
 	It("IT-SP-1511-002a: populates Status.ClusterClassification from a registered cluster's onboarding label", func() {
-		ns := createTestNamespace("fleet-1511-002a")
+		ns := createTestNamespace(ctx, "fleet-1511-002a")
 		defer deleteTestNamespace(ns)
 
 		By("Loading a Rego policy with a cluster classification rule")
@@ -105,7 +105,7 @@ cluster := input.cluster.labels.environment if {
 	})
 
 	It("IT-SP-1511-002b: leaves Status.ClusterClassification empty for an unregistered cluster (graceful degradation, SI-10)", func() {
-		ns := createTestNamespace("fleet-1511-002b")
+		ns := createTestNamespace(ctx, "fleet-1511-002b")
 		defer deleteTestNamespace(ns)
 
 		By("Loading a Rego policy with a cluster classification rule")
@@ -135,7 +135,7 @@ cluster := input.cluster.labels.environment if {
 	})
 
 	It("IT-SP-1511-002c: leaves Status.ClusterClassification empty when fleet mode is disabled (no ClusterRegistry configured)", func() {
-		ns := createTestNamespace("fleet-1511-002c")
+		ns := createTestNamespace(ctx, "fleet-1511-002c")
 		defer deleteTestNamespace(ns)
 
 		By("Loading a Rego policy with a cluster classification rule, but wiring no ClusterRegistry")

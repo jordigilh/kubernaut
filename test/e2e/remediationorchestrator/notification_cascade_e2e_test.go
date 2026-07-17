@@ -54,7 +54,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 
 	Describe("Single NotificationRequest Cascade Deletion", func() {
 		It("should cascade delete NotificationRequest when RemediationRequest is deleted", func() {
-			testNamespace := createTestNamespace("ro-notif-cascade-single")
+			testNamespace := createTestNamespace(ctx, "ro-notif-cascade-single")
 			defer deleteTestNamespace(testNamespace)
 
 			// Create RemediationRequest
@@ -113,7 +113,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 
 	Describe("Multiple NotificationRequests Cascade Deletion", func() {
 		It("should cascade delete multiple NotificationRequests when RemediationRequest is deleted", func() {
-			testNamespace := createTestNamespace("ro-notif-cascade-multi")
+			testNamespace := createTestNamespace(ctx, "ro-notif-cascade-multi")
 			defer deleteTestNamespace(testNamespace)
 
 			// Create RemediationRequest

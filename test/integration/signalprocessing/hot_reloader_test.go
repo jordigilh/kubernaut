@@ -168,7 +168,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 		// BR-SP-072: Rego policy file change detected via fsnotify
 		It("BR-SP-072: should detect Rego policy file change", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hr-file-watch")
+			ns := createTestNamespace(ctx, "hr-file-watch")
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to v1")
@@ -245,7 +245,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 		// BR-SP-072: Valid policy takes effect immediately
 		It("BR-SP-072: should apply valid updated policy immediately", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hr-reload-valid")
+			ns := createTestNamespace(ctx, "hr-reload-valid")
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to initial policy (status=alpha)")
@@ -322,7 +322,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 		// BR-SP-072: Invalid policy → old retained
 		It("BR-SP-072: should retain old policy when update is invalid", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hr-graceful")
+			ns := createTestNamespace(ctx, "hr-graceful")
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to valid policy (stage=prod)")

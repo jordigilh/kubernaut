@@ -59,7 +59,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 	)
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("audit-phase-lifecycle")
+		testNamespace = createTestNamespace(ctx, "audit-phase-lifecycle")
 		// DD-AUTH-014: dsClients initialized at suite level with ServiceAccount authentication
 	})
 

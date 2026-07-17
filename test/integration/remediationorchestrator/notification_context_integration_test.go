@@ -53,7 +53,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 	)
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("notif-ctx")
+		testNamespace = createTestNamespace(ctx, "notif-ctx")
 		nc = creator.NewNotificationCreator(
 			k8sClient,
 			k8sManager.GetScheme(),

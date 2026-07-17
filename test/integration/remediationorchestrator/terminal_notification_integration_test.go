@@ -47,7 +47,7 @@ var _ = Describe("Issue #88: Terminal-Phase Notification Tracking Integration", 
 	)
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("ro-terminal-notif")
+		testNamespace = createTestNamespace(ctx, "ro-terminal-notif")
 	})
 
 	AfterEach(func() {

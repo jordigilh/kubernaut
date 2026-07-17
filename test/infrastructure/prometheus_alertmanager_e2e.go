@@ -388,21 +388,21 @@ spec:
 
 // WaitForPrometheusReady polls the Prometheus readiness endpoint until it responds 200 OK.
 func WaitForPrometheusReady(ctx context.Context, promURL string, timeout time.Duration, writer io.Writer) error {
-	return waitForHTTPReady(promURL+"/-/ready", "Prometheus", timeout, writer)
+	return waitForHTTPReady(ctx, promURL+"/-/ready", "Prometheus", timeout, writer)
 }
 
 // WaitForAlertManagerReady polls the AlertManager readiness endpoint until it responds 200 OK.
 func WaitForAlertManagerReady(ctx context.Context, amURL string, timeout time.Duration, writer io.Writer) error {
-	return waitForHTTPReady(amURL+"/-/ready", "AlertManager", timeout, writer)
+	return waitForHTTPReady(ctx, amURL+"/-/ready", "AlertManager", timeout, writer)
 }
 
-func waitForHTTPReady(url, serviceName string, timeout time.Duration, writer io.Writer) error {
+func waitForHTTPReady(ctx context.Context, url, serviceName string, timeout time.Duration, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s to be ready (%s)...\n", serviceName, url)
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 		if reqErr != nil {
 			return fmt.Errorf("failed to build readiness request: %w", reqErr)
 		}
@@ -445,7 +445,7 @@ func WaitForPrometheusCadvisorTarget(ctx context.Context, promURL string, timeou
 
 	var lastErr string
 	for time.Now().Before(deadline) {
-		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, promURL+"/api/v1/targets", http.NoBody)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, promURL+"/api/v1/targets", http.NoBody)
 		if reqErr != nil {
 			time.Sleep(2 * time.Second)
 			continue
@@ -736,7 +736,7 @@ func InjectMetrics(ctx context.Context, promURL string, metrics []TestMetric) er
 		return fmt.Errorf("failed to marshal OTLP metrics: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, promURL+"/api/v1/otlp/v1/metrics", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, promURL+"/api/v1/otlp/v1/metrics", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to build OTLP metrics request: %w", err)
 	}

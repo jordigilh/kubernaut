@@ -63,7 +63,7 @@ func SeedActionTypesViaAPI(ctx context.Context, client *ogenclient.Client, write
 	_, _ = fmt.Fprintf(writer, "🏷️  Seeding %d action types via DataStorage API\n", len(e2eActionTypes))
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	for _, at := range e2eActionTypes {
@@ -145,7 +145,7 @@ func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, o
 	for _, at := range e2eActionTypes {
 		yaml := buildActionTypeYAML(at, namespace)
 
-		cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-f", "-")
 		cmd.Stdin = strings.NewReader(yaml)
@@ -160,7 +160,7 @@ func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, o
 
 	_, _ = fmt.Fprintf(output, "\n⏳ Waiting for ActionTypes to register in DataStorage...\n")
 	for _, at := range e2eActionTypes {
-		cmd := exec.CommandContext(context.Background(), "kubectl", "wait",
+		cmd := exec.CommandContext(ctx, "kubectl", "wait",
 			"--kubeconfig", kubeconfigPath,
 			"--for=jsonpath={.status.registered}=true",
 			fmt.Sprintf("actiontype/%s", at.MetadataName),

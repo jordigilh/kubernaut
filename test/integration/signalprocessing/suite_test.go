@@ -630,7 +630,7 @@ var _ = SynchronizedAfterSuite(
 // createTestNamespace creates a managed test namespace for test isolation.
 // Delegates to shared helpers.CreateTestNamespace with kubernaut.ai/managed=true.
 // DD-TEST-002: UUID-based naming for parallel execution safety (handled by shared helper).
-func createTestNamespace(prefix string) string {
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }
 

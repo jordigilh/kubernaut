@@ -57,7 +57,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("em-sd-e2e")
+		testNS = createTestNamespace(ctx, "em-sd-e2e")
 	})
 
 	AfterEach(func() {

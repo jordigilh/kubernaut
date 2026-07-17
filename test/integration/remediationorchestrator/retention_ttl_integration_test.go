@@ -45,7 +45,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", Label("integration
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-retention")
+			namespace = createTestNamespace(ctx, "ro-retention")
 			rrName = fmt.Sprintf("rr-ret-%s", uuid.New().String()[:8])
 		})
 

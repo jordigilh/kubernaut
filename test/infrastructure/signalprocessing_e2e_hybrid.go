@@ -144,19 +144,19 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 
 	// OPTIMIZATION #2: Install both CRDs in a single kubectl apply (3-5s savings)
 	_, _ = fmt.Fprintln(writer, "📋 Installing CRDs (batched: SignalProcessing + RemediationRequest)...")
-	if err := installSignalProcessingCRDsBatched(kubeconfigPath, writer); err != nil {
+	if err := installSignalProcessingCRDsBatched(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install CRDs (batched): %w", err)
 	}
 
 	// Create kubernaut-system namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createSignalProcessingNamespace(kubeconfigPath, writer); err != nil {
+	if err := createSignalProcessingNamespace(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// Deploy Rego policy ConfigMaps
 	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
-	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
+	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy policies: %w", err)
 	}
 
@@ -489,7 +489,7 @@ func createSignalProcessingKindCluster(ctx context.Context, clusterName, kubecon
 // signalProcessingImageTag holds the unique tag for this test run (set once, reused)
 var signalProcessingImageTag string
 
-func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer) error {
+func installSignalProcessingCRDsBatched(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// Find SignalProcessing CRD file
 	spCRDPaths := []string{
 		"config/crd/bases/kubernaut.ai_signalprocessings.yaml",
@@ -527,7 +527,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 	}
 
 	// Apply both CRDs in a single kubectl call (OPTIMIZATION #2)
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "-f", spCRDPath, "-f", rrCRDPath)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -541,7 +541,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 
 	// Check SignalProcessing CRD
 	for i := 0; i < 30; i++ {
-		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "signalprocessings.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			_, _ = fmt.Fprintln(writer, "  ✓ SignalProcessing CRD established")
@@ -555,7 +555,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 
 	// Check RemediationRequest CRD
 	for i := 0; i < 30; i++ {
-		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "remediationrequests.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			_, _ = fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
@@ -570,7 +570,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 	return nil
 }
 
-func createSignalProcessingNamespace(kubeconfigPath string, writer io.Writer) error {
+func createSignalProcessingNamespace(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	manifest := `
 apiVersion: v1
 kind: Namespace
@@ -580,14 +580,14 @@ metadata:
     app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: signalprocessing
 `
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
 }
 
-func deploySignalProcessingPolicies(kubeconfigPath string, writer io.Writer) error {
+func deploySignalProcessingPolicies(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// ADR-060: Deploy unified Rego policy as a single ConfigMap (replaces 5 separate ConfigMaps).
 	// The SP controller expects a single policy.rego file under package signalprocessing.
 	unifiedPolicy := `---
@@ -702,7 +702,7 @@ data:
       PredictedNodeNotReady: NodeNotReady
 `
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(unifiedPolicy)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

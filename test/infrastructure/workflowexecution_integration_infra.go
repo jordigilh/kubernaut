@@ -206,7 +206,7 @@ func StartWEIntegrationInfrastructure(ctx context.Context, writer io.Writer) err
 
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
-	if err := WaitForHTTPHealth(ctx, 
+	if err := WaitForHTTPHealth(ctx,
 		fmt.Sprintf("http://127.0.0.1:%d/readyz", WEIntegrationHealthPort),
 		30*time.Second,
 		writer,
@@ -279,7 +279,7 @@ func runWEMigrations(ctx context.Context, projectRoot string, writer io.Writer) 
 	if err := PullImageWithRetry(ctx, migrationsImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull migrations image: %w", err)
 	}
-	cmd := exec.CommandContext(context.Background(), "podman", "run", "--rm",
+	cmd := exec.CommandContext(ctx, "podman", "run", "--rm",
 		"--name", WEIntegrationMigrationsContainer,
 		"-v", fmt.Sprintf("%s:/migrations:ro", migrationsDir),
 		"-e", "PGHOST=host.containers.internal",
@@ -314,7 +314,7 @@ func startWEDataStorage(ctx context.Context, projectRoot string, writer io.Write
 
 	// DataStorage connects to PostgreSQL and Redis via host.containers.internal
 	// This allows containers to reach services on the host via port mapping
-	cmd := exec.CommandContext(context.Background(), "podman", "run",
+	cmd := exec.CommandContext(ctx, "podman", "run",
 		"-d",
 		"--name", WEIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", WEIntegrationDataStoragePort),

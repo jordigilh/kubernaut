@@ -56,7 +56,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 	var testNamespace string
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("needs-review")
+		testNamespace = createTestNamespace(ctx, "needs-review")
 	})
 
 	AfterEach(func() {

@@ -131,7 +131,7 @@ func RegisterWorkflowInDataStorage(ctx context.Context, client *ogenclient.Clien
 		return "", fmt.Errorf("read fixture for %s: %w", wf.WorkflowID, readErr)
 	}
 
-	uuid, _, err := callCreateWorkflowInline(client, content, "e2e-test-seeder")
+	uuid, _, err := callCreateWorkflowInline(ctx, client, content, "e2e-test-seeder")
 	if err == nil {
 		return uuid, nil
 	}
@@ -145,7 +145,7 @@ func RegisterWorkflowInDataStorage(ctx context.Context, client *ogenclient.Clien
 
 	_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409), querying for existing UUID...\n")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	listResp, listErr := client.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
 		WorkflowName: ogenclient.NewOptString(wf.WorkflowID),
@@ -225,7 +225,7 @@ func SeedWorkflowsViaKubectlApply(ctx context.Context, kubeconfigPath, namespace
 			return nil, fmt.Errorf("read fixture %s: %w", wf.FixtureDir, err)
 		}
 
-		cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-n", namespace,
 			"-f", "-")
@@ -255,7 +255,7 @@ func SeedWorkflowsViaKubectlApply(ctx context.Context, kubeconfigPath, namespace
 		name := appliedNames[i]
 		key := fmt.Sprintf("%s:%s", name, wf.Environment)
 
-		uuid, err := waitForWorkflowUUID(kubeconfigPath, namespace, name, 90*time.Second)
+		uuid, err := waitForWorkflowUUID(ctx, kubeconfigPath, namespace, name, 90*time.Second)
 		if err != nil {
 			return nil, fmt.Errorf("workflow %s UUID not populated: %w", name, err)
 		}
@@ -269,10 +269,10 @@ func SeedWorkflowsViaKubectlApply(ctx context.Context, kubeconfigPath, namespace
 
 // waitForWorkflowUUID polls a RemediationWorkflow's .status.workflowId until it
 // is non-empty or the timeout expires.
-func waitForWorkflowUUID(kubeconfigPath, namespace, name string, timeout time.Duration) (string, error) {
+func waitForWorkflowUUID(ctx context.Context, kubeconfigPath, namespace, name string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		cmd := exec.CommandContext(context.Background(), "kubectl", "get",
+		cmd := exec.CommandContext(ctx, "kubectl", "get",
 			fmt.Sprintf("remediationworkflow/%s", name),
 			"-n", namespace,
 			"--kubeconfig", kubeconfigPath,

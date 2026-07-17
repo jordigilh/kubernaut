@@ -87,7 +87,7 @@ func GetKeycloakClientCredentialsToken(ctx context.Context, cfg KeycloakFleetTok
 	}
 
 	client := keycloakHTTPClient(cfg.HTTPClient)
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, cfg.TokenEndpoint, strings.NewReader(data.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.TokenEndpoint, strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("failed to build keycloak client_credentials token request: %w", err)
 	}
@@ -195,7 +195,7 @@ func DeployKeycloakInfra(ctx context.Context, namespace, kubeconfigPath string, 
 	if err := deployKeycloakInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return err
 	}
-	return waitForKeycloakReady(hostPort, writer)
+	return waitForKeycloakReady(ctx, hostPort, writer)
 }
 
 // deployKeycloakInNamespace deploys Keycloak as an OIDC provider + RFC 8693
@@ -338,7 +338,7 @@ spec:
 //
 // hostPort is the Kind extraPortMappings host port that maps to the Keycloak
 // NodePort (30557) in the running cluster.
-func waitForKeycloakReady(hostPort int, writer io.Writer) error {
+func waitForKeycloakReady(ctx context.Context, hostPort int, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Keycloak kubernaut-fleet realm to be reachable (HTTPS)...")
 
 	client := &http.Client{
@@ -353,7 +353,7 @@ func waitForKeycloakReady(hostPort int, writer io.Writer) error {
 	realmURL := fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet", hostPort)
 	deadline := time.Now().Add(150 * time.Second)
 	for time.Now().Before(deadline) {
-		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, realmURL, http.NoBody)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, realmURL, http.NoBody)
 		if reqErr != nil {
 			return fmt.Errorf("failed to build Keycloak realm request: %w", reqErr)
 		}

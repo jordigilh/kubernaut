@@ -348,7 +348,7 @@ var _ = SynchronizedAfterSuite(
 
 // createTestNamespace creates a managed test namespace and waits for Active.
 // Delegates to shared helpers.CreateTestNamespaceAndWait with kubernaut.ai/managed=true.
-func createTestNamespace(prefix string) string {
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespaceAndWait(k8sClient, prefix)
 }
 

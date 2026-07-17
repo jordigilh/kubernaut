@@ -338,7 +338,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// namespace only pre-existed on the hub cluster; without it, both the
 	// SA creation below and the Job itself would fail with "namespace not found".
 	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #1542)...\n", ExecutionNamespace)
-	if err := createTestNamespace(ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", ExecutionNamespace, err)
 	}
 
@@ -346,7 +346,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// reference would fail to resolve on the remote cluster (SA only
 	// pre-existed on the hub).
 	_, _ = fmt.Fprintln(writer, "🔐 Creating workflow-job-executor SA + RBAC on the remote cluster (Issue #1542)...")
-	if err := createWorkflowJobExecutorRBAC(remoteKubeconfigPath, ExecutionNamespace, writer); err != nil {
+	if err := createWorkflowJobExecutorRBAC(ctx, remoteKubeconfigPath, ExecutionNamespace, writer); err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to create workflow-job-executor RBAC on remote cluster: %w", err)
 	}
 
@@ -2267,7 +2267,7 @@ func WaitForFleetReady(ctx context.Context, tokenFunc func() (string, error), no
 	body, _ := json.Marshal(initReq)
 
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, gatewayURL, bytes.NewReader(body))
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, gatewayURL, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/event-stream")
 
@@ -2282,7 +2282,7 @@ func WaitForFleetReady(ctx context.Context, tokenFunc func() (string, error), no
 			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized {
 				_ = resp.Body.Close()
 				_, _ = fmt.Fprintf(writer, "  ✅ MCP Gateway reachable (initialize → %d)\n", resp.StatusCode)
-				return waitForAuthenticatedMCPGateway(tokenFunc, gatewayURL, toolPrefix, writer)
+				return waitForAuthenticatedMCPGateway(ctx, tokenFunc, gatewayURL, toolPrefix, writer)
 			}
 			_ = resp.Body.Close()
 		}
@@ -2310,13 +2310,13 @@ func WaitForFleetReady(ctx context.Context, tokenFunc func() (string, error), no
 // This probe mirrors the real call FMC's syncer makes (pkg/fleet/fmc/syncer.go):
 // an OAuth2 client_credentials token via tokenFunc, then a tools/call against
 // the "loopback-cluster" MCPServerRegistration created earlier in Phase 3.
-func waitForAuthenticatedMCPGateway(tokenFunc func() (string, error), gatewayURL, toolPrefix string, writer io.Writer) error {
+func waitForAuthenticatedMCPGateway(ctx context.Context, tokenFunc func() (string, error), gatewayURL, toolPrefix string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying authenticated tools/call succeeds (gateway AuthPolicy/SecurityPolicy convergence)...")
 
 	deadline := time.Now().Add(90 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		if err := probeAuthenticatedResourcesList(tokenFunc, gatewayURL, toolPrefix); err != nil {
+		if err := probeAuthenticatedResourcesList(ctx, tokenFunc, gatewayURL, toolPrefix); err != nil {
 			lastErr = err
 			time.Sleep(3 * time.Second)
 			continue
@@ -2343,7 +2343,7 @@ func waitForAuthenticatedMCPGateway(tokenFunc func() (string, error), gatewayURL
 // (the built-in "view" role does not grant list access to cluster-scoped Node
 // resources -- confirmed by a prior run of this probe against Node, which
 // failed with a clear RBAC "forbidden" error, not a convergence timeout).
-func probeAuthenticatedResourcesList(tokenFunc func() (string, error), gatewayURL, toolPrefix string) error {
+func probeAuthenticatedResourcesList(ctx context.Context, tokenFunc func() (string, error), gatewayURL, toolPrefix string) error {
 	token, err := tokenFunc()
 	if err != nil {
 		return fmt.Errorf("acquire IdP token: %w", err)
@@ -2354,7 +2354,7 @@ func probeAuthenticatedResourcesList(tokenFunc func() (string, error), gatewayUR
 		Transport: &bearerTokenTransport{token: token, base: http.DefaultTransport},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	mcpConn, err := mcpclient.New(ctx, gatewayURL,

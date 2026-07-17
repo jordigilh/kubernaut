@@ -446,7 +446,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}()
 
 	go func() {
-		err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, builtImages["aianalysis"], writer)
+		err := deployAIAnalysisControllerManifestOnly(ctx, kubeconfigPath, builtImages["aianalysis"], writer)
 		deployResults <- deployResult{"AIAnalysis", err}
 	}()
 
@@ -517,7 +517,7 @@ func createAIAnalysisKindCluster(ctx context.Context, clusterName, kubeconfigPat
 	}
 
 	// Wait for cluster to be ready (original behavior preserved)
-	return waitForClusterReady(kubeconfigPath, writer)
+	return waitForClusterReady(ctx, kubeconfigPath, writer)
 }
 
 func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
@@ -582,7 +582,7 @@ func installInvestigationSessionCRD(kubeconfigPath string, writer io.Writer) err
 // - Deterministic ordering, no timing issues
 // Removed: createMockLLMConfigMap (unused) - Mock LLM now uses direct deployment with seeded workflows
 
-func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
+func deployAIAnalysisControllerManifestOnly(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Use dynamic image name parameter (built by BuildImageForKind)
 	_, _ = fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
@@ -796,7 +796,7 @@ spec:
 		coverageEnvYAML("aianalysis"),
 		coverageVolumeMountYAML(),
 		coverageVolumeYAML())
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -805,7 +805,7 @@ spec:
 	}
 
 	// Deploy Rego policy ConfigMap (inline fixture, self-contained)
-	return createInlineRegoPolicyConfigMap(kubeconfigPath, writer)
+	return createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer)
 }
 
 func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -889,10 +889,10 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 
 	return nil
 }
-func waitForClusterReady(kubeconfigPath string, writer io.Writer) error {
+func waitForClusterReady(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  Waiting for cluster to be ready...")
 	for i := 0; i < 60; i++ {
-		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "nodes", "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}")
 		output, err := cmd.Output()
 		if err == nil && containsReady(string(output)) {
@@ -938,7 +938,7 @@ func containsReady(s string) bool {
 	return len(s) > 0 && s != "" && (s == "True" || s == "True True")
 }
 
-func createInlineRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
+func createInlineRegoPolicyConfigMap(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// Simplified E2E test policy - requires approval for all production
 	// This is intentionally simpler than production policy for E2E test predictability
 	manifest := `
@@ -978,7 +978,7 @@ data:
     reason := f.reason if { some f in risk_factors; f.score == max_risk_score }
     default reason := "Auto-approved"
 `
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -989,7 +989,7 @@ data:
 // with DataStorage access using DD-AUTH-014 (SubjectAccessReview authorization)
 func createAIAnalysisE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	// Create a fresh context (workaround for potential context issues)
-	freshCtx := context.Background()
+	freshCtx := ctx
 
 	// Create ServiceAccount
 	saName := "aianalysis-e2e-sa"
@@ -1014,7 +1014,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 `, namespace, saName, namespace)
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(roleBindingYAML)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

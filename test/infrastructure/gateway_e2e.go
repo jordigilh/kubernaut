@@ -197,7 +197,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// Install RemediationRequest CRD
 	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml"
-	crdCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
 	crdCmd.Stderr = writer
 	if err := crdCmd.Run(); err != nil {
@@ -206,7 +206,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -366,7 +366,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	if err != nil {
 		return fmt.Errorf("failed to get seed SA token for action type seeding: %w", err)
 	}
-	if err := SeedActionTypesViaAPIWithTLS(ctx, 
+	if err := SeedActionTypesViaAPIWithTLS(ctx,
 		fmt.Sprintf("https://localhost:%d", DataStorageE2EHostPort), seedToken, kubeconfigPath, 30*time.Second, writer,
 	); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
@@ -445,7 +445,7 @@ func CreateGatewayCluster(ctx context.Context, clusterName, kubeconfigPath strin
 	// 2. Install RemediationRequest CRD (reuse from signalprocessing.go)
 	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml" // Updated to new API group
-	crdCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
 	crdCmd.Stderr = writer
 	if err := crdCmd.Run(); err != nil {
@@ -454,7 +454,7 @@ func CreateGatewayCluster(ctx context.Context, clusterName, kubeconfigPath strin
 
 	// 3. Build and load Gateway Docker image
 	_, _ = fmt.Fprintln(writer, "🐳 Building Gateway Docker image...")
-	if err := buildAndLoadGatewayImage(clusterName, writer); err != nil {
+	if err := buildAndLoadGatewayImage(ctx, clusterName, writer); err != nil {
 		return fmt.Errorf("failed to build Gateway image: %w", err)
 	}
 
@@ -536,7 +536,7 @@ func loadGatewayImageToKind(ctx context.Context, imageName, clusterName string, 
 //
 // DEPRECATED for hybrid pattern: Use buildGatewayImageOnly() + loadGatewayImageToKind() instead
 // Still used by: standard pattern E2E tests (if any)
-func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
+func buildAndLoadGatewayImage(ctx context.Context, clusterName string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 
 	// Use shared build utilities (DD-TEST-001 compliant)
@@ -548,7 +548,7 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   Building Gateway image via shared build utilities (DD-TEST-001)...")
 
 	buildScript := filepath.Join(projectRoot, "scripts", "build-service-image.sh")
-	buildCmd := exec.CommandContext(context.Background(), buildScript,
+	buildCmd := exec.CommandContext(ctx, buildScript,
 		"gateway",
 		"--kind",
 		"--cluster", clusterName,
@@ -835,7 +835,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := gatewayRBACManifest()
-	rbacCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = strings.NewReader(rbacManifest)
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -848,7 +848,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := gatewayWorkloadManifest(gatewayImageName, false)
-	workloadCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = strings.NewReader(workloadManifest)
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer
@@ -857,7 +857,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 	}
 
 	_, _ = fmt.Fprintln(writer, "   Waiting for Gateway pod (may take up to 5 minutes for RBAC + initial startup)...")
-	waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
+	waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=gateway",
 		"-n", namespace,
@@ -974,7 +974,7 @@ func GatewayCoverageManifest(imageName string) string {
 func DeployGatewayCoverageManifest(ctx context.Context, kubeconfigPath string, gatewayImageName string, writer io.Writer) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := gatewayRBACManifest()
-	rbacCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = strings.NewReader(rbacManifest)
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -987,7 +987,7 @@ func DeployGatewayCoverageManifest(ctx context.Context, kubeconfigPath string, g
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := gatewayWorkloadManifest(gatewayImageName, true)
-	workloadCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = strings.NewReader(workloadManifest)
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer

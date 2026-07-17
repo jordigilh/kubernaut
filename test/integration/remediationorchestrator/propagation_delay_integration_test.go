@@ -160,7 +160,7 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 	// computation until creation + HashComputeDelay.
 	// ========================================
 	It("IT-RO-253-001: should use config-driven operator delay for CRD target (not stabilization window)", func() {
-		ns := createTestNamespace("ro-253-001")
+		ns := createTestNamespace(ctx, "ro-253-001")
 		defer deleteTestNamespace(ns)
 
 		rr := driveToCompletedWithCRDTarget(ns, "rr-253-001", false /* not GitOps */)
@@ -198,7 +198,7 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 	// HashComputeDelay = gitOpsSyncDelay + operatorReconcileDelay
 	// ========================================
 	It("IT-RO-253-002: should compound gitOpsSyncDelay + operatorReconcileDelay for dual-async target", func() {
-		ns := createTestNamespace("ro-253-002")
+		ns := createTestNamespace(ctx, "ro-253-002")
 		defer deleteTestNamespace(ns)
 
 		rr := driveToCompletedWithCRDTarget(ns, "rr-253-002", true /* GitOps-managed */)

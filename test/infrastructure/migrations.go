@@ -137,7 +137,7 @@ func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Wri
 	}
 	defer pf.Close()
 
-	db, err := openPostgresConnection(pf.localPort, config)
+	db, err := openPostgresConnection(ctx, pf.localPort, config)
 	if err != nil {
 		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
@@ -178,7 +178,7 @@ func applyGooseMigrationsE2E(ctx context.Context, config MigrationConfig, migrat
 	}
 	defer pf.Close()
 
-	db, err := openPostgresConnection(pf.localPort, config)
+	db, err := openPostgresConnection(ctx, pf.localPort, config)
 	if err != nil {
 		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
@@ -311,14 +311,14 @@ func (pf *portForward) Close() {
 }
 
 // openPostgresConnection opens a database/sql connection to PostgreSQL via a forwarded local port.
-func openPostgresConnection(localPort int, config MigrationConfig) (*sql.DB, error) {
+func openPostgresConnection(ctx context.Context, localPort int, config MigrationConfig) (*sql.DB, error) {
 	connStr := fmt.Sprintf("host=localhost port=%d user=%s password=%s dbname=%s sslmode=disable",
 		localPort, config.PostgresUser, config.PostgresPassword, config.PostgresDB)
 	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open connection: %w", err)
 	}
-	if err := db.PingContext(context.Background()); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}

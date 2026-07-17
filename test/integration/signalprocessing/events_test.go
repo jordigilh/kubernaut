@@ -129,7 +129,7 @@ var _ = Describe("SignalProcessing K8s Event Observability (DD-EVENT-001, BR-SP-
 	Context("IT-SP-095-02: Rego failure", func() {
 		It("should emit PhaseTransition, PolicyEvaluationFailed when severity triggers policy error", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("events-rego")
+			ns := createTestNamespace(ctx, "events-rego")
 			defer deleteTestNamespace(ns)
 
 			By("Creating parent RemediationRequest with severity that triggers policy error")
@@ -170,7 +170,7 @@ var _ = Describe("SignalProcessing K8s Event Observability (DD-EVENT-001, BR-SP-
 	Context("IT-SP-095-03: Degraded enrichment", func() {
 		It("should emit PhaseTransition, EnrichmentDegraded, SignalProcessed when target pod not found", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("events-degraded")
+			ns := createTestNamespace(ctx, "events-degraded")
 			defer deleteTestNamespace(ns)
 
 			By("Creating parent RemediationRequest for non-existent pod")

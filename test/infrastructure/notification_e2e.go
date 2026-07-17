@@ -123,7 +123,7 @@ func CreateNotificationCluster(ctx context.Context, clusterName, kubeconfigPath 
 		}
 	}
 
-	if err := CreateKindClusterWithExtraMounts(ctx, 
+	if err := CreateKindClusterWithExtraMounts(ctx,
 		clusterName,
 		kubeconfigPath,
 		"test/infrastructure/kind-notification-config.yaml",
@@ -189,7 +189,7 @@ func CreateNotificationCluster(ctx context.Context, clusterName, kubeconfigPath 
 	// ============================================================
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "PHASE 4: Installing NotificationRequest CRD...")
-	if err := installNotificationCRD(kubeconfigPath, writer); err != nil {
+	if err := installNotificationCRD(ctx, kubeconfigPath, writer); err != nil {
 		return "", fmt.Errorf("failed to install NotificationRequest CRD: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ PHASE 4 Complete: CRDs installed")
@@ -212,12 +212,12 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	}
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating default namespace (for E2E tests)...\n")
-	if err := createTestNamespace("default", kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, "default", kubeconfigPath, writer); err != nil {
 		errMsg := strings.ToLower(err.Error())
 		if !strings.Contains(errMsg, "alreadyexists") && !strings.Contains(errMsg, "already exists") {
 			return fmt.Errorf("failed to create default namespace: %w", err)
@@ -246,7 +246,7 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture
 	manifest := notificationControllerManifest(namespace, notificationImageName, enableCoverage)
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -420,7 +420,7 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, testsFailed b
 	return nil
 }
 
-func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
+func installNotificationCRD(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
@@ -432,7 +432,7 @@ func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
 		return fmt.Errorf("NotificationRequest CRD not found at %s", crdPath)
 	}
 
-	applyCmd := exec.CommandContext(context.Background(), "kubectl", "apply", "-f", crdPath)
+	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", crdPath)
 	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 	applyCmd.Stdout = writer
 	applyCmd.Stderr = writer

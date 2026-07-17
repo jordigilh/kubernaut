@@ -54,7 +54,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 	)
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-char")
+		namespace = createTestNamespace(ctx, "ro-char")
 		rrName = fmt.Sprintf("char-%s", uuid.New().String()[:13])
 	})
 

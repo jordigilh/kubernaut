@@ -230,7 +230,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Rego policy fallback for environment classification
 		It("BR-SP-052: should classify environment from Rego policy fallback", func() {
 			By("Creating namespace with 'staging' prefix (no label)")
-			ns := createTestNamespace("staging-app")
+			ns := createTestNamespace(ctx, "staging-app")
 			defer deleteTestNamespace(ns)
 
 			// Create parent RemediationRequest (matches production architecture)
@@ -301,7 +301,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Owner chain traversal from Pod to Deployment
 		It("BR-SP-100: should build owner chain from Pod to Deployment", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("ownerchain")
+			ns := createTestNamespace(ctx, "ownerchain")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Deployment")
@@ -429,7 +429,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Default environment fallback when no labels present
 		It("BR-SP-053: should default to unknown environment when no labels", func() {
 			By("Creating namespace without environment label")
-			ns := createTestNamespace("unknown-env")
+			ns := createTestNamespace(ctx, "unknown-env")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
@@ -463,7 +463,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Degraded mode when target resource not found
 		It("BR-SP-001: should enter degraded mode when pod not found", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("degraded")
+			ns := createTestNamespace(ctx, "degraded")
 			defer deleteTestNamespace(ns)
 
 			// Create parent RemediationRequest (matches production architecture)
@@ -496,7 +496,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Concurrent reconciliation stress test
 		It("Controller: should handle concurrent reconciliation of 10 CRs", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("concurrent")
+			ns := createTestNamespace(ctx, "concurrent")
 			defer deleteTestNamespace(ns)
 
 			By("Creating 10 SignalProcessing CRs concurrently")
@@ -540,7 +540,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Minimal spec with defaults
 		It("Robustness: should handle minimal spec with default values", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("minimal")
+			ns := createTestNamespace(ctx, "minimal")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR with minimal spec")
@@ -573,7 +573,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Special namespace handling
 		It("Robustness: should handle special characters in namespace", func() {
 			By("Creating namespace with special characters")
-			ns := createTestNamespace("my-ns-123")
+			ns := createTestNamespace(ctx, "my-ns-123")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
@@ -606,7 +606,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Max owner chain depth limit
 		It("BR-SP-100: should stop owner chain traversal at 5 levels", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("deep-owner")
+			ns := createTestNamespace(ctx, "deep-owner")
 			defer deleteTestNamespace(ns)
 
 			// Create a deep ownership chain (Pod → RS → Deploy)
@@ -684,7 +684,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// No failed detections on successful queries
 		It("BR-SP-103: should have empty FailedDetections when all queries succeed", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("success-detect")
+			ns := createTestNamespace(ctx, "success-detect")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Pod")
@@ -782,7 +782,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Status update conflict handling (Error Category D)
 		It("Error-Cat-D: should handle status update conflicts gracefully", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("conflict")
+			ns := createTestNamespace(ctx, "conflict")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
@@ -812,7 +812,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Rego syntax error fallback to defaults (Error Category C)
 		It("Error-Cat-C: should use defaults when Rego policy has syntax error", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("rego-error")
+			ns := createTestNamespace(ctx, "rego-error")
 			defer deleteTestNamespace(ns)
 
 			By("Creating ConfigMap with invalid Rego policy")
@@ -865,7 +865,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 		// Audit write failure continues processing (ADR-038)
 		It("ADR-038: should continue processing when audit write fails", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("audit-fail")
+			ns := createTestNamespace(ctx, "audit-fail")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
@@ -898,7 +898,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 		// Permanent error with invalid spec (Error Category A)
 		It("Error-Cat-A: should fail permanently with invalid spec", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("permanent-fail")
+			ns := createTestNamespace(ctx, "permanent-fail")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR with empty fingerprint (invalid)")

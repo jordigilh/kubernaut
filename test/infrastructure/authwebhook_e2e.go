@@ -168,7 +168,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return "", "", fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -209,13 +209,13 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Goroutine 3: Deploy PostgreSQL (E2E ports per DD-TEST-001)
 	go func() {
-		err := deployPostgreSQLToKind(kubeconfigPath, namespace, "25442", "30442", writer)
+		err := deployPostgreSQLToKind(ctx, kubeconfigPath, namespace, "25442", "30442", writer)
 		results <- result{name: "PostgreSQL", err: err}
 	}()
 
 	// Goroutine 4: Deploy Redis (E2E ports per DD-TEST-001)
 	go func() {
-		err := deployRedisToKind(kubeconfigPath, namespace, "26386", "30386", writer)
+		err := deployRedisToKind(ctx, kubeconfigPath, namespace, "26386", "30386", writer)
 		results <- result{name: "Redis", err: err}
 	}()
 
@@ -243,7 +243,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 4: Running database migrations...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~20-30 seconds")
-	if err := runDatabaseMigrations(kubeconfigPath, namespace, writer); err != nil {
+	if err := runDatabaseMigrations(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return "", "", fmt.Errorf("failed to run migrations: %w", err)
 	}
 
@@ -277,14 +277,14 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Deploy DataStorage service (E2E ports per DD-TEST-001)
 	_, _ = fmt.Fprintln(writer, "  📦 Deploying DataStorage service...")
-	if err := deployDataStorageToKind(kubeconfigPath, namespace, dsImageName, "28099", "30081", writer); err != nil {
+	if err := deployDataStorageToKind(ctx, kubeconfigPath, namespace, dsImageName, "28099", "30081", writer); err != nil {
 		return "", "", fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
 	// Deploy AuthWebhook service with webhook configurations
 	_, _ = fmt.Fprintln(writer, "  🔐 Deploying AuthWebhook service...")
 	// Deploy AuthWebhook service using pre-built image from Phase 1
-	if err := deployAuthWebhookToKind(kubeconfigPath, namespace, awImageName, writer); err != nil {
+	if err := deployAuthWebhookToKind(ctx, kubeconfigPath, namespace, awImageName, writer); err != nil {
 		return "", "", fmt.Errorf("failed to deploy AuthWebhook: %w", err)
 	}
 
@@ -293,7 +293,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 6: Waiting for services to be ready...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~20-30 seconds")
-	if err := waitForServicesReady(kubeconfigPath, namespace, writer); err != nil {
+	if err := waitForServicesReady(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return "", "", fmt.Errorf("services failed to become ready: %w", err)
 	}
 
@@ -629,7 +629,7 @@ webhooks:
 
 // deployAuthWebhookToKind deploys the AuthWebhook service to Kind cluster.
 // Standardized: uses authWebhookManifest() inline YAML template.
-func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
+func deployAuthWebhookToKind(ctx context.Context, kubeconfigPath, namespace, imageTag string, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
@@ -637,13 +637,13 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// STEP 1: Generate webhook TLS certificates
 	_, _ = fmt.Fprintln(writer, "🔐 Generating webhook TLS certificates...")
-	if err := generateWebhookCertsOnly(kubeconfigPath, namespace, writer); err != nil {
+	if err := generateWebhookCertsOnly(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to generate webhook certs: %w", err)
 	}
 
 	// STEP 2: Apply CRDs first
 	_, _ = fmt.Fprintln(writer, "📋 Applying CRDs...")
-	cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+	cmd := exec.CommandContext(ctx, "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "config/crd/bases/")
 	cmd.Dir = workspaceRoot
@@ -656,7 +656,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
 	dsURL := fmt.Sprintf("https://data-storage-service.%s.svc.cluster.local:8080", namespace)
 	manifest := authWebhookManifest(namespace, imageTag, dsURL)
-	cmd = exec.CommandContext(context.Background(), "kubectl", "apply",
+	cmd = exec.CommandContext(ctx, "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
@@ -668,7 +668,7 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 	// STEP 4: Patch webhook configurations with CA bundle
 	_, _ = fmt.Fprintln(writer, "🔐 Patching webhook configurations with CA bundle...")
-	if err := patchWebhookConfigurations(kubeconfigPath, writer); err != nil {
+	if err := patchWebhookConfigurations(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to patch webhook configurations: %w", err)
 	}
 
@@ -677,12 +677,12 @@ func deployAuthWebhookToKind(kubeconfigPath, namespace, imageTag string, writer 
 
 // generateWebhookCertsOnly generates TLS certificates for webhook admission WITHOUT patching
 // This must be called BEFORE the deployment (which creates the webhook configurations)
-func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer) error {
+func generateWebhookCertsOnly(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	// Use openssl to generate self-signed certificates for testing
 	// In production, use cert-manager
 
 	// Generate private key
-	cmd := exec.CommandContext(context.Background(), "openssl", "genrsa", "-out", "/tmp/webhook-key.pem", "2048")
+	cmd := exec.CommandContext(ctx, "openssl", "genrsa", "-out", "/tmp/webhook-key.pem", "2048")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Key generation failed: %s\n", output)
 		return fmt.Errorf("openssl genrsa failed: %w", err)
@@ -690,7 +690,7 @@ func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer
 
 	// Generate certificate with SAN (Subject Alternative Names) for webhook service
 	// This is required for Kubernetes to trust the webhook certificate
-	cmd = exec.CommandContext(context.Background(), "openssl", "req", "-new", "-x509",
+	cmd = exec.CommandContext(ctx, "openssl", "req", "-new", "-x509",
 		"-key", "/tmp/webhook-key.pem",
 		"-out", "/tmp/webhook-cert.pem",
 		"-days", "365",
@@ -702,7 +702,7 @@ func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer
 	}
 
 	// Create and apply secret with certificates using a single command
-	cmd = exec.CommandContext(context.Background(), "kubectl", "create", "secret", "tls", "authwebhook-tls",
+	cmd = exec.CommandContext(ctx, "kubectl", "create", "secret", "tls", "authwebhook-tls",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"--cert=/tmp/webhook-cert.pem",
@@ -718,9 +718,9 @@ func generateWebhookCertsOnly(kubeconfigPath, namespace string, writer io.Writer
 
 // patchWebhookConfigurations patches webhook configurations with CA bundle
 // This must be called AFTER the deployment is applied (webhook configurations must exist)
-func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
+func patchWebhookConfigurations(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// Base64 encode the certificate for CA bundle
-	caBundleOutput, err := exec.CommandContext(context.Background(), "bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
+	caBundleOutput, err := exec.CommandContext(ctx, "bash", "-c", "cat /tmp/webhook-cert.pem | base64 | tr -d '\\n'").Output()
 	if err != nil {
 		return fmt.Errorf("failed to base64 encode CA bundle: %w", err)
 	}
@@ -730,7 +730,7 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   🔧 Patching MutatingWebhookConfiguration webhooks...")
 	webhookNames := []string{"workflowexecution.mutate.kubernaut.ai", "remediationapprovalrequest.mutate.kubernaut.ai", "remediationrequest.mutate.kubernaut.ai"}
 	for i, webhookName := range webhookNames {
-		patchCmd := exec.CommandContext(context.Background(), "kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
+		patchCmd := exec.CommandContext(ctx, "kubectl", "patch", "mutatingwebhookconfiguration", "authwebhook-mutating",
 			"--kubeconfig", kubeconfigPath,
 			"--type=json",
 			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
@@ -745,7 +745,7 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   🔧 Patching ValidatingWebhookConfiguration webhooks...")
 	validatingWebhookNames := []string{"notificationrequest.validate.kubernaut.ai", "remediationworkflow.validate.kubernaut.ai", "actiontype.validate.kubernaut.ai"}
 	for i, vwName := range validatingWebhookNames {
-		patchCmd := exec.CommandContext(context.Background(), "kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
+		patchCmd := exec.CommandContext(ctx, "kubectl", "patch", "validatingwebhookconfiguration", "authwebhook-validating",
 			"--kubeconfig", kubeconfigPath,
 			"--type=json",
 			"-p", fmt.Sprintf(`[{"op":"replace","path":"/webhooks/%d/clientConfig/caBundle","value":"%s"}]`, i, caBundleB64))
@@ -790,7 +790,7 @@ func LoadKubeconfig(kubeconfigPath string) (*rest.Config, error) {
 
 // deployPostgreSQLToKind deploys PostgreSQL to Kind cluster with custom NodePort.
 // Standardized: inline YAML template pattern.
-func deployPostgreSQLToKind(kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
+func deployPostgreSQLToKind(ctx context.Context, kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ConfigMap
@@ -913,7 +913,7 @@ spec:
           name: postgresql-init
 `, nodePort)
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -927,7 +927,7 @@ spec:
 
 // deployRedisToKind deploys Redis to Kind cluster with custom NodePort.
 // Standardized: inline YAML template pattern.
-func deployRedisToKind(kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
+func deployRedisToKind(ctx context.Context, kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: Service
@@ -989,7 +989,7 @@ spec:
           timeoutSeconds: 5
 `, nodePort)
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1002,14 +1002,13 @@ spec:
 }
 
 // runDatabaseMigrations runs database migrations using ApplyMigrations
-func runDatabaseMigrations(kubeconfigPath, namespace string, writer io.Writer) error {
-	ctx := context.Background()
+func runDatabaseMigrations(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	return ApplyMigrations(ctx, namespace, kubeconfigPath, writer)
 }
 
 // deployDataStorageToKind deploys Data Storage service to Kind cluster with custom NodePort and image tag.
 // Standardized: inline YAML template pattern.
-func deployDataStorageToKind(kubeconfigPath, namespace, imageTag, hostPort, nodePort string, writer io.Writer) error {
+func deployDataStorageToKind(ctx context.Context, kubeconfigPath, namespace, imageTag, hostPort, nodePort string, writer io.Writer) error {
 	pullPolicy := GetImagePullPolicy()
 
 	manifest := fmt.Sprintf(`---
@@ -1217,7 +1216,7 @@ spec:
           path: /coverdata
 `, namespace, nodePort, imageTag, pullPolicy)
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1230,8 +1229,7 @@ spec:
 }
 
 // waitForServicesReady waits for Data Storage and AuthWebhook services to be ready
-func waitForServicesReady(kubeconfigPath, namespace string, writer io.Writer) error {
-	ctx := context.Background()
+func waitForServicesReady(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return err

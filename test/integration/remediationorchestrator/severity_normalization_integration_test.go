@@ -63,7 +63,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-severity-sev")
+			namespace = createTestNamespace(ctx, "ro-severity-sev")
 			rrName = fmt.Sprintf("rr-sev1-%s", uuid.New().String()[:13])
 		})
 
@@ -217,7 +217,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-severity-pd")
+			namespace = createTestNamespace(ctx, "ro-severity-pd")
 			rrName = fmt.Sprintf("rr-p0-%s", uuid.New().String()[:13])
 		})
 
@@ -373,7 +373,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-signalmode")
+			namespace = createTestNamespace(ctx, "ro-signalmode")
 		})
 
 		AfterEach(func() {
@@ -527,7 +527,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-severity-std")
+			namespace = createTestNamespace(ctx, "ro-severity-std")
 			rrName = fmt.Sprintf("rr-standard-%s", uuid.New().String()[:13])
 		})
 

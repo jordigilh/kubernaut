@@ -69,7 +69,7 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 		clientset, err = kubernetes.NewForConfig(cfg)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create K8s clientset")
 
-		testNS = createTestNamespace("adr056-e2e")
+		testNS = createTestNamespace(ctx, "adr056-e2e")
 	})
 
 	// createTestDeployment creates a Deployment in the test namespace for label detection.

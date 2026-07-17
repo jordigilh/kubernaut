@@ -81,7 +81,7 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 	// IT-EM-KE-001: K8s events recorded during reconcile
 	// ========================================
 	It("IT-EM-KE-001: should emit K8s events during reconcile lifecycle", func() {
-		ns := createTestNamespace("em-ke-001")
+		ns := createTestNamespace(ctx, "em-ke-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
@@ -110,7 +110,7 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 	// IT-EM-KE-002: EffectivenessAssessed event on successful completion
 	// ========================================
 	It("IT-EM-KE-002: should emit EffectivenessAssessed event on successful completion", func() {
-		ns := createTestNamespace("em-ke-002")
+		ns := createTestNamespace(ctx, "em-ke-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a target pod so health score >= threshold")
@@ -187,7 +187,7 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 	// ========================================
 	// EM no longer emits Warning RemediationIneffective; it always emits Normal EffectivenessAssessed.
 	It("IT-EM-KE-003: should emit EffectivenessAssessed event on completion (never RemediationIneffective)", func() {
-		ns := createTestNamespace("em-ke-003")
+		ns := createTestNamespace(ctx, "em-ke-003")
 		defer deleteTestNamespace(ns)
 
 		By("Ensuring NO target pod exists (health score = 0.0)")
@@ -251,7 +251,7 @@ var _ = Describe("K8s Event Observability (BR-EM-005, DD-EVENT-001)", func() {
 	// IT-EM-KE-004: No K8s events emitted when EA already Completed (idempotency)
 	// ========================================
 	It("IT-EM-KE-004: should not emit duplicate events on re-reconcile of completed EA", func() {
-		ns := createTestNamespace("em-ke-004")
+		ns := createTestNamespace(ctx, "em-ke-004")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA and waiting for completion")

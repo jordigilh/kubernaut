@@ -425,6 +425,6 @@ func randomSuffix() string {
 
 // createTestNamespace creates a managed test namespace for test isolation.
 // Delegates to shared helpers.CreateTestNamespace with kubernaut.ai/managed=true.
-func createTestNamespace(prefix string) string {
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }

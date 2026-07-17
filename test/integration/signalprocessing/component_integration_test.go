@@ -67,7 +67,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Pod enrichment with real K8s API
 		It("BR-SP-001: should enrich Pod context from real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-pod")
+			ns := createTestNamespace(ctx, "enricher-pod")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Pod with labels and annotations")
@@ -132,7 +132,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Deployment enrichment with real K8s API
 		It("BR-SP-001: should enrich Deployment context from real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-deploy")
+			ns := createTestNamespace(ctx, "enricher-deploy")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Deployment")
@@ -173,7 +173,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// StatefulSet enrichment
 		It("BR-SP-001: should enrich StatefulSet context from real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-sts")
+			ns := createTestNamespace(ctx, "enricher-sts")
 			defer deleteTestNamespace(ns)
 
 			By("Creating StatefulSet")
@@ -229,7 +229,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Service enrichment
 		It("BR-SP-001: should enrich Service context from real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-svc")
+			ns := createTestNamespace(ctx, "enricher-svc")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Service")
@@ -317,7 +317,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Degraded mode fallback
 		It("BR-SP-001: should fall back to degraded mode when resource not found", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-degraded")
+			ns := createTestNamespace(ctx, "enricher-degraded")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR for non-existent resource")
@@ -362,7 +362,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			// The suite_test.go creates a ConfigMap with rules:
 			// - startswith(namespace, "prod") → production
 			// - startswith(namespace, "staging") → staging
-			ns := createTestNamespace("prod-rego-test")
+			ns := createTestNamespace(ctx, "prod-rego-test")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
@@ -477,7 +477,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Severity fallback when environment unknown
 		It("BR-SP-071: should fall back to severity-only priority when environment unknown", func() {
 			By("Creating namespace without environment classification")
-			ns := createTestNamespace("priority-severity-fallback")
+			ns := createTestNamespace(ctx, "priority-severity-fallback")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR with critical severity")
@@ -599,7 +599,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Real K8s traversal
 		It("BR-SP-100: should traverse owner chain using real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("ownerchain-real")
+			ns := createTestNamespace(ctx, "ownerchain-real")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Deployment → ReplicaSet → Pod chain")

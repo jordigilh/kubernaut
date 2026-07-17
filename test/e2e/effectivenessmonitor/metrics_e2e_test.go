@@ -39,7 +39,7 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("em-mc-e2e")
+		testNS = createTestNamespace(ctx, "em-mc-e2e")
 	})
 
 	AfterEach(func() {

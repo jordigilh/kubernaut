@@ -67,7 +67,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 	})
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("audit-emission")
+		testNamespace = createTestNamespace(ctx, "audit-emission")
 	})
 
 	AfterEach(func() {

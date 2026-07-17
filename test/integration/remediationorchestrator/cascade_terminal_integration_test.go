@@ -59,7 +59,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 	)
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-cascade")
+		namespace = createTestNamespace(ctx, "ro-cascade")
 	})
 
 	AfterEach(func() {

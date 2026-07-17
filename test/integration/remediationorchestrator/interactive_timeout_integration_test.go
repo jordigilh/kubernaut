@@ -54,7 +54,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 	)
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-interactive")
+		namespace = createTestNamespace(ctx, "ro-interactive")
 	})
 
 	AfterEach(func() {

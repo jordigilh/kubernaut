@@ -91,7 +91,7 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 	// IT-EM-SD-001: Spec modification after hash -> EA completes with spec_drift
 	// ========================================
 	It("IT-EM-SD-001: should complete with spec_drift when target spec changes after hash computation", func() {
-		ns := createTestNamespace("em-sd-001")
+		ns := createTestNamespace(ctx, "em-sd-001")
 		defer deleteTestNamespace(ns)
 
 		By("1. Creating a target Deployment in the namespace")
@@ -201,7 +201,7 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 	// IT-EM-SD-002: No spec change -> EA completes normally (no drift)
 	// ========================================
 	It("IT-EM-SD-002: should complete normally when target spec is unchanged", func() {
-		ns := createTestNamespace("em-sd-002")
+		ns := createTestNamespace(ctx, "em-sd-002")
 		defer deleteTestNamespace(ns)
 
 		By("1. Creating a target Deployment")
@@ -241,7 +241,7 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 	// IT-EM-SD-003: No target resource -> hash from empty spec, no drift
 	// ========================================
 	It("IT-EM-SD-003: should complete normally when target resource does not exist", func() {
-		ns := createTestNamespace("em-sd-003")
+		ns := createTestNamespace(ctx, "em-sd-003")
 		defer deleteTestNamespace(ns)
 
 		By("1. Creating an EA targeting a non-existent Deployment (no Deployment created)")

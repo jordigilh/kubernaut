@@ -182,7 +182,7 @@ func StartNotificationIntegrationInfrastructure(ctx context.Context, writer io.W
 	// STEP 3: Wait for PostgreSQL to be ready (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
-	if err := WaitForPostgreSQLReady(ctx, 
+	if err := WaitForPostgreSQLReady(ctx,
 		NTIntegrationPostgresContainer,
 		NTIntegrationDBUser,
 		NTIntegrationDBName,
@@ -201,7 +201,7 @@ func StartNotificationIntegrationInfrastructure(ctx context.Context, writer io.W
 	if err := PullImageWithRetry(ctx, migrationsImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull migrations image: %w", err)
 	}
-	migrationsCmd := exec.CommandContext(context.Background(), "podman", "run", "--rm",
+	migrationsCmd := exec.CommandContext(ctx, "podman", "run", "--rm",
 		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
 		"-e", fmt.Sprintf("PGPORT=%d", NTIntegrationPostgresPort),
 		"-e", fmt.Sprintf("PGUSER=%s", NTIntegrationDBUser),
@@ -260,7 +260,7 @@ echo "Migrations complete!"`)
 	// STEP 8: Start DataStorage LAST (service-specific)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	if err := startNotificationDataStorage(actualDSImage, writer); err != nil {
+	if err := startNotificationDataStorage(ctx, actualDSImage, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
@@ -268,14 +268,14 @@ echo "Migrations complete!"`)
 	// STEP 9: Wait for DataStorage HTTP endpoint (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
-	if err := WaitForHTTPHealth(ctx, 
+	if err := WaitForHTTPHealth(ctx,
 		fmt.Sprintf("http://127.0.0.1:%d/readyz", NTIntegrationHealthPort),
 		30*time.Second,
 		writer,
 	); err != nil {
 		// Print container logs for debugging
 		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
-		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", NTIntegrationDataStorageContainer)
+		logsCmd := exec.CommandContext(ctx, "podman", "logs", NTIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
@@ -319,7 +319,7 @@ func StopNotificationIntegrationInfrastructure(ctx context.Context, writer io.Wr
 	}, writer)
 
 	// Remove network (ignore errors)
-	networkCmd := exec.CommandContext(context.Background(), "podman", "network", "rm", NTIntegrationNetwork)
+	networkCmd := exec.CommandContext(ctx, "podman", "network", "rm", NTIntegrationNetwork)
 	_ = networkCmd.Run()
 
 	_, _ = fmt.Fprintf(writer, "✅ Notification Integration Infrastructure stopped and cleaned up\n")
@@ -332,14 +332,14 @@ func StopNotificationIntegrationInfrastructure(ctx context.Context, writer io.Wr
 
 // startNotificationDataStorage starts the DataStorage container for Notification integration tests
 // This is service-specific because it needs to connect to Notification-specific PostgreSQL/Redis instances
-func startNotificationDataStorage(imageTag string, writer io.Writer) error {
+func startNotificationDataStorage(ctx context.Context, imageTag string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 
 	// Use existing config file from test/integration/notification/config/
 	configDir := filepath.Join(projectRoot, "test", "integration", "notification", "config")
 	configMount := fmt.Sprintf("%s:/etc/datastorage:ro", configDir)
 
-	cmd := exec.CommandContext(context.Background(), "podman", "run", "-d",
+	cmd := exec.CommandContext(ctx, "podman", "run", "-d",
 		"--name", NTIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", NTIntegrationDataStoragePort),
 		"-p", fmt.Sprintf("%d:8081", NTIntegrationHealthPort),

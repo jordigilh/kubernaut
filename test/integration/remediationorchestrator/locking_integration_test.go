@@ -147,7 +147,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 	// IT-RO-189-001: Two RRs same target, parallel reconciles = only one WFE
 	Describe("IT-RO-189-001: Two RRs same target = only one WFE", func() {
 		It("should create only one WFE when two RRs target the same resource", func() {
-			ns := createTestNamespace("locking-dedup")
+			ns := createTestNamespace(ctx, "locking-dedup")
 			defer deleteTestNamespace(ns)
 
 			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
@@ -203,7 +203,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 	// IT-RO-189-002: WFE creation fails = lock released, next reconcile acquires
 	Describe("IT-RO-189-002: Lock released on WFE creation failure", func() {
 		It("should release the lock when WFE creation fails, allowing retry", func() {
-			ns := createTestNamespace("locking-fail-release")
+			ns := createTestNamespace(ctx, "locking-fail-release")
 			defer deleteTestNamespace(ns)
 
 			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
@@ -237,7 +237,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 	// IT-RO-189-003: After successful Create, Lease deleted; second RR proceeds
 	Describe("IT-RO-189-003: Lock released after successful WFE creation", func() {
 		It("should release lock after WFE creation, allowing next RR to proceed", func() {
-			ns := createTestNamespace("locking-release-proceed")
+			ns := createTestNamespace(ctx, "locking-release-proceed")
 			defer deleteTestNamespace(ns)
 
 			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
@@ -282,7 +282,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 	// IT-RO-189-004: Post-approval Create with concurrent RRs = only one WFE
 	Describe("IT-RO-189-004: Approval path uses locking", func() {
 		It("should prevent duplicate WFE creation via approval path when target is busy", func() {
-			ns := createTestNamespace("locking-approval")
+			ns := createTestNamespace(ctx, "locking-approval")
 			defer deleteTestNamespace(ns)
 
 			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
@@ -435,7 +435,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 	// IT-RO-189-005: Status update failure recovery via creator idempotency
 	Describe("IT-RO-189-005: Idempotent WFE creation on status update failure", func() {
 		It("should recover via Get-before-Create when WFE exists but status update failed", func() {
-			ns := createTestNamespace("locking-idempotency")
+			ns := createTestNamespace(ctx, "locking-idempotency")
 			defer deleteTestNamespace(ns)
 
 			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)

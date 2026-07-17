@@ -58,7 +58,7 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 	)
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-signalmode-e2e")
+		testNS = createTestNamespace(ctx, "ro-signalmode-e2e")
 	})
 
 	AfterEach(func() {

@@ -48,7 +48,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-e2e")
+		testNS = createTestNamespace(ctx, "ro-e2e")
 	})
 
 	AfterEach(func() {

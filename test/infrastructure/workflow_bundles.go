@@ -144,6 +144,7 @@ func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigP
 		}
 
 		wfUUID, regErr := registerTestBundleWorkflow(
+			ctx,
 			dataStorageURL,
 			saToken,
 			kubeconfigPath,
@@ -187,7 +188,7 @@ func readWorkflowFixtureContent(fixtureName string) (string, error) {
 // ADR-058: Sends CRD YAML content directly (inline) instead of OCI pullspec.
 // Returns the DS-assigned UUID for use in WorkflowExecution specs (DD-WE-006).
 // Includes DD-AUTH-014 ServiceAccount authentication.
-func registerTestBundleWorkflow(dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent, description string, output io.Writer) (string, error) {
+func registerTestBundleWorkflow(ctx context.Context, dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent, description string, output io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) inline\n", workflowName, version)
 
 	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
@@ -203,7 +204,7 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, kubeconfigPath, workflo
 		return "", fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
-	uuid, reEnabled, err := callCreateWorkflowInline(client, schemaContent, "e2e-test-infra")
+	uuid, reEnabled, err := callCreateWorkflowInline(ctx, client, schemaContent, "e2e-test-infra")
 	if err != nil {
 		return "", fmt.Errorf("failed to register workflow: %w", err)
 	}
@@ -223,14 +224,13 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, kubeconfigPath, workflo
 // All ogen response types are handled so that the caller receives an actionable
 // error with the DS detail message instead of a generic "unexpected response type".
 // A *workflowConflictError is returned for 409 so callers can fall back to query.
-func callCreateWorkflowInline(client *dsgen.Client, content, registeredBy string) (string, bool, error) {
+func callCreateWorkflowInline(ctx context.Context, client *dsgen.Client, content, registeredBy string) (string, bool, error) {
 	req := &dsgen.CreateWorkflowInlineRequest{
 		Content: content,
 	}
 	req.Source.SetTo("e2e-test")
 	req.RegisteredBy.SetTo(registeredBy)
 
-	ctx := context.Background()
 	resp, err := client.CreateWorkflow(ctx, req)
 	if err != nil {
 		return "", false, fmt.Errorf("transport error: %w", err)

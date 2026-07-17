@@ -149,7 +149,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 	// until after the GitOps controller (ArgoCD/FluxCD) reconciles the target.
 	// ========================================
 	It("IT-RO-251-001: should set Config.HashComputeDelay in EA when AIAnalysis indicates GitOps target", func() {
-		ns := createTestNamespace("ro-251-001")
+		ns := createTestNamespace(ctx, "ro-251-001")
 		defer deleteTestNamespace(ns)
 
 		rr := driveToCompleted(ns, "rr-251-001", func(ai *aianalysisv1.AIAnalysis) {
@@ -209,7 +209,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 	// that duration, giving the proactive alert time to fire and resolve.
 	// ========================================
 	It("IT-RO-251-003: should set Config.AlertCheckDelay in EA when signal is proactive (#277)", func() {
-		ns := createTestNamespace("ro-251-003")
+		ns := createTestNamespace(ctx, "ro-251-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a RemediationRequest")
@@ -337,7 +337,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 	// compatibility: the EM computes the hash immediately on first reconcile.
 	// ========================================
 	It("IT-RO-251-002: should NOT set Config.HashComputeDelay for sync built-in target without GitOps", func() {
-		ns := createTestNamespace("ro-251-002")
+		ns := createTestNamespace(ctx, "ro-251-002")
 		defer deleteTestNamespace(ns)
 
 		rr := driveToCompleted(ns, "rr-251-002", func(ai *aianalysisv1.AIAnalysis) {

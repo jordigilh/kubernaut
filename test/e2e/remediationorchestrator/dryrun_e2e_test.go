@@ -69,7 +69,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 
 	BeforeEach(func() {
 		configPatched = false
-		testNS = createTestNamespace("ro-dryrun-e2e")
+		testNS = createTestNamespace(ctx, "ro-dryrun-e2e")
 
 		By("Saving original RO ConfigMap for restoration")
 		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,

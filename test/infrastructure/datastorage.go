@@ -62,13 +62,13 @@ func CreateDataStorageCluster(ctx context.Context, clusterName, kubeconfigPath s
 
 	// 2. Build Data Storage Docker image
 	_, _ = fmt.Fprintln(writer, "🔨 Building Data Storage Docker image...")
-	if err := buildDataStorageImage(writer); err != nil {
+	if err := buildDataStorageImage(ctx, writer); err != nil {
 		return fmt.Errorf("failed to build Data Storage image: %w", err)
 	}
 
 	// 3. Load Data Storage image into Kind
 	_, _ = fmt.Fprintln(writer, "📦 Loading Data Storage image into Kind cluster...")
-	if err := loadDataStorageImage(clusterName, writer); err != nil {
+	if err := loadDataStorageImage(ctx, clusterName, writer); err != nil {
 		return fmt.Errorf("failed to load Data Storage image: %w", err)
 	}
 
@@ -535,7 +535,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -671,7 +671,7 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 
 	// 1. Create test namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -743,7 +743,7 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 
 	// 1. Create test namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -806,7 +806,7 @@ func CleanupDataStorageTestNamespace(namespace, kubeconfigPath string, writer io
 	return nil
 }
 
-func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
+func createTestNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)
@@ -825,7 +825,7 @@ func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) err
 		},
 	}
 
-	_, err = clientset.CoreV1().Namespaces().Create(context.Background(), ns, metav1.CreateOptions{})
+	_, err = clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 	if err != nil {
 		// Check for AlreadyExists error (case-insensitive for robustness)
 		errMsg := strings.ToLower(err.Error())
@@ -1502,7 +1502,7 @@ func createKindCluster(ctx context.Context, clusterName, kubeconfigPath string, 
 	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
-func buildDataStorageImage(writer io.Writer) error {
+func buildDataStorageImage(ctx context.Context, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
@@ -1527,7 +1527,7 @@ func buildDataStorageImage(writer io.Writer) error {
 
 	buildArgs = append(buildArgs, ".")
 
-	buildCmd := exec.CommandContext(context.Background(), "podman", buildArgs...)
+	buildCmd := exec.CommandContext(ctx, "podman", buildArgs...)
 	buildCmd.Dir = workspaceRoot
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
@@ -1537,7 +1537,7 @@ func buildDataStorageImage(writer io.Writer) error {
 	}
 
 	// Tag image for SP E2E compatibility (SP expects e2e-test tag)
-	tagCmd := exec.CommandContext(context.Background(), "podman", "tag", "localhost/kubernaut-datastorage:e2e-test-datastorage", "localhost/kubernaut-datastorage:e2e-test")
+	tagCmd := exec.CommandContext(ctx, "podman", "tag", "localhost/kubernaut-datastorage:e2e-test-datastorage", "localhost/kubernaut-datastorage:e2e-test")
 	tagCmd.Stdout = writer
 	tagCmd.Stderr = writer
 	if err := tagCmd.Run(); err != nil {
@@ -1548,7 +1548,7 @@ func buildDataStorageImage(writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   Data Storage image tagged: localhost/kubernaut-datastorage:e2e-test (SP E2E compatibility)")
 
 	// PROFILING: Get image size for optimization analysis
-	sizeCmd := exec.CommandContext(context.Background(), "podman", "images", "--format", "{{.Size}}", "localhost/kubernaut-datastorage:e2e-test-datastorage")
+	sizeCmd := exec.CommandContext(ctx, "podman", "images", "--format", "{{.Size}}", "localhost/kubernaut-datastorage:e2e-test-datastorage")
 	sizeOutput, err := sizeCmd.Output()
 	if err == nil {
 		_, _ = fmt.Fprintf(writer, "   📊 Image size: %s\n", string(sizeOutput))
@@ -1557,10 +1557,10 @@ func buildDataStorageImage(writer io.Writer) error {
 	return nil
 }
 
-func loadDataStorageImage(clusterName string, writer io.Writer) error {
+func loadDataStorageImage(ctx context.Context, clusterName string, writer io.Writer) error {
 	// Save image to tar (following Gateway pattern)
 	// DD-TEST-001: Use service-specific tag
-	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "localhost/kubernaut-datastorage:e2e-test-datastorage", "-o", "/tmp/datastorage-e2e.tar")
+	saveCmd := exec.CommandContext(ctx, "podman", "save", "localhost/kubernaut-datastorage:e2e-test-datastorage", "-o", "/tmp/datastorage-e2e.tar")
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 
@@ -1569,7 +1569,7 @@ func loadDataStorageImage(clusterName string, writer io.Writer) error {
 	}
 
 	// Load image into Kind cluster
-	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", "/tmp/datastorage-e2e.tar", "--name", clusterName)
+	loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", "/tmp/datastorage-e2e.tar", "--name", clusterName)
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 
@@ -1583,7 +1583,7 @@ func loadDataStorageImage(clusterName string, writer io.Writer) error {
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintln(writer, "   🗑️  Removing Podman image to free disk space...")
-	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", "localhost/kubernaut-datastorage:e2e-test-datastorage")
+	rmiCmd := exec.CommandContext(ctx, "podman", "rmi", "-f", "localhost/kubernaut-datastorage:e2e-test-datastorage")
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -1664,43 +1664,43 @@ func StartDataStorageInfrastructure(ctx context.Context, cfg *DataStorageConfig,
 
 	// 3. Connect to PostgreSQL
 	_, _ = fmt.Fprintln(writer, "🔌 Connecting to PostgreSQL...")
-	if err := connectPostgreSQL(infra, cfg, writer); err != nil {
+	if err := connectPostgreSQL(ctx, infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
 
 	// 4. Apply migrations
 	_, _ = fmt.Fprintln(writer, "📋 Applying schema migrations...")
-	if err := applyMigrations(infra, writer); err != nil {
+	if err := applyMigrations(ctx, infra, writer); err != nil {
 		return nil, fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
 	// 5. Connect to Redis
 	_, _ = fmt.Fprintln(writer, "🔌 Connecting to Redis...")
-	if err := connectRedis(infra, cfg, writer); err != nil {
+	if err := connectRedis(ctx, infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to connect to Redis: %w", err)
 	}
 
 	// 6. Create config files
 	_, _ = fmt.Fprintln(writer, "📝 Creating ADR-030 config files...")
-	if err := createConfigFiles(infra, cfg, writer); err != nil {
+	if err := createConfigFiles(ctx, infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to create config files: %w", err)
 	}
 
 	// 7. Build Data Storage Service image
 	_, _ = fmt.Fprintln(writer, "🏗️  Building Data Storage Service image...")
-	if err := buildDataStorageService(writer); err != nil {
+	if err := buildDataStorageService(ctx, writer); err != nil {
 		return nil, fmt.Errorf("failed to build service: %w", err)
 	}
 
 	// 8. Start Data Storage Service
 	_, _ = fmt.Fprintln(writer, "🚀 Starting Data Storage Service container...")
-	if err := startDataStorageService(infra, cfg, writer); err != nil {
+	if err := startDataStorageService(ctx, infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start service: %w", err)
 	}
 
 	// 9. Wait for service to be ready
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Data Storage Service to be ready...")
-	if err := waitForServiceReady(infra, writer); err != nil {
+	if err := waitForServiceReady(ctx, infra, writer); err != nil {
 		return nil, fmt.Errorf("service not ready: %w", err)
 	}
 
@@ -1740,8 +1740,8 @@ func (infra *DataStorageInfrastructure) Stop(writer io.Writer) {
 
 func startPostgreSQL(ctx context.Context, infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	// Cleanup existing container
-	_ = exec.CommandContext(context.Background(), "podman", "stop", infra.PostgresContainer).Run()
-	_ = exec.CommandContext(context.Background(), "podman", "rm", infra.PostgresContainer).Run()
+	_ = exec.CommandContext(ctx, "podman", "stop", infra.PostgresContainer).Run()
+	_ = exec.CommandContext(ctx, "podman", "rm", infra.PostgresContainer).Run()
 
 	// Pull image with retry to handle transient registry failures (#914)
 	const postgresImage = "docker.io/library/postgres:16-alpine"
@@ -1750,7 +1750,7 @@ func startPostgreSQL(ctx context.Context, infra *DataStorageInfrastructure, cfg 
 	}
 
 	// Start PostgreSQL
-	cmd := exec.CommandContext(context.Background(), "podman", "run", "-d",
+	cmd := exec.CommandContext(ctx, "podman", "run", "-d",
 		"--name", infra.PostgresContainer,
 		"-p", fmt.Sprintf("%s:5432", cfg.PostgresPort),
 		"-e", fmt.Sprintf("POSTGRES_DB=%s", cfg.DBName),
@@ -1769,7 +1769,7 @@ func startPostgreSQL(ctx context.Context, infra *DataStorageInfrastructure, cfg 
 	time.Sleep(3 * time.Second)
 
 	Eventually(func() error {
-		testCmd := exec.CommandContext(context.Background(), "podman", "exec", infra.PostgresContainer, "pg_isready", "-U", cfg.DBUser)
+		testCmd := exec.CommandContext(ctx, "podman", "exec", infra.PostgresContainer, "pg_isready", "-U", cfg.DBUser)
 		return testCmd.Run()
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be ready")
 
@@ -1779,8 +1779,8 @@ func startPostgreSQL(ctx context.Context, infra *DataStorageInfrastructure, cfg 
 
 func startRedis(ctx context.Context, infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	// Cleanup existing container
-	_ = exec.CommandContext(context.Background(), "podman", "stop", infra.RedisContainer).Run()
-	_ = exec.CommandContext(context.Background(), "podman", "rm", infra.RedisContainer).Run()
+	_ = exec.CommandContext(ctx, "podman", "stop", infra.RedisContainer).Run()
+	_ = exec.CommandContext(ctx, "podman", "rm", infra.RedisContainer).Run()
 
 	// Pull image with retry to handle transient registry failures (#914)
 	const redisImage = "quay.io/jordigilh/redis:7-alpine"
@@ -1789,7 +1789,7 @@ func startRedis(ctx context.Context, infra *DataStorageInfrastructure, cfg *Data
 	}
 
 	// Start Redis
-	cmd := exec.CommandContext(context.Background(), "podman", "run", "-d",
+	cmd := exec.CommandContext(ctx, "podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"-p", fmt.Sprintf("%s:6379", cfg.RedisPort),
 		redisImage)
@@ -1804,7 +1804,7 @@ func startRedis(ctx context.Context, infra *DataStorageInfrastructure, cfg *Data
 	time.Sleep(2 * time.Second)
 
 	Eventually(func() error {
-		testCmd := exec.CommandContext(context.Background(), "podman", "exec", infra.RedisContainer, "redis-cli", "ping")
+		testCmd := exec.CommandContext(ctx, "podman", "exec", infra.RedisContainer, "redis-cli", "ping")
 		testOutput, err := testCmd.CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("redis not ready: %w, output: %s", err, string(testOutput))
@@ -1816,7 +1816,7 @@ func startRedis(ctx context.Context, infra *DataStorageInfrastructure, cfg *Data
 	return nil
 }
 
-func connectPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
+func connectPostgreSQL(ctx context.Context, infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	connStr := fmt.Sprintf("host=localhost port=%s user=%s password=%s dbname=%s sslmode=disable",
 		cfg.PostgresPort, cfg.DBUser, cfg.DBPassword, cfg.DBName)
 
@@ -1828,16 +1828,14 @@ func connectPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig,
 
 	// Wait for connection
 	Eventually(func() error {
-		return infra.DB.PingContext(context.Background())
+		return infra.DB.PingContext(ctx)
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "PostgreSQL should be connectable")
 
 	_, _ = fmt.Fprintln(writer, "  ✅ PostgreSQL connection established")
 	return nil
 }
 
-func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
-	ctx := context.Background()
-
+func applyMigrations(ctx context.Context, infra *DataStorageInfrastructure, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  🗑️  Dropping existing schema...")
 	_, err := infra.DB.ExecContext(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	if err != nil {
@@ -1869,14 +1867,14 @@ func applyMigrations(infra *DataStorageInfrastructure, writer io.Writer) error {
 	return nil
 }
 
-func connectRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
+func connectRedis(ctx context.Context, infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	infra.RedisClient = redis.NewClient(&redis.Options{
 		Addr: fmt.Sprintf("localhost:%s", cfg.RedisPort),
 		DB:   0,
 	})
 
 	// Verify connection
-	err := infra.RedisClient.Ping(context.Background()).Err()
+	err := infra.RedisClient.Ping(ctx).Err()
 	if err != nil {
 		return fmt.Errorf("failed to connect to Redis: %w", err)
 	}
@@ -1885,7 +1883,7 @@ func connectRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writ
 	return nil
 }
 
-func createConfigFiles(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
+func createConfigFiles(ctx context.Context, infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	var err error
 	infra.ConfigDir, err = os.MkdirTemp("", "datastorage-config-*")
 	if err != nil {
@@ -1893,8 +1891,8 @@ func createConfigFiles(infra *DataStorageInfrastructure, cfg *DataStorageConfig,
 	}
 
 	// Get container IPs
-	postgresIP := getContainerIP(infra.PostgresContainer)
-	redisIP := getContainerIP(infra.RedisContainer)
+	postgresIP := getContainerIP(ctx, infra.PostgresContainer)
+	redisIP := getContainerIP(ctx, infra.RedisContainer)
 
 	// Create config.yaml (ADR-030)
 	configYAML := fmt.Sprintf(`
@@ -1959,7 +1957,7 @@ password: %s
 	return nil
 }
 
-func buildDataStorageService(writer io.Writer) error {
+func buildDataStorageService(ctx context.Context, writer io.Writer) error {
 	// Find workspace root (go.mod location)
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
@@ -1967,10 +1965,10 @@ func buildDataStorageService(writer io.Writer) error {
 	}
 
 	// Cleanup any existing image
-	_ = exec.CommandContext(context.Background(), "podman", "rmi", "-f", "data-storage:test").Run()
+	_ = exec.CommandContext(ctx, "podman", "rmi", "-f", "data-storage:test").Run()
 
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
-	buildCmd := exec.CommandContext(context.Background(), "podman", "build",
+	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--no-cache", // Force fresh build to include latest code changes
 		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"-t", "data-storage:test",
@@ -1993,17 +1991,17 @@ func findWorkspaceRoot() (string, error) {
 	return testutil.FindWorkspaceRoot()
 }
 
-func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
+func startDataStorageService(ctx context.Context, infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	// Cleanup existing container
-	_ = exec.CommandContext(context.Background(), "podman", "stop", infra.ServiceContainer).Run()
-	_ = exec.CommandContext(context.Background(), "podman", "rm", infra.ServiceContainer).Run()
+	_ = exec.CommandContext(ctx, "podman", "stop", infra.ServiceContainer).Run()
+	_ = exec.CommandContext(ctx, "podman", "rm", infra.ServiceContainer).Run()
 
 	// Mount config files (ADR-030)
 	configMount := fmt.Sprintf("%s/config.yaml:/etc/datastorage/config.yaml:ro", infra.ConfigDir)
 	secretsMount := fmt.Sprintf("%s:/etc/datastorage/secrets:ro", infra.ConfigDir)
 
 	// Start service container with ADR-030 config
-	startCmd := exec.CommandContext(context.Background(), "podman", "run", "-d",
+	startCmd := exec.CommandContext(ctx, "podman", "run", "-d",
 		"--name", infra.ServiceContainer,
 		"-p", fmt.Sprintf("%s:8080", cfg.ServicePort),
 		"-p", fmt.Sprintf("%s:8081", cfg.HealthPort),
@@ -2022,13 +2020,13 @@ func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageC
 	return nil
 }
 
-func waitForServiceReady(infra *DataStorageInfrastructure, writer io.Writer) error {
+func waitForServiceReady(ctx context.Context, infra *DataStorageInfrastructure, writer io.Writer) error {
 	// Wait up to 30 seconds for service to be ready
 	var lastStatusCode int
 	var lastError error
 
 	Eventually(func() int {
-		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, infra.HealthURL+"/readyz", http.NoBody)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, infra.HealthURL+"/readyz", http.NoBody)
 		if reqErr != nil {
 			lastError = reqErr
 			lastStatusCode = 0
@@ -2062,13 +2060,13 @@ func waitForServiceReady(infra *DataStorageInfrastructure, writer io.Writer) err
 		}
 
 		// Print container logs for debugging
-		logs, logErr := exec.CommandContext(context.Background(), "podman", "logs", "--tail", "200", infra.ServiceContainer).CombinedOutput()
+		logs, logErr := exec.CommandContext(ctx, "podman", "logs", "--tail", "200", infra.ServiceContainer).CombinedOutput()
 		if logErr == nil {
 			_, _ = fmt.Fprintf(writer, "\n📋 Data Storage Service logs (last 200 lines):\n%s\n", string(logs))
 		}
 
 		// Check if container is running
-		statusCmd := exec.CommandContext(context.Background(), "podman", "ps", "--filter", fmt.Sprintf("name=%s", infra.ServiceContainer), "--format", "{{.Status}}")
+		statusCmd := exec.CommandContext(ctx, "podman", "ps", "--filter", fmt.Sprintf("name=%s", infra.ServiceContainer), "--format", "{{.Status}}")
 		statusOutput, _ := statusCmd.CombinedOutput()
 		_, _ = fmt.Fprintf(writer, "  Container status: %s\n", strings.TrimSpace(string(statusOutput)))
 	}
@@ -2077,8 +2075,8 @@ func waitForServiceReady(infra *DataStorageInfrastructure, writer io.Writer) err
 	return nil
 }
 
-func getContainerIP(containerName string) string {
-	cmd := exec.CommandContext(context.Background(), "podman", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", containerName)
+func getContainerIP(ctx context.Context, containerName string) string {
+	cmd := exec.CommandContext(ctx, "podman", "inspect", "-f", "{{.NetworkSettings.IPAddress}}", containerName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		panic(fmt.Sprintf("Failed to get IP for container %s: %v", containerName, err))
@@ -2331,7 +2329,7 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	}
 
 	_, _ = fmt.Fprintln(writer, "📋 Creating Certificate resource...")
-	certCmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+	certCmd := exec.CommandContext(ctx, "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"-f", certPath)
@@ -2344,7 +2342,7 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 
 	// Wait for cert-manager to create the Secret
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for cert-manager to issue certificate...")
-	waitSecretCmd := exec.CommandContext(context.Background(), "kubectl", "wait",
+	waitSecretCmd := exec.CommandContext(ctx, "kubectl", "wait",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"--for=condition=Ready",
@@ -2364,7 +2362,7 @@ func DeployCertManagerDataStorage(ctx context.Context, kubeconfigPath, namespace
 	_, _ = fmt.Fprintln(writer, "📦 Deploying DataStorage via Kustomize...")
 
 	// Use kubectl apply with kustomize
-	deployCmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+	deployCmd := exec.CommandContext(ctx, "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-n", namespace,
 		"-k", kustomizePath)

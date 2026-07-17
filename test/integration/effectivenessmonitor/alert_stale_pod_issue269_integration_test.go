@@ -53,7 +53,7 @@ var _ = Describe("Alert Scoring — Issue #269: filter stale pod alerts after ro
 	// still has a firing alert for it. The scorer must filter it out.
 	// ========================================================================
 	It("IT-EM-269-001: should score 1.0 when AlertManager only has stale alert for deleted pod", func() {
-		ns := createTestNamespace("em-269-001")
+		ns := createTestNamespace(ctx, "em-269-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating active pods for Deployment 'leaky-app' (post-restart replicas)")
@@ -141,7 +141,7 @@ var _ = Describe("Alert Scoring — Issue #269: filter stale pod alerts after ro
 	// an active new pod. The stale alert is filtered but the active one remains.
 	// ========================================================================
 	It("IT-EM-269-002: should score 0.0 when AlertManager has alert for both active and deleted pods", func() {
-		ns := createTestNamespace("em-269-002")
+		ns := createTestNamespace(ctx, "em-269-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating active pod for Deployment 'leaky-app'")

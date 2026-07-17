@@ -260,7 +260,7 @@ spec:
 // kind-kubernautagent-config.yaml maps host 5556, while kind-fullpipeline-config.yaml
 // and kind-fleetmetadatacache-config.yaml map host 30556 directly (matching the
 // NodePort number). Callers must pass the value used in their own Kind config.
-func waitForDexReady(hostPort int, writer io.Writer) error {
+func waitForDexReady(ctx context.Context, hostPort int, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DEX OIDC endpoint to be reachable (HTTPS)...")
 
 	client := &http.Client{
@@ -275,7 +275,7 @@ func waitForDexReady(hostPort int, writer io.Writer) error {
 	healthzURL := fmt.Sprintf("https://localhost:%d/dex/healthz", hostPort)
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, healthzURL, http.NoBody)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthzURL, http.NoBody)
 		if reqErr != nil {
 			return fmt.Errorf("failed to build DEX healthz request: %w", reqErr)
 		}

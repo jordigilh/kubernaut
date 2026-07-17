@@ -96,7 +96,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 
 	Context("IT-RO-095-01: Happy path event trail (auto-approve)", func() {
 		It("should emit RemediationCreated, PhaseTransition, RemediationCompleted when lifecycle completes", func() {
-			namespace := createTestNamespace("ro-events-happy")
+			namespace := createTestNamespace(ctx, "ro-events-happy")
 			defer deleteTestNamespace(namespace)
 
 			rrName := fmt.Sprintf("rr-events-happy-%s", uuid.New().String()[:13])
@@ -209,7 +209,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 
 	Context("IT-RO-095-02: Approval flow event trail", func() {
 		It("should emit RemediationCreated, ApprovalRequired, ApprovalGranted, RemediationCompleted when approval flow completes", func() {
-			namespace := createTestNamespace("ro-events-approval")
+			namespace := createTestNamespace(ctx, "ro-events-approval")
 			defer deleteTestNamespace(namespace)
 
 			rrName := fmt.Sprintf("rr-events-appr-%s", uuid.New().String()[:13])
@@ -336,7 +336,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 
 	Context("IT-RO-095-04: Consecutive failure blocking event trail", func() {
 		It("should emit RemediationCreated and ConsecutiveFailureBlocked when target at threshold", func() {
-			namespace := createTestNamespace("ro-events-consecutive")
+			namespace := createTestNamespace(ctx, "ro-events-consecutive")
 			defer deleteTestNamespace(namespace)
 
 			fingerprint := GenerateTestFingerprint(namespace, "events-blocked")

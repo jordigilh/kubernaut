@@ -49,7 +49,7 @@ var _ = Describe("EffectivenessMonitor Operational E2E Tests", Label("e2e"), fun
 		var testNS string
 
 		BeforeEach(func() {
-			testNS = createTestNamespace("em-vw-e2e")
+			testNS = createTestNamespace(ctx, "em-vw-e2e")
 		})
 
 		AfterEach(func() {
@@ -96,7 +96,7 @@ var _ = Describe("EffectivenessMonitor Operational E2E Tests", Label("e2e"), fun
 		It("E2E-EM-FF-001: should start successfully when Prometheus is unreachable", func() {
 			By("Creating an EM deployment with Prometheus URL pointing to a non-existent service")
 
-			ffNamespace := createTestNamespace("em-ff-e2e")
+			ffNamespace := createTestNamespace(ctx, "em-ff-e2e")
 			defer deleteTestNamespace(ffNamespace)
 
 			imageCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
@@ -220,7 +220,7 @@ spec:
 			Expect(string(out)).To(Equal("1"), "EM controller should be running")
 
 			By("Creating an EA to ensure there is in-flight work")
-			gsNS := createTestNamespace("em-gs-e2e")
+			gsNS := createTestNamespace(ctx, "em-gs-e2e")
 			defer deleteTestNamespace(gsNS)
 
 			name := uniqueName("ea-gs")

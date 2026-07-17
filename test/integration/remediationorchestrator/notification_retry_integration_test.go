@@ -51,7 +51,7 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 
 	// IT-NT-RETRY-001: Full lifecycle validates completion notification tracked in NotificationRequestRefs
 	It("IT-NT-RETRY-001: should track completion notification ref after full remediation lifecycle", func() {
-		ns := createTestNamespace("ro-nt-retry")
+		ns := createTestNamespace(ctx, "ro-nt-retry")
 		defer deleteTestNamespace(ns)
 
 		rrName := "rr-nt-retry-001"

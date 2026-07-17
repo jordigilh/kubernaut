@@ -644,7 +644,7 @@ var _ = SynchronizedAfterSuite(func() {
 // createTestNamespace creates a managed test namespace for test isolation.
 // Delegates to shared helpers.CreateTestNamespace with kubernaut.ai/managed=true.
 // MANDATORY per 03-testing-strategy.mdc: Each test must use unique identifiers.
-func createTestNamespace(prefix string) string {
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }
 

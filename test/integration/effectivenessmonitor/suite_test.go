@@ -469,7 +469,7 @@ var _ = SynchronizedAfterSuite(func() {
 // ============================================================================
 
 // createTestNamespace creates a managed test namespace for test isolation.
-func createTestNamespace(prefix string) string {
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }
 

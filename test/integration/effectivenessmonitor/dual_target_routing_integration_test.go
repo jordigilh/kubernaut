@@ -90,7 +90,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 	// IT-EM-188-007: assessMetrics uses SignalTarget.Namespace in PromQL queries
 	// ========================================================================
 	It("IT-EM-188-007: should use SignalTarget.Namespace in Prometheus PromQL queries", func() {
-		ns := createTestNamespace("em-rt-007")
+		ns := createTestNamespace(ctx, "em-rt-007")
 		defer deleteTestNamespace(ns)
 
 		signalNs := ns + "-signal"
@@ -139,7 +139,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 	// IT-EM-188-005: getTargetHealthStatus uses RemediationTarget (#275)
 	// ========================================================================
 	It("IT-EM-188-005: should use RemediationTarget for health assessment (HPA, not Deployment)", func() {
-		ns := createTestNamespace("em-rt-005")
+		ns := createTestNamespace(ctx, "em-rt-005")
 		defer deleteTestNamespace(ns)
 
 		signalNs := ns + "-signal"
@@ -171,7 +171,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 	// IT-EM-188-004: getTargetSpec uses RemediationTarget for hash computation
 	// ========================================================================
 	It("IT-EM-188-004: should use RemediationTarget for spec hash computation", func() {
-		ns := createTestNamespace("em-rt-004")
+		ns := createTestNamespace(ctx, "em-rt-004")
 		defer deleteTestNamespace(ns)
 
 		signalNs := ns + "-signal"
@@ -204,7 +204,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 	// IT-EM-188-008: Drift guard re-hashes using RemediationTarget
 	// ========================================================================
 	It("IT-EM-188-008: should use RemediationTarget for drift guard re-hashing", func() {
-		ns := createTestNamespace("em-rt-008")
+		ns := createTestNamespace(ctx, "em-rt-008")
 		defer deleteTestNamespace(ns)
 
 		signalNs := ns + "-signal"
@@ -242,7 +242,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 	// IT-EM-188-006: assessAlert uses SignalTarget.Namespace in AlertContext
 	// ========================================================================
 	It("IT-EM-188-006: should pass SignalTarget.Namespace to alert scorer context", func() {
-		ns := createTestNamespace("em-rt-006")
+		ns := createTestNamespace(ctx, "em-rt-006")
 		defer deleteTestNamespace(ns)
 
 		signalNs := ns + "-signal"
@@ -298,7 +298,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 	// IT-EM-188-FULL: Full reconcile with divergent targets completes successfully
 	// ========================================================================
 	It("IT-EM-188-FULL: should complete full assessment with divergent signal/remediation targets", func() {
-		ns := createTestNamespace("em-rt-full")
+		ns := createTestNamespace(ctx, "em-rt-full")
 		defer deleteTestNamespace(ns)
 
 		signalNs := ns + "-signal"

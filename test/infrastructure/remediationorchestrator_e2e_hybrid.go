@@ -153,7 +153,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	}
 
 	kindConfigPath := "test/infrastructure/kind-remediationorchestrator-config.yaml"
-	if err := CreateKindClusterWithExtraMounts(ctx, 
+	if err := CreateKindClusterWithExtraMounts(ctx,
 		clusterName,
 		kubeconfigPath,
 		kindConfigPath,
@@ -178,7 +178,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
 		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
-		crdCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 		crdCmd.Stdout = writer
 		crdCmd.Stderr = writer
 		if err := crdCmd.Run(); err != nil {
@@ -188,7 +188,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 
 	// Create kubernaut-system namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -725,7 +725,7 @@ spec:
 func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := roRBACManifest()
-	rbacCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = bytes.NewReader([]byte(rbacManifest))
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -738,7 +738,7 @@ func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName str
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := roWorkloadManifest(imageName, verifyingTimeout...)
-	workloadCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = bytes.NewReader([]byte(workloadManifest))
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer
@@ -751,7 +751,7 @@ func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName str
 	_, _ = fmt.Fprintln(writer, "   ⏳ Waiting for RemediationOrchestrator to be ready...")
 	deadline := time.Now().Add(3 * time.Minute) // Longer timeout for controller startup
 	for time.Now().Before(deadline) {
-		waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
+		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 			"wait", "--for=condition=ready", "pod", "-l", "app=remediationorchestrator-controller",
 			"--timeout=10s")
 		if err := waitCmd.Run(); err == nil {
@@ -768,7 +768,7 @@ func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName str
 
 	// 1. Pod status
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Status:")
-	statusCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
+	statusCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"get", "pods", "-l", "app=remediationorchestrator-controller", "-o", "wide")
 	statusCmd.Stdout = writer
 	statusCmd.Stderr = writer
@@ -777,7 +777,7 @@ func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName str
 
 	// 2. Pod describe (events, image status, readiness probe)
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Details & Events:")
-	describeCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
+	describeCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"describe", "pod", "-l", "app=remediationorchestrator-controller")
 	describeCmd.Stdout = writer
 	describeCmd.Stderr = writer
@@ -786,7 +786,7 @@ func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName str
 
 	// 3. Pod logs (startup errors)
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Logs (last 50 lines):")
-	logsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
+	logsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"logs", "-l", "app=remediationorchestrator-controller", "--tail=50", "--all-containers")
 	logsCmd.Stdout = writer
 	logsCmd.Stderr = writer

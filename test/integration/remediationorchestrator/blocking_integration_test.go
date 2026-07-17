@@ -61,7 +61,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 		It("should block RR and create notification after threshold failures (end-to-end)", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("blocking-e2e")
+			ns := createTestNamespace(ctx, "blocking-e2e")
 			defer deleteTestNamespace(ns)
 
 			fingerprint := "c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3"
@@ -120,7 +120,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 		It("should accept Blocked as a valid phase value in RR status", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("blocking-phase")
+			ns := createTestNamespace(ctx, "blocking-phase")
 			defer deleteTestNamespace(ns)
 
 			fingerprint := "d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4"
@@ -165,7 +165,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 		It("should allow manual blocks without BlockedUntil (nil = no auto-expiry)", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("blocking-manual")
+			ns := createTestNamespace(ctx, "blocking-manual")
 			defer deleteTestNamespace(ns)
 
 			fingerprint := "f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6"
@@ -207,7 +207,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		var namespace string
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-fingerprint")
+			namespace = createTestNamespace(ctx, "ro-fingerprint")
 		})
 
 		AfterEach(func() {
@@ -286,7 +286,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			ctx := context.Background()
 
 			// Create second namespace for isolation test
-			nsB := createTestNamespace("ro-fingerprint-b")
+			nsB := createTestNamespace(ctx, "ro-fingerprint-b")
 			defer deleteTestNamespace(nsB)
 
 			// Unique fingerprint per test to avoid cross-test blocking (parallel tests share ROControllerNamespace)

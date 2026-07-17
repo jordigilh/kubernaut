@@ -56,7 +56,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 	)
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-completion-e2e")
+		testNS = createTestNamespace(ctx, "ro-completion-e2e")
 	})
 
 	AfterEach(func() {

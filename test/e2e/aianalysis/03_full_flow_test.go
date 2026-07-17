@@ -44,7 +44,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
-			_ = createTestNamespace("full-flow-prod")
+			_ = createTestNamespace(ctx, "full-flow-prod")
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-prod-incident-" + randomSuffix(),
@@ -221,7 +221,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
-			_ = createTestNamespace("full-flow-data-quality")
+			_ = createTestNamespace(ctx, "full-flow-data-quality")
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-data-quality-" + randomSuffix(),
@@ -278,7 +278,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
-			_ = createTestNamespace("full-flow-low-conf")
+			_ = createTestNamespace(ctx, "full-flow-low-conf")
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-low-conf-" + randomSuffix(),
@@ -352,7 +352,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
-			_ = createTestNamespace("full-flow-max-retries")
+			_ = createTestNamespace(ctx, "full-flow-max-retries")
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-max-retries-" + randomSuffix(),

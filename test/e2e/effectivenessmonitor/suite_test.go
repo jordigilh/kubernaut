@@ -294,7 +294,7 @@ var _ = SynchronizedAfterSuite(
 // ============================================================================
 
 // createTestNamespace creates a managed test namespace and waits for Active.
-func createTestNamespace(prefix string) string {
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespaceAndWait(k8sClient, prefix)
 }
 

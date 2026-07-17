@@ -55,7 +55,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 	)
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-ea-e2e")
+		testNS = createTestNamespace(ctx, "ro-ea-e2e")
 	})
 
 	AfterEach(func() {

@@ -50,7 +50,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-lifecycle")
+			namespace = createTestNamespace(ctx, "ro-lifecycle")
 			rrName = fmt.Sprintf("rr-%s", uuid.New().String()[:13])
 		})
 
@@ -132,7 +132,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-phase")
+			namespace = createTestNamespace(ctx, "ro-phase")
 			rrName = fmt.Sprintf("rr-phase-%s", uuid.New().String()[:13])
 		})
 
@@ -196,7 +196,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-manual-review")
+			namespace = createTestNamespace(ctx, "ro-manual-review")
 			rrName = fmt.Sprintf("rr-mr-%s", uuid.New().String()[:13])
 		})
 
@@ -272,7 +272,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-infra-fail")
+			namespace = createTestNamespace(ctx, "ro-infra-fail")
 			rrName = fmt.Sprintf("rr-if-%s", uuid.New().String()[:13])
 		})
 
@@ -354,7 +354,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-no-action")
+			namespace = createTestNamespace(ctx, "ro-no-action")
 			rrName = fmt.Sprintf("rr-na-%s", uuid.New().String()[:13])
 		})
 
@@ -443,7 +443,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-approval")
+			namespace = createTestNamespace(ctx, "ro-approval")
 			rrName = fmt.Sprintf("rr-appr-%s", uuid.New().String()[:13])
 		})
 

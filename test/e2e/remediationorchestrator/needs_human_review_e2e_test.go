@@ -53,7 +53,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-human-review-e2e")
+		testNS = createTestNamespace(ctx, "ro-human-review-e2e")
 	})
 
 	AfterEach(func() {

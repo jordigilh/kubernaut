@@ -71,7 +71,7 @@ func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKu
 		return nil, fmt.Errorf("remote cluster creation failed: %w", err)
 	}
 
-	if err := createTestNamespace(namespace, remoteKubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
 		return nil, fmt.Errorf("remote namespace creation failed: %w", err)
 	}
 

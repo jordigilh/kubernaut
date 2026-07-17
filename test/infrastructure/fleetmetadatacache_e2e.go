@@ -139,7 +139,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", "", fmt.Errorf("failed to create Kind cluster: %w", clusterErr)
 	}
 
-	if nsErr := createTestNamespace(namespace, kubeconfigPath, writer); nsErr != nil {
+	if nsErr := createTestNamespace(ctx, namespace, kubeconfigPath, writer); nsErr != nil {
 		return "", "", fmt.Errorf("failed to create namespace: %w", nsErr)
 	}
 

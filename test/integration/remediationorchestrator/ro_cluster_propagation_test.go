@@ -75,7 +75,7 @@ var _ = Describe("IT-RO-1511-001: RO propagates SP.Status.ClusterClassification 
 	)
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-cluster")
+		namespace = createTestNamespace(ctx, "ro-cluster")
 		rrName = fmt.Sprintf("cluster-%s", uuid.New().String()[:13])
 	})
 

@@ -166,7 +166,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	kindConfigPath := "test/infrastructure/kind-fullpipeline-config.yaml"
-	if err := CreateKindClusterWithExtraMounts(ctx, 
+	if err := CreateKindClusterWithExtraMounts(ctx,
 		clusterName, kubeconfigPath, kindConfigPath, extraMounts, writer,
 	); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 2 failed: %w", err)
@@ -211,7 +211,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		_, _ = fmt.Fprintf(writer, "  ├── %s\n", crdFile)
 		crdArgs = append(crdArgs, "-f", crdPath)
 	}
-	cmd := exec.CommandContext(context.Background(), "kubectl", crdArgs...)
+	cmd := exec.CommandContext(ctx, "kubectl", crdArgs...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -226,7 +226,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 5: Namespace + RBAC...")
 	phase5Start := time.Now()
 
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -744,7 +744,7 @@ func loadFullPipelineImages(ctx context.Context, builtImages map[string]string, 
 func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Install all SP-specific Rego policy ConfigMaps and proactive signal mappings
 	// (5 policies + 1 proactive mapping ConfigMap required by SP controller)
-	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
+	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy SP policies: %w", err)
 	}
 
@@ -759,12 +759,12 @@ func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPa
 // Rego policy and proper RBAC for the full pipeline E2E.
 func deployFullPipelineAAController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Install AA-specific Rego policy ConfigMap (aianalysis-policies)
-	if err := createInlineRegoPolicyConfigMap(kubeconfigPath, writer); err != nil {
+	if err := createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create AA Rego policy ConfigMap: %w", err)
 	}
 
 	// Deploy AA controller using the manifest helper
-	if err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName, writer); err != nil {
+	if err := deployAIAnalysisControllerManifestOnly(ctx, kubeconfigPath, imageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy AA controller: %w", err)
 	}
 	return nil
@@ -782,7 +782,7 @@ func deployFullPipelineAAController(ctx context.Context, namespace, kubeconfigPa
 func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, gatewayImageName string, writer io.Writer) error {
 	manifest := gatewayManifest(gatewayImageName, false)
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -791,7 +791,7 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 	}
 
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Gateway pod ready...")
-	waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
+	waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=gateway", "-n", namespace, "--timeout=300s")
 	waitCmd.Stdout = writer

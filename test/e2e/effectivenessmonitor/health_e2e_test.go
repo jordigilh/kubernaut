@@ -32,7 +32,7 @@ var _ = Describe("EffectivenessMonitor Health Check E2E Tests", Label("e2e"), fu
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("em-hc-e2e")
+		testNS = createTestNamespace(ctx, "em-hc-e2e")
 	})
 
 	AfterEach(func() {

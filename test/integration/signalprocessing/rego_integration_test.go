@@ -235,7 +235,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 		// Missing Rego policy ConfigMap falls back to defaults
 		It("BR-SP-053: should fall back to defaults when Rego policy ConfigMap is missing", func() {
 			By("Creating namespace without any Rego policy ConfigMaps")
-			ns := createTestNamespace("rego-fallback-missing")
+			ns := createTestNamespace(ctx, "rego-fallback-missing")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
@@ -330,7 +330,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 		// 5s timeout enforcement
 		It("DD-WORKFLOW-001: should enforce 5s timeout on Rego evaluation", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("rego-timeout")
+			ns := createTestNamespace(ctx, "rego-timeout")
 			defer deleteTestNamespace(ns)
 
 			By("Creating ConfigMap with slow policy (infinite loop protection)")
@@ -403,7 +403,7 @@ labels["computed"] := [result] if {
 		// Value truncation (100 chars)
 		It("DD-WORKFLOW-001: should truncate values longer than 100 characters", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("rego-val-value")
+			ns := createTestNamespace(ctx, "rego-val-value")
 			defer deleteTestNamespace(ns)
 
 			By("Updating unified policy with long-value labels rules")
@@ -447,7 +447,7 @@ labels["shortvalue"] := ["ok"] if { true }
 		// Max keys truncation (10)
 		It("DD-WORKFLOW-001: should limit CustomLabels to 10 keys maximum", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("rego-val-maxkeys")
+			ns := createTestNamespace(ctx, "rego-val-maxkeys")
 			defer deleteTestNamespace(ns)
 
 			By("Updating unified policy with 15 label keys")

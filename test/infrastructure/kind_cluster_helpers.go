@@ -65,8 +65,8 @@ func checkKindVersionOutput(versionStr string) error {
 
 // validateKindVersion shells out to `kind version` and validates the result
 // against the minimum required version, logging progress to writer.
-func validateKindVersion(writer io.Writer) error {
-	versionCmd := exec.CommandContext(context.Background(), "kind", "version")
+func validateKindVersion(ctx context.Context, writer io.Writer) error {
+	versionCmd := exec.CommandContext(ctx, "kind", "version")
 	versionOutput, err := versionCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to get kind version: %w", err)
@@ -119,7 +119,7 @@ type ExtraMount struct {
 //   - ✅ Consistent YAML manipulation logic
 //   - ✅ Reusable across Notification, Gateway, WorkflowExecution, etc.
 //   - ✅ Easier to maintain and test
-func CreateKindClusterWithExtraMounts(ctx context.Context, 
+func CreateKindClusterWithExtraMounts(ctx context.Context,
 	clusterName string,
 	kubeconfigPath string,
 	baseConfigPath string,
@@ -127,7 +127,7 @@ func CreateKindClusterWithExtraMounts(ctx context.Context,
 	writer io.Writer,
 ) error {
 	// 0. Validate Kind version (minimum version required for E2E tests)
-	if err := validateKindVersion(writer); err != nil {
+	if err := validateKindVersion(ctx, writer); err != nil {
 		return err
 	}
 
@@ -135,11 +135,11 @@ func CreateKindClusterWithExtraMounts(ctx context.Context,
 	// When --flake-attempts or CI retry re-runs the suite, the cluster from
 	// the failed attempt is still alive. Reuse it so cascade failures remain
 	// visible — cleaning up would mask correlations between tests.
-	checkCmd := exec.CommandContext(context.Background(), "kind", "get", "clusters")
+	checkCmd := exec.CommandContext(ctx, "kind", "get", "clusters")
 	checkOutput, _ := checkCmd.CombinedOutput()
 	if strings.Contains(string(checkOutput), clusterName) {
 		_, _ = fmt.Fprintf(writer, "  ♻️  Cluster %s already exists, reusing (retry-safe)\n", clusterName)
-		return exportKubeconfigIfNeeded(clusterName, kubeconfigPath, writer)
+		return exportKubeconfigIfNeeded(ctx, clusterName, kubeconfigPath, writer)
 	}
 
 	// 1. Find workspace root
@@ -196,7 +196,7 @@ func CreateKindClusterWithExtraMounts(ctx context.Context,
 	}
 
 	// 7. Create Kind cluster
-	cmd := exec.CommandContext(context.Background(), "kind", "create", "cluster",
+	cmd := exec.CommandContext(ctx, "kind", "create", "cluster",
 		"--name", clusterName,
 		"--config", tmpConfig.Name(),
 		"--kubeconfig", kubeconfigPath)
@@ -341,23 +341,23 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 	_, _ = fmt.Fprintf(writer, "🔧 Creating Kind cluster: %s\n", opts.ClusterName)
 
 	// 0. Validate Kind version (minimum version required for E2E tests)
-	if err := validateKindVersion(writer); err != nil {
+	if err := validateKindVersion(ctx, writer); err != nil {
 		return err
 	}
 
 	// 1. Check if cluster already exists
-	checkCmd := exec.CommandContext(context.Background(), "kind", "get", "clusters")
+	checkCmd := exec.CommandContext(ctx, "kind", "get", "clusters")
 	checkOutput, _ := checkCmd.CombinedOutput()
 	clusterExists := strings.Contains(string(checkOutput), opts.ClusterName)
 
 	if clusterExists {
 		if opts.ReuseExisting {
 			_, _ = fmt.Fprintf(writer, "  ℹ️  Cluster %s already exists, reusing...\n", opts.ClusterName)
-			return exportKubeconfigIfNeeded(opts.ClusterName, opts.KubeconfigPath, writer)
+			return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, writer)
 		}
 		if opts.DeleteExisting {
 			_, _ = fmt.Fprintf(writer, "  ⚠️  Cluster already exists, deleting...\n")
-			delCmd := exec.CommandContext(context.Background(), "kind", "delete", "cluster", "--name", opts.ClusterName)
+			delCmd := exec.CommandContext(ctx, "kind", "delete", "cluster", "--name", opts.ClusterName)
 			if output, err := delCmd.CombinedOutput(); err != nil {
 				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to delete existing cluster: %s\n", output)
 			}
@@ -368,7 +368,7 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 	if opts.CleanupOrphanedContainers {
 		_, _ = fmt.Fprintln(writer, "  🧹 Cleaning up any leftover Podman containers...")
 		// Only control-plane node (single-node clusters for resource efficiency)
-		cleanupCmd := exec.CommandContext(context.Background(), "podman", "rm", "-f", opts.ClusterName+"-control-plane")
+		cleanupCmd := exec.CommandContext(ctx, "podman", "rm", "-f", opts.ClusterName+"-control-plane")
 		_ = cleanupCmd.Run() // Ignore errors - container may not exist
 	}
 
@@ -400,7 +400,7 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 		waitTimeout = "60s"
 	}
 
-	cmd := exec.CommandContext(context.Background(), "kind", "create", "cluster",
+	cmd := exec.CommandContext(ctx, "kind", "create", "cluster",
 		"--name", opts.ClusterName,
 		"--config", absoluteConfigPath,
 		"--kubeconfig", opts.KubeconfigPath,
@@ -431,17 +431,17 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 	// create a root-owned 0755 directory inside the Kind node. This ensures the
 	// container user (UID 1001) can always write coverage data.
 	if os.Getenv("E2E_COVERAGE") == trueFixture {
-		ensureCoverdataWritableInKindNode(opts.ClusterName, writer)
+		ensureCoverdataWritableInKindNode(ctx, opts.ClusterName, writer)
 	}
 
 	// 11. Export kubeconfig explicitly (kind create --kubeconfig doesn't always work reliably)
-	return exportKubeconfigIfNeeded(opts.ClusterName, opts.KubeconfigPath, writer)
+	return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, writer)
 }
 
 // exportKubeconfigIfNeeded exports the kubeconfig for a Kind cluster
 // This is a workaround for unreliable --kubeconfig flag behavior
-func exportKubeconfigIfNeeded(clusterName, kubeconfigPath string, writer io.Writer) error {
-	kubeconfigCmd := exec.CommandContext(context.Background(), "kind", "get", "kubeconfig", "--name", clusterName)
+func exportKubeconfigIfNeeded(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	kubeconfigCmd := exec.CommandContext(ctx, "kind", "get", "kubeconfig", "--name", clusterName)
 	kubeconfigOutput, err := kubeconfigCmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get kubeconfig: %w", err)
@@ -461,12 +461,12 @@ func exportKubeconfigIfNeeded(clusterName, kubeconfigPath string, writer io.Writ
 // coverage data. This is a defense-in-depth measure: if the hostPath volume's
 // DirectoryOrCreate creates a root-owned directory, the container user would
 // be unable to write without this fix.
-func ensureCoverdataWritableInKindNode(clusterName string, writer io.Writer) {
+func ensureCoverdataWritableInKindNode(ctx context.Context, clusterName string, writer io.Writer) {
 	nodeName := clusterName + "-control-plane"
 
 	// Try both runtimes (podman for local, docker for CI)
 	for _, runtime := range []string{"podman", "docker"} {
-		cmd := exec.CommandContext(context.Background(), runtime, "exec", nodeName,
+		cmd := exec.CommandContext(ctx, runtime, "exec", nodeName,
 			"sh", "-c", "mkdir -p /coverdata && chmod 777 /coverdata")
 		output, err := cmd.CombinedOutput()
 		if err == nil {
