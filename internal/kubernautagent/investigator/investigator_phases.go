@@ -92,7 +92,7 @@ func MergePhase1Fallbacks(result *katypes.InvestigationResult, p1 *prompt.Phase1
 func mergePhase1InvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
 	result.InvestigationOutcome = outcome
 	parser.ApplyInvestigationOutcome(result, outcome)
-	if outcome == "problem_resolved" && result.HumanReviewNeeded {
+	if outcome == katypes.InvestigationOutcomeProblemResolved && result.HumanReviewNeeded {
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}
@@ -319,43 +319,48 @@ func toPromptEnrichment(data *enrichment.EnrichmentResult) *prompt.EnrichmentDat
 	return pe
 }
 
+// boolLabelTrue is the map value used for boolean DetectedLabels fields when
+// converting to the flat string map consumed by prompt templates. Only "true"
+// entries are ever written; absent keys imply false.
+const boolLabelTrue = "true"
+
 func detectedLabelsToPromptMap(dl *enrichment.DetectedLabels) map[string]string {
 	m := make(map[string]string, 14)
 	if dl.GitOpsManaged {
-		m["gitOpsManaged"] = "true"
+		m["gitOpsManaged"] = boolLabelTrue
 		if dl.GitOpsTool != "" {
 			m["gitOpsTool"] = dl.GitOpsTool
 		}
 	}
 	if dl.HPAEnabled {
-		m["hpaEnabled"] = "true"
+		m["hpaEnabled"] = boolLabelTrue
 	}
 	if dl.PDBProtected {
-		m["pdbProtected"] = "true"
+		m["pdbProtected"] = boolLabelTrue
 	}
 	if dl.Stateful {
-		m["stateful"] = "true"
+		m["stateful"] = boolLabelTrue
 	}
 	if dl.HelmManaged {
-		m["helmManaged"] = "true"
+		m["helmManaged"] = boolLabelTrue
 	}
 	if dl.NetworkIsolated {
-		m["networkIsolated"] = "true"
+		m["networkIsolated"] = boolLabelTrue
 	}
 	if dl.ServiceMesh != "" {
 		m["serviceMesh"] = dl.ServiceMesh
 	}
 	if dl.ResourceQuotaConstrained {
-		m["resourceQuotaConstrained"] = "true"
+		m["resourceQuotaConstrained"] = boolLabelTrue
 	}
 	if dl.VirtualMachine {
-		m["virtualMachine"] = "true"
+		m["virtualMachine"] = boolLabelTrue
 	}
 	if dl.LiveMigratable {
-		m["liveMigratable"] = "true"
+		m["liveMigratable"] = boolLabelTrue
 	}
 	if dl.CDIManaged {
-		m["cdiManaged"] = "true"
+		m["cdiManaged"] = boolLabelTrue
 	}
 	if dl.StorageBackend != "" {
 		m["storageBackend"] = dl.StorageBackend

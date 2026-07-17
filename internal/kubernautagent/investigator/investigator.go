@@ -578,7 +578,7 @@ func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnriched
 	if reEnriched != nil && reEnriched.HardFail {
 		inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
 		p.RCAResult.HumanReviewNeeded = true
-		p.RCAResult.HumanReviewReason = "rca_incomplete"
+		p.RCAResult.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
 		return enrichData, true
 	}
 

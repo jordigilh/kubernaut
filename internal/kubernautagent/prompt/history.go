@@ -27,6 +27,10 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 )
 
+// notAvailable is the placeholder rendered in prompt text when a value is
+// absent, inconclusive, or not populated for the given history entry.
+const notAvailable = "N/A"
+
 // RepeatedRemediationEscalationThreshold is the minimum count of completed-but-recurring
 // remediations before the LLM is warned to escalate (KA constants.py:92).
 const RepeatedRemediationEscalationThreshold = 2
@@ -269,7 +273,7 @@ func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 		level := EffectivenessLevel(entry.EffectivenessScore)
 		scoreText = fmt.Sprintf("%.2f (%s)", *entry.EffectivenessScore, level)
 	default:
-		scoreText = "N/A"
+		scoreText = notAvailable
 	}
 
 	hashMatch := withDefault(entry.HashMatch, "none")
@@ -282,7 +286,7 @@ func FormatTier2Summary(entry enrichment.Tier2Summary) string {
 // 1:1 port of KA _format_health_checks().
 func FormatHealthChecks(hc *enrichment.HealthChecks) string {
 	if hc == nil {
-		return "N/A"
+		return notAvailable
 	}
 	var parts []string
 	if hc.PodRunning != nil {
@@ -308,7 +312,7 @@ func FormatHealthChecks(hc *enrichment.HealthChecks) string {
 		parts = append(parts, fmt.Sprintf("pending_pods=%d (scheduling/resource issue)", *hc.PendingCount))
 	}
 	if len(parts) == 0 {
-		return "N/A"
+		return notAvailable
 	}
 	return strings.Join(parts, ", ")
 }
@@ -317,7 +321,7 @@ func FormatHealthChecks(hc *enrichment.HealthChecks) string {
 // 1:1 port of KA _format_metric_deltas().
 func FormatMetricDeltas(md *enrichment.MetricDeltas) string {
 	if md == nil {
-		return "N/A"
+		return notAvailable
 	}
 	var parts []string
 	if md.CpuBefore != nil && md.CpuAfter != nil {
@@ -334,7 +338,7 @@ func FormatMetricDeltas(md *enrichment.MetricDeltas) string {
 	}
 	parts = append(parts, formatClusterScopedAndThroughputDeltas(md)...)
 	if len(parts) == 0 {
-		return "N/A"
+		return notAvailable
 	}
 	return strings.Join(parts, ", ")
 }
