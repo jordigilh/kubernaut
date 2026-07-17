@@ -339,7 +339,7 @@ func (h *Handler) HandleDisableActionType(w http.ResponseWriter, r *http.Request
 
 	resp := actionTypeDisableResponse{
 		ActionType: name,
-		Status:     "Disabled",
+		Status:     models.ActionTypeStatusDisabled,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

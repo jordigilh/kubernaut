@@ -57,7 +57,7 @@ func (r *Repository) Create(ctx context.Context, actionType string, description 
 	}
 
 	if existing != nil {
-		if existing.Status == "Active" {
+		if existing.Status == models.ActionTypeStatusActive {
 			return &CreateResult{ActionType: existing, Status: "exists", WasReenabled: false}, nil
 		}
 
@@ -134,7 +134,7 @@ func (r *Repository) UpdateDescription(ctx context.Context, actionType string, n
 	if existing == nil {
 		return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
 	}
-	if existing.Status != "Active" {
+	if existing.Status != models.ActionTypeStatusActive {
 		return nil, fmt.Errorf("%w: %s", ErrActionTypeDisabled, actionType)
 	}
 
@@ -226,7 +226,7 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 		return nil, fmt.Errorf("check action type for disable: %w", err)
 	}
 
-	if existing.Status != "Active" {
+	if existing.Status != models.ActionTypeStatusActive {
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("commit (already disabled): %w", err)
 		}
@@ -294,7 +294,7 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 		return nil, fmt.Errorf("check action type for force-disable: %w", err)
 	}
 
-	if existing.Status != "Active" {
+	if existing.Status != models.ActionTypeStatusActive {
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("commit (already disabled): %w", err)
 		}

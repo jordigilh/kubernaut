@@ -62,7 +62,6 @@ func newBaseDiscoveryEvent(eventType, action string) *ogenclient.AuditEventReque
 	pkgaudit.SetEventAction(event, action)
 	pkgaudit.SetEventOutcome(event, pkgaudit.OutcomeSuccess)
 	pkgaudit.SetActor(event, "service", "datastorage")
-	event.Version = "1.0"
 	return event
 }
 

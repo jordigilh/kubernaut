@@ -25,6 +25,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// jsonNull is the JSON literal for a null value, used when checking/writing
+// raw JSON bytes for optional event_data payloads.
+const jsonNull = "null"
+
+// defaultAuditEventVersion is the audit event schema version stamped by the
+// repository when a persisted event arrives with no Version set.
+const defaultAuditEventVersion = "1.0"
+
 // DateOnly is a time.Time that serializes to JSON as date-only format (YYYY-MM-DD)
 // This is required because the OpenAPI spec defines event_date as format: date
 // and oapi-codegen generates openapi_types.Date which expects "2025-12-16" not "2025-12-16T00:00:00Z"
@@ -34,7 +42,7 @@ type DateOnly time.Time
 func (d DateOnly) MarshalJSON() ([]byte, error) {
 	t := time.Time(d)
 	if t.IsZero() {
-		return []byte("null"), nil
+		return []byte(jsonNull), nil
 	}
 	return []byte(fmt.Sprintf(`"%s"`, t.Format("2006-01-02"))), nil
 }
@@ -42,7 +50,7 @@ func (d DateOnly) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON deserializes date-only format "YYYY-MM-DD" to DateOnly
 func (d *DateOnly) UnmarshalJSON(data []byte) error {
 	// Handle null
-	if string(data) == "null" {
+	if string(data) == jsonNull {
 		*d = DateOnly{}
 		return nil
 	}

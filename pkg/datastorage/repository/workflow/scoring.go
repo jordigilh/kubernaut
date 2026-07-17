@@ -25,6 +25,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
+// sqlZeroScore is the SQL numeric literal used as a no-op scoring expression
+// (added to a SQL SELECT/ORDER BY clause) when there are no boost/penalty
+// cases or label criteria to score against.
+const sqlZeroScore = "0.0"
+
 // sanitizeEnumValue validates that value is one of the allowedValues.
 // Returns the value if valid, empty string otherwise.
 func sanitizeEnumValue(value string, allowedValues []string) string {
@@ -123,7 +128,7 @@ func appendWildcardStringBoostCase(cases []string, value, jsonKey string, weight
 //   - No match: 0.0
 func buildDetectedLabelsBoostSQL(dl *models.DetectedLabels) string {
 	if dl == nil || dl.IsEmpty() {
-		return "0.0"
+		return sqlZeroScore
 	}
 
 	boostCases := []string{}
@@ -141,7 +146,7 @@ func buildDetectedLabelsBoostSQL(dl *models.DetectedLabels) string {
 	boostCases = appendWildcardStringBoostCase(boostCases, dl.StorageBackend, "storageBackend", detectedLabelWeights["storage_backend"], []string{"odf-ceph", "lvms", "local"})
 
 	if len(boostCases) == 0 {
-		return "0.0"
+		return sqlZeroScore
 	}
 
 	return fmt.Sprintf("COALESCE((%s), 0.0)", strings.Join(boostCases, " + "))
@@ -155,7 +160,7 @@ func buildDetectedLabelsBoostSQL(dl *models.DetectedLabels) string {
 //   - Query wants specific tool but workflow has different tool: penalty
 func buildDetectedLabelsPenaltySQL(dl *models.DetectedLabels) string {
 	if dl == nil || dl.IsEmpty() {
-		return "0.0"
+		return sqlZeroScore
 	}
 
 	penaltyCases := []string{}
@@ -181,7 +186,7 @@ func buildDetectedLabelsPenaltySQL(dl *models.DetectedLabels) string {
 	}
 
 	if len(penaltyCases) == 0 {
-		return "0.0"
+		return sqlZeroScore
 	}
 
 	return fmt.Sprintf("COALESCE((%s), 0.0)", strings.Join(penaltyCases, " + "))
@@ -195,7 +200,7 @@ func buildDetectedLabelsPenaltySQL(dl *models.DetectedLabels) string {
 //   - No match: 0.0
 func buildCustomLabelsBoostSQL(customLabels map[string][]string) string {
 	if len(customLabels) == 0 {
-		return "0.0"
+		return sqlZeroScore
 	}
 
 	boostCases := []string{}
@@ -227,7 +232,7 @@ func buildCustomLabelsBoostSQL(customLabels map[string][]string) string {
 	}
 
 	if len(boostCases) == 0 {
-		return "0.0"
+		return sqlZeroScore
 	}
 
 	return fmt.Sprintf("COALESCE((%s), 0.0)", strings.Join(boostCases, " + "))
