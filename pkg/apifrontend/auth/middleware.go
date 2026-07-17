@@ -41,7 +41,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 	}
 	logger = logger.WithName("auth")
 
-	authMethod := "jwt"
+	authMethod := AuthMethodJWT
 	if cfg.Validator != nil {
 		authMethod = cfg.Validator.AuthMethod()
 	}
@@ -143,9 +143,9 @@ func applyTokenExpiryDeadline(ctx context.Context, identity *UserIdentity) (cont
 
 func authMethodFromIdentity(identity *UserIdentity) string {
 	if identity.Issuer != "" {
-		return "jwt"
+		return AuthMethodJWT
 	}
-	return "token_review"
+	return AuthMethodTokenReview
 }
 
 func emitAuthSuccess(ctx context.Context, emitter audit.Emitter, identity *UserIdentity, sourceIP string) {

@@ -18,6 +18,10 @@ import (
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
+// unknownValue is the generic fallback used when a signal name, phase, or
+// reason cannot be grounded in any available infrastructure signal.
+const unknownValue = "unknown"
+
 // ToolDeps groups infrastructure dependencies shared by tool handler functions.
 // Constructed once at wiring time; per-call data (args, username) remains as
 // separate parameters.
@@ -384,7 +388,7 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 		return name
 	}
 	if client == nil {
-		return "unknown"
+		return unknownValue
 	}
 	if name := signalNameFromResourceEvents(ctx, client, namespace, args); name != "" {
 		return name
@@ -392,7 +396,7 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 	if name := signalNameFromPodEvents(ctx, client, namespace, args); name != "" {
 		return name
 	}
-	return "unknown"
+	return unknownValue
 }
 
 // signalNameFromTriage returns the alert/rule name from an upstream

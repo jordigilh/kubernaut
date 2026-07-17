@@ -52,18 +52,27 @@ type TriageResult struct {
 	Confidence float64
 }
 
+// Canonical severity values (ADR-066). Severity is kept as a plain string
+// (not a named type) on TriageResult for JSON/API compatibility.
+const (
+	SeverityCritical = "critical"
+	SeverityHigh     = "high"
+	SeverityWarning  = "warning"
+	SeverityInfo     = "info"
+)
+
 var severityRank = map[string]int{
-	"critical": 5,
-	"high":     4,
-	"warning":  3,
-	"info":     1,
+	SeverityCritical: 5,
+	SeverityHigh:     4,
+	SeverityWarning:  3,
+	SeverityInfo:     1,
 }
 
 var validSeverities = map[string]bool{
-	"critical": true,
-	"high":     true,
-	"warning":  true,
-	"info":     true,
+	SeverityCritical: true,
+	SeverityHigh:     true,
+	SeverityWarning:  true,
+	SeverityInfo:     true,
 }
 
 // ValidateSeverity checks if the string is a valid canonical severity value.
@@ -72,13 +81,13 @@ func ValidateSeverity(s string) bool {
 }
 
 // NormalizeSeverity lowercases and validates the severity string.
-// Returns "warning" as default for invalid/empty input (ADR-066).
+// Returns SeverityWarning as default for invalid/empty input (ADR-066).
 func NormalizeSeverity(s string) string {
 	lower := strings.TrimSpace(strings.ToLower(s))
 	if validSeverities[lower] {
 		return lower
 	}
-	return "warning"
+	return SeverityWarning
 }
 
 // CompareSeverity returns > 0 if a is higher severity than b, < 0 if lower, 0 if equal.

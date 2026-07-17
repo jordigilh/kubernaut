@@ -23,6 +23,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
+// resultLabelSuccess is the tool-call/audit result label used when a tool
+// invocation completes without error.
+const resultLabelSuccess = "success"
+
 // NewRootAgent creates the ADK root agent with all registered tools.
 // Returns the agent, the full tool list (for RBAC filtering), and any error.
 //
@@ -351,7 +355,7 @@ func newMetricsToolCallbacks(toolCalls *prometheus.CounterVec, toolDuration *pro
 	}
 
 	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
-		resultLabel := "success"
+		resultLabel := resultLabelSuccess
 		if toolErr != nil {
 			resultLabel = "error"
 		}
@@ -428,7 +432,7 @@ func newToolLoggingCallbacks() (llmagent.BeforeToolCallback, llmagent.AfterToolC
 	}
 
 	after := func(ctx tool.Context, t tool.Tool, _, _ map[string]any, toolErr error) (map[string]any, error) {
-		result := "success"
+		result := resultLabelSuccess
 		if toolErr != nil {
 			result = "error"
 		}
@@ -555,7 +559,7 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 // Logs the error at the call site (not in the audit event itself) for
 // operator observability.
 func buildToolAuditDetail(ctx tool.Context, t tool.Tool, input map[string]any, toolErr error) map[string]string {
-	result := "success"
+	result := resultLabelSuccess
 	if toolErr != nil {
 		result = "failure"
 		logr.FromContextOrDiscard(ctx).Error(toolErr, "tool call failed", "tool", t.Name())

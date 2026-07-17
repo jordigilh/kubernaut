@@ -306,7 +306,7 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 	case ka.EventTypeSessionEnded:
 		reason := evt.Phase
 		if reason == "" {
-			reason = "unknown"
+			reason = unknownValue
 		}
 		return "Session ended: " + reason
 	case ka.EventTypeAlignmentVerdict:

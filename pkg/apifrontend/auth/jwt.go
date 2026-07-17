@@ -152,15 +152,22 @@ func NewJWTValidator(cfg Config, opts ...JWTValidatorOption) (*JWTValidator, err
 	return v, nil
 }
 
-// AuthMethod returns "jwt" when OIDC providers are configured, or
-// "token_review" when the validator operates in TokenReview-only mode.
+// AuthMethodJWT and AuthMethodTokenReview are the values returned by
+// AuthMethod(), identifying which validation path authenticated the request.
+const (
+	AuthMethodJWT         = "jwt"
+	AuthMethodTokenReview = "token_review"
+)
+
+// AuthMethod returns AuthMethodJWT when OIDC providers are configured, or
+// AuthMethodTokenReview when the validator operates in TokenReview-only mode.
 // Used by the middleware to emit accurate audit events on auth failure
 // (AU-3: audit record content).
 func (v *JWTValidator) AuthMethod() string {
 	if len(v.providers) == 0 {
-		return "token_review"
+		return AuthMethodTokenReview
 	}
-	return "jwt"
+	return AuthMethodJWT
 }
 
 // Ready returns true if the validator's JWKS cache is healthy (no circuit
