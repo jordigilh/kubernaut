@@ -356,6 +356,11 @@ type WorkflowExecutionStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// ExecutionEngineTekton is the Status.ExecutionEngine value for Tekton
+// Pipelines-backed workflows. See the ExecutionEngine field doc above for
+// the full value set ("tekton", "job", "ansible").
+const ExecutionEngineTekton = "tekton"
+
 // ========================================
 // V1.0: SKIP DETAILS REMOVED
 // DD-RO-002: All skip information moved to RemediationRequest.Status

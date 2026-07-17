@@ -130,7 +130,7 @@ func (r *WorkflowExecutionReconciler) handleRunningExecutionResult(ctx context.C
 // PipelineRun). Extracted from reconcileRunning (Wave 6 6e-ii GREEN: funlen
 // remediation) — pure code motion, no behavior change.
 func (r *WorkflowExecutionReconciler) fetchTektonPipelineRunForMark(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) *tektonv1.PipelineRun {
-	if wfe.Status.ExecutionEngine != "tekton" {
+	if wfe.Status.ExecutionEngine != workflowexecutionv1alpha1.ExecutionEngineTekton {
 		return nil
 	}
 	var pr tektonv1.PipelineRun

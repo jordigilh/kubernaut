@@ -208,12 +208,12 @@ func validateWorkflowExecution(schema *models.WorkflowSchema) error {
 
 	engine := schema.Execution.Engine
 	if engine == "" {
-		engine = "tekton"
+		engine = string(models.ExecutionEngineTekton)
 	}
 
 	// For tekton/job: require sha256 digest in bundle URL (OCI image)
 	// For ansible: bundle is a Git repo URL — digest validation is different
-	if engine == "tekton" || engine == "job" {
+	if engine == string(models.ExecutionEngineTekton) || engine == string(models.ExecutionEngineJob) {
 		if err := validateBundleDigest(schema.Execution.Bundle); err != nil {
 			return err
 		}
@@ -446,6 +446,10 @@ func (p *Parser) ExtractDescription(schema *models.WorkflowSchema) (json.RawMess
 	return descJSON, nil
 }
 
+// boolStringTrue is the schema-level string value that converts to Go `true`
+// for DetectedLabelsSchema boolean fields (ADR-043 v1.3).
+const boolStringTrue = "true"
+
 // ExtractDetectedLabels converts the YAML-parsed DetectedLabelsSchema (string fields)
 // to the business model DetectedLabels (bool/string fields).
 // ADR-043 v1.3: Boolean fields convert "true" -> true; string fields pass through.
@@ -462,17 +466,17 @@ func (p *Parser) ExtractDetectedLabels(schema *models.WorkflowSchema) (*models.D
 	}
 
 	src := schema.DetectedLabels
-	dl.GitOpsManaged = src.GitOpsManaged == "true"
+	dl.GitOpsManaged = src.GitOpsManaged == boolStringTrue
 	dl.GitOpsTool = src.GitOpsTool
-	dl.PDBProtected = src.PDBProtected == "true"
-	dl.HPAEnabled = src.HPAEnabled == "true"
-	dl.Stateful = src.Stateful == "true"
-	dl.HelmManaged = src.HelmManaged == "true"
-	dl.NetworkIsolated = src.NetworkIsolated == "true"
+	dl.PDBProtected = src.PDBProtected == boolStringTrue
+	dl.HPAEnabled = src.HPAEnabled == boolStringTrue
+	dl.Stateful = src.Stateful == boolStringTrue
+	dl.HelmManaged = src.HelmManaged == boolStringTrue
+	dl.NetworkIsolated = src.NetworkIsolated == boolStringTrue
 	dl.ServiceMesh = src.ServiceMesh
-	dl.VirtualMachine = src.VirtualMachine == "true"
-	dl.LiveMigratable = src.LiveMigratable == "true"
-	dl.CDIManaged = src.CDIManaged == "true"
+	dl.VirtualMachine = src.VirtualMachine == boolStringTrue
+	dl.LiveMigratable = src.LiveMigratable == boolStringTrue
+	dl.CDIManaged = src.CDIManaged == boolStringTrue
 	dl.StorageBackend = src.StorageBackend
 
 	return dl, nil
@@ -493,7 +497,7 @@ func (p *Parser) ExtractExecutionEngine(schema *models.WorkflowSchema) string {
 	if schema.Execution != nil && schema.Execution.Engine != "" {
 		return schema.Execution.Engine
 	}
-	return "tekton" // Default for V1.0
+	return string(models.ExecutionEngineTekton) // Default for V1.0
 }
 
 // ExtractExecutionBundle extracts the execution bundle from a WorkflowSchema

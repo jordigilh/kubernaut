@@ -293,7 +293,7 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 			result, markErr := r.MarkFailed(ctx, wfe, nil)
 			return resourceName, result, markErr, true
 		}
-	case "tekton":
+	case workflowexecutionv1alpha1.ExecutionEngineTekton:
 		existingPR := &tektonv1.PipelineRun{}
 		err := r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingPR)
 		if err == nil {
@@ -389,7 +389,7 @@ func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context
 // Extracted from createPendingExecutionResource (Wave 6 6e-ii GREEN: nestif
 // remediation) — pure code motion, no behavior change.
 func (r *WorkflowExecutionReconciler) handleCreateAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, createOpts weexecutor.CreateOptions, exec weexecutor.Executor, createErr error, logger logr.Logger) (*weexecutor.CreateResult, ctrl.Result, error, bool) {
-	if wfe.Status.ExecutionEngine == "tekton" {
+	if wfe.Status.ExecutionEngine == workflowexecutionv1alpha1.ExecutionEngineTekton {
 		result, handleErr := r.HandleAlreadyExists(ctx, wfe, resourceName, createErr)
 		return &weexecutor.CreateResult{}, result, handleErr, true
 	}

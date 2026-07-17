@@ -134,10 +134,10 @@ func (h *Handler) resolveDisabledVersionDuplicate(ctx context.Context, disabled,
 	repo := h.workflowIntegrityRepo
 
 	if disabled.ContentHash == incomingHash {
-		if err := repo.UpdateStatus(ctx, disabled.WorkflowID, disabled.Version, "Active", "re-enabled via CRD re-creation", ""); err != nil {
+		if err := repo.UpdateStatus(ctx, disabled.WorkflowID, disabled.Version, models.WorkflowStatusActive, "re-enabled via CRD re-creation", ""); err != nil {
 			return nil, fmt.Errorf("re-enable workflow %s: %w", disabled.WorkflowID, err)
 		}
-		disabled.Status = "Active"
+		disabled.Status = models.WorkflowStatusActive
 		disabled.DisabledAt = nil
 		disabled.DisabledBy = nil
 		disabled.DisabledReason = nil
@@ -249,16 +249,16 @@ func (h *Handler) tryReEnableWorkflow(ctx context.Context, workflow *models.Reme
 		return nil, fmt.Errorf("workflow not found after conflict")
 	}
 
-	if existing.Status != "Disabled" {
+	if existing.Status != models.WorkflowStatusDisabled {
 		return nil, fmt.Errorf("workflow is %s, not disabled", existing.Status)
 	}
 
 	reason := "re-enabled via CRD re-creation"
-	if err := repo.UpdateStatus(ctx, existing.WorkflowID, existing.Version, "Active", reason, ""); err != nil {
+	if err := repo.UpdateStatus(ctx, existing.WorkflowID, existing.Version, models.WorkflowStatusActive, reason, ""); err != nil {
 		return nil, fmt.Errorf("update status to active: %w", err)
 	}
 
-	existing.Status = "Active"
+	existing.Status = models.WorkflowStatusActive
 	existing.DisabledAt = nil
 	existing.DisabledBy = nil
 	existing.DisabledReason = nil
@@ -347,7 +347,7 @@ func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.Workflo
 		Parameters:      &rawParams,
 		ExecutionEngine: execEngine,
 		ActionType:      parsedSchema.ActionType,
-		Status:          "Active",
+		Status:          models.WorkflowStatusActive,
 		IsLatestVersion: true,
 	}
 

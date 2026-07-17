@@ -507,7 +507,7 @@ func (r *WorkflowExecutionReconciler) emitPhaseTransition(wfe *workflowexecution
 // engineGuidance returns a human-readable remediation hint for a missing engine (Issue #868).
 func engineGuidance(engine string) string {
 	switch engine {
-	case "tekton":
+	case workflowexecutionv1alpha1.ExecutionEngineTekton:
 		return `install Tekton Pipelines CRDs or use executionEngine: "job"`
 	case "ansible":
 		return "configure ansible section in workflowexecution config"
