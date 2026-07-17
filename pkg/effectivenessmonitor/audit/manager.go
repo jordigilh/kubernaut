@@ -167,7 +167,6 @@ func (m *Manager) RecordComponentAssessed(ctx context.Context, ea *eav1.Effectiv
 	}
 
 	event := pkgaudit.NewAuditEventRequest()
-	event.Version = "1.0"
 	pkgaudit.SetEventType(event, cfg.eventType)
 	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
 	pkgaudit.SetEventAction(event, cfg.action)
@@ -360,7 +359,6 @@ func (m *Manager) RecordAlertDecayDetected(ctx context.Context, ea *eav1.Effecti
 	)
 
 	event := pkgaudit.NewAuditEventRequest()
-	event.Version = "1.0"
 	pkgaudit.SetEventType(event, cfg.eventType)
 	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
 	pkgaudit.SetEventAction(event, cfg.action)
@@ -509,7 +507,6 @@ func (m *Manager) storeEvent(ctx context.Context, cfg componentEventConfig, ea *
 	}
 
 	event := pkgaudit.NewAuditEventRequest()
-	event.Version = "1.0"
 	pkgaudit.SetEventType(event, cfg.eventType)
 	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
 	pkgaudit.SetEventAction(event, cfg.action)
@@ -594,7 +591,6 @@ func (m *Manager) RecordHashComputed(ctx context.Context, ea *eav1.Effectiveness
 	}
 
 	event := pkgaudit.NewAuditEventRequest()
-	event.Version = "1.0"
 	pkgaudit.SetEventType(event, cfg.eventType)
 	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
 	pkgaudit.SetEventAction(event, cfg.action)
@@ -669,7 +665,6 @@ func (m *Manager) RecordAssessmentScheduled(ctx context.Context, ea *eav1.Effect
 	payload.StabilizationWindow = ogenclient.NewOptString(ea.Spec.Config.StabilizationWindow.Duration.String())
 
 	event := pkgaudit.NewAuditEventRequest()
-	event.Version = "1.0"
 	pkgaudit.SetEventType(event, string(emtypes.AuditAssessmentScheduled))
 	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
 	pkgaudit.SetEventAction(event, ActionScheduled)
@@ -719,7 +714,6 @@ func (m *Manager) RecordAssessmentCompleted(ctx context.Context, ea *eav1.Effect
 	assessed := payload.ComponentsAssessed
 
 	event := pkgaudit.NewAuditEventRequest()
-	event.Version = "1.0"
 	pkgaudit.SetEventType(event, string(emtypes.AuditAssessmentCompleted))
 	pkgaudit.SetEventCategory(event, CategoryEffectiveness)
 	pkgaudit.SetEventAction(event, ActionAssessed)

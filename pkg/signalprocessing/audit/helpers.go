@@ -24,6 +24,16 @@ import (
 
 // Enum conversion helpers for SignalProcessing audit payloads
 
+// Severity level literals shared by toSignalProcessingAuditPayloadSeverity and
+// toSignalProcessingAuditPayloadNormalizedSeverity below.
+const (
+	severityLevelCritical = "critical"
+	severityLevelHigh     = "high"
+	severityLevelWarning  = "warning"
+	severityLevelInfo     = "info"
+	severityLevelUnknown  = "unknown"
+)
+
 func toSignalProcessingAuditPayloadPhase(value string) api.SignalProcessingAuditPayloadPhase {
 	switch value {
 	case "Pending":
@@ -45,15 +55,15 @@ func toSignalProcessingAuditPayloadPhase(value string) api.SignalProcessingAudit
 
 func toSignalProcessingAuditPayloadSeverity(value string) api.SignalProcessingAuditPayloadSeverity {
 	switch value {
-	case "critical":
+	case severityLevelCritical:
 		return api.SignalProcessingAuditPayloadSeverityCritical
-	case "high":
+	case severityLevelHigh:
 		return api.SignalProcessingAuditPayloadSeverityHigh
-	case "warning":
+	case severityLevelWarning:
 		return api.SignalProcessingAuditPayloadSeverityWarning
-	case "info":
+	case severityLevelInfo:
 		return api.SignalProcessingAuditPayloadSeverityInfo
-	case "unknown":
+	case severityLevelUnknown:
 		return api.SignalProcessingAuditPayloadSeverityUnknown
 	default:
 		return api.SignalProcessingAuditPayloadSeverityUnknown // DD-SEVERITY-001 v1.1 fallback
@@ -63,15 +73,15 @@ func toSignalProcessingAuditPayloadSeverity(value string) api.SignalProcessingAu
 // DD-SEVERITY-001 v1.1: Converter for normalized severity from Rego policy
 func toSignalProcessingAuditPayloadNormalizedSeverity(value string) api.SignalProcessingAuditPayloadNormalizedSeverity {
 	switch value {
-	case "critical":
+	case severityLevelCritical:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityCritical
-	case "high":
+	case severityLevelHigh:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityHigh
-	case "warning":
+	case severityLevelWarning:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityWarning
-	case "info":
+	case severityLevelInfo:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityInfo
-	case "unknown":
+	case severityLevelUnknown:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityUnknown
 	default:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityUnknown // DD-SEVERITY-001 v1.1 fallback
