@@ -189,7 +189,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		{HostPath: coverdataPath, ContainerPath: "/coverdata", ReadOnly: false},
 	}
 
-	if err := CreateKindClusterWithExtraMounts(
+	if err := CreateKindClusterWithExtraMounts(ctx, 
 		clusterName, kubeconfigPath, emE2EKindConfig, extraMounts, writer,
 	); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
@@ -322,12 +322,12 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	_, _ = fmt.Fprintln(writer, "\n  PHASE 5: Waiting for services to be ready...")
 
 	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
-	if err := WaitForPrometheusReady(promURL, emPrometheusReadyTimeout, writer); err != nil {
+	if err := WaitForPrometheusReady(ctx, promURL, emPrometheusReadyTimeout, writer); err != nil {
 		return fmt.Errorf("prometheus not ready: %w", err)
 	}
 
 	amURL := fmt.Sprintf("http://127.0.0.1:%d", AlertManagerHostPort)
-	if err := WaitForAlertManagerReady(amURL, emAlertManagerReadyTimeout, writer); err != nil {
+	if err := WaitForAlertManagerReady(ctx, amURL, emAlertManagerReadyTimeout, writer); err != nil {
 		return fmt.Errorf("alertmanager not ready: %w", err)
 	}
 
@@ -336,7 +336,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		return fmt.Errorf("EM controller not ready: %w", err)
 	}
 
-	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
+	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("prometheus cadvisor target not UP: %w", err)
 	}
 

@@ -166,7 +166,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	kindConfigPath := "test/infrastructure/kind-fullpipeline-config.yaml"
-	if err := CreateKindClusterWithExtraMounts(
+	if err := CreateKindClusterWithExtraMounts(ctx, 
 		clusterName, kubeconfigPath, kindConfigPath, extraMounts, writer,
 	); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 2 failed: %w", err)
@@ -349,7 +349,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: DataStorage HTTP not ready: %w", err)
 	}
 
-	if err := SeedE2EActionTypes(kubeconfigPath, namespace, writer); err != nil {
+	if err := SeedE2EActionTypes(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
 	}
 
@@ -359,7 +359,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		{FixtureDir: "fix-certificate", Environment: "production"},
 		{FixtureDir: "generic-restart", Environment: "production"},
 	}
-	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, fpWorkflows, writer)
+	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, namespace, fpWorkflows, writer)
 	if seedErr != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed workflows: %w", seedErr)
 	}
@@ -476,7 +476,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 			return deployFullPipelineSPController(ctx, namespace, kubeconfigPath, builtImages["signalprocessing"], writer)
 		}},
 		{"RemediationOrchestrator", func() error {
-			return DeployROCoverageManifest(kubeconfigPath, builtImages["remediationorchestrator"], writer)
+			return DeployROCoverageManifest(ctx, kubeconfigPath, builtImages["remediationorchestrator"], writer)
 		}},
 		{"AIAnalysis", func() error {
 			return deployFullPipelineAAController(ctx, namespace, kubeconfigPath, builtImages["aianalysis"], writer)
@@ -506,7 +506,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// B1: Kubernaut Agent — wait for Mock LLM
 	go func() {
 		<-mockLLMReady
-		err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
+		err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		allResults <- waveResult{"KubernautAgent", err}
 	}()
 
@@ -567,7 +567,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8b: Verifying Prometheus cadvisor scrape target...")
 	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
-	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
+	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8b failed: %w", err)
 	}
 
@@ -749,7 +749,7 @@ func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPa
 	}
 
 	// Deploy SP controller using coverage manifest (handles both coverage and non-coverage modes)
-	if err := DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName, writer); err != nil {
+	if err := DeploySignalProcessingControllerWithCoverage(ctx, kubeconfigPath, imageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy SP controller: %w", err)
 	}
 	return nil

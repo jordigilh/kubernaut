@@ -106,7 +106,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// PHASE 2: Create Kind cluster (reuse AIAnalysis E2E Kind config — same ports)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🏗️  PHASE 2: Creating Kind cluster...")
-	if err := createKAKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createKAKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -215,12 +215,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create DS client: %w", err)
 	}
 
-	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
+	if err := SeedActionTypesViaAPI(ctx, seedClient, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
 	testWorkflows := GetKAE2ETestWorkflows()
-	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "KA E2E (via infrastructure)", writer)
+	workflowUUIDs, err := SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "KA E2E (via infrastructure)", writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed workflows: %w", err)
 	}
@@ -298,7 +298,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy KA RBAC: %w", err)
 	}
-	if err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
+	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
 		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
 	}
 
@@ -864,7 +864,7 @@ subjects:
 // DeployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
 // Port mapping: 30088 → 8443 (container), host 8088. KA defaults to 8443 since the H1 GA finding.
 // enableJWT controls whether jwtProviders are included in the config (requires DEX to be deployed).
-func DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
+func DeployKubernautAgentOnly(ctx context.Context, clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
 
 	// DD-TEST-007: Build GOCOVERDIR YAML snippets for binary coverage instrumentation

@@ -49,14 +49,14 @@ const (
 // This includes:
 // - Kind cluster (2 nodes: control-plane + worker)
 // - Data Storage Service Docker image (build + load)
-func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+func CreateDataStorageCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "Data Storage E2E Cluster Setup (ONCE)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// 1. Create Kind cluster
 	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster...")
-	if err := createKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -529,7 +529,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
 	// Create Kind cluster
-	if err := createKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -1489,8 +1489,8 @@ func waitForDataStorageServicesReady(ctx context.Context, namespace, kubeconfigP
 	return nil
 }
 
-func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+func createKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
 	opts := KindClusterOptions{
 		ClusterName:    clusterName,
 		KubeconfigPath: kubeconfigPath,
@@ -1499,7 +1499,7 @@ func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) err
 		DeleteExisting: true, // Original behavior: delete if exists
 		ReuseExisting:  false,
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
 func buildDataStorageImage(writer io.Writer) error {
@@ -1635,7 +1635,7 @@ func DefaultDataStorageConfig() *DataStorageConfig {
 
 // StartDataStorageInfrastructure starts all Data Storage Service infrastructure
 // Returns an infrastructure handle that can be used to stop the services
-func StartDataStorageInfrastructure(cfg *DataStorageConfig, writer io.Writer) (*DataStorageInfrastructure, error) {
+func StartDataStorageInfrastructure(ctx context.Context, cfg *DataStorageConfig, writer io.Writer) (*DataStorageInfrastructure, error) {
 	if cfg == nil {
 		cfg = DefaultDataStorageConfig()
 	}
@@ -1652,13 +1652,13 @@ func StartDataStorageInfrastructure(cfg *DataStorageConfig, writer io.Writer) (*
 
 	// 1. Start PostgreSQL
 	_, _ = fmt.Fprintln(writer, "📦 Starting PostgreSQL container...")
-	if err := startPostgreSQL(infra, cfg, writer); err != nil {
+	if err := startPostgreSQL(ctx, infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
 
 	// 2. Start Redis
 	_, _ = fmt.Fprintln(writer, "📦 Starting Redis container...")
-	if err := startRedis(infra, cfg, writer); err != nil {
+	if err := startRedis(ctx, infra, cfg, writer); err != nil {
 		return nil, fmt.Errorf("failed to start Redis: %w", err)
 	}
 
@@ -1738,14 +1738,14 @@ func (infra *DataStorageInfrastructure) Stop(writer io.Writer) {
 
 // Helper functions
 
-func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
+func startPostgreSQL(ctx context.Context, infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	// Cleanup existing container
 	_ = exec.CommandContext(context.Background(), "podman", "stop", infra.PostgresContainer).Run()
 	_ = exec.CommandContext(context.Background(), "podman", "rm", infra.PostgresContainer).Run()
 
 	// Pull image with retry to handle transient registry failures (#914)
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, postgresImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
 	}
 
@@ -1777,14 +1777,14 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 	return nil
 }
 
-func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
+func startRedis(ctx context.Context, infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
 	// Cleanup existing container
 	_ = exec.CommandContext(context.Background(), "podman", "stop", infra.RedisContainer).Run()
 	_ = exec.CommandContext(context.Background(), "podman", "rm", infra.RedisContainer).Run()
 
 	// Pull image with retry to handle transient registry failures (#914)
 	const redisImage = "quay.io/jordigilh/redis:7-alpine"
-	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, redisImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull Redis image: %w", err)
 	}
 

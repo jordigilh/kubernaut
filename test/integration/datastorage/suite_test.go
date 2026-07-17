@@ -309,11 +309,11 @@ var _ = SynchronizedBeforeSuite(
 
 		// 2. Start PostgreSQL
 		GinkgoWriter.Println("📦 Starting PostgreSQL container...")
-		startPostgreSQL()
+		startPostgreSQL(context.Background())
 
 		// 3. Start Redis for DLQ
 		GinkgoWriter.Println("📦 Starting Redis container...")
-		startRedis()
+		startRedis(context.Background())
 
 		// 4. Connect to PostgreSQL to apply migrations
 		GinkgoWriter.Println("🔌 Connecting to PostgreSQL...")
@@ -558,7 +558,7 @@ func createNetwork() {
 
 // startPostgreSQL starts PostgreSQL container
 // When POSTGRES_HOST is set (e.g., in Docker Compose), skip container creation
-func startPostgreSQL() {
+func startPostgreSQL(ctx context.Context) {
 	// Check if running in Docker Compose environment
 	if os.Getenv("POSTGRES_HOST") != "" {
 		GinkgoWriter.Println("🐳 Using external PostgreSQL (Docker Compose)")
@@ -607,7 +607,7 @@ func startPostgreSQL() {
 	// Increase max_connections for parallel test execution (default is 100)
 	GinkgoWriter.Println("🔧 Starting fresh PostgreSQL container...")
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	Expect(infrastructure.PullImageWithRetry(postgresImage, 3, GinkgoWriter)).To(Succeed())
+	Expect(infrastructure.PullImageWithRetry(ctx, postgresImage, 3, GinkgoWriter)).To(Succeed())
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", postgresContainer,
 		"--network", "datastorage-test",
@@ -638,7 +638,7 @@ func startPostgreSQL() {
 
 // startRedis starts Redis container for DLQ
 // When REDIS_HOST is set (e.g., in Docker Compose), skip container creation
-func startRedis() {
+func startRedis(ctx context.Context) {
 	// Check if running in Docker Compose environment
 	if os.Getenv("REDIS_HOST") != "" {
 		GinkgoWriter.Println("🐳 Using external Redis (Docker Compose)")
@@ -672,7 +672,7 @@ func startRedis() {
 	// Start Redis
 	// Use --network=datastorage-test for container-to-container communication
 	const redisImage = "quay.io/jordigilh/redis:7-alpine"
-	Expect(infrastructure.PullImageWithRetry(redisImage, 3, GinkgoWriter)).To(Succeed())
+	Expect(infrastructure.PullImageWithRetry(ctx, redisImage, 3, GinkgoWriter)).To(Succeed())
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", redisContainer,
 		"--network", "datastorage-test",
@@ -832,14 +832,14 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 
 	// 7. Seed action types via temp in-process DataStorage server (DD-WORKFLOW-016)
 	GinkgoWriter.Println("  🏷️  Seeding action types via in-process DataStorage server...")
-	seedActionTypesViaInProcessServer()
+	seedActionTypesViaInProcessServer(ctx)
 	GinkgoWriter.Println("  ✅ Action types seeded")
 }
 
 // seedActionTypesViaInProcessServer creates a temporary in-process DataStorage httptest
 // server, seeds all standard action types through its API, then tears it down. The rows
 // persist in the shared PostgreSQL instance so every per-test httptest server sees them.
-func seedActionTypesViaInProcessServer() {
+func seedActionTypesViaInProcessServer(ctx context.Context) {
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
 		host = localhost
@@ -913,7 +913,7 @@ func seedActionTypesViaInProcessServer() {
 	client, err := ogenclient.NewClient(ts.URL, ogenclient.WithClient(httpClient))
 	Expect(err).ToNot(HaveOccurred(), "ogen client creation should succeed")
 
-	err = infrastructure.SeedActionTypesViaAPI(client, GinkgoWriter)
+	err = infrastructure.SeedActionTypesViaAPI(ctx, client, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "action type seeding via DS API should succeed")
 }
 

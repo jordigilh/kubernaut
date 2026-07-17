@@ -123,7 +123,7 @@ func CreateNotificationCluster(ctx context.Context, clusterName, kubeconfigPath 
 		}
 	}
 
-	if err := CreateKindClusterWithExtraMounts(
+	if err := CreateKindClusterWithExtraMounts(ctx, 
 		clusterName,
 		kubeconfigPath,
 		"test/infrastructure/kind-notification-config.yaml",
@@ -375,7 +375,7 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 	// NodePort 30090 is exposed by kind-notification-config.yaml for E2E tests
 	dataStorageHealthURL := "http://127.0.0.1:30281/readyz"
 	_, _ = fmt.Fprintf(writer, "   🔍 Checking DataStorage health endpoint: %s\n", dataStorageHealthURL)
-	if err := WaitForHTTPHealth(dataStorageHealthURL, 60*time.Second, writer); err != nil {
+	if err := WaitForHTTPHealth(ctx, dataStorageHealthURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("DataStorage health check failed: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage ready and healthy\n")

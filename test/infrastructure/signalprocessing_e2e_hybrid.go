@@ -138,7 +138,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase2Start.Format("15:04:05.000"))
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
-	if err := createSignalProcessingKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createSignalProcessingKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -295,7 +295,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		// Per Consolidated API Migration (January 2026):
 		// Use SignalProcessing image name from builtImages map (built in Phase 1)
 		spImage := builtImages["SignalProcessing (coverage)"]
-		err := DeploySignalProcessingControllerWithCoverage(kubeconfigPath, spImage, writer)
+		err := DeploySignalProcessingControllerWithCoverage(ctx, kubeconfigPath, spImage, writer)
 		deployResults <- deployResult{"SignalProcessing", err}
 	}()
 
@@ -337,7 +337,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	if err != nil {
 		return fmt.Errorf("failed to get seed SA token: %w", err)
 	}
-	if err := SeedActionTypesViaAPIWithTLS("https://localhost:30081", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
+	if err := SeedActionTypesViaAPIWithTLS(ctx, "https://localhost:30081", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -468,8 +468,8 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
-// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
+func createSignalProcessingKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:    clusterName,
 		KubeconfigPath: kubeconfigPath,
@@ -478,7 +478,7 @@ func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, write
 		DeleteExisting: false,
 		ReuseExisting:  true, // Original behavior: reuse if exists
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
 // ============================================================================
@@ -1031,7 +1031,7 @@ spec:
 `, imageName, imagePullPolicy)
 }
 
-func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName string, writer io.Writer) error {
+func DeploySignalProcessingControllerWithCoverage(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 
@@ -1039,7 +1039,7 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName stri
 	imagePullPolicy := GetImagePullPolicy()
 	manifest := signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPolicy)
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1050,7 +1050,6 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName stri
 
 	// Wait for controller to be ready
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled controller to be ready...")
-	ctx := context.Background()
 	return waitForSignalProcessingController(ctx, kubeconfigPath, writer)
 }
 

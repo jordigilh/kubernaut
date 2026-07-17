@@ -17,6 +17,7 @@ limitations under the License.
 package custom_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -52,6 +53,8 @@ var (
 var _ = SynchronizedBeforeSuite(
 	// Phase 1: Start shared infrastructure (Process 1 only)
 	func() []byte {
+		ctx := context.Background()
+
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("KA Custom Tools IT - PHASE 1: Infrastructure Setup")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -82,7 +85,7 @@ var _ = SynchronizedBeforeSuite(
 			"test/integration/kubernautagent/tools/custom/config",
 			authConfig,
 		)
-		dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+		dsInfra, err = infrastructure.StartDSBootstrap(ctx, cfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		dsInfra.SharedTestEnv = sharedTestEnv
 
@@ -113,7 +116,7 @@ var _ = SynchronizedBeforeSuite(
 				Environment: "production",
 			},
 		}
-		wfUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(
+		wfUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(ctx, 
 			dsClients.OpenAPIClient, testWorkflows, "ka-custom-tools", GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "workflow seeding must succeed")

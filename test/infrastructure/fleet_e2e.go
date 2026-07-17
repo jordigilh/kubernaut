@@ -393,7 +393,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// Kuadrant broker's own upstream discovery connection needs a static
 	// credential when RequireOAuth=true (see BrokerCredentialToken doc
 	// comment) -- mirrors the FMC E2E lane's Phase 7 broker credential.
-	brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
+	brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
 		TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
 		ClientID:      fmcOAuth2Config.ClientID,
 		ClientSecret:  fmcOAuth2Config.ClientSecret,
@@ -438,14 +438,14 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	}
 
 	keycloakFleetReadTokenFunc := func() (string, error) {
-		return GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
+		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
 			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
 			ClientID:      fmcOAuth2Config.ClientID,
 			ClientSecret:  fmcOAuth2Config.ClientSecret,
 			Scopes:        fmcOAuth2Config.Scopes,
 		})
 	}
-	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, 31975, "remote_cluster_", writer); readyErr != nil {
+	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, 31975, "remote_cluster_", writer); readyErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
@@ -2244,7 +2244,7 @@ fleet:
 // EAIGW 31976 per DD-TEST-001) and loopback-cluster tool-name prefix
 // (Kuadrant's MCPServerRegistration "loopback_cluster_" vs EAIGW's
 // auto-generated "loopback-cluster__", Spike S18).
-func WaitForFleetReady(tokenFunc func() (string, error), nodePort int, toolPrefix string, writer io.Writer) error {
+func WaitForFleetReady(ctx context.Context, tokenFunc func() (string, error), nodePort int, toolPrefix string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying MCP Gateway reachability via NodePort...")
 
 	gatewayURL := fmt.Sprintf("http://localhost:%d/mcp", nodePort)

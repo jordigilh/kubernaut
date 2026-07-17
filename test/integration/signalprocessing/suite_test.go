@@ -187,7 +187,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		"test/integration/signalprocessing/config",
 		authConfig,
 	)
-	dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err = infrastructure.StartDSBootstrap(ctx, cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	dsInfra.SharedTestEnv = sharedTestEnv // Store for cleanup
 	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage)")

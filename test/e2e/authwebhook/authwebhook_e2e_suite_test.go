@@ -191,7 +191,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("🏷️  Seeding action types via DataStorage API (DD-WORKFLOW-016)...")
 		seedToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, e2eSAName, kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred(), "Failed to get seed SA token")
-		Expect(infrastructure.SeedActionTypesViaAPIWithTLS("https://localhost:28099", seedToken, kubeconfigPath, 30*time.Second, GinkgoWriter)).
+		Expect(infrastructure.SeedActionTypesViaAPIWithTLS(ctx, "https://localhost:28099", seedToken, kubeconfigPath, 30*time.Second, GinkgoWriter)).
 			To(Succeed(), "Failed to seed action types via DS API")
 		logger.Info("✅ Action types seeded")
 

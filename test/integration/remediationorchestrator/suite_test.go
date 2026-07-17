@@ -215,7 +215,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		"test/integration/remediationorchestrator/config",
 		authConfig,
 	)
-	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err := infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All external services started and healthy")
 

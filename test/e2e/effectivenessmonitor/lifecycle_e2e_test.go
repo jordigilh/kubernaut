@@ -82,7 +82,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		// Inject before/after metrics showing improvement.
 		// Use time.Now() for both to avoid Prometheus TSDB "out of bounds" rejection.
 		// Inject sequentially with a short sleep for timestamp separation.
-		err = infrastructure.InjectMetrics(prometheusURL, []infrastructure.TestMetric{
+		err = infrastructure.InjectMetrics(ctx, prometheusURL, []infrastructure.TestMetric{
 			{
 				Name: "container_cpu_usage_seconds_total",
 				Labels: map[string]string{
@@ -98,7 +98,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 
 		time.Sleep(2 * time.Second) // Ensure timestamp separation
 
-		err = infrastructure.InjectMetrics(prometheusURL, []infrastructure.TestMetric{
+		err = infrastructure.InjectMetrics(ctx, prometheusURL, []infrastructure.TestMetric{
 			{
 				Name: "container_cpu_usage_seconds_total",
 				Labels: map[string]string{
@@ -182,7 +182,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		Expect(err).ToNot(HaveOccurred())
 
 		// Inject metrics sequentially with time.Now() to avoid TSDB "out of bounds".
-		err = infrastructure.InjectMetrics(prometheusURL, []infrastructure.TestMetric{
+		err = infrastructure.InjectMetrics(ctx, prometheusURL, []infrastructure.TestMetric{
 			{
 				Name:      "container_cpu_usage_seconds_total",
 				Labels:    map[string]string{"namespace": testNS, "pod": "target-pod", "container": "workload"},
@@ -194,7 +194,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 
 		time.Sleep(2 * time.Second) // Ensure timestamp separation
 
-		err = infrastructure.InjectMetrics(prometheusURL, []infrastructure.TestMetric{
+		err = infrastructure.InjectMetrics(ctx, prometheusURL, []infrastructure.TestMetric{
 			{
 				Name:      "container_cpu_usage_seconds_total",
 				Labels:    map[string]string{"namespace": testNS, "pod": "target-pod", "container": "workload"},

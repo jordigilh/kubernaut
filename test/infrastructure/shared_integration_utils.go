@@ -132,12 +132,12 @@ type PostgreSQLConfig struct {
 //	    DBUser: "slm_user",
 //	    DBPassword: "test_password",
 //	}
-//	if err := StartPostgreSQL(cfg, writer); err != nil {
+//	if err := StartPostgreSQL(ctx, cfg, writer); err != nil {
 //	    return err
 //	}
-func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
+func StartPostgreSQL(ctx context.Context, cfg PostgreSQLConfig, writer io.Writer) error {
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, postgresImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
 	}
 
@@ -186,10 +186,10 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 //
 // Usage:
 //
-//	if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
+//	if err := WaitForPostgreSQLReady(ctx, "myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
 //	    return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 //	}
-func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writer) error {
+func WaitForPostgreSQLReady(ctx context.Context, containerName, dbUser, dbName string, writer io.Writer) error {
 	// ============================================================================
 	// PHASE 1: Wait for PostgreSQL to accept connections (pg_isready)
 	// ============================================================================
@@ -264,12 +264,12 @@ type RedisConfig struct {
 //	    ContainerName: "myservice_redis_1",
 //	    Port: 16383,
 //	}
-//	if err := StartRedis(cfg, writer); err != nil {
+//	if err := StartRedis(ctx, cfg, writer); err != nil {
 //	    return err
 //	}
-func StartRedis(cfg RedisConfig, writer io.Writer) error {
+func StartRedis(ctx context.Context, cfg RedisConfig, writer io.Writer) error {
 	const redisImage = "redis:7-alpine"
-	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, redisImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull Redis image: %w", err)
 	}
 
@@ -301,10 +301,10 @@ func StartRedis(cfg RedisConfig, writer io.Writer) error {
 //
 // Usage:
 //
-//	if err := WaitForRedisReady("myservice_redis_1", writer); err != nil {
+//	if err := WaitForRedisReady(ctx, "myservice_redis_1", writer); err != nil {
 //	    return fmt.Errorf("Redis failed to become ready: %w", err)
 //	}
-func WaitForRedisReady(containerName string, writer io.Writer) error {
+func WaitForRedisReady(ctx context.Context, containerName string, writer io.Writer) error {
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
 		cmd := exec.CommandContext(context.Background(), "podman", "exec", containerName, "redis-cli", "ping")
@@ -331,10 +331,10 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 //
 // Usage:
 //
-//	if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
+//	if err := WaitForHTTPHealth(ctx, "http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
 //	    return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 //	}
-func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error {
+func WaitForHTTPHealth(ctx context.Context, healthURL string, timeout time.Duration, writer io.Writer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -472,12 +472,12 @@ func MustGatherContainerLogs(serviceName string, containerNames []string, writer
 //
 // Usage:
 //
-//	CleanupContainers([]string{
+//	CleanupContainers(ctx, []string{
 //	    "myservice_postgres_1",
 //	    "myservice_redis_1",
 //	    "myservice_datastorage_1",
 //	}, writer)
-func CleanupContainers(containerNames []string, writer io.Writer) {
+func CleanupContainers(ctx context.Context, containerNames []string, writer io.Writer) {
 	for _, container := range containerNames {
 		// Stop container (immediate stop for faster cleanup)
 		// Use --time=0 to force immediate stop without waiting for graceful shutdown
@@ -621,7 +621,7 @@ type IntegrationDataStorageConfig struct {
 //	}
 //
 //	// Wait for health check
-//	if err := WaitForHTTPHealth("http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
+//	if err := WaitForHTTPHealth(ctx, "http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
 //	    return err
 //	}
 func StartDataStorage(ctx context.Context, cfg IntegrationDataStorageConfig, writer io.Writer) error {
@@ -794,14 +794,14 @@ func findProjectRoot() (string, error) {
 //
 //   func StartMyServiceIntegrationInfrastructure(writer io.Writer) error {
 //       // Step 1: Cleanup existing containers
-//       CleanupContainers([]string{
+//       CleanupContainers(ctx, []string{
 //           "myservice_postgres_1",
 //           "myservice_redis_1",
 //           "myservice_datastorage_1",
 //       }, writer)
 //
 //       // Step 2: Start PostgreSQL
-//       if err := StartPostgreSQL(PostgreSQLConfig{
+//       if err := StartPostgreSQL(ctx, PostgreSQLConfig{
 //           ContainerName: "myservice_postgres_1",
 //           Port: 15437,
 //           DBName: "action_history",
@@ -812,7 +812,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 3: Wait for PostgreSQL ready
-//       if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
+//       if err := WaitForPostgreSQLReady(ctx, "myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
 //           return err
 //       }
 //
@@ -830,7 +830,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 5: Start Redis
-//       if err := StartRedis(RedisConfig{
+//       if err := StartRedis(ctx, RedisConfig{
 //           ContainerName: "myservice_redis_1",
 //           Port: 16383,
 //       }, writer); err != nil {
@@ -838,7 +838,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 6: Wait for Redis ready
-//       if err := WaitForRedisReady("myservice_redis_1", writer); err != nil {
+//       if err := WaitForRedisReady(ctx, "myservice_redis_1", writer); err != nil {
 //           return err
 //       }
 //
@@ -859,7 +859,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 8: Wait for DataStorage HTTP health
-//       if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 60*time.Second, writer); err != nil {
+//       if err := WaitForHTTPHealth(ctx, "http://127.0.0.1:18096/health", 60*time.Second, writer); err != nil {
 //           return err
 //       }
 //
@@ -869,7 +869,7 @@ func findProjectRoot() (string, error) {
 // Example 2: Cleanup Infrastructure
 //
 //   func StopMyServiceIntegrationInfrastructure(writer io.Writer) error {
-//       CleanupContainers([]string{
+//       CleanupContainers(ctx, []string{
 //           "myservice_datastorage_1",
 //           "myservice_redis_1",
 //           "myservice_postgres_1",

@@ -459,7 +459,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		"test/integration/aianalysis/config",
 		authConfig,
 	)
-	dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err = infrastructure.StartDSBootstrap(specCtx, cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ DataStorage infrastructure started (PostgreSQL, Redis, DataStorage)")
 
@@ -481,7 +481,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Must seed workflows first so Mock LLM can load UUIDs at startup
 	// DD-AUTH-014: Now uses authenticated client (matches KA pattern)
 	By("Seeding test workflows into DataStorage (with authentication)")
-	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(seedClient.OpenAPIClient, GinkgoWriter)
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(specCtx, seedClient.OpenAPIClient, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
 
 	// Write Mock LLM config file with workflow UUIDs

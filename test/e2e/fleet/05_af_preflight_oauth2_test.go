@@ -43,7 +43,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 		// port as the FMC E2E lane -- see keycloakHostPortFleet in fleet_e2e.go).
 		cfg := infrastructure.DefaultKeycloakFleetReadConfig(30557)
 		cfg.Scopes = []string{"kube-mcp-server-audience"}
-		token, err := infrastructure.GetKeycloakClientCredentialsToken(cfg)
+		token, err := infrastructure.GetKeycloakClientCredentialsToken(ctx, cfg)
 		Expect(err).ToNot(HaveOccurred(), "Keycloak should issue client_credentials token")
 		Expect(token).ToNot(BeEmpty(), "IA-5: token must be non-empty")
 

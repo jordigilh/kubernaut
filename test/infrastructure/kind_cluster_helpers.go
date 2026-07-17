@@ -112,14 +112,14 @@ type ExtraMount struct {
 //	    {HostPath: "/Users/me/.kubernaut/e2e-notifications", ContainerPath: "/tmp/e2e-notifications", ReadOnly: false},
 //	    {HostPath: "./coverdata", ContainerPath: "/coverdata", ReadOnly: false},
 //	}
-//	err := infrastructure.CreateKindClusterWithExtraMounts("notification-e2e", kubeconfig, "test/infrastructure/kind-notification-config.yaml", mounts, writer)
+//	err := infrastructure.CreateKindClusterWithExtraMounts(ctx, "notification-e2e", kubeconfig, "test/infrastructure/kind-notification-config.yaml", mounts, writer)
 //
 // Benefits over service-specific implementations:
 //   - ✅ Single source of truth for Kind cluster creation with mounts
 //   - ✅ Consistent YAML manipulation logic
 //   - ✅ Reusable across Notification, Gateway, WorkflowExecution, etc.
 //   - ✅ Easier to maintain and test
-func CreateKindClusterWithExtraMounts(
+func CreateKindClusterWithExtraMounts(ctx context.Context, 
 	clusterName string,
 	kubeconfigPath string,
 	baseConfigPath string,
@@ -336,8 +336,8 @@ type KindClusterOptions struct {
 //	    UsePodman:      true,
 //	    ProjectRootAsWorkingDir: true,
 //	}
-//	err := infrastructure.CreateKindClusterWithConfig(opts, writer)
-func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) error {
+//	err := infrastructure.CreateKindClusterWithConfig(ctx, opts, writer)
+func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔧 Creating Kind cluster: %s\n", opts.ClusterName)
 
 	// 0. Validate Kind version (minimum version required for E2E tests)

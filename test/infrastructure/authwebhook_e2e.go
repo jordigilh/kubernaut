@@ -162,7 +162,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintf(writer, "  ✅ Created %s for coverage collection (mode=0777)\n", coverdataPath)
 
 	// Create Kind cluster with authwebhook-specific config
-	if err := createKindClusterWithConfig(clusterName, kubeconfigPath, "test/e2e/authwebhook/kind-config.yaml", writer); err != nil {
+	if err := createKindClusterWithConfig(ctx, clusterName, kubeconfigPath, "test/e2e/authwebhook/kind-config.yaml", writer); err != nil {
 		return "", "", fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -761,8 +761,8 @@ func patchWebhookConfigurations(kubeconfigPath string, writer io.Writer) error {
 }
 
 // createKindClusterWithConfig creates a Kind cluster with a specific config file
-// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-func createKindClusterWithConfig(clusterName, kubeconfigPath, configPath string, writer io.Writer) error {
+// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
+func createKindClusterWithConfig(ctx context.Context, clusterName, kubeconfigPath, configPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
 		KubeconfigPath:            kubeconfigPath,
@@ -773,7 +773,7 @@ func createKindClusterWithConfig(clusterName, kubeconfigPath, configPath string,
 		CleanupOrphanedContainers: true, // Podman cleanup on macOS
 		UsePodman:                 true, // CRITICAL: Sets KIND_EXPERIMENTAL_PROVIDER=podman
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
 // LoadKubeconfig loads a kubeconfig file and returns a rest.Config

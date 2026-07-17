@@ -441,7 +441,7 @@ func PreloadExternalImage(ctx context.Context, imageName, clusterName string, wr
 // Example (Hybrid Pattern - RECOMMENDED):
 //
 //	imageName, err := BuildImageForKind(cfg, writer)
-//	createKindCluster(...)
+//	createKindCluster(ctx, ...)
 //	err = LoadImageToKind(imageName, cfg.ServiceName, cfg.KindClusterName, writer)
 func BuildAndLoadImageToKind(ctx context.Context, cfg E2EImageConfig, writer io.Writer) (string, error) {
 	imageName, err := BuildImageForKind(ctx, cfg, writer)

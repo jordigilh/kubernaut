@@ -172,7 +172,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Creating Kind cluster...")
-	if err := createAIAnalysisKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createAIAnalysisKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -335,12 +335,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
-	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
+	if err := SeedActionTypesViaAPI(ctx, seedClient, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
 	// Inline workflow definitions (CANNOT use test/integration/aianalysis wrapper - import cycle)
-	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage() function
+	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage(ctx) function
 	// Note: test/integration/aianalysis imports test/infrastructure, creating circular dependency
 	// Acceptable trade-off: Small duplication avoids architectural issues
 	// Source of truth: test/integration/aianalysis/test_workflows.go:GetAIAnalysisTestWorkflows()
@@ -400,7 +400,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"v1/Pod"}, Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 	}
 
-	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
+	workflowUUIDs, err := SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
@@ -441,7 +441,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			deployResults <- deployResult{"Kubernaut Agent", rbacErr}
 			return
 		}
-		err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
+		err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		deployResults <- deployResult{"Kubernaut Agent", err}
 	}()
 
@@ -500,8 +500,8 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, testsFailed boo
 	return nil
 }
 
-func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+func createAIAnalysisKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
 		KubeconfigPath:            kubeconfigPath,
@@ -512,7 +512,7 @@ func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.W
 		CleanupOrphanedContainers: true, // Original behavior: cleanup Podman containers on macOS
 		ProjectRootAsWorkingDir:   true, // DD-TEST-007: For ./coverdata resolution in Kind config
 	}
-	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
+	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return err
 	}
 

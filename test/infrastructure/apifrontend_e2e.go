@@ -144,7 +144,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
 	}
-	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
+	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -204,7 +204,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("KA RBAC failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  Deploying Kubernaut Agent...")
-	if err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], false, writer); err != nil {
+	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, images["kubernautagent"], false, writer); err != nil {
 		return fmt.Errorf("KA deploy failed: %w", err)
 	}
 
@@ -246,11 +246,11 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	if seedErr != nil {
 		return fmt.Errorf("create DS seed client: %w", seedErr)
 	}
-	if seedErr = SeedActionTypesViaAPI(seedClient, writer); seedErr != nil {
+	if seedErr = SeedActionTypesViaAPI(ctx, seedClient, writer); seedErr != nil {
 		return fmt.Errorf("seed action types: %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
-	if _, seedErr = SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AF E2E", writer); seedErr != nil {
+	if _, seedErr = SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "AF E2E", writer); seedErr != nil {
 		return fmt.Errorf("seed workflows: %w", seedErr)
 	}
 

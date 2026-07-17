@@ -91,7 +91,7 @@ type DSBootstrapConfig struct {
 //	    "test/integration/gateway/config", authConfig)
 //
 //	// Phase 3: Start infrastructure
-//	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+//	dsInfra, err := infrastructure.StartDSBootstrap(ctx, cfg, GinkgoWriter)
 //
 // Authority: DD-AUTH-014 (Middleware-based authentication)
 func NewDSBootstrapConfigWithAuth(
@@ -312,7 +312,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 // Returns:
 // - *DSBootstrapInfra: Infrastructure references for cleanup
 // - error: Any errors during infrastructure startup
-func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfra, error) {
+func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfra, error) {
 	// Default HealthPort to DataStoragePort+10000 if not explicitly set.
 	// Offset 10000 avoids collision with MetricsPort (which is typically DataStoragePort+1000).
 	if cfg.HealthPort == 0 {
@@ -366,7 +366,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 
 	// Step 3: PostgreSQL
 	_, _ = fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
-	if err := startDSBootstrapPostgreSQL(infra, writer); err != nil {
+	if err := startDSBootstrapPostgreSQL(ctx, infra, writer); err != nil {
 		return nil, fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
 
@@ -375,7 +375,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	// Phase 1: pg_isready (connection check)
 	// Phase 2: SELECT 1 (queryability check)
 	// Per DD-TEST-002: This prevents race condition in migrations
-	if err := WaitForPostgreSQLReady(infra.PostgresContainer, defaultPostgresUser, defaultPostgresDB, writer); err != nil {
+	if err := WaitForPostgreSQLReady(ctx, infra.PostgresContainer, defaultPostgresUser, defaultPostgresDB, writer); err != nil {
 		return nil, fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready and queryable\n\n")
@@ -389,7 +389,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 
 	// Step 5: Redis
 	_, _ = fmt.Fprintf(writer, "🔴 Starting Redis...\n")
-	if err := startDSBootstrapRedis(infra, writer); err != nil {
+	if err := startDSBootstrapRedis(ctx, infra, writer); err != nil {
 		return nil, fmt.Errorf("failed to start Redis: %w", err)
 	}
 
@@ -429,7 +429,7 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	// Step 7: Seed action types via DS API (DD-WORKFLOW-016: FK constraint)
 	if cfg.ClientToken != "" {
 		_, _ = fmt.Fprintf(writer, "🏷️  Seeding action types via DataStorage API...\n")
-		if err := SeedActionTypesViaAPIWithURL(infra.ServiceURL, cfg.ClientToken, 30*time.Second, writer); err != nil {
+		if err := SeedActionTypesViaAPIWithURL(ctx, infra.ServiceURL, cfg.ClientToken, 30*time.Second, writer); err != nil {
 			return nil, fmt.Errorf("failed to seed action types via API: %w", err)
 		}
 	}
@@ -539,7 +539,7 @@ func createDSBootstrapNetwork(infra *DSBootstrapInfra, writer io.Writer) error {
 
 // PullImageWithRetry pulls a container image with exponential backoff.
 // This prevents transient registry failures (e.g., Docker Hub 504) from failing the entire test suite.
-func PullImageWithRetry(image string, maxRetries int, writer io.Writer) error {
+func PullImageWithRetry(ctx context.Context, image string, maxRetries int, writer io.Writer) error {
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		cmd := exec.CommandContext(context.Background(), "podman", "pull", image)
@@ -563,11 +563,11 @@ func PullImageWithRetry(image string, maxRetries int, writer io.Writer) error {
 }
 
 // startDSBootstrapPostgreSQL starts the PostgreSQL container
-func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error {
+func startDSBootstrapPostgreSQL(ctx context.Context, infra *DSBootstrapInfra, writer io.Writer) error {
 	cfg := infra.Config
 
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, postgresImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
 	}
 
@@ -608,11 +608,11 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 }
 
 // startDSBootstrapRedis starts the Redis container
-func startDSBootstrapRedis(infra *DSBootstrapInfra, writer io.Writer) error {
+func startDSBootstrapRedis(ctx context.Context, infra *DSBootstrapInfra, writer io.Writer) error {
 	cfg := infra.Config
 
 	const redisImage = "redis:7-alpine"
-	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, redisImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull Redis image: %w", err)
 	}
 

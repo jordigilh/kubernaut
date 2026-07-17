@@ -83,7 +83,7 @@ type TestWorkflow struct {
 // Returns: map[workflow_name]workflow_id (UUID) for test reference
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUIDs (cannot be specified by client)
 // DD-AUTH-014: Accepts authenticated client for real K8s authentication
-func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkflow, testSuiteName string, output io.Writer) (map[string]string, error) {
+func SeedWorkflowsInDataStorage(ctx context.Context, client *ogenclient.Client, workflows []TestWorkflow, testSuiteName string, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🌱 Seeding Test Workflows in DataStorage (%s)\n", testSuiteName)
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -94,7 +94,7 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 	workflowUUIDs := make(map[string]string)
 
 	for _, wf := range workflows {
-		workflowID, err := RegisterWorkflowInDataStorage(client, wf, output)
+		workflowID, err := RegisterWorkflowInDataStorage(ctx, client, wf, output)
 		if err != nil {
 			return nil, fmt.Errorf("failed to register workflow %s: %w", wf.WorkflowID, err)
 		}
@@ -124,7 +124,7 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 // is returned immediately — no misleading fallback.
 //
 // Returns: The actual UUID assigned by DataStorage (either from creation or query)
-func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
+func RegisterWorkflowInDataStorage(ctx context.Context, client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
 	fixtureDir := workflowIDToImageName(wf.WorkflowID)
 	content, readErr := readWorkflowFixtureContent(fixtureDir)
 	if readErr != nil {
@@ -211,7 +211,7 @@ type WorkflowSeedSpec struct {
 //  4. Returns map["<crd-name>:<environment>"] = "<uuid>"
 //
 // Prerequisites: AuthWebhook deployed, DataStorage healthy, ActionTypes seeded.
-func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
+func SeedWorkflowsViaKubectlApply(ctx context.Context, kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🌱 Seeding %d workflows via kubectl apply (declarative)\n", len(workflows))
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")

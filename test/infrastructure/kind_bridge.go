@@ -33,7 +33,7 @@ import (
 //
 // nodeName is conventionally "<clusterName>-control-plane" for a
 // single-node Kind cluster (the only topology this project's E2E lanes use).
-func KindNodeBridgeIP(nodeName string) (string, error) {
+func KindNodeBridgeIP(ctx context.Context, nodeName string) (string, error) {
 	cmd := exec.CommandContext(context.Background(), "podman", "inspect", nodeName,
 		"--format", "{{.NetworkSettings.Networks.kind.IPAddress}}")
 	out, err := cmd.CombinedOutput()

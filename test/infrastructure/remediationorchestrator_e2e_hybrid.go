@@ -153,7 +153,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	}
 
 	kindConfigPath := "test/infrastructure/kind-remediationorchestrator-config.yaml"
-	if err := CreateKindClusterWithExtraMounts(
+	if err := CreateKindClusterWithExtraMounts(ctx, 
 		clusterName,
 		kubeconfigPath,
 		kindConfigPath,
@@ -347,7 +347,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	}()
 	go func() {
 		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := DeployROCoverageManifest(kubeconfigPath, roImage, writer, "5s")
+		err := DeployROCoverageManifest(ctx, kubeconfigPath, roImage, writer, "5s")
 		deployResults <- deployResult{"RemediationOrchestrator", err}
 	}()
 
@@ -383,7 +383,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	if err != nil {
 		return fmt.Errorf("failed to get seed SA token: %w", err)
 	}
-	if err := SeedActionTypesViaAPIWithTLS("https://localhost:8090", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
+	if err := SeedActionTypesViaAPIWithTLS(ctx, "https://localhost:8090", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -722,7 +722,7 @@ spec:
 // Per consolidated API migration: Accepts dynamic image name as parameter
 // Applies RBAC first, then workload after 2s propagation delay to avoid API race.
 // verifyingTimeout optionally sets the Verifying phase safety-net (#280). Pass "5s" for tiers without EM.
-func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
+func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := roRBACManifest()
 	rbacCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")

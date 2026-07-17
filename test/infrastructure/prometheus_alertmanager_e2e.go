@@ -387,12 +387,12 @@ spec:
 }
 
 // WaitForPrometheusReady polls the Prometheus readiness endpoint until it responds 200 OK.
-func WaitForPrometheusReady(promURL string, timeout time.Duration, writer io.Writer) error {
+func WaitForPrometheusReady(ctx context.Context, promURL string, timeout time.Duration, writer io.Writer) error {
 	return waitForHTTPReady(promURL+"/-/ready", "Prometheus", timeout, writer)
 }
 
 // WaitForAlertManagerReady polls the AlertManager readiness endpoint until it responds 200 OK.
-func WaitForAlertManagerReady(amURL string, timeout time.Duration, writer io.Writer) error {
+func WaitForAlertManagerReady(ctx context.Context, amURL string, timeout time.Duration, writer io.Writer) error {
 	return waitForHTTPReady(amURL+"/-/ready", "AlertManager", timeout, writer)
 }
 
@@ -425,7 +425,7 @@ func waitForHTTPReady(url, serviceName string, timeout time.Duration, writer io.
 // kubelet-cadvisor scrape job has at least one target in "up" state.
 // This detects cadvisor scraping failures early (within seconds of setup)
 // rather than surfacing as a mysterious metrics timeout minutes later in the EM.
-func WaitForPrometheusCadvisorTarget(promURL string, timeout time.Duration, writer io.Writer) error {
+func WaitForPrometheusCadvisorTarget(ctx context.Context, promURL string, timeout time.Duration, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for Prometheus cadvisor scrape target to be UP...\n")
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -671,7 +671,7 @@ func HasActiveAlerts(amURL string) bool {
 // Parameters:
 //   - promURL: Prometheus base URL (e.g., "http://127.0.0.1:9190")
 //   - metrics: Slice of test metrics to inject
-func InjectMetrics(promURL string, metrics []TestMetric) error {
+func InjectMetrics(ctx context.Context, promURL string, metrics []TestMetric) error {
 	if len(metrics) == 0 {
 		return nil
 	}

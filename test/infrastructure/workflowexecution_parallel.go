@@ -288,7 +288,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	}
 
 	dataStorageURL := "https://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
-	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, output); err != nil {
+	if _, err = BuildAndRegisterTestWorkflows(ctx, clusterName, kubeconfigPath, dataStorageURL, saToken, output); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}
 	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")

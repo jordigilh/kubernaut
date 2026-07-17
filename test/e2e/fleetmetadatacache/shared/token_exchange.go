@@ -50,14 +50,14 @@ const keycloakTokenEndpointFMC = "https://localhost:30557/realms/kubernaut-fleet
 // E2E-FMC-EAIGW-054-014 (EAIGW).
 //
 // Authority: Issue #54, ADR-068, Spike S17/S18, BR-INTEGRATION-065.
-func TokenExchange(_ *Harness, v Variant) bool {
+func TokenExchange(h *Harness, v Variant) bool {
 	return Describe(fmt.Sprintf("%s-014: kube-mcp-server's RFC 8693 token exchange is wired to real Keycloak (AC-6)", v.ScenarioPrefix()), func() {
 		var subjectToken string
 
 		BeforeEach(func() {
 			By("acquiring FMC's own client_credentials token from Keycloak (the subject token)")
 			var err error
-			subjectToken, err = infrastructure.GetKeycloakClientCredentialsToken(infrastructure.KeycloakFleetTokenConfig{
+			subjectToken, err = infrastructure.GetKeycloakClientCredentialsToken(h.Ctx, infrastructure.KeycloakFleetTokenConfig{
 				TokenEndpoint: keycloakTokenEndpointFMC,
 				ClientID:      "kubernaut-fleet-read",
 				ClientSecret:  "e2e-fleet-secret",

@@ -379,7 +379,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		"test/integration/apifrontend/config",
 		authConfig,
 	)
-	dsInfra, err = infrastructure.StartDSBootstrap(dsCfg, GinkgoWriter)
+	dsInfra, err = infrastructure.StartDSBootstrap(specCtx, dsCfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred())
 
 	// Start Mock LLM

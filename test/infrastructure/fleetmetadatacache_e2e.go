@@ -135,7 +135,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		UsePodman:               true,
 		ProjectRootAsWorkingDir: true, // DD-TEST-007: For ./coverdata resolution
 	}
-	if clusterErr := CreateKindClusterWithConfig(opts, writer); clusterErr != nil {
+	if clusterErr := CreateKindClusterWithConfig(ctx, opts, writer); clusterErr != nil {
 		return "", "", fmt.Errorf("failed to create Kind cluster: %w", clusterErr)
 	}
 
@@ -249,7 +249,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// separate broker component (MCPRoute.backendRefs aggregates natively),
 	// so there is no discovery connection needing its own credential.
 	if gatewayType != registry.GatewayEAIGW {
-		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
+		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
 			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
 			ClientID:      fmcOAuth2Config.ClientID,
 			ClientSecret:  fmcOAuth2Config.ClientSecret,
@@ -279,14 +279,14 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// Keycloak-based token func for the readiness probe's authenticated
 	// tools/call, matching FMC's own runtime OAuth2 config above.
 	keycloakFleetReadTokenFunc := func() (string, error) {
-		return GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
+		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
 			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
 			ClientID:      fmcOAuth2Config.ClientID,
 			ClientSecret:  fmcOAuth2Config.ClientSecret,
 			Scopes:        fmcOAuth2Config.Scopes,
 		})
 	}
-	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, writer); readyErr != nil {
+	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, writer); readyErr != nil {
 		return "", "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 

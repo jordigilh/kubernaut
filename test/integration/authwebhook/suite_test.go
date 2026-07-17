@@ -85,6 +85,10 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// PHASE 1: Runs ONCE on parallel process #1
 	// Setup shared infrastructure (envtest + PostgreSQL + Redis + Data Storage)
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// Package-level `ctx` is not assigned until Phase 2 (below); Phase 1
+	// needs its own bounded context for the setup calls it makes here.
+	phase1Ctx := context.Background()
+
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	GinkgoWriter.Printf("🔧 [Process %d] AuthWebhook Integration Test Suite - DD-TEST-002\n", GinkgoParallelProcess())
 	GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -131,7 +135,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Setting up Data Storage infrastructure (PostgreSQL + Redis + Data Storage service)")
 	infra = testinfra.NewAuthWebhookInfrastructure()
-	err = infra.SetupWithAuth(authConfig, GinkgoWriter)
+	err = infra.SetupWithAuth(phase1Ctx, authConfig, GinkgoWriter)
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to setup infrastructure: %v", err))
 	}

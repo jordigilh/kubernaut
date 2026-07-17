@@ -114,7 +114,7 @@ const (
 // Manual Infrastructure Control:
 //   import "github.com/jordigilh/kubernaut/test/infrastructure"
 //   infrastructure.StartNotificationIntegrationInfrastructure(ctx, os.Stdout)
-//   defer infrastructure.StopNotificationIntegrationInfrastructure(os.Stdout)
+//   defer infrastructure.StopNotificationIntegrationInfrastructure(ctx, os.Stdout)
 //
 // Health Check:
 //   curl http://127.0.0.1:18096/health  # Should return 200 OK
@@ -156,7 +156,7 @@ func StartNotificationIntegrationInfrastructure(ctx context.Context, writer io.W
 	// STEP 1: Cleanup existing containers
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
-	CleanupContainers([]string{
+	CleanupContainers(ctx, []string{
 		NTIntegrationPostgresContainer,
 		NTIntegrationRedisContainer,
 		NTIntegrationDataStorageContainer,
@@ -168,7 +168,7 @@ func StartNotificationIntegrationInfrastructure(ctx context.Context, writer io.W
 	// STEP 2: Start PostgreSQL FIRST (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
-	if err := StartPostgreSQL(PostgreSQLConfig{
+	if err := StartPostgreSQL(ctx, PostgreSQLConfig{
 		ContainerName: NTIntegrationPostgresContainer,
 		Port:          NTIntegrationPostgresPort,
 		DBName:        NTIntegrationDBName,
@@ -182,7 +182,7 @@ func StartNotificationIntegrationInfrastructure(ctx context.Context, writer io.W
 	// STEP 3: Wait for PostgreSQL to be ready (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
-	if err := WaitForPostgreSQLReady(
+	if err := WaitForPostgreSQLReady(ctx, 
 		NTIntegrationPostgresContainer,
 		NTIntegrationDBUser,
 		NTIntegrationDBName,
@@ -198,7 +198,7 @@ func StartNotificationIntegrationInfrastructure(ctx context.Context, writer io.W
 	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
 	projectRoot := getProjectRoot()
 	const migrationsImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(migrationsImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, migrationsImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull migrations image: %w", err)
 	}
 	migrationsCmd := exec.CommandContext(context.Background(), "podman", "run", "--rm",
@@ -229,7 +229,7 @@ echo "Migrations complete!"`)
 	// STEP 5: Start Redis (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🔴 Starting Redis...\n")
-	if err := StartRedis(RedisConfig{
+	if err := StartRedis(ctx, RedisConfig{
 		ContainerName: NTIntegrationRedisContainer,
 		Port:          NTIntegrationRedisPort,
 	}, writer); err != nil {
@@ -240,7 +240,7 @@ echo "Migrations complete!"`)
 	// STEP 6: Wait for Redis to be ready (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
-	if err := WaitForRedisReady(NTIntegrationRedisContainer, writer); err != nil {
+	if err := WaitForRedisReady(ctx, NTIntegrationRedisContainer, writer); err != nil {
 		return fmt.Errorf("redis failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "\n")
@@ -268,7 +268,7 @@ echo "Migrations complete!"`)
 	// STEP 9: Wait for DataStorage HTTP endpoint (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
-	if err := WaitForHTTPHealth(
+	if err := WaitForHTTPHealth(ctx, 
 		fmt.Sprintf("http://127.0.0.1:%d/readyz", NTIntegrationHealthPort),
 		30*time.Second,
 		writer,
@@ -307,11 +307,11 @@ echo "Migrations complete!"`)
 //
 // Returns:
 // - error: Any errors during infrastructure cleanup
-func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
+func StopNotificationIntegrationInfrastructure(ctx context.Context, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🛑 Stopping Notification Integration Infrastructure...\n")
 
 	// Stop and remove containers (uses shared utility)
-	CleanupContainers([]string{
+	CleanupContainers(ctx, []string{
 		NTIntegrationDataStorageContainer,
 		NTIntegrationRedisContainer,
 		NTIntegrationPostgresContainer,

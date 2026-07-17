@@ -72,7 +72,7 @@ var _ = SynchronizedBeforeSuite(
 			promURL := "http://localhost:9190"
 
 			_, _ = fmt.Fprintln(GinkgoWriter, "  Waiting for Prometheus readiness...")
-			Expect(kinfra.WaitForPrometheusReady(promURL, 90*time.Second, GinkgoWriter)).
+			Expect(kinfra.WaitForPrometheusReady(ctx, promURL, 90*time.Second, GinkgoWriter)).
 				To(Succeed(), "Prometheus must become ready within 90s")
 
 			_, _ = fmt.Fprintln(GinkgoWriter, "  Injecting OTLP metrics for severity triage alerts...")

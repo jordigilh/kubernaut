@@ -260,7 +260,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		"test/integration/notification/config",
 		authConfig,
 	)
-	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err := infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 	Expect(err).NotTo(HaveOccurred(), "Failed to start Notification integration infrastructure")
 	GinkgoWriter.Println("✅ Notification integration infrastructure started (PostgreSQL, Redis, DataStorage - shared across all processes)")
 

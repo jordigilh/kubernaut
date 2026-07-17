@@ -245,7 +245,7 @@ const fleetKeycloakNodePort = 30557
 func fleetAuthenticatedHTTPClient() (*http.Client, error) {
 	cfg := infrastructure.DefaultKeycloakFleetReadConfig(fleetKeycloakNodePort)
 	cfg.Scopes = []string{"kube-mcp-server-audience"}
-	token, err := infrastructure.GetKeycloakClientCredentialsToken(cfg)
+	token, err := infrastructure.GetKeycloakClientCredentialsToken(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("acquire Keycloak client_credentials token: %w", err)
 	}

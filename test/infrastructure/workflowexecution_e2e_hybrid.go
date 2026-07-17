@@ -576,7 +576,7 @@ subjects:
 
 	// Goroutine 1: Seed workflows in DataStorage (includes ansible workflows — BR-WE-015)
 	go func() {
-		if _, seedErr := BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); seedErr != nil {
+		if _, seedErr := BuildAndRegisterTestWorkflows(ctx, clusterName, kubeconfigPath, dataStorageURL, saToken, writer); seedErr != nil {
 			postDeployCh <- postDeployResult{"workflow seeding", seedErr}
 			return
 		}
@@ -605,7 +605,7 @@ subjects:
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n📋 Creating test pipeline...")
-	if err := CreateSimpleTestPipeline(kubeconfigPath, writer); err != nil {
+	if err := CreateSimpleTestPipeline(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create test pipeline: %w", err)
 	}
 
@@ -997,7 +997,7 @@ subjects:
 	return nil
 }
 
-func CreateSimpleTestPipeline(kubeconfigPath string, output io.Writer) error {
+func CreateSimpleTestPipeline(ctx context.Context, kubeconfigPath string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "\n📝 Creating test pipelines (success + failure)...\n")
 
 	pipelineYAML := `

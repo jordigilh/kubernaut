@@ -49,7 +49,7 @@ const coverageSecurityContextYAMLFixture = `
 
 // createKAKindCluster creates a Kind cluster using the KA Kind config.
 // Reused by both KA and AIAnalysis E2E suites (same port layout).
-func createKAKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+func createKAKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
@@ -74,7 +74,7 @@ func createKAKindCluster(clusterName, kubeconfigPath string, writer io.Writer) e
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
 // CreateKAE2EServiceAccount creates the E2E ServiceAccount with

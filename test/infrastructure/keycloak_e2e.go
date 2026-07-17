@@ -76,7 +76,7 @@ func DefaultKeycloakFleetReadConfig(hostPort int) KeycloakFleetTokenConfig {
 
 // GetKeycloakClientCredentialsToken obtains an access_token from Keycloak
 // using the OAuth2 client_credentials grant.
-func GetKeycloakClientCredentialsToken(cfg KeycloakFleetTokenConfig) (string, error) {
+func GetKeycloakClientCredentialsToken(ctx context.Context, cfg KeycloakFleetTokenConfig) (string, error) {
 	data := url.Values{
 		"grant_type":    {"client_credentials"},
 		"client_id":     {cfg.ClientID},
