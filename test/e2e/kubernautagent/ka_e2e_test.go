@@ -26,6 +26,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	errorFixture = "error"
+)
+
 // Kubernaut Agent E2E Tests — #433
 // Test Plan: docs/tests/433/TEST_PLAN.md
 // Scenarios: E2E-KA-433-001 through E2E-KA-433-009
@@ -186,7 +191,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 60*time.Second, 1*time.Second).Should(

@@ -34,6 +34,10 @@ import (
 
 var httpTestClient = &http.Client{Timeout: 10 * time.Second}
 
+// mcpInitializeRequestFixture is the MCP "initialize" JSON-RPC request body
+// reused by the wiring tests below (goconst dedup).
+const mcpInitializeRequestFixture = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+
 func fakeAuthMiddleware(user string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,7 +74,7 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 			ts, _ := newMCPTestRouter()
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
@@ -95,7 +99,7 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 			ts, _ := newMCPTestRouter()
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
@@ -114,7 +118,7 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 			ts, _ := newMCPTestRouter()
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
@@ -161,7 +165,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			ts := httptest.NewServer(r)
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -197,7 +201,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			ts := httptest.NewServer(r)
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -239,7 +243,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			ts := httptest.NewServer(r)
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -288,7 +292,7 @@ var _ = Describe("MCP Session Resilience — KeepAlive/SessionTimeout Wiring (#1
 		ts := httptest.NewServer(r)
 		defer ts.Close()
 
-		jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+		jsonRPC := mcpInitializeRequestFixture
 		req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")
