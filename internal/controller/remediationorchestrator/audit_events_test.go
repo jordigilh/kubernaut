@@ -138,12 +138,12 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 	Context("Phase 3: Audit Event Emission Tests", func() {
 		It("AE-7.1: Should emit lifecycle started event on new RR", func() {
 			// Create new RemediationRequest
-			rr := newRemediationRequest("test-rr", "default", "")
+			rr := newRemediationRequest("test-rr", defaultFixture, "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			// Reconcile to initialize phase
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
@@ -161,7 +161,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 		It("AE-7.2: Should emit phase transition event on Pending→Processing", func() {
 			// Create RR in Pending phase with SP created
-			rr := newRemediationRequest("test-rr", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-rr", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
@@ -170,7 +170,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			// Reconcile to transition to Processing
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
@@ -184,23 +184,23 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 		It("AE-7.3: Should emit verifying_started event on successful workflow (#280)", func() {
 			// Create RR in Executing phase with completed WE
-			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "sp-test-rr", "ai-test-rr", "we-test-rr")
+			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "sp-test-rr", "ai-test-rr", "we-test-rr")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", "default", "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
-			ai := newAIAnalysisCompleted("ai-test-rr", "default", "test-rr", 0.9, "restart-pod")
+			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.9, "restart-pod")
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
-			we := newWorkflowExecutionCompleted("we-test-rr", "default", "test-rr")
+			we := newWorkflowExecutionCompleted("we-test-rr", defaultFixture, "test-rr")
 			Expect(fakeClient.Create(ctx, we)).To(Succeed())
 
 			mockAuditStore.Reset()
 
 			// Reconcile to transition to Verifying (#280)
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
@@ -215,23 +215,23 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 		It("AE-7.4: Should emit failure event on workflow failure", func() {
 			// Create RR in Executing phase with failed WE
-			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "sp-test-rr", "ai-test-rr", "we-test-rr")
+			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "sp-test-rr", "ai-test-rr", "we-test-rr")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", "default", "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
-			ai := newAIAnalysisCompleted("ai-test-rr", "default", "test-rr", 0.9, "restart-pod")
+			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.9, "restart-pod")
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
-			we := newWorkflowExecutionFailed("we-test-rr", "default", "test-rr", "Pod restart failed")
+			we := newWorkflowExecutionFailed("we-test-rr", defaultFixture, "test-rr", "Pod restart failed")
 			Expect(fakeClient.Create(ctx, we)).To(Succeed())
 
 			mockAuditStore.Reset()
 
 			// Reconcile to transition to Failed
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
@@ -246,20 +246,20 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 		It("AE-7.5: Should emit approval requested event on low confidence", func() {
 			// Create RR in Analyzing phase with low confidence AI
-			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAnalyzing, "sp-test-rr", "ai-test-rr", "")
+			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "sp-test-rr", "ai-test-rr", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", "default", "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
-			ai := newAIAnalysisCompleted("ai-test-rr", "default", "test-rr", 0.4, "risky-workflow")
+			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.4, "risky-workflow")
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
 			mockAuditStore.Reset()
 
 			// Reconcile to transition to AwaitingApproval
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
@@ -275,22 +275,22 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		It("AE-7.6: Should NOT emit approval decision event (delegated to RARReconciler)", func() {
 			// Approval audit events are emitted by the RARReconciler, not the main
 			// reconciler, to avoid duplicate emission (DD-AUDIT-003, ADR-040).
-			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "sp-test-rr", "ai-test-rr", "")
+			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "sp-test-rr", "ai-test-rr", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", "default", "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
-			ai := newAIAnalysisCompleted("ai-test-rr", "default", "test-rr", 0.4, "risky-workflow")
+			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.4, "risky-workflow")
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
-			rar := newRemediationApprovalRequestApproved("rar-test-rr", "default", "test-rr", "admin@example.com")
+			rar := newRemediationApprovalRequestApproved("rar-test-rr", defaultFixture, "test-rr", "admin@example.com")
 			Expect(fakeClient.Create(ctx, rar)).To(Succeed())
 
 			mockAuditStore.Reset()
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
@@ -303,22 +303,22 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		It("AE-7.7: Should NOT emit rejection event (delegated to RARReconciler)", func() {
 			// Rejection audit events are emitted by the RARReconciler, not the main
 			// reconciler, to avoid duplicate emission (DD-AUDIT-003, ADR-040).
-			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "sp-test-rr", "ai-test-rr", "")
+			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "sp-test-rr", "ai-test-rr", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", "default", "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
-			ai := newAIAnalysisCompleted("ai-test-rr", "default", "test-rr", 0.4, "risky-workflow")
+			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.4, "risky-workflow")
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
-			rar := newRemediationApprovalRequestRejected("rar-test-rr", "default", "test-rr", "admin@example.com", "Too risky")
+			rar := newRemediationApprovalRequestRejected("rar-test-rr", defaultFixture, "test-rr", "admin@example.com", "Too risky")
 			Expect(fakeClient.Create(ctx, rar)).To(Succeed())
 
 			mockAuditStore.Reset()
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
@@ -330,14 +330,14 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 		It("AE-7.8: Should emit timeout event on global timeout", func() {
 			// Create RR with expired global timeout
-			rr := newRemediationRequestWithTimeout("test-rr", "default", remediationv1.PhasePending, -2*time.Hour)
+			rr := newRemediationRequestWithTimeout("test-rr", defaultFixture, remediationv1.PhasePending, -2*time.Hour)
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			mockAuditStore.Reset()
 
 			// Reconcile to detect timeout
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
@@ -356,25 +356,25 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			// In reality, this is set by WE controller, but we can test the audit emission
 
 			// Create RR in Failed phase with RequiresManualReview flag
-			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseFailed, "sp-test-rr", "ai-test-rr", "we-test-rr")
+			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseFailed, "sp-test-rr", "ai-test-rr", "we-test-rr")
 			rr.Status.RequiresManualReview = true
 			rr.Status.FailureReason = stringPtr("ExhaustedRetries")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", "default", "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
-			ai := newAIAnalysisCompleted("ai-test-rr", "default", "test-rr", 0.9, "restart-pod")
+			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.9, "restart-pod")
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
-			we := newWorkflowExecutionFailed("we-test-rr", "default", "test-rr", "ExhaustedRetries")
+			we := newWorkflowExecutionFailed("we-test-rr", defaultFixture, "test-rr", "ExhaustedRetries")
 			Expect(fakeClient.Create(ctx, we)).To(Succeed())
 
 			mockAuditStore.Reset()
 
 			// Reconcile (terminal phase housekeeping — #265 now returns RequeueAfter for TTL)
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeNumerically(">=", 0))
@@ -394,13 +394,13 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			// Create RR without phase to trigger lifecycle.started event
 			// (Per reconciler logic: lifecycle.started emitted when OverallPhase == "")
-			rr := newRemediationRequest("test-rr", "default", "")
+			rr := newRemediationRequest("test-rr", defaultFixture, "")
 			// Don't set StartTime - let reconciler initialize it
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			// First reconcile: initializes phase to Pending and emits lifecycle.started + lifecycle.created
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
@@ -411,7 +411,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 			// Second reconcile: transitions from Pending to Processing and emits phase.transitioned
 			result, err = reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
@@ -426,12 +426,12 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 
 	Context("DD-AUDIT-003 v2.2: Fleet ClusterName in audit events (CC8.1)", func() {
 		It("IT-RO-FLEET-001: lifecycle.started event includes ClusterName for fleet RRs [CC8.1, AU-3]", func() {
-			rr := newRemediationRequest("fleet-rr", "default", "")
+			rr := newRemediationRequest("fleet-rr", defaultFixture, "")
 			rr.Spec.ClusterID = "prod-east"
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "fleet-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "fleet-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
@@ -445,13 +445,13 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		})
 
 		It("IT-RO-FLEET-002: lifecycle.started event has no ClusterName for hub-only RRs", func() {
-			rr := newRemediationRequest("hub-rr", "default", "")
+			rr := newRemediationRequest("hub-rr", defaultFixture, "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			mockAuditStore.Reset()
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "hub-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "hub-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
@@ -463,7 +463,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 		})
 
 		It("IT-RO-FLEET-003: phase transition event includes ClusterName for fleet RRs [CC8.1]", func() {
-			rr := newRemediationRequest("fleet-phase-rr", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("fleet-phase-rr", defaultFixture, remediationv1.PhasePending)
 			rr.Spec.ClusterID = "prod-west"
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
@@ -471,7 +471,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			mockAuditStore.Reset()
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "fleet-phase-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "fleet-phase-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 

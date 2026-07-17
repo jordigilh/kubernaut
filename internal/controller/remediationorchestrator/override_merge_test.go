@@ -69,7 +69,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			ExecutionBundleDigest: "sha256:aaa",
 			Confidence:            0.72,
 			Parameters: map[string]string{
-				"NAMESPACE": "default",
+				"NAMESPACE": defaultFixture,
 				"POD_NAME":  "app-pod-1",
 			},
 			Rationale:          "AI recommended pod restart for OOMKill recovery",
@@ -144,7 +144,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			Expect(resolved.Confidence).To(Equal(0.72))
 
 			// Parameters from AIA (override.Parameters is nil)
-			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", "default"))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", defaultFixture))
 			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", "app-pod-1"))
 		})
 	})
@@ -185,7 +185,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			Expect(resolved.WorkflowID).To(Equal("wf-ai-001"))
 			Expect(resolved.Version).To(Equal("1.0.0"))
 			Expect(resolved.ExecutionBundle).To(Equal("ai-bundle:v1.0@sha256:aaa"))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", "default"))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", defaultFixture))
 			Expect(resolved.Parameters).To(HaveKeyWithValue("POD_NAME", "app-pod-1"))
 			Expect(resolved.Confidence).To(Equal(0.72))
 		})
@@ -272,7 +272,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(applied).To(BeTrue())
 			Expect(resolved.Parameters).To(HaveLen(2))
-			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", "default"))
+			Expect(resolved.Parameters).To(HaveKeyWithValue("NAMESPACE", defaultFixture))
 		})
 	})
 

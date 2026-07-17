@@ -61,7 +61,7 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 		ReleaseLock:               func(_ context.Context, _ string) error { return nil },
 		CapturePreRemediationHash: func(_ context.Context, _, _, _, _ string) (string, string, error) { return "", "", nil },
 		ResolveDualTargets: func(_ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) prodcontroller.DualTargetResult {
-			return prodcontroller.DualTargetResult{Remediation: prodcontroller.TargetRef{Kind: "Deployment", Name: "app", Namespace: "default"}}
+			return prodcontroller.DualTargetResult{Remediation: prodcontroller.TargetRef{Kind: "Deployment", Name: "app", Namespace: defaultFixture}}
 		},
 		PersistPreHash: func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) error { return nil },
 		TransitionToFailed: func(_ context.Context, _ *remediationv1.RemediationRequest, _ remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
@@ -99,14 +99,14 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 	}
 
 	awaitingRR := func(name string) *remediationv1.RemediationRequest {
-		rr := newRemediationRequest(name, "default", remediationv1.PhaseAwaitingApproval)
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-" + name, Namespace: "default"}
+		rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseAwaitingApproval)
+		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-" + name, Namespace: defaultFixture}
 		return rr
 	}
 
 	makeRAR := func(rrName string, decision remediationv1.ApprovalDecision) *remediationv1.RemediationApprovalRequest {
 		return &remediationv1.RemediationApprovalRequest{
-			ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("rar-%s", rrName), Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("rar-%s", rrName), Namespace: defaultFixture},
 			Spec: remediationv1.RemediationApprovalRequestSpec{
 				RequiredBy: metav1.NewTime(time.Now().Add(1 * time.Hour)),
 			},
@@ -119,7 +119,7 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 
 	makeAI := func(name string) *aianalysisv1.AIAnalysis {
 		return &aianalysisv1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: "Completed",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
@@ -129,7 +129,7 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 				},
 				RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
 					RemediationTarget: &aianalysisv1.RemediationTarget{
-						Kind: "Deployment", Name: "my-app", Namespace: "default",
+						Kind: "Deployment", Name: "my-app", Namespace: defaultFixture,
 					},
 				},
 			},
@@ -220,7 +220,7 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			failedCalled := false
 			cbs := noopAwaitingCallbacks()
 			cbs.ResolveWorkflow = func(_ context.Context, _ *remediationv1.WorkflowOverride, _ *aianalysisv1.SelectedWorkflow, _ string) (*aianalysisv1.SelectedWorkflow, bool, error) {
-				return nil, false, override.NewOverrideNotFoundError("deleted-wf", "default", fmt.Errorf("workflow deleted"))
+				return nil, false, override.NewOverrideNotFoundError("deleted-wf", defaultFixture, fmt.Errorf("workflow deleted"))
 			}
 			cbs.TransitionToFailed = func(_ context.Context, _ *remediationv1.RemediationRequest, fp remediationv1.FailurePhase, _ error) (ctrl.Result, error) {
 				failedCalled = true

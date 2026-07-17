@@ -133,7 +133,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 	// UT-RO-1091-001: Inconclusive sets ConsecutiveFailureCount and NextAllowedExecution
 	It("UT-RO-1091-001: Inconclusive EA sets ConsecutiveFailureCount=1 and NextAllowedExecution in future", func() {
 		rrName := "rr-1091-001"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newVerifyingRRWithEA(rrName, namespace, eaName)
@@ -165,7 +165,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 	// UT-RO-1091-002: Pre-existing ConsecutiveFailureCount is preserved and incremented
 	It("UT-RO-1091-002: Inconclusive with pre-existing count=1 increments to 2 with longer backoff", func() {
 		rrName := "rr-1091-002"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newVerifyingRRWithEA(rrName, namespace, eaName)
@@ -193,7 +193,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 	// UT-RO-1091-003: Inconclusive when EA phase is Failed (not Completed) still applies backoff
 	It("UT-RO-1091-003: Inconclusive from Failed EA still transitions with backoff", func() {
 		rrName := "rr-1091-003"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newVerifyingRRWithEA(rrName, namespace, eaName)
@@ -235,7 +235,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 	// UT-RO-1091-004: At threshold, count increments but NextAllowedExecution is NOT set
 	It("UT-RO-1091-004: Inconclusive at threshold increments count but skips NextAllowedExecution", func() {
 		rrName := "rr-1091-004"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newVerifyingRRWithEA(rrName, namespace, eaName)
@@ -263,7 +263,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 	// UT-RO-1091-005: Remediated outcome does NOT set backoff (negative/regression test)
 	It("UT-RO-1091-005: Remediated EA does NOT set backoff fields", func() {
 		rrName := "rr-1091-005"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newVerifyingRRWithEA(rrName, namespace, eaName)
@@ -292,7 +292,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 	// UT-RO-1091-006: Idempotency - second reconcile does not re-apply backoff
 	It("UT-RO-1091-006: second reconcile after Inconclusive does not re-apply backoff", func() {
 		rrName := "rr-1091-006"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newVerifyingRRWithEA(rrName, namespace, eaName)

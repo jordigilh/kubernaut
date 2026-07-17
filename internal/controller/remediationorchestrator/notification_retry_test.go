@@ -69,7 +69,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 	// ========================================
 	It("UT-NT-RETRY-001: should retry completion notification creation on next reconcile after transient failure", func() {
 		rrName := "rr-nt-retry-001"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		eaName := fmt.Sprintf("ea-%s", rrName)
 		completionNTName := fmt.Sprintf("nr-completion-%s", rrName)
@@ -202,7 +202,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 	// ========================================
 	It("UT-NT-RETRY-002: should retry bulk duplicate notification creation on next reconcile after transient failure", func() {
 		rrName := "rr-nt-retry-002"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		eaName := fmt.Sprintf("ea-%s", rrName)
 		bulkNTName := fmt.Sprintf("nr-bulk-%s", rrName)
@@ -363,7 +363,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 	// ========================================
 	It("UT-NT-RETRY-003: should not create duplicate notifications when refs already tracked", func() {
 		rrName := "rr-nt-retry-003"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		eaName := fmt.Sprintf("ea-%s", rrName)
 		completionNTName := fmt.Sprintf("nr-completion-%s", rrName)
@@ -547,7 +547,7 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 	// ========================================
 	It("IT-RO-318-004: should include EA verification data in completion notification when EA ref exists", func() {
 		rrName := "rr-it-318-004"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		eaName := fmt.Sprintf("ea-%s", rrName)
 		completionNTName := fmt.Sprintf("nr-completion-%s", rrName)
@@ -666,7 +666,7 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 	// ========================================
 	It("IT-RO-318-005: should create completion notification with 'not available' when EA ref is nil", func() {
 		rrName := "rr-it-318-005"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		completionNTName := fmt.Sprintf("nr-completion-%s", rrName)
 

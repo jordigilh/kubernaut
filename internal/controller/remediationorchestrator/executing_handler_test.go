@@ -86,7 +86,7 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("Corrupted state", func() {
 		It("UT-EXE-003: no WorkflowExecutionRef returns Failed intent", func() {
-			rr := newRemediationRequest("exe-no-ref", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-no-ref", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -105,11 +105,11 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("Missing child CRD", func() {
 		It("UT-EXE-004: WE CRD not found returns Failed intent", func() {
-			rr := newRemediationRequest("exe-missing-we", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-missing-we", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "nonexistent-we",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -128,14 +128,14 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("WE Completed", func() {
 		It("UT-EXE-005: WE Completed returns Verifying intent", func() {
-			rr := newRemediationRequest("exe-completed", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-completed", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "we-completed",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			we := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "we-completed", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "we-completed", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseCompleted,
 				},
@@ -157,14 +157,14 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("WE Failed (normal)", func() {
 		It("UT-EXE-006: WE Failed returns Failed intent", func() {
-			rr := newRemediationRequest("exe-failed", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-failed", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "we-failed",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			we := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "we-failed", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "we-failed", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseFailed,
 				},
@@ -186,14 +186,14 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("WE Failed (Deduplicated)", func() {
 		It("UT-EXE-007: WE Deduplicated sets DeduplicatedByWE and requeues", func() {
-			rr := newRemediationRequest("exe-dedup", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-dedup", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "we-dedup",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			we := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "we-dedup", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "we-dedup", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseFailed,
 					FailureDetails: &workflowexecutionv1.FailureDetails{
@@ -213,7 +213,7 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 			Expect(intent.RequeueAfter).To(Equal(10 * time.Second))
 
 			var updatedRR remediationv1.RemediationRequest
-			Expect(c.Get(ctx, types.NamespacedName{Name: "exe-dedup", Namespace: "default"}, &updatedRR)).To(Succeed())
+			Expect(c.Get(ctx, types.NamespacedName{Name: "exe-dedup", Namespace: defaultFixture}, &updatedRR)).To(Succeed())
 			Expect(updatedRR.Status.DeduplicatedByWE).To(Equal("original-we"))
 		})
 	})
@@ -223,14 +223,14 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("WE In Progress", func() {
 		It("UT-EXE-008: WE Pending returns 10s requeue", func() {
-			rr := newRemediationRequest("exe-pending", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-pending", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "we-pending",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			we := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "we-pending", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "we-pending", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhasePending,
 				},
@@ -249,14 +249,14 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 
 	Describe("WE In Progress (Running)", func() {
 		It("UT-EXE-013: WE Running returns 10s requeue", func() {
-			rr := newRemediationRequest("exe-running", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-running", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "we-running",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			we := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "we-running", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "we-running", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseRunning,
 				},
@@ -275,14 +275,14 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 
 	Describe("WE Empty Phase", func() {
 		It("UT-EXE-014: WE empty phase returns 10s requeue", func() {
-			rr := newRemediationRequest("exe-empty", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-empty", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "we-empty",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			we := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "we-empty", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "we-empty", Namespace: defaultFixture},
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -298,14 +298,14 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 
 	Describe("WE Unknown Phase", func() {
 		It("UT-EXE-015: WE unknown phase returns 10s requeue", func() {
-			rr := newRemediationRequest("exe-unknown", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-unknown", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "we-unknown",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			we := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "we-unknown", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "we-unknown", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: "SomeUnknownPhase",
 				},
@@ -327,21 +327,21 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("Dedup result propagation", func() {
 		It("UT-EXE-009: original WFE Completed returns InheritedCompleted", func() {
-			rr := newRemediationRequest("exe-dedup-complete", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-dedup-complete", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.DeduplicatedByWE = "original-we"
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "dedup-we",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			dedupWE := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "dedup-we", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "dedup-we", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseFailed,
 				},
 			}
 			originalWE := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "original-we", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "original-we", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseCompleted,
 				},
@@ -359,21 +359,21 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 		})
 
 		It("UT-EXE-010: original WFE Failed returns InheritedFailed", func() {
-			rr := newRemediationRequest("exe-dedup-fail", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-dedup-fail", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.DeduplicatedByWE = "original-we-fail"
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "dedup-we-fail",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			dedupWE := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "dedup-we-fail", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "dedup-we-fail", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseFailed,
 				},
 			}
 			originalWE := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "original-we-fail", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "original-we-fail", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase:         workflowexecutionv1.PhaseFailed,
 					FailureReason: "pipeline crashed",
@@ -392,15 +392,15 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 		})
 
 		It("UT-EXE-011: original WFE deleted returns InheritedFailed", func() {
-			rr := newRemediationRequest("exe-dedup-deleted", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-dedup-deleted", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.DeduplicatedByWE = "deleted-original-we"
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "dedup-we-deleted",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			dedupWE := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "dedup-we-deleted", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "dedup-we-deleted", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseFailed,
 				},
@@ -418,21 +418,21 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 		})
 
 		It("UT-EXE-012: original WFE still running returns 10s requeue", func() {
-			rr := newRemediationRequest("exe-dedup-running", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("exe-dedup-running", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.DeduplicatedByWE = "running-original-we"
 			rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 				Name:      "dedup-we-running",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			dedupWE := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "dedup-we-running", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "dedup-we-running", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseFailed,
 				},
 			}
 			originalWE := &workflowexecutionv1.WorkflowExecution{
-				ObjectMeta: metav1.ObjectMeta{Name: "running-original-we", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "running-original-we", Namespace: defaultFixture},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
 					Phase: workflowexecutionv1.PhaseRunning,
 				},

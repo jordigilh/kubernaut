@@ -66,7 +66,7 @@ var _ = Describe("Issue #666: BlockedHandler (BR-ORCH-042)", func() {
 	}
 
 	blockedRR := func(name string, reason remediationv1.BlockReason, blockedUntil *time.Time) *remediationv1.RemediationRequest {
-		rr := newRemediationRequest(name, "default", remediationv1.PhaseBlocked)
+		rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseBlocked)
 		rr.Status.BlockReason = reason
 		if blockedUntil != nil {
 			t := metav1.NewTime(*blockedUntil)

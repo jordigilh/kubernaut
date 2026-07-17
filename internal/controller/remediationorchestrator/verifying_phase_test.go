@@ -62,7 +62,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 	// ========================================
 	It("UT-VERIFY-001: should transition to Verifying (not Completed) when WFE completes", func() {
 		rrName := "rr-verify-001"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -108,7 +108,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 	// ========================================
 	It("UT-VERIFY-002: should create EA when transitioning to Verifying", func() {
 		rrName := "rr-verify-002"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -158,7 +158,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 	// ========================================
 	It("UT-VERIFY-003: should transition from Verifying to Completed when EA completes", func() {
 		rrName := "rr-verify-003"
-		namespace := "test-ns"
+		namespace := testNs
 
 		deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
 		rr := &remediationv1.RemediationRequest{
@@ -230,7 +230,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 	// ========================================
 	It("UT-VERIFY-004: should transition from Verifying to Completed when EA fails", func() {
 		rrName := "rr-verify-004"
-		namespace := "test-ns"
+		namespace := testNs
 
 		deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
 		rr := &remediationv1.RemediationRequest{
@@ -302,7 +302,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 	// ========================================
 	It("UT-VERIFY-006: should transition to Completed with VerificationTimedOut when deadline expires", func() {
 		rrName := "rr-verify-006"
-		namespace := "test-ns"
+		namespace := testNs
 
 		expiredDeadline := metav1.NewTime(time.Now().Add(-1 * time.Minute))
 		rr := &remediationv1.RemediationRequest{
@@ -372,7 +372,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 	// ========================================
 	It("UT-VERIFY-TIMEOUT-004: should timeout when VerificationDeadline is nil and RR is older than configured verifying timeout", func() {
 		rrName := "rr-verify-timeout-004"
-		namespace := "test-ns"
+		namespace := testNs
 
 		verifyingTimeout := 10 * time.Minute
 		rr := &remediationv1.RemediationRequest{
@@ -442,7 +442,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 	// ========================================
 	It("UT-VERIFY-005: should populate VerificationDeadline when EA has ValidityDeadline", func() {
 		rrName := "rr-verify-005"
-		namespace := "test-ns"
+		namespace := testNs
 
 		deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
 		rr := &remediationv1.RemediationRequest{

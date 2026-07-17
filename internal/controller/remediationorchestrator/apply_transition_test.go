@@ -55,7 +55,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 	Describe("TransitionNone result mapping", func() {
 
 		It("UT-AT-001: NoOp intent produces empty ctrl.Result", func() {
-			rr := newRemediationRequest("test-noop", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-noop", defaultFixture, remediationv1.PhasePending)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
@@ -66,7 +66,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-AT-002: Requeue intent produces ctrl.Result with RequeueAfter", func() {
-			rr := newRemediationRequest("test-requeue", "default", remediationv1.PhaseProcessing)
+			rr := newRemediationRequest("test-requeue", defaultFixture, remediationv1.PhaseProcessing)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
@@ -77,7 +77,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-AT-003: RequeueNow intent produces ctrl.Result with Requeue=true", func() {
-			rr := newRemediationRequest("test-requeue-now", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-requeue-now", defaultFixture, remediationv1.PhasePending)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
@@ -94,7 +94,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 	Describe("Validation errors", func() {
 
 		It("UT-AT-004: Advance without TargetPhase returns validation error", func() {
-			rr := newRemediationRequest("test-invalid", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-invalid", defaultFixture, remediationv1.PhasePending)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
@@ -105,7 +105,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-AT-005: Unknown TransitionType returns error", func() {
-			rr := newRemediationRequest("test-unknown", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-unknown", defaultFixture, remediationv1.PhasePending)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
@@ -122,7 +122,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 	Describe("Dispatch to transition methods", func() {
 
 		It("UT-AT-006: Advance dispatches to transitionPhase, updating status", func() {
-			rr := newRemediationRequest("test-advance", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-advance", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
@@ -135,7 +135,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-AT-007: Failed dispatches to transitionToFailed, setting FailurePhase", func() {
-			rr := newRemediationRequest("test-failed", "default", remediationv1.PhaseProcessing)
+			rr := newRemediationRequest("test-failed", defaultFixture, remediationv1.PhaseProcessing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
@@ -149,7 +149,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-AT-008: Verifying dispatches to transitionToVerifying", func() {
-			rr := newRemediationRequest("test-verifying", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("test-verifying", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
@@ -162,7 +162,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-AT-009: InheritedCompleted dispatches to transitionToInheritedCompleted", func() {
-			rr := newRemediationRequest("test-inherit-complete", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-inherit-complete", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
@@ -175,7 +175,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-AT-010: InheritedFailed dispatches to transitionToInheritedFailed", func() {
-			rr := newRemediationRequest("test-inherit-fail", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-inherit-fail", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
@@ -194,7 +194,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 	Describe("CompletedWithoutVerification dispatch (#712, #736)", func() {
 
 		It("UT-RO-712-005: dispatches to transitionToCompletedWithoutVerification, setting DryRun outcome", func() {
-			rr := newRemediationRequest("test-dryrun", "default", remediationv1.PhaseAnalyzing)
+			rr := newRemediationRequest("test-dryrun", defaultFixture, remediationv1.PhaseAnalyzing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
@@ -209,7 +209,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-RO-712-005b: already-Completed RR is a no-op on double-reconcile (idempotency)", func() {
-			rr := newRemediationRequest("test-dryrun-idem", "default", remediationv1.PhaseCompleted)
+			rr := newRemediationRequest("test-dryrun-idem", defaultFixture, remediationv1.PhaseCompleted)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.Outcome = "DryRun"
 			completedAt := metav1.Now()
@@ -226,7 +226,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-RO-712-006: dry-run completion sets CompletedAt for retention TTL", func() {
-			rr := newRemediationRequest("test-dryrun-ts", "default", remediationv1.PhaseAnalyzing)
+			rr := newRemediationRequest("test-dryrun-ts", defaultFixture, remediationv1.PhaseAnalyzing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
 			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
@@ -242,7 +242,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-RO-712-007: dry-run sets NextAllowedExecution for GW suppression", func() {
-			rr := newRemediationRequest("test-dryrun-nae", "default", remediationv1.PhaseAnalyzing)
+			rr := newRemediationRequest("test-dryrun-nae", defaultFixture, remediationv1.PhaseAnalyzing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			holdPeriod := 30 * time.Minute
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
@@ -260,7 +260,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		})
 
 		It("UT-RO-712-007b: dry-run preserves later failure backoff NextAllowedExecution", func() {
-			rr := newRemediationRequest("test-dryrun-preserve", "default", remediationv1.PhaseAnalyzing)
+			rr := newRemediationRequest("test-dryrun-preserve", defaultFixture, remediationv1.PhaseAnalyzing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			laterBackoff := metav1.NewTime(time.Now().Add(24 * time.Hour))
 			rr.Status.NextAllowedExecution = &laterBackoff

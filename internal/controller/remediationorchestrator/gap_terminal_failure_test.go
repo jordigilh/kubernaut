@@ -55,13 +55,13 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-808-001"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseProcessing, "sp-"+rrName, "", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		procStart := metav1.Now()
 		rr.Status.ProcessingStartTime = &procStart
 
-		sp := newSignalProcessingFailed("sp-"+rrName, "default", rrName, "Signal processing failed")
+		sp := newSignalProcessingFailed("sp-"+rrName, defaultFixture, rrName, "Signal processing failed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -81,14 +81,14 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-escalation-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "Escalation NR should exist after SP failure transition")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))
@@ -101,13 +101,13 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-808-002"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseProcessing, "sp-"+rrName, "", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		procStart := metav1.Now()
 		rr.Status.ProcessingStartTime = &procStart
 
-		sp := newSignalProcessingFailed("sp-"+rrName, "default", rrName, "SP failed")
+		sp := newSignalProcessingFailed("sp-"+rrName, defaultFixture, rrName, "SP failed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -127,7 +127,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -142,15 +142,15 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-808-003"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseExecuting, "sp-"+rrName, "ai-"+rrName, "we-"+rrName)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		execStart := metav1.Now()
 		rr.Status.ExecutingStartTime = &execStart
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
-		we := newWorkflowExecutionFailed("we-"+rrName, "default", rrName, "Pipeline failed")
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		we := newWorkflowExecutionFailed("we-"+rrName, defaultFixture, rrName, "Pipeline failed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -170,7 +170,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -200,13 +200,13 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-808-004"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseProcessing, "sp-"+rrName, "", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		procStart := metav1.Now()
 		rr.Status.ProcessingStartTime = &procStart
 
-		sp := newSignalProcessingFailed("sp-"+rrName, "default", rrName, "SP failed")
+		sp := newSignalProcessingFailed("sp-"+rrName, defaultFixture, rrName, "SP failed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -227,7 +227,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 
 		// First reconcile
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -235,7 +235,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 
 		// Second reconcile
 		_, err = reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -260,7 +260,7 @@ var _ = Describe("BR-ORCH-036 GAP-5: transitionToFailedTerminal Escalation NR (#
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-809-001"
-		rr := newRemediationRequest(rrName, "default", remediationv1.PhaseBlocked)
+		rr := newRemediationRequest(rrName, defaultFixture, remediationv1.PhaseBlocked)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now().Add(-30 * time.Minute)}
 		expiredTime := metav1.NewTime(time.Now().Add(-1 * time.Minute))
 		rr.Status.BlockedUntil = &expiredTime
@@ -284,14 +284,14 @@ var _ = Describe("BR-ORCH-036 GAP-5: transitionToFailedTerminal Escalation NR (#
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-escalation-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "Escalation NR should exist after cooldown expiry")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))

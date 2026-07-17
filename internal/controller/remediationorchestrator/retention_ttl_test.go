@@ -58,7 +58,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 	Context("RetentionExpiryTime assignment on terminal RRs", func() {
 
 		It("UT-RO-265-001: should set RetentionExpiryTime on Completed RR", func() {
-			rr := newRemediationRequest("test-rr", "default", remediationv1.PhaseCompleted)
+			rr := newRemediationRequest("test-rr", defaultFixture, remediationv1.PhaseCompleted)
 			rr.Status.ObservedGeneration = rr.Generation
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
@@ -81,12 +81,12 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.RetentionExpiryTime).NotTo(BeNil(),
 				"Behavior: RetentionExpiryTime must be set on terminal Completed RR")
@@ -97,7 +97,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 		})
 
 		It("UT-RO-265-002: should set RetentionExpiryTime on Failed RR", func() {
-			rr := newRemediationRequest("test-rr-failed", "default", remediationv1.PhaseFailed)
+			rr := newRemediationRequest("test-rr-failed", defaultFixture, remediationv1.PhaseFailed)
 			rr.Status.ObservedGeneration = rr.Generation
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
@@ -124,19 +124,19 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-failed", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-failed", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-failed", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-failed", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.RetentionExpiryTime).NotTo(BeNil(),
 				"Behavior: RetentionExpiryTime must be set on terminal Failed RR")
 		})
 
 		It("UT-RO-265-003: should set RetentionExpiryTime on TimedOut RR", func() {
-			rr := newRemediationRequest("test-rr-timedout", "default", remediationv1.PhaseTimedOut)
+			rr := newRemediationRequest("test-rr-timedout", defaultFixture, remediationv1.PhaseTimedOut)
 			rr.Status.ObservedGeneration = rr.Generation
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
@@ -161,19 +161,19 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-timedout", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-timedout", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-timedout", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-timedout", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.RetentionExpiryTime).NotTo(BeNil(),
 				"Behavior: RetentionExpiryTime must be set on terminal TimedOut RR")
 		})
 
 		It("UT-RO-265-014: should set RetentionExpiryTime on Cancelled RR", func() {
-			rr := newRemediationRequest("test-rr-cancelled", "default", remediationv1.PhaseCancelled)
+			rr := newRemediationRequest("test-rr-cancelled", defaultFixture, remediationv1.PhaseCancelled)
 			rr.Status.ObservedGeneration = rr.Generation
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
@@ -196,12 +196,12 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-cancelled", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-cancelled", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-cancelled", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-cancelled", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.RetentionExpiryTime).NotTo(BeNil(),
 				"Behavior: RetentionExpiryTime must be set on terminal Cancelled RR")
@@ -212,7 +212,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 		})
 
 		It("UT-RO-265-004: should NOT set RetentionExpiryTime on non-terminal Pending RR", func() {
-			rr := newRemediationRequest("test-rr-pending", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-rr-pending", defaultFixture, remediationv1.PhasePending)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
@@ -234,18 +234,18 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			_, _ = reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-pending", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-pending", Namespace: defaultFixture},
 			})
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-pending", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-pending", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.RetentionExpiryTime).To(BeNil(),
 				"Behavior: non-terminal Pending RR must NOT get RetentionExpiryTime")
 		})
 
 		It("UT-RO-265-005: should NOT overwrite existing RetentionExpiryTime", func() {
-			rr := newRemediationRequest("test-rr-existing", "default", remediationv1.PhaseCompleted)
+			rr := newRemediationRequest("test-rr-existing", defaultFixture, remediationv1.PhaseCompleted)
 			rr.Status.ObservedGeneration = rr.Generation
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
@@ -270,12 +270,12 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-existing", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-existing", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-existing", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-existing", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.RetentionExpiryTime.Time).To(BeTemporally("~", existingExpiry.Time, 1*time.Second),
 				"Behavior: existing RetentionExpiryTime must not be overwritten")
@@ -285,7 +285,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 	Context("Cleanup of expired CRDs", func() {
 
 		It("UT-RO-265-006: should delete CRD when RetentionExpiryTime has expired", func() {
-			rr := newRemediationRequest("test-rr-expired", "default", remediationv1.PhaseCompleted)
+			rr := newRemediationRequest("test-rr-expired", defaultFixture, remediationv1.PhaseCompleted)
 			rr.Status.ObservedGeneration = rr.Generation
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
@@ -310,21 +310,21 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-expired", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-expired", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero(),
 				"Behavior: no requeue after deletion")
 
 			deleted := &remediationv1.RemediationRequest{}
-			err = fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-expired", Namespace: "default"}, deleted)
+			err = fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-expired", Namespace: defaultFixture}, deleted)
 			Expect(client.IgnoreNotFound(err)).NotTo(HaveOccurred())
 			Expect(err).To(HaveOccurred(),
 				"Behavior: expired CRD must be deleted from cluster")
 		})
 
 		It("UT-RO-265-008: should emit retention_cleanup audit event before deleting expired CRD", func() {
-			rr := newRemediationRequest("test-rr-audit-del", "default", remediationv1.PhaseCompleted)
+			rr := newRemediationRequest("test-rr-audit-del", defaultFixture, remediationv1.PhaseCompleted)
 			rr.Status.ObservedGeneration = rr.Generation
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
@@ -350,13 +350,13 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-audit-del", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-audit-del", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeZero(), "Behavior: no requeue after deletion")
 
 			deleted := &remediationv1.RemediationRequest{}
-			err = fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-audit-del", Namespace: "default"}, deleted)
+			err = fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-audit-del", Namespace: defaultFixture}, deleted)
 			Expect(client.IgnoreNotFound(err)).NotTo(HaveOccurred())
 			Expect(err).To(HaveOccurred(), "Precondition: CRD must have been deleted")
 
@@ -376,7 +376,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 		})
 
 		It("UT-RO-265-007: should requeue when RetentionExpiryTime is not yet expired", func() {
-			rr := newRemediationRequest("test-rr-future", "default", remediationv1.PhaseCompleted)
+			rr := newRemediationRequest("test-rr-future", defaultFixture, remediationv1.PhaseCompleted)
 			rr.Status.ObservedGeneration = rr.Generation
 			now := metav1.Now()
 			rr.Status.CompletedAt = &now
@@ -401,7 +401,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-future", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-future", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeNumerically(">", 1*time.Hour),
@@ -414,7 +414,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 	Context("CompletedAt consistency fix (F3)", func() {
 
 		It("UT-RO-265-009: transitionToFailed should set CompletedAt", func() {
-			rr := newRemediationRequest("test-rr-fail-ts", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("test-rr-fail-ts", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now().Add(-30 * time.Minute)}
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * time.Hour))
@@ -442,11 +442,11 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			_, _ = reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-fail-ts", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-fail-ts", Namespace: defaultFixture},
 			})
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-fail-ts", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-fail-ts", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Precondition: RR must have transitioned to Failed (executing phase timeout)")
@@ -455,7 +455,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 		})
 
 		It("UT-RO-265-010: handleGlobalTimeout should set CompletedAt", func() {
-			rr := newRemediationRequest("test-rr-timeout-ts", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-rr-timeout-ts", defaultFixture, remediationv1.PhasePending)
 			rr.Status.ObservedGeneration = 0
 			rr.Status.StartTime = &metav1.Time{Time: time.Now().Add(-2 * time.Hour)}
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-2 * time.Hour))
@@ -478,11 +478,11 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", func() {
 			})
 
 			_, _ = reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr-timeout-ts", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr-timeout-ts", Namespace: defaultFixture},
 			})
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-timeout-ts", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-timeout-ts", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseTimedOut),
 				"Precondition: RR must have transitioned to TimedOut (global timeout)")

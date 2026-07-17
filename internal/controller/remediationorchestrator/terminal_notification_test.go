@@ -54,7 +54,7 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 	Describe("Bug 1: Terminal-phase skip blocks NT processing", func() {
 		It("UT-RO-088-001: should track NotificationDelivered condition when NT reaches Sent for a terminal (Completed) RR", func() {
 			rrName := "rr-terminal-notif-001"
-			namespace := "default"
+			namespace := defaultFixture
 			notifName := "nr-completion-" + rrName
 
 			// Create a terminal (Completed) RR with ObservedGeneration == Generation
@@ -130,7 +130,7 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 
 		It("UT-RO-088-002: should track NotificationDelivered=False when NT reaches Failed for a terminal (Failed) RR", func() {
 			rrName := "rr-terminal-notif-002"
-			namespace := "default"
+			namespace := defaultFixture
 			notifName := "timeout-" + rrName
 
 			// Create a terminal (Failed) RR with ObservedGeneration == Generation
@@ -210,7 +210,7 @@ var _ = Describe("Issue #88: Terminal-phase notification tracking", func() {
 			// This test verifies the precondition: if the ref IS in NotificationRequestRefs,
 			// the tracking works (once Bug 1 is fixed). This proves Bug 2's fix is necessary.
 			rrName := "rr-ref-population-003"
-			namespace := "default"
+			namespace := defaultFixture
 			notifName := "nr-completion-" + rrName
 
 			// Terminal RR WITHOUT the completion NT in NotificationRequestRefs (Bug 2 state)

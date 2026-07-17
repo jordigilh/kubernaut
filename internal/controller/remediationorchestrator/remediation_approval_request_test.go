@@ -88,7 +88,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
 
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "missing-rar", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "missing-rar", Namespace: defaultFixture},
 		})
 
 		Expect(err).ToNot(HaveOccurred())
@@ -97,7 +97,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-002: pending decision (empty Status.Decision) is a no-op", func() {
-		rar := newRemediationApprovalRequestApproved("rar-pending", "default", "rr-1", "")
+		rar := newRemediationApprovalRequestApproved("rar-pending", defaultFixture, "rr-1", "")
 		rar.Status.Decision = "" // override fixture: no decision yet
 		rar.Status.DecidedAt = nil
 		fakeClient := newFakeClient(rar)
@@ -105,7 +105,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
 
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "rar-pending", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "rar-pending", Namespace: defaultFixture},
 		})
 
 		Expect(err).ToNot(HaveOccurred())
@@ -114,13 +114,13 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-003: already-audited RAR (AuditRecorded=True) is a no-op (idempotency, DD-STATUS-001)", func() {
-		rar := newRemediationApprovalRequestApproved("rar-already-audited", "default", "rr-2", "alice")
+		rar := newRemediationApprovalRequestApproved("rar-already-audited", defaultFixture, "rr-2", "alice")
 		fakeClient := newFakeClient(rar)
 
 		// Mark AuditRecorded=True directly via the status subresource so the
 		// apiReader re-fetch (cache-bypassed) observes it as already set.
 		var current remediationv1.RemediationApprovalRequest
-		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rar-already-audited", Namespace: "default"}, &current)).To(Succeed())
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rar-already-audited", Namespace: defaultFixture}, &current)).To(Succeed())
 		rarconditions.SetAuditRecorded(&current, true, rarconditions.ReasonAuditSucceeded, "already recorded", metrics)
 		Expect(fakeClient.Status().Update(ctx, &current)).To(Succeed())
 
@@ -128,7 +128,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
 
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "rar-already-audited", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "rar-already-audited", Namespace: defaultFixture},
 		})
 
 		Expect(err).ToNot(HaveOccurred())
@@ -137,14 +137,14 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-004: missing parent RemediationRequest reference is a no-op (defensive guard)", func() {
-		rar := newRemediationApprovalRequestApproved("rar-no-parent", "default", "rr-3", "alice")
+		rar := newRemediationApprovalRequestApproved("rar-no-parent", defaultFixture, "rr-3", "alice")
 		rar.Spec.RemediationRequestRef = corev1.ObjectReference{} // Name == ""
 		fakeClient := newFakeClient(rar)
 		mockAuditStore := &MockAuditStore{}
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
 
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "rar-no-parent", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "rar-no-parent", Namespace: defaultFixture},
 		})
 
 		Expect(err).ToNot(HaveOccurred())
@@ -153,13 +153,13 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-005: Approved decision emits an audit event and sets AuditRecorded=True", func() {
-		rar := newRemediationApprovalRequestApproved("rar-approved", "default", "rr-4", "alice")
+		rar := newRemediationApprovalRequestApproved("rar-approved", defaultFixture, "rr-4", "alice")
 		fakeClient := newFakeClient(rar)
 		mockAuditStore := &MockAuditStore{}
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
 
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "rar-approved", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "rar-approved", Namespace: defaultFixture},
 		})
 
 		Expect(err).ToNot(HaveOccurred())
@@ -170,7 +170,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 		Expect(event.EventType).To(Equal(roaudit.EventTypeApprovalApproved))
 
 		var updated remediationv1.RemediationApprovalRequest
-		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rar-approved", Namespace: "default"}, &updated)).To(Succeed())
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rar-approved", Namespace: defaultFixture}, &updated)).To(Succeed())
 		cond := meta.FindStatusCondition(updated.Status.Conditions, rarconditions.ConditionAuditRecorded)
 		Expect(cond).ToNot(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
@@ -178,13 +178,13 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-006: Rejected decision emits an audit event and sets AuditRecorded=True", func() {
-		rar := newRemediationApprovalRequestRejected("rar-rejected", "default", "rr-5", "bob", "insufficient evidence")
+		rar := newRemediationApprovalRequestRejected("rar-rejected", defaultFixture, "rr-5", "bob", "insufficient evidence")
 		fakeClient := newFakeClient(rar)
 		mockAuditStore := &MockAuditStore{}
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
 
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "rar-rejected", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "rar-rejected", Namespace: defaultFixture},
 		})
 
 		Expect(err).ToNot(HaveOccurred())
@@ -194,20 +194,20 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 		Expect(event.EventType).To(Equal(roaudit.EventTypeApprovalRejected))
 
 		var updated remediationv1.RemediationApprovalRequest
-		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rar-rejected", Namespace: "default"}, &updated)).To(Succeed())
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rar-rejected", Namespace: defaultFixture}, &updated)).To(Succeed())
 		cond := meta.FindStatusCondition(updated.Status.Conditions, rarconditions.ConditionAuditRecorded)
 		Expect(cond).ToNot(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 	})
 
 	It("UT-RO-RAR-007: audit store failure is fire-and-forget (no reconcile error) and sets AuditRecorded=False/AuditFailed", func() {
-		rar := newRemediationApprovalRequestApproved("rar-audit-fail", "default", "rr-6", "alice")
+		rar := newRemediationApprovalRequestApproved("rar-audit-fail", defaultFixture, "rr-6", "alice")
 		fakeClient := newFakeClient(rar)
 		erroringStore := &erroringAuditStore{err: fmt.Errorf("simulated datastorage outage")}
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, erroringStore, metrics)
 
 		result, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "rar-audit-fail", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "rar-audit-fail", Namespace: defaultFixture},
 		})
 
 		Expect(err).ToNot(HaveOccurred(), "fire-and-forget: audit failures must not fail reconciliation")
@@ -215,7 +215,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 		Expect(erroringStore.Events).To(HaveLen(1))
 
 		var updated remediationv1.RemediationApprovalRequest
-		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rar-audit-fail", Namespace: "default"}, &updated)).To(Succeed())
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "rar-audit-fail", Namespace: defaultFixture}, &updated)).To(Succeed())
 		cond := meta.FindStatusCondition(updated.Status.Conditions, rarconditions.ConditionAuditRecorded)
 		Expect(cond).ToNot(BeNil())
 		Expect(cond.Status).To(Equal(metav1.ConditionFalse))

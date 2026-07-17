@@ -67,7 +67,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-001: should create EA when RR transitions to Verifying via Reconcile (#280)", func() {
 		rrName := "rr-ea-001"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		// RR in Executing phase with WorkflowExecutionRef
@@ -131,7 +131,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-002: should NOT create EA when RR transitions to Failed via WFE failure (#240)", func() {
 		rrName := "rr-ea-002"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -180,7 +180,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-003: should NOT create EA when RR times out via global timeout (#240)", func() {
 		rrName := "rr-ea-003"
-		namespace := "test-ns"
+		namespace := testNs
 
 		// Create an RR that's past its timeout (start time 2 hours ago)
 		rr := newRemediationRequestWithTimeout(rrName, namespace, remediationv1.PhaseExecuting, -2*time.Hour)
@@ -224,7 +224,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-004: should not error when EA already exists (idempotent)", func() {
 		rrName := "rr-ea-004"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -283,7 +283,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-005: should complete transition even if EA creation fails", func() {
 		rrName := "rr-ea-005"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -336,7 +336,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-006: should propagate config-driven stabilization window to EA spec", func() {
 		rrName := "rr-ea-006"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 		customWindow := 2 * time.Minute
 
@@ -383,7 +383,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-007: should persist EffectivenessAssessmentRef on RR status after EA creation", func() {
 		rrName := "rr-ea-007"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -443,7 +443,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-009: should produce EA that enables EM spec drift detection with pre-remediation baseline", func() {
 		rrName := "rr-ea-009"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -517,7 +517,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-010: should produce fully assessable EA when pre-remediation hash is unavailable", func() {
 		rrName := "rr-ea-010"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -576,7 +576,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 
 	It("UT-RO-EA-008: should set EffectivenessAssessed=False/AssessmentInProgress on EA creation", func() {
 		rrName := "rr-ea-008"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -630,7 +630,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-011: should NOT create EA when RR transitions to TimedOut via phase timeout (#240)", func() {
 		rrName := "rr-ea-011"
-		namespace := "test-ns"
+		namespace := testNs
 
 		// RR in Processing phase with phase start time 10 minutes ago.
 		// Global timeout is 1 hour (not exceeded), but Processing phase timeout is 5 minutes (exceeded).
@@ -694,7 +694,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-012: should NOT create EA when AIA WorkflowResolutionFailed completes with ManualReviewRequired (#240, #550)", func() {
 		rrName := "rr-ea-012"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := "ai-" + rrName
 
 		// RR in Analyzing phase with AIAnalysisRef
@@ -753,7 +753,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-013: should NOT create EA when SP fails (#240)", func() {
 		rrName := "rr-ea-013"
-		namespace := "test-ns"
+		namespace := testNs
 		spName := "sp-" + rrName
 
 		// RR in Processing phase with SPRef
@@ -803,7 +803,7 @@ var _ = Describe("EA Creation on Terminal Transitions (ADR-EM-001)", func() {
 	// ========================================
 	It("UT-RO-EA-014: should create EA when WFE succeeds (regression guard) (#240)", func() {
 		rrName := "rr-ea-014"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		// RR in Executing phase with successful WFE
@@ -871,7 +871,7 @@ var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
 	// when AI analysis identifies a different resource than the signal source.
 	It("UT-RO-188-001: should set SignalTarget from RR and RemediationTarget from AIAnalysis", func() {
 		rrName := "rr-dual-001"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := "ai-" + rrName
 		weName := "we-" + rrName
 
@@ -935,7 +935,7 @@ var _ = Describe("EA Dual-Target Creation (DD-EM-003)", func() {
 	// UT-RO-188-002: Without AI analysis, both targets should fall back to RR
 	It("UT-RO-188-002: should set both targets from RR when no AI analysis available", func() {
 		rrName := "rr-dual-002"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-" + rrName
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)

@@ -40,6 +40,7 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
@@ -359,7 +360,7 @@ func (r *Reconciler) computeEADelays(rr *remediationv1.RemediationRequest, dualT
 
 	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode.
 	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
-	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" && asyncCfg.ProactiveAlertDelay > 0 {
+	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == signalprocessingv1alpha1.SignalModeProactive && asyncCfg.ProactiveAlertDelay > 0 {
 		alertCheckDelay = &metav1.Duration{Duration: asyncCfg.ProactiveAlertDelay}
 		logger.Info("Proactive signal detected, setting alert check delay",
 			"signalMode", ai.Spec.AnalysisRequest.SignalContext.SignalMode,

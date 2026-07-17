@@ -44,6 +44,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	defaultFixture = "default"
+)
+
 // ========================================
 // Mock Routing Engine for Unit Tests
 // ========================================
@@ -177,9 +182,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "Fresh RR in Pending should create SignalProcessing and transition to Processing",
 			businessReq: "BR-ORCH-025.1",
 			initialObjects: []client.Object{
-				newRemediationRequest("test-rr", "default", remediationv1.PhasePending),
+				newRemediationRequest("test-rr", defaultFixture, remediationv1.PhasePending),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseProcessing,
 			expectedResult: ctrl.Result{
 				RequeueAfter: 5 * time.Second, // Requeue to check SP progress
@@ -196,7 +201,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description:    "Request for non-existent RR should return gracefully without error",
 			businessReq:    "Error handling",
 			initialObjects: []client.Object{},
-			rrName:         types.NamespacedName{Name: "non-existent", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "non-existent", Namespace: defaultFixture},
 			expectedPhase:  "", // No phase check (RR doesn't exist)
 			expectedResult: ctrl.Result{},
 			expectError:    false,
@@ -207,9 +212,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "RR with empty phase should be initialized to Pending (requires 2nd reconcile for SP creation)",
 			businessReq: "BR-ORCH-025.1 (initialization)",
 			initialObjects: []client.Object{
-				newRemediationRequest("test-rr", "default", ""), // Empty phase
+				newRemediationRequest("test-rr", defaultFixture, ""), // Empty phase
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhasePending, // First reconcile just initializes
 			expectedResult: ctrl.Result{
 				RequeueAfter: 100 * time.Millisecond, // Requeue after short delay to process Pending phase
@@ -224,9 +229,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "Should preserve Gateway deduplication metadata during SP creation",
 			businessReq: "BR-ORCH-038 (preserve Gateway data)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithGatewayMetadata("test-rr", "default"),
+				newRemediationRequestWithGatewayMetadata("test-rr", defaultFixture),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseProcessing,
 			expectedResult: ctrl.Result{
 				RequeueAfter: 5 * time.Second, // Active phase - requeue to check SP progress
@@ -246,9 +251,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "RR in terminal phase (Completed) should skip reconciliation",
 			businessReq: "Performance optimization",
 			initialObjects: []client.Object{
-				newRemediationRequest("test-rr", "default", remediationv1.PhaseCompleted),
+				newRemediationRequest("test-rr", defaultFixture, remediationv1.PhaseCompleted),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseCompleted, // No change
 			expectedResult: ctrl.Result{},                // No requeue
 			expectedChildren: map[string]bool{
@@ -265,10 +270,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When SP completes, should create AIAnalysis and transition to Analyzing",
 			businessReq: "BR-ORCH-025.2",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseAnalyzing,
 			expectedResult: ctrl.Result{
 				RequeueAfter: 5 * time.Second, // Requeue to check AI progress
@@ -283,10 +288,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When SP fails, should transition to Failed and propagate error",
 			businessReq: "BR-ORCH-025.2 (error propagation)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
-				newSignalProcessingFailed("test-rr-sp", "default", "test-rr", "Enrichment failed"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
+				newSignalProcessingFailed("test-rr-sp", defaultFixture, "test-rr", "Enrichment failed"),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase, no requeue
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
@@ -299,10 +304,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "While SP is still processing, should stay in Processing and requeue",
 			businessReq: "BR-ORCH-025.2 (wait for child)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
-				newSignalProcessing("test-rr-sp", "default", "test-rr", signalprocessingv1.PhaseEnriching),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
+				newSignalProcessing("test-rr-sp", defaultFixture, "test-rr", signalprocessingv1.PhaseEnriching),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseProcessing, // Stay in same phase
 			expectedResult: ctrl.Result{
 				RequeueAfter: 10 * time.Second, // Requeue to check again (default case in handleProcessingPhase)
@@ -314,17 +319,17 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "Should aggregate SP status into RR.Status.SignalProcessingRef",
 			businessReq: "BR-ORCH-026 (status aggregation)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseAnalyzing,
 			expectedResult: ctrl.Result{
 				RequeueAfter: 5 * time.Second, // Requeue to check AI progress
 			},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
-				Expect(rr.Status.SignalProcessingRef).To(HaveField("Namespace", Equal("default")))
+				Expect(rr.Status.SignalProcessingRef).To(HaveField("Namespace", Equal(defaultFixture)))
 			},
 		}),
 
@@ -333,10 +338,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "If SP is missing but should exist, should transition to Failed",
 			businessReq: "BR-ORCH-026 (error handling)",
 			initialObjects: []client.Object{
-				newRemediationRequest("test-rr", "default", remediationv1.PhaseProcessing),
+				newRemediationRequest("test-rr", defaultFixture, remediationv1.PhaseProcessing),
 				// SP not found (was deleted or never created)
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseFailed,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("SignalProcessing not found")))
@@ -352,11 +357,11 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "High confidence AI result should create WorkflowExecution and transition to Executing",
 			businessReq: "BR-ORCH-025.3",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.9, "restart-pod-v1"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseExecuting,
 			expectedResult: ctrl.Result{
 				RequeueAfter: 5 * time.Second, // Requeue to check WE progress (transitionPhase returns 5s for Executing)
@@ -369,7 +374,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				Expect(rr.Status.RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
 				Expect(rr.Status.RemediationTarget.Kind).To(Equal("Deployment"))
 				Expect(rr.Status.RemediationTarget.Name).To(Equal("test-deployment"))
-				Expect(rr.Status.RemediationTarget.Namespace).To(Equal("default"))
+				Expect(rr.Status.RemediationTarget.Namespace).To(Equal(defaultFixture))
 			},
 		}),
 
@@ -378,11 +383,11 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "Low confidence AI result should create RAR and transition to AwaitingApproval",
 			businessReq: "BR-ORCH-001 (approval required)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseAwaitingApproval,
 			expectedResult: ctrl.Result{
 				RequeueAfter: 100 * time.Millisecond, // Requeue after short delay after creating RAR
@@ -398,11 +403,11 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "AI determines no workflow needed should transition directly to Completed",
 			businessReq: "BR-ORCH-037 (WorkflowNotNeeded handling)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisWorkflowNotNeeded("test-rr-ai", "default", "test-rr", "No remediation needed"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisWorkflowNotNeeded("test-rr-ai", defaultFixture, "test-rr", "No remediation needed"),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseCompleted,
 			expectedResult: ctrl.Result{}, // Terminal phase
 			expectedChildren: map[string]bool{
@@ -419,11 +424,11 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "While AI is analyzing, should stay in Analyzing and requeue",
 			businessReq: "BR-ORCH-025.3 (wait for child)",
 			initialObjects: []client.Object{
-				newRemediationRequest("test-rr", "default", remediationv1.PhaseAnalyzing),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysis("test-rr-ai", "default", "test-rr", aianalysisv1.PhaseAnalyzing),
+				newRemediationRequest("test-rr", defaultFixture, remediationv1.PhaseAnalyzing),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysis("test-rr-ai", defaultFixture, "test-rr", aianalysisv1.PhaseAnalyzing),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseAnalyzing, // Stay in same phase
 			expectedResult: ctrl.Result{
 				RequeueAfter: 5 * time.Second,
@@ -435,11 +440,11 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When AIAnalysis fails, should transition to Failed and propagate error",
 			businessReq: "BR-ORCH-025.3 (error propagation)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisFailed("test-rr-ai", "default", "test-rr", "LLM unavailable"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisFailed("test-rr-ai", defaultFixture, "test-rr", "LLM unavailable"),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
@@ -456,12 +461,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When WorkflowExecution succeeds, should transition to Verifying (#280)",
 			businessReq: "BR-ORCH-025.4",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.9, "restart-pod-v1"),
-				newWorkflowExecutionSucceeded("test-rr-we", "default", "test-rr"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
+				newWorkflowExecutionSucceeded("test-rr-we", defaultFixture, "test-rr"),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseVerifying,
 			expectedResult: ctrl.Result{}, // Verifying phase, no requeue
 		}),
@@ -471,12 +476,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When WorkflowExecution fails, should transition to Failed and propagate error",
 			businessReq: "BR-ORCH-025.4 (error propagation)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.9, "restart-pod-v1"),
-				newWorkflowExecutionFailed("test-rr-we", "default", "test-rr", "Pod not found"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
+				newWorkflowExecutionFailed("test-rr-we", defaultFixture, "test-rr", "Pod not found"),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{}, // Terminal phase
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
@@ -489,12 +494,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "While WE is running, should stay in Executing and requeue",
 			businessReq: "BR-ORCH-025.4 (wait for child)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.9, "restart-pod-v1"),
-				newWorkflowExecution("test-rr-we", "default", "test-rr", workflowexecutionv1.PhaseRunning),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
+				newWorkflowExecution("test-rr-we", defaultFixture, "test-rr", workflowexecutionv1.PhaseRunning),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseExecuting, // Stay in same phase
 			expectedResult: ctrl.Result{
 				RequeueAfter: 10 * time.Second,
@@ -506,12 +511,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "Should aggregate all children statuses correctly",
 			businessReq: "BR-ORCH-026 (complete status aggregation)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.9, "restart-pod-v1"),
-				newWorkflowExecutionSucceeded("test-rr-we", "default", "test-rr"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
+				newWorkflowExecutionSucceeded("test-rr-we", defaultFixture, "test-rr"),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseVerifying,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.SignalProcessingRef).To(HaveField("Name", Equal("test-rr-sp")))
@@ -525,12 +530,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "If WE is missing but should exist, should transition to Failed",
 			businessReq: "BR-ORCH-026 (error handling)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.9, "restart-pod-v1"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 				// WE not found (was deleted or never created)
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseFailed,
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
 				Expect(rr.Status.FailureReason).To(HaveValue(ContainSubstring("WorkflowExecution not found")))
@@ -547,12 +552,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When RAR is approved, should create WE and transition to Executing",
 			businessReq: "BR-ORCH-001 (approval granted)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
-				newRemediationApprovalRequestApproved("rar-test-rr", "default", "test-rr", "admin@example.com"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
+				newRemediationApprovalRequestApproved("rar-test-rr", defaultFixture, "test-rr", "admin@example.com"),
 			},
-			rrName:           types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:           types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:    remediationv1.PhaseExecuting,
 			expectedResult:   ctrl.Result{RequeueAfter: 5 * time.Second},
 			expectedChildren: map[string]bool{"WE": true},
@@ -561,7 +566,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 				Expect(rr.Status.RemediationTarget).ToNot(BeNil(), "RemediationTarget should be set from AIAnalysis AffectedResource")
 				Expect(rr.Status.RemediationTarget.Kind).To(Equal("Deployment"))
 				Expect(rr.Status.RemediationTarget.Name).To(Equal("test-deployment"))
-				Expect(rr.Status.RemediationTarget.Namespace).To(Equal("default"))
+				Expect(rr.Status.RemediationTarget.Namespace).To(Equal(defaultFixture))
 			},
 		}),
 
@@ -570,12 +575,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When RAR is rejected, should transition to Failed",
 			businessReq: "BR-ORCH-001 (approval rejected)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
-				newRemediationApprovalRequestRejected("rar-test-rr", "default", "test-rr", "admin@example.com", "Too risky"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
+				newRemediationApprovalRequestRejected("rar-test-rr", defaultFixture, "test-rr", "admin@example.com", "Too risky"),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
@@ -588,12 +593,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When RAR expires, should transition to Failed",
 			businessReq: "BR-ORCH-001 (approval timeout)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
-				newRemediationApprovalRequestExpired("rar-test-rr", "default", "test-rr"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
+				newRemediationApprovalRequestExpired("rar-test-rr", defaultFixture, "test-rr"),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseFailed,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
@@ -606,12 +611,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When RAR doesn't exist, should requeue gracefully",
 			businessReq: "BR-ORCH-001 (error recovery)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 				// RAR not created yet
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseAwaitingApproval,        // Stay in same phase
 			expectedResult: ctrl.Result{RequeueAfter: 5 * time.Second}, // RequeueGenericError
 		}),
@@ -621,12 +626,12 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When RAR is pending, should stay in AwaitingApproval and requeue",
 			businessReq: "BR-ORCH-001 (polling for decision)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-				newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
-				newRemediationApprovalRequestPending("rar-test-rr", "default", "test-rr"),
+				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
+				newRemediationApprovalRequestPending("rar-test-rr", defaultFixture, "test-rr"),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseAwaitingApproval,
 			expectedResult: ctrl.Result{RequeueAfter: 30 * time.Second},
 		}),
@@ -641,9 +646,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When global timeout exceeded in Pending, should transition to TimedOut",
 			businessReq: "BR-ORCH-027 (global timeout)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithTimeout("test-rr", "default", remediationv1.PhasePending, -2*time.Hour), // Started 2 hours ago
+				newRemediationRequestWithTimeout("test-rr", defaultFixture, remediationv1.PhasePending, -2*time.Hour), // Started 2 hours ago
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{},
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
@@ -657,9 +662,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When global timeout not exceeded, should continue processing",
 			businessReq: "BR-ORCH-027 (timeout check)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithTimeout("test-rr", "default", remediationv1.PhasePending, -30*time.Minute), // Started 30 min ago
+				newRemediationRequestWithTimeout("test-rr", defaultFixture, remediationv1.PhasePending, -30*time.Minute), // Started 30 min ago
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseProcessing, // Should proceed normally
 			expectedResult: ctrl.Result{RequeueAfter: 5 * time.Second},
 		}),
@@ -669,10 +674,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When Processing phase timeout exceeded, should transition to TimedOut",
 			businessReq: "BR-ORCH-028.1 (phase timeout)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithPhaseTimeout("test-rr", "default", remediationv1.PhaseProcessing, "test-rr-sp", -10*time.Minute), // In Processing for 10 min
-				newSignalProcessing("test-rr-sp", "default", "test-rr", signalprocessingv1.PhaseEnriching),
+				newRemediationRequestWithPhaseTimeout("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", -10*time.Minute), // In Processing for 10 min
+				newSignalProcessing("test-rr-sp", defaultFixture, "test-rr", signalprocessingv1.PhaseEnriching),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{RequeueAfter: 30 * time.Second}, // RequeueResourceBusy after notification creation
 			additionalAsserts: func(rr *remediationv1.RemediationRequest) {
@@ -685,10 +690,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When Analyzing phase timeout exceeded, should transition to TimedOut",
 			businessReq: "BR-ORCH-028.2 (phase timeout)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithPhaseTimeout("test-rr", "default", remediationv1.PhaseAnalyzing, "test-rr-ai", -15*time.Minute),
-				newAIAnalysis("test-rr-ai", "default", "test-rr", aianalysisv1.PhaseAnalyzing),
+				newRemediationRequestWithPhaseTimeout("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-ai", -15*time.Minute),
+				newAIAnalysis("test-rr-ai", defaultFixture, "test-rr", aianalysisv1.PhaseAnalyzing),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{RequeueAfter: 30 * time.Second}, // RequeueResourceBusy after notification creation
 		}),
@@ -698,10 +703,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When Executing phase timeout exceeded, should transition to TimedOut",
 			businessReq: "BR-ORCH-028.3 (phase timeout)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithPhaseTimeout("test-rr", "default", remediationv1.PhaseExecuting, "test-rr-we", -35*time.Minute),
-				newWorkflowExecution("test-rr-we", "default", "test-rr", workflowexecutionv1.PhaseRunning),
+				newRemediationRequestWithPhaseTimeout("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-we", -35*time.Minute),
+				newWorkflowExecution("test-rr-we", defaultFixture, "test-rr", workflowexecutionv1.PhaseRunning),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseTimedOut,
 			expectedResult: ctrl.Result{RequeueAfter: 30 * time.Second}, // RequeueResourceBusy after notification creation
 		}),
@@ -711,9 +716,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When timeout occurs, should create notification",
 			businessReq: "BR-ORCH-027 (timeout notification)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithTimeout("test-rr", "default", remediationv1.PhaseProcessing, -2*time.Hour),
+				newRemediationRequestWithTimeout("test-rr", defaultFixture, remediationv1.PhaseProcessing, -2*time.Hour),
 			},
-			rrName:           types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:           types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:    remediationv1.PhaseTimedOut,
 			expectedChildren: map[string]bool{"Notification": true},
 		}),
@@ -723,10 +728,10 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When both global and phase timeouts exceeded, global should win",
 			businessReq: "BR-ORCH-027 (timeout precedence)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithBothTimeouts("test-rr", "default", remediationv1.PhaseProcessing, "test-rr-sp", -2*time.Hour, -10*time.Minute),
-				newSignalProcessing("test-rr-sp", "default", "test-rr", signalprocessingv1.PhaseEnriching),
+				newRemediationRequestWithBothTimeouts("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", -2*time.Hour, -10*time.Minute),
+				newSignalProcessing("test-rr-sp", defaultFixture, "test-rr", signalprocessingv1.PhaseEnriching),
 			},
-			rrName:        types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseTimedOut,
 		}),
 
@@ -735,9 +740,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			description: "When RR already in terminal phase, timeout check should be skipped",
 			businessReq: "BR-ORCH-027 (terminal phase handling)",
 			initialObjects: []client.Object{
-				newRemediationRequestWithTimeout("test-rr", "default", remediationv1.PhaseCompleted, -2*time.Hour),
+				newRemediationRequestWithTimeout("test-rr", defaultFixture, remediationv1.PhaseCompleted, -2*time.Hour),
 			},
-			rrName:         types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseCompleted, // Stay in Completed
 			expectedResult: ctrl.Result{},                // No requeue
 		}),
@@ -771,9 +776,9 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 
 	It("should proceed with empty hash when apiReader returns error for target resource", func() {
 		initialObjects := []client.Object{
-			newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-			newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-			newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.9, "restart-pod-v1"),
+			newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
+			newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+			newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 		}
 
 		fakeClient := fake.NewClientBuilder().
@@ -798,7 +803,7 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 			).
 			WithInterceptorFuncs(interceptor.Funcs{
 				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-					if key.Name == "test-deployment" && key.Namespace == "default" {
+					if key.Name == "test-deployment" && key.Namespace == defaultFixture {
 						return fmt.Errorf("simulated API server error: RBAC denied")
 					}
 					return c.Get(ctx, key, obj, opts...)
@@ -826,13 +831,13 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 		reconciler.SetRESTMapper(newTestRESTMapper())
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 		})
 
 		Expect(err).ToNot(HaveOccurred(), "Reconciler should not return error")
 
 		var finalRR remediationv1.RemediationRequest
-		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, &finalRR)).To(Succeed())
+		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 		Expect(finalRR.Status.OverallPhase).ToNot(Equal(remediationv1.PhaseFailed),
 			"RR should NOT fail when hash capture soft-fails (Issue #545)")
 		Expect(finalRR.Status.PreRemediationSpecHash).To(BeEmpty(),
