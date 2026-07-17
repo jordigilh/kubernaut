@@ -121,7 +121,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	authConfig, err := testinfra.CreateIntegrationServiceAccountWithDataStorageAccess(
 		sharedK8sConfig,
 		"authwebhook-integration-sa",
-		"default",
+		defaultFixture,
 		GinkgoWriter,
 	)
 	if err != nil {

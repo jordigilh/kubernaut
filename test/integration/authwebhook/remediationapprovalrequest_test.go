@@ -31,12 +31,12 @@ import (
 
 // ApprovalDecisionScenario defines test data for business outcome validation
 type ApprovalDecisionScenario struct {
-	testID              string
-	businessOutcome     string
-	auditorQuestion     string
-	complianceControl   string
-	decision        remediationv1.ApprovalDecision
-	decisionMessage string
+	testID            string
+	businessOutcome   string
+	auditorQuestion   string
+	complianceControl string
+	decision          remediationv1.ApprovalDecision
+	decisionMessage   string
 }
 
 var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution", func() {
@@ -47,7 +47,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "default"
+		namespace = defaultFixture
 	})
 
 	// Helper to create RAR with scenario-specific decision
@@ -71,10 +71,10 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				InvestigationSummary: "Memory leak detected in payment service",
 				WhyApprovalRequired:  "Medium confidence requires human validation",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-					WorkflowID:     "restart-pod-v1",
-					Version:        "1.0.0",
+					WorkflowID:      "restart-pod-v1",
+					Version:         "1.0.0",
 					ExecutionBundle: "kubernaut/restart-pod:v1",
-					Rationale:      "Standard pod restart for memory leak",
+					Rationale:       "Standard pod restart for memory leak",
 				},
 				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 					{Action: "Restart pod", Rationale: "Clear memory leak"},
