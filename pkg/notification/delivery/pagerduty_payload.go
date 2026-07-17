@@ -50,11 +50,11 @@ func mapPagerDutySeverity(priority notificationv1alpha1.NotificationPriority) st
 	case notificationv1alpha1.NotificationPriorityHigh:
 		return "error"
 	case notificationv1alpha1.NotificationPriorityMedium:
-		return "warning"
+		return colorOrSeverityWarning
 	case notificationv1alpha1.NotificationPriorityLow:
 		return "info"
 	default:
-		return "warning"
+		return colorOrSeverityWarning
 	}
 }
 

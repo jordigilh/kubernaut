@@ -168,7 +168,6 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageSent)
 	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, ActionSent)
@@ -241,7 +240,6 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageFailed)
 	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, ActionSent) // Action was "sent" (attempted), outcome is "failure"
@@ -302,7 +300,6 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageAcknowledged)
 	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, ActionAcknowledged)
@@ -364,7 +361,6 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageEscalated)
 	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, ActionEscalated)
