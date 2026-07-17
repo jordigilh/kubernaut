@@ -71,7 +71,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			task, err := extractTaskFromResult(rpc.Result)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(task.ID).NotTo(BeEmpty(), "%s: task ID must not be empty", id)
-			Expect(task.Status.State).To(BeElementOf("completed", "working", "failed"),
+			Expect(task.Status.State).To(BeElementOf(completed, "working", failed),
 				"%s: task should reach a valid state", id)
 		}
 
@@ -185,7 +185,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			}
 			if rpc.Result != nil {
 				task, _ := extractTaskFromResult(rpc.Result)
-				if task.Status.State == "failed" || task.Status.State == "completed" {
+				if task.Status.State == failed || task.Status.State == completed {
 					// Expect the response to indicate denial
 					bodyBytes, _ := json.Marshal(rpc.Result)
 					bodyStr := strings.ToLower(string(bodyBytes))
@@ -359,7 +359,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 				}
 				t, _ := extractTaskFromResult(r.Result)
 				return t.Status.State
-			}, 60*time.Second, 3*time.Second).Should(BeElementOf("completed", "failed"),
+			}, 60*time.Second, 3*time.Second).Should(BeElementOf(completed, failed),
 				"multi-tool workflow should reach terminal state")
 		})
 
@@ -444,7 +444,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			// Either JSON-RPC error or task with failed state is acceptable
 			if rpc.Error == nil && rpc.Result != nil {
 				task, _ := extractTaskFromResult(rpc.Result)
-				Expect(task.Status.State).To(BeElementOf("failed", "completed"))
+				Expect(task.Status.State).To(BeElementOf(failed, completed))
 			}
 		})
 
@@ -545,7 +545,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			task, err := extractTaskFromResult(rpc.Result)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(task.ID).NotTo(BeEmpty(), "1268-001: task ID must not be empty")
-			Expect(task.Status.State).To(BeElementOf("completed", "working", "failed"),
+			Expect(task.Status.State).To(BeElementOf(completed, "working", failed),
 				"1268-001: task should reach a valid state")
 		})
 
@@ -661,7 +661,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 
 			task, taskErr := extractTaskFromResult(rpc.Result)
 			Expect(taskErr).NotTo(HaveOccurred(), "should parse task from result")
-			Expect(task.Status.State).To(BeElementOf("completed", "failed"),
+			Expect(task.Status.State).To(BeElementOf(completed, failed),
 				"task should reach a terminal state")
 
 			hasDenialKeyword := strings.Contains(bodyStr, "denied") ||
@@ -713,4 +713,3 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		//   - Circuit breaker: UT-AF-038-016..024 (resilience/transport_test.go)
 	})
 })
-

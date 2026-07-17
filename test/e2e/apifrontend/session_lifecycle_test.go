@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
-
 )
 
 var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4", "g19"), func() {
@@ -262,7 +261,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(lower).To(Or(
 			ContainSubstring("session_active"),
 			ContainSubstring("already exists"),
-			ContainSubstring("failed"),
+			ContainSubstring(failed),
 		), "User B's takeover must be rejected — single-driver enforcement (BR-INTERACTIVE-004)")
 
 		// Verify IS CRD still shows User A

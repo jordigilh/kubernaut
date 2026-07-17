@@ -50,7 +50,7 @@ var _ = Describe("Severity Triage LLM Wiring", func() {
 		result, err := pipeline.Triage(context.Background(), severity.TriageInput{
 			Kind:        "Deployment",
 			Name:        "test-workload",
-			Namespace:   "default",
+			Namespace:   defaultFixture,
 			Description: "test workload failing",
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -75,7 +75,7 @@ var _ = Describe("Severity Triage LLM Wiring", func() {
 		result, err := pipeline.Triage(context.Background(), severity.TriageInput{
 			Kind:        "Deployment",
 			Name:        "test-workload",
-			Namespace:   "default",
+			Namespace:   defaultFixture,
 			Description: "test workload failing",
 		})
 		Expect(err).NotTo(HaveOccurred())

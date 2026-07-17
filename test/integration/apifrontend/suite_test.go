@@ -46,6 +46,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	linux = "linux"
+)
+
 // Per-process variables (DD-TEST-010 compliant)
 var (
 	testEnv   *envtest.Environment
@@ -54,8 +59,8 @@ var (
 	restCfg   *rest.Config
 
 	// K8s clientsets for TokenReview and dynamic operations
-	k8sClientset   kubernetes.Interface
-	dynamicClient  dynamic.Interface
+	k8sClientset  kubernetes.Interface
+	dynamicClient dynamic.Interface
 
 	// Auth infrastructure
 	serviceAccountToken string
@@ -72,8 +77,8 @@ var (
 	auditRecorder *recordingEmitter
 
 	// Shared infra references (process 1 only)
-	dsInfra       *infrastructure.DSBootstrapInfra
-	kaContainer   *infrastructure.ContainerInstance
+	dsInfra     *infrastructure.DSBootstrapInfra
+	kaContainer *infrastructure.ContainerInstance
 
 	// Shared envtest (process 1 only, for SA/RBAC/TokenReview)
 	sharedTestEnv *envtest.Environment
@@ -252,7 +257,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
 		sharedCfg,
 		"apifrontend-it-client",
-		"default",
+		defaultFixture,
 		GinkgoWriter,
 	)
 	Expect(err).ToNot(HaveOccurred())
@@ -289,7 +294,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			{
 				Kind:      "ServiceAccount",
 				Name:      "apifrontend-it-client",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			},
 		},
 	}
@@ -300,11 +305,11 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	// Create SA for KA service (TokenReview/SAR permissions)
 	By("Creating SA for KA service with TokenReview/SAR")
-	useHostNetworkForKA := goruntime.GOOS == "linux"
+	useHostNetworkForKA := goruntime.GOOS == linux
 	kaServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
 		sharedCfg,
 		"kubernaut-agent-service",
-		"default",
+		defaultFixture,
 		useHostNetworkForKA,
 		GinkgoWriter,
 	)
@@ -322,7 +327,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 			{
 				Kind:      "ServiceAccount",
 				Name:      "kubernaut-agent-service",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			},
 		},
 	}
@@ -382,7 +387,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	mockLLMConfig := infrastructure.GetMockLLMConfigForAIAnalysis()
 	mockLLMConfig.Port = 18151
 	mockLLMConfig.ImageTag = mockLLMImageName
-	if goruntime.GOOS == "linux" {
+	if goruntime.GOOS == linux {
 		mockLLMConfig.Network = "host"
 	} else {
 		mockLLMConfig.Network = "apifrontend_test_network"
@@ -400,7 +405,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	kaConfigDir := filepath.Join(os.TempDir(), fmt.Sprintf("af-ka-config-%d", time.Now().UnixNano()))
 	Expect(os.MkdirAll(kaConfigDir, 0755)).To(Succeed())
 
-	useHostNetwork := goruntime.GOOS == "linux"
+	useHostNetwork := goruntime.GOOS == linux
 	var llmEndpoint, dsURL string
 	if useHostNetwork {
 		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMConfig.Port)
@@ -449,14 +454,14 @@ timeoutSeconds: 120
 		Image: kaImageName,
 		Env: map[string]string{
 			"KUBECONFIG":    "/tmp/kubeconfig",
-			"POD_NAMESPACE": "default",
+			"POD_NAMESPACE": defaultFixture,
 		},
 		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
-			kaConfigDir:                         "/etc/kubernautagent:ro",
-			kaLLMRuntimeDir:                     "/etc/kubernautagent-llm-runtime:ro",
-			kaServiceAuthConfig.KubeconfigPath:  "/tmp/kubeconfig:ro",
-			kaSATokenDir:                        "/var/run/secrets/kubernetes.io/serviceaccount:ro",
+			kaConfigDir:                        "/etc/kubernautagent:ro",
+			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
+			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
+			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
 		HealthCheck: &infrastructure.HealthCheckConfig{
 			URL:     "http://127.0.0.1:18131/healthz",
@@ -555,9 +560,9 @@ timeoutSeconds: 120
 
 	// Build router with real dependencies
 	authMiddleware := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
-		Validator: jwtValidator,
-		Logger:    logf.Log.WithName("auth-it"),
-		Auditor:   auditRecorder,
+		Validator:    jwtValidator,
+		Logger:       logf.Log.WithName("auth-it"),
+		Auditor:      auditRecorder,
 		AuthDuration: metricsRegistry.AuthDuration,
 	})
 
@@ -587,7 +592,7 @@ timeoutSeconds: 120
 	watchClient, wcErr := client.NewWithWatch(restCfg, client.Options{Scheme: scheme})
 	Expect(wcErr).NotTo(HaveOccurred(), "WithWatch client must initialize for StatusHandler IT tests")
 
-	statusHandler := handler.NewStatusHandler(watchClient, "default", logf.Log.WithName("status-it"))
+	statusHandler := handler.NewStatusHandler(watchClient, defaultFixture, logf.Log.WithName("status-it"))
 
 	routerCfg := handler.RouterConfig{
 		MetricsRegistry:  metricsRegistry,

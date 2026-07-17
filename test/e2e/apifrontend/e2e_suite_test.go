@@ -52,7 +52,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).NotTo(HaveOccurred())
 		kubeconfigPath = fmt.Sprintf("%s/.kube/apifrontend-e2e-config", homeDir)
 
-		if os.Getenv("AF_E2E_SKIP_INFRA") == "true" {
+		if os.Getenv("AF_E2E_SKIP_INFRA") == trueFixture {
 			_, _ = fmt.Fprintln(GinkgoWriter, "Skipping infra deployment (AF_E2E_SKIP_INFRA=true)")
 			setupSucceeded = true
 			return []byte(kubeconfigPath)
@@ -64,7 +64,7 @@ var _ = SynchronizedBeforeSuite(
 		err = kinfra.SetupAPIFrontendE2EInfrastructure(ctx, e2eClusterName, kubeconfigPath, e2eNamespace, GinkgoWriter)
 		Expect(err).NotTo(HaveOccurred(), "E2E infrastructure setup failed")
 
-		if os.Getenv("AF_E2E_SKIP_PROMETHEUS") != "true" {
+		if os.Getenv("AF_E2E_SKIP_PROMETHEUS") != trueFixture {
 			_, _ = fmt.Fprintln(GinkgoWriter, "\nDeploying Prometheus for severity triage testing...")
 			err = kinfra.DeployPrometheusForSeverityTriage(ctx, e2eNamespace, kubeconfigPath, GinkgoWriter)
 			Expect(err).NotTo(HaveOccurred(), "Prometheus deployment must succeed for severity triage tests")
@@ -169,11 +169,11 @@ var _ = SynchronizedAfterSuite(
 			_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Coverage collection failed (non-fatal): %v\n", err)
 		}
 
-		if os.Getenv("AF_E2E_SKIP_TEARDOWN") == "true" {
+		if os.Getenv("AF_E2E_SKIP_TEARDOWN") == trueFixture {
 			_, _ = fmt.Fprintln(GinkgoWriter, "Skipping teardown (AF_E2E_SKIP_TEARDOWN=true)")
 			return
 		}
-		if os.Getenv("AF_E2E_SKIP_INFRA") == "true" {
+		if os.Getenv("AF_E2E_SKIP_INFRA") == trueFixture {
 			return
 		}
 

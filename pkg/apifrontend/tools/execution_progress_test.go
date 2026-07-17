@@ -16,6 +16,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	executionProgress = "execution_progress"
+)
+
 var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 	Describe("BuildProgressSnapshot — UT-AF-1403-001..003", func() {
@@ -23,7 +28,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 			func(phase, rrName, startedAt, completedAt string, expectCompletedAt bool) {
 				snapshot := tools.BuildProgressSnapshot(phase, rrName, startedAt, completedAt)
 				Expect(snapshot).NotTo(BeNil())
-				Expect(snapshot["type"]).To(Equal("execution_progress"))
+				Expect(snapshot["type"]).To(Equal(executionProgress))
 				Expect(snapshot["schema_version"]).To(Equal("1.0"))
 				Expect(snapshot["rr_name"]).To(Equal(rrName))
 				Expect(snapshot["current_phase"]).To(Equal(phase))
@@ -170,7 +175,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 			for _, evt := range events {
 				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
 					if art.Artifact != nil && art.Artifact.Metadata != nil {
-						if art.Artifact.Metadata["type"] == "execution_progress" {
+						if art.Artifact.Metadata["type"] == executionProgress {
 							artifactEvents = append(artifactEvents, art)
 						}
 					}
@@ -183,7 +188,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 			dataPart, ok := firstArt.Artifact.Parts[0].(a2a.DataPart)
 			Expect(ok).To(BeTrue(), "Part[0] should be DataPart")
-			Expect(dataPart.Data["type"]).To(Equal("execution_progress"))
+			Expect(dataPart.Data["type"]).To(Equal(executionProgress))
 			Expect(dataPart.Data["rr_name"]).To(Equal("rr-1"))
 		})
 
@@ -217,7 +222,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 			var verifyingArtifact *a2a.TaskArtifactUpdateEvent
 			for _, evt := range events {
 				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-					if art.Artifact != nil && art.Artifact.Metadata != nil && art.Artifact.Metadata["type"] == "execution_progress" {
+					if art.Artifact != nil && art.Artifact.Metadata != nil && art.Artifact.Metadata["type"] == executionProgress {
 						for _, p := range art.Artifact.Parts {
 							if dp, dpOK := p.(a2a.DataPart); dpOK {
 								if dp.Data["current_phase"] == "Verifying" {
@@ -306,7 +311,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 			events := queue.Events()
 			for _, evt := range events {
 				if art, ok := evt.(*a2a.TaskArtifactUpdateEvent); ok {
-					if art.Artifact != nil && art.Artifact.Metadata != nil && art.Artifact.Metadata["type"] == "execution_progress" {
+					if art.Artifact != nil && art.Artifact.Metadata != nil && art.Artifact.Metadata["type"] == executionProgress {
 						Expect(art.Artifact.Metadata).NotTo(HaveKey("stabilization_window"),
 							"stabilization_window should not be present when EA does not exist")
 					}
@@ -323,7 +328,7 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 			var parsed map[string]any
 			Expect(json.Unmarshal(data, &parsed)).To(Succeed())
-			Expect(parsed["type"]).To(Equal("execution_progress"))
+			Expect(parsed["type"]).To(Equal(executionProgress))
 			Expect(parsed["schema_version"]).To(Equal("1.0"))
 			Expect(parsed["rr_name"]).To(Equal("rr-xyz789"))
 			Expect(parsed["current_phase"]).To(Equal("Verifying"))

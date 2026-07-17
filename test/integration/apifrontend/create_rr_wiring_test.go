@@ -78,37 +78,37 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1282-W02: created RR has signalSource=a2a-agent in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
-			Namespace:   "default",
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w02",
 			Description: "signal source check",
 		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		source, _, _ := unstructured.NestedString(created.Object, "spec", "signalSource")
 		Expect(source).To(Equal("a2a-agent"))
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
 	It("IT-AF-1282-W03: signalName falls back to unknown in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
-			Namespace:   "default",
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w03",
 			Description: "signal name check",
 		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
@@ -116,7 +116,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			"with no triager and no events, fallback should be unknown")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -129,7 +129,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 				"kind":       "Event",
 				"metadata": map[string]interface{}{
 					"name":      "oom-event-w03b",
-					"namespace": "default",
+					"namespace": defaultFixture,
 				},
 				"reason":  "OOMKilling",
 				"message": "Container killed due to OOM",
@@ -142,28 +142,28 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 				"lastTimestamp": "2026-05-25T00:00:00Z",
 			},
 		}
-		_, err := dynamicClient.Resource(eventsGVR).Namespace("default").Create(ctx, ev, metav1.CreateOptions{})
+		_, err := dynamicClient.Resource(eventsGVR).Namespace(defaultFixture).Create(ctx, ev, metav1.CreateOptions{})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(eventsGVR).Namespace("default").Delete(ctx, "oom-event-w03b", metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(eventsGVR).Namespace(defaultFixture).Delete(ctx, "oom-event-w03b", metav1.DeleteOptions{})
 		})
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
-			Namespace:   "default",
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w03b",
 			Description: "OOM event in envtest",
 		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
 		Expect(signalName).To(Equal("OOMKilling"), "K8s OOMKilling event should drive signalName")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -173,8 +173,8 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		cfg := severity.DefaultConfig()
 		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default", Triager: triager}, &tools.CreateRRArgs{
-			Namespace:   "default",
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w04",
 			Description: "triage wiring IT",
@@ -184,7 +184,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		Expect(result.Severity).NotTo(BeEmpty())
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -242,7 +242,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 
 	It("IT-AF-1282-W05: BuildInstruction contains Tool Usage Rules with resolved namespace", func() {
 		resolvedNS := agentpkg.ResolveNamespace("", "/nonexistent/path")
-		Expect(resolvedNS).To(Equal("default"))
+		Expect(resolvedNS).To(Equal(defaultFixture))
 
 		dir := GinkgoT().TempDir()
 		nsFile := dir + "/namespace"
@@ -261,8 +261,8 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-FLEET-004: HandleCreateRR with ClusterID produces RR with cluster fields in envtest (BR-INTEGRATION-065)", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
-			Namespace:   "default",
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-fleet-004-" + uuid.New().String()[:6],
 			Description: "fleet cluster wiring IT",
@@ -272,7 +272,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 
-		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
+		created, getErr := dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Get(ctx, result.RRID, metav1.GetOptions{})
 		Expect(getErr).NotTo(HaveOccurred())
 
 		clusterID, _, _ := unstructured.NestedString(created.Object, "spec", "clusterID")
@@ -283,7 +283,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			"ClusterName must be persisted on the RR CRD via envtest K8s API")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -291,8 +291,8 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		baseName := "web-fleet-005-" + uuid.New().String()[:6]
 
-		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
-			Namespace:   "default",
+		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        baseName,
 			Description: "east cluster",
@@ -301,8 +301,8 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result1.AlreadyExists).To(BeFalse())
 
-		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default"}, &tools.CreateRRArgs{
-			Namespace:   "default",
+		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        baseName,
 			Description: "west cluster",
@@ -315,8 +315,8 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			"different clusters must produce different RR IDs")
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result1.RRID, metav1.DeleteOptions{})
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result2.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result1.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result2.RRID, metav1.DeleteOptions{})
 		})
 	})
 
@@ -324,8 +324,8 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		auditRecorder.Reset()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: "default", Auditor: auditRecorder}, &tools.CreateRRArgs{
-			Namespace:   "default",
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Auditor: auditRecorder}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w06",
 			Description: "audit IT",
@@ -336,10 +336,10 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		events := auditRecorder.EventsOfType(audit.EventRRCreated)
 		Expect(events).To(HaveLen(1))
 		Expect(events[0].UserID).To(Equal("audit-user"))
-		Expect(events[0].Detail).To(HaveKeyWithValue("namespace", "default"))
+		Expect(events[0].Detail).To(HaveKeyWithValue("namespace", defaultFixture))
 
 		DeferCleanup(func() {
-			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
+			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
 	})
 })

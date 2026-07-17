@@ -52,7 +52,7 @@ var _ = Describe("DS Client Integration (ds/)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			_, err = client.GetRemediationHistory(context.Background(), ds.HistoryOpts{
-				Namespace: "default",
+				Namespace: defaultFixture,
 				Kind:      "Deployment",
 				Name:      "test-app",
 			})

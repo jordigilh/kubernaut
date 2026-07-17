@@ -19,6 +19,11 @@ import (
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	decision = "decision"
+)
+
 var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3", "g3"), func() {
 	var sreToken string
 
@@ -448,7 +453,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 				if json.Unmarshal(evt.Result, &art) == nil {
 					artifacts = append(artifacts, art)
 				}
-			case "status-update":
+			case statusUpdate:
 				var st taskStatusUpdate
 				if json.Unmarshal(evt.Result, &st) == nil {
 					statuses = append(statuses, st)
@@ -480,7 +485,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 
 		hasTerminal := false
 		for _, st := range statuses1 {
-			if st.Status.State == "completed" || st.Status.State == "failed" {
+			if st.Status.State == completed || st.Status.State == failed {
 				hasTerminal = true
 				break
 			}
@@ -491,7 +496,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		// Only assert progressive artifacts if turn 1 completed with "completed".
 		turn1Completed := false
 		for _, st := range statuses1 {
-			if st.Status.State == "completed" {
+			if st.Status.State == completed {
 				turn1Completed = true
 				break
 			}
@@ -553,7 +558,7 @@ var _ = Describe("Progressive A2A Streaming (issue #1258)", Label("e2e", "phase3
 		// Final state must be completed or failed (stream lifecycle closed)
 		hasFinal := false
 		for _, st := range statuses2 {
-			if st.Status.State == "completed" || st.Status.State == "failed" {
+			if st.Status.State == completed || st.Status.State == failed {
 				hasFinal = true
 				break
 			}
@@ -688,7 +693,7 @@ var _ = Describe("A2A Streaming Reasoning (#1399)", Ordered, Label("e2e", "phase
 				continue
 			}
 			meta, _ := artifact["metadata"].(map[string]any)
-			if meta != nil && meta["type"] == "decision" {
+			if meta != nil && meta["type"] == decision {
 				foundArtifact = true
 				break
 			}

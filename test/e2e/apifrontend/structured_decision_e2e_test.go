@@ -118,7 +118,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 				continue
 			}
 
-			if frame.Result.Kind == "status-update" {
+			if frame.Result.Kind == statusUpdate {
 				if frame.Result.Metadata == nil || frame.Result.Metadata["type"] != "decision" {
 					continue
 				}

@@ -7,6 +7,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	test = "test"
+)
+
 // ---------------------------------------------------------------------------
 // TC-C-03: CONFIG-01 — Startup Guard: Empty Issuer + TLS Required
 // ---------------------------------------------------------------------------
@@ -42,7 +47,7 @@ func TestStartupGuard_ValidIssuer_TLSRequired(t *testing.T) {
 	// TC-C-03c: valid issuer + tls.required:true → succeeds
 	cfg := config.DefaultConfig()
 	cfg.Auth.IssuerURL = "https://dex.example.com"
-	cfg.Auth.Audience = "test"
+	cfg.Auth.Audience = test
 	cfg.Server.TLS.Required = true
 	cfg.Server.Port = 8443
 

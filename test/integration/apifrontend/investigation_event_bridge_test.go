@@ -54,45 +54,45 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 
 		It("IT-AF-1326-050: HandleInvestigationMCP proceeds when AIA has session ID (BR-INTERACTIVE-010)", func() {
 			ctx := context.Background()
-			ns := "default"
+			ns := defaultFixture
 			rrName := "rr-it-1326-050"
 
-		aia := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "kubernaut.ai/v1alpha1",
-				"kind":       "AIAnalysis",
-				"metadata": map[string]interface{}{
-					"name":      "aia-it-1326-050",
-					"namespace": ns,
-				},
-				"spec": map[string]interface{}{
-					"remediationId": "rem-it-1326-050",
-					"analysisRequest": map[string]interface{}{
-						"analysisTypes": []interface{}{"Investigation"},
-						"signalContext": map[string]interface{}{
-							"fingerprint": "fp-it-050",
-							"severity":    "warning",
-							"signalName":  "OOMKilled",
-							"environment": "test",
-							"targetResource": map[string]interface{}{
-								"kind": "Pod",
-								"name": "test-pod",
+			aia := &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"apiVersion": "kubernaut.ai/v1alpha1",
+					"kind":       "AIAnalysis",
+					"metadata": map[string]interface{}{
+						"name":      "aia-it-1326-050",
+						"namespace": ns,
+					},
+					"spec": map[string]interface{}{
+						"remediationId": "rem-it-1326-050",
+						"analysisRequest": map[string]interface{}{
+							"analysisTypes": []interface{}{"Investigation"},
+							"signalContext": map[string]interface{}{
+								"fingerprint": "fp-it-050",
+								"severity":    "warning",
+								"signalName":  "OOMKilled",
+								"environment": "test",
+								"targetResource": map[string]interface{}{
+									"kind": "Pod",
+									"name": "test-pod",
+								},
+								"businessPriority":  "P2",
+								"enrichmentResults": map[string]interface{}{},
 							},
-							"businessPriority": "P2",
-							"enrichmentResults": map[string]interface{}{},
+						},
+						"remediationRequestRef": map[string]interface{}{
+							"name": rrName,
 						},
 					},
-					"remediationRequestRef": map[string]interface{}{
-						"name": rrName,
+					"status": map[string]interface{}{
+						"investigationSession": map[string]interface{}{
+							"id": "ka-sess-050",
+						},
 					},
 				},
-				"status": map[string]interface{}{
-					"investigationSession": map[string]interface{}{
-						"id": "ka-sess-050",
-					},
-				},
-			},
-		}
+			}
 			_, err := dynamicClient.Resource(aianalysisGVR).Namespace(ns).Create(ctx, aia, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func() {
@@ -134,7 +134,7 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 
 			// No AIA CRD exists — HandleAwaitSession will timeout, but
 			// HandleInvestigationMCP proceeds anyway (best-effort).
-			result, err := tools.HandleInvestigationMCP(ctx, mockMCP, k8sClient, "default", tools.InvestigateMCPArgs{
+			result, err := tools.HandleInvestigationMCP(ctx, mockMCP, k8sClient, defaultFixture, tools.InvestigateMCPArgs{
 				RRID: "rr-nonexistent-051",
 			}, nil)
 			Expect(err).NotTo(HaveOccurred())

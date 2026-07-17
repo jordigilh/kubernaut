@@ -27,6 +27,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	defaultFixture = "default"
+)
+
 // syncBuffer wraps bytes.Buffer with a mutex for concurrent access from
 // background goroutines (e.g. FileWatcher) and gomega Eventually pollers.
 type syncBuffer struct {
@@ -67,7 +72,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 		const sessionName = "sess-it-1274-001"
 
 		sess := makeSession(sessionName, v1alpha1.SessionPhaseDisconnected, nil, pastTime(20*time.Minute))
-		sess.Namespace = "default"
+		sess.Namespace = defaultFixture
 		Expect(k8sClient.Create(ctx, sess)).To(Succeed())
 
 		sess.Status.Phase = v1alpha1.SessionPhaseDisconnected
@@ -76,13 +81,13 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 
 		defer func() {
 			_ = k8sClient.Delete(ctx, &v1alpha1.InvestigationSession{
-				ObjectMeta: metav1.ObjectMeta{Name: sessionName, Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: sessionName, Namespace: defaultFixture},
 			})
 		}()
 
 		Eventually(func(g Gomega) {
 			var fetched v1alpha1.InvestigationSession
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sessionName, Namespace: "default"}, &fetched)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sessionName, Namespace: defaultFixture}, &fetched)).To(Succeed())
 			g.Expect(fetched.Status.Phase).To(Equal(v1alpha1.SessionPhaseDisconnected))
 			g.Expect(fetched.Status.DisconnectedAt).NotTo(BeNil(), "status update must propagate")
 		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
@@ -94,7 +99,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 			k8sClient, 15*time.Minute, controller.MinRetentionTTL, logger, nil, nil, nil,
 		)
 		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: sessionName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: sessionName, Namespace: defaultFixture},
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(buf.String()).To(ContainSubstring("session auto-cancelled"))
@@ -111,7 +116,7 @@ var _ = Describe("Logger Wiring (#1274)", func() {
 			adksession.InMemoryService(),
 			k8sClient,
 			scheme,
-			"default",
+			defaultFixture,
 			session.WithLogger(logger),
 		)
 
