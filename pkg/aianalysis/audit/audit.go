@@ -106,7 +106,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 
 	// Determine outcome
 	var apiOutcome ogenclient.AuditEventRequestEventOutcome
-	if analysis.Status.Phase == "Failed" {
+	if analysis.Status.Phase == aianalysisv1.PhaseFailed {
 		apiOutcome = audit.OutcomeFailure
 	} else {
 		apiOutcome = audit.OutcomeSuccess
@@ -114,7 +114,6 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 
 	// Build audit event (DD-AUDIT-002 V2.2: Direct struct assignment)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeAnalysisCompleted)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, EventActionAnalysisComplete) // Fixed: Must match test contract
@@ -210,7 +209,6 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, analysis *aiana
 
 	// Build audit event (DD-AUDIT-002 V2.2: Direct struct assignment)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypePhaseTransition)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, EventActionPhaseTransition)
@@ -241,7 +239,6 @@ func (c *AuditClient) RecordError(ctx context.Context, analysis *aianalysisv1.AI
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeError)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, EventActionError)
@@ -284,7 +281,6 @@ func (c *AuditClient) RecordAIAgentCall(ctx context.Context, analysis *aianalysi
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeAIAgentCall)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, EventActionAIAgentCall) // Fixed: Must match test contract
@@ -330,7 +326,6 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeApprovalDecision)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, EventActionApprovalDecision)
@@ -374,7 +369,6 @@ func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianal
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeRegoEvaluation)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, EventActionPolicyEvaluation)
@@ -421,7 +415,7 @@ func truncateString(s string, maxLen int) string {
 // - No selected workflow = needs human review
 func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 	// Failed analyses typically need human review
-	if analysis.Status.Phase == "Failed" {
+	if analysis.Status.Phase == aianalysisv1.PhaseFailed {
 		return true
 	}
 
@@ -463,7 +457,6 @@ func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianaly
 	}
 
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeAIAgentSubmit)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, "aiagent_submit")
@@ -495,7 +488,6 @@ func (c *AuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianaly
 	}
 
 	resultEvent := audit.NewAuditEventRequest()
-	resultEvent.Version = "1.0"
 	audit.SetEventType(resultEvent, EventTypeAIAgentResult)
 	audit.SetEventCategory(resultEvent, EventCategoryAIAnalysis)
 	audit.SetEventAction(resultEvent, "aiagent_result")
@@ -525,7 +517,6 @@ func (c *AuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis *ai
 	}
 
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeAIAgentSessionLost)
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, "aiagent_session_lost")
@@ -571,7 +562,6 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 
 	// Build audit event per DD-AUDIT-002 V2.0: OpenAPI types
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeAnalysisFailed) // DD-AUDIT-003: Use constant
 	audit.SetEventCategory(event, EventCategoryAIAnalysis)
 	audit.SetEventAction(event, EventActionAnalysisFailed) // DD-AUDIT-003: Use constant
@@ -586,7 +576,7 @@ func (c *AuditClient) RecordAnalysisFailed(ctx context.Context, analysis *aianal
 
 	// Use ogen union constructor (OGEN-MIGRATION)
 	// Determine which constructor based on phase
-	if analysis.Status.Phase == "Failed" {
+	if analysis.Status.Phase == aianalysisv1.PhaseFailed {
 		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisFailedAuditEventRequestEventData(payload)
 	} else {
 		event.EventData = ogenclient.NewAuditEventRequestEventDataAianalysisAnalysisCompletedAuditEventRequestEventData(payload)
@@ -691,7 +681,7 @@ func toAIAnalysisAuditPayloadPhase(phase string) ogenclient.AIAnalysisAuditPaylo
 		return ogenclient.AIAnalysisAuditPayloadPhaseAnalyzing
 	case "Completed":
 		return ogenclient.AIAnalysisAuditPayloadPhaseCompleted
-	case "Failed":
+	case aianalysisv1.PhaseFailed:
 		return ogenclient.AIAnalysisAuditPayloadPhaseFailed
 	default:
 		return "" // Should not happen with valid CRD phases

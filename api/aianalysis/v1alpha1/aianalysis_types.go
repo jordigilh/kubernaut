@@ -332,6 +332,18 @@ const (
 	PhaseFailed = "Failed"
 )
 
+// AIAnalysis SubReason constants (subset of the full kubebuilder enum on
+// AIAnalysisStatus.SubReason below) for values referenced from multiple
+// call sites in pkg/aianalysis/handlers.
+const (
+	// SubReasonWorkflowNotFound indicates no matching workflow was found in the catalog
+	SubReasonWorkflowNotFound = "WorkflowNotFound"
+	// SubReasonNoMatchingWorkflows indicates the catalog query returned zero candidates
+	SubReasonNoMatchingWorkflows = "NoMatchingWorkflows"
+	// SubReasonTransientError indicates a retryable error occurred (network, API, timeout)
+	SubReasonTransientError = "TransientError"
+)
+
 // AIAnalysisStatus defines the observed state of AIAnalysis.
 type AIAnalysisStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.

@@ -623,7 +623,7 @@ func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Conte
 	analysis.Status.CompletedAt = &now
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-	analysis.Status.SubReason = "NoMatchingWorkflows"
+	analysis.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows
 	analysis.Status.InvestigationID = resp.IncidentID
 
 	// #768: NeedsHumanReview remains true — still requires human intervention
@@ -674,7 +674,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	analysis.Status.CompletedAt = &now
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
-	analysis.Status.SubReason = "NoMatchingWorkflows" // Maps to CRD SubReason enum
+	analysis.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows // Maps to CRD SubReason enum
 	analysis.Status.InvestigationID = resp.IncidentID
 
 	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for terminal failures
@@ -702,8 +702,8 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	}
 
 	// Track failure metrics
-	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoMatchingWorkflows").Inc()
-	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", aianalysisv1.SubReasonNoMatchingWorkflows).Inc()
+	p.metrics.RecordFailure("WorkflowResolutionFailed", aianalysisv1.SubReasonNoMatchingWorkflows)
 
 	aianalysis.SetInvestigationComplete(analysis, false, "no workflow selected: no matching workflows found")
 	aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected for remediation")
@@ -817,10 +817,10 @@ func setTotalAnalysisTime(analysis *aianalysisv1.AIAnalysis, now metav1.Time) {
 // Updated Dec 7, 2025: Added investigation_inconclusive per BR-HAPI-200
 func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 	mapping := map[string]string{
-		"workflow_not_found":          "WorkflowNotFound",
+		"workflow_not_found":          aianalysisv1.SubReasonWorkflowNotFound,
 		"image_mismatch":              "ImageMismatch",
 		"parameter_validation_failed": "ParameterValidationFailed",
-		"no_matching_workflows":       "NoMatchingWorkflows",
+		"no_matching_workflows":       aianalysisv1.SubReasonNoMatchingWorkflows,
 		"low_confidence":              "LowConfidence",
 		"llm_parsing_error":           "LLMParsingError",
 		"investigation_inconclusive":  "InvestigationInconclusive", // BR-HAPI-200
@@ -831,7 +831,7 @@ func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 		return subReason
 	}
 	p.log.Info("Unknown human_review_reason, defaulting to WorkflowNotFound", "reason", reason)
-	return "WorkflowNotFound"
+	return aianalysisv1.SubReasonWorkflowNotFound
 }
 
 // hasNoWorkflowWarningSignal checks if KA's warnings contain signals that indicate
@@ -911,9 +911,9 @@ func mapWarningsToSubReason(warnings []string) string {
 
 	switch {
 	case strings.Contains(warningsStr, "not found") || strings.Contains(warningsStr, "does not exist"):
-		return "WorkflowNotFound"
+		return aianalysisv1.SubReasonWorkflowNotFound
 	case strings.Contains(warningsStr, "no workflows matched") || strings.Contains(warningsStr, "no matching"):
-		return "NoMatchingWorkflows"
+		return aianalysisv1.SubReasonNoMatchingWorkflows
 	case strings.Contains(warningsStr, "confidence") && strings.Contains(warningsStr, "below"):
 		return "LowConfidence"
 	case strings.Contains(warningsStr, "parameter validation") || strings.Contains(warningsStr, "missing required"):
@@ -923,7 +923,7 @@ func mapWarningsToSubReason(warnings []string) string {
 	case strings.Contains(warningsStr, "parse") || strings.Contains(warningsStr, "invalid json"):
 		return "LLMParsingError"
 	default:
-		return "WorkflowNotFound" // Default to most common case
+		return aianalysisv1.SubReasonWorkflowNotFound // Default to most common case
 	}
 }
 
