@@ -370,6 +370,19 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedDSEnvConfig, "datastorage-integration")
 		Expect(err).ToNot(HaveOccurred(), "writing shared envtest kubeconfig")
 		GinkgoWriter.Println("✅ [Process 1] Shared envtest ready (kubernaut-workflows namespace created)")
+
+		// Seed action types directly as CRDs too (DD-WORKFLOW-016). #1661 Phase 53:
+		// makes them visible via DS's informer-backed cache (IT-DS-1661-P52-001)
+		// AuthWebhook-independently, for specs exercising the cache/CRD path
+		// (e.g. workflow_cache_test.go). This is IN ADDITION to -- not a
+		// replacement for -- the Postgres-backed seeding below: several specs in
+		// this suite still write to remediation_workflow_catalog directly, whose
+		// fk_workflow_action_type FK requires matching action_type_taxonomy rows.
+		GinkgoWriter.Println("🏷️  Seeding action types via direct CRD creation...")
+		Expect(infrastructure.SeedActionTypesViaCRD(kubeconfigPath, "kubernaut-workflows", GinkgoWriter)).
+			To(Succeed(), "action type CRD seeding should succeed")
+		GinkgoWriter.Println("✅ Action types seeded (CRD)")
+
 		GinkgoWriter.Println("✅ Infrastructure ready for integration tests")
 		return []byte(kubeconfigPath)
 	},
@@ -845,15 +858,26 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
 
-	// 7. Seed action types via temp in-process DataStorage server (DD-WORKFLOW-016)
-	GinkgoWriter.Println("  🏷️  Seeding action types via in-process DataStorage server...")
+	// 7. Seed action types in Postgres via temp in-process DataStorage server
+	// (DD-WORKFLOW-016). Still required as of #1661 Phase 53: remediation_workflow_catalog
+	// has a real FK (fk_workflow_action_type -> action_type_taxonomy), and several specs
+	// in this suite (e.g. workflow_repository_integration_test.go) insert workflows
+	// directly against Postgres, bypassing the CRD/cache path entirely. This seeding
+	// step -- and the action_type_taxonomy table/FK it satisfies -- is removed in
+	// Phase 55 once those specs are migrated or deleted and the table is dropped.
+	GinkgoWriter.Println("  🏷️  Seeding action types via in-process DataStorage server (Postgres FK)...")
 	seedActionTypesViaInProcessServer()
-	GinkgoWriter.Println("  ✅ Action types seeded")
+	GinkgoWriter.Println("  ✅ Action types seeded (Postgres)")
 }
 
 // seedActionTypesViaInProcessServer creates a temporary in-process DataStorage httptest
 // server, seeds all standard action types through its API, then tears it down. The rows
 // persist in the shared PostgreSQL instance so every per-test httptest server sees them.
+//
+// #1661 Phase 53: kept alongside SeedActionTypesViaCRD (called separately from
+// SynchronizedBeforeSuite once envtest is up) because remediation_workflow_catalog's
+// fk_workflow_action_type FK constraint still requires action_type_taxonomy rows for
+// the Postgres-backed specs in this suite. Removed in Phase 55 with the table itself.
 func seedActionTypesViaInProcessServer() {
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
