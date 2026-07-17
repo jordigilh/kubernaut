@@ -96,6 +96,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 const (
 	clusterName = "fmc-e2e"
 	namespace   = "kubernaut-system"
@@ -204,7 +209,7 @@ var _ = SynchronizedAfterSuite(
 		setupFailed := harness.KubeconfigPath == ""
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == trueFixture || os.Getenv("KEEP_CLUSTER") == trueFixture
 
 		remoteClusterName := clusterName + "-remote"
 
@@ -238,7 +243,7 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			if covErr := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "fleetmetadatacache",
 				ClusterName:    clusterName,
