@@ -20,13 +20,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // workflowConflictError is returned when the DS API reports a 409 Conflict,
@@ -88,8 +85,9 @@ var RegisteredWorkflowUUIDs = make(map[string]string)
 // Also populates RegisteredWorkflowUUIDs for tests that need DS UUIDs (DD-WE-006).
 func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
 	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
-	// Issue #785: TLS-aware seeding to DataStorage API (inter-service CA).
-	if err := SeedActionTypesViaAPIWithTLS(dataStorageURL, saToken, kubeconfigPath, 30*time.Second, output); err != nil {
+	// #1661 Phase 53: direct CRD creation -- no AuthWebhook/DataStorage round-trip
+	// dependency for ActionType, unlike the removed SeedActionTypesViaAPIWithTLS.
+	if err := SeedActionTypesViaCRD(kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
 		return nil, fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -111,52 +109,50 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 
 	_, _ = fmt.Fprintf(output, "  ✅ Using bundles from %s\n", TestWorkflowBundleRegistry)
 
-	// Register workflows in DataStorage using inline content (ADR-058)
-	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows in DataStorage (inline)...\n")
+	// Register workflows via kubectl apply (#1661 Phase 53: CRD-native registration,
+	// exercising the same AuthWebhook admission path production traffic uses -- no
+	// DataStorage inline-registration REST call, per DD-WORKFLOW-018 Change 6).
+	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows via kubectl apply...\n")
 
-	// ADR-058: Read workflow-schema.yaml from fixture directories and register inline.
 	// The fixture directory name maps to the workflow name (without "test-" prefix for some).
+	// version/description are declared in each fixture's workflow-schema.yaml and no
+	// longer need to be passed separately now that registration is CRD-native.
 	bundleWorkflows := []struct {
 		name       string
-		version    string
 		fixtureDIR string
-		desc       string
 	}{
-		{"test-hello-world", "v1.0.0", "hello-world", "Simple hello-world workflow for E2E testing"},
-		{"test-intentional-failure", "v1.0.0", "failing", "Intentionally failing workflow for E2E failure handling tests"},
-		{"test-dep-secret-job", "v1.0.0", "dep-secret-job", "Job workflow with Secret dependency for DD-WE-006 E2E testing"},
-		{"test-dep-secret-tekton", "v1.0.0", "dep-secret-tekton", "Tekton workflow with Secret dependency for DD-WE-006 E2E testing"},
-		{"test-dep-configmap-job", "v1.0.0", "dep-configmap-job", "Job workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
-		{"test-dep-configmap-tekton", "v1.0.0", "dep-configmap-tekton", "Tekton workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
-		{"test-job-hello-world", "v1.0.0", "job-hello-world", "Job backend hello-world workflow for BR-WE-014 E2E testing"},
-		{"test-job-intentional-failure", "v1.0.0", "job-failing", "Job backend intentionally failing workflow for BR-WE-014 E2E testing"},
-		{"test-job-oomkill", "v1.0.0", "job-oomkill", "Job backend OOM-kill-simulation workflow for DD-WE-008 E2E testing"},
-		{"test-ansible-success", "v1.0.0", "ansible-success", "Ansible engine success workflow for BR-WE-015 E2E testing"},
-		{"test-ansible-failure", "v1.0.0", "ansible-failure", "Ansible engine failure workflow for BR-WE-015 E2E testing"},
-		{"test-dep-secret-ansible", "v1.0.0", "dep-secret-ansible", "Ansible workflow with Secret dependency for DD-WE-006/BR-WE-015 E2E testing"},
-		{"test-dep-configmap-ansible", "v1.0.0", "dep-configmap-ansible", "Ansible workflow with ConfigMap dependency for DD-WE-006/BR-WE-015 E2E testing"},
+		{"test-hello-world", "hello-world"},
+		{"test-intentional-failure", "failing"},
+		{"test-dep-secret-job", "dep-secret-job"},
+		{"test-dep-secret-tekton", "dep-secret-tekton"},
+		{"test-dep-configmap-job", "dep-configmap-job"},
+		{"test-dep-configmap-tekton", "dep-configmap-tekton"},
+		{"test-job-hello-world", "job-hello-world"},
+		{"test-job-intentional-failure", "job-failing"},
+		{"test-job-oomkill", "job-oomkill"},
+		{"test-ansible-success", "ansible-success"},
+		{"test-ansible-failure", "ansible-failure"},
+		{"test-dep-secret-ansible", "dep-secret-ansible"},
+		{"test-dep-configmap-ansible", "dep-configmap-ansible"},
 	}
 
+	specs := make([]WorkflowSeedSpec, 0, len(bundleWorkflows))
 	for _, bw := range bundleWorkflows {
-		content, readErr := readWorkflowFixtureContent(bw.fixtureDIR)
-		if readErr != nil {
-			return nil, fmt.Errorf("failed to read fixture for %s: %w", bw.name, readErr)
-		}
+		specs = append(specs, WorkflowSeedSpec{FixtureDir: bw.fixtureDIR})
+	}
 
-		wfUUID, regErr := registerTestBundleWorkflow(
-			dataStorageURL,
-			saToken,
-			kubeconfigPath,
-			bw.name,
-			bw.version,
-			content,
-			bw.desc,
-			output,
-		)
-		if regErr != nil {
-			return nil, fmt.Errorf("failed to register %s workflow: %w", bw.name, regErr)
+	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(kubeconfigPath, WorkflowExecutionNamespace, specs, output)
+	if seedErr != nil {
+		return nil, fmt.Errorf("failed to register test workflow bundles: %w", seedErr)
+	}
+	for _, bw := range bundleWorkflows {
+		// SeedWorkflowsViaKubectlApply keys its map "<crd-name>:<environment>"; these
+		// fixtures declare no environment, so the key carries a trailing colon.
+		uuid, ok := seededUUIDs[bw.name+":"]
+		if !ok {
+			return nil, fmt.Errorf("workflow %s missing from seeded UUIDs", bw.name)
 		}
-		RegisteredWorkflowUUIDs[bw.name] = wfUUID
+		RegisteredWorkflowUUIDs[bw.name] = uuid
 	}
 
 	// Populate bundles map with execution bundle references (still OCI images for Tekton/Job runtime)
@@ -181,39 +177,6 @@ func readWorkflowFixtureContent(fixtureName string) (string, error) {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}
 	return string(data), nil
-}
-
-// registerTestBundleWorkflow registers a workflow in DataStorage using the inline schema API.
-// ADR-058: Sends CRD YAML content directly (inline) instead of OCI pullspec.
-// Returns the DS-assigned UUID for use in WorkflowExecution specs (DD-WE-006).
-// Includes DD-AUTH-014 ServiceAccount authentication.
-func registerTestBundleWorkflow(dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent, description string, output io.Writer) (string, error) {
-	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) inline\n", workflowName, version)
-
-	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to create TLS-aware transport: %w", err)
-	}
-	httpClient := &http.Client{
-		Transport: testauth.NewServiceAccountTransportWithBase(saToken, tlsTransport),
-	}
-
-	client, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
-	if err != nil {
-		return "", fmt.Errorf("failed to create DataStorage client: %w", err)
-	}
-
-	uuid, reEnabled, err := callCreateWorkflowInline(client, schemaContent, "e2e-test-infra")
-	if err != nil {
-		return "", fmt.Errorf("failed to register workflow: %w", err)
-	}
-
-	if reEnabled {
-		_, _ = fmt.Fprintf(output, "    ✅ Re-enabled in DataStorage: %s (UUID: %s)\n", workflowName, uuid)
-	} else {
-		_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s (UUID: %s)\n", workflowName, uuid)
-	}
-	return uuid, nil
 }
 
 // callCreateWorkflowInline sends an inline registration request to DataStorage and
