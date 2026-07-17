@@ -150,7 +150,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			// BR-AI-013: If reconciliation reaches Completed, Rego evaluation ran.
 			// The Rego evaluator receives detected_labels (from PostRCAContext or empty map).
 			// Production + confidence < 0.8 triggers approval via Rego policy.
-			if analysis.Status.Phase == "Completed" {
+			if analysis.Status.Phase == aianalysisv1.PhaseCompleted {
 				Expect(analysis.Status.ApprovalRequired).To(BeTrue(),
 					"Production environment should require approval (Rego evaluation with detected_labels)")
 			}

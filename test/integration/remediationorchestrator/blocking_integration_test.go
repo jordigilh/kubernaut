@@ -102,7 +102,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				Namespace: ROControllerNamespace,
 			}, fetchedRR)).To(Succeed())
 
-			if fetchedRR.Status.OverallPhase == "Blocked" {
+			if fetchedRR.Status.OverallPhase == remediationv1.PhaseBlocked {
 				Expect(fetchedRR.Status.BlockedUntil).ToNot(BeNil(), "Should set BlockedUntil")
 				Expect(fetchedRR.Status.BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures), "Should set BlockReason")
 				GinkgoWriter.Printf("✅ RR blocked with cooldown until: %s\n", fetchedRR.Status.BlockedUntil.Format(time.RFC3339))

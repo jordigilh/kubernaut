@@ -54,7 +54,7 @@ var _ = Describe("Issue #627: Notification Body Field Reordering", func() {
 		nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 		rr := helpers.NewRemediationRequest("test-rr-627-001", "default")
-		rr.Status.OverallPhase = "Completed"
+		rr.Status.OverallPhase = remediationv1.PhaseCompleted
 		rr.Status.Outcome = remediationv1.OutcomeRemediated
 		ai := helpers.NewCompletedAIAnalysis("test-ai-627-001", "default")
 
@@ -127,7 +127,7 @@ var _ = Describe("Issue #627: Notification Body Field Reordering", func() {
 		nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 		rr := helpers.NewRemediationRequest("test-rr-627-004", "default")
-		rr.Status.OverallPhase = "Completed"
+		rr.Status.OverallPhase = remediationv1.PhaseCompleted
 		rr.Status.DuplicateCount = 2
 		ai := helpers.NewCompletedAIAnalysis("test-ai-627-004", "default")
 

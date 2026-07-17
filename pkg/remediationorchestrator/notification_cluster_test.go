@@ -36,6 +36,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// outcomeSucceededFixture is a test-only Outcome fixture value. Not part of the
+// RemediationRequestStatus.Outcome kubebuilder enum (Remediated;NoActionRequired;
+// ManualReviewRequired;VerificationTimedOut;Inconclusive;DryRun) -- kept as-is
+// (pre-existing test behavior) since the fake client does not enforce CRD
+// validation and no test assertion depends on the enum being authoritative here.
+const outcomeSucceededFixture = "Succeeded"
+
 var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 	var (
 		scheme *runtime.Scheme
@@ -73,8 +80,8 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 
 	Describe("UT-RO-615-005..009: Body builders prepend cluster line when SetClusterIdentity is called", func() {
 		const (
-			clusterName = "ocp-prod"
-			clusterUUID = "abc-123"
+			clusterName    = "ocp-prod"
+			clusterUUID    = "abc-123"
 			expectedPrefix = "**Cluster**: ocp-prod (abc-123)\n\n"
 		)
 
@@ -100,8 +107,8 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			nc.SetClusterIdentity(clusterName, clusterUUID)
 
 			rr := helpers.NewRemediationRequest("test-rr-615-006", "default")
-			rr.Status.OverallPhase = "Completed"
-			rr.Status.Outcome = "Succeeded"
+			rr.Status.OverallPhase = remediationv1.PhaseCompleted
+			rr.Status.Outcome = outcomeSucceededFixture
 			ai := helpers.NewCompletedAIAnalysis("test-ai-615-006", "default")
 
 			name, err := nc.CreateCompletionNotification(context.Background(), rr, ai, "argo", nil)
@@ -118,7 +125,7 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			nc.SetClusterIdentity(clusterName, clusterUUID)
 
 			rr := helpers.NewRemediationRequest("test-rr-615-007", "default")
-			rr.Status.OverallPhase = "Completed"
+			rr.Status.OverallPhase = remediationv1.PhaseCompleted
 			rr.Status.DuplicateCount = 3
 
 			name, err := nc.CreateBulkDuplicateNotification(context.Background(), rr)
@@ -219,8 +226,8 @@ var _ = Describe("Issue #615: Cluster Identification in Notifications", func() {
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 			rr := helpers.NewRemediationRequest("test-rr-615-010", "default")
-			rr.Status.OverallPhase = "Completed"
-			rr.Status.Outcome = "Succeeded"
+			rr.Status.OverallPhase = remediationv1.PhaseCompleted
+			rr.Status.Outcome = outcomeSucceededFixture
 			rr.Status.DuplicateCount = 1
 			ai := helpers.NewCompletedAIAnalysis("test-ai-615-010", "default")
 

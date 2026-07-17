@@ -139,7 +139,7 @@ var _ = Describe("BR-GATEWAY-185: ShouldDeduplicate with Field Selectors", func(
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Update status subresource
-			rr.Status.OverallPhase = "Pending"
+			rr.Status.OverallPhase = remediationv1alpha1.PhasePending
 			Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 			// Wait for field selector to work (cache must index the object)

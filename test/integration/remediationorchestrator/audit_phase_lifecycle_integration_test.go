@@ -149,20 +149,20 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			rr := newValidRemediationRequest("it-audit-phase-001", fingerprint)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
-		// Wait for RO to create SignalProcessing (this triggers Pending → Processing)
-		spName := "sp-" + rr.Name
-		sp := &signalprocessingv1.SignalProcessing{}
-		Eventually(func() bool {
-			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
-				Name:      spName,
-				Namespace: ROControllerNamespace,
-			}, sp)
-			return err == nil
-		}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created")
+			// Wait for RO to create SignalProcessing (this triggers Pending → Processing)
+			spName := "sp-" + rr.Name
+			sp := &signalprocessingv1.SignalProcessing{}
+			Eventually(func() bool {
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+					Name:      spName,
+					Namespace: ROControllerNamespace,
+				}, sp)
+				return err == nil
+			}, timeout, interval).Should(BeTrue(), "SignalProcessing should be created")
 
-		// Wait for RR to transition to Processing phase
-		// Note: We DON'T complete SignalProcessing here - that would trigger Processing → Analyzing
-		// This test only validates the Pending → Processing transition audit event
+			// Wait for RR to transition to Processing phase
+			// Note: We DON'T complete SignalProcessing here - that would trigger Processing → Analyzing
+			// This test only validates the Pending → Processing transition audit event
 			Eventually(func() remediationv1.RemediationPhase {
 				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
 					Name:      rr.Name, // Fixed: was incorrectly using spName
@@ -172,45 +172,45 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			}, timeout, interval).Should(Equal(remediationv1.PhaseProcessing),
 				"RR should transition to Processing phase")
 
-		// Query DataStorage for phase transition audit event
-		// Explicit flush to ensure buffered events are persisted
-		err := auditStore.Flush(ctx)
-		Expect(err).ToNot(HaveOccurred(), "Failed to flush audit store")
+			// Query DataStorage for phase transition audit event
+			// Explicit flush to ensure buffered events are persisted
+			err := auditStore.Flush(ctx)
+			Expect(err).ToNot(HaveOccurred(), "Failed to flush audit store")
 
-		correlationID := rr.Name
-		var events []ogenclient.AuditEvent
-		var queryErr error
+			correlationID := rr.Name
+			var events []ogenclient.AuditEvent
+			var queryErr error
 
-		Eventually(func() bool {
-			events, queryErr = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleTransitioned)
-			if queryErr != nil {
-				GinkgoWriter.Printf("⏳ Waiting for phase transition audit event (error: %v)\n", queryErr)
-				return false
-			}
-			if len(events) > 0 {
-				GinkgoWriter.Printf("✅ Found %d transition event(s)\n", len(events))
-			}
-			return len(events) > 0
-		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"Phase transition audit event should be persisted in DataStorage")
+			Eventually(func() bool {
+				events, queryErr = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleTransitioned)
+				if queryErr != nil {
+					GinkgoWriter.Printf("⏳ Waiting for phase transition audit event (error: %v)\n", queryErr)
+					return false
+				}
+				if len(events) > 0 {
+					GinkgoWriter.Printf("✅ Found %d transition event(s)\n", len(events))
+				}
+				return len(events) > 0
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"Phase transition audit event should be persisted in DataStorage")
 
-		// Validate we have exactly 1 event (Pending → Processing)
-		// Since we don't complete SignalProcessing, there should be no additional transitions
-		Expect(events).To(HaveLen(1), "Should have exactly 1 phase transition event (Pending→Processing)")
-		event := events[0]
+			// Validate we have exactly 1 event (Pending → Processing)
+			// Since we don't complete SignalProcessing, there should be no additional transitions
+			Expect(events).To(HaveLen(1), "Should have exactly 1 phase transition event (Pending→Processing)")
+			event := events[0]
 
-		// Validate event details
-		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleTransitioned))
-		Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration))
-		Expect(event.EventAction).To(Equal("transitioned"))
-		Expect(event.CorrelationID).To(Equal(correlationID))
-		Expect(string(event.EventOutcome)).To(Equal("success"))
+			// Validate event details
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleTransitioned))
+			Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration))
+			Expect(event.EventAction).To(Equal("transitioned"))
+			Expect(event.CorrelationID).To(Equal(correlationID))
+			Expect(string(event.EventOutcome)).To(Equal("success"))
 
-		// Validate the phase transition in event_data
-		payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload()
-		Expect(ok).To(BeTrue(), "EventData should be RemediationOrchestratorAuditPayload")
-		Expect(payload.FromPhase.Value).To(Equal("Pending"), "FromPhase should be Pending")
-		Expect(payload.ToPhase.Value).To(Equal("Processing"), "ToPhase should be Processing")
+			// Validate the phase transition in event_data
+			payload, ok := event.EventData.GetRemediationOrchestratorAuditPayload()
+			Expect(ok).To(BeTrue(), "EventData should be RemediationOrchestratorAuditPayload")
+			Expect(payload.FromPhase.Value).To(Equal("Pending"), "FromPhase should be Pending")
+			Expect(payload.ToPhase.Value).To(Equal("Processing"), "ToPhase should be Processing")
 		})
 
 		It("IT-AUDIT-PHASE-002: should emit audit event when transitioning from Processing to Analyzing", func() {
@@ -266,25 +266,25 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			}
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-		// Wait for RR to reach Analyzing or any subsequent phase.
-		// The controller may advance past Analyzing within a single reconcile cycle
-		// (when SP and AI children complete quickly), so we accept any phase at or
-		// beyond Analyzing. The audit event assertion below proves the transition occurred.
-		analyzingOrBeyond := []remediationv1.RemediationPhase{
-			remediationv1.PhaseAnalyzing,
-			remediationv1.PhaseAwaitingApproval,
-			remediationv1.PhaseExecuting,
-			remediationv1.PhaseVerifying,
-			remediationv1.PhaseCompleted,
-		}
-		Eventually(func() remediationv1.RemediationPhase {
-			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
-				Name:      rr.Name,
-				Namespace: ROControllerNamespace,
-			}, rr)
-			return rr.Status.OverallPhase
-		}, timeout, interval).Should(BeElementOf(analyzingOrBeyond),
-			"RR should reach Analyzing or a subsequent phase")
+			// Wait for RR to reach Analyzing or any subsequent phase.
+			// The controller may advance past Analyzing within a single reconcile cycle
+			// (when SP and AI children complete quickly), so we accept any phase at or
+			// beyond Analyzing. The audit event assertion below proves the transition occurred.
+			analyzingOrBeyond := []remediationv1.RemediationPhase{
+				remediationv1.PhaseAnalyzing,
+				remediationv1.PhaseAwaitingApproval,
+				remediationv1.PhaseExecuting,
+				remediationv1.PhaseVerifying,
+				remediationv1.PhaseCompleted,
+			}
+			Eventually(func() remediationv1.RemediationPhase {
+				_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+					Name:      rr.Name,
+					Namespace: ROControllerNamespace,
+				}, rr)
+				return rr.Status.OverallPhase
+			}, timeout, interval).Should(BeElementOf(analyzingOrBeyond),
+				"RR should reach Analyzing or a subsequent phase")
 
 			// Query DataStorage for phase transition audit events.
 			// Flush inside the poll loop to capture in-flight events (SP-AUDIT-001 pattern).
@@ -306,7 +306,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			var analyzingEvent *ogenclient.AuditEvent
 			for i := range events {
 				payload := events[i].EventData.RemediationOrchestratorAuditPayload
-				if payload.ToPhase.IsSet() && payload.ToPhase.Value == "Analyzing" {
+				if payload.ToPhase.IsSet() && payload.ToPhase.Value == string(remediationv1.PhaseAnalyzing) {
 					analyzingEvent = &events[i]
 					break
 				}
@@ -315,7 +315,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			Expect(analyzingEvent).ToNot(BeNil(), "Should find Processing→Analyzing transition event")
 			payload := analyzingEvent.EventData.RemediationOrchestratorAuditPayload
 			Expect(payload.FromPhase.Value).To(Equal("Processing"))
-			Expect(payload.ToPhase.Value).To(Equal("Analyzing"))
+			Expect(payload.ToPhase.Value).To(Equal(string(remediationv1.PhaseAnalyzing)))
 		})
 	})
 
@@ -356,8 +356,8 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "test-workflow",
-				Version:        "1.0.0",
+				WorkflowID:      "test-workflow",
+				Version:         "1.0.0",
 				ExecutionBundle: "test-image:latest",
 			}
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
@@ -458,22 +458,22 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			var events []ogenclient.AuditEvent
 
 			Eventually(func() bool {
-			events, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleCompleted)
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for completion audit event (error: %v)\n", err)
-				return false
-			}
-			return len(events) > 0
-		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"Lifecycle completion audit event should be persisted in DataStorage")
+				events, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleCompleted)
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for completion audit event (error: %v)\n", err)
+					return false
+				}
+				return len(events) > 0
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"Lifecycle completion audit event should be persisted in DataStorage")
 
-		// Validate event details
-		Expect(events).To(HaveLen(1), "Should have exactly 1 completion event")
-		event := events[0]
+			// Validate event details
+			Expect(events).To(HaveLen(1), "Should have exactly 1 completion event")
+			event := events[0]
 
-		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
-		Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration)) // Convert enum to string
-		Expect(event.EventAction).To(Equal(roaudit.ActionCompleted))
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
+			Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration)) // Convert enum to string
+			Expect(event.EventAction).To(Equal(roaudit.ActionCompleted))
 			Expect(event.CorrelationID).To(Equal(correlationID))
 			Expect(string(event.EventOutcome)).To(Equal("success"))
 
@@ -542,28 +542,28 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			var events []ogenclient.AuditEvent
 
 			Eventually(func() bool {
-			events, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleCompleted)
-			if err != nil {
-				GinkgoWriter.Printf("⏳ Waiting for failure completion audit event (error: %v)\n", err)
-				return false
-			}
-			if len(events) > 0 {
-				GinkgoWriter.Printf("✅ Found %d completion events, first event: EventType=%s, EventCategory=%s, EventOutcome=%s\n",
-					len(events), events[0].EventType, events[0].EventCategory, string(events[0].EventOutcome))
-			} else {
-				GinkgoWriter.Printf("⏳ No completion events found yet (correlation_id=%s, event_type=%s)\n", correlationID, roaudit.EventTypeLifecycleCompleted)
-			}
-			return len(events) > 0
-		}, 30*time.Second, 2*time.Second).Should(BeTrue(),
-			"Lifecycle failure completion audit event should be persisted in DataStorage")
+				events, err = queryAuditEvents(correlationID, roaudit.EventTypeLifecycleCompleted)
+				if err != nil {
+					GinkgoWriter.Printf("⏳ Waiting for failure completion audit event (error: %v)\n", err)
+					return false
+				}
+				if len(events) > 0 {
+					GinkgoWriter.Printf("✅ Found %d completion events, first event: EventType=%s, EventCategory=%s, EventOutcome=%s\n",
+						len(events), events[0].EventType, events[0].EventCategory, string(events[0].EventOutcome))
+				} else {
+					GinkgoWriter.Printf("⏳ No completion events found yet (correlation_id=%s, event_type=%s)\n", correlationID, roaudit.EventTypeLifecycleCompleted)
+				}
+				return len(events) > 0
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"Lifecycle failure completion audit event should be persisted in DataStorage")
 
-		// Validate event details
-		Expect(events).To(HaveLen(1), "Should have exactly 1 completion event")
-		event := events[0]
+			// Validate event details
+			Expect(events).To(HaveLen(1), "Should have exactly 1 completion event")
+			event := events[0]
 
-		Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
-		Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration)) // Convert enum to string
-		Expect(event.EventAction).To(Equal(roaudit.ActionCompleted))
+			Expect(event.EventType).To(Equal(roaudit.EventTypeLifecycleCompleted))
+			Expect(string(event.EventCategory)).To(Equal(roaudit.EventCategoryOrchestration)) // Convert enum to string
+			Expect(event.EventAction).To(Equal(roaudit.ActionCompleted))
 			Expect(event.CorrelationID).To(Equal(correlationID))
 			Expect(string(event.EventOutcome)).To(Equal("failure"))
 

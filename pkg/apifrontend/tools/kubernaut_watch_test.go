@@ -436,7 +436,7 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 			updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
 			time.Sleep(100 * time.Millisecond)
 			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-1"), func(ea *eav1alpha1.EffectivenessAssessment) {
-				ea.Status.Phase = "Assessing"
+				ea.Status.Phase = eav1alpha1.PhaseAssessing
 				ea.Status.Components.HealthAssessed = true
 				score := 1.0
 				ea.Status.Components.HealthScore = &score
@@ -503,7 +503,7 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 			updateRRPhase(ctx, wc, "payments", "rr-2", "Verifying")
 			time.Sleep(100 * time.Millisecond)
 			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-2"), func(ea *eav1alpha1.EffectivenessAssessment) {
-				ea.Status.Phase = "Assessing"
+				ea.Status.Phase = eav1alpha1.PhaseAssessing
 			})
 			time.Sleep(50 * time.Millisecond)
 			updateRRTerminal(ctx, wc, "payments", "rr-2", "Completed", "Remediated", "done")
@@ -560,7 +560,7 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 			updateRRPhase(ctx, wc, "payments", "rr-3", "Verifying")
 			time.Sleep(100 * time.Millisecond)
 			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-3"), func(ea *eav1alpha1.EffectivenessAssessment) {
-				ea.Status.Phase = "Assessing"
+				ea.Status.Phase = eav1alpha1.PhaseAssessing
 			})
 			time.Sleep(50 * time.Millisecond)
 			updateRRTerminal(ctx, wc, "payments", "rr-3", "Completed", "Remediated", "done")
@@ -654,7 +654,7 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 				},
 			},
 			Status: eav1alpha1.EffectivenessAssessmentStatus{
-				Phase: "Assessing",
+				Phase: eav1alpha1.PhaseAssessing,
 			},
 		}
 		wc := newWatchClient(rr, ea)

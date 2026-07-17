@@ -51,6 +51,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
+// msgConfidenceBelowThresholdFixture is a free-text AIAnalysis.Status.ApprovalReason
+// fixture (not a CRD enum) reused across low-confidence approval test cases below.
+const msgConfidenceBelowThresholdFixture = "Confidence below threshold"
+
 // listEventsForObject returns corev1.Events for the given object name in the namespace,
 // sorted by FirstTimestamp for deterministic ordering.
 func listEventsForObjectRO(ctx context.Context, c client.Client, objectName, namespace string) ([]corev1.Event, error) {
@@ -118,14 +122,14 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			By("Simulating AIAnalysis completion (high confidence, no approval)")
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = false
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pods",
-				Version:        "v1.0.0",
-				Confidence:     0.95,
+				WorkflowID:      "wf-restart-pods",
+				Version:         "v1.0.0",
+				Confidence:      0.95,
 				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:      "High confidence auto-approve",
+				Rationale:       "High confidence auto-approve",
 			}
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -230,15 +234,15 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = "Confidence below threshold"
+			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pods",
-				Version:        "v1.0.0",
-				Confidence:     0.70,
+				WorkflowID:      "wf-restart-pods",
+				Version:         "v1.0.0",
+				Confidence:      0.70,
 				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:      "Restart recommended",
+				Rationale:       "Restart recommended",
 			}
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
