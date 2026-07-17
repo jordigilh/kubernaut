@@ -305,6 +305,12 @@ This decision does **not** supersede or duplicate:
 | [DD-AUDIT-004](./DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md) | `workflow_content` field mapping and cross-event join query (Change 11) |
 | [DD-KA-001](./DD-KA-001-workflow-response-validation-architecture.md) | Parameter validation architecture; sole-validator decision (Change 9) |
 
+**Proposed follow-up** (not yet approved, gated on this decision's rollout completing):
+[DD-WORKFLOW-019](./DD-WORKFLOW-019-ka-owned-workflow-discovery.md) captures a validated (but not-yet-implemented)
+direction to further relocate the discovery/scoring logic and cache this decision's Change 1-2 place in DS into
+KubernautAgent, once KA's status as the sole real consumer is reconfirmed post-rollout. Tracked in
+[Issue #1677](https://github.com/jordigilh/kubernaut/issues/1677).
+
 ---
 
 ## FedRAMP / SOC2 Control Mapping
