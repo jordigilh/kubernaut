@@ -15,6 +15,13 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	executePrometheusInstantQuery = "execute_prometheus_instant_query"
+	getSeries                     = "get_series"
+	getMetricNames                = "get_metric_names"
+)
+
 type roundTripperFunc struct {
 	fn func(*http.Request) (*http.Response, error)
 }
@@ -51,7 +58,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var queryTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "execute_prometheus_instant_query" {
+				if t.Name() == executePrometheusInstantQuery {
 					queryTool = t
 					break
 				}
@@ -108,7 +115,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var queryTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "execute_prometheus_instant_query" {
+				if t.Name() == executePrometheusInstantQuery {
 					queryTool = t
 					break
 				}
@@ -134,7 +141,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var queryTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "execute_prometheus_instant_query" {
+				if t.Name() == executePrometheusInstantQuery {
 					queryTool = t
 					break
 				}
@@ -167,14 +174,14 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 	Describe("UT-KA-433-190: AllToolNames includes 8 Prometheus tools", func() {
 		It("should list 8 Prometheus tool names", func() {
 			Expect(prometheus.AllToolNames).To(HaveLen(8))
-			Expect(prometheus.AllToolNames).To(ContainElement("execute_prometheus_instant_query"))
+			Expect(prometheus.AllToolNames).To(ContainElement(executePrometheusInstantQuery))
 			Expect(prometheus.AllToolNames).To(ContainElement("execute_prometheus_range_query"))
-			Expect(prometheus.AllToolNames).To(ContainElement("get_metric_names"))
+			Expect(prometheus.AllToolNames).To(ContainElement(getMetricNames))
 			Expect(prometheus.AllToolNames).To(ContainElement("get_label_values"))
 			Expect(prometheus.AllToolNames).To(ContainElement("get_all_labels"))
 			Expect(prometheus.AllToolNames).To(ContainElement("get_metric_metadata"))
 			Expect(prometheus.AllToolNames).To(ContainElement("list_prometheus_rules"))
-			Expect(prometheus.AllToolNames).To(ContainElement("get_series"))
+			Expect(prometheus.AllToolNames).To(ContainElement(getSeries))
 		})
 	})
 
@@ -229,7 +236,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var seriesTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "get_series" {
+				if t.Name() == getSeries {
 					seriesTool = t
 					break
 				}
@@ -255,7 +262,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var seriesTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "get_series" {
+				if t.Name() == getSeries {
 					seriesTool = t
 					break
 				}
@@ -275,7 +282,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var seriesTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "get_series" {
+				if t.Name() == getSeries {
 					seriesTool = t
 					break
 				}
@@ -297,7 +304,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var metricNamesTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "get_metric_names" {
+				if t.Name() == getMetricNames {
 					metricNamesTool = t
 					break
 				}
@@ -338,7 +345,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var metricNamesTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "get_metric_names" {
+				if t.Name() == getMetricNames {
 					metricNamesTool = t
 					break
 				}
@@ -369,7 +376,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var metricNamesTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "get_metric_names" {
+				if t.Name() == getMetricNames {
 					metricNamesTool = t
 					break
 				}
@@ -419,7 +426,7 @@ var _ = Describe("Kubernaut Agent Prometheus Tools Unit — #433", func() {
 			allTools := prometheus.NewAllTools(client)
 			var seriesTool tools.Tool
 			for _, t := range allTools {
-				if t.Name() == "get_series" {
+				if t.Name() == getSeries {
 					seriesTool = t
 					break
 				}
