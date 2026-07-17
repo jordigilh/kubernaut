@@ -27,6 +27,14 @@ import (
 	"time"
 )
 
+// sourceInnerFixture and sourceKeepaliveFixture are Event.Source values used
+// throughout this spike's test table (goconst dedup). Named distinctly from
+// the local `inner` executor variable used in several tests below.
+const (
+	sourceInnerFixture     = "inner"
+	sourceKeepaliveFixture = "keepalive"
+)
+
 // Event is a minimal stand-in for a2a.Event.
 type Event struct {
 	Source string
@@ -115,7 +123,7 @@ func channelMergeExecute(
 					return
 				case <-ticker.C:
 					select {
-					case merged <- eventOrErr{event: Event{Source: "keepalive", Text: "."}}:
+					case merged <- eventOrErr{event: Event{Source: sourceKeepaliveFixture, Text: "."}}:
 					case <-ctx.Done():
 						return
 					case <-done:
@@ -201,7 +209,7 @@ func reinvocationChainExecute(
 					return
 				case <-ticker.C:
 					select {
-					case merged <- eventOrErr{event: Event{Source: "keepalive", Text: "."}}:
+					case merged <- eventOrErr{event: Event{Source: sourceKeepaliveFixture, Text: "."}}:
 					case <-ctx.Done():
 						return
 					case <-done:
@@ -290,9 +298,9 @@ func TestChannelMerge_BasicOrdering(t *testing.T) {
 	ctx := context.Background()
 
 	innerEvents := []Event{
-		{Source: "inner", Text: "event-1", Index: 0},
-		{Source: "inner", Text: "event-2", Index: 1},
-		{Source: "inner", Text: "event-3", Index: 2},
+		{Source: sourceInnerFixture, Text: "event-1", Index: 0},
+		{Source: sourceInnerFixture, Text: "event-2", Index: 1},
+		{Source: sourceInnerFixture, Text: "event-3", Index: 2},
 	}
 
 	bridgeCh := make(chan Event, 10)
@@ -321,11 +329,11 @@ func TestChannelMerge_BasicOrdering(t *testing.T) {
 	keepaliveCount := 0
 	for _, e := range collected {
 		switch e.Source {
-		case "inner":
+		case sourceInnerFixture:
 			innerCount++
 		case "bridge":
 			bridgeCount++
-		case "keepalive":
+		case sourceKeepaliveFixture:
 			keepaliveCount++
 		}
 	}
@@ -342,9 +350,9 @@ func TestChannelMerge_KeepaliveEmits(t *testing.T) {
 
 	// Slow inner executor: 3 events with 30ms gaps -> keepalive at 25ms fires
 	slowEvents := []Event{
-		{Source: "inner", Text: "slow-1"},
-		{Source: "inner", Text: "slow-2"},
-		{Source: "inner", Text: "slow-3"},
+		{Source: sourceInnerFixture, Text: "slow-1"},
+		{Source: sourceInnerFixture, Text: "slow-2"},
+		{Source: sourceInnerFixture, Text: "slow-3"},
 	}
 
 	slowInner := func(yield func(Event, error) bool) {
@@ -373,7 +381,7 @@ func TestChannelMerge_KeepaliveEmits(t *testing.T) {
 
 	keepaliveCount := 0
 	for _, e := range collected {
-		if e.Source == "keepalive" {
+		if e.Source == sourceKeepaliveFixture {
 			keepaliveCount++
 		}
 	}
@@ -395,7 +403,7 @@ func TestChannelMerge_ContextCancellation(t *testing.T) {
 				return
 			default:
 			}
-			if !yield(Event{Source: "inner", Text: fmt.Sprintf("event-%d", i)}, nil) {
+			if !yield(Event{Source: sourceInnerFixture, Text: fmt.Sprintf("event-%d", i)}, nil) {
 				return
 			}
 			i++
@@ -431,9 +439,9 @@ func TestReinvocationChain_MultipleRounds(t *testing.T) {
 	innerFn := func(_ context.Context, round int) iter.Seq2[Event, error] {
 		return func(yield func(Event, error) bool) {
 			if round < 2 {
-				yield(Event{Source: "inner", Text: fmt.Sprintf("text-only-round-%d", round), Index: round}, nil)
+				yield(Event{Source: sourceInnerFixture, Text: fmt.Sprintf("text-only-round-%d", round), Index: round}, nil)
 			} else {
-				yield(Event{Source: "inner", Text: "tool-call-round", Index: round}, nil)
+				yield(Event{Source: sourceInnerFixture, Text: "tool-call-round", Index: round}, nil)
 			}
 		}
 	}
@@ -452,7 +460,7 @@ func TestReinvocationChain_MultipleRounds(t *testing.T) {
 
 	innerCount := 0
 	for _, e := range collected {
-		if e.Source == "inner" {
+		if e.Source == sourceInnerFixture {
 			innerCount++
 		}
 	}
@@ -471,7 +479,7 @@ func TestReinvocationChain_KeepaliveContinuesAcrossRounds(t *testing.T) {
 	innerFn := func(ctx context.Context, round int) iter.Seq2[Event, error] {
 		return func(yield func(Event, error) bool) {
 			time.Sleep(30 * time.Millisecond)
-			yield(Event{Source: "inner", Text: fmt.Sprintf("round-%d", round)}, nil)
+			yield(Event{Source: sourceInnerFixture, Text: fmt.Sprintf("round-%d", round)}, nil)
 		}
 	}
 
@@ -489,9 +497,9 @@ func TestReinvocationChain_KeepaliveContinuesAcrossRounds(t *testing.T) {
 	innerCount := 0
 	for _, e := range collected {
 		switch e.Source {
-		case "keepalive":
+		case sourceKeepaliveFixture:
 			keepaliveCount++
-		case "inner":
+		case sourceInnerFixture:
 			innerCount++
 		}
 	}
@@ -513,7 +521,7 @@ func TestReinvocationChain_BridgeWritesDuringExecution(t *testing.T) {
 		return func(yield func(Event, error) bool) {
 			bridgeCh <- Event{Source: "bridge", Text: fmt.Sprintf("reasoning-round-%d", round)}
 			time.Sleep(10 * time.Millisecond)
-			yield(Event{Source: "inner", Text: fmt.Sprintf("round-%d", round)}, nil)
+			yield(Event{Source: sourceInnerFixture, Text: fmt.Sprintf("round-%d", round)}, nil)
 		}
 	}
 
@@ -533,7 +541,7 @@ func TestReinvocationChain_BridgeWritesDuringExecution(t *testing.T) {
 		switch e.Source {
 		case "bridge":
 			bridgeCount++
-		case "inner":
+		case sourceInnerFixture:
 			innerCount++
 		}
 	}
@@ -550,7 +558,7 @@ func TestReinvocationChain_BridgeWritesDuringExecution(t *testing.T) {
 func TestChannelMerge_NoGoroutineLeak(t *testing.T) {
 	ctx := context.Background()
 
-	innerEvents := []Event{{Source: "inner", Text: "only-one"}}
+	innerEvents := []Event{{Source: sourceInnerFixture, Text: "only-one"}}
 	bridgeCh := make(chan Event, 10)
 	inner := innerExecutor(ctx, innerEvents)
 
@@ -569,7 +577,7 @@ func TestChannelMerge_ErrorPropagation(t *testing.T) {
 
 	testErr := fmt.Errorf("simulated inner executor failure")
 	failingInner := func(yield func(Event, error) bool) {
-		yield(Event{Source: "inner", Text: "ok-event"}, nil)
+		yield(Event{Source: sourceInnerFixture, Text: "ok-event"}, nil)
 		yield(Event{}, testErr)
 	}
 

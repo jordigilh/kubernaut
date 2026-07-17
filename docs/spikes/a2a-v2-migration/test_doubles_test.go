@@ -36,6 +36,11 @@ import (
 	"time"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	statusUpdate = "status-update"
+)
+
 // --- New test doubles for v2 iter.Seq2 executor ---
 
 // fakeIterExecutor replaces fakeQueue. Instead of receiving events through
@@ -134,7 +139,7 @@ func (te *testableExecute) Run(ctx context.Context, inner iter.Seq2[Event, error
 func TestTestDouble_SingleEventEmission(t *testing.T) {
 	exec := &fakeIterExecutor{
 		events: []Event{
-			{Source: "inner", Text: "status-update"},
+			{Source: "inner", Text: statusUpdate},
 		},
 	}
 
@@ -145,7 +150,7 @@ func TestTestDouble_SingleEventEmission(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	if events[0].Text != "status-update" {
+	if events[0].Text != statusUpdate {
 		t.Errorf("text mismatch: got %q", events[0].Text)
 	}
 
@@ -265,7 +270,7 @@ func TestTestDouble_EventTypeAssertions(t *testing.T) {
 	exec := &fakeIterExecutor{
 		events: []Event{
 			{Source: "inner", Text: "reasoning-text"},
-			{Source: "inner", Text: "status-update"},
+			{Source: "inner", Text: statusUpdate},
 			{Source: "inner", Text: "artifact-data"},
 		},
 	}
@@ -279,7 +284,7 @@ func TestTestDouble_EventTypeAssertions(t *testing.T) {
 	if events[0].Text != "reasoning-text" {
 		t.Errorf("expected first event to be reasoning, got %q", events[0].Text)
 	}
-	if events[1].Text != "status-update" {
+	if events[1].Text != statusUpdate {
 		t.Errorf("expected second event to be status, got %q", events[1].Text)
 	}
 	if events[2].Text != "artifact-data" {
