@@ -404,7 +404,7 @@ func (r *SignalProcessingReconciler) resolveSignalMode(signal *signalprocessingv
 		return r.SignalModeClassifier.Classify(signal.Name)
 	}
 	return classifier.SignalModeResult{
-		SignalMode:       "reactive",
+		SignalMode:       signalprocessingv1alpha1.SignalModeReactive,
 		SignalName:       signal.Name,
 		SourceSignalName: "",
 	}
@@ -427,7 +427,7 @@ func buildClassificationMessage(envClass *signalprocessingv1alpha1.EnvironmentCl
 			severityResult.Severity, severityResult.Source)
 	}
 
-	if signalModeResult.SignalMode == "proactive" {
+	if signalModeResult.SignalMode == signalprocessingv1alpha1.SignalModeProactive {
 		classificationMessage += fmt.Sprintf(", signalMode=proactive (normalized: %s → %s)",
 			signalModeResult.SourceSignalName, signalModeResult.SignalName)
 	}

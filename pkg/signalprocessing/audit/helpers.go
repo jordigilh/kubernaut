@@ -19,20 +19,11 @@ package audit
 import (
 	"strings"
 
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // Enum conversion helpers for SignalProcessing audit payloads
-
-// Severity level literals shared by toSignalProcessingAuditPayloadSeverity and
-// toSignalProcessingAuditPayloadNormalizedSeverity below.
-const (
-	severityLevelCritical = "critical"
-	severityLevelHigh     = "high"
-	severityLevelWarning  = "warning"
-	severityLevelInfo     = "info"
-	severityLevelUnknown  = "unknown"
-)
 
 func toSignalProcessingAuditPayloadPhase(value string) api.SignalProcessingAuditPayloadPhase {
 	switch value {
@@ -55,15 +46,15 @@ func toSignalProcessingAuditPayloadPhase(value string) api.SignalProcessingAudit
 
 func toSignalProcessingAuditPayloadSeverity(value string) api.SignalProcessingAuditPayloadSeverity {
 	switch value {
-	case severityLevelCritical:
+	case signalprocessingv1alpha1.SeverityCritical:
 		return api.SignalProcessingAuditPayloadSeverityCritical
-	case severityLevelHigh:
+	case signalprocessingv1alpha1.SeverityHigh:
 		return api.SignalProcessingAuditPayloadSeverityHigh
-	case severityLevelWarning:
+	case signalprocessingv1alpha1.SeverityWarning:
 		return api.SignalProcessingAuditPayloadSeverityWarning
-	case severityLevelInfo:
+	case signalprocessingv1alpha1.SeverityInfo:
 		return api.SignalProcessingAuditPayloadSeverityInfo
-	case severityLevelUnknown:
+	case signalprocessingv1alpha1.SeverityUnknown:
 		return api.SignalProcessingAuditPayloadSeverityUnknown
 	default:
 		return api.SignalProcessingAuditPayloadSeverityUnknown // DD-SEVERITY-001 v1.1 fallback
@@ -73,15 +64,15 @@ func toSignalProcessingAuditPayloadSeverity(value string) api.SignalProcessingAu
 // DD-SEVERITY-001 v1.1: Converter for normalized severity from Rego policy
 func toSignalProcessingAuditPayloadNormalizedSeverity(value string) api.SignalProcessingAuditPayloadNormalizedSeverity {
 	switch value {
-	case severityLevelCritical:
+	case signalprocessingv1alpha1.SeverityCritical:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityCritical
-	case severityLevelHigh:
+	case signalprocessingv1alpha1.SeverityHigh:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityHigh
-	case severityLevelWarning:
+	case signalprocessingv1alpha1.SeverityWarning:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityWarning
-	case severityLevelInfo:
+	case signalprocessingv1alpha1.SeverityInfo:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityInfo
-	case severityLevelUnknown:
+	case signalprocessingv1alpha1.SeverityUnknown:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityUnknown
 	default:
 		return api.SignalProcessingAuditPayloadNormalizedSeverityUnknown // DD-SEVERITY-001 v1.1 fallback
@@ -147,9 +138,9 @@ func toSignalProcessingAuditPayloadPrioritySource(value string) api.SignalProces
 // BR-SP-106: Signal mode conversion for audit payloads
 func toSignalProcessingAuditPayloadSignalMode(value string) api.SignalProcessingAuditPayloadSignalMode {
 	switch value {
-	case "reactive":
+	case signalprocessingv1alpha1.SignalModeReactive:
 		return api.SignalProcessingAuditPayloadSignalModeReactive
-	case "proactive":
+	case signalprocessingv1alpha1.SignalModeProactive:
 		return api.SignalProcessingAuditPayloadSignalModeProactive
 	default:
 		return api.SignalProcessingAuditPayloadSignalModeReactive // Default to reactive

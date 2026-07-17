@@ -59,9 +59,9 @@ type SignalProcessing struct {
 //
 // To reprocess a signal, delete and recreate the SignalProcessing CRD.
 //
-// +kubebuilder:validation:XValidation:rule="self.remediationRequestRef.name != ''",message="remediationRequestRef.name is required for audit trail correlation"
+// +kubebuilder:validation:XValidation:rule="self.remediationRequestRef.name != ”",message="remediationRequestRef.name is required for audit trail correlation"
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable after creation (ADR-001)"
-type SignalProcessingSpec struct{
+type SignalProcessingSpec struct {
 	// Reference to parent RemediationRequest
 	RemediationRequestRef ObjectReference `json:"remediationRequestRef"`
 
@@ -281,6 +281,27 @@ type SignalProcessingStatus struct {
 	// +optional
 	LastFailureTime *metav1.Time `json:"lastFailureTime,omitempty"`
 }
+
+// SignalProcessingStatus.SignalMode enum values (BR-SP-106, ADR-054).
+// Mirrors the +kubebuilder:validation:Enum=reactive;proactive marker above.
+const (
+	// SignalModeReactive is the default mode for unmapped signal types.
+	SignalModeReactive = "reactive"
+	// SignalModeProactive indicates the signal was matched against the
+	// proactive signal mappings and triggers proactive prevention strategy.
+	SignalModeProactive = "proactive"
+)
+
+// SignalProcessingStatus.Severity enum values (DD-SEVERITY-001 v1.1, ADR-066).
+// Mirrors the +kubebuilder:validation:Enum=critical;high;warning;info;unknown
+// marker above.
+const (
+	SeverityCritical = "critical"
+	SeverityHigh     = "high"
+	SeverityWarning  = "warning"
+	SeverityInfo     = "info"
+	SeverityUnknown  = "unknown"
+)
 
 // ========================================
 // SHARED TYPE ALIASES (Issue #113)

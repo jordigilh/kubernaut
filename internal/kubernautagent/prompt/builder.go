@@ -25,6 +25,7 @@ import (
 	"strings"
 	"text/template"
 
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -34,22 +35,22 @@ var templateFS embed.FS
 
 // SignalData contains the signal-level fields rendered into the prompt.
 type SignalData struct {
-	Name             string
-	Namespace        string
-	Severity         string
-	Message          string
-	ResourceKind     string
-	ResourceName     string
-	ClusterName      string
-	Environment      string
-	Priority         string
-	RiskTolerance    string
-	SignalSource     string
-	BusinessCategory string
-	Description      string
-	SignalMode       string
-	FiringTime       string
-	ReceivedTime     string
+	Name                       string
+	Namespace                  string
+	Severity                   string
+	Message                    string
+	ResourceKind               string
+	ResourceName               string
+	ClusterName                string
+	Environment                string
+	Priority                   string
+	RiskTolerance              string
+	SignalSource               string
+	BusinessCategory           string
+	Description                string
+	SignalMode                 string
+	FiringTime                 string
+	ReceivedTime               string
 	IsDuplicate                *bool
 	OccurrenceCount            *int
 	DeduplicationWindowMinutes *int
@@ -67,34 +68,33 @@ type EnrichmentData struct {
 	HistoryRendered string
 }
 
-
 // investigationTemplateData maps to fields expected by incident_investigation.tmpl.
 type investigationTemplateData struct {
-	IncidentSummary             string
-	PriorityDescription         string
-	Environment                 string
-	RiskDescription             string
-	SignalName                  string
-	Severity                    string
-	Namespace                   string
-	ResourceKind                string
-	ResourceName                string
-	ErrorMessage                string
-	SignalSource                string
-	ClusterName                 string
-	Description                 string
-	FiringTime                  string
-	ReceivedTime                string
-	SignalMode                  string
-	IsDuplicate                 bool
-	OccurrenceCount             int
-	DeduplicationWindowMinutes  int
-	FirstSeen                   string
-	LastSeen                    string
-	Priority                    string
-	BusinessCategory            string
-	RiskTolerance    string
-	SignalAnnotations map[string]string
+	IncidentSummary            string
+	PriorityDescription        string
+	Environment                string
+	RiskDescription            string
+	SignalName                 string
+	Severity                   string
+	Namespace                  string
+	ResourceKind               string
+	ResourceName               string
+	ErrorMessage               string
+	SignalSource               string
+	ClusterName                string
+	Description                string
+	FiringTime                 string
+	ReceivedTime               string
+	SignalMode                 string
+	IsDuplicate                bool
+	OccurrenceCount            int
+	DeduplicationWindowMinutes int
+	FirstSeen                  string
+	LastSeen                   string
+	Priority                   string
+	BusinessCategory           string
+	RiskTolerance              string
+	SignalAnnotations          map[string]string
 }
 
 // workflowTemplateData maps to fields expected by phase3_workflow_selection.tmpl.
@@ -148,8 +148,8 @@ type ValidationErrorData struct {
 
 // Builder renders prompt templates with signal and enrichment data.
 type Builder struct {
-	investigationTmpl  *template.Template
-	workflowTmpl       *template.Template
+	investigationTmpl   *template.Template
+	workflowTmpl        *template.Template
 	validationErrorTmpl *template.Template
 }
 
@@ -189,24 +189,24 @@ func (b *Builder) RenderInvestigation(signal SignalData) (string, error) {
 	sanitized := sanitizeSignal(signal)
 
 	data := investigationTemplateData{
-		IncidentSummary:     fmt.Sprintf("%s %s in %s: %s", sanitized.Severity, sanitized.Name, sanitized.Namespace, sanitized.Message),
-		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
-		Environment:         withDefault(sanitized.Environment, sanitized.Namespace),
-		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
-		SignalName:          sanitized.Name,
-		Severity:            sanitized.Severity,
-		Namespace:           sanitized.Namespace,
-		ResourceKind:        withDefault(sanitized.ResourceKind, "Pod"),
-		ResourceName:        withDefault(sanitized.ResourceName, sanitized.Name),
-		ErrorMessage:        sanitized.Message,
-		SignalSource:        withDefault(sanitized.SignalSource, "kubernaut-gateway"),
-		ClusterName:         withDefault(sanitized.ClusterName, "default"),
-		Description:         withDefault(sanitized.Description, sanitized.Message),
-		FiringTime:          withDefault(sanitized.FiringTime, "N/A"),
-		ReceivedTime:        withDefault(sanitized.ReceivedTime, "N/A"),
-		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
-		Priority:            sanitized.Priority,
-		BusinessCategory:    sanitized.BusinessCategory,
+		IncidentSummary:            fmt.Sprintf("%s %s in %s: %s", sanitized.Severity, sanitized.Name, sanitized.Namespace, sanitized.Message),
+		PriorityDescription:        withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
+		Environment:                withDefault(sanitized.Environment, sanitized.Namespace),
+		RiskDescription:            withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
+		SignalName:                 sanitized.Name,
+		Severity:                   sanitized.Severity,
+		Namespace:                  sanitized.Namespace,
+		ResourceKind:               withDefault(sanitized.ResourceKind, "Pod"),
+		ResourceName:               withDefault(sanitized.ResourceName, sanitized.Name),
+		ErrorMessage:               sanitized.Message,
+		SignalSource:               withDefault(sanitized.SignalSource, "kubernaut-gateway"),
+		ClusterName:                withDefault(sanitized.ClusterName, "default"),
+		Description:                withDefault(sanitized.Description, sanitized.Message),
+		FiringTime:                 withDefault(sanitized.FiringTime, "N/A"),
+		ReceivedTime:               withDefault(sanitized.ReceivedTime, "N/A"),
+		SignalMode:                 withDefault(sanitized.SignalMode, signalprocessingv1alpha1.SignalModeReactive),
+		Priority:                   sanitized.Priority,
+		BusinessCategory:           sanitized.BusinessCategory,
 		RiskTolerance:              sanitized.RiskTolerance,
 		IsDuplicate:                sanitized.IsDuplicate != nil && *sanitized.IsDuplicate,
 		OccurrenceCount:            derefIntOr(sanitized.OccurrenceCount, 0),
@@ -237,16 +237,16 @@ type WorkflowSelectionInput struct {
 func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, error) {
 	sanitized := sanitizeSignal(in.Signal)
 	data := workflowTemplateData{
-		Severity:            withDefault(sanitized.Severity, "critical"),
-		SignalName:          withDefault(sanitized.Name, "investigation"),
-		Namespace:           withDefault(sanitized.Namespace, "default"),
-		ResourceKind:        withDefault(sanitized.ResourceKind, "Pod"),
-		ResourceName:        withDefault(sanitized.ResourceName, "unknown"),
-		ClusterName:         withDefault(sanitized.ClusterName, "default"),
-		SignalMode:          withDefault(sanitized.SignalMode, "reactive"),
-		PriorityDescription: withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
-		Environment:         withDefault(sanitized.Environment, sanitized.Namespace),
-		RiskDescription:     withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
+		Severity:              withDefault(sanitized.Severity, "critical"),
+		SignalName:            withDefault(sanitized.Name, "investigation"),
+		Namespace:             withDefault(sanitized.Namespace, "default"),
+		ResourceKind:          withDefault(sanitized.ResourceKind, "Pod"),
+		ResourceName:          withDefault(sanitized.ResourceName, "unknown"),
+		ClusterName:           withDefault(sanitized.ClusterName, "default"),
+		SignalMode:            withDefault(sanitized.SignalMode, signalprocessingv1alpha1.SignalModeReactive),
+		PriorityDescription:   withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
+		Environment:           withDefault(sanitized.Environment, sanitized.Namespace),
+		RiskDescription:       withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
 		RCASummary:            sanitizeField(in.RCASummary),
 		Phase1Assessment:      formatPhase1Assessment(in.Phase1),
 		InvestigationAnalysis: formatInvestigationAnalysis(in.Phase1),
