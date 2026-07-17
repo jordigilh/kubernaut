@@ -112,7 +112,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 		requests := mockProm.GetRequestLog()
 		queryRangeRequests := 0
 		for _, req := range requests {
-			if req.Path != "/api/v1/query_range" {
+			if req.Path != pathQueryRange {
 				continue
 			}
 			queryValues := req.Query["query"]
@@ -275,7 +275,7 @@ var _ = Describe("Dual-Target Routing (Issue #188, DD-EM-003)", func() {
 		requests := mockAM.GetRequestLog()
 		alertGetRequests := 0
 		for _, req := range requests {
-			if req.Path == "/api/v2/alerts" && req.Method == "GET" {
+			if req.Path == pathV2Alerts && req.Method == "GET" {
 				filterValues := req.Query["filter"]
 				if len(filterValues) > 0 {
 					filter := strings.Join(filterValues, " ")

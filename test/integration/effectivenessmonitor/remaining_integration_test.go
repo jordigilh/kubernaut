@@ -283,7 +283,7 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 		requests := mockProm.GetRequestLog()
 		queryCount := 0
 		for _, req := range requests {
-			if req.Path == "/api/v1/query_range" {
+			if req.Path == pathQueryRange {
 				queryCount++
 			}
 		}
@@ -315,7 +315,7 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 		requests := mockAM.GetRequestLog()
 		alertCount := 0
 		for _, req := range requests {
-			if req.Path == "/api/v2/alerts" {
+			if req.Path == pathV2Alerts {
 				alertCount++
 			}
 		}

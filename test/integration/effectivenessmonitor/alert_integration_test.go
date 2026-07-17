@@ -207,7 +207,7 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 		requests := mockAM.GetRequestLog()
 		alertRequests := 0
 		for _, req := range requests {
-			if req.Path == "/api/v2/alerts" {
+			if req.Path == pathV2Alerts {
 				alertRequests++
 			}
 		}

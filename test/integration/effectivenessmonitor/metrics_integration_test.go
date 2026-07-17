@@ -31,6 +31,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	pathQueryRange = "/api/v1/query_range"
+)
+
 var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 
 	// Restore mock Prometheus to default state after each test
@@ -50,7 +55,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": "default"},
 			[][]interface{}{
 				{preRemediationTime, "0.500000"}, // pre-remediation: 50% CPU
-				{now, "0.250000"},                 // post-remediation: 25% CPU (improvement)
+				{now, "0.250000"},                // post-remediation: 25% CPU (improvement)
 			},
 		))
 	})
@@ -391,7 +396,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 		requests := mockProm.GetRequestLog()
 		queryRequests := 0
 		for _, req := range requests {
-			if req.Path == "/api/v1/query_range" {
+			if req.Path == pathQueryRange {
 				queryRequests++
 			}
 		}
