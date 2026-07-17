@@ -31,6 +31,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	ghcrIoTestBundleLatest = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+)
+
 // mockWorkflowCatalogClient implements weclient.WorkflowCatalogClient for testing.
 type mockWorkflowCatalogClient struct {
 	response ogenclient.GetWorkflowByIDRes
@@ -542,7 +547,7 @@ func buildTestSchema(deps *models.WorkflowDependencies) string {
 func buildTestSchemaWithParams(deps *models.WorkflowDependencies, params []models.WorkflowParameter) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
-	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.Bundle = ghcrIoTestBundleLatest
 	crd.Spec.Parameters = params
 	crd.Spec.Dependencies = deps
 	return testutil.MarshalWorkflowCRD(crd)
@@ -553,7 +558,7 @@ func buildTestSchemaWithParams(deps *models.WorkflowDependencies, params []model
 func buildTestSchemaWithEngineConfig(engine string, engineConfig map[string]interface{}) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", engine)
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
-	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.Bundle = ghcrIoTestBundleLatest
 	crd.Spec.Execution.EngineConfig = engineConfig
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target ns"},
@@ -567,7 +572,7 @@ func buildTestSchemaWithEngineConfig(engine string, engineConfig map[string]inte
 func buildTestSchemaWithResources(resources *models.ResourcesSchema) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
-	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.Bundle = ghcrIoTestBundleLatest
 	crd.Spec.Execution.Resources = resources
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target ns"},

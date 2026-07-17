@@ -391,7 +391,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: Gap #6 uses "workflowexecution" category and weaudit.EventTypeExecutionStarted event type
-			eventCategory := "workflowexecution" // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
+			eventCategory := weaudit.CategoryWorkflowExecution // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
 			var startedEvent *ogenclient.AuditEvent
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 			correlationID := wfe.Spec.RemediationRequestRef.Name
@@ -461,7 +461,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeCompleted event type
-			eventCategory := "workflowexecution"
+			eventCategory := weaudit.CategoryWorkflowExecution
 			var completedEvent *ogenclient.AuditEvent
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 			correlationID := wfe.Spec.RemediationRequestRef.Name
@@ -526,7 +526,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeFailed event type
-			eventCategory := "workflowexecution"
+			eventCategory := weaudit.CategoryWorkflowExecution
 			var failedEvent *ogenclient.AuditEvent
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 			correlationID := wfe.Spec.RemediationRequestRef.Name
@@ -593,7 +593,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: Use "workflowexecution" category
-			eventCategory := "workflowexecution"
+			eventCategory := weaudit.CategoryWorkflowExecution
 			// Flush before querying to ensure buffered events are written to DataStorage
 			flushAuditBuffer()
 			Eventually(func() bool {

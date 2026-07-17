@@ -55,6 +55,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	defaultDeploymentMyApp = "default/deployment/my-app"
+)
+
 // WorkflowExecution Controller Unit Tests
 //
 // Per TESTING_GUIDELINES.md:
@@ -129,14 +134,14 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 		It("should generate deterministic name from targetResource", func() {
 			// Same input should always produce same output
-			targetResource := "default/deployment/my-app"
+			targetResource := defaultDeploymentMyApp
 			name1 := weexecutor.ExecutionResourceName(targetResource)
 			name2 := weexecutor.ExecutionResourceName(targetResource)
 			Expect(name1).To(Equal(name2))
 		})
 
 		It("should prefix name with 'wfe-'", func() {
-			targetResource := "default/deployment/my-app"
+			targetResource := defaultDeploymentMyApp
 			name := weexecutor.ExecutionResourceName(targetResource)
 			Expect(name).To(HavePrefix("wfe-"))
 		})
@@ -149,7 +154,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		It("should generate 20-character name (wfe- + 16 hex chars)", func() {
-			targetResource := "default/deployment/my-app"
+			targetResource := defaultDeploymentMyApp
 			name := weexecutor.ExecutionResourceName(targetResource)
 			// "wfe-" (4 chars) + 16 hex chars = 20 chars
 			Expect(len(name)).To(Equal(20))
@@ -165,7 +170,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		})
 
 		It("should use only lowercase hex characters", func() {
-			targetResource := "default/deployment/my-app"
+			targetResource := defaultDeploymentMyApp
 			name := weexecutor.ExecutionResourceName(targetResource)
 			// Remove "wfe-" prefix and check hex chars
 			hexPart := name[4:]
@@ -209,7 +214,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Entry("single char namespace", "a/deployment/app", "single char namespace"),
 
 			// Edge cases - resource name variations
-			Entry("resource with dash", "default/deployment/my-app", "resource with dash"),
+			Entry("resource with dash", defaultDeploymentMyApp, "resource with dash"),
 			Entry("resource with numbers", "default/deployment/app123", "resource with numbers"),
 			Entry("long resource name", "very-long-namespace/deployment/very-long-deployment-name-that-exceeds-normal-limits", "long resource name"),
 
@@ -247,7 +252,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		)
 
 		BeforeEach(func() {
-			targetResource = "default/deployment/my-app"
+			targetResource = defaultDeploymentMyApp
 		})
 
 		It("should handle case when PipelineRun doesn't exist (not AlreadyExists)", func() {
@@ -2102,7 +2107,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "restart-deployment",
 					},
-					TargetResource: "default/deployment/my-app",
+					TargetResource: defaultDeploymentMyApp,
 				},
 			}
 			details := &workflowexecutionv1alpha1.FailureDetails{
@@ -2140,7 +2145,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "restart-deployment",
 					},
-					TargetResource: "default/deployment/my-app",
+					TargetResource: defaultDeploymentMyApp,
 				},
 			}
 			details := &workflowexecutionv1alpha1.FailureDetails{
@@ -2165,7 +2170,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "restart-deployment",
 					},
-					TargetResource: "default/deployment/my-app",
+					TargetResource: defaultDeploymentMyApp,
 				},
 			}
 
@@ -2185,7 +2190,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "restart-deployment",
 					},
-					TargetResource: "default/deployment/my-app",
+					TargetResource: defaultDeploymentMyApp,
 				},
 			}
 			details := &workflowexecutionv1alpha1.FailureDetails{
@@ -2237,7 +2242,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:          workflowexecutionv1alpha1.PhaseCompleted,
@@ -2265,7 +2270,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:          workflowexecutionv1alpha1.PhaseCompleted,
@@ -2291,7 +2296,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:          workflowexecutionv1alpha1.PhaseCompleted,
@@ -2337,7 +2342,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:          workflowexecutionv1alpha1.PhaseCompleted,
@@ -2371,7 +2376,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:          workflowexecutionv1alpha1.PhaseCompleted,
@@ -2400,7 +2405,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:          workflowexecutionv1alpha1.PhaseCompleted,
@@ -2448,7 +2453,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Finalizers: []string{workflowexecution.FinalizerName},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase: workflowexecutionv1alpha1.PhaseRunning,
@@ -2492,7 +2497,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Finalizers: []string{workflowexecution.FinalizerName},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:        workflowexecutionv1alpha1.PhasePending,
@@ -2536,7 +2541,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Finalizers: []string{workflowexecution.FinalizerName},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase: workflowexecutionv1alpha1.PhaseCompleted,
@@ -2569,7 +2574,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Finalizers: []string{workflowexecution.FinalizerName},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase: workflowexecutionv1alpha1.PhaseFailed,
@@ -2604,7 +2609,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Finalizers: []string{workflowexecution.FinalizerName},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase: workflowexecutionv1alpha1.PhaseRunning,
@@ -2647,7 +2652,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Finalizers: []string{workflowexecution.FinalizerName},
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase: workflowexecutionv1alpha1.PhaseCompleted,
@@ -2679,7 +2684,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Finalizers: []string{}, // No finalizer
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 				}
 
@@ -2775,7 +2780,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 					Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
 						Phase:     workflowexecutionv1alpha1.PhaseRunning,
@@ -2812,7 +2817,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID: "test-workflow",
 						},
@@ -2922,7 +2927,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						RemediationRequestRef: corev1.ObjectReference{
 							Name: fmt.Sprintf("rr-start-%s", suffix),
 						},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:      "test-workflow",
 							ExecutionBundle: "ghcr.io/test/workflow:v1",
@@ -2962,7 +2967,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						RemediationRequestRef: corev1.ObjectReference{
 							Name: fmt.Sprintf("rr-complete-%s", suffix),
 						},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:      "test-workflow",
 							ExecutionBundle: "ghcr.io/test/workflow:v1",
@@ -2996,7 +3001,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						RemediationRequestRef: corev1.ObjectReference{
 							Name: fmt.Sprintf("rr-fail-%s", suffix),
 						},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:      "test-workflow",
 							ExecutionBundle: "ghcr.io/test/workflow:v1",
@@ -3036,7 +3041,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						RemediationRequestRef: corev1.ObjectReference{
 							Name: fmt.Sprintf("rr-no-audit-%s", suffix),
 						},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:      "test-workflow",
 							ExecutionBundle: "ghcr.io/test/workflow:v1",
@@ -3070,7 +3075,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						RemediationRequestRef: corev1.ObjectReference{
 							Name: "", // Empty correlation source
 						},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:      "test-workflow",
 							ExecutionBundle: "ghcr.io/test/workflow:v1",
@@ -3100,7 +3105,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						RemediationRequestRef: corev1.ObjectReference{
 							Name: fmt.Sprintf("rr-nil-labels-%s", suffix),
 						},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:      "test-workflow",
 							ExecutionBundle: "ghcr.io/test/workflow:v1",
@@ -3227,7 +3232,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						RemediationRequestRef: corev1.ObjectReference{
 							Name: fmt.Sprintf("rr-no-params-%s", suffix),
 						},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 						WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 							WorkflowID:      "test-workflow",
 							Version:         "v1.0.0",
@@ -3780,7 +3785,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -3814,7 +3819,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -3848,7 +3853,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 						Namespace: "default",
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 				}
 
@@ -4492,7 +4497,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						ExecutionBundle: "", // Empty
 					},
-					TargetResource: "default/deployment/my-app",
+					TargetResource: defaultDeploymentMyApp,
 				},
 			}
 
@@ -4604,7 +4609,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "restart-pod",
 					},
-					TargetResource: "default/deployment/my-app",
+					TargetResource: defaultDeploymentMyApp,
 				},
 			}
 			details := &workflowexecutionv1alpha1.FailureDetails{
@@ -4619,7 +4624,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Then: Summary should contain all key information
 			Expect(summary).To(ContainSubstring("restart-pod"))
-			Expect(summary).To(ContainSubstring("default/deployment/my-app"))
+			Expect(summary).To(ContainSubstring(defaultDeploymentMyApp))
 			Expect(summary).To(ContainSubstring(workflowexecutionv1alpha1.FailureReasonOOMKilled))
 			Expect(summary).To(ContainSubstring("Container exceeded memory limit"))
 			Expect(summary).To(ContainSubstring("2m30s"))
@@ -4633,7 +4638,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "restart-pod",
 					},
-					TargetResource: "default/deployment/my-app",
+					TargetResource: defaultDeploymentMyApp,
 				},
 			}
 
@@ -4642,7 +4647,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 			// Then: Summary should handle nil gracefully
 			Expect(summary).To(ContainSubstring("restart-pod"))
-			Expect(summary).To(ContainSubstring("default/deployment/my-app"))
+			Expect(summary).To(ContainSubstring(defaultDeploymentMyApp))
 			Expect(summary).To(ContainSubstring("Unknown"))
 			Expect(summary).To(ContainSubstring("No failure details available"))
 		})
@@ -4654,7 +4659,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: "restart-pod",
 					},
-					TargetResource: "default/deployment/my-app",
+					TargetResource: defaultDeploymentMyApp,
 				},
 			}
 			details := &workflowexecutionv1alpha1.FailureDetails{
@@ -5509,7 +5514,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 						WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test-workflow", Version: "v1"},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -5536,7 +5541,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 						WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test-workflow", Version: "v1"},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -5563,7 +5568,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 					},
 					Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 						WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test-workflow", Version: "v1"},
-						TargetResource: "default/deployment/my-app",
+						TargetResource: defaultDeploymentMyApp,
 					},
 				}
 				Expect(fakeClient.Create(ctx, wfe)).To(Succeed())
@@ -5583,7 +5588,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 		Context("HandleAlreadyExists — Tekton path", func() {
 
 			It("UT-WE-190-005: should set Deduplicated when PipelineRun from another WFE", func() {
-				targetResource := "default/deployment/my-app"
+				targetResource := defaultDeploymentMyApp
 				prName := weexecutor.ExecutionResourceName(targetResource)
 
 				existingPR := &tektonv1.PipelineRun{
@@ -5633,7 +5638,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			})
 
 			It("UT-WE-190-006: should continue with Running when PipelineRun is ours (regression guard)", func() {
-				targetResource := "default/deployment/my-app"
+				targetResource := defaultDeploymentMyApp
 				prName := weexecutor.ExecutionResourceName(targetResource)
 
 				existingPR := &tektonv1.PipelineRun{
@@ -5679,7 +5684,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			})
 
 			It("UT-WE-190-007: should fall back to Unknown when PipelineRun label missing", func() {
-				targetResource := "default/deployment/my-app"
+				targetResource := defaultDeploymentMyApp
 				prName := weexecutor.ExecutionResourceName(targetResource)
 
 				existingPR := &tektonv1.PipelineRun{

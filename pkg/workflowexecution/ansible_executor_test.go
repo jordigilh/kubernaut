@@ -24,9 +24,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -34,6 +34,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	ctrl "sigs.k8s.io/controller-runtime"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	openshiftOrKubernetesApiBearerToken = "OpenShift or Kubernetes API Bearer Token"
 )
 
 // ========================================
@@ -45,17 +50,17 @@ import (
 
 // mockAWXClient implements executor.AWXClient for unit testing.
 type mockAWXClient struct {
-	launchFunc                func(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error)
-	getStatusFunc             func(ctx context.Context, jobID int) (*executor.AWXJobStatus, error)
-	cancelFunc                func(ctx context.Context, jobID int) error
-	findTemplateByNameFn      func(ctx context.Context, name string) (int, error)
-	createCredentialTypeFn    func(ctx context.Context, name string, inputs executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error)
+	launchFunc                 func(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error)
+	getStatusFunc              func(ctx context.Context, jobID int) (*executor.AWXJobStatus, error)
+	cancelFunc                 func(ctx context.Context, jobID int) error
+	findTemplateByNameFn       func(ctx context.Context, name string) (int, error)
+	createCredentialTypeFn     func(ctx context.Context, name string, inputs executor.CredentialTypeInputs, injectors executor.CredentialTypeInjectors) (int, error)
 	findCredentialTypeByNameFn func(ctx context.Context, name string) (int, error)
 	findCredentialTypeByKindFn func(ctx context.Context, kind string, managed bool) (int, error)
-	createCredentialFn        func(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
-	deleteCredentialFn        func(ctx context.Context, credentialID int) error
-	launchWithCredsFn         func(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
-	getTemplateCredsFn        func(ctx context.Context, templateID int) ([]int, error)
+	createCredentialFn         func(ctx context.Context, name string, credTypeID, orgID int, inputs map[string]string) (int, error)
+	deleteCredentialFn         func(ctx context.Context, credentialID int) error
+	launchWithCredsFn          func(ctx context.Context, templateID int, extraVars map[string]interface{}, credentialIDs []int) (int, error)
+	getTemplateCredsFn         func(ctx context.Context, templateID int) ([]int, error)
 }
 
 func (m *mockAWXClient) LaunchJobTemplate(ctx context.Context, templateID int, extraVars map[string]interface{}) (int, error) {
@@ -320,9 +325,9 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 	Context("GetStatus", func() {
 		It("UT-WE-015-002: should map all 7 AWX states to correct WFE phases", func() {
 			testCases := []struct {
-				awxStatus            string
-				expectedPhase        string
-				expectedCondStatus   corev1.ConditionStatus
+				awxStatus          string
+				expectedPhase      string
+				expectedCondStatus corev1.ConditionStatus
 			}{
 				{"pending", workflowexecutionv1alpha1.PhasePending, corev1.ConditionUnknown},
 				{"waiting", workflowexecutionv1alpha1.PhasePending, corev1.ConditionUnknown},
@@ -778,7 +783,7 @@ var _ = Describe("AnsibleExecutor dependencies.configMaps injection (BR-WE-015)"
 					Namespace: "kubernaut-workflows",
 				},
 				Data: map[string]string{
-					"log-level":  "debug",
+					"log-level":   "debug",
 					"max-retries": "5",
 				},
 			}
@@ -1236,7 +1241,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 5, nil
 				}
 				return 0, fmt.Errorf("not found")
@@ -1303,7 +1308,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			callCount := 0
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 5, nil
 				}
 				return 0, fmt.Errorf("not found")
@@ -1419,7 +1424,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 0, fmt.Errorf("not found")
 				}
 				if name == "kubernaut-k8s-bearer-token" {
@@ -1497,7 +1502,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 5, nil
 				}
 				return 0, fmt.Errorf("not found")
@@ -1540,7 +1545,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 0, fmt.Errorf("not found")
 				}
 				return 0, fmt.Errorf("not found")
@@ -1619,7 +1624,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 0, fmt.Errorf("not found")
 				}
 				if name == "kubernaut-k8s-bearer-token" {
@@ -1822,7 +1827,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 5, nil
 				}
 				return 0, fmt.Errorf("not found")
@@ -1858,7 +1863,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 5, nil
 				}
 				return 0, fmt.Errorf("not found")
@@ -1895,7 +1900,7 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 
 			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) { return 10, nil }
 			awxClient.findCredentialTypeByNameFn = func(_ context.Context, name string) (int, error) {
-				if name == "OpenShift or Kubernetes API Bearer Token" {
+				if name == openshiftOrKubernetesApiBearerToken {
 					return 5, nil
 				}
 				return 0, fmt.Errorf("not found")
