@@ -49,13 +49,13 @@ var _ = Describe("Deterministic UUID Integration (#548)", Ordered, ContinueOnFai
 	const testUser = "system:serviceaccount:test:det-uuid-tester"
 
 	BeforeAll(func() {
-		host := getEnvOrDefault("POSTGRES_HOST", "localhost")
+		host := getEnvOrDefault("POSTGRES_HOST", localhost)
 		pgPort := getEnvOrDefault("POSTGRES_PORT", "15433")
 		dbConnStr := fmt.Sprintf(
 			"host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'",
 			host, pgPort,
 		)
-		redisHost := getEnvOrDefault("REDIS_HOST", "localhost")
+		redisHost := getEnvOrDefault("REDIS_HOST", localhost)
 		redisPort := getEnvOrDefault("REDIS_PORT", "16379")
 		redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
 

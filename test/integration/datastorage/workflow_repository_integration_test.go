@@ -29,6 +29,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	jsonSteps = "{\"steps\":[]}"
+)
+
 // ========================================
 // WORKFLOW CATALOG REPOSITORY INTEGRATION TESTS
 // ========================================
@@ -146,47 +151,47 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 
 				// ASSERT: Verify workflow persisted with correct composite PK
 				// Use Eventually to handle transaction commit delays (DS-FLAKY-006 fix)
-			var (
-				dbWorkflowName, dbVersion, dbSchemaVersion, dbName, dbDescription, dbContent, dbContentHash, dbStatus, dbExecutionEngine string
-				dbLabels                                                                                                                 []byte // JSONB
-				dbIsLatestVersion                                                                                                        bool
-				dbCreatedAt, dbUpdatedAt                                                                                                 time.Time
-			)
+				var (
+					dbWorkflowName, dbVersion, dbSchemaVersion, dbName, dbDescription, dbContent, dbContentHash, dbStatus, dbExecutionEngine string
+					dbLabels                                                                                                                 []byte // JSONB
+					dbIsLatestVersion                                                                                                        bool
+					dbCreatedAt, dbUpdatedAt                                                                                                 time.Time
+				)
 
-			Eventually(func() error {
-				row := db.QueryRowContext(ctx, `
+				Eventually(func() error {
+					row := db.QueryRowContext(ctx, `
 					SELECT workflow_name, version, schema_version, name, description, content, content_hash,
 					       labels, status, execution_engine, is_latest_version, created_at, updated_at
 					FROM remediation_workflow_catalog
 					WHERE workflow_name = $1 AND version = $2
 				`, workflowName, "v1.0.0")
 
-				return row.Scan(
-					&dbWorkflowName,
-					&dbVersion,
-					&dbSchemaVersion,
-					&dbName,
-					&dbDescription,
-					&dbContent,
-					&dbContentHash,
-					&dbLabels,
-					&dbStatus,
-					&dbExecutionEngine,
-					&dbIsLatestVersion,
-				&dbCreatedAt,
-				&dbUpdatedAt,
-			)
-		}, 10*time.Second, 200*time.Millisecond).Should(Succeed(), "Should retrieve workflow from database within 10 seconds (CI-safe)")
+					return row.Scan(
+						&dbWorkflowName,
+						&dbVersion,
+						&dbSchemaVersion,
+						&dbName,
+						&dbDescription,
+						&dbContent,
+						&dbContentHash,
+						&dbLabels,
+						&dbStatus,
+						&dbExecutionEngine,
+						&dbIsLatestVersion,
+						&dbCreatedAt,
+						&dbUpdatedAt,
+					)
+				}, 10*time.Second, 200*time.Millisecond).Should(Succeed(), "Should retrieve workflow from database within 10 seconds (CI-safe)")
 
-			// CRITICAL ASSERTIONS: Verify composite PK and all fields
-			Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")
-			Expect(dbVersion).To(Equal("v1.0.0"), "version should match")
-			Expect(dbSchemaVersion).To(Equal("1.0"), "schema_version should be persisted (#255)")
+				// CRITICAL ASSERTIONS: Verify composite PK and all fields
+				Expect(dbWorkflowName).To(Equal(workflowName), "workflow_name should match")
+				Expect(dbVersion).To(Equal("v1.0.0"), "version should match")
+				Expect(dbSchemaVersion).To(Equal("1.0"), "schema_version should be persisted (#255)")
 				Expect(dbName).To(Equal("Test Workflow"))
 				// Description is now StructuredDescription JSONB (BR-WORKFLOW-004, migration 026)
-			var parsedDesc models.StructuredDescription
-			Expect(json.Unmarshal([]byte(dbDescription), &parsedDesc)).To(Succeed())
-			Expect(parsedDesc.What).To(Equal("Integration test workflow"))
+				var parsedDesc models.StructuredDescription
+				Expect(json.Unmarshal([]byte(dbDescription), &parsedDesc)).To(Succeed())
+				Expect(parsedDesc.What).To(Equal("Integration test workflow"))
 				Expect(dbContent).To(ContainSubstring("scale"))
 				Expect(dbContentHash).To(Equal(contentHash))
 				Expect(dbStatus).To(Equal("Active"))
@@ -195,18 +200,18 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(dbCreatedAt).ToNot(BeZero())
 				Expect(dbUpdatedAt).ToNot(BeZero())
 
-			// CRITICAL: Verify JSONB labels persisted correctly
-			Expect(dbLabels).ToNot(BeEmpty(), "Labels should be persisted as JSONB")
-			// DD-WORKFLOW-001 v2.5: environment is now []string, use map[string]interface{}
-			var persistedLabels map[string]interface{}
-			err = json.Unmarshal(dbLabels, &persistedLabels)
-			Expect(err).ToNot(HaveOccurred())
-			// DD-WORKFLOW-001 v2.7: severity is now []string, stored as JSONB array
-			Expect(persistedLabels["severity"]).To(Equal([]interface{}{"critical"}))
-			// Verify environment is an array
-			Expect(persistedLabels["environment"]).To(BeAssignableToTypeOf([]interface{}{}))
-			envArray := persistedLabels["environment"].([]interface{})
-			Expect(envArray).To(ContainElement("production"))
+				// CRITICAL: Verify JSONB labels persisted correctly
+				Expect(dbLabels).ToNot(BeEmpty(), "Labels should be persisted as JSONB")
+				// DD-WORKFLOW-001 v2.5: environment is now []string, use map[string]interface{}
+				var persistedLabels map[string]interface{}
+				err = json.Unmarshal(dbLabels, &persistedLabels)
+				Expect(err).ToNot(HaveOccurred())
+				// DD-WORKFLOW-001 v2.7: severity is now []string, stored as JSONB array
+				Expect(persistedLabels["severity"]).To(Equal([]interface{}{"critical"}))
+				// Verify environment is an array
+				Expect(persistedLabels["environment"]).To(BeAssignableToTypeOf([]interface{}{}))
+				envArray := persistedLabels["environment"].([]interface{})
+				Expect(envArray).To(ContainElement("production"))
 			})
 		})
 
@@ -214,7 +219,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			It("should return unique constraint violation error", func() {
 				// ARRANGE: Create first workflow
 				workflowName := fmt.Sprintf("wf-repo-%s-duplicate", testID)
-				content := `{"steps":[]}`
+				content := jsonSteps
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
@@ -281,7 +286,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 		BeforeEach(func() {
 			// Insert test workflow
 			workflowName = fmt.Sprintf("wf-repo-%s-get", testID)
-			content := `{"steps":[]}`
+			content := jsonSteps
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 			// V1.0: Use structured MandatoryLabels
@@ -326,19 +331,19 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 				Expect(retrievedWorkflow.Version).To(Equal("v1.0.0"))
 				Expect(retrievedWorkflow.Name).To(Equal("Test Workflow Get"))
 				// Description is now StructuredDescription (BR-WORKFLOW-004, migration 026)
-			Expect(retrievedWorkflow.Description.What).To(Equal("Test workflow for Get method"))
+				Expect(retrievedWorkflow.Description.What).To(Equal("Test workflow for Get method"))
 				Expect(retrievedWorkflow.Status).To(Equal("Active"))
 				Expect(retrievedWorkflow.ExecutionEngine).To(Equal(models.ExecutionEngine("argo-workflows")))
 				Expect(retrievedWorkflow.IsLatestVersion).To(BeTrue())
 				Expect(retrievedWorkflow.CreatedAt).ToNot(BeZero())
 				Expect(retrievedWorkflow.UpdatedAt).ToNot(BeZero())
 
-			// CRITICAL: Verify structured labels deserialized correctly (Issue #274: signalName removed)
-			Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"info"}))
-			Expect(retrievedWorkflow.Labels.Component).To(Equal([]string{"test"}))
-			Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
-			// DD-WORKFLOW-001 v2.5: Environment is now []string
-			Expect(retrievedWorkflow.Labels.Environment).To(Equal([]string{"test"}))
+				// CRITICAL: Verify structured labels deserialized correctly (Issue #274: signalName removed)
+				Expect(retrievedWorkflow.Labels.Severity).To(Equal([]string{"info"}))
+				Expect(retrievedWorkflow.Labels.Component).To(Equal([]string{"test"}))
+				Expect(retrievedWorkflow.Labels.Priority).To(Equal("P3"))
+				// DD-WORKFLOW-001 v2.5: Environment is now []string
+				Expect(retrievedWorkflow.Labels.Environment).To(Equal([]string{"test"}))
 			})
 		})
 	})
@@ -371,7 +376,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			}
 
 			for _, wf := range workflows {
-				content := `{"steps":[]}`
+				content := jsonSteps
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
@@ -509,7 +514,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 		BeforeEach(func() {
 			// Insert active workflow
 			workflowName = fmt.Sprintf("wf-repo-%s-update", testID)
-			content := `{"steps":[]}`
+			content := jsonSteps
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 			// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)

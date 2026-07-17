@@ -135,7 +135,7 @@ func datastorageIntegrationSigningCertDirOrDie() string {
 		pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
 			CommonName:       "data-storage-integration",
 			Organization:     "Kubernaut",
-			DNSNames:         []string{"localhost"},
+			DNSNames:         []string{localhost},
 			ValidityDuration: 8760 * time.Hour,
 			KeySize:          2048,
 		})
@@ -381,9 +381,9 @@ var _ = SynchronizedBeforeSuite(
 		// Each parallel process needs these vars for tests that create their own
 		// connections (e.g., graceful shutdown tests)
 		if os.Getenv("POSTGRES_HOST") == "" {
-			_ = os.Setenv("POSTGRES_HOST", "localhost")
+			_ = os.Setenv("POSTGRES_HOST", localhost)
 			_ = os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
-			_ = os.Setenv("REDIS_HOST", "localhost")
+			_ = os.Setenv("REDIS_HOST", localhost)
 			_ = os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
 			GinkgoWriter.Printf("📌 [Process %d] Exported environment variables for test infrastructure\n", processNum)
 		}
@@ -710,7 +710,7 @@ func startRedis() {
 func mustConnectPostgreSQL() *sqlx.DB {
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
-		host = "localhost"
+		host = localhost
 	}
 	port := os.Getenv("POSTGRES_PORT")
 	if port == "" {
@@ -740,7 +740,7 @@ func connectPostgreSQL() {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
-		host = "localhost"
+		host = localhost
 	}
 	port := os.Getenv("POSTGRES_PORT")
 	if port == "" {
@@ -772,7 +772,7 @@ func connectRedis() {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("REDIS_HOST")
 	if host == "" {
-		host = "localhost"
+		host = localhost
 	}
 	port := os.Getenv("REDIS_PORT")
 	if port == "" {
@@ -842,7 +842,7 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 func seedActionTypesViaInProcessServer() {
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
-		host = "localhost"
+		host = localhost
 	}
 	pgPort := os.Getenv("POSTGRES_PORT")
 	if pgPort == "" {
@@ -855,7 +855,7 @@ func seedActionTypesViaInProcessServer() {
 
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
-		redisHost = "localhost"
+		redisHost = localhost
 	}
 	redisPort := os.Getenv("REDIS_PORT")
 	if redisPort == "" {

@@ -38,6 +38,11 @@ import (
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	auditDlqEvents = "audit:dlq:events"
+)
+
 // ========================================
 // PHASE 2 (P0): DLQ CRITICAL DATA-LOSS FIX TESTS
 // Issue #1048 | BR-AUDIT-001 | ADR-032
@@ -118,7 +123,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			worker.Start(ctx)
 			Eventually(func() int {
 				return mockNotifRepo.CreatedCount()
-			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
+			}).WithTimeout(2*time.Second).WithPolling(50*time.Millisecond).Should(Equal(1),
 				"DF-1: notification retry must persist via NotificationAuditRepository.Create, not silently drop")
 			worker.Stop()
 			Expect(mockNotifRepo.createdAudits[0].RemediationID).To(Equal("remediation-df1-test"))
@@ -160,7 +165,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			Eventually(func() int64 {
 				depth, _ := dlqClient.GetDLQDepth(ctx, "notifications")
 				return depth
-			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(BeNumerically(">=", 1),
+			}).WithTimeout(2*time.Second).WithPolling(50*time.Millisecond).Should(BeNumerically(">=", 1),
 				"DF-1: failed notification write must NOT ack the message")
 			worker.Stop()
 		})
@@ -237,7 +242,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			worker.Start(ctx)
 			Eventually(func() int {
 				return mockEventsRepo.CreatedCount()
-			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
+			}).WithTimeout(2*time.Second).WithPolling(50*time.Millisecond).Should(Equal(1),
 				"DF-2: retry worker must persist events using proper unmarshal")
 			worker.Stop()
 
@@ -298,7 +303,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			worker.Start(ctx)
 			Eventually(func() int {
 				return mockEventsRepo.CreatedCount()
-			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Equal(1),
+			}).WithTimeout(2*time.Second).WithPolling(50*time.Millisecond).Should(Equal(1),
 				"DF-2: empty EventData must not cause parsing failure")
 			worker.Stop()
 		})
@@ -501,7 +506,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 			Eventually(func() int64 {
 				depth, _ := dlqClient.GetDLQDepth(ctx, "events")
 				return depth
-			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(BeNumerically(">=", 1),
+			}).WithTimeout(2*time.Second).WithPolling(50*time.Millisecond).Should(BeNumerically(">=", 1),
 				"SRE-M1: nil auditRepo must return error, message stays in DLQ for retry")
 		})
 	})
@@ -828,20 +833,20 @@ var _ = Describe("#1048 QE-H1: Drain context cancellation branches", func() {
 		mockNotifRepo := &MockNotificationRepository{}
 		for i := 0; i < 5; i++ {
 			event := &audit.AuditEvent{
-				EventID:       uuid.New(),
-				EventVersion:  "1.0",
-				EventType:     "test.cancel.event",
-				EventCategory: "test",
-				EventAction:   "processed",
-				EventOutcome:  "success",
+				EventID:        uuid.New(),
+				EventVersion:   "1.0",
+				EventType:      "test.cancel.event",
+				EventCategory:  "test",
+				EventAction:    "processed",
+				EventOutcome:   "success",
 				EventTimestamp: time.Now(),
-				CorrelationID: fmt.Sprintf("corr-cancel-%d", i),
-				ActorType:     "service",
-				ActorID:       "test-service",
-				ResourceType:  "test",
-				ResourceID:    fmt.Sprintf("res-%d", i),
-				EventData:     []byte(`{"k":"v"}`),
-				RetentionDays: 2555,
+				CorrelationID:  fmt.Sprintf("corr-cancel-%d", i),
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     fmt.Sprintf("res-%d", i),
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 			err := dlqClient.EnqueueAuditEvent(ctx, event, fmt.Errorf("test"))
 			Expect(err).ToNot(HaveOccurred())
@@ -874,20 +879,20 @@ var _ = Describe("#1048 QE-H1: Drain context cancellation branches", func() {
 		}
 		for i := 0; i < 3; i++ {
 			event := &audit.AuditEvent{
-				EventID:       uuid.New(),
-				EventVersion:  "1.0",
-				EventType:     "test.cancel.mid",
-				EventCategory: "test",
-				EventAction:   "processed",
-				EventOutcome:  "success",
+				EventID:        uuid.New(),
+				EventVersion:   "1.0",
+				EventType:      "test.cancel.mid",
+				EventCategory:  "test",
+				EventAction:    "processed",
+				EventOutcome:   "success",
 				EventTimestamp: time.Now(),
-				CorrelationID: fmt.Sprintf("corr-mid-%d", i),
-				ActorType:     "service",
-				ActorID:       "test-service",
-				ResourceType:  "test",
-				ResourceID:    fmt.Sprintf("res-%d", i),
-				EventData:     []byte(`{"k":"v"}`),
-				RetentionDays: 2555,
+				CorrelationID:  fmt.Sprintf("corr-mid-%d", i),
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     fmt.Sprintf("res-%d", i),
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 			err := dlqClient.EnqueueAuditEvent(ctx, event, fmt.Errorf("test"))
 			Expect(err).ToNot(HaveOccurred())
@@ -941,7 +946,7 @@ var _ = Describe("#1048 QE-M2: DLQ branch coverage", func() {
 
 		// ARRANGE: Insert a stream entry where the "message" value is not valid
 		// AuditMessage JSON. This simulates a corrupt entry in the Redis stream.
-		streamKey := "audit:dlq:events"
+		streamKey := auditDlqEvents
 		err := redisClient.XAdd(ctx, &redis.XAddArgs{
 			Stream: streamKey,
 			ID:     "*",
@@ -984,7 +989,7 @@ var _ = Describe("#1048 QE-M2: DLQ branch coverage", func() {
 		msgJSON, err := json.Marshal(bigMsg)
 		Expect(err).ToNot(HaveOccurred())
 
-		streamKey := "audit:dlq:events"
+		streamKey := auditDlqEvents
 		err = redisClient.XAdd(ctx, &redis.XAddArgs{
 			Stream: streamKey,
 			ID:     "*",
@@ -1014,20 +1019,20 @@ var _ = Describe("#1048 QE-M2: DLQ branch coverage", func() {
 		// ARRANGE: Enqueue 150 event messages (drainBatchSize is 100)
 		for i := 0; i < 150; i++ {
 			event := &audit.AuditEvent{
-				EventID:       uuid.New(),
-				EventVersion:  "1.0",
-				EventType:     "test.pagination",
-				EventCategory: "test",
-				EventAction:   "processed",
-				EventOutcome:  "success",
+				EventID:        uuid.New(),
+				EventVersion:   "1.0",
+				EventType:      "test.pagination",
+				EventCategory:  "test",
+				EventAction:    "processed",
+				EventOutcome:   "success",
 				EventTimestamp: time.Now(),
-				CorrelationID: fmt.Sprintf("corr-page-%d", i),
-				ActorType:     "service",
-				ActorID:       "test-service",
-				ResourceType:  "test",
-				ResourceID:    fmt.Sprintf("res-%d", i),
-				EventData:     []byte(`{"k":"v"}`),
-				RetentionDays: 2555,
+				CorrelationID:  fmt.Sprintf("corr-page-%d", i),
+				ActorType:      "service",
+				ActorID:        "test-service",
+				ResourceType:   "test",
+				ResourceID:     fmt.Sprintf("res-%d", i),
+				EventData:      []byte(`{"k":"v"}`),
+				RetentionDays:  2555,
 			}
 			err := dlqClient.EnqueueAuditEvent(ctx, event, fmt.Errorf("test"))
 			Expect(err).ToNot(HaveOccurred())

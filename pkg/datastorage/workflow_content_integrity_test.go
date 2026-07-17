@@ -39,15 +39,20 @@ import (
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	quayIoKubernautWorkflowsScale = "quay.io/kubernaut/workflows/scale-memory:v1.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
+)
+
 // mockWorkflowIntegrityRepo implements server.WorkflowContentIntegrityRepository for unit tests.
 // Simulates pre-existing workflows in the catalog to test content integrity decisions.
 type mockWorkflowIntegrityRepo struct {
-	activeWorkflow        *models.RemediationWorkflow
-	activeByNameWorkflow  *models.RemediationWorkflow // Issue #371: cross-version lookup
-	disabledWorkflow      *models.RemediationWorkflow
-	createdWorkflows      []*models.RemediationWorkflow
-	updateStatusCalls     []statusUpdateCall
-	createErr             error
+	activeWorkflow       *models.RemediationWorkflow
+	activeByNameWorkflow *models.RemediationWorkflow // Issue #371: cross-version lookup
+	disabledWorkflow     *models.RemediationWorkflow
+	createdWorkflows     []*models.RemediationWorkflow
+	updateStatusCalls    []statusUpdateCall
+	createErr            error
 }
 
 type statusUpdateCall struct {
@@ -102,7 +107,7 @@ var integrityBaseYAML = func() string {
 		What:      "Scales memory limits for OOM-killed pods",
 		WhenToUse: "When pods are OOM-killed repeatedly",
 	}
-	crd.Spec.Execution.Bundle = "quay.io/kubernaut/workflows/scale-memory:v1.0.0@sha256:abc123def456abc123def456abc123def456abc123def456abc123def456abc1"
+	crd.Spec.Execution.Bundle = quayIoKubernautWorkflowsScale
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource"},
 	}

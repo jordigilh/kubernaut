@@ -26,6 +26,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	lit00 = "0.0"
+)
+
 // ========================================
 // UNIT TESTS: Shared scoring SQL builders
 // ========================================
@@ -37,7 +42,7 @@ import (
 
 func TestBuildDetectedLabelsBoostSQL_Nil(t *testing.T) {
 	result := buildDetectedLabelsBoostSQL(nil)
-	if result != "0.0" {
+	if result != lit00 {
 		t.Errorf("expected 0.0 for nil DetectedLabels, got: %s", result)
 	}
 }
@@ -45,7 +50,7 @@ func TestBuildDetectedLabelsBoostSQL_Nil(t *testing.T) {
 func TestBuildDetectedLabelsBoostSQL_Empty(t *testing.T) {
 	dl := &models.DetectedLabels{}
 	result := buildDetectedLabelsBoostSQL(dl)
-	if result != "0.0" {
+	if result != lit00 {
 		t.Errorf("expected 0.0 for empty DetectedLabels, got: %s", result)
 	}
 }
@@ -80,7 +85,7 @@ func TestBuildDetectedLabelsBoostSQL_AllBooleans(t *testing.T) {
 
 func TestBuildDetectedLabelsPenaltySQL_Nil(t *testing.T) {
 	result := buildDetectedLabelsPenaltySQL(nil)
-	if result != "0.0" {
+	if result != lit00 {
 		t.Errorf("expected 0.0 for nil DetectedLabels, got: %s", result)
 	}
 }
@@ -95,14 +100,14 @@ func TestBuildDetectedLabelsPenaltySQL_GitOpsManaged(t *testing.T) {
 
 func TestBuildCustomLabelsBoostSQL_Nil(t *testing.T) {
 	result := buildCustomLabelsBoostSQL(nil)
-	if result != "0.0" {
+	if result != lit00 {
 		t.Errorf("expected 0.0 for nil customLabels, got: %s", result)
 	}
 }
 
 func TestBuildCustomLabelsBoostSQL_Empty(t *testing.T) {
 	result := buildCustomLabelsBoostSQL(map[string][]string{})
-	if result != "0.0" {
+	if result != lit00 {
 		t.Errorf("expected 0.0 for empty customLabels, got: %s", result)
 	}
 }
@@ -219,7 +224,7 @@ func TestBuildCustomLabelsBoostSQL_EmptyValues(t *testing.T) {
 		"constraint": {},
 	}
 	result := buildCustomLabelsBoostSQL(labels)
-	if result != "0.0" {
+	if result != lit00 {
 		t.Errorf("expected 0.0 for empty values, got: %s", result)
 	}
 }

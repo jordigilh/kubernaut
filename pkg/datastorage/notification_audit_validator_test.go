@@ -31,6 +31,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	fixture = "   "
+	invalid = "invalid"
+)
+
 // func TestValidation(t *testing.T) {
 // 	RegisterFailHandler(Fail)
 // 	RunSpecs(t, "...")
@@ -185,7 +191,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 		// CORRECTNESS: Whitespace is normalized/trimmed, then validated as empty
 		It("should reject whitespace-only remediation_id (treated as empty)", func() {
 			// ARRANGE: Whitespace-only remediation_id
-			audit.RemediationID = "   "
+			audit.RemediationID = fixture
 
 			// ACT: Validate
 			err := validator.Validate(audit)
@@ -266,7 +272,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 		// CORRECTNESS: Whitespace is treated as empty
 		It("should reject whitespace-only notification_id (treated as empty)", func() {
 			// ARRANGE: Whitespace-only notification_id
-			audit.NotificationID = "   "
+			audit.NotificationID = fixture
 
 			// ACT: Validate
 			err := validator.Validate(audit)
@@ -347,7 +353,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 		// CORRECTNESS: Whitespace is treated as empty
 		It("should reject whitespace-only recipient (treated as empty)", func() {
 			// ARRANGE: Whitespace-only recipient
-			audit.Recipient = "   "
+			audit.Recipient = fixture
 
 			// ACT: Validate
 			err := validator.Validate(audit)
@@ -415,7 +421,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 		// CORRECTNESS: ValidationError with enumeration hint
 		It("should reject invalid channel with enumeration hint", func() {
 			// ARRANGE: Invalid channel value
-			audit.Channel = "invalid"
+			audit.Channel = invalid
 
 			// ACT: Validate
 			err := validator.Validate(audit)
@@ -496,7 +502,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 		// CORRECTNESS: ValidationError with "required" (whitespace trimmed)
 		It("should reject whitespace-only message_summary as empty", func() {
 			// ARRANGE: Whitespace-only message summary
-			audit.MessageSummary = "   "
+			audit.MessageSummary = fixture
 
 			// ACT: Validate
 			err := validator.Validate(audit)
@@ -550,7 +556,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 		// CORRECTNESS: ValidationError with enumeration hint
 		It("should reject invalid status with enumeration hint", func() {
 			// ARRANGE: Invalid status value
-			audit.Status = "invalid"
+			audit.Status = invalid
 
 			// ACT: Validate
 			err := validator.Validate(audit)
@@ -742,9 +748,9 @@ var _ = Describe("NotificationAuditValidator", func() {
 			audit.RemediationID = ""
 			audit.NotificationID = ""
 			audit.Recipient = ""
-			audit.Channel = "invalid"
+			audit.Channel = invalid
 			audit.MessageSummary = ""
-			audit.Status = "invalid"
+			audit.Status = invalid
 			audit.SentAt = time.Time{}
 			audit.EscalationLevel = -1
 
