@@ -44,6 +44,14 @@ import (
 // Pattern: Manual SP status update (no SP controller deployed in RO E2E cluster)
 // Same pattern as needs_human_review_e2e_test.go and lifecycle_e2e_test.go.
 
+// kindRemediationRequestFixture and signalNameOOMKilledFixture are test-only
+// fixtures for owner-reference Kind checks and the normalized proactive
+// signal name used throughout this suite (goconst dedup).
+const (
+	kindRemediationRequestFixture = "RemediationRequest"
+	signalNameOOMKilledFixture    = "OOMKilled"
+)
+
 var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e", "signalmode", "remediationorchestrator"), func() {
 	var (
 		testNS string
@@ -72,7 +80,7 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 					return hex.EncodeToString(h[:])
 				}(),
 				SignalName: "PredictedOOMKill",
-				Severity:   "critical",
+				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "PredictedOOMKill",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
@@ -94,7 +102,7 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 			for i := range spList.Items {
 				if len(spList.Items[i].OwnerReferences) > 0 &&
-					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					spList.Items[i].OwnerReferences[0].Name == rrName {
 					sp = &spList.Items[i]
 					return true
@@ -105,11 +113,11 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 
 		By("3. Manually updating SP status with proactive signal mode (simulating SP controller)")
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = "critical"
+		sp.Status.Severity = signalprocessingv1.SeverityCritical
 		// BR-SP-106: Proactive signal mode fields
-		sp.Status.SignalMode = "proactive"
-		sp.Status.SignalName = "OOMKilled"              // Normalized from PredictedOOMKill
-		sp.Status.SourceSignalName = "PredictedOOMKill" // Preserved for SOC2 audit trail
+		sp.Status.SignalMode = signalprocessingv1.SignalModeProactive
+		sp.Status.SignalName = signalNameOOMKilledFixture // Normalized from PredictedOOMKill
+		sp.Status.SourceSignalName = "PredictedOOMKill"   // Preserved for SOC2 audit trail
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
@@ -129,7 +137,7 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 			for i := range analysisList.Items {
 				if len(analysisList.Items[i].OwnerReferences) > 0 &&
-					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					analysisList.Items[i].OwnerReferences[0].Name == rrName {
 					analysis = &analysisList.Items[i]
 					return true
@@ -139,11 +147,11 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 		}, timeout, interval).Should(BeTrue(), "AIAnalysis should be created by RO")
 
 		By("5. Verifying AIAnalysis has proactive signal mode from SP.Status")
-		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("proactive"),
+		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal(signalprocessingv1.SignalModeProactive),
 			"BR-SP-106/ADR-054: AIAnalysis MUST propagate signalMode=proactive from SP.Status")
 
 		By("6. Verifying AIAnalysis has NORMALIZED signal type")
-		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"),
+		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(signalNameOOMKilledFixture),
 			"BR-SP-106/ADR-054: AIAnalysis MUST use normalized SignalType from SP.Status (not PredictedOOMKill)")
 
 		GinkgoWriter.Println("E2E-RO-106-001: Proactive signal mode propagation validated in Kind cluster")
@@ -163,9 +171,9 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 					h := sha256.Sum256([]byte(uuid.New().String()))
 					return hex.EncodeToString(h[:])
 				}(),
-				SignalName: "OOMKilled",
-				Severity:   "critical",
-				SignalType: "OOMKilled",
+				SignalName: signalNameOOMKilledFixture,
+				Severity:   signalprocessingv1.SeverityCritical,
+				SignalType: signalNameOOMKilledFixture,
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Deployment",
@@ -186,7 +194,7 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 			for i := range spList.Items {
 				if len(spList.Items[i].OwnerReferences) > 0 &&
-					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					spList.Items[i].OwnerReferences[0].Name == rrName {
 					sp = &spList.Items[i]
 					return true
@@ -197,9 +205,9 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 
 		By("3. Manually updating SP status with reactive signal mode")
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = "critical"
-		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalName = "OOMKilled" // Unchanged for reactive
+		sp.Status.Severity = signalprocessingv1.SeverityCritical
+		sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
+		sp.Status.SignalName = signalNameOOMKilledFixture // Unchanged for reactive
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
@@ -219,7 +227,7 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 			for i := range analysisList.Items {
 				if len(analysisList.Items[i].OwnerReferences) > 0 &&
-					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					analysisList.Items[i].OwnerReferences[0].Name == rrName {
 					analysis = &analysisList.Items[i]
 					return true
@@ -228,9 +236,9 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 			return false
 		}, timeout, interval).Should(BeTrue())
 
-		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal("reactive"),
+		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalMode).To(Equal(signalprocessingv1.SignalModeReactive),
 			"Standard signals should have signalMode=reactive in AIAnalysis")
-		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal("OOMKilled"),
+		Expect(analysis.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(signalNameOOMKilledFixture),
 			"Reactive signal type should pass through unchanged")
 
 		GinkgoWriter.Println("E2E-RO-106-001: Reactive signal mode propagation validated in Kind cluster")

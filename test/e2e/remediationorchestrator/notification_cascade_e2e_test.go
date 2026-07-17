@@ -28,6 +28,7 @@ import (
 
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 
 	"github.com/google/uuid"
 )
@@ -66,7 +67,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "test-signal",
 					SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-					Severity:          "critical",
+					Severity:          signalprocessingv1.SeverityCritical,
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					FiringTime:        now,
@@ -125,7 +126,7 @@ var _ = Describe("BR-ORCH-031: Notification Cascade Cleanup E2E Tests", Label("e
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalName:        "test-signal",
 					SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
-					Severity:          "critical",
+					Severity:          signalprocessingv1.SeverityCritical,
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					FiringTime:        now,

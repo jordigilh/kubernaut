@@ -64,6 +64,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 // Test constants for timeout and polling intervals
 const (
 	timeout  = 120 * time.Second // Longer timeout for E2E with real services
@@ -269,7 +274,7 @@ var _ = SynchronizedAfterSuite(
 		// Determine cleanup strategy
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == trueFixture || os.Getenv("KEEP_CLUSTER") == trueFixture
 
 		if preserveCluster {
 			GinkgoWriter.Println("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
@@ -279,7 +284,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "remediationorchestrator",
 				ClusterName:    clusterName,

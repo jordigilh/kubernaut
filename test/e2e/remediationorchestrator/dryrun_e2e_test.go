@@ -33,6 +33,16 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	workflowRecommendedRestartPodV12 = "Workflow recommended: restart-pod-v1"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	workflowRecommendedRestartPodV1 = workflowRecommendedRestartPodV12
+)
+
 // E2E Tests for #712, #736: Dry-Run Mode
 //
 // Business Requirements:
@@ -52,9 +62,9 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 	)
 
 	var (
-		testNS          string
-		originalConfig  string
-		configPatched   bool
+		testNS         string
+		originalConfig string
+		configPatched  bool
 	)
 
 	BeforeEach(func() {
@@ -142,7 +152,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "DryRunTestOOMKilled",
-					Severity:          "critical",
+					Severity:          signalprocessingv1.SeverityCritical,
 					SignalType:        "oomkilled",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -164,7 +174,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 				_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 				for i := range spList.Items {
 					if len(spList.Items[i].OwnerReferences) > 0 &&
-						spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						spList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						spList.Items[i].OwnerReferences[0].Name == rr.Name {
 						sp = &spList.Items[i]
 						return true
@@ -175,8 +185,8 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 
 			By("Simulating SP completion")
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "critical"
-			sp.Status.SignalMode = "reactive"
+			sp.Status.Severity = signalprocessingv1.SeverityCritical
+			sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
 			sp.Status.SignalName = sp.Spec.Signal.Name
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  signalprocessingv1.EnvironmentProduction,
@@ -197,7 +207,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 				_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 				for i := range analysisList.Items {
 					if len(analysisList.Items[i].OwnerReferences) > 0 &&
-						analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						analysisList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
 						analysis = &analysisList.Items[i]
 						return true
@@ -210,7 +220,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 			analysis.Status.NeedsHumanReview = false
-			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
+			analysis.Status.Message = workflowRecommendedRestartPodV1
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      "restart-pod-v1",
 				Version:         "1.0.0",
@@ -220,7 +230,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 			}
 			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "OOM kill detected on pod",
-				Severity:   "critical",
+				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Pod",
@@ -248,7 +258,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 				count := 0
 				for _, item := range weList.Items {
 					if len(item.OwnerReferences) > 0 &&
-						item.OwnerReferences[0].Kind == "RemediationRequest" &&
+						item.OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						item.OwnerReferences[0].Name == rr.Name {
 						count++
 					}
