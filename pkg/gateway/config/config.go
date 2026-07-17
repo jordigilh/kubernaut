@@ -33,6 +33,10 @@ import (
 // ADR-030: All services MUST use /etc/{service}/config.yaml as the default.
 const DefaultConfigPath = "/etc/gateway/config.yaml"
 
+// configDocumentationURL is the shared reference link included in validation
+// errors returned by this package.
+const configDocumentationURL = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+
 // ServerConfig is the top-level configuration for the Gateway service.
 // Organized by Single Responsibility Principle for better maintainability.
 type ServerConfig struct {
@@ -101,7 +105,7 @@ func (s *ServerSettings) validateAddrAndConcurrency() error {
 			"Use ':8080' or '0.0.0.0:8080'",
 		)
 		err.Impact = "Gateway server will fail to start"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 
@@ -115,7 +119,7 @@ func (s *ServerSettings) validateAddrAndConcurrency() error {
 			"Use 100 (recommended), 0 for unlimited",
 		)
 		err.Impact = "Invalid throttle configuration"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	if s.MaxConcurrentRequests > 10000 {
@@ -126,7 +130,7 @@ func (s *ServerSettings) validateAddrAndConcurrency() error {
 			"Use 100-1000 for production (recommended: 100)",
 		)
 		err.Impact = "May not provide effective overload protection"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	return nil
@@ -145,7 +149,7 @@ func (s *ServerSettings) validateTimeouts() error {
 			"Use 30s (recommended) to prevent webhook timeouts",
 		)
 		err.Impact = "Webhook requests may timeout prematurely"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	if s.WriteTimeout > 0 && s.WriteTimeout < 5*time.Second {
@@ -156,7 +160,7 @@ func (s *ServerSettings) validateTimeouts() error {
 			"Use 30s (recommended) to prevent response failures",
 		)
 		err.Impact = "Response writes may fail prematurely"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	if s.IdleTimeout > 0 && s.IdleTimeout < 30*time.Second {
@@ -167,7 +171,7 @@ func (s *ServerSettings) validateTimeouts() error {
 			"Use 120s (recommended) to reduce connection churn",
 		)
 		err.Impact = "May increase connection establishment overhead"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 
@@ -184,7 +188,7 @@ func (s *ServerSettings) validateTimeouts() error {
 			"Use 15s (recommended) to allow K8s API operations to complete",
 		)
 		err.Impact = "K8s operations will fail prematurely with 504"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	if s.WriteTimeout > 0 && s.K8sRequestTimeout >= s.WriteTimeout {
@@ -195,7 +199,7 @@ func (s *ServerSettings) validateTimeouts() error {
 			"K8s timeout must leave room for the 504 response to be written",
 		)
 		err.Impact = "Server may kill connection before 504 error reaches client"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	return nil
@@ -315,7 +319,7 @@ func (r *RetrySettings) validateMaxAttempts() error {
 			"Use 3-5 for production (recommended: 3)",
 		)
 		err.Impact = "Retry logic will not function properly"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	if r.MaxAttempts > 10 {
@@ -326,7 +330,7 @@ func (r *RetrySettings) validateMaxAttempts() error {
 			"Reduce to 3-5 to avoid excessive retry delays",
 		)
 		err.Impact = "May cause slow request processing during failures"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	return nil
@@ -344,7 +348,7 @@ func (r *RetrySettings) validateBackoffBounds() error {
 			"Use 100ms-500ms (recommended: 100ms)",
 		)
 		err.Impact = "Negative backoff is invalid"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	if r.InitialBackoff > 5*time.Second {
@@ -355,7 +359,7 @@ func (r *RetrySettings) validateBackoffBounds() error {
 			"Reduce to 100ms-500ms for faster failure detection",
 		)
 		err.Impact = "High initial backoff may cause slow failure detection"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 
@@ -367,7 +371,7 @@ func (r *RetrySettings) validateBackoffBounds() error {
 			fmt.Sprintf("Set maxBackoff to at least %v", r.InitialBackoff),
 		)
 		err.Impact = "Invalid exponential backoff configuration"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 	if r.MaxBackoff > 30*time.Second {
@@ -378,7 +382,7 @@ func (r *RetrySettings) validateBackoffBounds() error {
 			"Reduce to 5s (recommended) to avoid long request delays",
 		)
 		err.Impact = "Excessive backoff may cause long request delays"
-		err.Documentation = "https://jordigilh.github.io/kubernaut-docs/user-guide/configuration/#gateway"
+		err.Documentation = configDocumentationURL
 		return err
 	}
 

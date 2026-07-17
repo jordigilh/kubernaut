@@ -60,7 +60,7 @@ func EventFreshnessValidator(tolerance time.Duration) func(http.Handler) http.Ha
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip validation for non-write methods (health, metrics endpoints)
-			if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
+			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
 				next.ServeHTTP(w, r)
 				return
 			}

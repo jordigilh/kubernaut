@@ -45,6 +45,15 @@ const (
 	LoggerKey contextKey = "logger"
 )
 
+// Operational (health/readiness/metrics) paths exempted from noisy logging
+// and freshness/timestamp validation across gateway middleware.
+const (
+	pathHealth  = "/health"
+	pathHealthz = "/healthz"
+	pathReady   = "/ready"
+	pathMetrics = "/metrics"
+)
+
 // RequestIDMiddleware adds a unique request ID to each request
 //
 // BUSINESS OUTCOME: Operators can trace requests across Gateway components
@@ -79,7 +88,7 @@ func RequestIDMiddleware(logger logr.Logger) func(http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, LoggerKey, requestLogger)
 
 			// Log incoming request (V(1) for health/readiness checks to reduce noise)
-			if r.URL.Path == "/health" || r.URL.Path == "/healthz" || r.URL.Path == "/ready" {
+			if r.URL.Path == pathHealth || r.URL.Path == pathHealthz || r.URL.Path == pathReady {
 				requestLogger.V(1).Info("Incoming request",
 					"user_agent", r.UserAgent(),
 					"content_type", r.Header.Get("Content-Type"),
