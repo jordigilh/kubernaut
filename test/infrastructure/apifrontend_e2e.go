@@ -246,8 +246,15 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	if seedErr != nil {
 		return fmt.Errorf("create DS seed client: %w", seedErr)
 	}
+	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. This is IN
+	// ADDITION to -- not a replacement for -- Postgres seeding: SeedWorkflowsInDataStorage
+	// below registers workflows via DS's Postgres-backed inline endpoint, whose
+	// action_type_taxonomy FK check requires the Postgres row too.
+	if seedErr = SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); seedErr != nil {
+		return fmt.Errorf("seed action types (CRD): %w", seedErr)
+	}
 	if seedErr = SeedActionTypesViaAPI(seedClient, writer); seedErr != nil {
-		return fmt.Errorf("seed action types: %w", seedErr)
+		return fmt.Errorf("seed action types (Postgres): %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
 	if _, seedErr = SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AF E2E", writer); seedErr != nil {

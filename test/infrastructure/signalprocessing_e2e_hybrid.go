@@ -328,16 +328,10 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintln(writer, "\n✅ All services ready!")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Phase 4 Duration: %.1f seconds\n", phase4Duration.Seconds())
 
-	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
-	seedSA := "sp-e2e-seed-sa"
-	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, seedSA, writer); err != nil {
-		return fmt.Errorf("failed to create seed SA: %w", err)
-	}
-	seedToken, err := GetServiceAccountToken(ctx, namespace, seedSA, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get seed SA token: %w", err)
-	}
-	if err := SeedActionTypesViaAPIWithTLS("https://localhost:30081", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
+	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
+	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
+	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
+	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 

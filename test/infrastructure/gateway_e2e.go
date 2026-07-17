@@ -346,19 +346,10 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage Service ready for internal cluster access\n")
 
-	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
-	// Use a temporary seed SA because the gateway SA is created later in Phase 5.
-	seedSA := "gw-e2e-seed-sa"
-	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, seedSA, writer); err != nil {
-		return fmt.Errorf("failed to create seed SA for action type seeding: %w", err)
-	}
-	seedToken, err := GetServiceAccountToken(ctx, namespace, seedSA, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get seed SA token for action type seeding: %w", err)
-	}
-	if err := SeedActionTypesViaAPIWithTLS(
-		fmt.Sprintf("https://localhost:%d", DataStorageE2EHostPort), seedToken, kubeconfigPath, 30*time.Second, writer,
-	); err != nil {
+	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
+	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
+	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
+	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 

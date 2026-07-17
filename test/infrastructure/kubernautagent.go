@@ -215,8 +215,15 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create DS client: %w", err)
 	}
 
+	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. This is IN
+	// ADDITION to -- not a replacement for -- Postgres seeding: SeedWorkflowsInDataStorage
+	// below registers workflows via DS's Postgres-backed inline endpoint, whose
+	// action_type_taxonomy FK check requires the Postgres row too.
+	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to seed action types (CRD): %w", err)
+	}
 	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
-		return fmt.Errorf("failed to seed action types: %w", err)
+		return fmt.Errorf("failed to seed action types (Postgres): %w", err)
 	}
 
 	testWorkflows := GetKAE2ETestWorkflows()
