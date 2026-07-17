@@ -27,27 +27,25 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// Issue #1661 Change 11e (DD-WORKFLOW-018), Phase 49 RED: resolveSchemaMetadata
-// currently fetches Dependencies/DeclaredParameterNames/EngineConfig from
-// DataStorage (WorkflowQuerier.GetWorkflowSchemaMetadata). Phase 50 GREEN removes
-// this DS round-trip entirely -- executor.CreateOptions must be built directly
-// from the already-validated wfe.Spec.WorkflowRef snapshot (Change 11c/11d), with
-// zero WorkflowQuerier calls.
-//
-// These tests MUST fail against the current implementation (RED) because it
-// still calls r.WorkflowQuerier.GetWorkflowSchemaMetadata.
+// Issue #1661 Change 11e (DD-WORKFLOW-018): resolveSchemaMetadata builds
+// executor.CreateOptions (Dependencies/DeclaredParameterNames) directly from
+// the already-validated wfe.Spec.WorkflowRef snapshot (Change 11c/11d), with
+// zero DataStorage round-trips. Phase 51 REFACTOR: WorkflowQuerier no longer
+// exists as a field on WorkflowExecutionReconciler at all (removed once
+// Phase 50 confirmed zero remaining call sites in this package), so "zero
+// WorkflowQuerier calls" is now a structural guarantee rather than a runtime
+// assertion -- these tests instead assert the resulting CreateOptions
+// directly.
 var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 	var (
-		ctx     context.Context
-		querier *forbiddenWorkflowQuerier
-		r       *WorkflowExecutionReconciler
-		wfe     *workflowexecutionv1alpha1.WorkflowExecution
+		ctx context.Context
+		r   *WorkflowExecutionReconciler
+		wfe *workflowexecutionv1alpha1.WorkflowExecution
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		querier = &forbiddenWorkflowQuerier{}
-		r = &WorkflowExecutionReconciler{WorkflowQuerier: querier}
+		r = &WorkflowExecutionReconciler{}
 
 		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -63,11 +61,9 @@ var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 		}
 	})
 
-	It("UT-WE-1661-005: builds CreateOptions.Dependencies/DeclaredParameterNames from WorkflowRef with zero WorkflowQuerier calls", func() {
+	It("UT-WE-1661-005: builds CreateOptions.Dependencies/DeclaredParameterNames from WorkflowRef", func() {
 		_, opts, err := r.resolveSchemaMetadata(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
-
-		expectNoQuerierCalls(querier)
 
 		Expect(opts.Dependencies).To(Equal(&models.WorkflowDependencies{
 			Secrets:    []models.ResourceDependency{{Name: "db-creds"}},
@@ -83,7 +79,6 @@ var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 		_, opts, err := r.resolveSchemaMetadata(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
 
-		expectNoQuerierCalls(querier)
 		Expect(opts.Dependencies).To(BeNil())
 		Expect(opts.DeclaredParameterNames).To(BeNil())
 	})

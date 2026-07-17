@@ -23,21 +23,19 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
 )
 
-// Phase 2 coverage: AWX HTTP client, metrics wiring, phase helpers, config load, DS querier factory (BR-WE-008, BR-WE-015, BR-WE-005).
+// Phase 2 coverage: AWX HTTP client, metrics wiring, phase helpers, config load (BR-WE-008, BR-WE-015, BR-WE-005).
 var _ = Describe("WorkflowExecution coverage 668 (BR-WE-008 BR-WE-015)", func() {
 
 	Describe("AWXHTTPClient (BR-WE-015)", func() {
@@ -165,25 +163,6 @@ datastorage:
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg.Execution.Namespace).To(Equal("custom-ns"))
 			Expect(cfg.Validate()).To(Succeed())
-		})
-	})
-
-	Describe("NewOgenWorkflowQuerierFromConfig (BR-WE-005)", func() {
-		It("returns error when base URL is empty", func() {
-			_, err := weclient.NewOgenWorkflowQuerierFromConfig("", time.Second)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("cannot be empty"))
-		})
-
-		It("builds a querier against a reachable base URL", func() {
-			srv := httptest.NewServer(http.NotFoundHandler())
-			defer srv.Close()
-
-			q, err := weclient.NewOgenWorkflowQuerierFromConfig(srv.URL, 500*time.Millisecond)
-			Expect(err).NotTo(HaveOccurred())
-			_, _, err = q.GetWorkflowExecutionEngine(context.Background(), "not-a-uuid")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("invalid workflow ID"))
 		})
 	})
 })

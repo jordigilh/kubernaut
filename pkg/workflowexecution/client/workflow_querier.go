@@ -21,8 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -30,8 +28,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 )
 
 // WorkflowCatalogMetadata holds all workflow metadata resolved from the DS
@@ -117,35 +113,6 @@ type OgenWorkflowQuerier struct {
 // NewOgenWorkflowQuerier creates a WorkflowQuerier from an existing ogen client wrapper.
 func NewOgenWorkflowQuerier(client WorkflowCatalogClient) *OgenWorkflowQuerier {
 	return &OgenWorkflowQuerier{client: client}
-}
-
-// NewOgenWorkflowQuerierFromConfig creates a WorkflowQuerier with a standalone
-// ogen client configured from the DataStorage URL and timeout.
-// Uses ServiceAccount auth transport (same pattern as DSHistoryAdapter).
-func NewOgenWorkflowQuerierFromConfig(baseURL string, timeout time.Duration) (*OgenWorkflowQuerier, error) {
-	if baseURL == "" {
-		return nil, fmt.Errorf("DataStorage base URL cannot be empty")
-	}
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-
-	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
-	baseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create base transport: %w", err)
-	}
-	transport := auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport)
-
-	ogenClient, err := ogenclient.NewClient(baseURL, ogenclient.WithClient(&http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-	}))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create ogen client for workflow queries: %w", err)
-	}
-
-	return &OgenWorkflowQuerier{client: ogenClient}, nil
 }
 
 // classifyGetWorkflowResponse maps the polymorphic ogen response to either the

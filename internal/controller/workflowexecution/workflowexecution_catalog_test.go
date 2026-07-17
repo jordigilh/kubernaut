@@ -30,29 +30,25 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// Issue #1661 Change 11e (DD-WORKFLOW-018), Phase 49 RED: resolveWorkflowCatalog
-// currently resolves ExecutionEngine/ServiceAccountName/Resources/WorkflowName/
-// ActionType from a DataStorage round-trip (WorkflowQuerier.ResolveWorkflowCatalogMetadata)
-// and additionally overrides wfe.Spec.WorkflowRef.ExecutionBundle/EngineConfig at
-// runtime from the DS catalog entry. Phase 50 GREEN removes both behaviors: the
-// WorkflowRef carries an immutable, already-validated execution snapshot
-// (Change 11c/11d) that resolveWorkflowCatalog must copy onto Status verbatim,
-// with zero WorkflowQuerier calls and zero spec mutation.
-//
-// These tests MUST fail against the current implementation (RED) because it
-// still calls r.WorkflowQuerier.ResolveWorkflowCatalogMetadata.
+// Issue #1661 Change 11e (DD-WORKFLOW-018): resolveWorkflowCatalog copies the
+// execution-engine snapshot (ExecutionEngine/ServiceAccountName/Resources)
+// from wfe.Spec.WorkflowRef onto Status verbatim, with zero DataStorage
+// round-trips and zero spec mutation. Phase 51 REFACTOR: WorkflowQuerier no
+// longer exists as a field on WorkflowExecutionReconciler at all (removed
+// once Phase 50 confirmed zero remaining call sites in this package), so
+// "zero WorkflowQuerier calls" is now a structural guarantee rather than a
+// runtime assertion -- these tests instead assert the resulting behavior
+// directly against Status/Spec.
 var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 	var (
-		ctx     context.Context
-		querier *forbiddenWorkflowQuerier
-		r       *WorkflowExecutionReconciler
-		wfe     *workflowexecutionv1alpha1.WorkflowExecution
+		ctx context.Context
+		r   *WorkflowExecutionReconciler
+		wfe *workflowexecutionv1alpha1.WorkflowExecution
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		querier = &forbiddenWorkflowQuerier{}
-		r = &WorkflowExecutionReconciler{WorkflowQuerier: querier}
+		r = &WorkflowExecutionReconciler{}
 
 		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
@@ -77,11 +73,9 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 		}
 	})
 
-	It("UT-WE-1661-001: sets Status.ExecutionEngine/ServiceAccountName/Resources from WorkflowRef with zero WorkflowQuerier calls", func() {
+	It("UT-WE-1661-001: sets Status.ExecutionEngine/ServiceAccountName/Resources from WorkflowRef", func() {
 		_, err := r.resolveWorkflowCatalog(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
-
-		expectNoQuerierCalls(querier)
 
 		Expect(wfe.Status.ExecutionEngine).To(Equal("job"),
 			"ExecutionEngine must come from wfe.Spec.WorkflowRef, not the (forbidden) DS catalog")
@@ -117,18 +111,16 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 		_, err := r.resolveWorkflowCatalog(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
 
-		expectNoQuerierCalls(querier)
 		Expect(wfe.Status.WorkflowName).To(BeEmpty())
 		Expect(wfe.Status.ActionType).To(BeEmpty())
 	})
 
-	It("UT-WE-1661-004: is idempotent -- a no-op with zero WorkflowQuerier calls when Status.ExecutionEngine is already resolved", func() {
+	It("UT-WE-1661-004: is idempotent -- a no-op when Status.ExecutionEngine is already resolved", func() {
 		wfe.Status.ExecutionEngine = "already-resolved"
 
 		_, err := r.resolveWorkflowCatalog(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
 
-		expectNoQuerierCalls(querier)
 		Expect(wfe.Status.ExecutionEngine).To(Equal("already-resolved"))
 	})
 })

@@ -18,10 +18,7 @@ package workflowexecution_test
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
@@ -40,11 +37,9 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/workflowexecution"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
@@ -135,8 +130,8 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-deployment",
-						Version:        "v1",
+						WorkflowID:      "restart-deployment",
+						Version:         "v1",
 						ExecutionBundle: "registry.example.com/workflows/restart:v1",
 					},
 				},
@@ -199,8 +194,8 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-deployment",
-						Version:        "v1",
+						WorkflowID:      "restart-deployment",
+						Version:         "v1",
 						ExecutionBundle: "registry.example.com/workflows/restart:v1",
 					},
 				},
@@ -263,8 +258,8 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-deployment",
-						Version:        "v1",
+						WorkflowID:      "restart-deployment",
+						Version:         "v1",
 						ExecutionBundle: "registry.example.com/workflows/restart:v1",
 					},
 				},
@@ -341,7 +336,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 		evtRecorder = record.NewFakeRecorder(20)
 	})
 
-	buildReconciler := func(fakeClient client.Client, querier weclient.WorkflowQuerier, registry *weexecutor.Registry) *workflowexecution.WorkflowExecutionReconciler {
+	buildReconciler := func(fakeClient client.Client, registry *weexecutor.Registry) *workflowexecution.WorkflowExecutionReconciler {
 		as := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 		am := audit.NewManager(as, logr.Discard())
 		sm := status.NewManager(fakeClient)
@@ -359,7 +354,6 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			StatusManager:      sm,
 			AuditManager:       am,
 			PhaseManager:       pm,
-			WorkflowQuerier:    querier,
 			ExecutorRegistry:   registry,
 		}
 	}
@@ -400,7 +394,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				WithStatusSubresource(wfe).
 				Build()
 
-			reconciler := buildReconciler(fakeClient, nil, nil)
+			reconciler := buildReconciler(fakeClient, nil)
 			drainFakeRecorderEvents(evtRecorder)
 
 			const enrichedMessage = `secret "my-creds" not found`
@@ -428,6 +422,10 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 	Context("UT-WE-659-002 (P0): Unsupported engine emits WorkflowValidationFailed", func() {
 		It("should emit WorkflowValidationFailed event for unsupported engine", func() {
 			wfe := buildPendingWFE("wfe-659-bad-engine")
+			// Issue #1661 Change 11e: engine is read directly from WorkflowRef,
+			// not resolved via a DS catalog round-trip -- set it on the spec
+			// snapshot instead of a mocked WorkflowQuerier response.
+			wfe.Spec.WorkflowRef.ExecutionEngine = "unsupported-engine-xyz"
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
 				WithObjects(wfe).
@@ -437,18 +435,11 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				}).
 				Build()
 
-			querier := &mockCatalogQuerier{
-				meta: &weclient.WorkflowCatalogMetadata{
-					ExecutionEngine: "unsupported-engine-xyz",
-					WorkflowName:    "test-workflow",
-					ExecutionBundle: "ghcr.io/test/exec:v1",
-				},
-			}
 			tektonExec := weexecutor.NewTektonExecutor(fakeClient)
 			registry := weexecutor.NewRegistry()
 			registry.Register(tektonExec.Engine(), tektonExec)
 
-			reconciler := buildReconciler(fakeClient, querier, registry)
+			reconciler := buildReconciler(fakeClient, registry)
 			drainFakeRecorderEvents(evtRecorder)
 
 			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
@@ -464,6 +455,11 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 
 	Context("UT-WE-659-003 (P0): Catalog resolution failure — regression guard", func() {
 		It("should emit WorkflowValidationFailed event when catalog resolution fails", func() {
+			// Issue #1661 Change 11e: resolveWorkflowCatalog no longer queries
+			// DS -- its only remaining failure mode is a WorkflowRef with no
+			// ExecutionEngine set, which buildPendingWFE deliberately leaves
+			// empty (regression guard: this must still fail closed, not panic
+			// or silently default to an engine).
 			wfe := buildPendingWFE("wfe-659-catalog-fail")
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
@@ -471,12 +467,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				WithStatusSubresource(wfe).
 				Build()
 
-			querier := &mockCatalogQuerier{
-				err: fmt.Errorf("DS internal server error for workflow"),
-			}
-			registry := weexecutor.NewRegistry()
-
-			reconciler := buildReconciler(fakeClient, querier, registry)
+			reconciler := buildReconciler(fakeClient, nil)
 			drainFakeRecorderEvents(evtRecorder)
 
 			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
@@ -500,7 +491,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				WithStatusSubresource(wfe).
 				Build()
 
-			reconciler := buildReconciler(fakeClient, nil, nil)
+			reconciler := buildReconciler(fakeClient, nil)
 			drainFakeRecorderEvents(evtRecorder)
 
 			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
@@ -528,7 +519,7 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 				WithStatusSubresource(wfe).
 				Build()
 
-			reconciler := buildReconciler(fakeClient, nil, nil)
+			reconciler := buildReconciler(fakeClient, nil)
 			drainFakeRecorderEvents(evtRecorder)
 
 			_, err := reconciler.Reconcile(evtCtx, reconcile.Request{
@@ -542,53 +533,3 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 		})
 	})
 })
-
-// mockCatalogQuerier implements weclient.WorkflowQuerier for test injection.
-type mockCatalogQuerier struct {
-	meta *weclient.WorkflowCatalogMetadata
-	err  error
-}
-
-func (m *mockCatalogQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*models.WorkflowDependencies, error) {
-	if m.meta != nil {
-		return m.meta.Dependencies, m.err
-	}
-	return nil, m.err
-}
-
-func (m *mockCatalogQuerier) GetWorkflowEngineConfig(_ context.Context, _ string) (json.RawMessage, error) {
-	return nil, m.err
-}
-
-func (m *mockCatalogQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
-	if m.meta != nil {
-		return m.meta.ExecutionEngine, m.meta.WorkflowName, m.err
-	}
-	return "", "", m.err
-}
-
-func (m *mockCatalogQuerier) GetWorkflowExecutionBundle(_ context.Context, _ string) (string, string, error) {
-	if m.meta != nil {
-		return m.meta.ExecutionBundle, m.meta.ExecutionBundleDigest, m.err
-	}
-	return "", "", m.err
-}
-
-func (m *mockCatalogQuerier) ResolveWorkflowCatalogMetadata(_ context.Context, _ string) (*weclient.WorkflowCatalogMetadata, error) {
-	return m.meta, m.err
-}
-
-func (m *mockCatalogQuerier) GetWorkflowSchemaMetadata(_ context.Context, _ string) (*weclient.SchemaMetadata, error) {
-	if m.meta != nil {
-		return &weclient.SchemaMetadata{
-			Engine:       m.meta.ExecutionEngine,
-			WorkflowName: m.meta.WorkflowName,
-			Dependencies: m.meta.Dependencies,
-			EngineConfig: m.meta.EngineConfig,
-		}, m.err
-	}
-	return nil, m.err
-}
-
-// Suppress unused import warning
-var _ = time.Second
