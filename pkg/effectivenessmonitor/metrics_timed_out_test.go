@@ -116,7 +116,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 	// ========================================
 	It("UT-EM-MT-001: should set metrics_timed_out when health+hash done but metrics not assessed", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-mt-001"
 
 		healthScore := 1.0
@@ -148,7 +148,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 	// ========================================
 	It("UT-EM-MT-002: should set partial when only health done but hash not computed", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-mt-002"
 
 		healthScore := 1.0
@@ -178,7 +178,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 	// ========================================
 	It("UT-EM-MT-003: should not set metrics_timed_out when Prometheus is disabled", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-mt-003"
 
 		healthScore := 1.0
@@ -210,7 +210,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 	// ========================================
 	It("UT-EM-MT-004: should set expired when no components assessed", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-mt-004"
 
 		ea := seedAssessingEA(ns, name, eav1.EAComponents{
@@ -239,7 +239,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 	// ========================================
 	It("UT-EM-MT-005: should set partial when alerts and metrics both unassessed with AM enabled", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-mt-005"
 
 		ea := seedAssessingEA(ns, name, eav1.EAComponents{

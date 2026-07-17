@@ -28,6 +28,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	deployment    = "Deployment"
+	appPaymentAPI = "payment-api"
+)
+
 // mockOwnerResolver implements types.OwnerResolver for testing
 type mockOwnerResolver struct {
 	// resolveFunc allows per-test customization of resolve behavior
@@ -77,7 +83,7 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 			// Mock: Pod "payment-api-789" is owned by Deployment "payment-api"
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
-					return "Deployment", "payment-api", nil
+					return deployment, appPaymentAPI, nil
 				},
 			}
 			adapter := adapters.NewKubernetesEventAdapter(resolver)
@@ -99,8 +105,8 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 			// Verify the fingerprint matches expected owner-based calculation
 			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: "prod",
-				Kind:      "Deployment",
-				Name:      "payment-api",
+				Kind:      deployment,
+				Name:      appPaymentAPI,
 			})
 			Expect(signal1.Fingerprint).To(Equal(expectedFingerprint),
 				"Fingerprint should be based on the owner (Deployment), not the pod")
@@ -113,7 +119,7 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 			// Mock: Both pods are owned by Deployment "payment-api"
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
-					return "Deployment", "payment-api", nil
+					return deployment, appPaymentAPI, nil
 				},
 			}
 			adapter := adapters.NewKubernetesEventAdapter(resolver)

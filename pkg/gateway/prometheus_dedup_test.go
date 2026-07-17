@@ -103,7 +103,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
 					if kind == "Pod" && name == "payment-api-789" {
-						return "Deployment", "payment-api", nil
+						return deployment, appPaymentAPI, nil
 					}
 					return kind, name, nil
 				},
@@ -118,8 +118,8 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			// Fingerprint should be based on the Deployment, not the Pod
 			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: "prod",
-				Kind:      "Deployment",
-				Name:      "payment-api",
+				Kind:      deployment,
+				Name:      appPaymentAPI,
 			})
 			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
 				"Pod-level alerts should be fingerprinted at the Deployment level via owner chain resolution")
@@ -129,7 +129,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			// Mock: Both pods are owned by Deployment "payment-api"
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
-					return "Deployment", "payment-api", nil
+					return deployment, appPaymentAPI, nil
 				},
 			}
 			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())

@@ -39,6 +39,11 @@ import (
 	emmetrics "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/metrics"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	testNs = "test-ns"
+)
+
 // emptyPromQuerier returns empty results for all queries, causing assessMetrics
 // to return Assessed=false (no metric data). This keeps MetricsAssessed=false
 // so the reconciler reaches Step 10 (requeue for remaining components).
@@ -150,7 +155,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	// ========================================
 	It("UT-EM-DAR-001: should cap requeue at remaining validity time when deadline is closer than default interval", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-dar-001"
 
 		deadline := time.Now().Add(10 * time.Second)
@@ -176,7 +181,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	// ========================================
 	It("UT-EM-DAR-002: should use default requeue interval when deadline is far away", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-dar-002"
 
 		deadline := time.Now().Add(5 * time.Minute)

@@ -166,7 +166,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		return &decayAMClient{
 			alerts: []emclient.Alert{
 				{
-					Labels: map[string]string{"alertname": "HighMemoryUsage", "namespace": "test-ns"},
+					Labels: map[string]string{"alertname": "HighMemoryUsage", "namespace": testNs},
 					State:  "active",
 				},
 			},
@@ -208,7 +208,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-001: should keep EA open when resource is healthy but alert still firing (decay)", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-001"
 
 		ea := seedDecayEA(ns, name)
@@ -244,7 +244,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-002: should complete with full reason and AlertScore=1.0 when alert resolves after decay monitoring", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-002"
 
 		ea := seedDecayEA(ns, name)
@@ -283,7 +283,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-003: should set alert_decay_timeout when validity expires during decay monitoring", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-003"
 
 		ea := seedDecayEA(ns, name)
@@ -340,7 +340,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-004: should assess alert normally when HealthScore is nil (non-pod resource)", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-004"
 
 		ea := seedDecayEA(ns, name)
@@ -373,7 +373,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-005: should complete with spec_drift when target spec changes during decay monitoring", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-005"
 
 		ea := seedDecayEA(ns, name)
@@ -409,7 +409,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-006: should accurately increment AlertDecayRetries on each reconcile", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-006"
 
 		ea := seedDecayEA(ns, name)
@@ -444,7 +444,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-007: should emit exactly one audit event on first decay detection, silence on subsequent", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-007"
 
 		spy := &decayAuditSpy{}
@@ -488,7 +488,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-008: should complete EA normally when metrics are negative (proactive signal kills decay hypothesis)", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-008"
 
 		ea := seedDecayEA(ns, name)
@@ -526,7 +526,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-009: should continue decay monitoring when metrics are nil (neutral, not negative)", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-009"
 
 		ea := seedDecayEA(ns, name)
@@ -561,7 +561,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-010: should reset HealthAssessed and re-probe health on each decay pass", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-010"
 
 		ea := seedDecayEA(ns, name)
@@ -607,7 +607,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-011: should kill decay hypothesis when health degrades on re-probe", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-011"
 
 		ea := seedDecayEA(ns, name)

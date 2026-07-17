@@ -23,6 +23,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	crdCreation    = "crd_creation"
+	transientError = "transient_error"
+)
+
 // GW-UNIT-ERR-013: BR-GATEWAY-113 Error Recovery Metrics
 // Unit tests for error recovery metric emission (mock metrics, no infrastructure)
 
@@ -77,7 +83,7 @@ var _ = Describe("BR-GATEWAY-113: Error Recovery Metrics", func() {
 			// BUSINESS LOGIC: Recovery metrics show system resilience
 			// Unit Test: Mock metric increment validation
 
-			operation := "crd_creation"
+			operation := crdCreation
 			errorType := "k8s_api_unavailable"
 
 			// Simulate successful recovery after retry
@@ -94,8 +100,8 @@ var _ = Describe("BR-GATEWAY-113: Error Recovery Metrics", func() {
 			// BUSINESS LOGIC: Retry metrics show system load under failure
 			// Unit Test: Mock metric increment validation
 
-			operation := "crd_creation"
-			errorType := "transient_error"
+			operation := crdCreation
+			errorType := transientError
 
 			// Simulate multiple retry attempts
 			errorRetryCounter.WithLabelValues(errorType, operation).Inc() // Attempt 1
@@ -113,7 +119,7 @@ var _ = Describe("BR-GATEWAY-113: Error Recovery Metrics", func() {
 			// BUSINESS LOGIC: Failure metrics trigger operational alerts
 			// Unit Test: Mock metric increment validation
 
-			operation := "crd_creation"
+			operation := crdCreation
 			errorType := "validation_error"
 
 			// Simulate permanent failure (no recovery possible)
@@ -131,12 +137,12 @@ var _ = Describe("BR-GATEWAY-113: Error Recovery Metrics", func() {
 			// Unit Test: Label validation
 
 			// Different operations and error types
-			errorRetryCounter.WithLabelValues("transient_error", "crd_creation").Inc()
+			errorRetryCounter.WithLabelValues(transientError, crdCreation).Inc()
 			errorRetryCounter.WithLabelValues("network_error", "audit_emission").Inc()
 			errorRetryCounter.WithLabelValues("timeout", "k8s_api_call").Inc()
 
 			// BUSINESS RULE: Each label combination should have independent counter
-			crdRetries := testutil.ToFloat64(errorRetryCounter.WithLabelValues("transient_error", "crd_creation"))
+			crdRetries := testutil.ToFloat64(errorRetryCounter.WithLabelValues(transientError, crdCreation))
 			auditRetries := testutil.ToFloat64(errorRetryCounter.WithLabelValues("network_error", "audit_emission"))
 			k8sRetries := testutil.ToFloat64(errorRetryCounter.WithLabelValues("timeout", "k8s_api_call"))
 
@@ -150,8 +156,8 @@ var _ = Describe("BR-GATEWAY-113: Error Recovery Metrics", func() {
 			// BUSINESS LOGIC: High recovery rate = resilient, low rate = systemic issues
 			// Unit Test: Calculate recovery rate from metrics
 
-			operation := "crd_creation"
-			errorType := "transient_error"
+			operation := crdCreation
+			errorType := transientError
 
 			// Simulate mixed outcomes: 3 recoveries, 1 failure
 			errorRecoveryCounter.WithLabelValues(errorType, operation).Inc()
@@ -176,8 +182,8 @@ var _ = Describe("BR-GATEWAY-113: Error Recovery Metrics", func() {
 			// BUSINESS LOGIC: High retries/recovery = inefficient backoff
 			// Unit Test: Calculate retry overhead from metrics
 
-			operation := "crd_creation"
-			errorType := "transient_error"
+			operation := crdCreation
+			errorType := transientError
 
 			// Simulate: 5 retries leading to 1 recovery
 			for i := 0; i < 5; i++ {

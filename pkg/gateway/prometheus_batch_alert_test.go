@@ -46,8 +46,8 @@ func newBatchWebhookJSON(alerts []batchAlertEntry, commonLabels map[string]strin
 		StartsAt    string            `json:"startsAt"`
 	}
 	type webhookJSON struct {
-		Alerts           []alertJSON       `json:"alerts"`
-		CommonLabels     map[string]string `json:"commonLabels"`
+		Alerts            []alertJSON       `json:"alerts"`
+		CommonLabels      map[string]string `json:"commonLabels"`
 		CommonAnnotations map[string]string `json:"commonAnnotations"`
 	}
 
@@ -97,7 +97,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 				if stalePods[name] {
 					return "", "", fmt.Errorf("pods %q not found", name)
 				}
-				return "Deployment", "worker", nil
+				return deployment, "worker", nil
 			},
 		}
 	}
@@ -122,7 +122,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 
 			expectedFP := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: "demo-crashloop",
-				Kind:      "Deployment",
+				Kind:      deployment,
 				Name:      "worker",
 			})
 			Expect(signal.Fingerprint).To(Equal(expectedFP),
@@ -186,7 +186,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 
 			expectedFP := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: "prod",
-				Kind:      "Deployment",
+				Kind:      deployment,
 				Name:      "worker",
 			})
 			Expect(signal.Fingerprint).To(Equal(expectedFP))
@@ -223,13 +223,13 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
 					switch {
 					case len(name) >= 15 && name[:15] == "order-processor":
-						return "Deployment", "order-processor", nil
+						return deployment, "order-processor", nil
 					case len(name) >= 14 && name[:14] == "inventory-sync":
-						return "Deployment", "inventory-sync", nil
+						return deployment, "inventory-sync", nil
 					case len(name) >= 8 && name[:8] == "postgres":
-						return "Deployment", "postgres", nil
+						return deployment, "postgres", nil
 					default:
-						return "Deployment", name, nil
+						return deployment, name, nil
 					}
 				},
 			}
@@ -249,10 +249,10 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			Expect(signals).To(HaveLen(2), "Each alert with a distinct owner chain must produce its own signal")
 
 			fpOrderProc := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: "demo-cascade", Kind: "Deployment", Name: "order-processor",
+				Namespace: "demo-cascade", Kind: deployment, Name: "order-processor",
 			})
 			fpInvSync := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: "demo-cascade", Kind: "Deployment", Name: "inventory-sync",
+				Namespace: "demo-cascade", Kind: deployment, Name: "inventory-sync",
 			})
 
 			fingerprints := map[string]bool{signals[0].Fingerprint: true, signals[1].Fingerprint: true}
@@ -276,7 +276,7 @@ var _ = Describe("Issue #451: Gateway Resilient Batch Alert Processing", func() 
 			Expect(signal).ToNot(BeNil(), "Parse returns the first resolved signal")
 
 			fpOrderProc := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: "demo-cascade", Kind: "Deployment", Name: "order-processor",
+				Namespace: "demo-cascade", Kind: deployment, Name: "order-processor",
 			})
 			Expect(signal.Fingerprint).To(Equal(fpOrderProc),
 				"Parse short-circuits on first alert — only order-processor is returned")
