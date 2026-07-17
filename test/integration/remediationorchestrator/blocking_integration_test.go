@@ -309,7 +309,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				}
 				failedCountA := 0
 				for _, rr := range rrListA.Items {
-					if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == namespace && rr.Status.OverallPhase == "Failed" {
+					if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == namespace && rr.Status.OverallPhase == remediationv1.PhaseFailed {
 						failedCountA++
 					}
 				}
@@ -333,7 +333,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				}
 				failedCountB := 0
 				for _, rr := range rrListB.Items {
-					if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == nsB && rr.Status.OverallPhase == "Failed" {
+					if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == nsB && rr.Status.OverallPhase == remediationv1.PhaseFailed {
 						failedCountB++
 					}
 				}
@@ -375,7 +375,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				Equal("Processing"),
 				Equal("Analyzing"),
 				Equal("Executing"),
-				Equal("Completed")),
+				Equal(completed)),
 				"New RR in namespace B should progress normally (namespace isolation works)")
 
 			// Business Value: Multi-tenant safety - one tenant's failures don't affect another

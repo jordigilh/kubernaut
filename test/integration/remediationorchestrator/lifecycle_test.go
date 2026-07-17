@@ -385,7 +385,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.RootCause = "Problem self-resolved - container restarted successfully"
 			ai.Status.Reason = "WorkflowNotNeeded"
 			ai.Status.SubReason = "ProblemResolved"
@@ -474,7 +474,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = "Confidence below 80% threshold"
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
@@ -535,9 +535,9 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = "Confidence below threshold"
+			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      "wf-restart-pods",
 				Version:         "v1.0.0",
@@ -606,9 +606,9 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = "Confidence below threshold"
+			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowID:      "wf-restart-pods",
 				Version:         "v1.0.0",

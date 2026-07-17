@@ -55,7 +55,7 @@ var _ = Describe("Issue #628: Notification Status Standardization", func() {
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 			rr := helpers.NewRemediationRequest("test-rr-628-001", "default")
-			rr.Status.OverallPhase = "Completed"
+			rr.Status.OverallPhase = remediationv1.PhaseCompleted
 			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			ai := helpers.NewCompletedAIAnalysis("test-ai-628-001", "default")
 
@@ -76,7 +76,7 @@ var _ = Describe("Issue #628: Notification Status Standardization", func() {
 			nc := creator.NewNotificationCreator(cl, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 			rr := helpers.NewRemediationRequest("test-rr-628-002", "default")
-			rr.Status.OverallPhase = "Completed"
+			rr.Status.OverallPhase = remediationv1.PhaseCompleted
 			rr.Status.DuplicateCount = 3
 
 			name, err := nc.CreateBulkDuplicateNotification(context.Background(), rr)
@@ -199,7 +199,7 @@ var _ = Describe("Issue #628: Notification Status Standardization", func() {
 			}
 
 			rr := helpers.NewRemediationRequest("test-rr-628-008", "default")
-			rr.Status.OverallPhase = "Completed"
+			rr.Status.OverallPhase = remediationv1.PhaseCompleted
 			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			rr.Status.DuplicateCount = 2
 			ai := helpers.NewCompletedAIAnalysis("test-ai-628-008", "default")

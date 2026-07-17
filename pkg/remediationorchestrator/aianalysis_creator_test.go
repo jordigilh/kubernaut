@@ -36,6 +36,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// tierCriticalLabelFixture is a cost/business-tier custom label value used in
+// the CustomLabels pass-through test below. Unrelated to SignalProcessing's
+// Severity enum despite sharing the same text (goconst dedup).
+const tierCriticalLabelFixture = "critical"
+
 var _ = Describe("AIAnalysisCreator", func() {
 	var (
 		scheme *runtime.Scheme
@@ -105,21 +110,21 @@ var _ = Describe("AIAnalysisCreator", func() {
 			})
 
 			It("should build correct AIAnalysis spec with signal context and enrichment data", func() {
-			// Arrange - use testutil factories with custom options
-			// NOTE: Environment, Priority, and Severity now come from SP.Status, not RR.Spec
-			// (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md and DD-SEVERITY-001)
-			completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
-			// Override SP status to have custom environment/priority/severity for test
-			completedSP.Status.EnvironmentClassification.Environment = signalprocessingv1.EnvironmentProduction
-			completedSP.Status.PriorityAssignment.Priority = signalprocessingv1.PriorityP0
-			completedSP.Status.Severity = "critical" // DD-SEVERITY-001: Normalized severity from SP
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
-				WithStatusSubresource(completedSP).Build()
-			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
-			rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
-				Severity:   "sev1", // External severity (not used by AIAnalysis per DD-SEVERITY-001)
-				SignalType: "alert",
-			})
+				// Arrange - use testutil factories with custom options
+				// NOTE: Environment, Priority, and Severity now come from SP.Status, not RR.Spec
+				// (per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md and DD-SEVERITY-001)
+				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
+				// Override SP status to have custom environment/priority/severity for test
+				completedSP.Status.EnvironmentClassification.Environment = signalprocessingv1.EnvironmentProduction
+				completedSP.Status.PriorityAssignment.Priority = signalprocessingv1.PriorityP0
+				completedSP.Status.Severity = signalprocessingv1.SeverityCritical // DD-SEVERITY-001: Normalized severity from SP
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+					WithStatusSubresource(completedSP).Build()
+				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+				rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
+					Severity:   "sev1", // External severity (not used by AIAnalysis per DD-SEVERITY-001)
+					SignalType: "alert",
+				})
 
 				// Act
 				name, err := aiCreator.Create(ctx, rr, completedSP)
@@ -132,23 +137,23 @@ var _ = Describe("AIAnalysisCreator", func() {
 				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
 				Expect(err).ToNot(HaveOccurred())
 
-			// Verify RemediationRequestRef
-			Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
-			Expect(createdAI.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
+				// Verify RemediationRequestRef
+				Expect(createdAI.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
+				Expect(createdAI.Spec.RemediationRequestRef.Kind).To(Equal("RemediationRequest"))
 
-			// Verify RemediationID uses RR.Name per DD-AUDIT-CORRELATION-001
-			// (NOT rr.UID - that was the old inconsistent pattern)
-			Expect(createdAI.Spec.RemediationID).To(Equal(rr.Name))
+				// Verify RemediationID uses RR.Name per DD-AUDIT-CORRELATION-001
+				// (NOT rr.UID - that was the old inconsistent pattern)
+				Expect(createdAI.Spec.RemediationID).To(Equal(rr.Name))
 
-			// Verify SignalContext
-			// Fingerprint comes from RR.Spec
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
-			// BR-SP-106: SignalType now comes from SP.Status (normalized by signal mode classifier)
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(completedSP.Status.SignalName))
-			// DD-SEVERITY-001: Severity, Environment, and Priority come from SP.Status (normalized)
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(completedSP.Status.Severity))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(string(completedSP.Status.EnvironmentClassification.Environment)))
-			Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(string(completedSP.Status.PriorityAssignment.Priority)))
+				// Verify SignalContext
+				// Fingerprint comes from RR.Spec
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
+				// BR-SP-106: SignalType now comes from SP.Status (normalized by signal mode classifier)
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(completedSP.Status.SignalName))
+				// DD-SEVERITY-001: Severity, Environment, and Priority come from SP.Status (normalized)
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(completedSP.Status.Severity))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(string(completedSP.Status.EnvironmentClassification.Environment)))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(string(completedSP.Status.PriorityAssignment.Priority)))
 
 				// Verify TargetResource
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.TargetResource.Kind).To(Equal(rr.Spec.TargetResource.Kind))
@@ -207,7 +212,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 					Phase: signalprocessingv1.PhaseCompleted,
 				})
 				// Set normalized severity in SP status (determined by SignalProcessing Rego policy)
-				completedSP.Status.Severity = "critical"
+				completedSP.Status.Severity = signalprocessingv1.SeverityCritical
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
 				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
@@ -230,7 +235,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 				// DD-SEVERITY-001: AIAnalysis MUST use normalized severity from SP.Status.Severity
 				// (not external severity from RR.Spec.Severity)
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal("critical"),
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(signalprocessingv1.SeverityCritical),
 					"AIAnalysis should use normalized severity from SP.Status.Severity (DD-SEVERITY-001)")
 
 				// Verify RR still has external severity (for notifications/operator messages)
@@ -400,7 +405,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Arrange: SP has proactive signal mode
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
 				completedSP.Status.SignalMode = "proactive"
-				completedSP.Status.SignalName = "OOMKilled"             // normalized
+				completedSP.Status.SignalName = "OOMKilled"              // normalized
 				completedSP.Status.SourceSignalName = "PredictedOOMKill" // preserved for audit
 
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
@@ -428,7 +433,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Arrange: SP has normalized signal type
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
 				completedSP.Status.SignalMode = "proactive"
-				completedSP.Status.SignalName = "OOMKilled"             // Normalized by SP
+				completedSP.Status.SignalName = "OOMKilled" // Normalized by SP
 				completedSP.Status.SourceSignalName = "PredictedOOMKill"
 
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
@@ -485,7 +490,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 			completedSP := helpers.NewCompletedSignalProcessing("sp-customlabels", "default")
 			completedSP.Status.KubernetesContext.CustomLabels = map[string][]string{
 				"team":        {"platform"},
-				"tier":        {"critical"},
+				"tier":        {tierCriticalLabelFixture},
 				"cost-center": {"eng-42"},
 			}
 
@@ -503,7 +508,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 
 			kc := createdAI.Spec.AnalysisRequest.SignalContext.EnrichmentResults.KubernetesContext
 			Expect(kc.CustomLabels).To(HaveKeyWithValue("team", []string{"platform"}))
-			Expect(kc.CustomLabels).To(HaveKeyWithValue("tier", []string{"critical"}))
+			Expect(kc.CustomLabels).To(HaveKeyWithValue("tier", []string{tierCriticalLabelFixture}))
 			Expect(kc.CustomLabels).To(HaveKeyWithValue("cost-center", []string{"eng-42"}))
 		})
 

@@ -273,7 +273,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 				if err != nil {
 					return err
 				}
-				rr.Status.OverallPhase = "Completed"
+				rr.Status.OverallPhase = completed
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed(), "RR1 should be manually marked as Completed")
 
@@ -289,7 +289,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 				}
 				// Controller must have observed the completion (ObservedGeneration == Generation)
 				// AND status must be Completed
-				return rr.Status.OverallPhase == "Completed" &&
+				return rr.Status.OverallPhase == completed &&
 					rr.Status.ObservedGeneration == rr.Generation
 			}, timeout, interval).Should(BeTrue(), "RR1 should be fully completed with ObservedGeneration == Generation")
 

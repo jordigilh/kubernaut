@@ -34,6 +34,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	deploymentTestApp = "Deployment/test-app"
+)
+
 var _ = Describe("CheckResourceBusy Owner-Ref Self-Detection (BR-ORCH-050)", func() {
 	var (
 		ctx        context.Context
@@ -72,7 +77,7 @@ var _ = Describe("CheckResourceBusy Owner-Ref Self-Detection (BR-ORCH-050)", fun
 
 	Describe("UT-RO-189-008: CheckResourceBusy skips WFE owned by current RR", func() {
 		It("should return nil (not blocked) when the active WFE is owned by the requesting RR", func() {
-			targetResource := "Deployment/test-app"
+			targetResource := deploymentTestApp
 			rrUID := types.UID("rr-uid-001")
 
 			// Create the RR
@@ -120,7 +125,7 @@ var _ = Describe("CheckResourceBusy Owner-Ref Self-Detection (BR-ORCH-050)", fun
 
 	Describe("UT-RO-189-009: CheckResourceBusy blocks WFE owned by different RR", func() {
 		It("should return a BlockingCondition when the active WFE is owned by a different RR", func() {
-			targetResource := "Deployment/test-app"
+			targetResource := deploymentTestApp
 
 			// Create the requesting RR (different UID from the WFE owner)
 			requestingRR := &remediationv1.RemediationRequest{
@@ -167,7 +172,7 @@ var _ = Describe("CheckResourceBusy Owner-Ref Self-Detection (BR-ORCH-050)", fun
 		})
 
 		It("should block when WFE has no owner references (orphaned)", func() {
-			targetResource := "Deployment/test-app"
+			targetResource := deploymentTestApp
 
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
