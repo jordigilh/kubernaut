@@ -69,7 +69,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-001: original RR Completed → duplicate inherits Completed with InheritedCompleted outcome", func() {
 			originalRR := newRemediationRequest("original-rr-001", "default", remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = "Remediated"
+			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
 			dupRR := newBlockedDuplicateRR("dup-rr-001", "default", "original-rr-001")
 
@@ -99,7 +99,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: Blocked/DuplicateInProgress RR must inherit Completed when original RR completes")
-			Expect(updated.Status.Outcome).To(Equal("Remediated"),
+			Expect(updated.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
 				"Behavior: Outcome must be Remediated (lineage tracked via DuplicateOf + K8s events)")
 			Expect(updated.Status.CompletedAt).NotTo(BeNil(),
 				"Behavior: CompletedAt must be set for terminal transition")
@@ -254,7 +254,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-005: CurrentBlockedGauge decrements after successful Completed inheritance", func() {
 			originalRR := newRemediationRequest("original-rr-005", "default", remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = "Remediated"
+			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
 			dupRR := newBlockedDuplicateRR("dup-rr-005", "default", "original-rr-005")
 
@@ -330,7 +330,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-007: Completed inheritance emits K8s event with RemediationRequest provenance", func() {
 			originalRR := newRemediationRequest("original-rr-007", "default", remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = "Remediated"
+			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
 			dupRR := newBlockedDuplicateRR("dup-rr-007", "default", "original-rr-007")
 
@@ -570,7 +570,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-F3: ensureNotificationsCreated must NOT be called for RR-level inheritance (no AIAnalysis exists)", func() {
 			originalRR := newRemediationRequest("original-rr-f3", "default", remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = "Remediated"
+			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
 			dupRR := newBlockedDuplicateRR("dup-rr-f3", "default", "original-rr-f3")
 

@@ -601,7 +601,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-VER-001: EA Get error returns 30s requeue", func() {
 			rr := newRemediationRequestWithChildRefs("ver001", "default",
 				remediationv1.PhaseVerifying, "sp-ver001", "ai-ver001", "we-ver001")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",
@@ -633,7 +633,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-VER-002: EA in progress (non-terminal phase) returns 30s requeue", func() {
 			rr := newRemediationRequestWithChildRefs("ver002", "default",
 				remediationv1.PhaseVerifying, "sp-ver002", "ai-ver002", "we-ver002")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",
@@ -677,7 +677,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-VER-003: nil EA creator causes EA ref unset path, returns 30s requeue", func() {
 			rr := newRemediationRequestWithChildRefs("ver003", "default",
 				remediationv1.PhaseVerifying, "sp-ver003", "ai-ver003", "we-ver003")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -702,7 +702,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		It("UT-RO-CHAR-VER-004: ValidityDeadline not yet set, age under timeout, returns 30s requeue", func() {
 			rr := newRemediationRequestWithChildRefs("ver004", "default",
 				remediationv1.PhaseVerifying, "sp-ver004", "ai-ver004", "we-ver004")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",

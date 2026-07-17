@@ -55,7 +55,7 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		now := metav1.Now()
 		rr.Status.OverallPhase = phase.Completed
-		rr.Status.Outcome = "Remediated"
+		rr.Status.Outcome = remediationv1.OutcomeRemediated
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
 		if sourceKind == "RemediationRequest" {

@@ -55,7 +55,7 @@ var _ = Describe("Issue #627: Notification Body Field Reordering", func() {
 
 		rr := helpers.NewRemediationRequest("test-rr-627-001", "default")
 		rr.Status.OverallPhase = "Completed"
-		rr.Status.Outcome = "Remediated"
+		rr.Status.Outcome = remediationv1.OutcomeRemediated
 		ai := helpers.NewCompletedAIAnalysis("test-ai-627-001", "default")
 
 		name, err := nc.CreateCompletionNotification(context.Background(), rr, ai, "argo", nil)

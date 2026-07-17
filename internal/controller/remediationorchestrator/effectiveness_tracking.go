@@ -212,19 +212,19 @@ func (r *Reconciler) applyEffectivenessAssessmentOutcome(ctx context.Context, rr
 // AlertManager. EM alert/alert.go sets Assessed=false when AM is unreachable or disabled.
 func DeriveOutcomeFromEA(ea *eav1.EffectivenessAssessment) string {
 	if ea == nil {
-		return "Remediated"
+		return remediationv1.OutcomeRemediated
 	}
 
 	components := ea.Status.Components
 	if !components.AlertAssessed {
-		return "Remediated"
+		return remediationv1.OutcomeRemediated
 	}
 
 	if components.AlertScore != nil && *components.AlertScore == 0 {
 		return "Inconclusive"
 	}
 
-	return "Remediated"
+	return remediationv1.OutcomeRemediated
 }
 
 // completeVerificationIfNeeded transitions the RR from Verifying to Completed (#280, #722).

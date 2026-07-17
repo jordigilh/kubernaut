@@ -148,7 +148,7 @@ var _ = Describe("Issue #666: ExecutingHandler (BR-ORCH-025)", func() {
 			intent, err := h.Handle(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(intent.Type).To(Equal(phase.TransitionVerifying))
-			Expect(intent.Outcome).To(Equal("Remediated"))
+			Expect(intent.Outcome).To(Equal(remediationv1.OutcomeRemediated))
 		})
 	})
 

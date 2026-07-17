@@ -131,7 +131,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: RR must inherit Completed from original WFE")
-			Expect(updated.Status.Outcome).To(Equal("Remediated"),
+			Expect(updated.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
 				"Behavior: Outcome must be Remediated (lineage tracked via DeduplicatedByWE + K8s events)")
 			Expect(updated.Status.CompletedAt).NotTo(BeNil())
 		})

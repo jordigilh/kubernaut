@@ -135,7 +135,6 @@ func (m *Manager) BuildRemediationCreatedEvent(
 ) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeLifecycleCreated) // Gap #8: Per ADR-034 v1.2 naming convention
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, "created")
@@ -193,7 +192,6 @@ func (m *Manager) BuildLifecycleStartedEvent(
 ) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeLifecycleStarted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionStarted)
@@ -227,7 +225,6 @@ func (m *Manager) BuildLifecycleVerifyingStartedEvent(
 	clusterName string,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeLifecycleVerifyingStarted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, "verifying_started")
@@ -263,7 +260,6 @@ func (m *Manager) BuildLifecycleVerificationCompletedEvent(
 	durationMs int64,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeLifecycleVerificationCompleted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionCompleted)
@@ -300,7 +296,6 @@ func (m *Manager) BuildLifecycleVerificationTimedOutEvent(
 	durationMs int64,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeLifecycleVerificationTimedOut)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionExpired)
@@ -348,7 +343,6 @@ func (m *Manager) BuildPhaseTransitionEvent(
 ) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeLifecycleTransitioned)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionTransitioned)
@@ -399,7 +393,6 @@ func (m *Manager) BuildCompletionEvent(
 ) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeLifecycleCompleted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionCompleted)
@@ -468,7 +461,6 @@ func (m *Manager) BuildFailureEvent(
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeLifecycleCompleted)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionCompleted)
@@ -537,7 +529,6 @@ func (m *Manager) BuildApprovalRequestedEvent(
 		evtCtx.CorrelationID, evtCtx.Namespace, evtCtx.RRName, evtCtx.ClusterName, evtCtx.RARName
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeApprovalRequested)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionApprovalRequested)
@@ -589,7 +580,6 @@ func (m *Manager) BuildApprovalDecisionEvent(
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, string(mapping.PayloadEventType))
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, mapping.Action)
@@ -644,7 +634,6 @@ func (m *Manager) BuildManualReviewEvent(
 ) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeManualReview)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionManualReview)
@@ -707,7 +696,6 @@ func (m *Manager) BuildRoutingBlockedEvent(
 ) (*api.AuditEventRequest, error) {
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeRoutingBlocked)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionBlocked)
@@ -769,7 +757,6 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	data RemediationWorkflowCreatedData,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeRemediationWorkflowCreated)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionWorkflowCreated)
@@ -833,7 +820,6 @@ func (m *Manager) BuildEACreatedEvent(
 	data EACreatedData,
 ) (*api.AuditEventRequest, error) {
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeEACreated)
 	audit.SetEventCategory(event, CategoryOrchestration)
 	audit.SetEventAction(event, ActionEACreated)

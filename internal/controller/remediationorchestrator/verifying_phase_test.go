@@ -221,7 +221,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			"#280: EA terminal should trigger Verifying -> Completed")
 		Expect(fetchedRR.Status.CompletedAt).ToNot(BeNil(),
 			"CompletedAt should be set when transitioning to Completed")
-		Expect(fetchedRR.Status.Outcome).To(Equal("Remediated"),
+		Expect(fetchedRR.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
 			"Outcome should be Remediated after successful verification")
 	})
 
@@ -293,7 +293,7 @@ var _ = Describe("Verifying Phase Transition (#280)", func() {
 			"#280: EA failure should also trigger Verifying -> Completed")
 		Expect(fetchedRR.Status.CompletedAt).To(HaveValue(Not(BeZero())),
 			"CompletedAt should be set when transitioning to Completed")
-		Expect(fetchedRR.Status.Outcome).To(Equal("Remediated"),
+		Expect(fetchedRR.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
 			"Outcome is Remediated because the remediation itself succeeded, even if EA failed")
 	})
 

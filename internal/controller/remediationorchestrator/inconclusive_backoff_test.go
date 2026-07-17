@@ -282,7 +282,7 @@ var _ = Describe("Inconclusive Backoff (BR-ORCH-042.6, Issue #1091)", func() {
 		Expect(fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: namespace}, fetchedRR)).To(Succeed())
 
 		Expect(fetchedRR.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted))
-		Expect(fetchedRR.Status.Outcome).To(Equal("Remediated"))
+		Expect(fetchedRR.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated))
 		Expect(fetchedRR.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
 			"Remediated should NOT increment ConsecutiveFailureCount")
 		Expect(fetchedRR.Status.NextAllowedExecution).To(BeNil(),

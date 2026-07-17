@@ -816,6 +816,11 @@ type RemediationRequestStatus struct {
 	SignalTargetDisplay string `json:"signalTargetDisplay,omitempty"`
 }
 
+// OutcomeRemediated is the Status.Outcome value for a successfully remediated
+// and EA-verified RemediationRequest (BR-ORCH-037). See the Outcome field enum
+// above for the full set of valid values.
+const OutcomeRemediated = "Remediated"
+
 // WorkflowReference captures workflow catalog information for audit trail.
 // Used in RemediationRequestStatus.SelectedWorkflowRef (Gap #5).
 type WorkflowReference struct {

@@ -71,7 +71,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 
 		It("UT-RO-1033-001: EA terminal completion passes rr.Status.Outcome to EmitCompletionAudit", func() {
 			rr := newRemediationRequest("ver-outcome-ea", "default", remediationv1.PhaseVerifying)
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 			rr.Status.StartTime = &startTime
 			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
@@ -93,7 +93,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			cbs := noopCallbacks()
 			cbs.TrackEffectivenessStatus = func(_ context.Context, rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = phase.Completed
-				rr.Status.Outcome = "Remediated"
+				rr.Status.Outcome = remediationv1.OutcomeRemediated
 				return nil
 			}
 			cbs.EmitCompletionAudit = func(_ context.Context, _ *remediationv1.RemediationRequest, outcome string, _ int64) {
@@ -103,14 +103,14 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			h := newHandler(c, cbs)
 			_, err := h.Handle(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(capturedOutcome).To(Equal("Remediated"),
+			Expect(capturedOutcome).To(Equal(remediationv1.OutcomeRemediated),
 				"EmitCompletionAudit should receive rr.Status.Outcome, not 'success'")
 		})
 
 		It("UT-RO-1033-002: Safety-net timeout passes VerificationTimedOut to EmitCompletionAudit", func() {
 			rr := newRemediationRequest("ver-outcome-safety", "default", remediationv1.PhaseVerifying)
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-15 * time.Minute))
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-15 * time.Minute))
 			rr.Status.StartTime = &startTime
 			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
@@ -142,7 +142,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 
 		It("UT-RO-1033-003: Verification deadline expired passes VerificationTimedOut to EmitCompletionAudit", func() {
 			rr := newRemediationRequest("ver-outcome-dl", "default", remediationv1.PhaseVerifying)
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-10 * time.Minute))
 			rr.Status.StartTime = &startTime
 			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
@@ -184,7 +184,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			mgr := prodaudit.NewManager("test-orchestrator")
 
 			outcomes := []string{
-				"Remediated",
+				remediationv1.OutcomeRemediated,
 				"Inconclusive",
 				"VerificationTimedOut",
 				"DryRun",
@@ -275,9 +275,9 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 
 			var wg sync.WaitGroup
 			outcomes := []string{
-				"Remediated", "Inconclusive", "VerificationTimedOut",
+				remediationv1.OutcomeRemediated, "Inconclusive", "VerificationTimedOut",
 				"DryRun", "ManualReviewRequired",
-				"Remediated", "Inconclusive", "VerificationTimedOut",
+				remediationv1.OutcomeRemediated, "Inconclusive", "VerificationTimedOut",
 				"DryRun", "ManualReviewRequired",
 			}
 

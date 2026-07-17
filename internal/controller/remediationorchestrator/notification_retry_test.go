@@ -98,7 +98,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				Outcome:      "Remediated",
+				Outcome:      remediationv1.OutcomeRemediated,
 				EffectivenessAssessmentRef: &corev1.ObjectReference{
 					Kind:      "EffectivenessAssessment",
 					Name:      eaName,
@@ -232,7 +232,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase:   remediationv1.PhaseVerifying,
-				Outcome:        "Remediated",
+				Outcome:        remediationv1.OutcomeRemediated,
 				DuplicateCount: 3,
 				EffectivenessAssessmentRef: &corev1.ObjectReference{
 					Kind:      "EffectivenessAssessment",
@@ -393,7 +393,7 @@ var _ = Describe("NotificationRequest Retry (#281)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase:   remediationv1.PhaseVerifying,
-				Outcome:        "Remediated",
+				Outcome:        remediationv1.OutcomeRemediated,
 				DuplicateCount: 2,
 				EffectivenessAssessmentRef: &corev1.ObjectReference{
 					Kind:      "EffectivenessAssessment",
@@ -576,7 +576,7 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase: remediationv1.PhaseVerifying,
-				Outcome:      "Remediated",
+				Outcome:      remediationv1.OutcomeRemediated,
 				EffectivenessAssessmentRef: &corev1.ObjectReference{
 					Kind:      "EffectivenessAssessment",
 					Name:      eaName,
@@ -694,7 +694,7 @@ var _ = Describe("Completion Notification Verification Context (#318)", func() {
 			},
 			Status: remediationv1.RemediationRequestStatus{
 				OverallPhase:               remediationv1.PhaseVerifying,
-				Outcome:                    "Remediated",
+				Outcome:                    remediationv1.OutcomeRemediated,
 				EffectivenessAssessmentRef: nil,
 				VerificationDeadline:       &deadline,
 			},

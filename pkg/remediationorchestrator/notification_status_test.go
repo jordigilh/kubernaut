@@ -56,7 +56,7 @@ var _ = Describe("Issue #628: Notification Status Standardization", func() {
 
 			rr := helpers.NewRemediationRequest("test-rr-628-001", "default")
 			rr.Status.OverallPhase = "Completed"
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			ai := helpers.NewCompletedAIAnalysis("test-ai-628-001", "default")
 
 			name, err := nc.CreateCompletionNotification(context.Background(), rr, ai, "tekton", nil)
@@ -200,7 +200,7 @@ var _ = Describe("Issue #628: Notification Status Standardization", func() {
 
 			rr := helpers.NewRemediationRequest("test-rr-628-008", "default")
 			rr.Status.OverallPhase = "Completed"
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			rr.Status.DuplicateCount = 2
 			ai := helpers.NewCompletedAIAnalysis("test-ai-628-008", "default")
 
