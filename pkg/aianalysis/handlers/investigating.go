@@ -296,10 +296,10 @@ func (h *InvestigatingHandler) failMaxRetriesExceeded(ctx context.Context, analy
 	analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 		analysis.Status.ConsecutiveFailures, err)
 	analysis.Status.Reason = aianalysisv1.ReasonAPIError
-	analysis.Status.SubReason = "MaxRetriesExceeded"
+	analysis.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
 
 	// Record metric for max retries exceeded
-	h.metrics.RecordFailure("APIError", "MaxRetriesExceeded")
+	h.metrics.RecordFailure(string(aianalysisv1.ReasonAPIError), aianalysisv1.SubReasonMaxRetriesExceeded)
 
 	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
 	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
