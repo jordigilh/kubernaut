@@ -22,6 +22,15 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	oomkilled = "OOMKilled"
+	// oomkilledLower is the lowercase-normalized signal name variant, distinct
+	// from oomkilled (container termination Reason, PascalCase) and oomkill
+	// (workflow catalog key prefix).
+	oomkilledLower = "oomkilled"
+)
+
 // ────────────────────────────────────────────────────────────────────────────
 // JSON-RPC helpers (adapted from test/e2e/apifrontend/helpers_test.go)
 // ────────────────────────────────────────────────────────────────────────────
@@ -297,17 +306,17 @@ func fpWaitForPodCrashInNS(appLabel, ns string, timeout time.Duration) {
 		for _, pod := range pods.Items {
 			for _, cs := range pod.Status.ContainerStatuses {
 				if cs.LastTerminationState.Terminated != nil &&
-					cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+					cs.LastTerminationState.Terminated.Reason == oomkilled {
 					GinkgoWriter.Printf("  OOMKill detected for %s in %s (restarts=%d)\n", appLabel, ns, cs.RestartCount)
 					return true
 				}
 				if cs.State.Terminated != nil &&
-					cs.State.Terminated.Reason == "OOMKilled" {
+					cs.State.Terminated.Reason == oomkilled {
 					GinkgoWriter.Printf("  OOMKill detected for %s in %s\n", appLabel, ns)
 					return true
 				}
 				if cs.RestartCount > 0 && cs.State.Waiting != nil &&
-					cs.State.Waiting.Reason == "CrashLoopBackOff" {
+					cs.State.Waiting.Reason == crashloopbackoff {
 					GinkgoWriter.Printf("  CrashLoopBackOff detected for %s in %s\n", appLabel, ns)
 					return true
 				}

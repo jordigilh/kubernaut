@@ -91,6 +91,11 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 const (
 	timeout  = 10 * time.Minute
 	interval = 500 * time.Millisecond
@@ -346,7 +351,7 @@ func warmUpFleetMCPSession(ctx context.Context, c *mcpclient.Client) error {
 }
 
 func TestFleetE2E(t *testing.T) {
-	if os.Getenv("FLEET_E2E") != "true" {
+	if os.Getenv("FLEET_E2E") != trueFixture {
 		t.Skip("FLEET_E2E=true required for fleet E2E tests")
 	}
 	RegisterFailHandler(Fail)
@@ -363,7 +368,7 @@ var _ = SynchronizedBeforeSuite(
 		tempKubeconfigPath := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
 		GinkgoWriter.Printf("Using isolated kubeconfig: %s\n", tempKubeconfigPath)
 
-		if os.Getenv("FLEET_E2E_REUSE_CLUSTER") == "true" {
+		if os.Getenv("FLEET_E2E_REUSE_CLUSTER") == trueFixture {
 			GinkgoWriter.Println("⚡ FLEET_E2E_REUSE_CLUSTER=true — skipping infrastructure setup, reusing existing cluster")
 
 			By("Retrieving existing ServiceAccount tokens")
@@ -560,7 +565,7 @@ var _ = SynchronizedAfterSuite(
 		setupFailed := k8sClient == nil
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true" || os.Getenv("FLEET_E2E_REUSE_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == trueFixture || os.Getenv("KEEP_CLUSTER") == trueFixture || os.Getenv("FLEET_E2E_REUSE_CLUSTER") == trueFixture
 
 		remoteClusterName := clusterName + "-remote"
 
@@ -591,7 +596,7 @@ var _ = SynchronizedAfterSuite(
 			infrastructure.CleanupFullPipelineTestResources(kubeconfigPath, GinkgoWriter)
 		}
 
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			for _, svc := range []struct{ service, deployment string }{
 				{"signalprocessing", "signalprocessing-controller"},
 				{"remediationorchestrator", "remediationorchestrator-controller"},

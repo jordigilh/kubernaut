@@ -104,7 +104,7 @@ var _ = Describe("E2E-FLEET-015 [AC-3, AC-4, SI-4]: OOMKill increase-memory fix 
 		payload := buildPrometheusAlertWithCluster("OOMKilled", namespace, "critical",
 			"Deployment", oomkillCrossClusterAppName, "remote-cluster")
 
-		gatewayURL := "http://localhost:30080"
+		gatewayURL := urlLocalhost30080
 		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}

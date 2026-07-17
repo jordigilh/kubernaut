@@ -35,7 +35,7 @@ var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes 
 		payload := buildPrometheusAlertWithCluster("FleetRouting", namespace, "critical",
 			"Deployment", "memory-eater", "remote-cluster")
 
-		gatewayURL := "http://localhost:30080"
+		gatewayURL := urlLocalhost30080
 		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}

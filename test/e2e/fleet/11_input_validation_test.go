@@ -41,7 +41,7 @@ import (
 // RemediationRequests from invalid data.
 var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects malformed payloads (BR-GATEWAY-003)", Label("fleet"), func() {
 
-	gatewayURL := "http://localhost:30080"
+	gatewayURL := urlLocalhost30080
 
 	It("should return 400 for syntactically invalid JSON [SI-10]", func() {
 		malformed := `{"alerts": [{"status": "firing", INVALID}]}`

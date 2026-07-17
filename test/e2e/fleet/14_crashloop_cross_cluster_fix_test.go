@@ -84,7 +84,7 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 		payload := buildPrometheusAlertWithCluster("KubePodCrashLooping", namespace, "high",
 			"Deployment", infrastructure.CrashLoopAppName, "remote-cluster")
 
-		gatewayURL := "http://localhost:30080"
+		gatewayURL := urlLocalhost30080
 		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}

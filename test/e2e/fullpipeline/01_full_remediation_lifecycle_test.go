@@ -45,6 +45,11 @@ import (
 	crdvalidators "github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	oomkill = "oomkill"
+)
+
 // BR-E2E-001: Full Remediation Lifecycle E2E Test
 // Validates the complete pipeline from K8s Event to Notification delivery.
 //
@@ -122,19 +127,19 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				for _, cs := range pod.Status.ContainerStatuses {
 					// Check last terminated state for OOMKilled reason
 					if cs.LastTerminationState.Terminated != nil &&
-						cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+						cs.LastTerminationState.Terminated.Reason == oomkilled {
 						GinkgoWriter.Printf("  ✅ OOMKill detected: restarts=%d\n", cs.RestartCount)
 						return true
 					}
 					// Also check current terminated state
 					if cs.State.Terminated != nil &&
-						cs.State.Terminated.Reason == "OOMKilled" {
+						cs.State.Terminated.Reason == oomkilled {
 						GinkgoWriter.Println("  ✅ OOMKill terminated state detected")
 						return true
 					}
 					// Fallback: CrashLoopBackOff after restarts
 					if cs.RestartCount > 0 && cs.State.Waiting != nil &&
-						cs.State.Waiting.Reason == "CrashLoopBackOff" {
+						cs.State.Waiting.Reason == crashloopbackoff {
 						GinkgoWriter.Println("  ✅ CrashLoopBackOff detected (OOMKill)")
 						return true
 					}
@@ -163,7 +168,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 					continue
 				}
 				sig := strings.ToLower(rr.Spec.SignalName)
-				if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" ||
+				if sig == backoff || sig == oomkilledLower || sig == oomkill ||
 					sig == "memoryexceedslimit" ||
 					strings.Contains(sig, "oom") || strings.Contains(sig, "memory") {
 					remediationRequest = rr
@@ -374,7 +379,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				// doesn't return "recovered" before EM would also consider it so.
 				ready := false
 				for _, cs := range pod.Status.ContainerStatuses {
-					g.Expect(cs.State.Waiting).To(Or(BeNil(), Not(HaveField("Reason", Equal("CrashLoopBackOff")))),
+					g.Expect(cs.State.Waiting).To(Or(BeNil(), Not(HaveField("Reason", Equal(crashloopbackoff)))),
 						"pod %s must not remain in CrashLoopBackOff after the memory limit fix", pod.Name)
 					if cs.Ready {
 						ready = true
@@ -498,7 +503,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// These fire during processing; some may repeat (phase transitions, retries).
 		atLeastOnceEvents := []string{
 			// Remediation Orchestrator: EA creation and phase transitions
-			"orchestrator.ea.created",            // pkg/remediationorchestrator/audit: emitEACreatedAudit — may repeat on reconcile retry
+			"orchestrator.ea.created",             // pkg/remediationorchestrator/audit: emitEACreatedAudit — may repeat on reconcile retry
 			"orchestrator.lifecycle.transitioned", // pkg/remediationorchestrator/audit: emitPhaseTransitionAudit
 			// Signal Processing
 			"signalprocessing.enrichment.completed",    // pkg/signalprocessing/audit: RecordEnrichmentComplete

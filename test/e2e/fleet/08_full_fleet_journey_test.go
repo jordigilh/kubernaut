@@ -41,10 +41,10 @@ import (
 // This is the integration test that validates the complete multi-cluster
 // remediation lifecycle against the genuinely remote cluster (AllRegistrationsRemote,
 // DD-TEST-013). It exercises:
-//   1. Gateway receives alert with cluster_id
-//   2. RR is created with spec.clusterID
-//   3. SP enriches the signal via MCP gateway (remote)
-//   4. RO routes the RR through the workflow pipeline
+//  1. Gateway receives alert with cluster_id
+//  2. RR is created with spec.clusterID
+//  3. SP enriches the signal via MCP gateway (remote)
+//  4. RO routes the RR through the workflow pipeline
 var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from alert to enrichment (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should complete the full fleet remediation pipeline: alert -> RR -> SP enrichment", func() {
 		By("Step 1: Sending alert with cluster_id=remote-cluster to Gateway (AC-4)")
@@ -89,7 +89,7 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 		payload := buildPrometheusAlertWithCluster("FleetJourney", namespace, "critical",
 			"Deployment", targetName, "remote-cluster")
 
-		gatewayURL := "http://localhost:30080"
+		gatewayURL := urlLocalhost30080
 		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}

@@ -93,7 +93,7 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", namespace, "critical",
 			"Deployment", targetName, "prod-east")
 
-		gatewayURL := "http://localhost:30080"
+		gatewayURL := urlLocalhost30080
 		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}
@@ -127,7 +127,7 @@ var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct f
 		payloadWest := buildPrometheusAlertWithCluster("FleetDedup", namespace, "warning",
 			"Deployment", "memory-eater", "prod-west")
 
-		gatewayURL := "http://localhost:30080"
+		gatewayURL := urlLocalhost30080
 		_, bodyEast := postFleetAlertUntilAccepted(gatewayURL, payloadEast)
 		_, bodyWest := postFleetAlertUntilAccepted(gatewayURL, payloadWest)
 

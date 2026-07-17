@@ -34,6 +34,12 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/scenarios"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	crashloopbackoff = "CrashLoopBackOff"
+	backoff          = "backoff"
+)
+
 // E2E-FP-1542-001: crashloop-config-fix-v1 performs a real, verifiable fix.
 // Authority: Issue #1542
 //
@@ -88,7 +94,7 @@ var _ = Describe("E2E-FP-1542-001: CrashLoop config fix performs a real fix (sin
 			for _, pod := range pods.Items {
 				for _, cs := range pod.Status.ContainerStatuses {
 					if cs.RestartCount > 0 && cs.State.Waiting != nil &&
-						cs.State.Waiting.Reason == "CrashLoopBackOff" {
+						cs.State.Waiting.Reason == crashloopbackoff {
 						GinkgoWriter.Printf("  ✅ CrashLoopBackOff detected: restarts=%d\n", cs.RestartCount)
 						return true
 					}
@@ -110,7 +116,7 @@ var _ = Describe("E2E-FP-1542-001: CrashLoop config fix performs a real fix (sin
 					continue
 				}
 				sig := strings.ToLower(rr.Spec.SignalName)
-				if sig == "backoff" || strings.Contains(sig, "crashloop") {
+				if sig == backoff || strings.Contains(sig, "crashloop") {
 					remediationRequest = rr
 					GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
 					return true

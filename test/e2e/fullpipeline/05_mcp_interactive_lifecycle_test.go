@@ -69,9 +69,9 @@ var _ = Describe("FP-MCP-003a: status of pipeline-triggered RR", Label("e2e", "f
 			}
 			for _, pod := range pods.Items {
 				for _, cs := range pod.Status.ContainerStatuses {
-					if (cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason == "OOMKilled") ||
-						(cs.State.Terminated != nil && cs.State.Terminated.Reason == "OOMKilled") ||
-						(cs.RestartCount > 0 && cs.State.Waiting != nil && cs.State.Waiting.Reason == "CrashLoopBackOff") {
+					if (cs.LastTerminationState.Terminated != nil && cs.LastTerminationState.Terminated.Reason == oomkilled) ||
+						(cs.State.Terminated != nil && cs.State.Terminated.Reason == oomkilled) ||
+						(cs.RestartCount > 0 && cs.State.Waiting != nil && cs.State.Waiting.Reason == crashloopbackoff) {
 						return true
 					}
 				}
