@@ -42,7 +42,7 @@ import (
 // targetNamespace is where workload resources (Pods, etc.) live; Spec.SignalTarget and
 // Spec.RemediationTarget reference this namespace. The EA object itself is created in
 // controllerNamespace so the EM controller (which only watches kubernaut-system) can see it.
-func createEA(targetNamespace, name, correlationID string, opts ...eaOption) *eav1.EffectivenessAssessment {
+func createEA(targetNamespace, name, correlationID string, opts ...eaOption) {
 	ea := &eav1.EffectivenessAssessment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -73,7 +73,6 @@ func createEA(targetNamespace, name, correlationID string, opts ...eaOption) *ea
 
 	GinkgoHelper()
 	Expect(k8sClient.Create(ctx, ea)).To(Succeed(), "Failed to create EA %s/%s", controllerNamespace, name)
-	return ea
 }
 
 // eaOption is a functional option for customizing EA creation.
@@ -174,6 +173,8 @@ func withStabilizationWindow(d time.Duration) eaOption {
 
 // createTargetPod creates a simple target pod in the given namespace.
 // The pod runs a sleep container and becomes Ready.
+//
+//nolint:unparam // name is always "target-pod" today, but this helper is shared across many other e2e/effectivenessmonitor test files outside this fix's scope.
 func createTargetPod(namespace, name string) *corev1.Pod {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -211,6 +212,8 @@ func createTargetPod(namespace, name string) *corev1.Pod {
 }
 
 // waitForPodReady waits until the specified pod has a Ready condition.
+//
+//nolint:unparam // name is always "target-pod" today, but this helper is shared across many other e2e/effectivenessmonitor test files outside this fix's scope.
 func waitForPodReady(namespace, name string) {
 	GinkgoHelper()
 	Eventually(func() bool {
@@ -268,13 +271,13 @@ func uniqueName(prefix string) string {
 func seedWorkflowStartedEvent(correlationID string) {
 	GinkgoHelper()
 	event := &ogenclient.AuditEventRequest{
-		Version:       "1.0",
-		EventType:     "workflowexecution.execution.started",
+		Version:        "1.0",
+		EventType:      "workflowexecution.execution.started",
 		EventTimestamp: time.Now().UTC(),
-		EventCategory: ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
-		EventAction:   "started",
-		EventOutcome:  ogenclient.AuditEventRequestEventOutcomeSuccess,
-		CorrelationID: correlationID,
+		EventCategory:  ogenclient.AuditEventRequestEventCategoryWorkflowexecution,
+		EventAction:    "started",
+		EventOutcome:   ogenclient.AuditEventRequestEventOutcomeSuccess,
+		CorrelationID:  correlationID,
 		EventData: ogenclient.NewAuditEventRequestEventDataWorkflowexecutionExecutionStartedAuditEventRequestEventData(
 			ogenclient.WorkflowExecutionAuditPayload{
 				EventType:       ogenclient.WorkflowExecutionAuditPayloadEventTypeWorkflowexecutionExecutionStarted,
@@ -339,4 +342,3 @@ func seedWorkflowCompletedEvent(correlationID string) {
 		Fail(fmt.Sprintf("Unexpected DS response type %T when seeding audit event", resp))
 	}
 }
-

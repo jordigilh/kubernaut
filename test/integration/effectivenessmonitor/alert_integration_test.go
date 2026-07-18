@@ -139,7 +139,7 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 		By("Configuring mock AM to return 503 on first request, then succeed")
 		mockAM.SetAlertsResponse(nil) // Reset
 		// Use a custom handler that fails first, then succeeds
-		originalHandler := func(w http.ResponseWriter, r *http.Request) {
+		originalHandler := func(w http.ResponseWriter, _ *http.Request) {
 			errorCount++
 			if errorCount <= 2 {
 				w.WriteHeader(http.StatusServiceUnavailable)

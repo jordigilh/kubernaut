@@ -123,14 +123,14 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 
 	// seedDecayEA creates an EA in Assessing phase with health=OK, hash=done,
 	// alert=not-yet-assessed, validity in the future.
-	seedDecayEA := func(ns, name string) *eav1.EffectivenessAssessment {
+	seedDecayEA := func(name string) *eav1.EffectivenessAssessment {
 		healthScore := 1.0
 		futureDeadline := metav1.NewTime(time.Now().Add(1 * time.Hour))
 		pastCheck := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 		return &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              name,
-				Namespace:         ns,
+				Namespace:         testNs,
 				CreationTimestamp: metav1.NewTime(time.Now().Add(-30 * time.Minute)),
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
@@ -138,10 +138,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 				RemediationRequestPhase: "Verifying",
 				SignalName:              "HighMemoryUsage",
 				SignalTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: testNs,
 				},
 				RemediationTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: testNs,
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 0},
@@ -183,12 +183,12 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// seedHealthyPod creates a Running/Ready pod matching the label selector
 	// used by getTargetHealthStatus (client.MatchingLabels{"app": targetName}).
 	// Health scorer returns 1.0 for TotalReplicas=1, ReadyReplicas=1, RestartCount=0.
-	seedHealthyPod := func(ns, targetName string) *corev1.Pod {
+	seedHealthyPod := func() *corev1.Pod {
 		return &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      targetName + "-pod-0",
-				Namespace: ns,
-				Labels:    map[string]string{"app": targetName},
+				Name:      "test-app-pod-0",
+				Namespace: testNs,
+				Labels:    map[string]string{"app": "test-app"},
 			},
 			Status: corev1.PodStatus{
 				Phase: corev1.PodRunning,
@@ -211,7 +211,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-001"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
@@ -247,7 +247,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-002"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.AlertDecayRetries = 3
 		r, fc := makeReconcilerWithAM(s, resolvedAMClient(), nil, ea)
 
@@ -286,7 +286,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-003"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.AlertDecayRetries = 5
 		pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Hour))
 		ea.Status.ValidityDeadline = &pastDeadline
@@ -343,7 +343,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-004"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.HealthScore = nil
 
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
@@ -376,7 +376,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-005"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.AlertDecayRetries = 2
 		ea.Status.Components.PostRemediationSpecHash = "sha256:abc123"
 		ea.Status.Components.CurrentSpecHash = "sha256:abc123"
@@ -412,8 +412,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-006"
 
-		ea := seedDecayEA(ns, name)
-		pod := seedHealthyPod(ns, "test-app")
+		ea := seedDecayEA(name)
+		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
 
 		for i := int32(1); i <= 3; i++ {
@@ -450,8 +450,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		spy := &decayAuditSpy{}
 		auditMgr := emaudit.NewManager(spy, ctrl.Log.WithName("test"))
 
-		ea := seedDecayEA(ns, name)
-		pod := seedHealthyPod(ns, "test-app")
+		ea := seedDecayEA(name)
+		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), auditMgr, ea, pod)
 
 		// First reconcile — should emit decay detected audit event
@@ -491,7 +491,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-008"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		metricsScore := 0.0
 		ea.Status.Components.MetricsAssessed = true
 		ea.Status.Components.MetricsScore = &metricsScore
@@ -529,7 +529,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-009"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.MetricsAssessed = true
 		ea.Status.Components.MetricsScore = nil
 
@@ -564,8 +564,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-010"
 
-		ea := seedDecayEA(ns, name)
-		pod := seedHealthyPod(ns, "test-app")
+		ea := seedDecayEA(name)
+		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
 
 		// Pass 1: decay detected, HealthAssessed should be reset to false
@@ -610,8 +610,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		ns := testNs
 		name := "ea-decay-011"
 
-		ea := seedDecayEA(ns, name)
-		pod := seedHealthyPod(ns, "test-app")
+		ea := seedDecayEA(name)
+		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
 
 		// Pass 1: decay detected (health=1.0, alert=0.0, hash stable)

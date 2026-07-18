@@ -517,7 +517,7 @@ func createEffectivenessAssessment(namespace, name, correlationID string) *eav1.
 // the reconciler picks up the patched expired deadline on its next timed reconcile.
 // Note: With GenerationChangedPredicate (Issue #1466), Status().Update() alone does NOT
 // trigger reconciliation — the RequeueAfter timer provides the guaranteed trigger.
-func createExpiredEffectivenessAssessment(namespace, name, correlationID string) *eav1.EffectivenessAssessment {
+func createExpiredEffectivenessAssessment(namespace, name, correlationID string) {
 	ea := &eav1.EffectivenessAssessment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -552,5 +552,4 @@ func createExpiredEffectivenessAssessment(namespace, name, correlationID string)
 		g.Expect(k8sClient.Status().Update(ctx, ea)).To(Succeed())
 	}, 30*time.Second, 250*time.Millisecond).Should(Succeed())
 	GinkgoWriter.Printf("✅ Created expired EffectivenessAssessment: %s/%s\n", namespace, name)
-	return ea
 }

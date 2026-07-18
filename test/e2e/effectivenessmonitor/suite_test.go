@@ -294,6 +294,15 @@ var _ = SynchronizedAfterSuite(
 // ============================================================================
 
 // createTestNamespace creates a managed test namespace and waits for Active.
+//
+// Investigated per Issue #1546 review: ctx is intentionally unused here, not a
+// missed-wiring bug. CreateTestNamespaceAndWait uses context.Background() internally
+// per DD-E2E-PARALLEL, since namespace lifecycle must not be affected by test-level
+// timeouts (see test/shared/helpers/namespace.go). The ctx parameter is kept because
+// callers across many other e2e/effectivenessmonitor test files (outside this fix's
+// scope) pass it positionally; removing it would require editing those call sites too.
+//
+//nolint:unparam // ctx is unused by design (see comment above); kept for caller compatibility outside this fix's scope.
 func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespaceAndWait(k8sClient, prefix)
 }

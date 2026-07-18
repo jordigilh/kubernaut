@@ -24,8 +24,8 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -56,7 +56,7 @@ import (
 var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 
 	// Helper: create a standard test Deployment in the given namespace.
-	createTestDeployment := func(ns string) *appsv1.Deployment {
+	createTestDeployment := func(ns string) {
 		replicas := int32(1)
 		deploy := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
@@ -84,7 +84,6 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, deploy)).To(Succeed())
-		return deploy
 	}
 
 	// ========================================

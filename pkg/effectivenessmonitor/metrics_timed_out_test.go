@@ -82,22 +82,22 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 	// seedAssessingEA creates an EA in Assessing phase with expired ValidityDeadline
 	// and specific component states. This simulates an EA that has been assessed for
 	// some components but the validity window expired before metrics could be collected.
-	seedAssessingEA := func(ns, name string, components eav1.EAComponents) *eav1.EffectivenessAssessment {
+	seedAssessingEA := func(name string, components eav1.EAComponents) *eav1.EffectivenessAssessment {
 		pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Hour))
 		return &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              name,
-				Namespace:         ns,
+				Namespace:         testNs,
 				CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Hour)),
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "corr-" + name,
 				RemediationRequestPhase: "Completed",
 				SignalTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: testNs,
 				},
 				RemediationTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: testNs,
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 0},
@@ -120,7 +120,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 		name := "ea-mt-001"
 
 		healthScore := 1.0
-		ea := seedAssessingEA(ns, name, eav1.EAComponents{
+		ea := seedAssessingEA(name, eav1.EAComponents{
 			HealthAssessed: true,
 			HealthScore:    &healthScore,
 			HashComputed:   true,
@@ -152,7 +152,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 		name := "ea-mt-002"
 
 		healthScore := 1.0
-		ea := seedAssessingEA(ns, name, eav1.EAComponents{
+		ea := seedAssessingEA(name, eav1.EAComponents{
 			HealthAssessed: true,
 			HealthScore:    &healthScore,
 			HashComputed:   false, // Hash not done → cannot be metrics_timed_out
@@ -182,7 +182,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 		name := "ea-mt-003"
 
 		healthScore := 1.0
-		ea := seedAssessingEA(ns, name, eav1.EAComponents{
+		ea := seedAssessingEA(name, eav1.EAComponents{
 			HealthAssessed: true,
 			HealthScore:    &healthScore,
 			HashComputed:   true,
@@ -213,7 +213,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 		ns := testNs
 		name := "ea-mt-004"
 
-		ea := seedAssessingEA(ns, name, eav1.EAComponents{
+		ea := seedAssessingEA(name, eav1.EAComponents{
 			// All false/unassessed
 		})
 
@@ -242,7 +242,7 @@ var _ = Describe("Assessment Reason: metrics_timed_out (ADR-EM-001, Batch 3)", f
 		ns := testNs
 		name := "ea-mt-005"
 
-		ea := seedAssessingEA(ns, name, eav1.EAComponents{
+		ea := seedAssessingEA(name, eav1.EAComponents{
 			HealthAssessed: true,
 			HashComputed:   true,
 			// AlertAssessed:   false (AM enabled, alerts NOT done)

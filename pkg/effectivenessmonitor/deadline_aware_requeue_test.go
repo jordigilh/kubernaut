@@ -84,7 +84,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		return s
 	}
 
-	makeReconciler := func(s *runtime.Scheme, objs ...client.Object) (*controller.Reconciler, client.Client) {
+	makeReconciler := func(s *runtime.Scheme, objs ...client.Object) *controller.Reconciler {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
 			WithObjects(objs...).
@@ -107,7 +107,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 			AuditManager:       nil,
 			DSQuerier:          nil,
 		}, cfg)
-		return r, fakeClient
+		return r
 	}
 
 	// seedAssessingEA creates an EA already in Assessing phase with a specific
@@ -160,7 +160,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 
 		deadline := time.Now().Add(10 * time.Second)
 		ea := seedAssessingEA(ns, name, deadline)
-		r, _ := makeReconciler(s, ea)
+		r := makeReconciler(s, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
@@ -186,7 +186,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 
 		deadline := time.Now().Add(5 * time.Minute)
 		ea := seedAssessingEA(ns, name, deadline)
-		r, _ := makeReconciler(s, ea)
+		r := makeReconciler(s, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
