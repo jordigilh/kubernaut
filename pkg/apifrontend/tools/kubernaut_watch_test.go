@@ -37,6 +37,7 @@ func newWatchClientWithInterceptor(funcs interceptor.Funcs, objects ...crclient.
 		Build()
 }
 
+//nolint:unparam // ns always "payments" here, but also called from execution_progress_test.go outside this fix's scope
 func updateRRPhase(ctx context.Context, c crclient.WithWatch, ns, name, phase string) {
 	var rr remediationv1.RemediationRequest
 	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr)).To(Succeed())
@@ -44,6 +45,7 @@ func updateRRPhase(ctx context.Context, c crclient.WithWatch, ns, name, phase st
 	ExpectWithOffset(1, c.Status().Update(ctx, &rr)).To(Succeed())
 }
 
+//nolint:unparam // ns always "payments" here, but also called from execution_progress_test.go outside this fix's scope
 func updateRRTerminal(ctx context.Context, c crclient.WithWatch, ns, name, phase, outcome, msg string) {
 	var rr remediationv1.RemediationRequest
 	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr)).To(Succeed())

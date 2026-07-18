@@ -14,6 +14,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
+//nolint:unparam // namespace always "payments" here, but also called from kubernaut_approval_adversarial_test.go outside this fix's scope
 func newTypedRARWithDecision(namespace, name, rrName string, decision remediationv1.ApprovalDecision, confidence float64, confidenceLevel string) *remediationv1.RemediationApprovalRequest {
 	return &remediationv1.RemediationApprovalRequest{
 		ObjectMeta: objMeta(namespace, name),

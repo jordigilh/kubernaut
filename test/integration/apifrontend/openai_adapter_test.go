@@ -24,7 +24,7 @@ var _ = Describe("OpenAI Adapter Wiring (BR-INTEGRATION-1254)", func() {
 		requestCount atomic.Int32
 	)
 
-	chatCompletionHandler := func(w http.ResponseWriter, r *http.Request) {
+	chatCompletionHandler := func(w http.ResponseWriter, _ *http.Request) {
 		requestCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{

@@ -3,9 +3,9 @@ package session_test
 import (
 	"context"
 
+	adksession "google.golang.org/adk/session"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	adksession "google.golang.org/adk/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 )
@@ -20,6 +20,8 @@ func createRequestWithDefaults(sessionID, userID string, state map[string]any) a
 }
 
 // setSessionCRDPhase sets status.phase on the IS CRD (AA controller ownership in production).
+//
+//nolint:unparam // namespace kept for call-site clarity; helper is shared across session_test files outside this fix's scope
 func setSessionCRDPhase(ctx context.Context, k8s client.Client, namespace, sessionID string, phase v1alpha1.SessionPhase) error {
 	var crd v1alpha1.InvestigationSession
 	if err := k8s.Get(ctx, types.NamespacedName{Name: sessionID, Namespace: namespace}, &crd); err != nil {

@@ -663,14 +663,11 @@ func TestK8sCB_WatchBypassesCB(t *testing.T) {
 	// The CB being open does NOT prevent watch from succeeding at the K8s
 	// client layer — only Execute()-wrapped operations are affected.
 	watchCalled := false
-	watchFn := func() error {
+	watchFn := func() {
 		watchCalled = true
-		return nil
 	}
 	// Simulate that watch is called directly, not through Execute
-	if err := watchFn(); err != nil {
-		t.Fatalf("watch error = %v", err)
-	}
+	watchFn()
 	if !watchCalled {
 		t.Error("watch function was not called")
 	}

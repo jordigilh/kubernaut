@@ -1574,7 +1574,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 				defer GinkgoRecover()
 				defer wg.Done()
 				results <- mcpCallToolHTTP(ts.URL, sessions[0],
-					kubernautListRemediations, map[string]any{}, user)
+					map[string]any{}, user)
 			}()
 
 			// Wait for the holder to enter the hook (semaphore acquired).
@@ -1589,7 +1589,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					results <- mcpCallToolHTTP(ts.URL, sessions[idx],
-						kubernautListRemediations, map[string]any{}, user)
+						map[string]any{}, user)
 				}(i)
 			}
 
@@ -1685,7 +1685,7 @@ var _ = Describe("MCP Bridge - Tier 3: Observability", Label("tier3", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, user)
-					mcpCallToolHTTP(ts.URL, sid, kubernautListRemediations, map[string]any{}, user)
+					mcpCallToolHTTP(ts.URL, sid, map[string]any{}, user)
 				}()
 			}
 
@@ -2051,13 +2051,13 @@ var _ = Describe("MCP Bridge - Tier 5: Cross-Cutting", Label("tier5", "bridge"),
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, allowedUser)
-					mcpCallToolHTTP(ts.URL, sid, kubernautListRemediations, map[string]any{}, allowedUser)
+					mcpCallToolHTTP(ts.URL, sid, map[string]any{}, allowedUser)
 				}()
 				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
 					sid := mcpInitializeHTTP(ts.URL, deniedUser)
-					mcpCallToolHTTP(ts.URL, sid, kubernautListRemediations, map[string]any{}, deniedUser)
+					mcpCallToolHTTP(ts.URL, sid, map[string]any{}, deniedUser)
 				}()
 			}
 			wg.Wait()
@@ -2220,9 +2220,9 @@ func mcpInitializeHTTP(baseURL string, user *auth.UserIdentity) string {
 	return sessionID
 }
 
-// mcpCallToolHTTP sends tools/call via a real HTTP server using the default client.
-func mcpCallToolHTTP(baseURL, sessionID, toolName string, args map[string]any, user *auth.UserIdentity) string {
-	return mcpCallToolHTTPClient(http.DefaultClient, baseURL, sessionID, toolName, args, user)
+// mcpCallToolHTTP sends tools/call for kubernautListRemediations via a real HTTP server using the default client.
+func mcpCallToolHTTP(baseURL, sessionID string, args map[string]any, user *auth.UserIdentity) string {
+	return mcpCallToolHTTPClient(http.DefaultClient, baseURL, sessionID, kubernautListRemediations, args, user)
 }
 
 // mcpCallToolHTTPClient sends tools/call via a real HTTP server using a custom client.

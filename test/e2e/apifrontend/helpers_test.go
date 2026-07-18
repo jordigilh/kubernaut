@@ -417,6 +417,7 @@ func buildRR(namespace, rrName, targetKind, targetName string) *remediationv1alp
 	}
 }
 
+//nolint:unparam // targetKind is always "Deployment" today, but createRR is a shared helper called from many other e2e/apifrontend test files outside this fix's scope.
 func createRR(namespace, rrName, targetKind, targetName string) error {
 	rr := buildRR(namespace, rrName, targetKind, targetName)
 	return k8sClient.Create(context.Background(), rr)
@@ -446,12 +447,12 @@ func buildRAR(namespace, rarName, rrName string) *remediationv1alpha1.Remediatio
 			AIAnalysisRef: remediationv1alpha1.ObjectRef{
 				Name: "e2e-analysis-" + rarName,
 			},
-			Confidence:             0.65,
-			ConfidenceLevel:        "medium",
-			InvestigationSummary:   fmt.Sprintf("E2E RAR flow — RR %s", rrName),
-			Reason:                 "E2E approval gate",
-			WhyApprovalRequired:    "E2E coverage G5",
-			RequiredBy:             metav1.NewTime(time.Now().UTC()),
+			Confidence:           0.65,
+			ConfidenceLevel:      "medium",
+			InvestigationSummary: fmt.Sprintf("E2E RAR flow — RR %s", rrName),
+			Reason:               "E2E approval gate",
+			WhyApprovalRequired:  "E2E coverage G5",
+			RequiredBy:           metav1.NewTime(time.Now().UTC()),
 			RecommendedActions: []remediationv1alpha1.ApprovalRecommendedAction{
 				{
 					Action:    "RestartPod",

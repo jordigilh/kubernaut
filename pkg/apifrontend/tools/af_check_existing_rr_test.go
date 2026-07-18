@@ -20,6 +20,7 @@ func testFingerprint(ns, kind, name string) string {
 	})
 }
 
+//nolint:unparam // namespace always "prod" in this file's callers, but also called with "prod" from af_create_rr_test.go outside this fix's scope
 func newTypedRRWithFingerprint(namespace, name, phase, targetKind, targetName string) *remediationv1.RemediationRequest {
 	fp := testFingerprint(namespace, targetKind, targetName)
 	return &remediationv1.RemediationRequest{

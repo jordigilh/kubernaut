@@ -195,7 +195,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
-	if err := afDeployMockLLM(ctx, kubeconfigPath, namespace, images["mock-llm"], writer); err != nil {
+	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], writer); err != nil {
 		return fmt.Errorf("mock-LLM deploy failed: %w", err)
 	}
 
@@ -676,7 +676,7 @@ subjects:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
-func afDeployMockLLM(ctx context.Context, kubeconfigPath, namespace, mockLLMImage string, writer io.Writer) error {
+func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	mockLLMManifest := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "mock-llm.yaml")
 

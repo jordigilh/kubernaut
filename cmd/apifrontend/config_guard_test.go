@@ -61,6 +61,10 @@ func TestStartupGuard_ValidIssuer_TLSRequired(t *testing.T) {
 // TC-C-08: WIRE-16 — Limiter and Cache Stop() on shutdown
 // ---------------------------------------------------------------------------
 
+// TestShutdownStopsLimiters relies on go test's panic-catching behavior: Stop()
+// panicking on a double-stop would fail the test without needing t.Errorf.
+//
+//nolint:unparam // t must stay to satisfy the required *testing.T entry-point signature for go test discovery
 func TestShutdownStopsLimiters(t *testing.T) {
 	// TC-C-08a/c: Verify Stop() is idempotent (double-stop doesn't panic).
 	il := ratelimit.NewIPLimiter(ratelimit.PerIPConfig{

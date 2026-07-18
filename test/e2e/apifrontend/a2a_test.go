@@ -57,7 +57,7 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 	// ===================================================================
 	Context("Category 1: Per-Tool Happy Path (SRE)", func() {
 
-		toolTest := func(id, prompt, expectedTool string) {
+		toolTest := func(id, prompt string) {
 			resp, err := a2aInvoke(httpClient, baseURL, sreToken, a2aTasksSend(id, prompt))
 			Expect(err).NotTo(HaveOccurred())
 			defer func() { _ = resp.Body.Close() }()
@@ -76,13 +76,13 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 		}
 
 		It("TC-E2E-A2A-T01: kubernaut_investigate (new investigation)", func() {
-			toolTest("a2a-t01", "Start investigation on pod nginx in default namespace", "kubernaut_investigate")
+			toolTest("a2a-t01", "Start investigation on pod nginx in default namespace")
 		})
 		It("TC-E2E-A2A-T02: kubernaut_investigate (resume by session_id)", func() {
-			toolTest("a2a-t02", "Check investigation status for session sess-001", "kubernaut_investigate")
+			toolTest("a2a-t02", "Check investigation status for session sess-001")
 		})
 		It("TC-E2E-A2A-T03: kubernaut_select_workflow", func() {
-			toolTest("a2a-t03", "Select the restart workflow for remediation rr-001", "kubernaut_select_workflow")
+			toolTest("a2a-t03", "Select the restart workflow for remediation rr-001")
 		})
 		It("TC-E2E-A2A-T04: kubernaut_present_decision", func() {
 			// present_decision is IsLongRunning=true, so the ADK A2A executor
@@ -104,10 +104,10 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 				"a2a-t04: present_decision (IsLongRunning) should produce input-required")
 		})
 		It("TC-E2E-A2A-T05: kubernaut_list_remediations", func() {
-			toolTest("a2a-t05", "List all remediations in the default namespace", "kubernaut_list_remediations")
+			toolTest("a2a-t05", "List all remediations in the default namespace")
 		})
 		It("TC-E2E-A2A-T06: kubernaut_get_remediation", func() {
-			toolTest("a2a-t06", "Get details for remediation rr-test in payments namespace", "kubernaut_get_remediation")
+			toolTest("a2a-t06", "Get details for remediation rr-test in payments namespace")
 		})
 		It("TC-E2E-A2A-T07: kubernaut_approve removed from A2A toolset (#1415)", func() {
 			// Verify that asking the agent to approve does NOT result in a kubernaut_approve tool call.
@@ -123,44 +123,44 @@ var _ = Describe("A2A Handler (E2E)", Label("e2e", "a2a"), func() {
 			Expect(rpc.Error).To(BeNil(), "should not error — agent returns guidance text instead")
 		})
 		It("TC-E2E-A2A-T08: kubernaut_cancel_remediation", func() {
-			toolTest("a2a-t08", "Cancel the remediation rr-test in payments namespace", "kubernaut_cancel_remediation")
+			toolTest("a2a-t08", "Cancel the remediation rr-test in payments namespace")
 		})
 		It("TC-E2E-A2A-T09: kubernaut_watch", func() {
-			toolTest("a2a-t09", "Watch the progress of remediation rr-test", "kubernaut_watch")
+			toolTest("a2a-t09", "Watch the progress of remediation rr-test")
 		})
 		It("TC-E2E-A2A-T10: kubernaut_list_workflows", func() {
-			toolTest("a2a-t10", "List all available remediation workflows", "kubernaut_list_workflows")
+			toolTest("a2a-t10", "List all available remediation workflows")
 		})
 		It("TC-E2E-A2A-T11: kubernaut_get_remediation_history", func() {
-			toolTest("a2a-t11", "Get remediation history for the payments namespace", "kubernaut_get_remediation_history")
+			toolTest("a2a-t11", "Get remediation history for the payments namespace")
 		})
 		It("TC-E2E-A2A-T12: kubernaut_get_effectiveness", func() {
-			toolTest("a2a-t12", "Show remediation effectiveness statistics", "kubernaut_get_effectiveness")
+			toolTest("a2a-t12", "Show remediation effectiveness statistics")
 		})
 		It("TC-E2E-A2A-T13: kubernaut_get_audit_trail", func() {
-			toolTest("a2a-t13", "Get the audit trail for remediation rr-audit", "kubernaut_get_audit_trail")
+			toolTest("a2a-t13", "Get the audit trail for remediation rr-audit")
 		})
 		It("TC-E2E-A2A-T14: kubectl_list_events", func() {
-			toolTest("a2a-t14", "List Kubernetes events in the kubernaut-system namespace", "kubectl_list_events")
+			toolTest("a2a-t14", "List Kubernetes events in the kubernaut-system namespace")
 		})
 		It("TC-E2E-A2A-T15: kubectl_list (Pod)", func() {
-			toolTest("a2a-t15", "Get all pods in the default namespace", "kubectl_list")
+			toolTest("a2a-t15", "Get all pods in the default namespace")
 		})
 		It("TC-E2E-A2A-T16: kubectl_list (Deployment)", func() {
-			toolTest("a2a-t16", "Get workloads in the default namespace", "kubectl_list")
+			toolTest("a2a-t16", "Get workloads in the default namespace")
 		})
 		// TC-E2E-A2A-T17 deleted: af_resolve_owner removed. Owner chain is internal LLM reasoning.
 		It("TC-E2E-A2A-T18: kubernaut_check_existing_remediation", func() {
-			toolTest("a2a-t18", "Check if a remediation request already exists for deployment web in prod", "kubernaut_check_existing_remediation")
+			toolTest("a2a-t18", "Check if a remediation request already exists for deployment web in prod")
 		})
 		It("TC-E2E-A2A-T19: kubernaut_remediate", func() {
-			toolTest("a2a-t19", "Create a remediation request for deployment web in prod namespace", "kubernaut_remediate")
+			toolTest("a2a-t19", "Create a remediation request for deployment web in prod namespace")
 		})
 		It("E2E-AF-1189-001: kubernaut_investigate (session resume)", func() {
-			toolTest("a2a-1189-001", "Resume investigation for session sess-001", "kubernaut_investigate")
+			toolTest("a2a-1189-001", "Resume investigation for session sess-001")
 		})
 		It("E2E-AF-1189-002: kubernaut_discover_workflows", func() {
-			toolTest("a2a-1189-002", "Discover available workflows for remediation kubernaut-system/rr-test", "kubernaut_discover_workflows")
+			toolTest("a2a-1189-002", "Discover available workflows for remediation kubernaut-system/rr-test")
 		})
 	})
 

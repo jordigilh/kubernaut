@@ -30,7 +30,7 @@ var _ = Describe("af_list_events", func() {
 	})
 
 	It("UT-AF-052-001: returns events in namespace", func() {
-		ev := newUnstructuredEvent("prod", "pod-crash", "BackOff", "Back-off restarting failed container", "Pod", "my-pod")
+		ev := newUnstructuredEvent("pod-crash", "BackOff", "Back-off restarting failed container", "Pod", "my-pod")
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, ev)
 
@@ -69,7 +69,7 @@ var _ = Describe("af_list_events", func() {
 	It("UT-AF-052-005: large result is trimmed", func() {
 		var objs []runtime.Object
 		for i := range 200 {
-			objs = append(objs, newUnstructuredEvent("prod", fmt.Sprintf("ev-%d", i),
+			objs = append(objs, newUnstructuredEvent(fmt.Sprintf("ev-%d", i),
 				"Warning", strings.Repeat("long message content ", 20), "Pod", "pod-"+strings.Repeat("x", 50)))
 		}
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
@@ -107,8 +107,8 @@ var _ = Describe("af_list_events", func() {
 	})
 
 	It("UT-AF-052-008: filters by reason when provided", func() {
-		ev1 := newUnstructuredEvent("prod", "ev-1", "BackOff", "msg1", "Pod", "pod1")
-		ev2 := newUnstructuredEvent("prod", "ev-2", "Scheduled", "msg2", "Pod", "pod2")
+		ev1 := newUnstructuredEvent("ev-1", "BackOff", "msg1", "Pod", "pod1")
+		ev2 := newUnstructuredEvent("ev-2", "Scheduled", "msg2", "Pod", "pod2")
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, ev1, ev2)
 
@@ -122,9 +122,9 @@ var _ = Describe("af_list_events", func() {
 	})
 
 	It("UT-AF-052-009: filters by involved_kind when provided", func() {
-		evPod := newUnstructuredEvent("prod", "ev-1", "BackOff", "container crash", "Pod", "web-abc")
-		evDeploy := newUnstructuredEvent("prod", "ev-2", "ScalingReplicaSet", "scaled up", "Deployment", "web")
-		evPod2 := newUnstructuredEvent("prod", "ev-3", "Pulled", "image pulled", "Pod", "web-def")
+		evPod := newUnstructuredEvent("ev-1", "BackOff", "container crash", "Pod", "web-abc")
+		evDeploy := newUnstructuredEvent("ev-2", "ScalingReplicaSet", "scaled up", "Deployment", "web")
+		evPod2 := newUnstructuredEvent("ev-3", "Pulled", "image pulled", "Pod", "web-def")
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, evPod, evDeploy, evPod2)
 
@@ -140,9 +140,9 @@ var _ = Describe("af_list_events", func() {
 	})
 
 	It("UT-AF-052-010: filters by both reason and involved_kind", func() {
-		ev1 := newUnstructuredEvent("prod", "ev-1", "BackOff", "crash", "Pod", "pod1")
-		ev2 := newUnstructuredEvent("prod", "ev-2", "BackOff", "scale fail", "Deployment", "web")
-		ev3 := newUnstructuredEvent("prod", "ev-3", "Pulled", "ok", "Pod", "pod2")
+		ev1 := newUnstructuredEvent("ev-1", "BackOff", "crash", "Pod", "pod1")
+		ev2 := newUnstructuredEvent("ev-2", "BackOff", "scale fail", "Deployment", "web")
+		ev3 := newUnstructuredEvent("ev-3", "Pulled", "ok", "Pod", "pod2")
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,
 			map[schema.GroupVersionResource]string{eventsGVRTest: "EventList"}, ev1, ev2, ev3)
 
@@ -157,8 +157,8 @@ var _ = Describe("af_list_events", func() {
 	})
 })
 
-func newUnstructuredEvent(ns, name, reason, message, involvedKind, involvedName string) *unstructured.Unstructured {
-	return newUnstructuredEventWithType(ns, name, reason, message, involvedKind, involvedName, "Normal")
+func newUnstructuredEvent(name, reason, message, involvedKind, involvedName string) *unstructured.Unstructured {
+	return newUnstructuredEventWithType("prod", name, reason, message, involvedKind, involvedName, "Normal")
 }
 
 func newUnstructuredEventWithType(ns, name, reason, message, involvedKind, involvedName, eventType string) *unstructured.Unstructured {
@@ -197,7 +197,7 @@ var _ = Describe("EventSummary.Type (#1282 F-EVT)", func() {
 	})
 
 	It("UT-AF-1282-EVT-002: missing type defaults to empty string", func() {
-		ev := newUnstructuredEvent("prod", "ev-1", "Pulled", "pulled image", "Pod", "worker-1")
+		ev := newUnstructuredEvent("ev-1", "Pulled", "pulled image", "Pod", "worker-1")
 		delete(ev.Object, "type")
 		scheme := runtime.NewScheme()
 		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme,

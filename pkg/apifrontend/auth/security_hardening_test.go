@@ -36,10 +36,10 @@ func testJWKSKeySet(t *testing.T) *jose.JSONWebKeySet {
 	}
 }
 
-func jwksServerWith(t *testing.T, body []byte, status int) *httptest.Server {
+func jwksServerWith(t *testing.T, body []byte) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(status)
+		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(body)
 	}))
 }
@@ -99,7 +99,7 @@ func validJWKSBytes(t *testing.T) []byte {
 func TestJWKSCache_FetchBodySizeLimit_ValidSmall(t *testing.T) {
 	// TC-B-01a: 512 KB valid JWKS → success
 	body := validJWKSBytes(t)
-	srv := jwksServerWith(t, body, http.StatusOK)
+	srv := jwksServerWith(t, body)
 	defer srv.Close()
 
 	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
@@ -115,7 +115,7 @@ func TestJWKSCache_FetchBodySizeLimit_ValidSmall(t *testing.T) {
 func TestJWKSCache_FetchBodySizeLimit_Oversized(t *testing.T) {
 	// TC-B-01b: 2 MB body → error (exceeds 1 MB limit)
 	oversized := make([]byte, 2<<20)
-	srv := jwksServerWith(t, oversized, http.StatusOK)
+	srv := jwksServerWith(t, oversized)
 	defer srv.Close()
 
 	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
@@ -127,7 +127,7 @@ func TestJWKSCache_FetchBodySizeLimit_Oversized(t *testing.T) {
 
 func TestJWKSCache_FetchBodySizeLimit_Empty(t *testing.T) {
 	// TC-B-01e: empty body → error
-	srv := jwksServerWith(t, nil, http.StatusOK)
+	srv := jwksServerWith(t, nil)
 	defer srv.Close()
 
 	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
@@ -139,7 +139,7 @@ func TestJWKSCache_FetchBodySizeLimit_Empty(t *testing.T) {
 
 func TestJWKSCache_FetchBodySizeLimit_InvalidJSON(t *testing.T) {
 	// TC-B-01f: valid JSON but not JWKS
-	srv := jwksServerWith(t, []byte(`{"foo":"bar"}`), http.StatusOK)
+	srv := jwksServerWith(t, []byte(`{"foo":"bar"}`))
 	defer srv.Close()
 
 	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
@@ -402,7 +402,7 @@ func TestJWKSCache_FetchBodySizeLimit_ExactBoundary(t *testing.T) {
 	// TC-B-01c: body at exactly 1 MiB should be accepted (boundary)
 	body := make([]byte, 1<<20)
 	copy(body, `{"keys":[]}`)
-	srv := jwksServerWith(t, body, http.StatusOK)
+	srv := jwksServerWith(t, body)
 	defer srv.Close()
 
 	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
@@ -415,7 +415,7 @@ func TestJWKSCache_FetchBodySizeLimit_ExactBoundary(t *testing.T) {
 func TestJWKSCache_FetchBodySizeLimit_OneBytePastBoundary(t *testing.T) {
 	// TC-B-01d: body at 1 MiB + 1 byte must be rejected
 	body := make([]byte, (1<<20)+1)
-	srv := jwksServerWith(t, body, http.StatusOK)
+	srv := jwksServerWith(t, body)
 	defer srv.Close()
 
 	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
@@ -727,7 +727,7 @@ func TestJWKSCache_ConcurrentGetKeys(t *testing.T) {
 	t.Parallel()
 
 	body := validJWKSBytes(t)
-	srv := jwksServerWith(t, body, http.StatusOK)
+	srv := jwksServerWith(t, body)
 	defer srv.Close()
 
 	cache := NewJWKSCache(srv.Client(), []string{srv.URL}, WithRefreshInterval(0))
@@ -891,9 +891,9 @@ func TestBuildIdentity_CELClaimMappings(t *testing.T) {
 
 	t.Run("custom username mapping", func(t *testing.T) {
 		claims := map[string]interface{}{
-			"email":    "alice@example.com",
-			"sub":      "alice-sub",
-			"exp":      float64(time.Now().Add(time.Hour).Unix()),
+			"email": "alice@example.com",
+			"sub":   "alice-sub",
+			"exp":   float64(time.Now().Add(time.Hour).Unix()),
 		}
 		mappings := ClaimMappings{
 			Username: `claims.email`,

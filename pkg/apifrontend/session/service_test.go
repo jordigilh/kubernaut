@@ -38,8 +38,8 @@ func newScheme() *runtime.Scheme {
 	return s
 }
 
-func newFakeClient(scheme *runtime.Scheme, objs ...client.Object) client.Client {
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).WithStatusSubresource(&v1alpha1.InvestigationSession{}).Build()
+func newFakeClient(scheme *runtime.Scheme) client.Client {
+	return fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&v1alpha1.InvestigationSession{}).Build()
 }
 
 func newTestService(k8s client.Client, scheme *runtime.Scheme) *session.CRDSessionService {
