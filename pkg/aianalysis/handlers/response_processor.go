@@ -500,6 +500,8 @@ func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *ag
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
 // BR-HAPI-200: Problem confirmed resolved, no workflow needed
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared dispatch contract of sibling handleXFromIncident functions (handleNotActionableFromIncident, handleNoWorkflowTerminalFailure), called uniformly as `result, err := p.handleXFromIncident(...)` (Issue #1546 Tier 4)
 func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("Problem confirmed resolved, no workflow needed",
 		"confidence", resp.Confidence,
@@ -552,6 +554,8 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 // #388: Alert is benign — condition may be present but is harmless (e.g., orphaned PVCs).
 // Routes to Completed/WorkflowNotNeeded/NotActionable, analogous to handleProblemResolvedFromIncident
 // but semantically distinct: resolved = problem went away, not-actionable = problem is harmless.
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared dispatch contract of sibling handleXFromIncident functions (see handleProblemResolvedFromIncident) (Issue #1546 Tier 4)
 func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("Alert not actionable, no workflow needed",
 		"confidence", resp.Confidence,
@@ -661,6 +665,8 @@ func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Conte
 
 // handleNoWorkflowTerminalFailure handles terminal failure when no workflow selected with low confidence
 // Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-HAPI-197 AC-4
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared dispatch contract of sibling handleXFromIncident functions (see handleProblemResolvedFromIncident) (Issue #1546 Tier 4)
 func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("No workflow selected, terminal failure",
 		"confidence", resp.Confidence,
