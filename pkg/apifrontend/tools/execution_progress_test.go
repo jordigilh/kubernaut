@@ -161,9 +161,9 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 			go func() {
 				time.Sleep(50 * time.Millisecond)
-				updateRRPhase(ctx, wc, "payments", "rr-1", "Executing")
+				updateRRPhase(ctx, wc, "rr-1", "Executing")
 				time.Sleep(50 * time.Millisecond)
-				updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+				updateRRTerminal(ctx, wc, "rr-1", "success")
 			}()
 
 			result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -209,9 +209,9 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 			go func() {
 				time.Sleep(50 * time.Millisecond)
-				updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
+				updateRRPhase(ctx, wc, "rr-1", "Verifying")
 				time.Sleep(50 * time.Millisecond)
-				updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+				updateRRTerminal(ctx, wc, "rr-1", "success")
 			}()
 
 			result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -258,9 +258,9 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 			go func() {
 				time.Sleep(50 * time.Millisecond)
-				updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
+				updateRRPhase(ctx, wc, "rr-1", "Verifying")
 				time.Sleep(50 * time.Millisecond)
-				updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+				updateRRTerminal(ctx, wc, "rr-1", "success")
 			}()
 
 			result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -299,9 +299,9 @@ var _ = Describe("Execution Progress Artifacts (#1403)", func() {
 
 			go func() {
 				time.Sleep(50 * time.Millisecond)
-				updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
+				updateRRPhase(ctx, wc, "rr-1", "Verifying")
 				time.Sleep(50 * time.Millisecond)
-				updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+				updateRRTerminal(ctx, wc, "rr-1", "success")
 			}()
 
 			result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})

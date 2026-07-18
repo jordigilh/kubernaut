@@ -14,10 +14,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-//nolint:unparam // namespace always "payments" here, but also called from kubernaut_approval_adversarial_test.go outside this fix's scope
-func newTypedRARWithDecision(namespace, name, rrName string, decision remediationv1.ApprovalDecision, confidence float64, confidenceLevel string) *remediationv1.RemediationApprovalRequest {
+// newTypedRARWithDecision builds a RemediationApprovalRequest in the fixed
+// "payments" namespace (the only namespace used across all kubernaut_list_approval_requests tests).
+func newTypedRARWithDecision(name, rrName string, decision remediationv1.ApprovalDecision, confidence float64, confidenceLevel string) *remediationv1.RemediationApprovalRequest {
 	return &remediationv1.RemediationApprovalRequest{
-		ObjectMeta: objMeta(namespace, name),
+		ObjectMeta: objMeta("payments", name),
 		Spec: remediationv1.RemediationApprovalRequestSpec{
 			RemediationRequestRef: corev1.ObjectReference{Name: rrName},
 			Confidence:            confidence,
@@ -41,8 +42,8 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 
 	It("UT-AF-108-001: lists all RARs in namespace", func() {
 		tc := newTypedFakeClient(
-			newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
-			newTypedRARWithDecision("payments", "rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
+			newTypedRARWithDecision("rar-1", "rr-1", "", 0.72, "medium"),
+			newTypedRARWithDecision("rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
 		)
 		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "payments"})
 		Expect(err).NotTo(HaveOccurred())
@@ -52,8 +53,8 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 
 	It("UT-AF-108-002: filters by decision=pending (empty string)", func() {
 		tc := newTypedFakeClient(
-			newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
-			newTypedRARWithDecision("payments", "rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
+			newTypedRARWithDecision("rar-1", "rr-1", "", 0.72, "medium"),
+			newTypedRARWithDecision("rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
 		)
 		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{
 			Namespace: "payments",
@@ -67,8 +68,8 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 
 	It("UT-AF-108-003: filters by decision=approved", func() {
 		tc := newTypedFakeClient(
-			newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
-			newTypedRARWithDecision("payments", "rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
+			newTypedRARWithDecision("rar-1", "rr-1", "", 0.72, "medium"),
+			newTypedRARWithDecision("rar-2", "rr-2", remediationv1.ApprovalDecisionApproved, 0.65, "low"),
 		)
 		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{
 			Namespace: "payments",
@@ -112,7 +113,7 @@ var _ = Describe("kubernaut_list_approval_requests", func() {
 
 	It("UT-AF-108-008: summary includes expected fields", func() {
 		tc := newTypedFakeClient(
-			newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
+			newTypedRARWithDecision("rar-1", "rr-1", "", 0.72, "medium"),
 		)
 		result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "payments"})
 		Expect(err).NotTo(HaveOccurred())

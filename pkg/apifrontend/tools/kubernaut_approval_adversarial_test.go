@@ -80,7 +80,7 @@ var _ = Describe("ADVERSARIAL: kubernaut_list_approval_requests", func() {
 	Context("Decision filter injection attempts", func() {
 		It("ADV-AF-108-010: decision with SQL injection payload", func() {
 			tc := newTypedFakeClient(
-				newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
+				newTypedRARWithDecision("rar-1", "rr-1", "", 0.72, "medium"),
 			)
 			result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{
 				Namespace: "payments",
@@ -92,7 +92,7 @@ var _ = Describe("ADVERSARIAL: kubernaut_list_approval_requests", func() {
 
 		It("ADV-AF-108-011: decision with extremely long string", func() {
 			tc := newTypedFakeClient(
-				newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
+				newTypedRARWithDecision("rar-1", "rr-1", "", 0.72, "medium"),
 			)
 			result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{
 				Namespace: "payments",
@@ -104,7 +104,7 @@ var _ = Describe("ADVERSARIAL: kubernaut_list_approval_requests", func() {
 
 		It("ADV-AF-108-012: decision filter is case-insensitive", func() {
 			tc := newTypedFakeClient(
-				newTypedRARWithDecision("payments", "rar-1", "rr-1", remediationv1.ApprovalDecisionApproved, 0.72, "medium"),
+				newTypedRARWithDecision("rar-1", "rr-1", remediationv1.ApprovalDecisionApproved, 0.72, "medium"),
 			)
 			result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{
 				Namespace: "payments",
@@ -116,7 +116,7 @@ var _ = Describe("ADVERSARIAL: kubernaut_list_approval_requests", func() {
 
 		It("ADV-AF-108-013: decision=PENDING with mixed case matches empty decision", func() {
 			tc := newTypedFakeClient(
-				newTypedRARWithDecision("payments", "rar-1", "rr-1", "", 0.72, "medium"),
+				newTypedRARWithDecision("rar-1", "rr-1", "", 0.72, "medium"),
 			)
 			result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{
 				Namespace: "payments",
@@ -147,7 +147,7 @@ var _ = Describe("ADVERSARIAL: kubernaut_list_approval_requests", func() {
 			objects := make([]crclient.Object, 50)
 			for i := range objects {
 				name := fmt.Sprintf("rar-%03d", i)
-				objects[i] = newTypedRARWithDecision("payments", name, "rr-1", "", 0.5, "low")
+				objects[i] = newTypedRARWithDecision(name, "rr-1", "", 0.5, "low")
 			}
 			tc := newTypedFakeClient(objects...)
 			result, err := tools.HandleListApprovalRequests(ctx, tc, tools.ListApprovalRequestsArgs{Namespace: "payments"})

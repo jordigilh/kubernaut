@@ -226,7 +226,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("UT-AF-1282-SRC-002: dedup does not create new RR (signalSource not applicable)", func() {
-			rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+			rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			tc := newTypedFakeClient(rr)
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
@@ -443,7 +443,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			existingRR := &remediationv1.RemediationRequest{
 				ObjectMeta: objMeta(controllerNS, "rr-deploy-web-existing"),
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: testFingerprint(workloadNS, "Deployment", "web"),
+					SignalFingerprint: testFingerprint(workloadNS),
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "web",
@@ -550,7 +550,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	})
 
 	It("UT-AF-1282-DEDUP: returns existing RR when non-terminal match found", func() {
-		rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+		rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 		tc := newTypedFakeClient(rr)
 
 		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
@@ -698,7 +698,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("emits EventRRDeduplicated with existing_rr detail when a non-terminal RR already exists", func() {
-			rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+			rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			tc := newTypedFakeClient(rr)
 			rec := &auditRecorder{}
 
