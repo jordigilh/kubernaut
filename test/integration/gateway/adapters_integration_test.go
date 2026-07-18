@@ -56,7 +56,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 	Context("BR-GATEWAY-001: Prometheus AlertManager Webhook Parsing", func() {
 		It("[GW-INT-ADP-001] should parse Prometheus alert format correctly", func() {
 			By("1. Create Prometheus alert payload")
-			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPUUsage", "critical", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPUUsage", "critical", "")
 
 			By("2. Parse alert through Prometheus adapter")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
@@ -96,7 +96,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("2. Parse alert with alertname=%s", tc.alertName))
-				alert := createPrometheusAlert(testNamespace, tc.alertName, "warning", "", "")
+				alert := createPrometheusAlert(testNamespace, tc.alertName, "warning", "")
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 
 				By("3. Verify alertname extracted correctly")
@@ -116,7 +116,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Create alert with explicit namespace label")
-			prometheusAlert := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -158,7 +158,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("2. Parse alert with severity=%s", tc.inputSeverity))
-				alert := createPrometheusAlert(testNamespace, "TestAlert", tc.inputSeverity, "", "")
+				alert := createPrometheusAlert(testNamespace, "TestAlert", tc.inputSeverity, "")
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 
 				By("3. Verify severity passed through without transformation")
@@ -174,8 +174,8 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 		It("[GW-INT-ADP-005] should generate stable fingerprints for deduplication (BR-GATEWAY-004)", func() {
 			By("1. Create identical alerts at different times")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-			alertPayload1 := createPrometheusAlert(testNamespace, "RepeatedAlert", "warning", "", "")
-			alertPayload2 := createPrometheusAlert(testNamespace, "RepeatedAlert", "warning", "", "")
+			alertPayload1 := createPrometheusAlert(testNamespace, "RepeatedAlert", "warning", "")
+			alertPayload2 := createPrometheusAlert(testNamespace, "RepeatedAlert", "warning", "")
 
 			By("2. Parse both alerts")
 			signal1, err1 := prometheusAdapter.Parse(ctx, alertPayload1)
@@ -188,7 +188,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"BR-GATEWAY-004: Identical alerts must generate identical fingerprints")
 
 			By("4. Create alert targeting a different pod (Issue #63: alertname excluded from fingerprint)")
-			alertPayload3 := createPrometheusAlertForPod(testNamespace, "DifferentAlert", "warning", "", "", "different-pod-456")
+			alertPayload3 := createPrometheusAlertForPod(testNamespace, "DifferentAlert", "warning", "", "different-pod-456")
 			signal3, err3 := prometheusAdapter.Parse(ctx, alertPayload3)
 			Expect(err3).ToNot(HaveOccurred())
 
@@ -282,7 +282,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 	Context("BR-GATEWAY-002: Kubernetes Event Parsing", func() {
 		It("[GW-INT-ADP-008] should parse Kubernetes Event format correctly", func() {
 			By("1. Create K8s Event payload")
-			k8sEvent := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "api-server-123")
+			k8sEvent := createK8sEvent("Warning", "BackOff", testNamespace, "api-server-123")
 
 			By("2. Parse event through K8s Event adapter")
 			k8sAdapter := adapters.NewKubernetesEventAdapter()
@@ -325,7 +325,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("2. Parse event with reason=%s", tc.reason))
-				event := createK8sEvent("Warning", tc.reason, testNamespace, "Pod", "test-pod")
+				event := createK8sEvent("Warning", tc.reason, testNamespace, "test-pod")
 				signal, err := k8sAdapter.Parse(ctx, event)
 
 				By("3. Verify reason extracted correctly")
@@ -345,7 +345,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Create K8s Event with explicit involvedObject")
-			k8sEvent := createK8sEvent("Warning", "FailedMount", testNamespace, "Pod", "database-pod-456")
+			k8sEvent := createK8sEvent("Warning", "FailedMount", testNamespace, "database-pod-456")
 			k8sAdapter := adapters.NewKubernetesEventAdapter()
 			signal, err := k8sAdapter.Parse(ctx, k8sEvent)
 			Expect(err).ToNot(HaveOccurred())
@@ -391,7 +391,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			for _, tc := range testCases {
 				By(fmt.Sprintf("2. Parse event with type=%s", tc.eventType))
-				event := createK8sEvent(tc.eventType, "TestReason", testNamespace, "Pod", "test-pod")
+				event := createK8sEvent(tc.eventType, "TestReason", testNamespace, "test-pod")
 				signal, err := k8sAdapter.Parse(ctx, event)
 
 				By("3. Verify event type passed through as severity")
@@ -407,8 +407,8 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 		It("[GW-INT-ADP-012] should generate stable fingerprints for K8s Events (BR-GATEWAY-004)", func() {
 			By("1. Create identical events at different times")
 			k8sAdapter := adapters.NewKubernetesEventAdapter()
-			eventPayload1 := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "api-server")
-			eventPayload2 := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "api-server")
+			eventPayload1 := createK8sEvent("Warning", "BackOff", testNamespace, "api-server")
+			eventPayload2 := createK8sEvent("Warning", "BackOff", testNamespace, "api-server")
 
 			By("2. Parse both events")
 			signal1, err1 := k8sAdapter.Parse(ctx, eventPayload1)
@@ -421,7 +421,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"BR-GATEWAY-004: Identical events must generate identical fingerprints")
 
 			By("4. Create event with different pod name")
-			eventPayload3 := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "different-pod")
+			eventPayload3 := createK8sEvent("Warning", "BackOff", testNamespace, "different-pod")
 			signal3, err3 := k8sAdapter.Parse(ctx, eventPayload3)
 			Expect(err3).ToNot(HaveOccurred())
 
@@ -504,12 +504,12 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 						fmt.Sprintf("BR-GATEWAY-005: %s should cause validation failure", tc.description))
 					Expect(signal).To(BeNil(),
 						"BR-GATEWAY-005: Signal must be nil when required field is empty")
-			} else {
-				Expect(err).ToNot(HaveOccurred(),
-					"BR-GATEWAY-005: Valid fields should parse without error")
-				Expect(signal.Resource.Kind).ToNot(BeEmpty(),
-					"BR-GATEWAY-005: Parsed signal must have a resource kind")
-			}
+				} else {
+					Expect(err).ToNot(HaveOccurred(),
+						"BR-GATEWAY-005: Valid fields should parse without error")
+					Expect(signal.Resource.Kind).ToNot(BeEmpty(),
+						"BR-GATEWAY-005: Parsed signal must have a resource kind")
+				}
 
 				GinkgoWriter.Printf("✅ Empty field handling validated: %s (fail=%v)\n",
 					tc.description, tc.shouldFail)
@@ -523,7 +523,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process valid K8s Event")
-			validEvent := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "valid-pod")
+			validEvent := createK8sEvent("Warning", "BackOff", testNamespace, "valid-pod")
 			k8sAdapter := adapters.NewKubernetesEventAdapter()
 			validSignal, err := k8sAdapter.Parse(ctx, validEvent)
 			Expect(err).ToNot(HaveOccurred())
@@ -542,7 +542,7 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 				"BR-GATEWAY-005: Malformed event must be rejected by adapter")
 
 			By("5. Verify Gateway can still process subsequent valid events")
-			validEvent2 := createK8sEvent("Warning", "FailedMount", testNamespace, "Pod", "another-pod")
+			validEvent2 := createK8sEvent("Warning", "FailedMount", testNamespace, "another-pod")
 			validSignal2, err := k8sAdapter.Parse(ctx, validEvent2)
 			Expect(err).ToNot(HaveOccurred())
 

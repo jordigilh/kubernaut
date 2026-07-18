@@ -996,12 +996,12 @@ func DeployGatewayCoverageManifest(ctx context.Context, kubeconfigPath string, g
 	}
 
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Gateway to be ready...")
-	return waitForGatewayHealth(ctx, kubeconfigPath, writer, 90*time.Second)
+	return waitForGatewayHealth(ctx, writer, 90*time.Second)
 }
 
 // waitForGatewayHealth waits for the Gateway service to become healthy.
 // Issue #753: Uses dedicated health port (8081) instead of the API port (8080).
-func waitForGatewayHealth(ctx context.Context, kubeconfigPath string, writer io.Writer, timeout time.Duration) error {
+func waitForGatewayHealth(ctx context.Context, writer io.Writer, timeout time.Duration) error {
 	healthURL := fmt.Sprintf("http://localhost:%d/readyz", GatewayE2EHealthPort)
 	return WaitForHTTPHealth(ctx, healthURL, timeout, writer)
 }

@@ -48,7 +48,7 @@ func (m *mockOwnerResolver) ResolveTopLevelOwner(ctx context.Context, namespace,
 }
 
 // newK8sEventJSON creates a K8s event JSON payload for testing
-func newK8sEventJSON(reason, eventType, podName, namespace string) []byte {
+func newK8sEventJSON(reason, podName string) []byte {
 	now := time.Now().Format(time.RFC3339)
 	return []byte(fmt.Sprintf(`{
 		"type": "%s",
@@ -67,7 +67,7 @@ func newK8sEventJSON(reason, eventType, podName, namespace string) []byte {
 			"component": "kubelet",
 			"host": "node-1"
 		}
-	}`, eventType, reason, podName, namespace, now, now))
+	}`, "Warning", reason, podName, "prod", now, now))
 }
 
 var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
@@ -89,12 +89,12 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 			adapter := adapters.NewKubernetesEventAdapter(resolver)
 
 			// Event 1: BackOff reason
-			event1 := newK8sEventJSON("BackOff", "Warning", "payment-api-789", "prod")
+			event1 := newK8sEventJSON("BackOff", "payment-api-789")
 			signal1, err := adapter.Parse(ctx, event1)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Event 2: OOMKilling reason (same pod, different reason)
-			event2 := newK8sEventJSON("OOMKilling", "Warning", "payment-api-789", "prod")
+			event2 := newK8sEventJSON("OOMKilling", "payment-api-789")
 			signal2, err := adapter.Parse(ctx, event2)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -125,12 +125,12 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 			adapter := adapters.NewKubernetesEventAdapter(resolver)
 
 			// Event from first pod
-			event1 := newK8sEventJSON("BackOff", "Warning", "payment-api-789abc", "prod")
+			event1 := newK8sEventJSON("BackOff", "payment-api-789abc")
 			signal1, err := adapter.Parse(ctx, event1)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Event from second pod (recreated by ReplicaSet)
-			event2 := newK8sEventJSON("BackOff", "Warning", "payment-api-def456", "prod")
+			event2 := newK8sEventJSON("BackOff", "payment-api-def456")
 			signal2, err := adapter.Parse(ctx, event2)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -150,7 +150,7 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 			}
 			adapter := adapters.NewKubernetesEventAdapter(resolver)
 
-			event := newK8sEventJSON("BackOff", "Warning", "payment-api-789", "prod")
+			event := newK8sEventJSON("BackOff", "payment-api-789")
 			signal, err := adapter.Parse(ctx, event)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("dropping signal"))
@@ -164,7 +164,7 @@ var _ = Describe("K8s Event Deduplication with Owner Chain Resolution", func() {
 		It("should exclude reason from fingerprint when no OwnerResolver is configured", func() {
 			adapter := adapters.NewKubernetesEventAdapter()
 
-			event := newK8sEventJSON("BackOff", "Warning", "payment-api-789", "prod")
+			event := newK8sEventJSON("BackOff", "payment-api-789")
 			signal, err := adapter.Parse(ctx, event)
 			Expect(err).ToNot(HaveOccurred())
 
