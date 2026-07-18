@@ -117,6 +117,8 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 // Rationale: BufferedAuditStore flushes asynchronously, so tests must poll
 // rather than query immediately after reconciliation. Using Eventually()
 // makes tests faster (no fixed sleep) and more reliable (handles timing variance).
+//
+//nolint:unparam // minCount is always 1 today, but also called from 06_error_audit_trail_test.go (outside this fix's scope), which may need a different threshold.
 func waitForSpecificAuditEvent(
 	correlationID string,
 	eventType string, // Use aianalysisaudit.EventType* constants
