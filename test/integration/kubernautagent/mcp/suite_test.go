@@ -41,10 +41,16 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
+
+// mcpSeedNamespace is the namespace RemediationWorkflow CRDs are seeded into
+// directly (no AuthWebhook in this suite -- see SeedWorkflowsViaDirectCRDCreation),
+// matching CreateIntegrationServiceAccountWithDataStorageAccess's "default" below.
+const mcpSeedNamespace = "default"
 
 // phase1Payload is the JSON struct passed between Ginkgo processes via
 // SynchronizedBeforeSuite. Uses the same pattern as the AIAnalysis IT suite.
@@ -108,6 +114,14 @@ var _ = SynchronizedBeforeSuite(
 		}
 		testEnv := &envtest.Environment{
 			BinaryAssetsDirectory: assetsDir,
+			// #1661 Phase 55: DataStorage's informer-backed workflow cache is
+			// unconditionally wired whenever EnvtestKubeconfig is supplied (see
+			// NewDSBootstrapConfigWithAuth below), and cache construction fails
+			// fast if the RemediationWorkflow/ActionType CRDs aren't installed
+			// in the target API server -- so this suite's envtest must load them
+			// even though it seeds no AuthWebhook.
+			CRDDirectoryPaths:     []string{"../../../../config/crd/bases"},
+			ErrorIfCRDPathMissing: true,
 		}
 		cfg, err := testEnv.Start()
 		Expect(err).ToNot(HaveOccurred(), "envtest should start")
@@ -117,6 +131,7 @@ var _ = SynchronizedBeforeSuite(
 		scheme := runtime.NewScheme()
 		Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(rwv1alpha1.AddToScheme(scheme)).To(Succeed())
 
 		k8sClient, err := client.New(cfg, client.Options{Scheme: scheme})
 		Expect(err).ToNot(HaveOccurred(), "controller-runtime client should build")
@@ -129,7 +144,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred())
 
 		authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
-			cfg, "ka-mcp-sa", "default", GinkgoWriter,
+			cfg, "ka-mcp-sa", mcpSeedNamespace, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred())
 
@@ -153,16 +168,17 @@ var _ = SynchronizedBeforeSuite(
 		)
 		sharedDSClient = dsClients.OpenAPIClient
 
-		// ── Step 3b: Seed workflows into DataStorage (#1174) ──
-		By("Seeding discovery workflows into DataStorage")
-		discoveryWorkflows := []infrastructure.TestWorkflow{
-			{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery", ActionType: "IncreaseMemoryLimits", Environment: "production"},
-			{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", ActionType: "RestartPod", Environment: "production"},
+		// ── Step 3b: Seed workflows via direct CRD creation (#1661 Phase 55: no
+		// AuthWebhook in this suite -- see SeedWorkflowsViaDirectCRDCreation) ──
+		By("Seeding discovery workflows via direct CRD creation")
+		discoveryWorkflows := []infrastructure.WorkflowSeedSpec{
+			{FixtureDir: "oomkill-increase-memory", Environment: "production"},
+			{FixtureDir: "generic-restart", Environment: "production"},
 		}
-		workflowUUIDs, seedErr := infrastructure.SeedWorkflowsInDataStorage(
-			sharedDSClient, discoveryWorkflows, "KA MCP IT", GinkgoWriter,
+		workflowUUIDs, seedErr := infrastructure.SeedWorkflowsViaDirectCRDCreation(
+			ctx, sharedK8sClient, mcpSeedNamespace, discoveryWorkflows, GinkgoWriter,
 		)
-		Expect(seedErr).ToNot(HaveOccurred(), "discovery workflows must seed in DataStorage")
+		Expect(seedErr).ToNot(HaveOccurred(), "discovery workflows must seed via direct CRD creation")
 		sharedWorkflowUUIDs = workflowUUIDs
 		GinkgoWriter.Printf("Seeded %d workflows: %v\n", len(workflowUUIDs), workflowUUIDs)
 
