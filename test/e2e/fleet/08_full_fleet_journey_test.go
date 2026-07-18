@@ -86,11 +86,11 @@ var _ = Describe("E2E-FLEET-009 [AC-3, AC-4, SI-4]: Full fleet journey from aler
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetJourney", namespace, "critical",
-			"Deployment", targetName, "remote-cluster")
+		payload := buildPrometheusAlertWithCluster("FleetJourney", "critical",
+			targetName, "remote-cluster")
 
 		gatewayURL := urlLocalhost30080
-		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())

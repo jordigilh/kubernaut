@@ -138,11 +138,11 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetClusterScoped", namespace, "critical",
-			"Deployment", targetName, remoteCluster)
+		payload := buildPrometheusAlertWithCluster("FleetClusterScoped", "critical",
+			targetName, remoteCluster)
 
 		gatewayURL := urlLocalhost30080
-		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())

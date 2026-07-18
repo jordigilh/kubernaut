@@ -90,11 +90,11 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", namespace, "critical",
-			"Deployment", targetName, "prod-east")
+		payload := buildPrometheusAlertWithCluster("FleetSignalIngestion", "critical",
+			targetName, "prod-east")
 
 		gatewayURL := urlLocalhost30080
-		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())
@@ -122,14 +122,14 @@ var _ = Describe("E2E-FLEET-001 [AC-4]: Signal ingestion with cluster_id creates
 // FedRAMP: AC-3 (access enforcement -- distinct cluster identities)
 var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct fingerprints (BR-INTEGRATION-054)", Label("fleet"), func() {
 	It("should produce different RRs for same resource on different clusters", func() {
-		payloadEast := buildPrometheusAlertWithCluster("FleetDedup", namespace, "warning",
-			"Deployment", "memory-eater", "prod-east")
-		payloadWest := buildPrometheusAlertWithCluster("FleetDedup", namespace, "warning",
-			"Deployment", "memory-eater", "prod-west")
+		payloadEast := buildPrometheusAlertWithCluster("FleetDedup", "warning",
+			"memory-eater", "prod-east")
+		payloadWest := buildPrometheusAlertWithCluster("FleetDedup", "warning",
+			"memory-eater", "prod-west")
 
 		gatewayURL := urlLocalhost30080
-		_, bodyEast := postFleetAlertUntilAccepted(gatewayURL, payloadEast)
-		_, bodyWest := postFleetAlertUntilAccepted(gatewayURL, payloadWest)
+		bodyEast := postFleetAlertUntilAccepted(gatewayURL, payloadEast)
+		bodyWest := postFleetAlertUntilAccepted(gatewayURL, payloadWest)
 
 		var eastResp, westResp map[string]interface{}
 		Expect(json.Unmarshal(bodyEast, &eastResp)).To(Succeed())
@@ -143,8 +143,12 @@ var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct f
 	})
 })
 
-//nolint:unparam // ns always receives the package-level namespace ("kubernaut-system") today, but this helper is shared across many other e2e/fleet test files outside this fix's scope.
-func buildPrometheusAlertWithCluster(alertName, ns, severity, kind, name, clusterID string) []byte {
+// buildPrometheusAlertWithCluster builds a Prometheus alert payload targeting a
+// "Deployment" (the only resource kind used across all e2e/fleet tests), in the
+// package-level test namespace (the only namespace used across all e2e/fleet tests).
+func buildPrometheusAlertWithCluster(alertName, severity, name, clusterID string) []byte {
+	const kind = "Deployment"
+	ns := namespace
 	payload := map[string]interface{}{
 		"version":  "4",
 		"groupKey": fmt.Sprintf("{}:{alertname=\"%s\"}", alertName),

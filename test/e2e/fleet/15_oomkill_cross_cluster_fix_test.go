@@ -101,11 +101,11 @@ var _ = Describe("E2E-FLEET-015 [AC-3, AC-4, SI-4]: OOMKill increase-memory fix 
 		// directly (test/services/mock-llm/scenarios/scenario_oomkilled.go),
 		// avoiding the ambiguous generic "BackOff" fallback path that could
 		// also match crashloopScenario.
-		payload := buildPrometheusAlertWithCluster("OOMKilled", namespace, "critical",
-			"Deployment", oomkillCrossClusterAppName, "remote-cluster")
+		payload := buildPrometheusAlertWithCluster("OOMKilled", "critical",
+			oomkillCrossClusterAppName, "remote-cluster")
 
 		gatewayURL := urlLocalhost30080
-		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())

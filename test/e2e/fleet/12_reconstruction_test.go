@@ -156,10 +156,10 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), dep) })
 
 			By("Submitting a signal with no cluster label to create a hub-only RR")
-			payload := buildPrometheusAlertWithCluster("HubOnlyReconstruction", namespace, "warning",
-				"Deployment", targetName, "")
+			payload := buildPrometheusAlertWithCluster("HubOnlyReconstruction", "warning",
+				targetName, "")
 			gatewayURL := urlLocalhost30080
-			_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+			body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 			var response map[string]interface{}
 			Expect(json.Unmarshal(body, &response)).To(Succeed())

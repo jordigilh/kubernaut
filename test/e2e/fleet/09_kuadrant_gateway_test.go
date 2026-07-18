@@ -70,7 +70,7 @@ var _ = Describe("E2E-FLEET-KUA: Kuadrant MCP Gateway Pipeline", Label("fleet"),
 
 	It("E2E-FLEET-KUA-002 [AC-3]: tool call routes through Kuadrant broker to kube-mcp-server backend", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx)
 		Expect(err).ToNot(HaveOccurred())
 		defer mcpClient.Close()
 
