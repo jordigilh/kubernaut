@@ -94,7 +94,7 @@ func NewFileWatcher(path string, callback ReloadCallback, logger logr.Logger) (*
 // Returns error if initial file load fails or watcher cannot be created.
 func (w *FileWatcher) Start(ctx context.Context) error {
 	// Load initial content
-	if err := w.loadInitial(ctx); err != nil {
+	if err := w.loadInitial(); err != nil {
 		return fmt.Errorf("failed to load initial content: %w", err)
 	}
 
@@ -185,8 +185,10 @@ func (w *FileWatcher) GetLastContent() string {
 	return w.lastContent
 }
 
-// loadInitial loads the file content at startup.
-func (w *FileWatcher) loadInitial(ctx context.Context) error {
+// loadInitial loads the file content at startup. Like its sibling
+// handleFileChange (the on-change reload path), os.ReadFile and w.callback
+// need no context, so this takes none either.
+func (w *FileWatcher) loadInitial() error {
 	content, err := os.ReadFile(w.path)
 	if err != nil {
 		return fmt.Errorf("failed to read file %s: %w", w.path, err)

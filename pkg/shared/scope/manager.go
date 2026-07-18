@@ -264,6 +264,8 @@ func (m *Manager) checkNamespaceLabel(ctx context.Context, namespace string) (bo
 
 // checkLabelValue inspects the kubernaut.ai/managed label and returns (managed, found).
 // "true" → (true, true), "false" → (false, true), missing or invalid → (false, false).
+//
+//nolint:unparam // error is always nil here; kept so checkResourceLabel/checkNamespaceLabel (which do return real client.Get errors) can `return checkLabelValue(obj.Labels)` as a direct tail call (Issue #1546 Tier 4)
 func checkLabelValue(labels map[string]string) (bool, bool, error) {
 	val, exists := labels[ManagedLabelKey]
 	if !exists {
