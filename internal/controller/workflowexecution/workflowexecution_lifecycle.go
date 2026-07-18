@@ -49,7 +49,7 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	logger := log.FromContext(ctx)
 
 	// Issue #518: Lazy resolution for pre-migration WFEs that lack status.executionEngine.
-	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+	if engineErr := r.validateExecutionEngineResolved(wfe); engineErr != nil {
 		logger.Error(engineErr, "Failed to resolve execution engine during Running phase")
 		return r.MarkFailed(ctx, wfe, nil)
 	}
@@ -152,7 +152,7 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	logger := log.FromContext(ctx)
 
 	// Issue #518: Lazy resolution for pre-migration WFEs (non-fatal for terminal phase).
-	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+	if engineErr := r.validateExecutionEngineResolved(wfe); engineErr != nil {
 		logger.V(1).Info("Could not resolve execution engine in terminal phase (non-fatal)", "error", engineErr)
 	}
 	logger.Info("Reconciling Terminal phase", "phase", wfe.Status.Phase)
@@ -353,7 +353,7 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	logger := log.FromContext(ctx)
 
 	// Issue #518: Lazy resolution for pre-migration WFEs (non-fatal for delete).
-	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+	if engineErr := r.validateExecutionEngineResolved(wfe); engineErr != nil {
 		logger.V(1).Info("Could not resolve execution engine during delete (non-fatal, will try fallback)", "error", engineErr)
 	}
 	logger.Info("Reconciling Delete")

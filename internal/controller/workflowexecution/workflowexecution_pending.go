@@ -57,6 +57,8 @@ import (
 // resulting fail-fast/observability guarantees). The error return is kept
 // for signature stability at the call site (resolvePendingSchemaAndEngine);
 // it is currently always nil.
+//
+//nolint:unparam // see doc comment above -- error kept for call-site signature stability (Issue #1546 Tier 4)
 func (r *WorkflowExecutionReconciler) resolveSchemaMetadata(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.SchemaMetadata, weexecutor.CreateOptions, error) {
 	opts := weexecutor.CreateOptions{}
 	if r.WorkflowQuerier == nil {
@@ -115,7 +117,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return auditResult, auditErr
 	}
 
-	createResult, createResourceResult, createResourceErr, shouldReturn := r.createPendingExecutionResource(ctx, wfe, resourceName, createOpts, engine, logger)
+	createResult, createResourceResult, createResourceErr, shouldReturn := r.createPendingExecutionResource(ctx, wfe, resourceName, createOpts, logger)
 	if shouldReturn {
 		return createResourceResult, createResourceErr
 	}
@@ -157,6 +159,8 @@ func (r *WorkflowExecutionReconciler) refetchFreshPendingWFE(ctx context.Context
 // Failed with ConfigurationError on validation failure (pre-execution
 // failure, wasExecutionFailure: false). Extracted from reconcilePending per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared (ctrl.Result, error, shouldReturn) contract of sibling reconcilePending step helpers, called uniformly as `if result, err, shouldReturn := r.xxx(...); shouldReturn { return result, err }` (Issue #1546 Tier 4)
 func (r *WorkflowExecutionReconciler) validateAndAnnouncePendingSpec(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (ctrl.Result, error, bool) {
 	if err := r.ValidateSpec(wfe); err != nil {
 		logger.Error(err, "Spec validation failed")
@@ -182,6 +186,8 @@ func (r *WorkflowExecutionReconciler) validateAndAnnouncePendingSpec(ctx context
 // must immediately return (result, err) — schema resolution failure or no
 // engine defined. Extracted from reconcilePending per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared reconcilePending step-helper contract (see validateAndAnnouncePendingSpec) (Issue #1546 Tier 4)
 func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (*weclient.SchemaMetadata, weexecutor.CreateOptions, string, ctrl.Result, error, bool) {
 	// ========================================
 	// Step 1.2: Resolve all workflow catalog metadata from DS in a single call (F6)
@@ -335,9 +341,12 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 // HandleAlreadyExists; Job attempts terminal-state cleanup + retry via
 // handleJobAlreadyExists, Issue #374/#383/#190). shouldReturn is true when
 // the caller must immediately return (result, err) — unsupported engine,
-// unresolvable collision, or hard creation failure. Extracted from
-// reconcilePending per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
-func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, createOpts weexecutor.CreateOptions, engine string, logger logr.Logger) (*weexecutor.CreateResult, ctrl.Result, error, bool) {
+// unresolvable collision, or hard creation failure. Reads the engine from
+// wfe.Status.ExecutionEngine (set by resolvePendingSchemaAndEngine before
+// this is called, so it is always identical to the caller's local `engine`
+// variable). Extracted from reconcilePending per
+// GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, createOpts weexecutor.CreateOptions, logger logr.Logger) (*weexecutor.CreateResult, ctrl.Result, error, bool) {
 	exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
 	if err != nil {
 		// Issue #868: Provide actionable guidance for unavailable engines
