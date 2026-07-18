@@ -219,7 +219,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 			}
 			// Filter by controller actor_id after retrieving events
 			events := resp.Data
-			controllerEvents := filterEventsByActorId(events, "notification-controller")
+			controllerEvents := filterEventsByActorId(events)
 			return len(controllerEvents)
 		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
 			"Controller should emit audit event during notification processing")
@@ -232,7 +232,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 
 		// DD-E2E-002: Filter to only controller-emitted events (ActorId "notification-controller")
 		// Uses real service name, not test-specific name (ADR-034 compliance)
-		events := filterEventsByActorId(allEvents, "notification-controller")
+		events := filterEventsByActorId(allEvents)
 
 		// Find controller-emitted sent event and validate ADR-034 compliance
 		var foundSentEvent *ogenclient.AuditEvent
@@ -411,15 +411,14 @@ func queryAuditEvents(dsClient *ogenclient.Client, correlationID string) []ogenc
 	return events
 }
 
-// filterEventsByActorId filters audit events to only include events with matching ActorId
-// This is used in E2E tests to distinguish service-emitted events (ActorId "notification")
-// from controller-emitted events (ActorId "notification-controller") when both run concurrently.
+// filterEventsByActorId filters audit events to only include controller-emitted
+// events (ActorId "notification-controller"), distinguishing them from
+// service-emitted events (ActorId "notification") when both run concurrently.
 //
 // IMPORTANT: ActorId MUST use real service names, NOT test-specific names (ADR-034 compliance).
 // DD-E2E-002: E2E Audit Event Isolation Pattern
-//
-//nolint:unparam // actorId is always "notification-controller" today, but this helper is also called from 02_audit_correlation_test.go (outside this fix's scope).
-func filterEventsByActorId(events []ogenclient.AuditEvent, actorId string) []ogenclient.AuditEvent {
+func filterEventsByActorId(events []ogenclient.AuditEvent) []ogenclient.AuditEvent {
+	const actorId = "notification-controller"
 	filtered := make([]ogenclient.AuditEvent, 0, len(events))
 	for _, event := range events {
 		if event.ActorID.IsSet() && event.ActorID.Value == actorId {

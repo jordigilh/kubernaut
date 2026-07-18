@@ -110,20 +110,20 @@ func countEventsByType(events []dsgen.AuditEvent) map[string]int {
 // Parameters:
 //   - correlationID: RemediationRequest.Name
 //   - eventType: Use constants from aianalysisaudit package (e.g., aianalysisaudit.EventTypePhaseTransition)
-//   - minCount: Minimum number of events expected
+//
+// Waits for at least 1 matching event (every caller across this file and
+// 06_error_audit_trail_test.go only ever needs the first occurrence).
 //
 // Returns: Array of audit events (OpenAPI-generated types)
 //
 // Rationale: BufferedAuditStore flushes asynchronously, so tests must poll
 // rather than query immediately after reconciliation. Using Eventually()
 // makes tests faster (no fixed sleep) and more reliable (handles timing variance).
-//
-//nolint:unparam // minCount is always 1 today, but also called from 06_error_audit_trail_test.go (outside this fix's scope), which may need a different threshold.
 func waitForSpecificAuditEvent(
 	correlationID string,
 	eventType string, // Use aianalysisaudit.EventType* constants
-	minCount int,
 ) []dsgen.AuditEvent {
+	const minCount = 1
 	var events []dsgen.AuditEvent
 
 	Eventually(func() int {
@@ -326,7 +326,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			remediationID := analysis.Spec.RemediationID
 
 			By("Waiting for phase transition events to appear in Data Storage")
-			phaseEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition, 1)
+			phaseEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypePhaseTransition)
 
 			By("Validating phase transition event_data structure")
 			for _, event := range phaseEvents {
@@ -390,7 +390,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			remediationID := analysis.Spec.RemediationID
 
 			By("Waiting for AI agent call events to appear in Data Storage")
-			kaEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeAIAgentCall, 1)
+			kaEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeAIAgentCall)
 
 			By("Validating AI agent API call event_data structure")
 			for _, event := range kaEvents {
@@ -456,7 +456,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			remediationID := analysis.Spec.RemediationID
 
 			By("Waiting for Rego evaluation events to appear in Data Storage")
-			regoEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeRegoEvaluation, 1)
+			regoEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeRegoEvaluation)
 
 			By("Validating Rego evaluation event_data structure")
 			event := regoEvents[0] // Should be only one Rego evaluation per analysis
@@ -525,7 +525,7 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 			remediationID := analysis.Spec.RemediationID
 
 			By("Waiting for approval decision events to appear in Data Storage")
-			approvalEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeApprovalDecision, 1)
+			approvalEvents := waitForSpecificAuditEvent(remediationID, aianalysisaudit.EventTypeApprovalDecision)
 
 			By("Validating approval decision event_data structure")
 			event := approvalEvents[0]
