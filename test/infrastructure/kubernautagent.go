@@ -868,7 +868,7 @@ func DeployKubernautAgentOnly(ctx context.Context, clusterName, kubeconfigPath, 
 	imagePullPolicy := GetImagePullPolicy()
 
 	// DD-TEST-007: Build GOCOVERDIR YAML snippets for binary coverage instrumentation
-	covEnv := coverageEnvYAML("kubernautagent")
+	covEnv := coverageEnvYAML()
 	covMount := coverageVolumeMountYAML()
 	covVol := coverageVolumeYAML()
 

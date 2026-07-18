@@ -264,6 +264,10 @@ func parseYAMLList(text string) ([]unstructured.Unstructured, error) {
 
 // --- Multi-format parser (the full priority chain) ---
 
+// parseMultiFormat is also called from e2e_spike_test.go in this package (via
+// fullPriorityChain) with a variable kind argument.
+//
+//nolint:unparam // fallbackKind is unused by every call site in this file, but removing it would require editing e2e_spike_test.go too, which is out of scope for this edit
 func parseMultiFormat(text string, fallbackKind, fallbackAPIVersion string) ([]unstructured.Unstructured, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {

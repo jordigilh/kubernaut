@@ -50,9 +50,9 @@ func fakeAuthMiddleware(user string) func(http.Handler) http.Handler {
 	}
 }
 
-func newMCPTestRouter() (*httptest.Server, *mcpinternal.MCPServer) {
+func newMCPTestRouter() *httptest.Server {
 	authMw := fakeAuthMiddleware("test-user")
-	handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+	handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
 		AuthMiddleware: authMw,
 	})
 
@@ -63,15 +63,14 @@ func newMCPTestRouter() (*httptest.Server, *mcpinternal.MCPServer) {
 		r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(handler))
 	})
 
-	ts := httptest.NewServer(r)
-	return ts, srv
+	return httptest.NewServer(r)
 }
 
 var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 
 	Describe("IT-KA-703-F01: MCP endpoint responds to authenticated POST (JSON-RPC initialize)", func() {
 		It("should return a valid JSON-RPC response to initialize", func() {
-			ts, _ := newMCPTestRouter()
+			ts := newMCPTestRouter()
 			defer ts.Close()
 
 			jsonRPC := mcpInitializeRequestFixture
@@ -96,7 +95,7 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 
 	Describe("IT-KA-703-F02: MCP endpoint rejects unauthenticated request (401)", func() {
 		It("should return 401 when no Authorization header", func() {
-			ts, _ := newMCPTestRouter()
+			ts := newMCPTestRouter()
 			defer ts.Close()
 
 			jsonRPC := mcpInitializeRequestFixture
@@ -115,7 +114,7 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 
 	Describe("IT-KA-703-F03: MCP SSE headers applied to response", func() {
 		It("should include SSE headers on MCP endpoint responses", func() {
-			ts, _ := newMCPTestRouter()
+			ts := newMCPTestRouter()
 			defer ts.Close()
 
 			jsonRPC := mcpInitializeRequestFixture

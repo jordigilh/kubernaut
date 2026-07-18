@@ -66,13 +66,13 @@ func (r *messagesCapturingInvestigatorRunner) RunFullInvestigation(_ context.Con
 	return &katypes.InvestigationResult{RCASummary: "mock RCA"}, nil
 }
 
-func newReconSessionMgr(rrID, sessionID string) (*mcpinternal.InteractiveSession, *mockSessionManager) {
+func newReconSessionMgr(rrID, sessionID string) *mockSessionManager {
 	sess := &mcpinternal.InteractiveSession{
 		SessionID:     sessionID,
 		CorrelationID: rrID,
 		ActingUser:    mcpinternal.UserInfo{Username: "alice"},
 	}
-	return sess, &mockSessionManager{
+	return &mockSessionManager{
 		takeoverSession: sess,
 		isActive:        true,
 		getDriverResult: sess,
@@ -84,7 +84,7 @@ var _ = Describe("BR-INTERACTIVE-010: Context reconstruction from audit trail", 
 	Describe("UT-KA-1293-008: RCA summary available → single turn", func() {
 		It("should store one assistant turn from RCA summary without calling Reconstruct", func() {
 			const rrID = "rr-recon-008"
-			_, sessionMgr := newReconSessionMgr(rrID, "sess-recon-008")
+			sessionMgr := newReconSessionMgr(rrID, "sess-recon-008")
 			autoMgr := &reconAutoMgr{
 				rcaSummary: "Pod OOMKilled due to memory limit",
 				rcaOK:      true,
@@ -125,7 +125,7 @@ var _ = Describe("BR-INTERACTIVE-010: Context reconstruction from audit trail", 
 	Describe("UT-KA-1293-009: no RCA, DS returns turns → multiple turns stored", func() {
 		It("should store reconstructed turns from DS when no RCA summary exists", func() {
 			const rrID = "rr-recon-009"
-			_, sessionMgr := newReconSessionMgr(rrID, "sess-recon-009")
+			sessionMgr := newReconSessionMgr(rrID, "sess-recon-009")
 			autoMgr := &interactiveAutoMgr{}
 			recon := &mockContextReconstructor{
 				turns: []mcpinternal.ConversationTurn{
@@ -168,7 +168,7 @@ var _ = Describe("BR-INTERACTIVE-010: Context reconstruction from audit trail", 
 	Describe("UT-KA-1293-010: no RCA, DS error → empty context", func() {
 		It("should proceed with empty context when DS reconstruction fails", func() {
 			const rrID = "rr-recon-010"
-			_, sessionMgr := newReconSessionMgr(rrID, "sess-recon-010")
+			sessionMgr := newReconSessionMgr(rrID, "sess-recon-010")
 			autoMgr := &interactiveAutoMgr{}
 			recon := &mockContextReconstructor{
 				err: errors.New("DS unavailable"),

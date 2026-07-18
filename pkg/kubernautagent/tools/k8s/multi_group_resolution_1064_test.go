@@ -58,14 +58,14 @@ func buildAmbiguousKindIndex() map[string]schema.GroupKind {
 	}
 }
 
-func newOLMSubscription(name, namespace string) *unstructured.Unstructured {
+func newOLMSubscription(name string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "operators.coreos.com/v1alpha1",
 			"kind":       "Subscription",
 			"metadata": map[string]interface{}{
 				"name":      name,
-				"namespace": namespace,
+				"namespace": "demo-operator",
 			},
 			"spec": map[string]interface{}{
 				"channel":         "stable",
@@ -103,7 +103,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 	Describe("UT-KA-1064-001: Get resolves ambiguous kind with explicit api_group (#1311)", func() {
 		It("should return the OLM Subscription when api_group is operators.coreos.com", func() {
 			scheme := newAmbiguousScheme()
-			olmSub := newOLMSubscription("etcd", "demo-operator")
+			olmSub := newOLMSubscription("etcd")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
@@ -120,7 +120,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 	Describe("UT-KA-1064-002: List resolves ambiguous kind with explicit api_group (#1311)", func() {
 		It("should return the OLM SubscriptionList when api_group is operators.coreos.com", func() {
 			scheme := newAmbiguousScheme()
-			olmSub := newOLMSubscription("etcd", "demo-operator")
+			olmSub := newOLMSubscription("etcd")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
@@ -137,7 +137,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 	Describe("UT-KA-1064-003: List with explicit api_group returns only that group's items (#1311)", func() {
 		It("should return OLM Subscription in demo-operator when api_group is operators.coreos.com", func() {
 			scheme := newAmbiguousScheme()
-			olmSub := newOLMSubscription("alpha", "demo-operator")
+			olmSub := newOLMSubscription("alpha")
 			knativeSub := &unstructured.Unstructured{
 				Object: map[string]interface{}{
 					"apiVersion": "messaging.knative.dev/v1",
@@ -336,7 +336,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 	Describe("UT-KA-1064-008: Multi-group Get with explicit api_group emits log on success", func() {
 		It("should resolve with explicit api_group for ambiguous kind", func() {
 			scheme := newAmbiguousScheme()
-			olmSub := newOLMSubscription("etcd", "demo-operator")
+			olmSub := newOLMSubscription("etcd")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
@@ -353,7 +353,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 	Describe("UT-KA-1064-009: Ambiguous kind without api_group returns disambiguation error (#1311)", func() {
 		It("should return error listing available groups when api_group is empty", func() {
 			scheme := newAmbiguousScheme()
-			olmSub := newOLMSubscription("etcd", "demo-operator")
+			olmSub := newOLMSubscription("etcd")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
@@ -371,7 +371,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 	Describe("UT-KA-1064-010: kubectl_find_resource with explicit api_group finds correct items (#1311)", func() {
 		It("should find OLM Subscription via keyword search with api_group", func() {
 			scheme := newAmbiguousScheme()
-			olmSub := newOLMSubscription("etcd", "demo-operator")
+			olmSub := newOLMSubscription("etcd")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
@@ -395,7 +395,7 @@ var _ = Describe("Issue #1064: kubectl tool multi-group kind resolution fallback
 	Describe("UT-KA-1064-011: kubernetes_jq_query with explicit api_group queries correct group (#1311)", func() {
 		It("should apply jq expression to OLM Subscriptions with api_group", func() {
 			scheme := newAmbiguousScheme()
-			olmSub := newOLMSubscription("etcd", "demo-operator")
+			olmSub := newOLMSubscription("etcd")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()

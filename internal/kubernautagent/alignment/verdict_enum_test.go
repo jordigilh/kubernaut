@@ -27,8 +27,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Verdict Enum Alignment — #1077", func() {
@@ -49,7 +49,7 @@ var _ = Describe("Verdict Enum Alignment — #1077", func() {
 			inner := &mockInvestigationRunner{result: innerRes}
 
 			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponseWithUsage(5, 10, 15),
+				suspiciousResponseWithUsage(),
 				cleanResponseWithUsage(10, 20, 30),
 			}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
@@ -91,7 +91,7 @@ var _ = Describe("Verdict Enum Alignment — #1077", func() {
 			inner := &mockInvestigationRunner{result: innerRes}
 
 			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponseWithUsage(5, 10, 15),
+				suspiciousResponseWithUsage(),
 				cleanResponseWithUsage(10, 20, 30),
 			}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{

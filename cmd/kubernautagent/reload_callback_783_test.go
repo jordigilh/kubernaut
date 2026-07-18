@@ -42,6 +42,10 @@ func staticCfg() *kaconfig.Config {
 // bootRuntimeFor builds the boot-time LLMRuntimeConfig snapshot passed to
 // llmRuntimeReloadCallback (#1599). Tests that don't exercise PhaseModels
 // only need the boot Model to match the SwappableClient's initial model.
+// bootRuntimeFor is also called from reload_callback_1470_test.go and
+// reload_callback_1616_test.go in this package.
+//
+//nolint:unparam // model always receives "gpt-4" in this file, but hardcoding it would require touching the other two call-site files above, which are out of scope for this edit
 func bootRuntimeFor(model string) *kaconfig.LLMRuntimeConfig {
 	return &kaconfig.LLMRuntimeConfig{Model: model}
 }

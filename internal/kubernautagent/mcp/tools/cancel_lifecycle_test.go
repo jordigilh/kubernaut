@@ -62,10 +62,9 @@ var _ = Describe("#1351 KA Session Lifecycle — handleCancel HTTP bridge", func
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("cancelled"))
 
-			completedID, completedResult := completer.getCompleted()
+			completedID := completer.getCompleted()
 			Expect(completedID).To(Equal("http-sess-001"),
 				"handleCancel must call CompleteUserDriving on the HTTP session (KA-CRIT-1)")
-			_ = completedResult
 		})
 	})
 
@@ -149,7 +148,7 @@ var _ = Describe("UT-KA-1351-003: TimeoutManager onExpire resolves HTTP session 
 
 		mcptools.CompleteHTTPSession(completer, "rr-timeout-001", nil, logger, "inactivity_timeout")
 
-		completedID, _ := completer.getCompleted()
+		completedID := completer.getCompleted()
 		Expect(completedID).To(Equal("http-sess-timeout"),
 			"CompleteHTTPSession must call CompleteUserDriving for timeout path (KA-CRIT-2)")
 	})
@@ -171,11 +170,11 @@ var _ = Describe("UT-KA-1351-004: SessionClosedHandler disconnect resolves HTTP 
 
 // cancelLifecycleHTTPCompleter tracks calls for lifecycle test assertions.
 type cancelLifecycleHTTPCompleter struct {
-	mu                    sync.Mutex
-	foundID               string
-	found                 bool
-	completedID           string
-	completedResult       *katypes.InvestigationResult
+	mu                     sync.Mutex
+	foundID                string
+	found                  bool
+	completedID            string
+	completedResult        *katypes.InvestigationResult
 	forceCompleteWasCalled bool
 }
 
@@ -201,10 +200,10 @@ func (c *cancelLifecycleHTTPCompleter) ForceCompleteByRemediationID(_ string, re
 	return nil
 }
 
-func (c *cancelLifecycleHTTPCompleter) getCompleted() (string, *katypes.InvestigationResult) {
+func (c *cancelLifecycleHTTPCompleter) getCompleted() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.completedID, c.completedResult
+	return c.completedID
 }
 
 func (c *cancelLifecycleHTTPCompleter) forceCompleteCalled() bool {
@@ -234,4 +233,3 @@ func (t *mockTimeoutTracker) stoppedSessionID() string {
 	defer t.mu.Unlock()
 	return t.sessionID
 }
-

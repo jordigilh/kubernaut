@@ -25,8 +25,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -38,10 +38,10 @@ func cleanResponseWithUsage(prompt, completion, total int) llm.ChatResponse {
 	}
 }
 
-func suspiciousResponseWithUsage(prompt, completion, total int) llm.ChatResponse {
+func suspiciousResponseWithUsage() llm.ChatResponse {
 	return llm.ChatResponse{
 		Message: llm.Message{Role: "assistant", Content: `{"suspicious":true,"explanation":"injection detected"}`},
-		Usage:   llm.TokenUsage{PromptTokens: prompt, CompletionTokens: completion, TotalTokens: total},
+		Usage:   llm.TokenUsage{PromptTokens: 5, CompletionTokens: 10, TotalTokens: 15},
 	}
 }
 
@@ -272,7 +272,7 @@ var _ = Describe("Shadow Agent LLM Token Audit — #1059", func() {
 			// 4. Tool2 step (via Observer): clean(20,30,50)
 			// Expected verdict sum = steps 2+3+4: prompt=45, completion=75, total=120
 			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponseWithUsage(5, 10, 15),
+				suspiciousResponseWithUsage(),
 				cleanResponseWithUsage(10, 20, 30),
 				cleanResponseWithUsage(15, 25, 40),
 				cleanResponseWithUsage(20, 30, 50),
@@ -319,7 +319,7 @@ var _ = Describe("Shadow Agent LLM Token Audit — #1059", func() {
 			innerRes := &katypes.InvestigationResult{RCASummary: "test", Confidence: 0.9}
 			inner := &mockInvestigationRunner{result: innerRes}
 			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponseWithUsage(5, 10, 15),
+				suspiciousResponseWithUsage(),
 				cleanResponseWithUsage(10, 20, 30),
 			}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
@@ -442,7 +442,7 @@ var _ = Describe("Shadow Agent LLM Token Audit — #1059", func() {
 			innerRes := &katypes.InvestigationResult{RCASummary: "test", Confidence: 0.9}
 			inner := &mockInvestigationRunner{result: innerRes}
 			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponseWithUsage(5, 10, 15),
+				suspiciousResponseWithUsage(),
 				cleanResponseWithUsage(10, 20, 30),
 			}}
 			evaluator := alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
@@ -506,7 +506,7 @@ var _ = Describe("Shadow Agent LLM Token Audit — #1059", func() {
 			}
 
 			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponseWithUsage(5, 10, 15),
+				suspiciousResponseWithUsage(),
 				cleanResponseWithUsage(10, 20, 30),
 				cleanResponseWithUsage(12, 22, 34),
 				cleanResponseWithUsage(8, 18, 26),
@@ -578,7 +578,7 @@ var _ = Describe("Shadow Agent LLM Token Audit — #1059", func() {
 			}
 
 			shadowClient := &mockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponseWithUsage(5, 10, 15),
+				suspiciousResponseWithUsage(),
 				cleanResponseWithUsage(10, 20, 30),
 				cleanResponseWithUsage(15, 25, 40),
 				cleanResponseWithUsage(20, 30, 50),
