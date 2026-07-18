@@ -93,10 +93,10 @@ cluster := input.cluster.labels.environment if {
 		sp := CreateTestSignalProcessingWithParent("it-sp-1511-002a", ns, rr, fingerprint, targetResource)
 		sp.Spec.Signal.ClusterID = "prod-east-1"
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-		defer func() { _ = deleteAndWait(sp, timeout) }()
+		defer func() { _ = deleteAndWait(sp) }()
 
 		By("Waiting for completion")
-		Expect(waitForCompletion(sp.Name, sp.Namespace, timeout)).To(Succeed())
+		Expect(waitForCompletion(sp.Name, sp.Namespace)).To(Succeed())
 
 		By("Verifying Status.ClusterClassification was persisted via the real reconcile loop")
 		var final signalprocessingv1alpha1.SignalProcessing
@@ -123,10 +123,10 @@ cluster := input.cluster.labels.environment if {
 		sp := CreateTestSignalProcessingWithParent("it-sp-1511-002b", ns, rr, fingerprint, targetResource)
 		sp.Spec.Signal.ClusterID = "unregistered-cluster"
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-		defer func() { _ = deleteAndWait(sp, timeout) }()
+		defer func() { _ = deleteAndWait(sp) }()
 
 		By("Waiting for completion")
-		Expect(waitForCompletion(sp.Name, sp.Namespace, timeout)).To(Succeed())
+		Expect(waitForCompletion(sp.Name, sp.Namespace)).To(Succeed())
 
 		By("Verifying Status.ClusterClassification stays empty and completion is not blocked")
 		var final signalprocessingv1alpha1.SignalProcessing
@@ -149,10 +149,10 @@ cluster := input.cluster.labels.environment if {
 
 		sp := CreateTestSignalProcessingWithParent("it-sp-1511-002c", ns, rr, fingerprint, targetResource)
 		Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-		defer func() { _ = deleteAndWait(sp, timeout) }()
+		defer func() { _ = deleteAndWait(sp) }()
 
 		By("Waiting for completion")
-		Expect(waitForCompletion(sp.Name, sp.Namespace, timeout)).To(Succeed())
+		Expect(waitForCompletion(sp.Name, sp.Namespace)).To(Succeed())
 
 		By("Verifying Status.ClusterClassification stays empty")
 		var final signalprocessingv1alpha1.SignalProcessing

@@ -68,8 +68,8 @@ import (
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/classifier"
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/enricher"
-	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	spevaluator "github.com/jordigilh/kubernaut/pkg/signalprocessing/evaluator"
+	spmetrics "github.com/jordigilh/kubernaut/pkg/signalprocessing/metrics"
 	spstatus "github.com/jordigilh/kubernaut/pkg/signalprocessing/status"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
@@ -480,9 +480,9 @@ proactive_signal_mappings:
 		k8sManager.GetClient(),
 		k8sManager.GetAPIReader(),
 		logger,
-		sharedMetrics,     // Pass shared metrics to enricher
-		5*time.Second,     // Timeout for K8s API calls
-		5*time.Minute,     // Cache TTL for namespace lookups
+		sharedMetrics, // Pass shared metrics to enricher
+		5*time.Second, // Timeout for K8s API calls
+		5*time.Minute, // Cache TTL for namespace lookups
 	)
 	sharedK8sEnricher = k8sEnricher // BR-FLEET-003 (#1511): exposed for IT-SP-1511-002
 
@@ -648,8 +648,8 @@ func deleteTestNamespace(ns string) {
 }
 
 // waitForPhase waits for a SignalProcessing CR to reach a specific phase.
-// Returns error if timeout is exceeded.
-func waitForPhase(name, namespace string, expectedPhase signalprocessingv1alpha1.SignalProcessingPhase, timeout time.Duration) error {
+// Returns error if timeout is exceeded. Uses the package-level timeout.
+func waitForPhase(name, namespace string, expectedPhase signalprocessingv1alpha1.SignalProcessingPhase) error {
 	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
 		sp := &signalprocessingv1alpha1.SignalProcessing{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp)
@@ -661,7 +661,8 @@ func waitForPhase(name, namespace string, expectedPhase signalprocessingv1alpha1
 }
 
 // waitForCompletion waits for a SignalProcessing CR to reach Completed phase with CompletionTime set.
-func waitForCompletion(name, namespace string, timeout time.Duration) error {
+// Uses the package-level timeout.
+func waitForCompletion(name, namespace string) error {
 	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(pollCtx context.Context) (bool, error) {
 		sp := &signalprocessingv1alpha1.SignalProcessing{}
 		err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp)
@@ -676,7 +677,8 @@ func waitForCompletion(name, namespace string, timeout time.Duration) error {
 
 // deleteAndWait deletes a SignalProcessing CR and waits for it to be fully removed.
 // CRITICAL: Prevents test pollution by ensuring complete cleanup before next test.
-func deleteAndWait(sp *signalprocessingv1alpha1.SignalProcessing, timeout time.Duration) error {
+// Uses the package-level timeout.
+func deleteAndWait(sp *signalprocessingv1alpha1.SignalProcessing) error {
 	// Delete the CRD
 	if err := k8sClient.Delete(ctx, sp); err != nil {
 		return err

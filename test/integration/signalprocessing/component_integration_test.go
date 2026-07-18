@@ -104,7 +104,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-pod-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-pod"],
 				Name:        "PodEnrichTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -114,10 +114,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Pod enrichment")
@@ -143,7 +143,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-deploy-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-deploy"],
 				Name:        "DeployEnrichTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -153,10 +153,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Deployment enrichment")
@@ -202,7 +202,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-sts-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-sts"],
 				Name:        "StsEnrichTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -212,10 +212,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying StatefulSet enrichment")
@@ -254,7 +254,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-svc-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-svc"],
 				Name:        "SvcEnrichTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -264,10 +264,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Service enrichment")
@@ -291,7 +291,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-ns-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-ns"],
 				Name:        "NsContextTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -301,10 +301,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Namespace context enrichment")
@@ -337,10 +337,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying degraded mode")
@@ -369,7 +369,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "env-rego-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["env-rego"],
 				Name:        "EnvRegoPolicyTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -379,10 +379,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Rego-based classification")
@@ -405,7 +405,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "env-label-priority-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["env-label"],
 				Name:        "LabelPriorityTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -415,10 +415,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying label takes priority")
@@ -459,10 +459,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Rego-based priority")
@@ -494,19 +494,19 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Verifying severity-based fallback priority")
-		var final signalprocessingv1alpha1.SignalProcessing
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
+			By("Verifying severity-based fallback priority")
+			var final signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-		Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP3))))
-		// Issue #98: Score-based policy: severity_score=3 (critical) + env_score=0 (unknown) = composite 3 → P3
-		// Previously P1 under N*M policy. Score-based treats unknown env as zero contribution.
+			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP3))))
+			// Issue #98: Score-based policy: severity_score=3 (critical) + env_score=0 (unknown) = composite 3 → P3
+			// Previously P1 under N*M policy. Score-based treats unknown env as zero contribution.
 		})
 
 		// Rego policy load
@@ -524,7 +524,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "priority-rego-policy-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["priority-rego-cm"],
 				Name:        "PriorityRegoPolicyTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -534,10 +534,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Rego policy was used")
@@ -566,7 +566,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "business-label-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["business-label"],
 				Name:        "BusinessLabelTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -576,10 +576,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying label-based business classification")
@@ -646,7 +646,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "ownerchain-real-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["ownerchain"],
 				Name:        "OwnerChainRealTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -656,10 +656,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying owner chain")
@@ -675,7 +675,6 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// This scenario is not applicable (API constraint, not test gap)
 	})
 
-
 	// Detection LabelDetector and Priority 3 tests removed - ADR-056: DetectedLabels relocated to KA
 	// See: kubernaut-agent/tests/unit/test_label_detector.py for post-RCA detection tests
 
@@ -686,4 +685,3 @@ func parseQuantity(s string) *resource.Quantity {
 	q := resource.MustParse(s)
 	return &q
 }
-

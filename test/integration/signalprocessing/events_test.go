@@ -103,10 +103,10 @@ var _ = Describe("SignalProcessing K8s Event Observability (DD-EVENT-001, BR-SP-
 			By("Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("events-happy-sp", ns, rr, ValidTestFingerprints["reconciler-01"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred(), "SignalProcessing should complete")
 
 			By("Listing events and asserting expected reasons")
@@ -146,10 +146,10 @@ var _ = Describe("SignalProcessing K8s Event Observability (DD-EVENT-001, BR-SP-
 			By("Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("events-rego-sp", ns, rr, GenerateTestFingerprint("events-rego"), targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for Failed phase")
-			err := waitForPhase(sp.Name, sp.Namespace, signalprocessingv1alpha1.PhaseFailed, timeout)
+			err := waitForPhase(sp.Name, sp.Namespace, signalprocessingv1alpha1.PhaseFailed)
 			Expect(err).ToNot(HaveOccurred(), "SignalProcessing should transition to Failed on policy error")
 
 			By("Listing events and asserting PhaseTransition, PolicyEvaluationFailed")
@@ -186,10 +186,10 @@ var _ = Describe("SignalProcessing K8s Event Observability (DD-EVENT-001, BR-SP-
 			By("Creating SignalProcessing CR for non-existent pod (triggers degraded enrichment)")
 			sp := CreateTestSignalProcessingWithParent("events-degraded-sp", ns, rr, ValidTestFingerprints["edge-case-02"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion (processing continues with partial/degraded data)")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred(), "SignalProcessing should complete despite degraded enrichment")
 
 			By("Listing events and asserting PhaseTransition, EnrichmentDegraded, SignalProcessed")
