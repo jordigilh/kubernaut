@@ -345,6 +345,8 @@ func (r *SignalProcessingReconciler) failClassifyingPhase(ctx context.Context, s
 // reconcileClassifying per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
 // (issue #1520). Returns failed=true when the caller must return
 // (result, err) immediately.
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the "caller must return (result, err)" contract shared with sibling extracted helpers (Issue #1546 Tier 4)
 func (r *SignalProcessingReconciler) evaluateSeverityOrFail(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, policyInput evaluator.PolicyInput, signal *signalprocessingv1alpha1.SignalData, classifyingStart time.Time, logger logr.Logger) (*evaluator.SeverityResult, ctrl.Result, bool, error) {
 	if r.PolicyEvaluator == nil {
 		return nil, ctrl.Result{}, false, nil
