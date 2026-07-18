@@ -162,6 +162,15 @@ linters:
                      # libraries are NOT exempted (same real-Kind/AWX-network
                      # CI-hygiene rationale as noctx); only _test.go Ginkgo
                      # spec files are excluded below.
+    # NOTE: godox (Issue #1546 Tier 4) is intentionally NOT in this enabled
+    # list. Of its ~97 current repo-wide findings, ~60% are "Bug:"/"BUG FIX"/
+    # "BUG REPRODUCTION" prose in regression-test doc comments explaining the
+    # historical bug a test guards against -- valuable documentation, not an
+    # actionable marker -- and the remainder are genuine TODO comments, whose
+    # entire purpose is deferred-work tracking that should not block merges.
+    # It runs as a separate, deliberately non-blocking `continue-on-error`
+    # step in .github/workflows/ci-pipeline.yml (lint-go job) instead, so
+    # findings are visible without gating CI.
 
   settings:
     govet:
