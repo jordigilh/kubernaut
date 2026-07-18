@@ -44,10 +44,8 @@ func staticCfg() *kaconfig.Config {
 // only need the boot Model to match the SwappableClient's initial model.
 // bootRuntimeFor is also called from reload_callback_1470_test.go and
 // reload_callback_1616_test.go in this package.
-//
-//nolint:unparam // model always receives "gpt-4" in this file, but hardcoding it would require touching the other two call-site files above, which are out of scope for this edit
-func bootRuntimeFor(model string) *kaconfig.LLMRuntimeConfig {
-	return &kaconfig.LLMRuntimeConfig{Model: model}
+func bootRuntimeFor() *kaconfig.LLMRuntimeConfig {
+	return &kaconfig.LLMRuntimeConfig{Model: "gpt-4"}
 }
 
 // setupSwappable accepts testing.TB (not *testing.T) so both plain
@@ -79,7 +77,7 @@ func (s *stubLLMClient) Close() error { return nil }
 var _ = Describe("llmRuntimeReloadCallback (#783)", func() {
 	It("rejects empty content and does not change the model", func() {
 		sc := setupSwappable(GinkgoTB())
-		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor("gpt-4"))
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor())
 
 		err := cb("")
 		Expect(err).To(HaveOccurred())
@@ -88,7 +86,7 @@ var _ = Describe("llmRuntimeReloadCallback (#783)", func() {
 
 	It("rejects whitespace-only content", func() {
 		sc := setupSwappable(GinkgoTB())
-		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor("gpt-4"))
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor())
 
 		err := cb("   \n  \t  ")
 		Expect(err).To(HaveOccurred())
@@ -99,7 +97,7 @@ var _ = Describe("llmRuntimeReloadCallback (#783)", func() {
 	// client must keep serving (restart required per #1599).
 	It("rejects a model change and does not change the model", func() {
 		sc := setupSwappable(GinkgoTB())
-		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor("gpt-4"))
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor())
 
 		err := cb(`model: gpt-4-turbo
 endpoint: http://localhost:11434
@@ -111,7 +109,7 @@ apiKey: test-key
 
 	It("accepts an endpoint change", func() {
 		sc := setupSwappable(GinkgoTB())
-		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor("gpt-4"))
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor())
 
 		err := cb(`model: gpt-4
 endpoint: http://new-endpoint:8080
@@ -122,7 +120,7 @@ apiKey: test-key
 
 	It("rejects a validation failure and does not change the model", func() {
 		sc := setupSwappable(GinkgoTB())
-		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor("gpt-4"))
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor())
 
 		err := cb(`model: ""
 endpoint: http://localhost:11434
@@ -134,7 +132,7 @@ apiKey: test-key
 
 	It("accepts a temperature change", func() {
 		sc := setupSwappable(GinkgoTB())
-		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor("gpt-4"))
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor())
 
 		err := cb(`model: gpt-4
 endpoint: http://localhost:11434
