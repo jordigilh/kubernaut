@@ -68,7 +68,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 			if err != nil {
 				reqLogger.V(1).Info("auth failed: token validation", "error", err)
 				observeAuthDuration(cfg.AuthDuration, start, "failure")
-				emitAuthFailure(ctx, cfg.Auditor, "", httputil.ExtractClientIP(r), classifyAuthError(err), authMethod)
+				emitAuthFailure(ctx, cfg.Auditor, httputil.ExtractClientIP(r), classifyAuthError(err), authMethod)
 				httputil.WriteProblem(w, http.StatusUnauthorized,
 					"Authentication Failed", "The provided token could not be validated.")
 				return
@@ -103,7 +103,7 @@ func extractBearerToken(w http.ResponseWriter, r *http.Request, ctx context.Cont
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		reqLogger.V(1).Info("auth failed: missing authorization header")
-		emitAuthFailure(ctx, auditor, "", httputil.ExtractClientIP(r), "missing_header", authMethod)
+		emitAuthFailure(ctx, auditor, httputil.ExtractClientIP(r), "missing_header", authMethod)
 		httputil.WriteProblem(w, http.StatusUnauthorized,
 			"Missing Authorization", "The Authorization header is required.")
 		return "", false
@@ -111,7 +111,7 @@ func extractBearerToken(w http.ResponseWriter, r *http.Request, ctx context.Cont
 
 	if err := security.ValidateHeaderValue(authHeader); err != nil {
 		reqLogger.V(1).Info("auth failed: invalid authorization header", "error", err)
-		emitAuthFailure(ctx, auditor, "", httputil.ExtractClientIP(r), "control_chars", authMethod)
+		emitAuthFailure(ctx, auditor, httputil.ExtractClientIP(r), "control_chars", authMethod)
 		httputil.WriteProblem(w, http.StatusBadRequest,
 			"Invalid Authorization Header", "The Authorization header contains invalid characters.")
 		return "", false
@@ -120,7 +120,7 @@ func extractBearerToken(w http.ResponseWriter, r *http.Request, ctx context.Cont
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	if token == authHeader {
 		reqLogger.V(1).Info("auth failed: non-bearer scheme")
-		emitAuthFailure(ctx, auditor, "", httputil.ExtractClientIP(r), "non_bearer", authMethod)
+		emitAuthFailure(ctx, auditor, httputil.ExtractClientIP(r), "non_bearer", authMethod)
 		httputil.WriteProblem(w, http.StatusUnauthorized,
 			"Invalid Scheme", "The Authorization header must use the Bearer scheme.")
 		return "", false
@@ -163,13 +163,17 @@ func emitAuthSuccess(ctx context.Context, emitter audit.Emitter, identity *UserI
 	})
 }
 
-func emitAuthFailure(ctx context.Context, emitter audit.Emitter, userID, sourceIP, reason, authMethod string) {
+// emitAuthFailure records an auth-failure audit event. UserID is always
+// empty: every call site is on a path where identity parsing/validation
+// itself failed, so there is no verified username to report -- reporting an
+// unverified claim here would put untrusted attacker-controlled data into
+// the audit trail's identity field.
+func emitAuthFailure(ctx context.Context, emitter audit.Emitter, sourceIP, reason, authMethod string) {
 	if emitter == nil {
 		return
 	}
 	emitter.Emit(ctx, &audit.Event{
 		Type:     audit.EventAuthFailure,
-		UserID:   userID,
 		SourceIP: sourceIP,
 		Detail: map[string]string{
 			"auth_method":    authMethod,

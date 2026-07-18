@@ -521,6 +521,8 @@ func (a *alertISSignalerAdapter) SignalInteractive(ctx context.Context, taskID, 
 // G6 (revised #1332): IS CRD creation moved to kubernaut_investigate ISSignaler.
 // The sessionSvc parameter is retained for future use but MaterializeCRD is no
 // longer called from this callback.
+//
+//nolint:unparam // sessionSvc is intentionally unused (see doc comment above); kept in the signature -- and in cfg.SessionService at the sole call site -- for the planned future re-wiring rather than churning callers twice (Issue #1546 Tier 4)
 func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionService, controllerNS string) llmagent.AfterToolCallback {
 	return func(ctx tool.Context, t tool.Tool, input, output map[string]any, toolErr error) (map[string]any, error) {
 		if auditor == nil {

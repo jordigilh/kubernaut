@@ -225,7 +225,7 @@ func trimResultToFit(r ListAlertsResult) ListAlertsResult {
 		r.Alerts = r.Alerts[:len(r.Alerts)-1]
 		r.Count = len(r.Alerts)
 		if r.Prioritized != nil {
-			r.Prioritized = recalcPrioritizedIndices(r.Alerts, r.Prioritized)
+			r.Prioritized = recalcPrioritizedIndices(r.Alerts)
 		}
 		raw, err = json.Marshal(r)
 		if err != nil {
@@ -236,7 +236,9 @@ func trimResultToFit(r ListAlertsResult) ListAlertsResult {
 }
 
 // recalcPrioritizedIndices adjusts tied/also_active indices after trimming.
-func recalcPrioritizedIndices(alerts []AlertSummary, p *PrioritizedAlerts) *PrioritizedAlerts {
+// Recomputes from alerts alone -- selection/tie logic does not depend on the
+// previous PrioritizedAlerts value, only on the (already-trimmed) alert list.
+func recalcPrioritizedIndices(alerts []AlertSummary) *PrioritizedAlerts {
 	if len(alerts) == 0 {
 		return nil
 	}

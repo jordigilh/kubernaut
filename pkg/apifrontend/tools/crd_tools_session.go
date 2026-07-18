@@ -82,6 +82,8 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 // watchForSessionID drains watcher's event channel until an AIAnalysis event
 // matching rrName carries a non-empty KASession.ID, the watch closes, or
 // watchCtx is done (timeout).
+//
+//nolint:unparam // error is always nil here; signature matches pollForSessionID's (AwaitSessionResult, error), the interchangeable sibling branch at the shared call site (Issue #1546 Tier 4)
 func watchForSessionID(watchCtx context.Context, watcher watch.Interface, rrName string) (AwaitSessionResult, error) {
 	for {
 		select {
