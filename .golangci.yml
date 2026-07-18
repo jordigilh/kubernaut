@@ -122,6 +122,23 @@ linters:
                      # assignOp (x = x * n -> x *= n), and 1 appendAssign
                      # (in-place slice filter idiom restructured to satisfy
                      # the checker without changing behavior).
+    - goconst        # Flags repeated string/numeric literals that should be
+                     # promoted to a constant (Issue #1546 Tier 4). 223
+                     # findings remediated: 48 in production code (pkg/,
+                     # internal/, cmd/, api/), 175 across ~127 test files.
+                     # Reuse policy: a literal matching an existing exported
+                     # production constant is reused only when the test is
+                     # setting/comparing the exact struct field the constant
+                     # was defined for (e.g. RemediationPhase, AIAnalysisReason/
+                     # SubReason, ActionTypeTaxonomy.Status, RemediationWorkflow.
+                     # Status, severity levels, audit outcomes) -- not just any
+                     # field that happens to share the same string value. One
+                     # new exported production constant was added where none
+                     # existed (remediationv1.OutcomeRemediated). Literals with
+                     # no production counterpart (fixture names, mock payloads,
+                     # test-only status strings) were promoted to scoped
+                     # unexported constants local to the test file/package
+                     # rather than new production types.
     - contextcheck   # Flags call chains that manufacture a new context instead
                      # of propagating an inherited one (Issue #1546 Tier 4). 90
                      # production findings triaged individually against source:
