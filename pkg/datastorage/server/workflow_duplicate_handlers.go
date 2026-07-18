@@ -307,10 +307,7 @@ func (h *Handler) buildWorkflowCommon(
 		return nil, err
 	}
 
-	workflow, err := buildWorkflowCore(schemaParser, parsedSchema, rawContent, rawParams)
-	if err != nil {
-		return nil, err
-	}
+	workflow := buildWorkflowCore(schemaParser, parsedSchema, rawContent, rawParams)
 
 	if err := applyWorkflowLabels(schemaParser, parsedSchema, workflow); err != nil {
 		return nil, err
@@ -326,8 +323,10 @@ func (h *Handler) buildWorkflowCommon(
 // (description, execution engine, execution bundle/digest, engine config,
 // service account) that do not depend on label extraction. Extracted from
 // buildWorkflowCommon (Wave 6 6f GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.WorkflowSchema, rawContent string, rawParams json.RawMessage) (*models.RemediationWorkflow, error) {
+// motion, no behavior change. Issue #1546 Tier 4: dropped the vestigial
+// error return (bundle-digest parse failures are already handled
+// internally by falling back to an unset digest, so this never failed).
+func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.WorkflowSchema, rawContent string, rawParams json.RawMessage) *models.RemediationWorkflow {
 	desc := models.StructuredDescription{
 		What:          parsedSchema.Description.What,
 		WhenToUse:     parsedSchema.Description.WhenToUse,
@@ -361,7 +360,7 @@ func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.Workflo
 	workflow.EngineConfig = schemaParser.ExtractEngineConfig(parsedSchema)
 	workflow.ServiceAccountName = schemaParser.ExtractServiceAccountName(parsedSchema)
 
-	return workflow, nil
+	return workflow
 }
 
 // applyWorkflowLabels extracts and unmarshals the schema's labels and

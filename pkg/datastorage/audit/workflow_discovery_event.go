@@ -152,6 +152,8 @@ func NewSelectionValidatedAuditEvent(workflowID string, filters *models.Workflow
 
 // buildDiscoveryPayload creates a WorkflowDiscoveryAuditPayload encoding context filters,
 // result counts, and query duration for the audit trail (DD-WORKFLOW-014 v3.0).
+//
+//nolint:unparam // actionType (Step 2's per-action-type filter, passed by NewWorkflowsListedAuditEvent) has no home in the OpenAPI-generated WorkflowDiscoveryAuditPayload/QueryMetadata/WorkflowSearchFilters schema -- capturing it in the audit trail needs an OpenAPI spec change + ogen-client regen, out of scope for this lint pass (Issue #1546 Tier 4); tracked as a follow-up audit-completeness gap
 func buildDiscoveryPayload(eventType ogenclient.WorkflowDiscoveryAuditPayloadEventType, filters *models.WorkflowDiscoveryFilters, totalCount int, actionType string, durationMs int64) ogenclient.WorkflowDiscoveryAuditPayload {
 	var searchFilters ogenclient.OptWorkflowSearchFilters
 	if filters != nil {

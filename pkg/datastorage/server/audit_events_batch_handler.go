@@ -90,12 +90,12 @@ func (s *Server) handleCreateAuditEventsBatch(w http.ResponseWriter, r *http.Req
 	}
 
 	authenticatedActorID := r.Header.Get("X-Auth-Request-User")
-	auditEvents, repositoryEvents, ok := s.validateAndConvertBatch(w, r, requests, authenticatedActorID)
+	auditEvents, repositoryEvents, ok := s.validateAndConvertBatch(w, requests, authenticatedActorID)
 	if !ok {
 		return
 	}
 
-	if !s.resolveBatchParentDates(ctx, w, r, requests, auditEvents, repositoryEvents) {
+	if !s.resolveBatchParentDates(ctx, w, requests, auditEvents, repositoryEvents) {
 		return
 	}
 
@@ -161,7 +161,7 @@ type batchParentRef struct {
 // atomic-batch guarantee (an invalid event at any position rejects the whole
 // batch). Returns ok=false after writing the RFC 7807 error response for the
 // first failing event.
-func (s *Server) validateAndConvertBatch(w http.ResponseWriter, r *http.Request, requests []dsclient.AuditEventRequest, authenticatedActorID string) ([]*audit.AuditEvent, []*repository.AuditEvent, bool) {
+func (s *Server) validateAndConvertBatch(w http.ResponseWriter, requests []dsclient.AuditEventRequest, authenticatedActorID string) ([]*audit.AuditEvent, []*repository.AuditEvent, bool) {
 	auditEvents := make([]*audit.AuditEvent, 0, len(requests))
 	repositoryEvents := make([]*repository.AuditEvent, 0, len(requests))
 
@@ -207,7 +207,7 @@ func (s *Server) validateAndConvertBatch(w http.ResponseWriter, r *http.Request,
 // the batch, instead of one query per row. Returns ok=false after writing
 // the RFC 7807 error response if the lookup query fails or any referenced
 // parent event does not exist.
-func (s *Server) resolveBatchParentDates(ctx context.Context, w http.ResponseWriter, r *http.Request, requests []dsclient.AuditEventRequest, auditEvents []*audit.AuditEvent, repositoryEvents []*repository.AuditEvent) bool {
+func (s *Server) resolveBatchParentDates(ctx context.Context, w http.ResponseWriter, requests []dsclient.AuditEventRequest, auditEvents []*audit.AuditEvent, repositoryEvents []*repository.AuditEvent) bool {
 	var parentRefs []batchParentRef
 	for i, req := range requests {
 		if req.ParentEventID.IsSet() {

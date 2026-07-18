@@ -138,6 +138,8 @@ func buildTimeoutConfig(src *TimeoutConfigData) (*remediationv1.TimeoutConfig, e
 }
 
 // mapAIAnalysisCompletedFields maps AI Analysis audit data to RR Spec (Gap #4).
+//
+//nolint:unparam // error return is required by the rrFieldMappers dispatch map's shared func(*ParsedAuditData, *ReconstructedRRFields) error value type; other registered mappers (e.g. mapGatewaySignalFields) do return real errors (Issue #1546 Tier 4)
 func mapAIAnalysisCompletedFields(parsedData *ParsedAuditData, result *ReconstructedRRFields) error {
 	if len(parsedData.ProviderData) > 0 {
 		result.Spec.ProviderData = parsedData.ProviderData
@@ -146,6 +148,8 @@ func mapAIAnalysisCompletedFields(parsedData *ParsedAuditData, result *Reconstru
 }
 
 // mapWorkflowSelectionCompletedFields maps Workflow Selection audit data to RR Status (Gap #5).
+//
+//nolint:unparam // error return required by the rrFieldMappers dispatch map's shared signature (see mapAIAnalysisCompletedFields)
 func mapWorkflowSelectionCompletedFields(parsedData *ParsedAuditData, result *ReconstructedRRFields) error {
 	if parsedData.SelectedWorkflowRef != nil {
 		result.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
@@ -159,6 +163,8 @@ func mapWorkflowSelectionCompletedFields(parsedData *ParsedAuditData, result *Re
 }
 
 // mapWorkflowExecutionStartedFields maps Workflow Execution audit data to RR Status (Gap #6).
+//
+//nolint:unparam // error return required by the rrFieldMappers dispatch map's shared signature (see mapAIAnalysisCompletedFields)
 func mapWorkflowExecutionStartedFields(parsedData *ParsedAuditData, result *ReconstructedRRFields) error {
 	if parsedData.ExecutionRef != nil {
 		result.Status.ExecutionRef = &corev1.ObjectReference{
@@ -172,6 +178,8 @@ func mapWorkflowExecutionStartedFields(parsedData *ParsedAuditData, result *Reco
 }
 
 // mapOrchestratorTerminalFields maps completion/failure data to RR Status (CC8.1).
+//
+//nolint:unparam // error return required by the rrFieldMappers dispatch map's shared signature (see mapAIAnalysisCompletedFields); also registered twice (completed/failed)
 func mapOrchestratorTerminalFields(parsedData *ParsedAuditData, result *ReconstructedRRFields) error {
 	if parsedData.Outcome != "" {
 		result.Status.Outcome = parsedData.Outcome
