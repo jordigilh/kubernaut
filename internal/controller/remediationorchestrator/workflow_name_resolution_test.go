@@ -52,7 +52,7 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 			"test-rr-643", defaultFixture, remediationv1.PhaseAnalyzing,
 			"sp-test-rr-643", "ai-test-rr-643", "")
 		ai := newAIAnalysisCompleted("ai-test-rr-643", defaultFixture, "test-rr-643", 0.95, workflowUUID)
-		sp := newSignalProcessingCompleted("sp-test-rr-643", defaultFixture, "test-rr-643")
+		sp := newSignalProcessingCompleted("sp-test-rr-643", "test-rr-643")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -106,7 +106,7 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 			"test-rr-643b", defaultFixture, remediationv1.PhaseAnalyzing,
 			"sp-test-rr-643b", "ai-test-rr-643b", "")
 		ai := newAIAnalysisCompleted("ai-test-rr-643b", defaultFixture, "test-rr-643b", 0.95, workflowUUID)
-		sp := newSignalProcessingCompleted("sp-test-rr-643b", defaultFixture, "test-rr-643b")
+		sp := newSignalProcessingCompleted("sp-test-rr-643b", "test-rr-643b")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -152,7 +152,7 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 			"test-rr-643c", defaultFixture, remediationv1.PhaseAnalyzing,
 			"sp-test-rr-643c", "ai-test-rr-643c", "")
 		ai := newAIAnalysisCompleted("ai-test-rr-643c", defaultFixture, "test-rr-643c", 0.95, workflowUUID)
-		sp := newSignalProcessingCompleted("sp-test-rr-643c", defaultFixture, "test-rr-643c")
+		sp := newSignalProcessingCompleted("sp-test-rr-643c", "test-rr-643c")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).

@@ -149,7 +149,7 @@ var _ = Describe("BR-ORCH-036 GAP-4: transitionToFailed Escalation NR (#808)", f
 		rr.Status.ExecutingStartTime = &execStart
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 		we := newWorkflowExecutionFailed("we-"+rrName, defaultFixture, rrName, "Pipeline failed")
 
 		fakeClient := fake.NewClientBuilder().

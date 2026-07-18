@@ -78,7 +78,7 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 			},
 		}
 
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -130,7 +130,7 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
 		ai.Status.NeedsHumanReview = true
 
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -179,7 +179,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 		rr.Status.ExecutingStartTime = &execStart
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 		we := newWorkflowExecutionFailed("we-"+rrName, defaultFixture, rrName, "Pipeline run timed out")
 
 		fakeClient := fake.NewClientBuilder().
@@ -228,7 +228,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 		rr.Status.ExecutingStartTime = &execStart
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 		we := newWorkflowExecutionFailed("we-"+rrName, defaultFixture, rrName, "Pipeline failed")
 
 		fakeClient := fake.NewClientBuilder().
@@ -271,7 +271,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 		rr.Status.ExecutingStartTime = &execStart
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 		we := newWorkflowExecutionFailed("we-"+rrName, defaultFixture, rrName, "Pipeline failed")
 
 		fakeClient := fake.NewClientBuilder().

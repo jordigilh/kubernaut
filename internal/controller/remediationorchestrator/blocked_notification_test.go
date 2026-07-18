@@ -63,7 +63,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-803-003", defaultFixture, "test-rr-803-003", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-803-003", defaultFixture, "test-rr-803-003")
+		sp := newSignalProcessingCompleted("sp-test-rr-803-003", "test-rr-803-003")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -131,7 +131,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-803-004", defaultFixture, "test-rr-803-004", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-803-004", defaultFixture, "test-rr-803-004")
+		sp := newSignalProcessingCompleted("sp-test-rr-803-004", "test-rr-803-004")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -181,7 +181,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-803-005", defaultFixture, "test-rr-803-005", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-803-005", defaultFixture, "test-rr-803-005")
+		sp := newSignalProcessingCompleted("sp-test-rr-803-005", "test-rr-803-005")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -235,7 +235,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-803-006", defaultFixture, "test-rr-803-006", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-803-006", defaultFixture, "test-rr-803-006")
+		sp := newSignalProcessingCompleted("sp-test-rr-803-006", "test-rr-803-006")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).

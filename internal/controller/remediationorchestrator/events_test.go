@@ -132,7 +132,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 
 		we := newWorkflowExecutionCompleted("we-test-rr-completed", defaultFixture, "test-rr-completed")
 		ai := newAIAnalysisCompleted("ai-test-rr-completed", defaultFixture, "test-rr-completed", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-completed", defaultFixture, "test-rr-completed")
+		sp := newSignalProcessingCompleted("sp-test-rr-completed", "test-rr-completed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -176,7 +176,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 
 		we := newWorkflowExecutionFailed("we-test-rr-failed", defaultFixture, "test-rr-failed", "Job failed")
 		ai := newAIAnalysisCompleted("ai-test-rr-failed", defaultFixture, "test-rr-failed", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-failed", defaultFixture, "test-rr-failed")
+		sp := newSignalProcessingCompleted("sp-test-rr-failed", "test-rr-failed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -259,7 +259,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 
 		// Low confidence (0.4 < 0.8) triggers approval
 		ai := newAIAnalysisCompleted("ai-test-rr-approval", defaultFixture, "test-rr-approval", 0.4, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-approval", defaultFixture, "test-rr-approval")
+		sp := newSignalProcessingCompleted("sp-test-rr-approval", "test-rr-approval")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -305,8 +305,8 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-granted", defaultFixture, "test-rr-granted", 0.4, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-granted", defaultFixture, "test-rr-granted")
-		rar := newRemediationApprovalRequestApproved("rar-test-rr-granted", defaultFixture, "test-rr-granted", "admin@example.com")
+		sp := newSignalProcessingCompleted("sp-test-rr-granted", "test-rr-granted")
+		rar := newRemediationApprovalRequestApproved("rar-test-rr-granted", "test-rr-granted", "admin@example.com")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -351,8 +351,8 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-rejected", defaultFixture, "test-rr-rejected", 0.4, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-rejected", defaultFixture, "test-rr-rejected")
-		rar := newRemediationApprovalRequestRejected("rar-test-rr-rejected", defaultFixture, "test-rr-rejected", "admin@example.com", "Risk too high")
+		sp := newSignalProcessingCompleted("sp-test-rr-rejected", "test-rr-rejected")
+		rar := newRemediationApprovalRequestRejected("rar-test-rr-rejected", "test-rr-rejected", "admin@example.com", "Risk too high")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -397,7 +397,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-expired", defaultFixture, "test-rr-expired", 0.4, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-expired", defaultFixture, "test-rr-expired")
+		sp := newSignalProcessingCompleted("sp-test-rr-expired", "test-rr-expired")
 		rar := newRemediationApprovalRequestExpired("rar-test-rr-expired", defaultFixture, "test-rr-expired")
 
 		fakeClient := fake.NewClientBuilder().
@@ -446,7 +446,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		// Failed AI with NeedsHumanReview triggers manual review escalation
 		ai := newAIAnalysisFailed("ai-test-rr-escalated", defaultFixture, "test-rr-escalated", "Insufficient context for automated analysis")
 		ai.Status.NeedsHumanReview = true
-		sp := newSignalProcessingCompleted("sp-test-rr-escalated", defaultFixture, "test-rr-escalated")
+		sp := newSignalProcessingCompleted("sp-test-rr-escalated", "test-rr-escalated")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -528,7 +528,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-cooldown", defaultFixture, "test-rr-cooldown", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-cooldown", defaultFixture, "test-rr-cooldown")
+		sp := newSignalProcessingCompleted("sp-test-rr-cooldown", "test-rr-cooldown")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -579,7 +579,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-test-rr-consec", defaultFixture, "test-rr-consec", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-consec", defaultFixture, "test-rr-consec")
+		sp := newSignalProcessingCompleted("sp-test-rr-consec", "test-rr-consec")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).

@@ -111,7 +111,7 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 
 				initialObjects := []client.Object{
 					newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-					newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+					newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 					newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 					rar,
 				}
@@ -164,9 +164,9 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 			It("should have Expired=false when RAR is approved", func() {
 				initialObjects := []client.Object{
 					newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-					newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+					newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 					newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
-					newRemediationApprovalRequestApproved("rar-test-rr", defaultFixture, "test-rr", "admin@example.com"),
+					newRemediationApprovalRequestApproved("rar-test-rr", "test-rr", "admin@example.com"),
 				}
 
 				fakeClient = fake.NewClientBuilder().
@@ -205,9 +205,9 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 			It("should have Expired=false when RAR is rejected", func() {
 				initialObjects := []client.Object{
 					newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-					newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+					newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 					newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
-					newRemediationApprovalRequestRejected("rar-test-rr", defaultFixture, "test-rr", "admin@example.com", "Too risky"),
+					newRemediationApprovalRequestRejected("rar-test-rr", "test-rr", "admin@example.com", "Too risky"),
 				}
 
 				fakeClient = fake.NewClientBuilder().
@@ -254,7 +254,7 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 
 				initialObjects := []client.Object{
 					newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-					newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+					newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 					newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 					rar,
 				}

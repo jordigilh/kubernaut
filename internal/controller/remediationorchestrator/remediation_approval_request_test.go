@@ -97,7 +97,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-002: pending decision (empty Status.Decision) is a no-op", func() {
-		rar := newRemediationApprovalRequestApproved("rar-pending", defaultFixture, "rr-1", "")
+		rar := newRemediationApprovalRequestApproved("rar-pending", "rr-1", "")
 		rar.Status.Decision = "" // override fixture: no decision yet
 		rar.Status.DecidedAt = nil
 		fakeClient := newFakeClient(rar)
@@ -114,7 +114,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-003: already-audited RAR (AuditRecorded=True) is a no-op (idempotency, DD-STATUS-001)", func() {
-		rar := newRemediationApprovalRequestApproved("rar-already-audited", defaultFixture, "rr-2", "alice")
+		rar := newRemediationApprovalRequestApproved("rar-already-audited", "rr-2", "alice")
 		fakeClient := newFakeClient(rar)
 
 		// Mark AuditRecorded=True directly via the status subresource so the
@@ -137,7 +137,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-004: missing parent RemediationRequest reference is a no-op (defensive guard)", func() {
-		rar := newRemediationApprovalRequestApproved("rar-no-parent", defaultFixture, "rr-3", "alice")
+		rar := newRemediationApprovalRequestApproved("rar-no-parent", "rr-3", "alice")
 		rar.Spec.RemediationRequestRef = corev1.ObjectReference{} // Name == ""
 		fakeClient := newFakeClient(rar)
 		mockAuditStore := &MockAuditStore{}
@@ -153,7 +153,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-005: Approved decision emits an audit event and sets AuditRecorded=True", func() {
-		rar := newRemediationApprovalRequestApproved("rar-approved", defaultFixture, "rr-4", "alice")
+		rar := newRemediationApprovalRequestApproved("rar-approved", "rr-4", "alice")
 		fakeClient := newFakeClient(rar)
 		mockAuditStore := &MockAuditStore{}
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
@@ -178,7 +178,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-006: Rejected decision emits an audit event and sets AuditRecorded=True", func() {
-		rar := newRemediationApprovalRequestRejected("rar-rejected", defaultFixture, "rr-5", "bob", "insufficient evidence")
+		rar := newRemediationApprovalRequestRejected("rar-rejected", "rr-5", "bob", "insufficient evidence")
 		fakeClient := newFakeClient(rar)
 		mockAuditStore := &MockAuditStore{}
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, mockAuditStore, metrics)
@@ -201,7 +201,7 @@ var _ = Describe("BR-AUDIT-006: RARReconciler.Reconcile (approval-decision audit
 	})
 
 	It("UT-RO-RAR-007: audit store failure is fire-and-forget (no reconcile error) and sets AuditRecorded=False/AuditFailed", func() {
-		rar := newRemediationApprovalRequestApproved("rar-audit-fail", defaultFixture, "rr-6", "alice")
+		rar := newRemediationApprovalRequestApproved("rar-audit-fail", "rr-6", "alice")
 		fakeClient := newFakeClient(rar)
 		erroringStore := &erroringAuditStore{err: fmt.Errorf("simulated datastorage outage")}
 		reconciler := prodcontroller.NewRARReconciler(fakeClient, fakeClient, scheme, erroringStore, metrics)

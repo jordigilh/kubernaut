@@ -93,11 +93,9 @@ func newCharTimeouts() prodcontroller.TimeoutConfig {
 }
 
 // newCharReconciler is also called from apply_transition_test.go in this package.
-//
-//nolint:unparam // the *record.FakeRecorder result is unused by every caller in this file, but dropping it would require editing apply_transition_test.go too, which is out of scope for this edit
-func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, routingEngine routing.Engine) (*prodcontroller.Reconciler, *record.FakeRecorder) {
+func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, routingEngine routing.Engine) *prodcontroller.Reconciler {
 	recorder := record.NewFakeRecorder(20)
-	r := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+	return prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
 		Client:        c,
 		APIReader:     apiReader,
 		Scheme:        scheme,
@@ -107,7 +105,6 @@ func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime
 		Timeouts:      newCharTimeouts(),
 		RoutingEngine: routingEngine,
 	})
-	return r, recorder
 }
 
 var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migration", func() {
@@ -137,7 +134,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				Build()
 
 			routingErr := fmt.Errorf("simulated routing failure")
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
 				PreAnalysisErr: routingErr,
 			})
 
@@ -176,7 +173,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "pnd002", Namespace: defaultFixture},
@@ -209,7 +206,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "pnd003", Namespace: defaultFixture},
@@ -250,7 +247,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "pnd004", Namespace: defaultFixture},
@@ -276,7 +273,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prc001", Namespace: defaultFixture},
@@ -295,7 +292,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			rr := newRemediationRequestWithChildRefs("prc002", defaultFixture,
 				remediationv1.PhaseProcessing, "sp-prc002", "", "")
 
-			sp := newSignalProcessingCompleted("sp-prc002", defaultFixture, "prc002")
+			sp := newSignalProcessingCompleted("sp-prc002", "prc002")
 
 			aiCreateErr := fmt.Errorf("simulated AI creation failure")
 			fakeClient := fake.NewClientBuilder().
@@ -315,7 +312,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "prc002", Namespace: defaultFixture},
@@ -350,7 +347,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "anz001", Namespace: defaultFixture},
@@ -376,7 +373,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "anz002", Namespace: defaultFixture},
@@ -402,7 +399,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
 				PostAnalysisErr: fmt.Errorf("simulated post-analysis routing failure"),
 			})
 			reconciler.SetRESTMapper(newTestRESTMapper())
@@ -439,7 +436,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 			reconciler.SetRESTMapper(newTestRESTMapper())
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -483,7 +480,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "apr001", Namespace: defaultFixture},
@@ -497,7 +494,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			rr := newRemediationRequestWithChildRefs("apr002", defaultFixture,
 				remediationv1.PhaseAwaitingApproval, "sp-apr002", "", "")
 
-			rar := newRemediationApprovalRequestApproved("rar-apr002", defaultFixture, "apr002", "admin")
+			rar := newRemediationApprovalRequestApproved("rar-apr002", "apr002", "admin")
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -508,7 +505,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "apr002", Namespace: defaultFixture},
@@ -528,7 +525,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			rr := newRemediationRequestWithChildRefs("apr003", defaultFixture,
 				remediationv1.PhaseAwaitingApproval, "sp-apr003", "ai-apr003", "")
 
-			rar := newRemediationApprovalRequestApproved("rar-apr003", defaultFixture, "apr003", "admin")
+			rar := newRemediationApprovalRequestApproved("rar-apr003", "apr003", "admin")
 			ai := newAIAnalysisCompleted("ai-apr003", defaultFixture, "apr003", 0.95, "wf-test")
 
 			fakeClient := fake.NewClientBuilder().
@@ -549,7 +546,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 			reconciler.SetRESTMapper(newTestRESTMapper())
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
@@ -582,7 +579,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "exe001", Namespace: defaultFixture},
@@ -624,7 +621,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ver001", Namespace: defaultFixture},
@@ -668,7 +665,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ver002", Namespace: defaultFixture},
@@ -693,7 +690,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ver003", Namespace: defaultFixture},
@@ -735,7 +732,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ver004", Namespace: defaultFixture},
@@ -774,7 +771,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "blk001", Namespace: defaultFixture},
@@ -805,7 +802,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "blk002", Namespace: defaultFixture},
@@ -841,7 +838,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "blk003", Namespace: defaultFixture},
@@ -869,7 +866,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
 				PostAnalysisBlock: &routing.BlockingCondition{
 					Blocked:      true,
 					Reason:       string(remediationv1.BlockReasonIneffectiveChain),
@@ -917,7 +914,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "xct001", Namespace: defaultFixture},
@@ -951,7 +948,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "xct002", Namespace: defaultFixture},

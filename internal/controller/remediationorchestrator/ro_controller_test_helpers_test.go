@@ -182,12 +182,11 @@ func newRemediationRequestWithChildRefs(name, namespace string, phase remediatio
 	return rr
 }
 
-// newSignalProcessingCompleted creates a completed SignalProcessing CRD.
+// newSignalProcessingCompleted creates a completed SignalProcessing CRD in the
+// fixed defaultFixture namespace (the only namespace used across this package's tests).
 // This shared helper is called from many other _test.go files in this package.
-//
-//nolint:unparam // namespace always receives defaultFixture in this package, but hardcoding it would require editing those out-of-scope call sites too
-func newSignalProcessingCompleted(name, namespace, rrName string) *signalprocessingv1.SignalProcessing {
-	sp := newSignalProcessing(name, namespace, rrName, signalprocessingv1.PhaseCompleted)
+func newSignalProcessingCompleted(name, rrName string) *signalprocessingv1.SignalProcessing {
+	sp := newSignalProcessing(name, defaultFixture, rrName, signalprocessingv1.PhaseCompleted)
 	now := metav1.Now()
 	sp.Status.CompletionTime = &now
 	return sp
@@ -337,11 +336,11 @@ func newWorkflowExecutionFailed(name, namespace, rrName, message string) *workfl
 	return we
 }
 
-// newRemediationApprovalRequestApproved creates an approved RAR.
+// newRemediationApprovalRequestApproved creates an approved RAR in the fixed
+// defaultFixture namespace (the only namespace used across this package's tests).
 // This shared helper is called from many other _test.go files in this package.
-//
-//nolint:unparam // namespace always receives defaultFixture in this package, but hardcoding it would require editing those out-of-scope call sites too
-func newRemediationApprovalRequestApproved(name, namespace, rrName, decidedBy string) *remediationv1.RemediationApprovalRequest {
+func newRemediationApprovalRequestApproved(name, rrName, decidedBy string) *remediationv1.RemediationApprovalRequest {
+	namespace := defaultFixture
 	now := metav1.Now()
 	return &remediationv1.RemediationApprovalRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -382,11 +381,11 @@ func newRemediationApprovalRequestApproved(name, namespace, rrName, decidedBy st
 	}
 }
 
-// newRemediationApprovalRequestRejected creates a rejected RAR.
+// newRemediationApprovalRequestRejected creates a rejected RAR in the fixed
+// defaultFixture namespace (the only namespace used across this package's tests).
 // This shared helper is called from many other _test.go files in this package.
-//
-//nolint:unparam // namespace always receives defaultFixture in this package, but hardcoding it would require editing those out-of-scope call sites too
-func newRemediationApprovalRequestRejected(name, namespace, rrName, decidedBy, reason string) *remediationv1.RemediationApprovalRequest {
+func newRemediationApprovalRequestRejected(name, rrName, decidedBy, reason string) *remediationv1.RemediationApprovalRequest {
+	namespace := defaultFixture
 	now := metav1.Now()
 	return &remediationv1.RemediationApprovalRequest{
 		ObjectMeta: metav1.ObjectMeta{

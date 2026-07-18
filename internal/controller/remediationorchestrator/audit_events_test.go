@@ -187,7 +187,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "sp-test-rr", "ai-test-rr", "we-test-rr")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.9, "restart-pod")
@@ -218,7 +218,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "sp-test-rr", "ai-test-rr", "we-test-rr")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.9, "restart-pod")
@@ -249,7 +249,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "sp-test-rr", "ai-test-rr", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.4, "risky-workflow")
@@ -278,13 +278,13 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "sp-test-rr", "ai-test-rr", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.4, "risky-workflow")
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
-			rar := newRemediationApprovalRequestApproved("rar-test-rr", defaultFixture, "test-rr", "admin@example.com")
+			rar := newRemediationApprovalRequestApproved("rar-test-rr", "test-rr", "admin@example.com")
 			Expect(fakeClient.Create(ctx, rar)).To(Succeed())
 
 			mockAuditStore.Reset()
@@ -306,13 +306,13 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "sp-test-rr", "ai-test-rr", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.4, "risky-workflow")
 			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
 
-			rar := newRemediationApprovalRequestRejected("rar-test-rr", defaultFixture, "test-rr", "admin@example.com", "Too risky")
+			rar := newRemediationApprovalRequestRejected("rar-test-rr", "test-rr", "admin@example.com", "Too risky")
 			Expect(fakeClient.Create(ctx, rar)).To(Succeed())
 
 			mockAuditStore.Reset()
@@ -361,7 +361,7 @@ var _ = Describe("BR-ORCH-AUDIT: Audit Event Emission", func() {
 			rr.Status.FailureReason = stringPtr("ExhaustedRetries")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			ai := newAIAnalysisCompleted("ai-test-rr", defaultFixture, "test-rr", 0.9, "restart-pod")

@@ -215,7 +215,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "sp-test-rr", "", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", defaultFixture, "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			// Reconcile to transition to Analyzing

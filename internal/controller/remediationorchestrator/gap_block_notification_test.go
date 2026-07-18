@@ -66,7 +66,7 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(1 * time.Hour)
 		fakeClient := fake.NewClientBuilder().
@@ -126,7 +126,7 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(5 * time.Second)
 		fakeClient := fake.NewClientBuilder().
@@ -185,7 +185,7 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -237,7 +237,7 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -289,7 +289,7 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(5 * time.Minute)
 		fakeClient := fake.NewClientBuilder().
@@ -343,7 +343,7 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(2 * time.Minute)
 		fakeClient := fake.NewClientBuilder().
@@ -401,7 +401,7 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, defaultFixture, rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(1 * time.Hour)
 		fakeClient := fake.NewClientBuilder().

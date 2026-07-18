@@ -271,7 +271,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-025.2",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 			},
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseAnalyzing,
@@ -320,7 +320,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-026 (status aggregation)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "test-rr-sp", "", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 			},
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase: remediationv1.PhaseAnalyzing,
@@ -358,7 +358,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-025.3",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 			},
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
@@ -384,7 +384,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-001 (approval required)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 			},
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
@@ -404,7 +404,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-037 (WorkflowNotNeeded handling)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisWorkflowNotNeeded("test-rr-ai", defaultFixture, "test-rr", "No remediation needed"),
 			},
 			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
@@ -425,7 +425,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-025.3 (wait for child)",
 			initialObjects: []client.Object{
 				newRemediationRequest("test-rr", defaultFixture, remediationv1.PhaseAnalyzing),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysis("test-rr-ai", defaultFixture, "test-rr", aianalysisv1.PhaseAnalyzing),
 			},
 			rrName:        types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
@@ -441,7 +441,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-025.3 (error propagation)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisFailed("test-rr-ai", defaultFixture, "test-rr", "LLM unavailable"),
 			},
 			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
@@ -462,7 +462,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-025.4",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 				newWorkflowExecutionSucceeded("test-rr-we", defaultFixture, "test-rr"),
 			},
@@ -477,7 +477,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-025.4 (error propagation)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 				newWorkflowExecutionFailed("test-rr-we", defaultFixture, "test-rr", "Pod not found"),
 			},
@@ -495,7 +495,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-025.4 (wait for child)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 				newWorkflowExecution("test-rr-we", defaultFixture, "test-rr", workflowexecutionv1.PhaseRunning),
 			},
@@ -512,7 +512,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-026 (complete status aggregation)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 				newWorkflowExecutionSucceeded("test-rr-we", defaultFixture, "test-rr"),
 			},
@@ -531,7 +531,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-026 (error handling)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseExecuting, "test-rr-sp", "test-rr-ai", "test-rr-we"),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 				// WE not found (was deleted or never created)
 			},
@@ -553,9 +553,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-001 (approval granted)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
-				newRemediationApprovalRequestApproved("rar-test-rr", defaultFixture, "test-rr", "admin@example.com"),
+				newRemediationApprovalRequestApproved("rar-test-rr", "test-rr", "admin@example.com"),
 			},
 			rrName:           types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:    remediationv1.PhaseExecuting,
@@ -576,9 +576,9 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-001 (approval rejected)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
-				newRemediationApprovalRequestRejected("rar-test-rr", defaultFixture, "test-rr", "admin@example.com", "Too risky"),
+				newRemediationApprovalRequestRejected("rar-test-rr", "test-rr", "admin@example.com", "Too risky"),
 			},
 			rrName:         types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			expectedPhase:  remediationv1.PhaseFailed,
@@ -594,7 +594,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-001 (approval timeout)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 				newRemediationApprovalRequestExpired("rar-test-rr", defaultFixture, "test-rr"),
 			},
@@ -612,7 +612,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-001 (error recovery)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 				// RAR not created yet
 			},
@@ -627,7 +627,7 @@ var _ = Describe("BR-ORCH-025: Phase Transition Logic (Table-Driven Tests)", fun
 			businessReq: "BR-ORCH-001 (polling for decision)",
 			initialObjects: []client.Object{
 				newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-				newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+				newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 				newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 				newRemediationApprovalRequestPending("rar-test-rr", defaultFixture, "test-rr"),
 			},
@@ -777,7 +777,7 @@ var _ = Describe("UT-RO-214-010: CapturePreRemediationHash API error soft-fail (
 	It("should proceed with empty hash when apiReader returns error for target resource", func() {
 		initialObjects := []client.Object{
 			newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAnalyzing, "test-rr-sp", "test-rr-ai", ""),
-			newSignalProcessingCompleted("test-rr-sp", defaultFixture, "test-rr"),
+			newSignalProcessingCompleted("test-rr-sp", "test-rr"),
 			newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.9, "restart-pod-v1"),
 		}
 

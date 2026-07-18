@@ -57,7 +57,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		It("UT-AT-001: NoOp intent produces empty ctrl.Result", func() {
 			rr := newRemediationRequest("test-noop", defaultFixture, remediationv1.PhasePending)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.NoOp("already terminal")
 			result, err := r.ApplyTransition(ctx, rr, intent)
@@ -68,7 +68,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		It("UT-AT-002: Requeue intent produces ctrl.Result with RequeueAfter", func() {
 			rr := newRemediationRequest("test-requeue", defaultFixture, remediationv1.PhaseProcessing)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.Requeue(5*time.Second, "SP in progress")
 			result, err := r.ApplyTransition(ctx, rr, intent)
@@ -79,7 +79,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		It("UT-AT-003: RequeueNow intent produces ctrl.Result with Requeue=true", func() {
 			rr := newRemediationRequest("test-requeue-now", defaultFixture, remediationv1.PhasePending)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.RequeueNow("event-based block cleared")
 			result, err := r.ApplyTransition(ctx, rr, intent)
@@ -96,7 +96,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		It("UT-AT-004: Advance without TargetPhase returns validation error", func() {
 			rr := newRemediationRequest("test-invalid", defaultFixture, remediationv1.PhasePending)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.TransitionIntent{Type: phase.TransitionAdvance, Reason: "missing target"}
 			_, err := r.ApplyTransition(ctx, rr, intent)
@@ -107,7 +107,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 		It("UT-AT-005: Unknown TransitionType returns error", func() {
 			rr := newRemediationRequest("test-unknown", defaultFixture, remediationv1.PhasePending)
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.TransitionIntent{Type: phase.TransitionType(99), Reason: "invalid"}
 			_, err := r.ApplyTransition(ctx, rr, intent)
@@ -125,7 +125,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr := newRemediationRequest("test-advance", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.Advance(phase.Processing, "SP created successfully")
 			result, err := r.ApplyTransition(ctx, rr, intent)
@@ -138,7 +138,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr := newRemediationRequest("test-failed", defaultFixture, remediationv1.PhaseProcessing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.Fail(remediationv1.FailurePhaseSignalProcessing, errors.New("SP timeout"), "SP creation failed")
 			result, err := r.ApplyTransition(ctx, rr, intent)
@@ -152,7 +152,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr := newRemediationRequest("test-verifying", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.Verify("remediationSucceeded", "WFE completed")
 			result, err := r.ApplyTransition(ctx, rr, intent)
@@ -165,7 +165,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr := newRemediationRequest("test-inherit-complete", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.InheritComplete("original-rr", "RemediationRequest", "inherited from original")
 			result, err := r.ApplyTransition(ctx, rr, intent)
@@ -178,7 +178,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr := newRemediationRequest("test-inherit-fail", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 
 			intent := phase.InheritFail(errors.New("original failed"), "original-wfe", "WorkflowExecution", "inherited failure")
 			result, err := r.ApplyTransition(ctx, rr, intent)
@@ -197,7 +197,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr := newRemediationRequest("test-dryrun", defaultFixture, remediationv1.PhaseAnalyzing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 			r.SetDryRun(true, 1*time.Hour)
 
 			intent := phase.CompleteWithoutVerification("dry-run mode enabled")
@@ -215,7 +215,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			completedAt := metav1.Now()
 			rr.Status.CompletedAt = &completedAt
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 			r.SetDryRun(true, 1*time.Hour)
 
 			intent := phase.CompleteWithoutVerification("dry-run mode enabled")
@@ -229,7 +229,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr := newRemediationRequest("test-dryrun-ts", defaultFixture, remediationv1.PhaseAnalyzing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 			r.SetDryRun(true, 1*time.Hour)
 
 			intent := phase.CompleteWithoutVerification("dry-run mode enabled")
@@ -246,7 +246,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			holdPeriod := 30 * time.Minute
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 			r.SetDryRun(true, holdPeriod)
 
 			intent := phase.CompleteWithoutVerification("dry-run mode enabled")
@@ -267,7 +267,7 @@ var _ = Describe("Issue #666: ApplyTransition (BR-ORCH-025)", func() {
 			rr.Status.ConsecutiveFailureCount = 3
 			holdPeriod := 30 * time.Minute
 			c := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&remediationv1.RemediationRequest{}).WithObjects(rr).Build()
-			r, _ := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
+			r := newCharReconciler(c, c, scheme, &MockRoutingEngine{})
 			r.SetDryRun(true, holdPeriod)
 
 			intent := phase.CompleteWithoutVerification("dry-run mode enabled")
