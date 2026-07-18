@@ -127,6 +127,7 @@ func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWor
 	}
 }
 
+//nolint:unparam // namespace always "kubernaut-system" here, but also called from rw_handler_delete_test.go outside this fix's scope
 func buildRemediationWorkflowWithStatus(name, namespace, workflowID string) *rwv1alpha1.RemediationWorkflow {
 	rw := buildRemediationWorkflow(name, namespace)
 	rw.Status = rwv1alpha1.RemediationWorkflowStatus{
@@ -206,8 +207,8 @@ func buildUpdateAdmissionRequest(rw *rwv1alpha1.RemediationWorkflow) admission.R
 	}
 }
 
-func fakeK8sKey(namespace, name string) types.NamespacedName {
-	return types.NamespacedName{Namespace: namespace, Name: name}
+func fakeK8sKey(name string) types.NamespacedName {
+	return types.NamespacedName{Namespace: "kubernaut-system", Name: name}
 }
 
 // ========================================
@@ -774,7 +775,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-supersede"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("integrity-supersede"), updated)
 				if err != nil {
 					return ""
 				}
@@ -821,7 +822,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("integrity-reenable"), updated)
 				if err != nil {
 					return ""
 				}
@@ -830,7 +831,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				"CRD status should contain the ORIGINAL UUID from the re-enable")
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)).To(Succeed())
+			Expect(fakeK8s.Get(ctx, fakeK8sKey("integrity-reenable"), updated)).To(Succeed())
 			Expect(updated.Status.PreviouslyExisted).To(BeTrue(),
 				"PreviouslyExisted should be true for re-enabled workflows")
 		})
@@ -899,7 +900,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			// Wait for async goroutine to complete
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-status"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("scale-memory-status"), updated)
 				if err != nil {
 					return ""
 				}
@@ -908,7 +909,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			// Verify all status fields
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-status"), updated)).To(Succeed())
+			Expect(fakeK8s.Get(ctx, fakeK8sKey("scale-memory-status"), updated)).To(Succeed())
 			Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
 			Expect(updated.Status.RegisteredBy).To(Equal(testUserEmail))
 			Expect(updated.Status.RegisteredAt).NotTo(BeNil())

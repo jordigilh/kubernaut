@@ -158,7 +158,7 @@ func deployAuthWebhookManifestsInternal(ctx context.Context, namespace, kubeconf
 	// STEP 5: Wait for webhook pod readiness
 	_, _ = fmt.Fprintln(writer, "\n⏳ STEP 5: Waiting for AuthWebhook pod readiness...")
 	_, _ = fmt.Fprintln(writer, "   ⏱️  Workaround: Polling Pod API directly (K8s v1.35.0 probe bug)")
-	if err := waitForAuthWebhookPodReady(ctx, kubeconfigPath, namespace, writer); err != nil {
+	if err := waitForAuthWebhookPodReady(ctx, kubeconfigPath, namespace); err != nil {
 		return fmt.Errorf("AuthWebhook pod did not become ready: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "   ✅ AuthWebhook pod ready")
@@ -268,7 +268,7 @@ func patchWebhookConfigsWithCABundle(ctx context.Context, kubeconfigPath string,
 // Per DD-TEST-008: Workaround for K8s v1.35.0 prober_manager bug
 // kubectl wait relies on kubelet probes which are broken (prober_manager.go:197 error affects ALL pods)
 // Solution: Poll Pod.Status.Conditions directly via K8s API (bypasses kubelet probe mechanism)
-func waitForAuthWebhookPodReady(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+func waitForAuthWebhookPodReady(ctx context.Context, kubeconfigPath, namespace string) error {
 	// Create Kubernetes clientset
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {

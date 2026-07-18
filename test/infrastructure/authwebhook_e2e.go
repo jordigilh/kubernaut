@@ -209,13 +209,13 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Goroutine 3: Deploy PostgreSQL (E2E ports per DD-TEST-001)
 	go func() {
-		err := deployPostgreSQLToKind(ctx, kubeconfigPath, namespace, "25442", "30442", writer)
+		err := deployPostgreSQLToKind(ctx, kubeconfigPath, namespace, "30442", writer)
 		results <- result{name: "PostgreSQL", err: err}
 	}()
 
 	// Goroutine 4: Deploy Redis (E2E ports per DD-TEST-001)
 	go func() {
-		err := deployRedisToKind(ctx, kubeconfigPath, namespace, "26386", "30386", writer)
+		err := deployRedisToKind(ctx, kubeconfigPath, namespace, "30386", writer)
 		results <- result{name: "Redis", err: err}
 	}()
 
@@ -277,7 +277,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Deploy DataStorage service (E2E ports per DD-TEST-001)
 	_, _ = fmt.Fprintln(writer, "  📦 Deploying DataStorage service...")
-	if err := deployDataStorageToKind(ctx, kubeconfigPath, namespace, dsImageName, "28099", "30081", writer); err != nil {
+	if err := deployDataStorageToKind(ctx, kubeconfigPath, namespace, dsImageName, "30081", writer); err != nil {
 		return "", "", fmt.Errorf("failed to deploy DataStorage: %w", err)
 	}
 
@@ -790,7 +790,7 @@ func LoadKubeconfig(kubeconfigPath string) (*rest.Config, error) {
 
 // deployPostgreSQLToKind deploys PostgreSQL to Kind cluster with custom NodePort.
 // Standardized: inline YAML template pattern.
-func deployPostgreSQLToKind(ctx context.Context, kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
+func deployPostgreSQLToKind(ctx context.Context, kubeconfigPath, namespace, nodePort string, writer io.Writer) error {
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ConfigMap
@@ -927,7 +927,7 @@ spec:
 
 // deployRedisToKind deploys Redis to Kind cluster with custom NodePort.
 // Standardized: inline YAML template pattern.
-func deployRedisToKind(ctx context.Context, kubeconfigPath, namespace, hostPort, nodePort string, writer io.Writer) error {
+func deployRedisToKind(ctx context.Context, kubeconfigPath, namespace, nodePort string, writer io.Writer) error {
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: Service
@@ -1008,7 +1008,7 @@ func runDatabaseMigrations(ctx context.Context, kubeconfigPath, namespace string
 
 // deployDataStorageToKind deploys Data Storage service to Kind cluster with custom NodePort and image tag.
 // Standardized: inline YAML template pattern.
-func deployDataStorageToKind(ctx context.Context, kubeconfigPath, namespace, imageTag, hostPort, nodePort string, writer io.Writer) error {
+func deployDataStorageToKind(ctx context.Context, kubeconfigPath, namespace, imageTag, nodePort string, writer io.Writer) error {
 	pullPolicy := GetImagePullPolicy()
 
 	manifest := fmt.Sprintf(`---

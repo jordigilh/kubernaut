@@ -36,6 +36,8 @@ import (
 
 // buildRemediationWorkflowCRD constructs a RemediationWorkflow CRD object.
 // Per #329, metadata.name IS the workflow name (no separate workflowName field).
+//
+//nolint:unparam // version is always "1.0.0" today, but also called from 04_workflow_update_propagation_test.go (outside this fix's scope).
 func buildRemediationWorkflowCRD(crdName, version, description string) *rwv1alpha1.RemediationWorkflow {
 	return &rwv1alpha1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{
@@ -72,6 +74,8 @@ func buildRemediationWorkflowCRD(crdName, version, description string) *rwv1alph
 }
 
 // waitForCRDStatus polls the CRD until the .status.workflowId is non-empty.
+//
+//nolint:unparam // timeout is always 30*time.Second today, but also called from 04_workflow_update_propagation_test.go (outside this fix's scope).
 func waitForCRDStatus(crdName string, timeout time.Duration) *rwv1alpha1.RemediationWorkflow {
 	rw := &rwv1alpha1.RemediationWorkflow{}
 	Eventually(func() string {

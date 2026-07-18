@@ -58,11 +58,11 @@ func newTestScheme() *runtime.Scheme {
 	return s
 }
 
-func buildRWForReconciler(name, namespace, workflowID, actionType string) *rwv1alpha1.RemediationWorkflow {
+func buildRWForReconciler(name, workflowID string) *rwv1alpha1.RemediationWorkflow {
 	rw := &rwv1alpha1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: "default",
 		},
 		Spec: rwv1alpha1.RemediationWorkflowSpec{
 			Version: "1.0.0",
@@ -70,7 +70,7 @@ func buildRWForReconciler(name, namespace, workflowID, actionType string) *rwv1a
 				What:      "Unit test workflow",
 				WhenToUse: "During unit tests",
 			},
-			ActionType: actionType,
+			ActionType: "RestartPod",
 			Labels: rwv1alpha1.RemediationWorkflowLabels{
 				Severity:    []string{"critical"},
 				Environment: []string{"production"},
@@ -130,7 +130,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	// ========================================
 	Describe("UT-AW-418-001: Finalizer added to new RW", func() {
 		It("should add the catalog-cleanup finalizer so RW cannot be silently deleted", func() {
-			rw := buildRWForReconciler("rw-001", "default", "uuid-001", "RestartPod")
+			rw := buildRWForReconciler("rw-001", "uuid-001")
 			scheme := newTestScheme()
 
 			fakeClient := fake.NewClientBuilder().
@@ -167,7 +167,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-002: Deletion disables DS workflow and removes finalizer", func() {
 		It("should call DS DisableWorkflow and remove finalizer on successful disable", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-002", "default", "uuid-002", "RestartPod")
+			rw := buildRWForReconciler("rw-002", "uuid-002")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 			scheme := newTestScheme()
@@ -218,7 +218,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-003: DS server error causes requeue", func() {
 		It("should requeue after 5s and keep finalizer when DS returns a server error", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-003", "default", "uuid-003", "RestartPod")
+			rw := buildRWForReconciler("rw-003", "uuid-003")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 			scheme := newTestScheme()
@@ -264,7 +264,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-469-004: Connection error during deletion proceeds with finalizer removal", func() {
 		It("should remove finalizer when DS returns connection refused", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-469-conn", "default", "uuid-469", "RestartPod")
+			rw := buildRWForReconciler("rw-469-conn", "uuid-469")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 			scheme := newTestScheme()
@@ -313,7 +313,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-004: Empty WorkflowID skips DS disable", func() {
 		It("should remove finalizer without calling DS when WorkflowID is empty", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-004", "default", "", "RestartPod")
+			rw := buildRWForReconciler("rw-004", "")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 			scheme := newTestScheme()
@@ -362,7 +362,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-005: AT activeWorkflowCount refreshed from DS after deletion", func() {
 		It("should update the parent AT's activeWorkflowCount to the value from DS", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-005", "default", "uuid-005", "RestartPod")
+			rw := buildRWForReconciler("rw-005", "uuid-005")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 
@@ -412,7 +412,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-006: AT count refresh failure does not block finalizer removal", func() {
 		It("should remove finalizer even when AT count refresh fails", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-006", "default", "uuid-006", "RestartPod")
+			rw := buildRWForReconciler("rw-006", "uuid-006")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 			scheme := newTestScheme()
@@ -485,7 +485,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-NOFINALIZER: Deletion without catalog-cleanup finalizer is no-op", func() {
 		It("should return empty result without DS call when our finalizer is absent", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-nofin", "default", "uuid-nofin", "RestartPod")
+			rw := buildRWForReconciler("rw-nofin", "uuid-nofin")
 			rw.DeletionTimestamp = &now
 			// Different finalizer (not ours) — required for fake client to accept DeletionTimestamp
 			rw.Finalizers = []string{"some.other.io/finalizer"}

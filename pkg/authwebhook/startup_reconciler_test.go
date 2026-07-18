@@ -43,13 +43,13 @@ type callRecord struct {
 
 // mockStartupDSClient records calls from the startup reconciler.
 type mockStartupDSClient struct {
-	mu             sync.Mutex
-	calls          []callRecord
-	failCount      int // number of times to fail before succeeding
-	currentFails   int
-	atResult       *authwebhook.ActionTypeRegistrationResult
-	rwResult       *authwebhook.WorkflowRegistrationResult
-	alwaysFail     bool
+	mu           sync.Mutex
+	calls        []callRecord
+	failCount    int // number of times to fail before succeeding
+	currentFails int
+	atResult     *authwebhook.ActionTypeRegistrationResult
+	rwResult     *authwebhook.WorkflowRegistrationResult
+	alwaysFail   bool
 }
 
 func (m *mockStartupDSClient) CreateActionType(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
@@ -304,7 +304,7 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-status"), updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-status"), updated)).To(Succeed())
 
 			Expect(updated.Status.WorkflowID).To(Equal("abc-123-det"),
 				"workflowId should be populated from DS response")
@@ -457,7 +457,7 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-idem"), updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-idem"), updated)).To(Succeed())
 			Expect(updated.Status.WorkflowID).To(Equal("idem-uuid-001"))
 			Expect(string(updated.Status.CatalogStatus)).To(Equal("Active"))
 		})
@@ -474,6 +474,6 @@ func filterCalls(calls []callRecord, callType string) []callRecord {
 	return filtered
 }
 
-func nsName(namespace, name string) types.NamespacedName {
-	return types.NamespacedName{Namespace: namespace, Name: name}
+func nsName(name string) types.NamespacedName {
+	return types.NamespacedName{Namespace: "default", Name: name}
 }
