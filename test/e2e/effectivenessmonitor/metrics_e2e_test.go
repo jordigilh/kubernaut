@@ -39,7 +39,7 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace(ctx, "em-mc-e2e")
+		testNS = createTestNamespace("em-mc-e2e")
 	})
 
 	AfterEach(func() {
@@ -75,8 +75,8 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject metric series")
 
 		By("Creating a target pod and EA")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		name := uniqueName("ea-mc-improve")
 		correlationID := uniqueName("corr-mc-improve")
@@ -126,8 +126,8 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject metric series")
 
 		By("Creating a target pod and EA")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		name := uniqueName("ea-mc-nochange")
 		correlationID := uniqueName("corr-mc-nochange")

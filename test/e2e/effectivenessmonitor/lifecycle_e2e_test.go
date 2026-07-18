@@ -24,8 +24,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
-	emconditions "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	emconditions "github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/conditions"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -43,7 +43,7 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace(ctx, "em-lc-e2e")
+		testNS = createTestNamespace("em-lc-e2e")
 	})
 
 	AfterEach(func() {
@@ -57,8 +57,8 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 		By("Setting up test data: target pod, alerts, and metrics")
 
 		// Create and wait for target pod
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		// The reconciler queries AM using alertname=<correlationID>.
 		// Define correlationID before injecting alerts so the alert name matches.
@@ -163,8 +163,8 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 	// ========================================================================
 	It("E2E-EM-AE-001: should emit all 5 audit events to DataStorage", func() {
 		By("Creating a target pod and EA with all components enabled")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		// Define correlationID before injecting alerts (reconciler queries by correlationID)
 		correlationID := uniqueName("corr-ae-events")
@@ -252,8 +252,8 @@ var _ = Describe("EffectivenessMonitor Lifecycle E2E Tests", Label("e2e"), func(
 	// ========================================================================
 	It("E2E-EM-SH-001: should compute spec hash and emit hash event to DS", func() {
 		By("Creating a target pod and EA")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		name := uniqueName("ea-sh-hash")
 		correlationID := uniqueName("corr-sh-hash")

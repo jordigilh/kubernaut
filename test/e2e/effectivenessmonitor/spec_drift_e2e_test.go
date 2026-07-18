@@ -22,8 +22,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -57,7 +57,7 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace(ctx, "em-sd-e2e")
+		testNS = createTestNamespace("em-sd-e2e")
 	})
 
 	AfterEach(func() {
@@ -70,8 +70,8 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 	// ========================================================================
 	It("E2E-EM-SD-001: should detect spec drift, emit audit events, and DS should score 0.0", func() {
 		By("1. Creating a target pod")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		correlationID := uniqueName("corr-sd-drift")
 		name := uniqueName("ea-sd-drift")
@@ -223,8 +223,8 @@ var _ = Describe("Spec Drift Guard E2E Tests (DD-EM-002 v1.1)", Label("e2e"), fu
 	// ========================================================================
 	It("E2E-EM-SD-002: should complete normally without drift and DS should score > 0.0", func() {
 		By("1. Creating a target pod and EA")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		correlationID := uniqueName("corr-sd-nodrift")
 		name := uniqueName("ea-sd-nodrift")

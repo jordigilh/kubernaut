@@ -171,11 +171,10 @@ func withStabilizationWindow(d time.Duration) eaOption {
 // Pod Helpers
 // ============================================================================
 
-// createTargetPod creates a simple target pod in the given namespace.
-// The pod runs a sleep container and becomes Ready.
-//
-//nolint:unparam // name is always "target-pod" today, but this helper is shared across many other e2e/effectivenessmonitor test files outside this fix's scope.
-func createTargetPod(namespace, name string) *corev1.Pod {
+// createTargetPod creates a simple target pod named "target-pod" in the
+// given namespace. The pod runs a sleep container and becomes Ready.
+func createTargetPod(namespace string) {
+	const name = "target-pod"
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -208,13 +207,12 @@ func createTargetPod(namespace, name string) *corev1.Pod {
 
 	GinkgoHelper()
 	Expect(k8sClient.Create(ctx, pod)).To(Succeed(), "Failed to create target pod %s/%s", namespace, name)
-	return pod
 }
 
-// waitForPodReady waits until the specified pod has a Ready condition.
-//
-//nolint:unparam // name is always "target-pod" today, but this helper is shared across many other e2e/effectivenessmonitor test files outside this fix's scope.
-func waitForPodReady(namespace, name string) {
+// waitForPodReady waits until the "target-pod" pod in the given namespace
+// has a Ready condition.
+func waitForPodReady(namespace string) {
+	const name = "target-pod"
 	GinkgoHelper()
 	Eventually(func() bool {
 		pod := &corev1.Pod{}

@@ -39,7 +39,7 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace(ctx, "em-ar-e2e")
+		testNS = createTestNamespace("em-ar-e2e")
 	})
 
 	AfterEach(func() {
@@ -75,8 +75,8 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject resolved alert into AlertManager")
 
 		By("Creating a target pod and EA")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
@@ -130,8 +130,8 @@ var _ = Describe("EffectivenessMonitor Alert Resolution E2E Tests", Label("e2e")
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject firing alert into AlertManager")
 
 		By("Creating a target pod and EA")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		By("Seeding workflowexecution.execution.started event (no_execution guard)")
 		seedWorkflowStartedEvent(correlationID)
