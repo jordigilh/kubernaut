@@ -525,43 +525,9 @@ func (h *RemediationWorkflowHandler) updateATWorkflowCountWithRetry(ctx context.
 // (old object, #1661 Change 8b REFACTOR) so both compute the hash the exact
 // same way with no duplicated marshal+hash call sites.
 func computeRWContentHash(rw *rwv1alpha1.RemediationWorkflow) ([]byte, string, error) {
-	content, err := marshalCleanCRDContent(rw)
+	content, err := contenthash.MarshalCleanCRDContent(rw)
 	if err != nil {
 		return nil, "", err
 	}
 	return content, contenthash.ComputeContentHash(string(content)), nil
-}
-
-// marshalCleanCRDContent produces a JSON representation of the CRD that only
-// includes the fields relevant to the workflow definition: apiVersion, kind,
-// metadata.name, and spec. Kubernetes runtime metadata (UID, resourceVersion,
-// creationTimestamp, managedFields, etc.) is excluded so that the content hash
-// computed by DS is deterministic across CRD delete+recreate cycles.
-func marshalCleanCRDContent(rw *rwv1alpha1.RemediationWorkflow) ([]byte, error) {
-	type cleanMetadata struct {
-		Name string `json:"name"`
-	}
-	type cleanCRD struct {
-		APIVersion string                              `json:"apiVersion"`
-		Kind       string                              `json:"kind"`
-		Metadata   cleanMetadata                       `json:"metadata"`
-		Spec       rwv1alpha1.RemediationWorkflowSpec  `json:"spec"`
-	}
-
-	apiVersion := rw.APIVersion
-	if apiVersion == "" {
-		apiVersion = "kubernaut.ai/v1alpha1"
-	}
-	kind := rw.Kind
-	if kind == "" {
-		kind = "RemediationWorkflow"
-	}
-
-	clean := cleanCRD{
-		APIVersion: apiVersion,
-		Kind:       kind,
-		Metadata:   cleanMetadata{Name: rw.Name},
-		Spec:       rw.Spec,
-	}
-	return json.Marshal(clean)
 }

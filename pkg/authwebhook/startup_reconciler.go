@@ -209,7 +209,7 @@ func (r *StartupReconciler) syncWorkflows(ctx context.Context, logger logr.Logge
 func (r *StartupReconciler) syncWorkflowCRD(ctx context.Context, logger logr.Logger, rw *rwv1alpha1.RemediationWorkflow) error {
 	rwLogger := logger.WithValues("workflow", rw.Name)
 
-	content, err := marshalCleanCRDContent(rw)
+	content, err := contenthash.MarshalCleanCRDContent(rw)
 	if err != nil {
 		r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonValidationFailed,
 			fmt.Sprintf("failed to marshal workflow: %v", err))

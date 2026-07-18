@@ -29,8 +29,11 @@ package contenthash
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 
 	"github.com/google/uuid"
+
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 )
 
 // kubernautNamespace is the fixed UUIDv5 namespace for all Kubernaut
@@ -55,4 +58,44 @@ func ComputeContentHash(content string) string {
 // database wipe recovers the original workflow_id.
 func DeterministicUUID(contentHash string) string {
 	return uuid.NewSHA1(kubernautNamespace, []byte(contentHash)).String()
+}
+
+// cleanCRDMetadata/cleanCRD mirror only the fields relevant to a workflow's
+// definition -- see MarshalCleanCRDContent.
+type cleanCRDMetadata struct {
+	Name string `json:"name"`
+}
+
+type cleanCRD struct {
+	APIVersion string                             `json:"apiVersion"`
+	Kind       string                             `json:"kind"`
+	Metadata   cleanCRDMetadata                   `json:"metadata"`
+	Spec       rwv1alpha1.RemediationWorkflowSpec `json:"spec"`
+}
+
+// MarshalCleanCRDContent produces a JSON representation of the CRD that only
+// includes the fields relevant to the workflow definition: apiVersion, kind,
+// metadata.name, and spec. Kubernetes runtime metadata (UID, resourceVersion,
+// creationTimestamp, managedFields, etc.) is excluded so that the content hash
+// is deterministic across CRD delete+recreate cycles. Moved from AuthWebhook
+// (#1661 Phase 55) so test code can compute the exact same hash/workflow_id
+// AuthWebhook would, without a live admission webhook (e.g. envtest-only
+// integration suites that never deploy AuthWebhook).
+func MarshalCleanCRDContent(rw *rwv1alpha1.RemediationWorkflow) ([]byte, error) {
+	apiVersion := rw.APIVersion
+	if apiVersion == "" {
+		apiVersion = "kubernaut.ai/v1alpha1"
+	}
+	kind := rw.Kind
+	if kind == "" {
+		kind = "RemediationWorkflow"
+	}
+
+	clean := cleanCRD{
+		APIVersion: apiVersion,
+		Kind:       kind,
+		Metadata:   cleanCRDMetadata{Name: rw.Name},
+		Spec:       rw.Spec,
+	}
+	return json.Marshal(clean)
 }
