@@ -713,6 +713,8 @@ func startReconcilerConfigWatcher(roReconciler *controller.Reconciler, configPat
 // testable with fakes). The returned *mcpclient.ResilientClient is non-nil
 // whenever the reader factory is wired, so the caller can close it on
 // graceful shutdown.
+//
+//nolint:unparam // error is always nil here (connectivity failures degrade gracefully by design, per the doc comment above); signature intentionally mirrors EffectivenessMonitor's buildFleetReaderFactory (cmd/effectivenessmonitor/main.go) for cross-service consistency (Issue #1546 Tier 4)
 func buildFleetReaderFactory(ctx context.Context, localClient client.Client, cfg *config.Config, logger logr.Logger) (fleet.ReaderFactory, *mcpclient.ResilientClient, error) {
 	if !cfg.Fleet.Enabled || cfg.Fleet.MCPGatewayEndpoint == "" {
 		return nil, nil, nil

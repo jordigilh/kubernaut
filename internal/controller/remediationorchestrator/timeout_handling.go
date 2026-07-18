@@ -52,6 +52,8 @@ import (
 // BR-ORCH-027: Global Timeout Management
 // Business Value: Prevents stuck remediations from consuming resources indefinitely
 // Default timeout: 1 hour from CreationTimestamp
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature required to match the reconcile-chain return contract of its caller (checkAndHandleGlobalTimeout in reconcile_loop.go, itself feeding Reconcile's (ctrl.Result, error)) (Issue #1546 Tier 4)
 func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 

@@ -327,10 +327,9 @@ func (r *Reconciler) handleTerminalPhaseHousekeeping(ctx context.Context, rr *re
 	// #1421: Cascade terminal phase to non-terminal child CRDs.
 	// Kubernetes-native parent-manages-children: RO is responsible for
 	// transitioning children to a terminal state when the parent RR terminates.
-	if err := r.cascadeTerminalToChildren(ctx, rr); err != nil {
-		logger.Error(err, "Failed to cascade terminal phase to children")
-		// Non-fatal: continue to return
-	}
+	// Per-child errors are logged internally by cascadeTerminalToChildren and
+	// never fail the parent reconcile.
+	r.cascadeTerminalToChildren(ctx, rr)
 
 	// BR-ORCH-044: Track routing decision - no action needed
 	r.Metrics.NoActionNeededTotal.WithLabelValues(string(rr.Status.OverallPhase), rr.Namespace).Inc()

@@ -71,9 +71,9 @@ func (r *Reconciler) trackEffectivenessStatus(ctx context.Context, rr *remediati
 		return nil
 	}
 
-	ea, err := r.fetchEffectivenessAssessmentForTracking(ctx, ref, logger)
-	if err != nil || ea == nil {
-		return err
+	ea := r.fetchEffectivenessAssessmentForTracking(ctx, ref, logger)
+	if ea == nil {
+		return nil
 	}
 
 	return r.applyEffectivenessAssessmentOutcome(ctx, rr, ea, logger)
@@ -114,28 +114,28 @@ func effectivenessTrackingRef(rr *remediationv1.RemediationRequest, logger logr.
 }
 
 // fetchEffectivenessAssessmentForTracking fetches the EA CRD referenced by
-// ref. A nil EA with a nil error is returned when the EA is not found
-// (deleted) or the fetch failed non-fatally — both cases mean "nothing more
-// to do this reconcile". Extracted from trackEffectivenessStatus (Wave 6
-// 6e-i GREEN: funlen remediation) — pure code motion, no behavior change.
-func (r *Reconciler) fetchEffectivenessAssessmentForTracking(ctx context.Context, ref *corev1.ObjectReference, logger logr.Logger) (*eav1.EffectivenessAssessment, error) {
+// ref. A nil EA is returned when the EA is not found (deleted) or the fetch
+// failed non-fatally — both cases mean "nothing more to do this reconcile",
+// so the fetch error itself is never propagated to the caller (Issue #1546
+// Tier 4: dropped the vestigial error return that was always nil; the
+// Tier 2 nilnil sentinel rationale below still applies to the two internal
+// nil returns). Extracted from trackEffectivenessStatus (Wave 6 6e-i GREEN:
+// funlen remediation) — pure code motion, no behavior change.
+func (r *Reconciler) fetchEffectivenessAssessmentForTracking(ctx context.Context, ref *corev1.ObjectReference, logger logr.Logger) *eav1.EffectivenessAssessment {
 	ea := &eav1.EffectivenessAssessment{}
 	err := r.client.Get(ctx, client.ObjectKey{
 		Name:      ref.Name,
 		Namespace: ref.Namespace,
 	}, ea)
 	if err != nil {
-		// nolint:nilnil // intentional "nothing more to do" sentinel, not an
-		// error — already documented in the doc comment above; sole caller
-		// already guards with `if err != nil || ea == nil` (Issue #1546 Tier 2).
 		if apierrors.IsNotFound(err) {
 			logger.V(1).Info("EffectivenessAssessment not found (deleted)", "eaName", ref.Name)
-			return nil, nil
+			return nil
 		}
 		logger.Error(err, "Failed to fetch EffectivenessAssessment", "eaName", ref.Name)
-		return nil, nil // nolint:nilnil // Non-fatal: don't block reconciliation
+		return nil // Non-fatal: don't block reconciliation
 	}
-	return ea, nil
+	return ea
 }
 
 // applyEffectivenessAssessmentOutcome sets the EffectivenessAssessed
