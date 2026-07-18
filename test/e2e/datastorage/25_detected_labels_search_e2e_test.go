@@ -67,7 +67,7 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		DeferCleanup(testCancel)
 
-		registeredWorkflowID, _ = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent, e2eStub)
+		registeredWorkflowID, _ = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent)
 		logger.Info("✅ DetectedLabels test workflow ready", "uuid", registeredWorkflowID)
 	})
 

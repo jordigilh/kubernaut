@@ -110,10 +110,10 @@ func generateWorkflowContent(workflowName, version string) string {
 // Handles all CreateWorkflow response types including the parallel race 500
 // (deterministic UUID PK collision when multiple Ginkgo processes register the
 // same content concurrently). On 409 Conflict or 500, falls back to querying
-// the workflow by name via ListWorkflows.
-//
-//nolint:unparam // workflowName is always "e2e-stub" today, but this helper is shared across many other e2e/datastorage test files outside this fix's scope.
-func ensureWorkflowRegistered(ctx context.Context, client *dsgen.Client, content, workflowName string) (string, uuid.UUID) {
+// the workflow by name ("e2e-stub", the only name used across all e2e/datastorage
+// tests) via ListWorkflows.
+func ensureWorkflowRegistered(ctx context.Context, client *dsgen.Client, content string) (string, uuid.UUID) {
+	const workflowName = "e2e-stub"
 	createReq := &dsgen.CreateWorkflowInlineRequest{Content: content}
 	createReq.Source.SetTo("e2e-test")
 
@@ -175,13 +175,14 @@ func postAuditEventBatch(
 // Minimal Payload Constructors for E2E API Testing
 // These create minimal valid payloads to test DataStorage API functionality
 
-//nolint:unparam // signalType is always "alert" today, but this helper is shared across many other e2e/datastorage test files outside this fix's scope.
-func newMinimalGatewayPayload(signalType, alertName string) dsgen.AuditEventRequestEventData {
+// newMinimalGatewayPayload builds a minimal gateway audit payload with a fixed
+// "alert" signal type (the only signal type used across all e2e/datastorage tests).
+func newMinimalGatewayPayload(alertName string) dsgen.AuditEventRequestEventData {
 	return dsgen.AuditEventRequestEventData{
 		Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 		GatewayAuditPayload: dsgen.GatewayAuditPayload{
 			EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-			SignalType:  dsgen.GatewayAuditPayloadSignalType(signalType),
+			SignalType:  dsgen.GatewayAuditPayloadSignalType("alert"),
 			SignalName:  alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",

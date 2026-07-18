@@ -41,11 +41,11 @@ import (
 
 var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW-014 v3.0)", Label("e2e", "datastorage", "audit", "discovery"), func() {
 	var (
-		testCtx          context.Context
-		testCancel       context.CancelFunc
-		auditWorkflowID  string
+		testCtx           context.Context
+		testCancel        context.CancelFunc
+		auditWorkflowID   string
 		auditWorkflowUUID uuid.UUID
-		remediationID    string
+		remediationID     string
 	)
 
 	BeforeEach(func() {
@@ -56,7 +56,7 @@ var _ = Describe("E2E-DS-017-AUDIT: Workflow Discovery Audit Events (DD-WORKFLOW
 		testID := uuid.New().String()[:8]
 		remediationID = fmt.Sprintf("rem-audit-e2e-%s", testID)
 
-		auditWorkflowID, auditWorkflowUUID = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent, "e2e-stub")
+		auditWorkflowID, auditWorkflowUUID = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent)
 
 		logger.Info("✅ Audit test workflow ready", "uuid", auditWorkflowID, "remediation_id", remediationID)
 	})
