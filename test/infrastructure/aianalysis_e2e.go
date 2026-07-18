@@ -345,7 +345,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	// Inline workflow definitions (CANNOT use test/integration/aianalysis wrapper - import cycle)
-	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage() function
+	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsViaKubectlApply() function (#1661 Phase 55)
 	// Note: test/integration/aianalysis imports test/infrastructure, creating circular dependency
 	// Acceptable trade-off: Small duplication avoids architectural issues
 	// Source of truth: test/integration/aianalysis/test_workflows.go:GetAIAnalysisTestWorkflows()

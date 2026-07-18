@@ -137,9 +137,10 @@ func SeedActionTypesViaAPIWithTLS(dsURL, token, kubeconfigPath string, timeout t
 // via the real AuthWebhook admission path (kubectl apply -> AW admits -> AW
 // patches .status.registered=true locally, no DS round-trip as of #1661 Change
 // 8d). Must be called AFTER CRDs are installed and AuthWebhook is deployed, but
-// BEFORE SeedWorkflowsInDataStorage. Use this variant when the E2E suite already
-// deploys AuthWebhook and the test wants to prove the real admission path works;
-// otherwise use SeedActionTypesViaCRD, which has no AuthWebhook dependency.
+// BEFORE seeding workflows (SeedWorkflowsViaKubectlApply et al.). Use this
+// variant when the E2E suite already deploys AuthWebhook and the test wants to
+// prove the real admission path works; otherwise use SeedActionTypesViaCRD,
+// which has no AuthWebhook dependency.
 func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d E2E ActionType CRDs in %s\n", len(e2eActionTypes), namespace)
