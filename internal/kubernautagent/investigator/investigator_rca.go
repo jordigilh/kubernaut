@@ -22,13 +22,17 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, enrichData *prompt.EnrichmentData, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, retErr error) {
+// runRCA does not consume enrichment data: per ADR-055, enrichment moves to
+// HAPI-driven EnrichmentService (Phase 2) and is only sent to the LLM in
+// Phase 3 (workflow selection). The caller (Investigate) retains its own
+// enrichData reference and applies it via InjectRemediationTarget after
+// this returns, independently of this function.
+func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContext, llmCtx LLMInvocationContext) (result *katypes.InvestigationResult, retErr error) {
 	correlationID := llmCtx.CorrelationID
 	promptSignal := SignalToPrompt(signal)
 	LogLabelOverrideOrRejection(inv.logger, signal, promptSignal, correlationID, "RCA")
@@ -246,7 +250,7 @@ func (inv *Investigator) attemptRCASubmitRetry(ctx context.Context, p rcaSubmitR
 		Messages: p.retryMessages,
 		Tools:    p.tools,
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
-	}, p.attempt+1, string(katypes.PhaseRCA), p.modelName, p.runtimeParams)
+	}, p.attempt+1, string(katypes.PhaseRCA), p.runtimeParams)
 	if err != nil {
 		inv.logger.Error(err, "RCA retry LLM call failed",
 			"correlation_id", p.correlationID)

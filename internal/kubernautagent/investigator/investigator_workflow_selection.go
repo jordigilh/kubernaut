@@ -65,9 +65,9 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		return nil, err
 	}
 
-	content, early, err := inv.handleWorkflowSelectionLoopResult(ctx, loopRes, rcaSummary, messages, llmCtx)
-	if early != nil || err != nil {
-		return early, err
+	content, early := inv.handleWorkflowSelectionLoopResult(ctx, loopRes, rcaSummary, messages, llmCtx)
+	if early != nil {
+		return early, nil
 	}
 
 	result, parseErr := inv.resultParser.Parse(content)
@@ -84,9 +84,11 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 // handleWorkflowSelectionLoopResult classifies the runLLMLoop outcome for
 // PhaseWorkflowDiscovery. When early is non-nil, the caller must return it
-// (and err) immediately without further parsing. Otherwise content holds the
-// tool-call (or text) payload to parse into an InvestigationResult.
-func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, loopRes LoopResult, rcaSummary string, messages []llm.Message, llmCtx LLMInvocationContext) (content string, early *katypes.InvestigationResult, err error) {
+// immediately without further parsing. Otherwise content holds the
+// tool-call (or text) payload to parse into an InvestigationResult. It is a
+// pure classification helper and never fails itself (Issue #1546 Tier 4:
+// dropped the vestigial error return, which was always nil).
+func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, loopRes LoopResult, rcaSummary string, messages []llm.Message, llmCtx LLMInvocationContext) (content string, early *katypes.InvestigationResult) {
 	correlationID := llmCtx.CorrelationID
 	switch r := loopRes.(type) {
 	case *CancelledResult:
@@ -105,13 +107,13 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 				TotalTokens:      s.TotalTokens,
 			}
 		}
-		return "", cancelledResult, nil
+		return "", cancelledResult
 	case *ExhaustedResult:
 		return "", &katypes.InvestigationResult{
 			RCASummary:        rcaSummary,
 			HumanReviewNeeded: true,
 			Reason:            fmt.Sprintf("%s during workflow selection (maxTurns=%d)", r.Reason, inv.maxTurns),
-		}, nil
+		}
 	case *SubmitNoWorkflowResult:
 		inv.logger.Info("submit_result_no_workflow sentinel: classifying as no_matching_workflows",
 			"correlation_id", correlationID)
@@ -120,11 +122,11 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 			HumanReviewNeeded: true,
 			HumanReviewReason: "no_matching_workflows",
 			Reason:            "LLM explicitly declined workflow selection via submit_result_no_workflow",
-		}, nil
+		}
 	case *SubmitWithWorkflowResult:
-		return r.Content, nil, nil
+		return r.Content, nil
 	case *SubmitResult:
-		return r.Content, nil, nil
+		return r.Content, nil
 	case *TextResult:
 		// #760 v2: LLM returned text instead of a tool call. Try parsing
 		// first — the text may contain a valid investigation result (e.g.
@@ -134,12 +136,12 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 		if _, textErr := inv.resultParser.Parse(r.Content); textErr == nil {
 			inv.logger.Info("workflow selection: parsed text response directly (no tool call)",
 				"correlation_id", correlationID)
-			return r.Content, nil, nil
+			return r.Content, nil
 		}
 		return "", inv.workflowSelectionRetryOrHumanReview(ctx, r.Content, messages, rcaSummary, llmCtx, nil,
-			"workflow selection: LLM did not use submit tool after retries"), nil
+			"workflow selection: LLM did not use submit tool after retries")
 	}
-	return "", nil, nil
+	return "", nil
 }
 
 // workflowSelectionRetryOrHumanReview performs one retryWorkflowSubmit
@@ -396,7 +398,7 @@ func (inv *Investigator) attemptWorkflowSubmitRetry(ctx context.Context, p workf
 		Messages: p.retryMessages,
 		Tools:    p.tools,
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.InvestigationResultSchema()},
-	}, p.attempt+1, string(katypes.PhaseWorkflowDiscovery), p.modelName, p.runtimeParams)
+	}, p.attempt+1, string(katypes.PhaseWorkflowDiscovery), p.runtimeParams)
 	if err != nil {
 		inv.logger.Error(err, "retry LLM call failed",
 			"correlation_id", p.correlationID)

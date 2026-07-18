@@ -73,7 +73,7 @@ func (a *K8sAdapter) SetKindIndex(idx map[string]schema.GroupKind) {
 // Multi-group fallback (#1062): when apiVersion is empty and the kind exists in
 // multiple API groups, tries each group until Get succeeds or all are exhausted.
 func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace, apiVersion string) ([]OwnerChainEntry, error) {
-	obj, _, err := a.getResourceWithFallback(ctx, kind, name, namespace, apiVersion)
+	obj, err := a.getResourceWithFallback(ctx, kind, name, namespace, apiVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func (a *K8sAdapter) GetOwnerChain(ctx context.Context, kind, name, namespace, a
 //
 // Multi-group fallback (#1062): same as GetOwnerChain.
 func (a *K8sAdapter) GetSpecHash(ctx context.Context, kind, name, namespace, apiVersion string) (string, error) {
-	obj, _, err := a.getResourceWithFallback(ctx, kind, name, namespace, apiVersion)
+	obj, err := a.getResourceWithFallback(ctx, kind, name, namespace, apiVersion)
 	if err != nil {
 		return "", err
 	}
@@ -186,23 +186,25 @@ func (a *K8sAdapter) resolveMappingWithAPIVersion(kind, apiVersion string) (*met
 
 // getResourceWithFallback fetches a resource, trying multiple API groups when
 // the kind is ambiguous and apiVersion is empty. Issue #1062.
-// Returns the fetched object, the mapping that succeeded, and any error.
-func (a *K8sAdapter) getResourceWithFallback(ctx context.Context, kind, name, namespace, apiVersion string) (*unstructured.Unstructured, *meta.RESTMapping, error) {
+// Returns the fetched object and any error; the mapping that succeeded is
+// only needed internally (for the multi-group fallback logging below) --
+// both current callers (GetOwnerChain, GetSpecHash) only use the object.
+func (a *K8sAdapter) getResourceWithFallback(ctx context.Context, kind, name, namespace, apiVersion string) (*unstructured.Unstructured, error) {
 	if apiVersion != "" {
 		mapping, err := a.resolveMappingWithAPIVersion(kind, apiVersion)
 		if err != nil {
-			return nil, nil, fmt.Errorf("k8s adapter: resolve GVR for %s: %w", kind, err)
+			return nil, fmt.Errorf("k8s adapter: resolve GVR for %s: %w", kind, err)
 		}
 		obj, err := a.scopedClient(mapping, namespace).Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
-			return nil, nil, fmt.Errorf("k8s adapter: get %s/%s in %s: %w", kind, name, namespace, err)
+			return nil, fmt.Errorf("k8s adapter: get %s/%s in %s: %w", kind, name, namespace, err)
 		}
-		return obj, mapping, nil
+		return obj, nil
 	}
 
 	mappings, err := a.resolveMappingsAll(kind)
 	if err != nil {
-		return nil, nil, fmt.Errorf("k8s adapter: resolve GVR for %s: %w", kind, err)
+		return nil, fmt.Errorf("k8s adapter: resolve GVR for %s: %w", kind, err)
 	}
 
 	var lastErr error
@@ -216,7 +218,7 @@ func (a *K8sAdapter) getResourceWithFallback(ctx context.Context, kind, name, na
 					"gvr", mapping.Resource.String(),
 					"result", "success")
 			}
-			return obj, mapping, nil
+			return obj, nil
 		}
 		errReason := "unknown"
 		if errors.IsNotFound(getErr) {
@@ -231,10 +233,10 @@ func (a *K8sAdapter) getResourceWithFallback(ctx context.Context, kind, name, na
 			"result", errReason)
 		lastErr = getErr
 		if !errors.IsNotFound(getErr) && !errors.IsForbidden(getErr) {
-			return nil, nil, fmt.Errorf("k8s adapter: get %s/%s in %s: %w", kind, name, namespace, getErr)
+			return nil, fmt.Errorf("k8s adapter: get %s/%s in %s: %w", kind, name, namespace, getErr)
 		}
 	}
-	return nil, nil, fmt.Errorf("k8s adapter: get %s/%s in %s: %w", kind, name, namespace, lastErr)
+	return nil, fmt.Errorf("k8s adapter: get %s/%s in %s: %w", kind, name, namespace, lastErr)
 }
 
 // resolveGroupKind extracts the GroupKind for a kind string using the kindIndex

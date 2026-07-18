@@ -139,7 +139,6 @@ func (inv *Investigator) doLLMCall(ctx context.Context, state *loopTurnState, me
 		turn:          turn,
 		phase:         string(phase),
 		correlationID: llmCtx.CorrelationID,
-		modelName:     llmCtx.ModelName,
 		runtimeParams: llmCtx.RuntimeParams,
 		tokens:        llmCtx.Tokens,
 		loopStart:     state.loopStart,
@@ -183,7 +182,6 @@ type llmTurnCallParams struct {
 	turn          int
 	phase         string
 	correlationID string
-	modelName     string
 	runtimeParams llm.RuntimeParams
 	tokens        *TokenAccumulator
 	loopStart     time.Time
@@ -195,7 +193,7 @@ type llmTurnCallParams struct {
 // event and returned wrapped (err non-nil); success returns the response
 // with both cancelled and err nil.
 func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (llm.ChatResponse, LoopResult, error) {
-	resp, err := inv.chatOrStream(ctx, p.client, p.chatReq, p.turn, p.phase, p.modelName, p.runtimeParams)
+	resp, err := inv.chatOrStream(ctx, p.client, p.chatReq, p.turn, p.phase, p.runtimeParams)
 	if err == nil {
 		return resp, nil, nil
 	}
@@ -372,8 +370,11 @@ func (inv *Investigator) buildTruncationRetryMessages(ctx context.Context, resp 
 // the same llm.RetryWithBackoff machinery and RuntimeParams-driven policy
 // (MaxRetries, RetryBackoff) — previously RuntimeParams.MaxRetries was
 // silently dead here, since StreamChat was called exactly once with no
-// retry at all.
-func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string, modelName string, runtimeParams llm.RuntimeParams) (llm.ChatResponse, error) {
+// retry at all. The retry-attempt telemetry (RecordLLMCallRetry) is
+// deliberately labeled by phase/outcome only, not model (DD-LLM-009), so
+// this takes no modelName -- callers already emit the model on the
+// request/gate audit events before invoking this.
+func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string, runtimeParams llm.RuntimeParams) (llm.ChatResponse, error) {
 	sink := session.EventSinkFromContext(ctx)
 	if sink == nil {
 		inv.logger.Info("chatOrStream: sink is nil, falling back to non-streaming Chat",

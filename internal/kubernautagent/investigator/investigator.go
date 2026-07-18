@@ -358,10 +358,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
 	signalNS = inv.normalizeNamespace(signalKind, signalNS)
 	enrichData := inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
-	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, LLMInvocationContext{
+	rcaResult, err := inv.runRCA(ctx, signal, LLMInvocationContext{
 		Tokens:        tokens,
 		CorrelationID: correlationID,
 		Client:        rcaClient,
