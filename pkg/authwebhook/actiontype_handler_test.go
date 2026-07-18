@@ -670,7 +670,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	Describe("UT-AT-512-002: DELETE denied when live RWs exist in K8s", func() {
 		It("should return Denied when DS-reported dependents are live in K8s", func() {
 			at := buildActionType("restart-pod", "RestartPod")
-			rw := buildRemediationWorkflow("live-wf", "kubernaut-system")
+			rw := buildRemediationWorkflow("live-wf")
 			rw.Spec.ActionType = "RestartPod"
 
 			scheme := newATScheme()
@@ -741,7 +741,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	Describe("UT-AT-512-004: DELETE denied with mixed live and orphaned workflows", func() {
 		It("should return Denied when some dependents are live and some orphaned", func() {
 			at := buildActionType("restart-pod", "RestartPod")
-			rw := buildRemediationWorkflow("live-wf", "kubernaut-system")
+			rw := buildRemediationWorkflow("live-wf")
 			rw.Spec.ActionType = "RestartPod"
 
 			scheme := newATScheme()
@@ -810,7 +810,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				authwebhook.WithActionTypeWorkflowCounter(mockCounter),
 			)
 
-			rw := buildRemediationWorkflow("scale-memory-wf", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory-wf")
 			rw.Spec.ActionType = "ScaleMemory"
 
 			resp := rwHandler.Handle(ctx, buildCreateAdmissionRequest(rw))
