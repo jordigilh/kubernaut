@@ -52,7 +52,7 @@ func (r *Reconciler) finalizeReconcile(ctx context.Context, rctx *reconcileConte
 		}
 
 		if rctx.pendingTransition {
-			r.emitAssessingTransitionEvents(ctx, ea)
+			r.emitAssessingTransitionEvents(ea)
 		}
 		if completing {
 			r.emitCompletionMetricsAndEvents(ctx, ea, ea.Status.AssessmentReason)

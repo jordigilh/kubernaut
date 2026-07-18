@@ -80,6 +80,8 @@ func (r *Reconciler) runComponentPipeline(ctx context.Context, rctx *reconcileCo
 }
 
 // runHashCheck executes the hash component check (Phase 1 of two-phase model).
+//
+//nolint:unparam // error is always nil here; signature matches the shared (ctrl.Result, bool, error) contract of sibling step-check helpers (handlePartialScope, handleAlertDeferralRequeue), all called uniformly as `if result, done, err := r.xxxCheck(...); done { return result, true, err }` (Issue #1546 Tier 4)
 func (r *Reconciler) runHashCheck(ctx context.Context, rctx *reconcileContext) (ctrl.Result, bool, error) {
 	ea := rctx.ea
 	if ea.Status.Components.HashComputed {
