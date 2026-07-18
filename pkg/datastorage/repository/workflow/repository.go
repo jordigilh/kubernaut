@@ -66,13 +66,16 @@ type Repository struct {
 	logger logr.Logger
 
 	// cache is the Issue #1661 Phase 28/29 informer-backed RemediationWorkflow/
-	// ActionType CRD view (DD-WORKFLOW-018). When set (via SetCache), ListActions
-	// and ListWorkflowsByActionType (Step 1/2 of the discovery protocol) read from
-	// it instead of issuing SQL against remediation_workflow_catalog/
-	// action_type_taxonomy. nil means "no cache wired" -- callers (tests,
-	// server_construction.go without K8sRestConfig) keep the existing SQL path
-	// unconditionally. GetWorkflowWithContextFilters/GetByID (Step 3) never
-	// consult the cache -- deferred per Phase 31 scope decision.
+	// ActionType CRD view (DD-WORKFLOW-018). When set (via SetCache), List,
+	// ListActions, ListWorkflowsByActionType, GetByID, and
+	// GetWorkflowWithContextFilters all read from it instead of issuing SQL
+	// against remediation_workflow_catalog/action_type_taxonomy. nil means
+	// "no cache wired" -- callers (tests, server_construction.go without
+	// K8sRestConfig) keep the existing SQL path unconditionally. GetByID/
+	// GetWorkflowWithContextFilters (Step 3) and List were ported ahead of
+	// the rest of Phase 55 once AuthWebhook stopped writing to Postgres
+	// (Change 8c) made their SQL paths unable to see any post-cutover
+	// workflow -- an already-broken production read path, not just a test gap.
 	cache *workflowcache.Cache
 }
 

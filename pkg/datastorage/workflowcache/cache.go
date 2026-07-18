@@ -228,6 +228,21 @@ func (c *Cache) ListWorkflowsByActionType(ctx context.Context, actionType string
 	return list.Items, nil
 }
 
+// ListWorkflows returns every RemediationWorkflow CRD across all namespaces,
+// unfiltered -- the cache-backed source for Repository.List's full-catalog
+// listing (#1661 Phase 55 prerequisite: KA's dsCatalogFetcher.FetchValidator,
+// cmd/kubernautagent/toolregistry.go, calls the DS ListWorkflows API with no
+// filters to build its per-request parameter validator; this was an
+// already-broken production read path once AuthWebhook stopped writing to
+// Postgres, mirroring the GetWorkflowByID/Step 3 fix above).
+func (c *Cache) ListWorkflows(ctx context.Context) ([]rwv1alpha1.RemediationWorkflow, error) {
+	var list rwv1alpha1.RemediationWorkflowList
+	if err := c.reader.List(ctx, &list); err != nil {
+		return nil, fmt.Errorf("failed to list RemediationWorkflows: %w", err)
+	}
+	return list.Items, nil
+}
+
 // GetActionType returns the ActionType CRD whose spec.name equals name, or
 // (nil, nil) if none exists. Lookup is keyed by the business identifier
 // (spec.name), not metadata.name -- mirrors AuthWebhook's existing

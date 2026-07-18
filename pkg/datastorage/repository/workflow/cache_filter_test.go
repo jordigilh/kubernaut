@@ -20,7 +20,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
@@ -298,4 +302,64 @@ var _ = Describe("finalScore (Issue #1661 Change 6)", func() {
 		Entry("penalty decreases the score", 0.0, 0.0, 0.10, 0.49),
 		Entry("score is capped at 1.0 even with a large boost", 5.0, 5.0, 0.0, 1.0),
 	)
+})
+
+var _ = Describe("matchesSearchFilters (Issue #1661 Change 6, Phase 55 prerequisite)", func() {
+	// Mirrors applyListFilters' SQL WHERE-clause combination (crud.go): List's
+	// cache-backed filter dimensions are workflow_name (exact), severity/
+	// component/environment/priority (wildcard, parity with the discovery
+	// path per Issue #522), and status (containment) -- no detectedLabels/
+	// customLabels, matching parseWorkflowSearchFilters' query-param parsing.
+
+	buildRW := func(name string, status sharedtypes.CatalogStatus) *rwv1alpha1.RemediationWorkflow {
+		return &rwv1alpha1.RemediationWorkflow{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: rwv1alpha1.RemediationWorkflowSpec{
+				Labels: rwv1alpha1.RemediationWorkflowLabels{
+					Severity:    []string{"critical"},
+					Component:   []string{"v1/Pod"},
+					Environment: []string{"production"},
+					Priority:    "P1",
+				},
+			},
+			Status: rwv1alpha1.RemediationWorkflowStatus{CatalogStatus: status},
+		}
+	}
+
+	It("UT-DS-1661-615-001: nil filters match every workflow", func() {
+		Expect(matchesSearchFilters(buildRW("wf-a", sharedtypes.CatalogStatusActive), nil)).To(BeTrue())
+	})
+
+	It("UT-DS-1661-615-002: workflow_name exact match", func() {
+		rw := buildRW("wf-a", sharedtypes.CatalogStatusActive)
+		Expect(matchesSearchFilters(rw, &models.WorkflowSearchFilters{WorkflowName: "wf-a"})).To(BeTrue())
+		Expect(matchesSearchFilters(rw, &models.WorkflowSearchFilters{WorkflowName: "wf-b"})).To(BeFalse())
+	})
+
+	It("UT-DS-1661-615-003: mandatory label dimensions reuse matchesArrayLabel/matchesPriority wildcard semantics", func() {
+		rw := buildRW("wf-a", sharedtypes.CatalogStatusActive)
+		Expect(matchesSearchFilters(rw, &models.WorkflowSearchFilters{Severity: "critical"})).To(BeTrue())
+		Expect(matchesSearchFilters(rw, &models.WorkflowSearchFilters{Severity: "warning"})).To(BeFalse())
+		Expect(matchesSearchFilters(rw, &models.WorkflowSearchFilters{Component: "V1/POD"})).To(BeTrue(), "component matching is case-insensitive")
+		Expect(matchesSearchFilters(rw, &models.WorkflowSearchFilters{Environment: "production"})).To(BeTrue())
+		Expect(matchesSearchFilters(rw, &models.WorkflowSearchFilters{Priority: "P2"})).To(BeFalse())
+	})
+
+	It("UT-DS-1661-615-004: status containment -- empty filter matches any status, non-empty filter requires membership", func() {
+		active := buildRW("wf-active", sharedtypes.CatalogStatusActive)
+		disabled := buildRW("wf-disabled", sharedtypes.CatalogStatusDisabled)
+
+		Expect(matchesSearchFilters(active, &models.WorkflowSearchFilters{})).To(BeTrue(), "no status filter means unconstrained -- KA's FetchValidator relies on this to see every workflow")
+		Expect(matchesSearchFilters(disabled, &models.WorkflowSearchFilters{})).To(BeTrue())
+
+		filters := &models.WorkflowSearchFilters{Status: []string{"Active"}}
+		Expect(matchesSearchFilters(active, filters)).To(BeTrue())
+		Expect(matchesSearchFilters(disabled, filters)).To(BeFalse())
+	})
+
+	It("UT-DS-1661-615-005: every dimension must match (AND semantics)", func() {
+		rw := buildRW("wf-a", sharedtypes.CatalogStatusActive)
+		filters := &models.WorkflowSearchFilters{WorkflowName: "wf-a", Severity: "critical", Status: []string{"Disabled"}}
+		Expect(matchesSearchFilters(rw, filters)).To(BeFalse(), "name/severity match but status doesn't -- must reject")
+	})
 })

@@ -244,4 +244,53 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 		Expect(err).ToNot(HaveOccurred())
 		Expect(got).To(BeNil(), "a genuinely nonexistent workflow_id must also return nil, nil -- indistinguishable from the filtered-out case above")
 	})
+
+	// #1661 Phase 55 prerequisite: List (the generic GET /api/v1/workflows
+	// catalog listing, distinct from the discovery protocol's Steps 1/2/3)
+	// was ported to the cache once it was discovered that KA's
+	// dsCatalogFetcher.FetchValidator (cmd/kubernautagent/toolregistry.go)
+	// depends on this exact method with empty filters, and it too could not
+	// see any workflow admitted after AuthWebhook stopped writing to
+	// Postgres (Change 8c) -- the same already-broken production read path
+	// as GetByID/Step 3 above.
+	It("IT-DS-1661-P32-005: List returns cache-sourced workflows with no filters, honors workflow_name/status filters, and paginates in created_at DESC order", func() {
+		actionType := uniquePascalName("CacheListAction")
+		nameActive := uniqueName("it-1661-p32-list-active")
+		nameDisabled := uniqueName("it-1661-p32-list-disabled")
+
+		activeRW := validRW(nameActive, actionType, []string{"critical"})
+		disabledRW := validRW(nameDisabled, actionType, []string{"critical"})
+		Expect(k8sClient.Create(ctx, activeRW)).To(Succeed())
+		Expect(k8sClient.Create(ctx, disabledRW)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, activeRW) })
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, disabledRW) })
+
+		activeRW.Status.WorkflowID = uniqueName("wfid-list-active")
+		activeRW.Status.CatalogStatus = sharedtypes.CatalogStatusActive
+		Expect(k8sClient.Status().Update(ctx, activeRW)).To(Succeed())
+		disabledRW.Status.WorkflowID = uniqueName("wfid-list-disabled")
+		disabledRW.Status.CatalogStatus = sharedtypes.CatalogStatusDisabled
+		Expect(k8sClient.Status().Update(ctx, disabledRW)).To(Succeed())
+
+		// No filters: KA's dsCatalogFetcher.FetchValidator calls List this
+		// way -- both workflows (any status) must be visible.
+		Eventually(func() (int, error) {
+			_, total, err := repo.List(ctx, &models.WorkflowSearchFilters{}, 50, 0)
+			return total, err
+		}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 2), "List with no filters must see workflows of every status once the informer observes them")
+
+		results, _, err := repo.List(ctx, &models.WorkflowSearchFilters{WorkflowName: nameActive}, 50, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(results).To(HaveLen(1))
+		Expect(results[0].WorkflowName).To(Equal(nameActive))
+		Expect(results[0].ActionType).To(Equal(actionType))
+
+		activeOnly, _, err := repo.List(ctx, &models.WorkflowSearchFilters{Status: []string{"Active"}, WorkflowName: nameActive}, 50, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(activeOnly).To(HaveLen(1))
+
+		noneMatch, _, err := repo.List(ctx, &models.WorkflowSearchFilters{Status: []string{"Disabled"}, WorkflowName: nameActive}, 50, 0)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(noneMatch).To(BeEmpty(), "an Active workflow must not match a Disabled-only status filter")
+	})
 })

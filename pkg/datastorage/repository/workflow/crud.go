@@ -514,7 +514,15 @@ func (r *Repository) GetVersionsByName(ctx context.Context, workflowName string)
 // List retrieves workflows with optional filtering and pagination
 // BR-STORAGE-012: Workflow catalog listing
 // V1.0 REFACTOR: Uses SQL builder for type-safe query construction
+//
+// Issue #1661 Change 6 (DD-WORKFLOW-018): when r.cache is set, reads from the
+// Phase 28/29 informer-backed CRD cache instead of Postgres (#1661 Phase 55
+// prerequisite -- ported ahead of the rest of Phase 55, see list_cache.go).
 func (r *Repository) List(ctx context.Context, filters *models.WorkflowSearchFilters, limit, offset int) ([]models.RemediationWorkflow, int, error) {
+	if r.cache != nil {
+		return r.listFromCache(ctx, filters, limit, offset)
+	}
+
 	builder := sqlbuilder.NewBuilder().
 		Select(workflowCatalogColumns).
 		From("remediation_workflow_catalog")

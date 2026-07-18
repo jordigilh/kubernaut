@@ -19,6 +19,7 @@ package workflow
 import (
 	"strings"
 
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
@@ -281,6 +282,37 @@ func containsValue(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// matchesSearchFilters reports whether rw satisfies List's filter
+// dimensions (#1661 Phase 55 prerequisite -- List's cache port). Mirrors
+// applyListFilters' SQL WHERE-clause combination exactly: workflow_name
+// exact match, severity/component/environment/priority wildcard label
+// matching (Issue #522 parity with the discovery path, reusing
+// matchesArrayLabel/matchesPriority), and status containment. Unlike
+// filterAndScoreCachedWorkflows (Steps 1/2/3), List's SQL never applies
+// detectedLabels or customLabels filters -- parseWorkflowSearchFilters
+// (workflow_query_handlers.go) never populates those fields for this
+// endpoint, so their omission here is parity, not a gap. nil filters
+// matches unconditionally.
+func matchesSearchFilters(rw *rwv1alpha1.RemediationWorkflow, filters *models.WorkflowSearchFilters) bool {
+	if filters == nil {
+		return true
+	}
+	if filters.WorkflowName != "" && rw.Name != filters.WorkflowName {
+		return false
+	}
+	labels := crdLabelsToMandatoryLabels(rw.Spec.Labels)
+	if !matchesArrayLabel(labels.Severity, filters.Severity) ||
+		!matchesArrayLabel(labels.Component, filters.Component) ||
+		!matchesArrayLabel(labels.Environment, filters.Environment) ||
+		!matchesPriority(labels.Priority, filters.Priority) {
+		return false
+	}
+	if len(filters.Status) > 0 && !containsValue(filters.Status, string(rw.Status.CatalogStatus)) {
+		return false
+	}
+	return true
 }
 
 // finalScore normalizes the raw boost/penalty contributions into the
