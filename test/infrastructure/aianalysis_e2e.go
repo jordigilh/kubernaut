@@ -330,12 +330,13 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		return fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
-	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint).
-	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. This is IN
-	// ADDITION to -- not a replacement for -- the Postgres-backed SeedActionTypesViaAPI
-	// below: SeedWorkflowsInDataStorage (called further down) still registers workflows
-	// via DS's Postgres-backed inline endpoint, whose action_type_taxonomy FK check
-	// requires the Postgres row. Removed once that write path is CRD-native (Phase 55+).
+	// DD-WORKFLOW-016: Seed action types before workflow registration.
+	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. Workflows here
+	// now seed via SeedWorkflowsViaKubectlApply (real AuthWebhook admission, Phase 55),
+	// so this file no longer touches DS's Postgres inline-registration endpoint at all
+	// -- but SeedActionTypesViaAPI's Postgres dual-seed below is retained regardless,
+	// since Phase 55 hasn't yet dropped the action_type_taxonomy table/FK/handlers
+	// (tracked separately; premature removal here would just be dead code until then).
 	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types (CRD): %w", err)
 	}
@@ -404,11 +405,13 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"v1/Pod"}, Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 	}
 
-	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
+	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)
+	// instead of DS's retired Postgres-backed inline endpoint.
+	workflowUUIDs, err := SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows in DataStorage\n", len(workflowUUIDs))
+	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows via kubectl apply\n", len(workflowUUIDs))
 
 	// NOTE: ConfigMap creation moved to deployMockLLMInNamespace() (Phase 7c)
 	// This avoids duplication and ensures workflows are passed correctly

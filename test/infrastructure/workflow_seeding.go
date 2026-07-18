@@ -200,6 +200,27 @@ type WorkflowSeedSpec struct {
 	Environment string // environment label for the workflowUUIDs map key (e.g., "production")
 }
 
+// testWorkflowsToSeedSpecs converts legacy TestWorkflow entries (the
+// Postgres-inline-registration shape) into WorkflowSeedSpecs for
+// SeedWorkflowsViaKubectlApply (Issue #1661 Phase 55: E2E suites move off
+// the Postgres-backed SeedWorkflowsInDataStorage path onto AuthWebhook's
+// real admission pipeline). FixtureDir is derived the same way
+// RegisterWorkflowInDataStorage does (workflowIDToImageName strips any
+// "-vN" version suffix from WorkflowID) -- every fixture's metadata.name
+// equals its TestWorkflow.WorkflowID (verified across all callers), so the
+// resulting map key (name:environment) is identical to the retired path's
+// key (WorkflowID:environment).
+func testWorkflowsToSeedSpecs(workflows []TestWorkflow) []WorkflowSeedSpec {
+	specs := make([]WorkflowSeedSpec, 0, len(workflows))
+	for _, wf := range workflows {
+		specs = append(specs, WorkflowSeedSpec{
+			FixtureDir:  workflowIDToImageName(wf.WorkflowID),
+			Environment: wf.Environment,
+		})
+	}
+	return specs
+}
+
 // SeedWorkflowsViaKubectlApply registers workflows declaratively using kubectl apply -f,
 // which triggers the authwebhook → DataStorage registration → CRD status update pipeline.
 // This mirrors production deployments where operators apply CRD manifests directly.

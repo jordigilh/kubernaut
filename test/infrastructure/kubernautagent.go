@@ -215,10 +215,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create DS client: %w", err)
 	}
 
-	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. This is IN
-	// ADDITION to -- not a replacement for -- Postgres seeding: SeedWorkflowsInDataStorage
-	// below registers workflows via DS's Postgres-backed inline endpoint, whose
-	// action_type_taxonomy FK check requires the Postgres row too.
+	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. Workflows here
+	// now seed via SeedWorkflowsViaKubectlApply (real AuthWebhook admission, Phase 55),
+	// so this file no longer touches DS's Postgres inline-registration endpoint at all
+	// -- but SeedActionTypesViaAPI's Postgres dual-seed below is retained regardless,
+	// since Phase 55 hasn't yet dropped the action_type_taxonomy table/FK/handlers
+	// (tracked separately; premature removal here would just be dead code until then).
 	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types (CRD): %w", err)
 	}
@@ -227,11 +229,13 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	testWorkflows := GetKAE2ETestWorkflows()
-	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "KA E2E (via infrastructure)", writer)
+	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)
+	// instead of DS's retired Postgres-backed inline endpoint.
+	workflowUUIDs, err := SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed workflows: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows\n", len(workflowUUIDs))
+	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows via kubectl apply\n", len(workflowUUIDs))
 
 	if err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], workflowUUIDs, nil, writer); err != nil {
 		return fmt.Errorf("failed to deploy Mock LLM: %w", err)

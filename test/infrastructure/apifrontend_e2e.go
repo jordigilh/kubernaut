@@ -246,10 +246,12 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	if seedErr != nil {
 		return fmt.Errorf("create DS seed client: %w", seedErr)
 	}
-	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. This is IN
-	// ADDITION to -- not a replacement for -- Postgres seeding: SeedWorkflowsInDataStorage
-	// below registers workflows via DS's Postgres-backed inline endpoint, whose
-	// action_type_taxonomy FK check requires the Postgres row too.
+	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. Workflows here
+	// now seed via SeedWorkflowsViaKubectlApply (real AuthWebhook admission, Phase 55),
+	// so this file no longer touches DS's Postgres inline-registration endpoint at all
+	// -- but SeedActionTypesViaAPI's Postgres dual-seed below is retained regardless,
+	// since Phase 55 hasn't yet dropped the action_type_taxonomy table/FK/handlers
+	// (tracked separately; premature removal here would just be dead code until then).
 	if seedErr = SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); seedErr != nil {
 		return fmt.Errorf("seed action types (CRD): %w", seedErr)
 	}
@@ -257,7 +259,9 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("seed action types (Postgres): %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
-	if _, seedErr = SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AF E2E", writer); seedErr != nil {
+	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)
+	// instead of DS's retired Postgres-backed inline endpoint.
+	if _, seedErr = SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
 		return fmt.Errorf("seed workflows: %w", seedErr)
 	}
 
