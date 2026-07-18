@@ -736,6 +736,11 @@ func mustConnectPostgreSQL() *sqlx.DB {
 	return tempDB
 }
 
+// FLAGGED for human review (unparam cleanup): sibling connectRedis threads ctx into
+// Ping(ctx), but this function still uses the no-context sqlx.Connect/db.Ping variants.
+// Kept as-is rather than silently rewired to sqlx.ConnectContext/db.PingContext.
+//
+//nolint:unparam // ctx unused pending decision above; not removed to avoid permanently losing the wiring point
 func connectPostgreSQL(ctx context.Context) {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("POSTGRES_HOST")

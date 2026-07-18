@@ -101,7 +101,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				SentAt:          time.Now(),
 				EscalationLevel: 0,
 			}
-			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "notifications", notif, 2*time.Minute)
+			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "notifications", notif)
 			Expect(err).ToNot(HaveOccurred())
 
 			// ARRANGE: Create mock notification repo that tracks Create calls
@@ -143,7 +143,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				Status:         "sent",
 				SentAt:         time.Now(),
 			}
-			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "notifications", notif, 2*time.Minute)
+			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "notifications", notif)
 			Expect(err).ToNot(HaveOccurred())
 
 			// ARRANGE: Mock repo that fails on Create
@@ -221,7 +221,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				EventData:      []byte(`{"workflow_id":"wf-123","step":"start","metadata":{"version":"2.1"}}`),
 				RetentionDays:  2555,
 			}
-			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "events", event, 2*time.Minute)
+			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "events", event)
 			Expect(err).ToNot(HaveOccurred())
 
 			// ARRANGE: Mock repo that captures the full repository.AuditEvent
@@ -283,7 +283,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				ResourceID:     "sys-1",
 				RetentionDays:  2555,
 			}
-			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "events", event, 2*time.Minute)
+			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "events", event)
 			Expect(err).ToNot(HaveOccurred())
 
 			mockEventsRepo := &MockRepositoryEventsRepository{
@@ -488,7 +488,7 @@ var _ = Describe("DLQ Critical Data-Loss Fixes (#1048 Phase 2)", func() {
 				EventData:      []byte(`{"guard":"nil"}`),
 				RetentionDays:  2555,
 			}
-			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "events", event, 2*time.Minute)
+			err := addDLQMessageWithPastTimestamp(ctx, redisClient, "events", event)
 			Expect(err).ToNot(HaveOccurred())
 
 			// ARRANGE: Worker with nil auditRepo (and nil notificationRepo)
@@ -1086,7 +1086,8 @@ func (m *CancellingEventsRepository) Create(_ context.Context, event *repository
 // addDLQMessageWithPastTimestamp inserts a DLQ message directly into Redis
 // with a timestamp far enough in the past that IsReadyForRetry returns true.
 // This bypasses the Enqueue* methods which always set Timestamp to time.Now().
-func addDLQMessageWithPastTimestamp(ctx context.Context, redisClient *redis.Client, auditType string, payload interface{}, age time.Duration) error {
+func addDLQMessageWithPastTimestamp(ctx context.Context, redisClient *redis.Client, auditType string, payload interface{}) error {
+	const age = 2 * time.Minute
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)

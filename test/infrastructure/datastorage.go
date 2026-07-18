@@ -1700,9 +1700,7 @@ func StartDataStorageInfrastructure(ctx context.Context, cfg *DataStorageConfig,
 
 	// 9. Wait for service to be ready
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Data Storage Service to be ready...")
-	if err := waitForServiceReady(ctx, infra, writer); err != nil {
-		return nil, fmt.Errorf("service not ready: %w", err)
-	}
+	waitForServiceReady(ctx, infra, writer)
 
 	_, _ = fmt.Fprintln(writer, "✅ Data Storage Service infrastructure ready!")
 	return infra, nil
@@ -2020,7 +2018,7 @@ func startDataStorageService(ctx context.Context, infra *DataStorageInfrastructu
 	return nil
 }
 
-func waitForServiceReady(ctx context.Context, infra *DataStorageInfrastructure, writer io.Writer) error {
+func waitForServiceReady(ctx context.Context, infra *DataStorageInfrastructure, writer io.Writer) {
 	// Wait up to 30 seconds for service to be ready
 	var lastStatusCode int
 	var lastError error
@@ -2072,7 +2070,6 @@ func waitForServiceReady(ctx context.Context, infra *DataStorageInfrastructure, 
 	}
 
 	_, _ = fmt.Fprintf(writer, "  ✅ Data Storage Service ready at %s\n", infra.ServiceURL)
-	return nil
 }
 
 func getContainerIP(ctx context.Context, containerName string) string {
@@ -2405,7 +2402,7 @@ stringData:
   tls.crt: |
 %s
   tls.key: |
-%s`, indentPEM(string(pair.CertPEM), 4), indentPEM(string(pair.KeyPEM), 4))
+%s`, indentPEM(string(pair.CertPEM)), indentPEM(string(pair.KeyPEM)))
 
 	if err := kubectlApply(ctx, kubeconfigPath, namespace, manifest, writer); err != nil {
 		return fmt.Errorf("failed to create signing cert Secret: %w", err)

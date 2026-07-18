@@ -129,8 +129,8 @@ const (
 // - Consumer service name provides clear isolation (gateway vs aianalysis vs ro)
 // - UUID ensures zero collision risk (no timestamp needed - UUID is sufficient)
 // - Simplest possible format while maintaining uniqueness
-// - No redundancy - image name already contains infrastructure type
-func generateInfrastructureImageTag(infrastructure, consumer string) string {
+// - No redundancy - image name already contains infrastructure type (caller-supplied prefix)
+func generateInfrastructureImageTag(consumer string) string {
 	// Use 8 hex characters from nanoseconds for UUID
 	uuid := fmt.Sprintf("%x", time.Now().UnixNano())[:8]
 	return fmt.Sprintf("%s-%s", consumer, uuid)
@@ -172,19 +172,21 @@ type DSBootstrapInfra struct {
 //   - IMAGE_TAG: Image tag (e.g., "pr-123", "main-abc1234")
 //
 // Returns:
-//   - imageName: The local image name after tagging (same as input localImageName)
+//   - imageName: The registry image reference (registry/serviceName:tag) when pulled
 //   - pulled: true if successfully pulled from registry, false otherwise
-//   - error: Only returns error if pull succeeded but tagging failed
+//   - error: reserved for future use; current implementation always returns nil here
 //
 // Usage:
 //
-//	if imageName, pulled, _ := tryPullFromRegistry(ctx, "datastorage", localImageName, writer); pulled {
+//	if imageName, pulled, _ := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
 //	    return imageName, nil // Use registry image
 //	}
 //	// Otherwise, fall through to local build
 //
 // Authority: CI/CD pipeline optimization for integration tests
-func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string, writer io.Writer) (string, bool, error) {
+//
+//nolint:unparam // error is reserved for future use (see doc comment above); all 3 call sites (here and shared_e2e.go/mock_llm.go) already check err != nil
+func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writer) (string, bool, error) {
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
 
@@ -233,7 +235,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	projectRoot := getProjectRoot()
 
 	// Generate DD-TEST-001 v1.3 compliant image tag
-	imageTag := generateInfrastructureImageTag("datastorage", serviceName)
+	imageTag := generateInfrastructureImageTag(serviceName)
 	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
@@ -256,7 +258,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
 	// CI/CD Optimization: Try to pull from registry if configured
-	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "datastorage", imageName, writer); pulled {
+	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
 		if err != nil {
 			return "", err // Tag failed after successful pull
 		}
@@ -354,7 +356,7 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 
 	// Step 1: Cleanup
 	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
-	cleanupDSBootstrapContainers(ctx, infra, writer)
+	cleanupDSBootstrapContainers(ctx, infra)
 	_, _ = fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
 
 	// Step 2: Network
@@ -505,7 +507,7 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 // ============================================================================
 
 // cleanupDSBootstrapContainers removes any existing containers from previous runs
-func cleanupDSBootstrapContainers(ctx context.Context, infra *DSBootstrapInfra, writer io.Writer) {
+func cleanupDSBootstrapContainers(ctx context.Context, infra *DSBootstrapInfra) {
 	containers := []string{
 		infra.PostgresContainer,
 		infra.RedisContainer,

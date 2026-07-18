@@ -22,7 +22,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/google/uuid"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	reconstructionpkg "github.com/jordigilh/kubernaut/pkg/datastorage/reconstruction"
 )
@@ -31,21 +30,17 @@ import (
 // Test Plan: docs/development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md
 // This test validates the parser component that extracts structured data from audit event payloads.
 var _ = Describe("Audit Event Parser", func() {
-	var (
-		testTimestamp time.Time
-		testUUID      uuid.UUID
-	)
+	var testTimestamp time.Time
 
 	BeforeEach(func() {
 		testTimestamp = time.Date(2026, 1, 12, 10, 0, 0, 0, time.UTC)
-		testUUID = uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	})
 
 	Context("PARSER-GW-01: Parse gateway.signal.received events (Gaps #1-3)", func() {
 		It("should extract signal type, labels, annotations, and fingerprint", func() {
 			// Validates extraction of Signal, SignalLabels, SignalAnnotations, Fingerprint from gateway audit events
 			// BR-AUDIT-005: signalFingerprint is required for RR reconstruction (deduplication identity)
-			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
+			event := createGatewaySignalReceivedEvent(testTimestamp)
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
@@ -62,7 +57,7 @@ var _ = Describe("Audit Event Parser", func() {
 
 		It("should return error for missing signal name", func() {
 			// Validates error handling for invalid gateway events
-			event := createInvalidGatewayEvent(testTimestamp, testUUID)
+			event := createInvalidGatewayEvent(testTimestamp)
 
 			_, err := reconstructionpkg.ParseAuditEvent(event)
 
@@ -74,7 +69,7 @@ var _ = Describe("Audit Event Parser", func() {
 	Context("PARSER-RO-01: Parse orchestrator.lifecycle.created events (Gap #8)", func() {
 		It("should extract TimeoutConfig with all phases", func() {
 			// Validates extraction of TimeoutConfig from orchestrator audit events
-			event := createOrchestratorLifecycleCreatedEvent(testTimestamp, testUUID)
+			event := createOrchestratorLifecycleCreatedEvent(testTimestamp)
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
@@ -86,7 +81,7 @@ var _ = Describe("Audit Event Parser", func() {
 
 		It("should handle missing optional timeout fields", func() {
 			// Validates optional TimeoutConfig fields can be omitted
-			event := createOrchestratorEventWithPartialTimeout(testTimestamp, testUUID)
+			event := createOrchestratorEventWithPartialTimeout(testTimestamp)
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
 
@@ -104,9 +99,9 @@ var _ = Describe("Audit Event Parser", func() {
 	Context("PARSER-RO-COMPLETED: Parse orchestrator.lifecycle.completed events (CC8.1)", func() {
 		It("should extract outcome and duration from completion event", func() {
 			event := ogenclient.AuditEvent{
-				EventType:     "orchestrator.lifecycle.completed",
+				EventType:      "orchestrator.lifecycle.completed",
 				EventTimestamp: testTimestamp,
-				CorrelationID: "test-rr-name",
+				CorrelationID:  "test-rr-name",
 				EventData: ogenclient.AuditEventEventData{
 					RemediationOrchestratorAuditPayload: ogenclient.RemediationOrchestratorAuditPayload{
 						Outcome:    ogenclient.NewOptRemediationOrchestratorAuditPayloadOutcome(ogenclient.RemediationOrchestratorAuditPayloadOutcomeSuccess),
@@ -132,9 +127,9 @@ var _ = Describe("Audit Event Parser", func() {
 	Context("PARSER-RO-FAILED: Parse orchestrator.lifecycle.failed events (CC8.1)", func() {
 		It("should extract error_details from failure event", func() {
 			event := ogenclient.AuditEvent{
-				EventType:     "orchestrator.lifecycle.failed",
+				EventType:      "orchestrator.lifecycle.failed",
 				EventTimestamp: testTimestamp,
-				CorrelationID: "test-rr-name",
+				CorrelationID:  "test-rr-name",
 				EventData: ogenclient.AuditEventEventData{
 					RemediationOrchestratorAuditPayload: ogenclient.RemediationOrchestratorAuditPayload{
 						Outcome:      ogenclient.NewOptRemediationOrchestratorAuditPayloadOutcome(ogenclient.RemediationOrchestratorAuditPayloadOutcomeFailed),
@@ -169,7 +164,7 @@ var _ = Describe("Audit Event Parser", func() {
 	// ========================================
 	Context("PARSER-CLUSTER-01: Extract ClusterName from event envelope (DD-AUDIT-003 v2.2)", func() {
 		It("should extract ClusterName from gateway.signal.received event [CC8.1]", func() {
-			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
+			event := createGatewaySignalReceivedEvent(testTimestamp)
 			event.ClusterName.SetTo("prod-east")
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
@@ -180,7 +175,7 @@ var _ = Describe("Audit Event Parser", func() {
 		})
 
 		It("should extract ClusterName from orchestrator.lifecycle.created event [CC8.1]", func() {
-			event := createOrchestratorLifecycleCreatedEvent(testTimestamp, testUUID)
+			event := createOrchestratorLifecycleCreatedEvent(testTimestamp)
 			event.ClusterName.SetTo("prod-west")
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
@@ -191,7 +186,7 @@ var _ = Describe("Audit Event Parser", func() {
 		})
 
 		It("should return empty ClusterName for single-cluster events (backward compat)", func() {
-			event := createGatewaySignalReceivedEvent(testTimestamp, testUUID)
+			event := createGatewaySignalReceivedEvent(testTimestamp)
 			// ClusterName intentionally NOT set (single-cluster deployment)
 
 			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
@@ -206,7 +201,7 @@ var _ = Describe("Audit Event Parser", func() {
 // Test fixture factories - MINIMAL approach
 // NOTE: These fixtures test OUR parser logic, not ogen's type system.
 // Complex ogen structure validation belongs in integration tests with real DataStorage queries.
-func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
+func createGatewaySignalReceivedEvent(timestamp time.Time) ogenclient.AuditEvent {
 	// Minimal: only fields OUR parser logic needs
 	labels := ogenclient.GatewayAuditPayloadSignalLabels{"alertname": "HighCPU"}
 	annotations := ogenclient.GatewayAuditPayloadSignalAnnotations{"summary": "CPU usage is high"}
@@ -227,7 +222,7 @@ func createGatewaySignalReceivedEvent(timestamp time.Time, id uuid.UUID) ogencli
 	}
 }
 
-func createInvalidGatewayEvent(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
+func createInvalidGatewayEvent(timestamp time.Time) ogenclient.AuditEvent {
 	// Minimal invalid: missing signal_name to test error handling
 	return ogenclient.AuditEvent{
 		EventType:      "gateway.signal.received",
@@ -241,7 +236,7 @@ func createInvalidGatewayEvent(timestamp time.Time, id uuid.UUID) ogenclient.Aud
 	}
 }
 
-func createOrchestratorLifecycleCreatedEvent(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
+func createOrchestratorLifecycleCreatedEvent(timestamp time.Time) ogenclient.AuditEvent {
 	// Minimal: only TimeoutConfig fields our parser needs
 	tc := ogenclient.TimeoutConfig{
 		Global:     ogenclient.NewOptString("1h0m0s"),
@@ -260,7 +255,7 @@ func createOrchestratorLifecycleCreatedEvent(timestamp time.Time, id uuid.UUID) 
 	}
 }
 
-func createOrchestratorEventWithPartialTimeout(timestamp time.Time, id uuid.UUID) ogenclient.AuditEvent {
+func createOrchestratorEventWithPartialTimeout(timestamp time.Time) ogenclient.AuditEvent {
 	// Minimal: partial TimeoutConfig to test optional field handling
 	tc := ogenclient.TimeoutConfig{
 		Global: ogenclient.NewOptString("1h0m0s"),

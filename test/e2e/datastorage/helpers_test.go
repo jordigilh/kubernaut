@@ -111,6 +111,8 @@ func generateWorkflowContent(workflowName, version string) string {
 // (deterministic UUID PK collision when multiple Ginkgo processes register the
 // same content concurrently). On 409 Conflict or 500, falls back to querying
 // the workflow by name via ListWorkflows.
+//
+//nolint:unparam // workflowName is always "e2e-stub" today, but this helper is shared across many other e2e/datastorage test files outside this fix's scope.
 func ensureWorkflowRegistered(ctx context.Context, client *dsgen.Client, content, workflowName string) (string, uuid.UUID) {
 	createReq := &dsgen.CreateWorkflowInlineRequest{Content: content}
 	createReq.Source.SetTo("e2e-test")
@@ -173,13 +175,14 @@ func postAuditEventBatch(
 // Minimal Payload Constructors for E2E API Testing
 // These create minimal valid payloads to test DataStorage API functionality
 
+//nolint:unparam // signalType is always "alert" today, but this helper is shared across many other e2e/datastorage test files outside this fix's scope.
 func newMinimalGatewayPayload(signalType, alertName string) dsgen.AuditEventRequestEventData {
 	return dsgen.AuditEventRequestEventData{
 		Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 		GatewayAuditPayload: dsgen.GatewayAuditPayload{
 			EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 			SignalType:  dsgen.GatewayAuditPayloadSignalType(signalType),
-			SignalName:   alertName,
+			SignalName:  alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",
 		},
