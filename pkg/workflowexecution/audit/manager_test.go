@@ -31,7 +31,7 @@ func TestAudit(t *testing.T) {
 }
 
 var _ = Describe("buildWorkflowExecutionAuditPayload retry-count (BR-WE-019 AC10, DD-WE-008 Wiring Point C)", func() {
-	newTestWFE := func(retryCount int32, executionStatus *workflowexecutionv1alpha1.ExecutionStatusSummary) *workflowexecutionv1alpha1.WorkflowExecution {
+	newTestWFE := func(executionStatus *workflowexecutionv1alpha1.ExecutionStatusSummary) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
 		wfe.Name = "wfe-retry-count-test"
 		wfe.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
@@ -40,7 +40,7 @@ var _ = Describe("buildWorkflowExecutionAuditPayload retry-count (BR-WE-019 AC10
 	}
 
 	It("UT-WE-AUDIT-001: should set payload.RetryCount from wfe.Status.ExecutionStatus.RetryCount when > 0", func() {
-		wfe := newTestWFE(2, &workflowexecutionv1alpha1.ExecutionStatusSummary{RetryCount: 2})
+		wfe := newTestWFE(&workflowexecutionv1alpha1.ExecutionStatusSummary{RetryCount: 2})
 
 		payload := buildWorkflowExecutionAuditPayload(wfe)
 
@@ -49,7 +49,7 @@ var _ = Describe("buildWorkflowExecutionAuditPayload retry-count (BR-WE-019 AC10
 	})
 
 	It("UT-WE-AUDIT-002a: should leave payload.RetryCount unset when ExecutionStatus is nil", func() {
-		wfe := newTestWFE(0, nil)
+		wfe := newTestWFE(nil)
 
 		payload := buildWorkflowExecutionAuditPayload(wfe)
 
@@ -57,7 +57,7 @@ var _ = Describe("buildWorkflowExecutionAuditPayload retry-count (BR-WE-019 AC10
 	})
 
 	It("UT-WE-AUDIT-002b: should leave payload.RetryCount unset when RetryCount == 0", func() {
-		wfe := newTestWFE(0, &workflowexecutionv1alpha1.ExecutionStatusSummary{RetryCount: 0})
+		wfe := newTestWFE(&workflowexecutionv1alpha1.ExecutionStatusSummary{RetryCount: 0})
 
 		payload := buildWorkflowExecutionAuditPayload(wfe)
 

@@ -68,7 +68,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 			var initialPR *tektonv1.PipelineRun
 			Eventually(func() error {
 				var err error
-				initialPR, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+				initialPR, err = waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 				return err
 			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 
@@ -202,7 +202,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 
 			By("Waiting for first WFE to create PipelineRun")
 			Eventually(func() error {
-				_, err := waitForPipelineRunCreation(wfe1.Name, wfe1.Namespace, 10*time.Second)
+				_, err := waitForPipelineRunCreation(wfe1.Name, 10*time.Second)
 				return err
 			}, 15*time.Second, 500*time.Millisecond).Should(Succeed())
 

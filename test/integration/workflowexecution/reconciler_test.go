@@ -67,7 +67,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for controller to create PipelineRun")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")
 
 			By("Verifying PipelineRun has correct labels")
@@ -94,7 +94,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying parameters are passed to PipelineRun")
@@ -117,7 +117,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying TARGET_RESOURCE parameter is passed")
@@ -153,7 +153,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			By("Waiting for PipelineRun creation")
 			var err error
-			pr, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err = waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Simulating PipelineRun success")
@@ -174,7 +174,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			By("Waiting for PipelineRun creation")
 			var err error
-			pr, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err = waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Simulating PipelineRun failure")
@@ -226,7 +226,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying owner reference is set")
@@ -254,7 +254,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying no platform default SA is injected (namespace default applies at runtime)")
@@ -272,7 +272,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying WFE status service account is propagated to TaskRunTemplate")
@@ -308,7 +308,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Getting PipelineRun and completing it")
-			pr, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err = waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = simulatePipelineRunCompletion(pr, true)
@@ -330,7 +330,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Getting PipelineRun and failing it")
-			pr, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err = waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = simulatePipelineRunCompletion(pr, false)
@@ -446,7 +446,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Getting PipelineRun and completing it")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = simulatePipelineRunCompletion(pr, true)
@@ -511,7 +511,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Getting PipelineRun and failing it")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = simulatePipelineRunCompletion(pr, false)

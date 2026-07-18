@@ -1220,7 +1220,11 @@ var _ = Describe("AnsibleExecutor K8s credential injection (#500, BR-WE-015)", f
 			Build()
 	}
 
-	mockInClusterCreds := func() (*executor.InClusterCredentials, error) {
+	// error is always nil here by design: this is the "credentials available" happy-path
+	// mock. Its signature must match executor.AnsibleExecutor.InClusterCredentialsFn
+	// (func() (*InClusterCredentials, error)); UT-WE-500-003 below assigns a sibling
+	// func literal that returns a non-nil error to test the unavailable-credentials path.
+	mockInClusterCreds := func() (*executor.InClusterCredentials, error) { //nolint:unparam // error must be non-nil-capable to match InClusterCredentialsFn signature; see UT-WE-500-003 sibling mock
 		return &executor.InClusterCredentials{
 			Host:   "https://10.0.0.1:6443",
 			Token:  "fake-sa-token-for-testing",

@@ -73,7 +73,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(pr).ToNot(BeNil())
 
@@ -124,7 +124,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(pr).ToNot(BeNil())
 
@@ -205,7 +205,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			Expect(k8sClient.Create(ctx, wfeFailed)).To(Succeed())
 
 			// Wait for PipelineRun creation
-			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, wfeFailed.Namespace, 10*time.Second)
+			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Simulating PipelineRun failure")
@@ -250,7 +250,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Completing workflow successfully")
@@ -295,7 +295,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			wfeSuccess := createUniqueWFE("slo-success", targetSuccess)
 			Expect(k8sClient.Create(ctx, wfeSuccess)).To(Succeed())
 
-			prSuccess, err := waitForPipelineRunCreation(wfeSuccess.Name, wfeSuccess.Namespace, 10*time.Second)
+			prSuccess, err := waitForPipelineRunCreation(wfeSuccess.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			prSuccess.Status.Conditions = duckv1.Conditions{
@@ -313,7 +313,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			wfeFailed := createUniqueWFE("slo-failed", targetFailed)
 			Expect(k8sClient.Create(ctx, wfeFailed)).To(Succeed())
 
-			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, wfeFailed.Namespace, 10*time.Second)
+			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			prFailed.Status.Conditions = duckv1.Conditions{
