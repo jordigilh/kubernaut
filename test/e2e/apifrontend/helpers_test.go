@@ -391,8 +391,8 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 	return tokenResp.IDToken, nil
 }
 
-func buildRR(namespace, rrName, targetKind, targetName string) *remediationv1alpha1.RemediationRequest {
-	h := sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)))
+func buildRR(namespace, rrName, targetName string) *remediationv1alpha1.RemediationRequest {
+	h := sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-Deployment-%s", namespace, targetName)))
 	fp := hex.EncodeToString(h[:])
 	firingTime := metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	receivedTime := metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC))
@@ -410,16 +410,17 @@ func buildRR(namespace, rrName, targetKind, targetName string) *remediationv1alp
 			ReceivedTime:      receivedTime,
 			TargetType:        "kubernetes",
 			TargetResource: remediationv1alpha1.ResourceIdentifier{
-				Kind: targetKind,
+				Kind: "Deployment",
 				Name: targetName,
 			},
 		},
 	}
 }
 
-//nolint:unparam // targetKind is always "Deployment" today, but createRR is a shared helper called from many other e2e/apifrontend test files outside this fix's scope.
-func createRR(namespace, rrName, targetKind, targetName string) error {
-	rr := buildRR(namespace, rrName, targetKind, targetName)
+// createRR creates a RemediationRequest targeting a Deployment (the only
+// target kind used across all e2e/apifrontend tests).
+func createRR(namespace, rrName, targetName string) error {
+	rr := buildRR(namespace, rrName, targetName)
 	return k8sClient.Create(context.Background(), rr)
 }
 

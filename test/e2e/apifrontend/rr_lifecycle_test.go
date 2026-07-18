@@ -55,12 +55,12 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		rrNamespace := e2eNamespace
 
 		By("TC-E2E-RR-01: Create RR via k8s client CRD fixture")
-		Expect(createRR(rrNamespace, rrName, "Deployment", "test-deploy-rr01")).To(Succeed())
+		Expect(createRR(rrNamespace, rrName, "test-deploy-rr01")).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		By("TC-E2E-RR-03: kubernaut_cancel_remediation sets RR to Cancelled")
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_cancel_remediation", map[string]interface{}{
-			"name":      rrName,
+			"name": rrName,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
 		Expect(strings.ToLower(text)).To(Or(
@@ -70,8 +70,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 
 		By("TC-E2E-RR-04: kubernaut_list_remediations returns the RR")
 		var out map[string]interface{}
-		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_list_remediations", map[string]interface{}{
-		})
+		text, err = mcpToolCallWith(authToken, mcpSessionID, "kubernaut_list_remediations", map[string]interface{}{})
 		Expect(err).NotTo(HaveOccurred(), text)
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
 		rem, ok := out["remediations"].([]interface{})
@@ -104,7 +103,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		const rrName = "e2e-rr-watch-07"
-		Expect(createRR(e2eNamespace, rrName, "Deployment", "test-deploy-rr07")).To(Succeed())
+		Expect(createRR(e2eNamespace, rrName, "test-deploy-rr07")).To(Succeed())
 		DeferCleanup(func() { deleteRR(e2eNamespace, rrName) })
 
 		// AF-only E2E has no SP/RO controllers, so the RR never transitions
@@ -123,7 +122,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		}()
 
 		text, err := mcpToolCallWith(authToken, mcpSessionID, "kubernaut_watch", map[string]interface{}{
-			"name":      rrName,
+			"name": rrName,
 		})
 		Expect(err).NotTo(HaveOccurred(), text)
 		var out map[string]interface{}
@@ -142,7 +141,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 
 	It("TC-E2E-RAR-01: kubernaut_approve succeeds for RAR referencing existing RR", func() {
 		const rrName = "e2e-rr-rar01"
-		Expect(createRR(rrNamespace, rrName, "Deployment", "test-deploy-rar01")).To(Succeed())
+		Expect(createRR(rrNamespace, rrName, "test-deploy-rar01")).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		rarName := "e2e-rar-g5-01"
@@ -162,9 +161,9 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		apBody := buildJSONRPC("g5-01-approve", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"rar_name":  rarName,
-				"decision":  "Approved",
-				"reason":    "E2E G5 approval",
+				"rar_name": rarName,
+				"decision": "Approved",
+				"reason":   "E2E G5 approval",
 			},
 		})
 		araw, acode, err := mcpPOST(approverTok, approverSession, apBody)
@@ -188,8 +187,8 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		body := buildJSONRPC("g5-02", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"rar_name":  "e2e-rar-does-not-exist-xyz",
-				"decision":  "Approved",
+				"rar_name": "e2e-rar-does-not-exist-xyz",
+				"decision": "Approved",
 			},
 		})
 		raw, code, err := mcpPOST(tok, sid, body)
@@ -208,7 +207,7 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 
 	It("TC-E2E-RAR-03: sre persona may kubernaut_approve (RBAC includes tool)", func() {
 		const rrName = "e2e-rr-rar03"
-		Expect(createRR(rrNamespace, rrName, "Deployment", "test-deploy-rar03")).To(Succeed())
+		Expect(createRR(rrNamespace, rrName, "test-deploy-rar03")).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		sreTok, err := fetchDEXTokenForPersona("sre")
@@ -228,8 +227,8 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		apBody := buildJSONRPC("g5-03-approve", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"rar_name":  rarName,
-				"decision":  "Approved",
+				"rar_name": rarName,
+				"decision": "Approved",
 			},
 		})
 		araw, acode, err := mcpPOST(sreTok, sreSession, apBody)

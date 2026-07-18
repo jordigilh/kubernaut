@@ -119,7 +119,7 @@ var _ = Describe("Investigation Streaming (G3)", Ordered, Label("e2e", "phase3",
 		// phase transitions on disconnect, not RR creation by the LLM.
 		kctlCtx := context.Background()
 		rrName := fmt.Sprintf("rr-stream03-%d", time.Now().UnixNano())
-		Expect(createRR("default", rrName, "Deployment", "web-slow-disconnect-test")).To(Succeed())
+		Expect(createRR("default", rrName, "web-slow-disconnect-test")).To(Succeed())
 		DeferCleanup(func() { deleteRR("default", rrName) })
 
 		// #1332: invoke kubernaut_investigate via MCP to create IS CRD.

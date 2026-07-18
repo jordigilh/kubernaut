@@ -72,7 +72,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 		It("TC-E2E-KA-FLOW-01: kubernaut_investigate returns session_id and status from KA", func() {
 			By("Creating RR so KA existence check passes (#1326 MCP migration)")
-			Expect(createRR(e2eNamespace, "e2e-flow-01-test-rr", "Deployment", "test-deploy-flow01")).To(Succeed())
+			Expect(createRR(e2eNamespace, "e2e-flow-01-test-rr", "test-deploy-flow01")).To(Succeed())
 			DeferCleanup(func() { deleteRR(e2eNamespace, "e2e-flow-01-test-rr") })
 
 			status, result := mcpToolCall("e2e-ka-flow-01", "kubernaut_investigate", map[string]interface{}{
@@ -94,7 +94,7 @@ var _ = Describe("KA Integration (AF -> KA -> DS -> mock-LLM)", Label("e2e", "ph
 
 		It("TC-E2E-KA-FLOW-02: kubernaut_investigate resume by session_id returns status", func() {
 			By("Creating RR so KA existence check passes (#1326 MCP migration)")
-			Expect(createRR(e2eNamespace, "e2e-flow-02-test-rr", "Deployment", "test-deploy-flow02")).To(Succeed())
+			Expect(createRR(e2eNamespace, "e2e-flow-02-test-rr", "test-deploy-flow02")).To(Succeed())
 			DeferCleanup(func() { deleteRR(e2eNamespace, "e2e-flow-02-test-rr") })
 
 			startStatus, startResult := mcpToolCall("e2e-ka-flow-02a", "kubernaut_investigate", map[string]interface{}{

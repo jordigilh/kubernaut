@@ -86,7 +86,7 @@ var _ = Describe("MCP Session Resilience (#1387)", Label("e2e", "mcp-resilience"
 		rrName := "e2e-resilience-1387-rr"
 
 		By("Creating RR fixture for investigation")
-		Expect(createRR(e2eNamespace, rrName, "Deployment", "test-deploy-1387")).To(Succeed())
+		Expect(createRR(e2eNamespace, rrName, "test-deploy-1387")).To(Succeed())
 		DeferCleanup(func() { deleteRR(e2eNamespace, rrName) })
 
 		By("Step 1: Starting investigation to populate AF session pool")
