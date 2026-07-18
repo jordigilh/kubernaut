@@ -545,8 +545,8 @@ receivers:
 	// Per BR-NOT-055: Circuit breaker provides per-channel isolation
 	circuitBreakerManager := circuitbreaker.NewManager(circuitbreaker.ManagerConfig{
 		MaxRequests:                 2,
-		Interval:                   10 * time.Second,
-		Timeout:                    30 * time.Second,
+		Interval:                    10 * time.Second,
+		Timeout:                     30 * time.Second,
 		ConsecutiveFailureThreshold: 3,
 		OnStateChange: func(name string, from, to circuitbreaker.State) {
 			if metricsRecorder != nil {
@@ -568,7 +568,7 @@ receivers:
 		APIReader:            k8sManager.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
 		Scheme:               k8sManager.GetScheme(),
 		ConsoleService:       consoleService,
-		CredentialResolver:   credResolver,          // BR-NOT-104: Per-receiver credential resolution
+		CredentialResolver:   credResolver, // BR-NOT-104: Per-receiver credential resolution
 		Sanitizer:            sanitizer,
 		CircuitBreaker:       circuitBreakerManager, // BR-NOT-055: Circuit breaker with gobreaker
 		AuditStore:           realAuditStore,        // ✅ REAL audit store (mandate compliance)
@@ -933,8 +933,8 @@ func stringContains(s, substr string) bool {
 
 // waitForReconciliationComplete waits for controller to fully complete reconciliation
 // CRITICAL: Prevents "not found" errors when tests delete CRDs before controller finishes
-func waitForReconciliationComplete(ctx context.Context, client client.Client, name, namespace string, expectedPhase notificationv1alpha1.NotificationPhase, timeout time.Duration) error {
-	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, timeout, true, func(pollCtx context.Context) (bool, error) {
+func waitForReconciliationComplete(ctx context.Context, client client.Client, name, namespace string, expectedPhase notificationv1alpha1.NotificationPhase) error {
+	return wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 30*time.Second, true, func(pollCtx context.Context) (bool, error) {
 		notif := &notificationv1alpha1.NotificationRequest{}
 		err := client.Get(pollCtx, types.NamespacedName{Name: name, Namespace: namespace}, notif)
 		if err != nil {
