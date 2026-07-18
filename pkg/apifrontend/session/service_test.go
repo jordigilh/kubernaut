@@ -241,7 +241,7 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(err).NotTo(HaveOccurred())
 			err = svc.MaterializeCRD(ctx, "prune-active", rrRef)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "prune-active", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "prune-active")).To(Succeed())
 
 			req2 := createRequestWithDefaults("prune-done", "jane.doe", createConfigState())
 			_, err = svc.Create(ctx, &req2)
@@ -733,7 +733,7 @@ var _ = Describe("CRDSessionService", func() {
 
 			err = svc.MaterializeCRD(ctx, "sess-gauge", v1alpha1.ObjectRef{Name: "rr-gauge", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "sess-gauge", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "sess-gauge")).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "sess-gauge", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "jane.doe")
 			Expect(err).NotTo(HaveOccurred())
@@ -836,7 +836,7 @@ var _ = Describe("CRDSessionService", func() {
 
 			err = svc.MaterializeCRD(ctx, "sess-audit", v1alpha1.ObjectRef{Name: "rr-audit", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "sess-audit", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "sess-audit")).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "sess-audit", v1alpha1.SessionPhaseCompleted, "done", "test-actor")
 			Expect(err).NotTo(HaveOccurred())

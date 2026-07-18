@@ -67,7 +67,7 @@ var _ = Describe("CRDSessionService concurrency", func() {
 
 		err = svc.MaterializeCRD(ctx, "race-sess", v1alpha1.ObjectRef{Name: "rr-race", Namespace: "test-ns"})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "race-sess", v1alpha1.SessionPhaseActive)).To(Succeed())
+		Expect(setSessionCRDPhase(ctx, k8s, "race-sess")).To(Succeed())
 
 		err = svc.UpdatePhase(ctx, "race-sess", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "")
 		Expect(err).NotTo(HaveOccurred())

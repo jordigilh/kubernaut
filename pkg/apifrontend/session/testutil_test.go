@@ -19,14 +19,14 @@ func createRequestWithDefaults(sessionID, userID string, state map[string]any) a
 	}
 }
 
-// setSessionCRDPhase sets status.phase on the IS CRD (AA controller ownership in production).
-//
-//nolint:unparam // namespace kept for call-site clarity; helper is shared across session_test files outside this fix's scope
-func setSessionCRDPhase(ctx context.Context, k8s client.Client, namespace, sessionID string, phase v1alpha1.SessionPhase) error {
+// setSessionCRDPhase sets status.phase to Active on the IS CRD (AA controller
+// ownership in production), in the fixed "test-ns" namespace used across all
+// session_test files.
+func setSessionCRDPhase(ctx context.Context, k8s client.Client, sessionID string) error {
 	var crd v1alpha1.InvestigationSession
-	if err := k8s.Get(ctx, types.NamespacedName{Name: sessionID, Namespace: namespace}, &crd); err != nil {
+	if err := k8s.Get(ctx, types.NamespacedName{Name: sessionID, Namespace: "test-ns"}, &crd); err != nil {
 		return err
 	}
-	crd.Status.Phase = phase
+	crd.Status.Phase = v1alpha1.SessionPhaseActive
 	return k8s.Status().Update(ctx, &crd)
 }
