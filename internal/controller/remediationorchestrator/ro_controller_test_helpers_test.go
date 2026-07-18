@@ -182,7 +182,10 @@ func newRemediationRequestWithChildRefs(name, namespace string, phase remediatio
 	return rr
 }
 
-// newSignalProcessingCompleted creates a completed SignalProcessing CRD
+// newSignalProcessingCompleted creates a completed SignalProcessing CRD.
+// This shared helper is called from many other _test.go files in this package.
+//
+//nolint:unparam // namespace always receives defaultFixture in this package, but hardcoding it would require editing those out-of-scope call sites too
 func newSignalProcessingCompleted(name, namespace, rrName string) *signalprocessingv1.SignalProcessing {
 	sp := newSignalProcessing(name, namespace, rrName, signalprocessingv1.PhaseCompleted)
 	now := metav1.Now()
@@ -334,7 +337,10 @@ func newWorkflowExecutionFailed(name, namespace, rrName, message string) *workfl
 	return we
 }
 
-// newRemediationApprovalRequestApproved creates an approved RAR
+// newRemediationApprovalRequestApproved creates an approved RAR.
+// This shared helper is called from many other _test.go files in this package.
+//
+//nolint:unparam // namespace always receives defaultFixture in this package, but hardcoding it would require editing those out-of-scope call sites too
 func newRemediationApprovalRequestApproved(name, namespace, rrName, decidedBy string) *remediationv1.RemediationApprovalRequest {
 	now := metav1.Now()
 	return &remediationv1.RemediationApprovalRequest{
@@ -376,7 +382,10 @@ func newRemediationApprovalRequestApproved(name, namespace, rrName, decidedBy st
 	}
 }
 
-// newRemediationApprovalRequestRejected creates a rejected RAR
+// newRemediationApprovalRequestRejected creates a rejected RAR.
+// This shared helper is called from many other _test.go files in this package.
+//
+//nolint:unparam // namespace always receives defaultFixture in this package, but hardcoding it would require editing those out-of-scope call sites too
 func newRemediationApprovalRequestRejected(name, namespace, rrName, decidedBy, reason string) *remediationv1.RemediationApprovalRequest {
 	now := metav1.Now()
 	return &remediationv1.RemediationApprovalRequest{

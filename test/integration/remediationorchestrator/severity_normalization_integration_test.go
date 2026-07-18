@@ -115,7 +115,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			By("4. Simulate SignalProcessing Rego normalization by updating Status")
 			// In real environment, SignalProcessing controller runs Rego policy
 			// For integration test, we use helper to consistently set normalized severity
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 			By("5. Wait for RO to create AIAnalysis")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -183,7 +183,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "high")).To(Succeed())
+			Expect(updateSPStatus(spName, "high")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -261,7 +261,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				"SignalProcessing should preserve external 'P0' in Spec")
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify normalized severity")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -323,7 +323,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
+			Expect(updateSPStatus(spName, "warning")).To(Succeed())
 
 			// RACE FIX: Ensure SignalProcessing status is fully propagated before expecting AIAnalysis
 			// In CI's faster environment, the RO controller might not see the SP status update
@@ -355,10 +355,10 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 				return false
 			}, timeout, interval).Should(BeTrue())
 
-		Expect(createdAA.Spec.AnalysisRequest.SignalContext.Severity).To(Equal("warning"),
-			"DD-SEVERITY-001: AIAnalysis should use normalized 'warning' (not external 'P3')")
+			Expect(createdAA.Spec.AnalysisRequest.SignalContext.Severity).To(Equal("warning"),
+				"DD-SEVERITY-001: AIAnalysis should use normalized 'warning' (not external 'P3')")
 
-		GinkgoWriter.Printf("✅ Severity normalization validated: P3 → warning\n")
+			GinkgoWriter.Printf("✅ Severity normalization validated: P3 → warning\n")
 		})
 	})
 
@@ -491,7 +491,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			}, timeout, interval).Should(Succeed())
 
 			// Use standard updateSPStatus which now sets reactive defaults
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify reactive signal mode")
 			var createdAA *aianalysisv1.AIAnalysis
@@ -568,7 +568,7 @@ var _ = Describe("DD-SEVERITY-001: Severity Normalization Integration", Label("i
 			}, timeout, interval).Should(Succeed())
 
 			// Simulate SignalProcessing Rego normalization using helper (DD-SEVERITY-001)
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 			By("3. Wait for AIAnalysis and verify severity")
 			var createdAA *aianalysisv1.AIAnalysis

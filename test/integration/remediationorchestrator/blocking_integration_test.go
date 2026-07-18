@@ -422,7 +422,7 @@ func createRemediationRequestWithFingerprint(targetNamespace, name, fingerprint 
 // createFailedRemediationRequestWithFingerprint creates an RR and sets it to Failed.
 // Uses same approach as simulateFailedPhase but in single function to minimize race window.
 // Used for blocking tests that need RRs pre-Failed (not transitioning during test).
-func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint string) *remediationv1.RemediationRequest {
+func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint string) {
 	// DD-TEST-PARALLELISM-003: Work WITH Controller, Not Against It
 	// Strategy: Wait for controller to naturally progress RR to Processing, THEN set to Failed.
 	// This eliminates race conditions by letting controller do its initial work first.
@@ -436,7 +436,7 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 	// Confidence: 95% - Works with controller lifecycle, not against it
 
 	// Step 1: Create RR (starts in Pending)
-	rr := createRemediationRequestWithFingerprint(namespace, name, fingerprint)
+	createRemediationRequestWithFingerprint(namespace, name, fingerprint)
 
 	// Step 2: Wait for controller to naturally progress to Processing
 	// Controller creates SignalProcessing CRD and updates RR status
@@ -478,7 +478,6 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 	}, timeout, interval).Should(Equal("Failed"), "Should confirm Failed phase persisted for %s/%s", ROControllerNamespace, name)
 
 	GinkgoWriter.Printf("✅ Set to Failed (after natural progression): %s/%s\n", ROControllerNamespace, name)
-	return rr
 }
 
 // Removed: simulateFailedPhase (unused) - Tests now use createFailedRemediationRequestWithFingerprint

@@ -67,7 +67,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -83,10 +83,10 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:     "wf-restart-pods",
-			Version:        "v1.0.0",
+			WorkflowID:      "wf-restart-pods",
+			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
-			Confidence:     0.95,
+			Confidence:      0.95,
 		}
 		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -256,7 +256,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
@@ -366,7 +366,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -433,7 +433,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, spObj)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -530,7 +530,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -633,7 +633,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)

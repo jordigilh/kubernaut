@@ -49,7 +49,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 
 	// advanceToAnalyzing advances an RR through SP → AI complete, leaving it
 	// in Analyzing phase ready to create a WFE. Returns the completed AIAnalysis.
-	advanceToAnalyzing := func(ns, rrName, targetResource string) (*remediationv1.RemediationRequest, *aianalysisv1.AIAnalysis) {
+	advanceToAnalyzing := func(ns, rrName string) (*remediationv1.RemediationRequest, *aianalysisv1.AIAnalysis) {
 		rr := createRemediationRequest(ns, rrName)
 
 		// Wait for SP creation
@@ -78,7 +78,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 		}
 		Expect(spName).NotTo(BeEmpty())
 		Eventually(func() error {
-			return updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)
+			return updateSPStatus(spName)
 		}, timeout, interval).Should(Succeed())
 
 		// Wait for AI Analysis creation
@@ -153,7 +153,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
 
 			// Create RR1 and advance to Analyzing
-			rr1, _ := advanceToAnalyzing(ns, "rr-lock-001", targetResource)
+			rr1, _ := advanceToAnalyzing(ns, "rr-lock-001")
 
 			// Wait for WFE creation from RR1
 			Eventually(func() bool {
@@ -170,7 +170,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			}, timeout, interval).Should(BeTrue(), "WFE should be created for RR1")
 
 			// Create RR2 targeting the same resource
-			rr2, _ := advanceToAnalyzing(ns, "rr-lock-002", targetResource)
+			rr2, _ := advanceToAnalyzing(ns, "rr-lock-002")
 
 			// Wait for RR2 to be processed (either WFE created or blocked)
 			Eventually(func() string {
@@ -206,8 +206,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			ns := createTestNamespace(ctx, "locking-fail-release")
 			defer deleteTestNamespace(ns)
 
-			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
-			rr, _ := advanceToAnalyzing(ns, "rr-lock-fail", targetResource)
+			rr, _ := advanceToAnalyzing(ns, "rr-lock-fail")
 
 			// Wait for reconcile to process (either creates WFE or fails)
 			Eventually(func() string {
@@ -240,10 +239,8 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			ns := createTestNamespace(ctx, "locking-release-proceed")
 			defer deleteTestNamespace(ns)
 
-			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
-
 			// Create RR1 and let it create WFE
-			rr1, _ := advanceToAnalyzing(ns, "rr-lock-first", targetResource)
+			rr1, _ := advanceToAnalyzing(ns, "rr-lock-first")
 
 			// Wait for WFE1 creation
 			Eventually(func() bool {
@@ -288,7 +285,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
 
 			// Create RR1 via normal path, let it create WFE1
-			rr1, _ := advanceToAnalyzing(ns, "rr-lock-normal", targetResource)
+			rr1, _ := advanceToAnalyzing(ns, "rr-lock-normal")
 
 			// Wait for WFE1 creation
 			Eventually(func() bool {
@@ -322,7 +319,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			for _, sp := range spList.Items {
 				if sp.Spec.RemediationRequestRef.Name == rrLockApproval {
 					Eventually(func() error {
-						return updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted)
+						return updateSPStatus(sp.Name)
 					}, timeout, interval).Should(Succeed())
 					break
 				}
@@ -438,8 +435,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			ns := createTestNamespace(ctx, "locking-idempotency")
 			defer deleteTestNamespace(ns)
 
-			targetResource := fmt.Sprintf("%s/Deployment/test-app", ns)
-			rr, _ := advanceToAnalyzing(ns, "rr-lock-idem", targetResource)
+			rr, _ := advanceToAnalyzing(ns, "rr-lock-idem")
 
 			// Wait for WFE creation
 			Eventually(func() bool {

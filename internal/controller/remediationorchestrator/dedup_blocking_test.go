@@ -50,8 +50,8 @@ const (
 
 // newBlockedDuplicateRR creates a Blocked RR with BlockReason=DuplicateInProgress
 // referencing the given original RR name.
-func newBlockedDuplicateRR(name, namespace, duplicateOf string) *remediationv1.RemediationRequest {
-	rr := newRemediationRequest(name, namespace, remediationv1.PhaseBlocked)
+func newBlockedDuplicateRR(name, duplicateOf string) *remediationv1.RemediationRequest {
+	rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseBlocked)
 	rr.Status.BlockReason = remediationv1.BlockReasonDuplicateInProgress
 	rr.Status.BlockMessage = "Another remediation is in progress for this fingerprint"
 	rr.Status.DuplicateOf = duplicateOf
@@ -76,7 +76,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR := newRemediationRequest("original-rr-001", defaultFixture, remediationv1.PhaseCompleted)
 			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
-			dupRR := newBlockedDuplicateRR("dup-rr-001", defaultFixture, "original-rr-001")
+			dupRR := newBlockedDuplicateRR("dup-rr-001", "original-rr-001")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -123,7 +123,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR.Status.FailurePhase = &failPhase
 			originalRR.Status.FailureReason = &failReason
 
-			dupRR := newBlockedDuplicateRR("dup-rr-002", defaultFixture, "original-rr-002")
+			dupRR := newBlockedDuplicateRR("dup-rr-002", "original-rr-002")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -171,7 +171,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 	Context("Edge cases", func() {
 
 		It("UT-RO-614-003: deleted original RR → duplicate inherits Failed (dangling reference)", func() {
-			dupRR := newBlockedDuplicateRR("dup-rr-003", defaultFixture, "deleted-original-003")
+			dupRR := newBlockedDuplicateRR("dup-rr-003", "deleted-original-003")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(dupRR).
@@ -214,7 +214,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 		})
 
 		It("UT-RO-614-004: transient Get error on original RR → reconcile error (retryable)", func() {
-			dupRR := newBlockedDuplicateRR("dup-rr-004", defaultFixture, "transient-original-004")
+			dupRR := newBlockedDuplicateRR("dup-rr-004", "transient-original-004")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(dupRR).
@@ -261,7 +261,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR := newRemediationRequest("original-rr-005", defaultFixture, remediationv1.PhaseCompleted)
 			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
-			dupRR := newBlockedDuplicateRR("dup-rr-005", defaultFixture, "original-rr-005")
+			dupRR := newBlockedDuplicateRR("dup-rr-005", "original-rr-005")
 
 			m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 			m.CurrentBlockedGauge.WithLabelValues(defaultFixture).Set(1)
@@ -299,7 +299,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR.Status.FailurePhase = &failPhase
 			originalRR.Status.FailureReason = &failReason
 
-			dupRR := newBlockedDuplicateRR("dup-rr-006", defaultFixture, "original-rr-006")
+			dupRR := newBlockedDuplicateRR("dup-rr-006", "original-rr-006")
 
 			m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 			m.CurrentBlockedGauge.WithLabelValues(defaultFixture).Set(1)
@@ -337,7 +337,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR := newRemediationRequest("original-rr-007", defaultFixture, remediationv1.PhaseCompleted)
 			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
-			dupRR := newBlockedDuplicateRR("dup-rr-007", defaultFixture, "original-rr-007")
+			dupRR := newBlockedDuplicateRR("dup-rr-007", "original-rr-007")
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -380,7 +380,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR.Status.FailurePhase = &failPhase
 			originalRR.Status.FailureReason = &failReason
 
-			dupRR := newBlockedDuplicateRR("dup-rr-008", defaultFixture, "original-rr-008")
+			dupRR := newBlockedDuplicateRR("dup-rr-008", "original-rr-008")
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -423,7 +423,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR := newRemediationRequest("original-rr-009", defaultFixture, remediationv1.PhaseExecuting)
 			originalRR.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-			dupRR := newBlockedDuplicateRR("dup-rr-009", defaultFixture, "original-rr-009")
+			dupRR := newBlockedDuplicateRR("dup-rr-009", "original-rr-009")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -501,7 +501,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR.Status.FailurePhase = &failPhase
 			originalRR.Status.FailureReason = &failReason
 
-			dupRR := newBlockedDuplicateRR("dup-rr-011", defaultFixture, "original-rr-011")
+			dupRR := newBlockedDuplicateRR("dup-rr-011", "original-rr-011")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -534,7 +534,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 		It("UT-RO-614-012: original RR TimedOut → duplicate inherits Failed (non-Completed terminal phases map to Failed)", func() {
 			originalRR := newRemediationRequest("original-rr-012", defaultFixture, remediationv1.PhaseTimedOut)
 
-			dupRR := newBlockedDuplicateRR("dup-rr-012", defaultFixture, "original-rr-012")
+			dupRR := newBlockedDuplicateRR("dup-rr-012", "original-rr-012")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -577,7 +577,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			originalRR := newRemediationRequest("original-rr-f3", defaultFixture, remediationv1.PhaseCompleted)
 			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
-			dupRR := newBlockedDuplicateRR("dup-rr-f3", defaultFixture, "original-rr-f3")
+			dupRR := newBlockedDuplicateRR("dup-rr-f3", "original-rr-f3")
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).

@@ -143,7 +143,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 			fakeClientBuilder = fake.NewClientBuilder().WithScheme(scheme)
 			ctx = context.Background()
 			transitionFailedCalls = 0
-			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.FailurePhase, reason error) (ctrl.Result, error) {
+			// ctx is unused here by design: this is the lightweight default mock for
+			// tests that only assert call count, not persisted state. Its signature
+			// must match handler.NewAIAnalysisHandler's ttf parameter type; tests that
+			// need real persistence swap in createMockTransitionFailed below, which
+			// does use ctx to call client.Status().Update.
+			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.FailurePhase, reason error) (ctrl.Result, error) { //nolint:unparam // ctx required to match TransitionFailedFunc signature (see handler.NewAIAnalysisHandler)
 				transitionFailedCalls++
 				return ctrl.Result{}, nil
 			}

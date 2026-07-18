@@ -101,7 +101,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-005", defaultFixture)
+			setWERef(rr, "dedup-wfe-005")
 			rr.Status.DeduplicatedByWE = "original-wfe-005"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-005", defaultFixture, "prop-rr-005", workflowexecutionv1.PhaseFailed)
@@ -146,7 +146,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-006", defaultFixture)
+			setWERef(rr, "dedup-wfe-006")
 			rr.Status.DeduplicatedByWE = "original-wfe-006"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-006", defaultFixture, "prop-rr-006", workflowexecutionv1.PhaseFailed)
@@ -191,7 +191,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-011", defaultFixture)
+			setWERef(rr, "dedup-wfe-011")
 			rr.Status.DeduplicatedByWE = "deleted-wfe-011"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-011", defaultFixture, "prop-rr-011", workflowexecutionv1.PhaseFailed)
@@ -233,7 +233,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-012", defaultFixture)
+			setWERef(rr, "dedup-wfe-012")
 			rr.Status.DeduplicatedByWE = "running-wfe-012"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-012", defaultFixture, "prop-rr-012", workflowexecutionv1.PhaseFailed)
@@ -277,7 +277,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-016", defaultFixture)
+			setWERef(rr, "dedup-wfe-016")
 			rr.Status.DeduplicatedByWE = "running-wfe-016"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-016", defaultFixture, "prop-rr-016", workflowexecutionv1.PhaseFailed)
@@ -329,7 +329,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-015", defaultFixture)
+			setWERef(rr, "dedup-wfe-015")
 			rr.Status.DeduplicatedByWE = "original-wfe-015"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-015", defaultFixture, "prop-rr-015", workflowexecutionv1.PhaseFailed)
@@ -380,7 +380,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-019", defaultFixture)
+			setWERef(rr, "dedup-wfe-019")
 			rr.Status.DeduplicatedByWE = transientErrorWfe019
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-019", defaultFixture, "prop-rr-019", workflowexecutionv1.PhaseFailed)
@@ -433,7 +433,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-017", defaultFixture)
+			setWERef(rr, "dedup-wfe-017")
 			rr.Status.DeduplicatedByWE = "failed-original-017"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-017", defaultFixture, "prop-rr-017", workflowexecutionv1.PhaseFailed)
@@ -481,7 +481,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-018", defaultFixture)
+			setWERef(rr, "dedup-wfe-018")
 			rr.Status.DeduplicatedByWE = "failed-original-018"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-018", defaultFixture, "prop-rr-018", workflowexecutionv1.PhaseFailed)
@@ -527,7 +527,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-013", defaultFixture)
+			setWERef(rr, "dedup-wfe-013")
 			rr.Status.DeduplicatedByWE = "deleted-wfe-013"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-013", defaultFixture, "prop-rr-013", workflowexecutionv1.PhaseFailed)
@@ -570,7 +570,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-014", defaultFixture)
+			setWERef(rr, "dedup-wfe-014")
 			rr.Status.DeduplicatedByWE = "failed-original-014"
 
 			dedupWFE := newWorkflowExecution("dedup-wfe-014", defaultFixture, "prop-rr-014", workflowexecutionv1.PhaseFailed)
@@ -613,12 +613,12 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 	})
 })
 
-func setWERef(rr *remediationv1.RemediationRequest, name, namespace string) {
+func setWERef(rr *remediationv1.RemediationRequest, name string) {
 	rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 		APIVersion: workflowexecutionv1.GroupVersion.String(),
 		Kind:       "WorkflowExecution",
 		Name:       name,
-		Namespace:  namespace,
+		Namespace:  defaultFixture,
 	}
 }
 

@@ -65,7 +65,7 @@ func driveToExecuting(ns, rrName string) *remediationv1.RemediationRequest {
 	Eventually(func() error {
 		return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 	}, timeout, interval).Should(Succeed())
-	Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+	Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 	Eventually(func() remediationv1.RemediationPhase {
 		_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)

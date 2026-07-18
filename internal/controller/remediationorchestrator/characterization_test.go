@@ -92,6 +92,9 @@ func newCharTimeouts() prodcontroller.TimeoutConfig {
 	}
 }
 
+// newCharReconciler is also called from apply_transition_test.go in this package.
+//
+//nolint:unparam // the *record.FakeRecorder result is unused by every caller in this file, but dropping it would require editing apply_transition_test.go too, which is out of scope for this edit
 func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, routingEngine routing.Engine) (*prodcontroller.Reconciler, *record.FakeRecorder) {
 	recorder := record.NewFakeRecorder(20)
 	r := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{

@@ -30,9 +30,9 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ============================================================================
@@ -63,7 +63,7 @@ var _ = Describe("RO Propagation Delay (DD-EM-004 v2.0, BR-RO-103, Issue #253)",
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {

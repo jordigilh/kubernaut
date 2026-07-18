@@ -232,7 +232,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
+			Expect(updateSPStatus(sp.Name, "warning")).To(Succeed())
 
 			// Wait for RO to create AIAnalysis
 			ai := &aianalysisv1.AIAnalysis{}
@@ -342,7 +342,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
+			Expect(updateSPStatus(sp.Name, "warning")).To(Succeed())
 
 			// Complete AIAnalysis
 			ai := &aianalysisv1.AIAnalysis{}
@@ -505,7 +505,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 				return err == nil
 			}, timeout, interval).Should(BeTrue())
 
-			Expect(updateSPStatus(ROControllerNamespace, sp.Name, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
+			Expect(updateSPStatus(sp.Name, "warning")).To(Succeed())
 
 			// Fail AIAnalysis to trigger remediation failure
 			ai := &aianalysisv1.AIAnalysis{}

@@ -110,7 +110,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating SignalProcessing completion")
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Waiting for AIAnalysis to be created")
 			aiName := fmt.Sprintf("ai-%s", rrName)
@@ -223,7 +223,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				sp := &signalprocessingv1.SignalProcessing{}
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Progressing through AI with approval required")
 			aiName := fmt.Sprintf("ai-%s", rrName)

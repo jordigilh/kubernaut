@@ -63,7 +63,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			sp := &signalprocessingv1.SignalProcessing{}
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		Eventually(func() error {

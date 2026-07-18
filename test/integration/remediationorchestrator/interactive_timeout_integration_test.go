@@ -77,7 +77,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension (Integration
 		}, timeout, interval).Should(Succeed())
 
 		By("Completing SignalProcessing to advance RR to Processing")
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		By("Waiting for AIAnalysis to be created by the controller")
 		aiName = fmt.Sprintf("ai-%s", rrName)
