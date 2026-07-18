@@ -601,7 +601,7 @@ skip_covered = false
 // coverageEnvYAML returns the YAML snippet for the GOCOVERDIR env var
 // when E2E_COVERAGE=true, or an empty string otherwise.
 // The indentation assumes container env section (8 spaces).
-func coverageEnvYAML(serviceName string) string {
+func coverageEnvYAML() string {
 	if os.Getenv("E2E_COVERAGE") != trueFixture {
 		return ""
 	}

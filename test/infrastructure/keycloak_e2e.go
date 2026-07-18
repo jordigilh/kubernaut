@@ -306,7 +306,7 @@ spec:
     nodePort: 30557
   selector:
     app: keycloak
-`, namespace, indentPEM(keycloakRealmFleetJSON, 4), keycloakImage)
+`, namespace, indentPEM(keycloakRealmFleetJSON), keycloakImage)
 
 	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)

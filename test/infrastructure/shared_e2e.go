@@ -627,7 +627,7 @@ spec:
 func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
 	projectRoot := getProjectRoot()
 
-	imageTag := generateInfrastructureImageTag("kubernautagent", serviceName)
+	imageTag := generateInfrastructureImageTag(serviceName)
 	localImageName := fmt.Sprintf("localhost/kubernautagent:%s", imageTag)
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
@@ -646,7 +646,7 @@ func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io
 	tag := os.Getenv("IMAGE_TAG")
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
-	registryImage, pulled, err := tryPullFromRegistry(ctx, "kubernautagent", localImageName, writer)
+	registryImage, pulled, err := tryPullFromRegistry(ctx, "kubernautagent", writer)
 	if err != nil {
 		return "", fmt.Errorf("failed during registry pull attempt: %w", err)
 	}

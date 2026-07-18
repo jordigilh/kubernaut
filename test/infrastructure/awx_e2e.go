@@ -512,8 +512,8 @@ func waitForAllContainersReady(ctx context.Context, clientset kubernetes.Interfa
 	return fmt.Errorf("timeout waiting for AWX web pod containers to become ready")
 }
 
-// awxAPIRequest makes an authenticated request to the AWX API.
-func awxAPIRequest(ctx context.Context, method, url string, body interface{}, token string) (map[string]interface{}, int, error) {
+// awxAPIRequest makes a request to the AWX API authenticated via HTTP basic auth.
+func awxAPIRequest(ctx context.Context, method, url string, body interface{}) (map[string]interface{}, int, error) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonBody, err := json.Marshal(body)
@@ -528,11 +528,7 @@ func awxAPIRequest(ctx context.Context, method, url string, body interface{}, to
 		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	} else {
-		req.SetBasicAuth(AWXAdminUser, AWXAdminPass)
-	}
+	req.SetBasicAuth(AWXAdminUser, AWXAdminPass)
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
@@ -572,7 +568,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	authDeadline := time.Now().Add(2 * time.Minute)
 	authReady := false
 	for attempt := 0; time.Now().Before(authDeadline); attempt++ {
-		_, meStatus, meErr := awxAPIRequest(ctx, "GET", awxBaseURL+"/api/v2/me/", nil, "")
+		_, meStatus, meErr := awxAPIRequest(ctx, "GET", awxBaseURL+"/api/v2/me/", nil)
 		if meErr == nil && meStatus == http.StatusOK {
 			authReady = true
 			break
@@ -597,7 +593,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	orgCreated := false
 	for attempt := 0; attempt < 12; attempt++ {
 		var orgErr error
-		orgResult, orgStatus, orgErr = awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/organizations/", orgBody, "")
+		orgResult, orgStatus, orgErr = awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/organizations/", orgBody)
 		if orgErr != nil {
 			return nil, fmt.Errorf("failed to create organization: %w", orgErr)
 		}
@@ -641,7 +637,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	projectCreated := false
 	for attempt := 0; attempt < 6; attempt++ {
 		var projErr error
-		projectResult, projectStatus, projErr = awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/projects/", projectBody, "")
+		projectResult, projectStatus, projErr = awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/projects/", projectBody)
 		if projErr != nil {
 			return nil, fmt.Errorf("failed to create project: %w", projErr)
 		}
@@ -651,7 +647,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		}
 		if projectStatus == http.StatusBadRequest || projectStatus == http.StatusConflict {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Project may already exist (HTTP %d), looking up by name...\n", projectStatus)
-			existingResult, existingStatus, lookupErr := awxAPIRequest(ctx, "GET", fmt.Sprintf("%s/api/v2/projects/?name=%s", awxBaseURL, "kubernaut-test-playbooks"), nil, "")
+			existingResult, existingStatus, lookupErr := awxAPIRequest(ctx, "GET", fmt.Sprintf("%s/api/v2/projects/?name=%s", awxBaseURL, "kubernaut-test-playbooks"), nil)
 			if lookupErr == nil && existingStatus == http.StatusOK {
 				if results, ok := existingResult["results"].([]interface{}); ok && len(results) > 0 {
 					if proj, ok := results[0].(map[string]interface{}); ok {
@@ -688,7 +684,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 	syncDeadline := time.Now().Add(5 * time.Minute)
 	projectSynced := false
 	for time.Now().Before(syncDeadline) {
-		result, _, _ := awxAPIRequest(ctx, "GET", fmt.Sprintf("%s/api/v2/projects/%d/", awxBaseURL, cfg.ProjectID), nil, "")
+		result, _, _ := awxAPIRequest(ctx, "GET", fmt.Sprintf("%s/api/v2/projects/%d/", awxBaseURL, cfg.ProjectID), nil)
 		if result != nil {
 			if status, _ := result["status"].(string); status == "successful" {
 				projectSynced = true
@@ -711,7 +707,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		"description":  "Local execution for E2E tests",
 		"organization": cfg.OrganizationID,
 	}
-	invResult, invStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/inventories/", invBody, "")
+	invResult, invStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/inventories/", invBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create inventory: %w", err)
 	}
@@ -726,7 +722,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		"name":      "localhost",
 		"variables": "ansible_connection: local\nansible_python_interpreter: /usr/bin/python3",
 	}
-	_, hostStatus, err := awxAPIRequest(ctx, "POST", fmt.Sprintf("%s/api/v2/inventories/%d/hosts/", awxBaseURL, cfg.InventoryID), hostBody, "")
+	_, hostStatus, err := awxAPIRequest(ctx, "POST", fmt.Sprintf("%s/api/v2/inventories/%d/hosts/", awxBaseURL, cfg.InventoryID), hostBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add host to inventory: %w", err)
 	}
@@ -744,7 +740,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		"inventory":               cfg.InventoryID,
 		"ask_variables_on_launch": true,
 	}
-	successResult, successStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", successBody, "")
+	successResult, successStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", successBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create success template: %w", err)
 	}
@@ -764,7 +760,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		"inventory":               cfg.InventoryID,
 		"ask_variables_on_launch": true,
 	}
-	failureResult, failureStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", failureBody, "")
+	failureResult, failureStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", failureBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create failure template: %w", err)
 	}
@@ -794,7 +790,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 			"ask_variables_on_launch":  true,
 			"ask_credential_on_launch": true,
 		}
-		dtResult, dtStatus, dtErr := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", dtBody, "")
+		dtResult, dtStatus, dtErr := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", dtBody)
 		switch {
 		case dtErr != nil:
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to create template %s (non-fatal): %v\n", dt.name, dtErr)
@@ -819,7 +815,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 			"username": "e2e-test-user",
 		},
 	}
-	machineCredResult, machineCredStatus, machineCredErr := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/credentials/", machineCredBody, "")
+	machineCredResult, machineCredStatus, machineCredErr := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/credentials/", machineCredBody)
 	if machineCredErr != nil || machineCredStatus != http.StatusCreated {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to create machine credential for #365 (non-fatal): HTTP %d, err: %v\n", machineCredStatus, machineCredErr)
 	} else {
@@ -835,7 +831,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 			"ask_variables_on_launch":  true,
 			"ask_credential_on_launch": true,
 		}
-		credMergeResult, credMergeStatus, credMergeErr := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", credMergeBody, "")
+		credMergeResult, credMergeStatus, credMergeErr := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/job_templates/", credMergeBody)
 		if credMergeErr != nil || credMergeStatus != http.StatusCreated {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to create cred-merge template (non-fatal): HTTP %d, err: %v\n", credMergeStatus, credMergeErr)
 		} else {
@@ -846,7 +842,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 			attachBody := map[string]interface{}{"id": machineCredID}
 			_, attachStatus, attachErr := awxAPIRequest(ctx, "POST",
 				fmt.Sprintf("%s/api/v2/job_templates/%d/credentials/", awxBaseURL, credMergeTemplateID),
-				attachBody, "")
+				attachBody)
 			if attachErr != nil || (attachStatus != http.StatusNoContent && attachStatus != http.StatusOK && attachStatus != http.StatusCreated) {
 				_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to attach credential to template (non-fatal): HTTP %d, err: %v\n", attachStatus, attachErr)
 			} else {
@@ -861,7 +857,7 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		"description": "Kubernaut WE controller E2E token",
 		"scope":       "write",
 	}
-	tokenResult, tokenStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/users/1/personal_tokens/", tokenBody, "")
+	tokenResult, tokenStatus, err := awxAPIRequest(ctx, "POST", awxBaseURL+"/api/v2/users/1/personal_tokens/", tokenBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create API token: %w", err)
 	}

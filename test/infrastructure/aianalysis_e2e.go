@@ -793,7 +793,7 @@ spec:
     targetPort: 8081
     nodePort: 30284
 `, imageName, GetImagePullPolicy(),
-		coverageEnvYAML("aianalysis"),
+		coverageEnvYAML(),
 		coverageVolumeMountYAML(),
 		coverageVolumeYAML())
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")

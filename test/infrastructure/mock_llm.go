@@ -125,7 +125,7 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 
 	// CI/CD Optimization: Try to pull from registry if configured
 	// Note: We try to pull with the unique image name, then tag as base for consistency
-	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "mock-llm", uniqueImageName, writer); pulled {
+	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "mock-llm", writer); pulled {
 		if err != nil {
 			return "", err // Tag failed after successful pull
 		}

@@ -222,7 +222,7 @@ func BuildImageForKind(ctx context.Context, cfg E2EImageConfig, writer io.Writer
 	// Generate DD-TEST-001 v1.3 compliant tag
 	// Use ServiceName for infrastructure field (not full ImageName with repo prefix)
 	// to avoid "/" in tags which Docker/Podman rejects
-	imageTag := generateInfrastructureImageTag(cfg.ServiceName, cfg.ServiceName)
+	imageTag := generateInfrastructureImageTag(cfg.ServiceName)
 	fullImageName := fmt.Sprintf("%s:%s", cfg.ImageName, imageTag)
 
 	// Podman automatically prefixes images with "localhost/" if no registry is specified

@@ -473,13 +473,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		deployF func() error
 	}{
 		{"SignalProcessing", func() error {
-			return deployFullPipelineSPController(ctx, namespace, kubeconfigPath, builtImages["signalprocessing"], writer)
+			return deployFullPipelineSPController(ctx, kubeconfigPath, builtImages["signalprocessing"], writer)
 		}},
 		{"RemediationOrchestrator", func() error {
 			return DeployROCoverageManifest(ctx, kubeconfigPath, builtImages["remediationorchestrator"], writer)
 		}},
 		{"AIAnalysis", func() error {
-			return deployFullPipelineAAController(ctx, namespace, kubeconfigPath, builtImages["aianalysis"], writer)
+			return deployFullPipelineAAController(ctx, kubeconfigPath, builtImages["aianalysis"], writer)
 		}},
 		{"WorkflowExecution", func() error {
 			return DeployWorkflowExecutionController(ctx, namespace, kubeconfigPath, builtImages["workflowexecution"], writer)
@@ -741,7 +741,7 @@ func loadFullPipelineImages(ctx context.Context, builtImages map[string]string, 
 
 // deployFullPipelineSPController deploys the SignalProcessing controller with
 // Rego policy ConfigMap for the full pipeline E2E.
-func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
+func deployFullPipelineSPController(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Install all SP-specific Rego policy ConfigMaps and proactive signal mappings
 	// (5 policies + 1 proactive mapping ConfigMap required by SP controller)
 	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
@@ -757,7 +757,7 @@ func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPa
 
 // deployFullPipelineAAController deploys the AIAnalysis controller with
 // Rego policy and proper RBAC for the full pipeline E2E.
-func deployFullPipelineAAController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
+func deployFullPipelineAAController(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Install AA-specific Rego policy ConfigMap (aianalysis-policies)
 	if err := createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create AA Rego policy ConfigMap: %w", err)

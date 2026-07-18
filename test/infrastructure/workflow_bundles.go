@@ -120,21 +120,20 @@ func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigP
 		name       string
 		version    string
 		fixtureDIR string
-		desc       string
 	}{
-		{"test-hello-world", "v1.0.0", "hello-world", "Simple hello-world workflow for E2E testing"},
-		{"test-intentional-failure", "v1.0.0", "failing", "Intentionally failing workflow for E2E failure handling tests"},
-		{"test-dep-secret-job", "v1.0.0", "dep-secret-job", "Job workflow with Secret dependency for DD-WE-006 E2E testing"},
-		{"test-dep-secret-tekton", "v1.0.0", "dep-secret-tekton", "Tekton workflow with Secret dependency for DD-WE-006 E2E testing"},
-		{"test-dep-configmap-job", "v1.0.0", "dep-configmap-job", "Job workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
-		{"test-dep-configmap-tekton", "v1.0.0", "dep-configmap-tekton", "Tekton workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
-		{"test-job-hello-world", "v1.0.0", "job-hello-world", "Job backend hello-world workflow for BR-WE-014 E2E testing"},
-		{"test-job-intentional-failure", "v1.0.0", "job-failing", "Job backend intentionally failing workflow for BR-WE-014 E2E testing"},
-		{"test-job-oomkill", "v1.0.0", "job-oomkill", "Job backend OOM-kill-simulation workflow for DD-WE-008 E2E testing"},
-		{"test-ansible-success", "v1.0.0", "ansible-success", "Ansible engine success workflow for BR-WE-015 E2E testing"},
-		{"test-ansible-failure", "v1.0.0", "ansible-failure", "Ansible engine failure workflow for BR-WE-015 E2E testing"},
-		{"test-dep-secret-ansible", "v1.0.0", "dep-secret-ansible", "Ansible workflow with Secret dependency for DD-WE-006/BR-WE-015 E2E testing"},
-		{"test-dep-configmap-ansible", "v1.0.0", "dep-configmap-ansible", "Ansible workflow with ConfigMap dependency for DD-WE-006/BR-WE-015 E2E testing"},
+		{"test-hello-world", "v1.0.0", "hello-world"},
+		{"test-intentional-failure", "v1.0.0", "failing"},
+		{"test-dep-secret-job", "v1.0.0", "dep-secret-job"},
+		{"test-dep-secret-tekton", "v1.0.0", "dep-secret-tekton"},
+		{"test-dep-configmap-job", "v1.0.0", "dep-configmap-job"},
+		{"test-dep-configmap-tekton", "v1.0.0", "dep-configmap-tekton"},
+		{"test-job-hello-world", "v1.0.0", "job-hello-world"},
+		{"test-job-intentional-failure", "v1.0.0", "job-failing"},
+		{"test-job-oomkill", "v1.0.0", "job-oomkill"},
+		{"test-ansible-success", "v1.0.0", "ansible-success"},
+		{"test-ansible-failure", "v1.0.0", "ansible-failure"},
+		{"test-dep-secret-ansible", "v1.0.0", "dep-secret-ansible"},
+		{"test-dep-configmap-ansible", "v1.0.0", "dep-configmap-ansible"},
 	}
 
 	for _, bw := range bundleWorkflows {
@@ -151,7 +150,6 @@ func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigP
 			bw.name,
 			bw.version,
 			content,
-			bw.desc,
 			output,
 		)
 		if regErr != nil {
@@ -188,7 +186,7 @@ func readWorkflowFixtureContent(fixtureName string) (string, error) {
 // ADR-058: Sends CRD YAML content directly (inline) instead of OCI pullspec.
 // Returns the DS-assigned UUID for use in WorkflowExecution specs (DD-WE-006).
 // Includes DD-AUTH-014 ServiceAccount authentication.
-func registerTestBundleWorkflow(ctx context.Context, dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent, description string, output io.Writer) (string, error) {
+func registerTestBundleWorkflow(ctx context.Context, dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent string, output io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) inline\n", workflowName, version)
 
 	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
