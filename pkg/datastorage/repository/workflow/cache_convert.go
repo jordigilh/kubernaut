@@ -102,9 +102,13 @@ func crdDetectedLabelsToModel(raw *apiextensionsv1.JSON) (models.DetectedLabels,
 }
 
 // crdWorkflowToModel converts a cached RemediationWorkflow CRD into
-// models.RemediationWorkflow for the discovery-protocol response shape
-// (models.WorkflowDiscoveryEntry, built by convertWorkflowsToDiscoveryEntries
-// in workflow_discovery_handlers.go).
+// models.RemediationWorkflow for both the discovery-protocol list response
+// shape (models.WorkflowDiscoveryEntry, built by
+// convertWorkflowsToDiscoveryEntries in workflow_discovery_handlers.go) and
+// the Step 3 GetByID/GetWorkflowWithContextFilters full-object response
+// (HandleGetWorkflowByID encodes this struct directly, so every field it
+// documents as part of its contract -- e.g. spec.parameters[] for LLM
+// parameter validation -- must be populated here).
 //
 // Catalog-only fields with no CRD equivalent (Owner, Maintainer, SchemaImage/
 // SchemaDigest, PreviousVersion, DeprecationNotice, VersionNotes,
@@ -154,7 +158,41 @@ func crdWorkflowToModel(rw *rwv1alpha1.RemediationWorkflow) (models.RemediationW
 		wf.EngineConfig = &raw
 	}
 
+	if len(rw.Spec.Parameters) > 0 {
+		raw, err := wrapCRDParameters(rw.Spec.Parameters)
+		if err != nil {
+			return models.RemediationWorkflow{}, fmt.Errorf("workflow %s: %w", rw.Name, err)
+		}
+		wf.Parameters = &raw
+	}
+
 	return wf, nil
+}
+
+// wrapCRDParameters marshals a RemediationWorkflow CRD's spec.parameters[]
+// into the `{"schema":{"parameters":[...]}}` envelope models.RemediationWorkflow.Parameters
+// has always used -- see buildWrappedWorkflowParameters
+// (pkg/datastorage/server/workflow_duplicate_handlers.go), the original
+// inline/OCI registration path this mirrors. The OpenAPI schema declares
+// `parameters` as `type: object` (not `array`) precisely because of this
+// envelope, and the ogen-generated client decodes it as `map[string]jx.Raw`
+// -- marshaling the bare parameter array here (without the envelope) breaks
+// ogen's decoder for every caller (confirmed via IT-KA-433-035).
+func wrapCRDParameters(params []rwv1alpha1.RemediationWorkflowParameter) (json.RawMessage, error) {
+	extracted, err := json.Marshal(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal parameters: %w", err)
+	}
+	wrapped := map[string]interface{}{
+		"schema": map[string]json.RawMessage{
+			"parameters": extracted,
+		},
+	}
+	wrappedJSON, err := json.Marshal(wrapped)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal parameters envelope: %w", err)
+	}
+	return json.RawMessage(wrappedJSON), nil
 }
 
 // crdDescriptionToShared adapts a RemediationWorkflow CRD's description

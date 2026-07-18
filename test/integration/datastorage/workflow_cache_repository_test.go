@@ -189,4 +189,59 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 			Expect(e.ActionType).ToNot(Equal(disabledActionType), "a non-Active action type must never appear, even with a matching workflow")
 		}
 	})
+
+	// #1661 Phase 55 prerequisite: Step 3 (GetByID/GetWorkflowWithContextFilters)
+	// was ported to the cache ahead of the rest of Phase 55 -- AuthWebhook already
+	// stopped writing to Postgres (Change 8c), so the SQL-backed GetByID could not
+	// find ANY workflow admitted after that change landed. These two specs prove
+	// the fix using the same nil-*sqlx.DB negative-proof technique as IT-DS-1661-P32-001/002.
+	It("IT-DS-1661-P32-003: GetByID returns the cache-sourced workflow by its content-hash workflow_id, with spec.parameters populated", func() {
+		actionType := uniquePascalName("CacheGetByIDAction")
+		name := uniqueName("it-1661-p32-getbyid")
+		rw := validRW(name, actionType, []string{"critical"})
+		rw.Spec.Parameters = []rwv1alpha1.RemediationWorkflowParameter{
+			{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+		}
+		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+
+		rw.Status.WorkflowID = uniqueName("wfid")
+		Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())
+
+		Eventually(func() (*models.RemediationWorkflow, error) {
+			return repo.GetByID(ctx, rw.Status.WorkflowID)
+		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(), "the cache-backed path must find the workflow once the informer observes it")
+
+		got, err := repo.GetByID(ctx, rw.Status.WorkflowID)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got).ToNot(BeNil())
+		Expect(got.WorkflowName).To(Equal(name))
+		Expect(got.ActionType).To(Equal(actionType))
+		Expect(got.Parameters).ToNot(BeNil(), "spec.parameters[] must be populated -- HandleGetWorkflowByID's documented contract for LLM parameter validation")
+	})
+
+	It("IT-DS-1661-P32-004: GetWorkflowWithContextFilters applies the security gate -- matching context returns the workflow, non-matching returns nil without distinguishing not-found", func() {
+		actionType := uniquePascalName("CacheContextGateAction")
+		name := uniqueName("it-1661-p32-gate")
+		rw := validRW(name, actionType, []string{"critical"})
+		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+
+		rw.Status.WorkflowID = uniqueName("wfid-gate")
+		Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())
+
+		matchingFilters := &models.WorkflowDiscoveryFilters{Severity: "critical"}
+		Eventually(func() (*models.RemediationWorkflow, error) {
+			return repo.GetWorkflowWithContextFilters(ctx, rw.Status.WorkflowID, matchingFilters)
+		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(), "matching context filters must return the workflow once the informer observes it")
+
+		nonMatchingFilters := &models.WorkflowDiscoveryFilters{Severity: "low"}
+		got, err := repo.GetWorkflowWithContextFilters(ctx, rw.Status.WorkflowID, nonMatchingFilters)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got).To(BeNil(), "a workflow that exists but fails the context-filter security gate must return nil, nil -- same as not-found (DD-WORKFLOW-016: prevent info leakage)")
+
+		got, err = repo.GetWorkflowWithContextFilters(ctx, "nonexistent-"+uniqueName("wfid"), nonMatchingFilters)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got).To(BeNil(), "a genuinely nonexistent workflow_id must also return nil, nil -- indistinguishable from the filtered-out case above")
+	})
 })

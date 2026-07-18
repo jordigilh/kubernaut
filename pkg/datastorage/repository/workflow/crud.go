@@ -349,7 +349,15 @@ func insertOrReactivateWorkflow(ctx context.Context, tx *sqlx.Tx, newWorkflow *m
 
 // GetByID retrieves a workflow by UUID (primary key)
 // DD-WORKFLOW-002 v3.0: workflow_id is the sole UUID primary key
+//
+// Issue #1661 Change 6 (DD-WORKFLOW-018): when r.cache is set, reads from the
+// Phase 28/29 informer-backed CRD cache instead of Postgres (#1661 Phase 55
+// prerequisite -- ported ahead of the rest of Phase 55, see discovery_cache.go).
 func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error) {
+	if r.cache != nil {
+		return r.getByIDFromCache(ctx, workflowID)
+	}
+
 	query := `
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_id = $1

@@ -27,15 +27,20 @@ import (
 )
 
 // ========================================
-// CACHE-BACKED STEP 1/2 DISCOVERY (Issue #1661 Change 6)
+// CACHE-BACKED STEP 1/2/3 DISCOVERY (Issue #1661 Change 6)
 // ========================================
 // Authority: DD-WORKFLOW-018 (etcd single source of truth). When r.cache is
-// set (SetCache), ListActions/ListWorkflowsByActionType read RemediationWorkflow/
-// ActionType CRDs from the Phase 28/29 informer-backed cache instead of issuing
-// SQL against action_type_taxonomy/remediation_workflow_catalog. Step 3
-// (GetWorkflowWithContextFilters/GetByID) is intentionally excluded -- it keeps
-// using r.db unconditionally until a later phase removes WorkflowExecution's
-// GetWorkflowByID Content dependency (see discovery.go's Step 3 comment).
+// set (SetCache), ListActions/ListWorkflowsByActionType/GetByID/
+// GetWorkflowWithContextFilters read RemediationWorkflow/ActionType CRDs from
+// the Phase 28/29 informer-backed cache instead of issuing SQL against
+// action_type_taxonomy/remediation_workflow_catalog.
+//
+// Step 3 (GetByID/GetWorkflowWithContextFilters) was ported ahead of the rest
+// of Phase 55 (#1661 Phase 55 prerequisite) once it was discovered that
+// AuthWebhook already stopped writing to Postgres (Change 8c) -- leaving the
+// SQL-backed GetByID unable to find ANY workflow admitted after that change,
+// in both production and tests. This is not a compatibility shim; it is a
+// bug fix for an already-broken production read path.
 // ========================================
 
 // listActionsFromCache is ListActions' cache-backed implementation (Step 1).
@@ -91,6 +96,64 @@ func (r *Repository) listWorkflowsByActionTypeFromCache(ctx context.Context, act
 
 	totalCount := len(matched)
 	return paginate(matched, offset, limit), totalCount, nil
+}
+
+// getByIDFromCache is GetByID's cache-backed implementation: an unfiltered
+// lookup by the content-hash workflow_id, with no security-gate check (matches
+// the SQL-backed GetByID's contract -- see discovery.go's Step 3 comment).
+func (r *Repository) getByIDFromCache(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error) {
+	rw, err := r.cache.GetWorkflowByID(ctx, workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get workflow by ID from cache: %w", err)
+	}
+	if rw == nil {
+		return nil, nil
+	}
+	wf, err := crdWorkflowToModel(rw)
+	if err != nil {
+		return nil, err
+	}
+	return &wf, nil
+}
+
+// getWorkflowWithContextFiltersFromCache is GetWorkflowWithContextFilters'
+// cache-backed implementation (Step 3): looks the workflow up by workflow_id,
+// then applies the same mandatory-label/detected-label security gate Step 1/2
+// use (matchesMandatoryLabels, matchesDetectedLabelsFilter) -- no scoring, since
+// this is a single-workflow lookup, not a ranked list. Returns (nil, nil) both
+// when the workflow doesn't exist and when it exists but fails the gate,
+// mirroring the SQL path's intentional non-disclosure (DD-WORKFLOW-016:
+// prevent info leakage about a workflow's existence to an unauthorized context).
+func (r *Repository) getWorkflowWithContextFiltersFromCache(ctx context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
+	rw, err := r.cache.GetWorkflowByID(ctx, workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get workflow by ID from cache: %w", err)
+	}
+	if rw == nil {
+		return nil, nil
+	}
+
+	if !matchesMandatoryLabels(crdLabelsToMandatoryLabels(rw.Spec.Labels), filters) {
+		return nil, nil
+	}
+
+	var dl *models.DetectedLabels
+	if filters != nil {
+		dl = filters.DetectedLabels
+	}
+	detectedLabels, err := crdDetectedLabelsToModel(rw.Spec.DetectedLabels)
+	if err != nil {
+		return nil, fmt.Errorf("workflow %s: %w", rw.Name, err)
+	}
+	if !matchesDetectedLabelsFilter(detectedLabels, dl) {
+		return nil, nil
+	}
+
+	wf, err := crdWorkflowToModel(rw)
+	if err != nil {
+		return nil, err
+	}
+	return &wf, nil
 }
 
 // scoredWorkflow pairs a converted models.RemediationWorkflow with its #220

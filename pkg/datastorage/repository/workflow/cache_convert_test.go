@@ -17,6 +17,8 @@ limitations under the License.
 package workflow
 
 import (
+	"encoding/json"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -164,6 +166,38 @@ var _ = Describe("crdWorkflowToModel (Issue #1661 Change 6)", func() {
 		Expect(got.ContentHash).To(Equal("deadbeef"))
 		Expect(got.Description.What).To(Equal("Recovers a Pod from an OOM condition"))
 		Expect(got.Status).To(Equal("Active"))
+	})
+
+	It("UT-DS-1661-612-003: maps spec.parameters[] into the {\"schema\":{\"parameters\":[...]}} envelope models.RemediationWorkflow.Parameters has always used (#1661 Phase 55 prerequisite -- HandleGetWorkflowByID's documented contract requires it for LLM parameter validation; the envelope matches buildWrappedWorkflowParameters/the OpenAPI object schema, not a bare array -- a bare array breaks the ogen client's map[string]jx.Raw decoder)", func() {
+		rw := buildRW()
+		rw.Spec.Parameters = []rwv1alpha1.RemediationWorkflowParameter{
+			{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
+			{Name: "REPLICAS", Type: "integer", Required: false, Description: "Desired replica count", Enum: []string{"1", "2", "3"}},
+		}
+
+		got, err := crdWorkflowToModel(rw)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got.Parameters).ToNot(BeNil())
+
+		var envelope struct {
+			Schema struct {
+				Parameters []map[string]interface{} `json:"parameters"`
+			} `json:"schema"`
+		}
+		Expect(json.Unmarshal(*got.Parameters, &envelope)).To(Succeed())
+		params := envelope.Schema.Parameters
+		Expect(params).To(HaveLen(2))
+		Expect(params[0]["name"]).To(Equal("NAMESPACE"))
+		Expect(params[0]["type"]).To(Equal("string"))
+		Expect(params[0]["required"]).To(Equal(true))
+		Expect(params[1]["name"]).To(Equal("REPLICAS"))
+		Expect(params[1]["enum"]).To(Equal([]interface{}{"1", "2", "3"}))
+	})
+
+	It("UT-DS-1661-612-004: no declared parameters maps to a nil (omitted) parameters field", func() {
+		got, err := crdWorkflowToModel(buildRW())
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got.Parameters).To(BeNil())
 	})
 
 	It("UT-DS-1661-612-002: catalog-only fields with no CRD equivalent are zero-valued (not a regression -- confirmed nil today for inline registration too)", func() {

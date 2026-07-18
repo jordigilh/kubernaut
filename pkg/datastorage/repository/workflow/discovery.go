@@ -269,10 +269,18 @@ func (r *Repository) selectScoredWorkflows(ctx context.Context, whereClause stri
 // security gate that verifies the workflow matches the provided context filters.
 // Returns nil if the workflow exists but doesn't match the context (security gate).
 // This is Step 3 of the discovery protocol.
+//
+// Issue #1661 Change 6 (DD-WORKFLOW-018): when r.cache is set, reads from the
+// Phase 28/29 informer-backed CRD cache instead of Postgres (#1661 Phase 55
+// prerequisite -- ported ahead of the rest of Phase 55, see discovery_cache.go).
 func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
 	// If no context filters, fall back to simple GetByID
 	if filters == nil || !filters.HasContextFilters() {
 		return r.GetByID(ctx, workflowID)
+	}
+
+	if r.cache != nil {
+		return r.getWorkflowWithContextFiltersFromCache(ctx, workflowID, filters)
 	}
 
 	// Build context filter WHERE clause

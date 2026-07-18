@@ -57,6 +57,15 @@ const actionTypeNameFieldIndex = ".spec.name"
 // (the same invariant the retired Postgres workflow_name column enforced).
 const workflowNameFieldIndex = "metadata.name"
 
+// workflowIDFieldIndex indexes RemediationWorkflow CRDs by status.workflowId
+// (the deterministic content-hash UUID AuthWebhook computes and stamps),
+// enabling GetWorkflowByID to do an indexed lookup instead of a full scan.
+// Step 3 of the discovery protocol (GetWorkflowByID/GetWorkflowWithContext
+// Filters) -- #1661 Phase 55 prerequisite: unlike metadata.name, workflow_id
+// is a content identity, not a naming identity (DD-WORKFLOW-018), which is
+// exactly why callers look workflows up by it instead of by name.
+const workflowIDFieldIndex = "status.workflowId"
+
 // syncTimeout bounds how long NewInformerCache waits for the initial
 // informer List+Watch sync before failing fast. Mirrors Gateway's
 // buildGatewayCache (pkg/gateway/server_constructors.go), the established
@@ -151,6 +160,17 @@ func indexWorkflowCacheFields(ctx context.Context, k8sCache cache.Cache) error {
 		return fmt.Errorf("failed to index RemediationWorkflow by %s: %w", workflowNameFieldIndex, err)
 	}
 
+	if err := k8sCache.IndexField(ctx, &rwv1alpha1.RemediationWorkflow{}, workflowIDFieldIndex,
+		func(obj client.Object) []string {
+			rw, ok := obj.(*rwv1alpha1.RemediationWorkflow)
+			if !ok || rw.Status.WorkflowID == "" {
+				return nil
+			}
+			return []string{rw.Status.WorkflowID}
+		}); err != nil {
+		return fmt.Errorf("failed to index RemediationWorkflow by %s: %w", workflowIDFieldIndex, err)
+	}
+
 	if err := k8sCache.IndexField(ctx, &atv1alpha1.ActionType{}, actionTypeNameFieldIndex,
 		func(obj client.Object) []string {
 			at, ok := obj.(*atv1alpha1.ActionType)
@@ -174,6 +194,22 @@ func (c *Cache) GetWorkflow(ctx context.Context, name string) (*rwv1alpha1.Remed
 	var list rwv1alpha1.RemediationWorkflowList
 	if err := c.reader.List(ctx, &list, client.MatchingFields{workflowNameFieldIndex: name}); err != nil {
 		return nil, fmt.Errorf("failed to get RemediationWorkflow %s: %w", name, err)
+	}
+	if len(list.Items) == 0 {
+		return nil, nil
+	}
+	return &list.Items[0], nil
+}
+
+// GetWorkflowByID returns the RemediationWorkflow CRD whose status.workflowId
+// matches workflowID, or (nil, nil) if none exists -- matching the retired
+// Postgres repository's not-found convention (crud.go GetByID). Lookup is
+// cluster-wide by the content-hash identity (DD-WORKFLOW-018), not by name:
+// this is Step 3 of the discovery protocol (#1661 Phase 55 prerequisite).
+func (c *Cache) GetWorkflowByID(ctx context.Context, workflowID string) (*rwv1alpha1.RemediationWorkflow, error) {
+	var list rwv1alpha1.RemediationWorkflowList
+	if err := c.reader.List(ctx, &list, client.MatchingFields{workflowIDFieldIndex: workflowID}); err != nil {
+		return nil, fmt.Errorf("failed to get RemediationWorkflow by workflow_id %s: %w", workflowID, err)
 	}
 	if len(list.Items) == 0 {
 		return nil, nil
