@@ -1712,7 +1712,7 @@ spec:
     targetPort: 8080
   selector:
     app: kube-mcp-server
-`, namespace, KubeMCPServerImage, indentPEM(kubeMCPTOMLConfig, 4), kubeMCPExtraVolumeMount, kubeMCPExtraVolume)
+`, namespace, KubeMCPServerImage, indentPEM(kubeMCPTOMLConfig), kubeMCPExtraVolumeMount, kubeMCPExtraVolume)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, kubeMCPManifest); err != nil {
 		return fmt.Errorf("kube-mcp-server deployment failed: %w", err)

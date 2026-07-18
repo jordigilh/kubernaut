@@ -143,6 +143,7 @@ var _ = Describe("E2E-FLEET-002 [AC-3]: Cluster-scoped dedup produces distinct f
 	})
 })
 
+//nolint:unparam // ns always receives the package-level namespace ("kubernaut-system") today, but this helper is shared across many other e2e/fleet test files outside this fix's scope.
 func buildPrometheusAlertWithCluster(alertName, ns, severity, kind, name, clusterID string) []byte {
 	payload := map[string]interface{}{
 		"version":  "4",

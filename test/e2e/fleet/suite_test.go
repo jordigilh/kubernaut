@@ -142,6 +142,8 @@ var (
 
 // postWithFleetAuth sends an authenticated POST request to the Gateway.
 // Uses fpAuthToken (BR-GATEWAY-036/037) provisioned in BeforeSuite.
+//
+//nolint:unparam // contentType is always "application/json" today, but this helper is also called directly from 11_input_validation_test.go (outside this fix's scope).
 func postWithFleetAuth(url, contentType string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
@@ -187,7 +189,8 @@ const fmcSyncTimeout = 45 * time.Second
 // retries while the response status is not one of acceptableStatus (defaults to
 // 201 Created). See fmcSyncTimeout for why the retry window must exceed FMC's
 // sync interval.
-
+//
+//nolint:unparam // result 0 (status code) is discarded by every caller today, but callers span many other e2e/fleet test files outside this fix's scope.
 func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableStatus ...int) (int, []byte) {
 	if len(acceptableStatus) == 0 {
 		acceptableStatus = []int{http.StatusCreated}
@@ -260,6 +263,8 @@ func fleetAuthenticatedHTTPClient() (*http.Client, error) {
 // Retries up to 90s to handle the broker sync delay where the MCP gateway
 // hasn't finished syncing tools from kube-mcp-server yet (~60s observed in
 // spike S15).
+//
+//nolint:unparam // clusterID is always "remote-cluster" today, but this helper is also called from other e2e/fleet test files outside this fix's scope.
 func newFleetMCPClient(ctx context.Context, clusterID string) (*mcpclient.Client, error) {
 	const (
 		maxRetries    = 18
