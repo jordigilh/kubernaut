@@ -4,15 +4,15 @@ Technical spikes validating key architectural decisions before committing to imp
 
 This directory contains both spike summary documents and spike source code.
 
-**Tracking**: [#1240 — v1.6: AgenticWorkflow Multi-Runtime Architecture](https://github.com/jordigilh/kubernaut/issues/1240) (closed) → current direction: [#1536](https://github.com/jordigilh/kubernaut/issues/1536) (CRD spec v2, runtime-agnostic OCI), [#1535](https://github.com/jordigilh/kubernaut/issues/1535) / [#1681](https://github.com/jordigilh/kubernaut/issues/1681) (AuthBridge audit relay + shadow-evaluator tee), milestone v1.7
+**Tracking**: [#1240 — AgenticWorkflow Multi-Runtime Architecture](https://github.com/jordigilh/kubernaut/issues/1240) (closed, was tracked under the v1.6 milestone before custom-agent work moved out) → current direction: [#1536](https://github.com/jordigilh/kubernaut/issues/1536) (CRD spec v2, runtime-agnostic OCI), [#1535](https://github.com/jordigilh/kubernaut/issues/1535) / [#1681](https://github.com/jordigilh/kubernaut/issues/1681) (AuthBridge audit relay + shadow-evaluator tee), all now under **milestone v1.7** — see [ROADMAP.md](../../roadmap/ROADMAP.md). **v1.6 is Fleet Operations**, not custom agents; the section headers below intentionally drop the old "v1.6" labels to avoid that confusion.
 
 ---
 
 ## Spike Index
 
-### v1.6 — AgenticWorkflow Multi-Runtime Architecture
+### AgenticWorkflow Multi-Runtime Architecture (originally v1.6 scope, superseded)
 
-⚠️ **This entire section is superseded** — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536). The spikes below validated real techniques (still useful — see [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md) for the security-relevant ones) but the multi-runtime CRD model they fed into is dead.
+⚠️ **This entire section is superseded** — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536). These spikes were tracked under the v1.6 milestone (#1240) back when custom-agent runtime selection was v1.6 scope; that work is now milestone **v1.7** (per the current [ROADMAP.md](../../roadmap/ROADMAP.md) — v1.6 shipped as Fleet Operations instead). The spikes below validated real techniques (still useful — see [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md) for the security-relevant ones) but the multi-runtime CRD model they fed into is dead.
 
 | Spike | Status | Confidence | Proposal | Code |
 |---|---|---|---|---|
@@ -22,7 +22,7 @@ This directory contains both spike summary documents and spike source code.
 | [SPIKE-GOOSE-MCP-ROUNDTRIP](SPIKE-GOOSE-MCP-ROUNDTRIP.md) | COMPLETED — mechanics validated, model superseded | 96% | [EXT-004](../proposals/PROPOSAL-EXT-004-goose-recipes.md) (superseded) | [goose-mcp-roundtrip/](./goose-mcp-roundtrip/) |
 | [SPIKE-DEEP-AGENTS](SPIKE-DEEP-AGENTS.md) | COMPLETED — technique validated, model superseded | 96% | [EXT-006](../proposals/PROPOSAL-EXT-006-deep-agents.md) (superseded) | [pyagentspec-langgraph/05_deepagents_validation.py](./pyagentspec-langgraph/05_deepagents_validation.py) |
 
-### v1.6 — Pre-Investigation Pipeline (planned)
+### Pre-Investigation Pipeline (was planned for v1.6/v1.7, rejected)
 
 ❌ **Rejected** — see [PROPOSAL-EXT-007](../proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md), rejected 2026-07-19. None of the spikes below were started; routing is Gateway/AF-owned (`TargetType`/`SignalSource`) + Rego, not a new SP-owned agent tier.
 
@@ -32,9 +32,9 @@ This directory contains both spike summary documents and spike source code.
 | SPIKE-PARALLEL-DOMAIN-AGENTS | ❌ Not started, rejected | — | [EXT-007](../proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) | — |
 | SPIKE-CORRELATOR-CAUSAL-CHAIN | ❌ Not started, rejected | — | [EXT-007](../proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) | — |
 
-### v1.5 — Agent Runtime Evaluation
+### Agent Runtime Evaluation (originally v1.6 scope, superseded)
 
-⚠️ **This entire section is superseded** — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536). All six spikes evaluated the OAS Runtime / ACP-session architecture from [PROPOSAL-EXT-003](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md), now dead. Security-relevant findings (sandbox isolation, shadow evaluation) are carried forward in [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md); see each spike's own status line for what specifically survives vs. is open.
+⚠️ **This entire section is superseded** — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536). This section was previously mislabeled "v1.5" — all six spikes' tracking issues (#1203, #1206, #1207, #1208, and siblings) are actually milestone **v1.6** (closed) in GitHub, from the same now-superseded custom-agent-runtime effort as the section above. All six spikes evaluated the OAS Runtime / ACP-session architecture from [PROPOSAL-EXT-003](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md), now dead. Security-relevant findings (sandbox isolation, shadow evaluation) are carried forward in [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md); see each spike's own status line for what specifically survives vs. is open.
 
 | Spike | Status | Confidence | Proposal | Code |
 |---|---|---|---|---|

@@ -49,39 +49,39 @@
     <text id="Operator-Overrides--Workflow" xml:space="preserve"><tspan x="529" y="682" font-family="Helvetica Neue" font-size="12" font-weight="700" fill="#1a1a1a" xml:space="preserve">Operator Overrides</tspan><tspan font-family="Helvetica Neue" font-size="12" fill="#000000" xml:space="preserve"> </tspan><tspan font-family="Helvetica Neue" font-size="12" fill="#1a1a1a" xml:space="preserve">– Workflow parameter</tspan></text>
     <text id="override-at-approval-time" xml:space="preserve" x="529" y="698" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">override at approval time.</text>
     <text id="Q226" xml:space="preserve" x="489" y="477" font-family="Helvetica Neue" font-size="14" fill="#444444">Q2’26</text>
-    <text id="Live-Investigation-Control" xml:space="preserve" x="659" y="167" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Live Investigation Control</text>
+    <text id="Live-Investigation-Control" xml:space="preserve" x="659" y="167" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Live Investigation Control (v1.5)</text>
     <text id="See-and-steer-your" xml:space="preserve" x="659" y="190" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">See and steer your AI investigations in real time</text>
-    <text id="-Real-time-investigation-streaming" xml:space="preserve" x="669" y="219" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Real-time investigation streaming</text>
+    <text id="-Real-time-investigation-streaming" xml:space="preserve" x="669" y="219" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Real-time investigation streaming (SSE)</text>
     <text id="-Cancel-and-takeover" xml:space="preserve" x="669" y="237" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Cancel and takeover long-running investigations</text>
-    <text id="-Investigation-snapshots-with" xml:space="preserve" x="669" y="255" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Investigation snapshots with full AI context</text>
+    <text id="-Investigation-snapshots-with" xml:space="preserve" x="669" y="255" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ MCP Interactive Mode for live investigation</text>
     <text id="-Sub-second-token-level-reasoning" xml:space="preserve" x="669" y="273" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Sub-second token-level reasoning updates</text>
-    <text id="Agentic-Integration" xml:space="preserve" x="889" y="582" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Agentic Integration</text>
+    <text id="Agentic-Integration" xml:space="preserve" x="889" y="582" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Agentic Integration (v1.5)</text>
     <text id="Your-tools-talk-to" xml:space="preserve" x="889" y="605" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">Your tools talk to Kubernaut natively</text>
     <text id="-MCP-Server-Claude" xml:space="preserve" x="899" y="634" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ MCP Server (Claude, Cursor, any MCP client)</text>
     <text id="-A2A-Protocol-for" xml:space="preserve" x="899" y="652" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ A2A Protocol for agent-to-agent delegation</text>
-    <text id="-Operator-Console-" xml:space="preserve" x="899" y="670" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Operator Console – dedicated web UI</text>
+    <text id="-Operator-Console-" xml:space="preserve" x="899" y="670" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Kubernaut Console – dedicated web UI</text>
     <text id="-Natural-Language-Signal" xml:space="preserve" x="899" y="688" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Natural Language Signal Intake</text>
     <text id="Collective-Intelligence" xml:space="preserve" x="1119" y="167" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Collective Intelligence</text>
     <text id="Multiple-AI-perspectives-one" xml:space="preserve" x="1119" y="190" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">Multiple AI perspectives, one root cause</text>
     <text id="-Multi-Agent-Consensus-RCA" xml:space="preserve" x="1129" y="219" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Multi-Agent Consensus RCA</text>
-    <text id="-Investigation-Prompt-Bundles" xml:space="preserve" x="1129" y="237" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Investigation Workflows (opaque OCI agents)</text>
+    <text id="-Investigation-Prompt-Bundles" xml:space="preserve" x="1129" y="237" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Investigation Workflows (opaque OCI agents) (v1.7)</text>
     <text id="-Remediation-History-Analysis" xml:space="preserve" x="1129" y="255" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Remediation History Analysis</text>
-    <text id="Fleet-Operations" xml:space="preserve" x="1349" y="582" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Fleet Operations</text>
+    <text id="Fleet-Operations" xml:space="preserve" x="1349" y="582" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Fleet Operations (v1.6 – RC)</text>
     <text id="From-one-cluster-to" xml:space="preserve" x="1349" y="605" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">From one cluster to your entire fleet</text>
-    <text id="-Fleet-Deployment" xml:space="preserve" x="1359" y="634" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Fleet Deployment (ACM Governance)</text>
-    <text id="-Fleet-Remediation" xml:space="preserve" x="1359" y="652" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Fleet Remediation (AAP playbooks)</text>
-    <text id="-Centralized-Observability" xml:space="preserve" x="1359" y="670" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Centralized Observability (Thanos/ACM)</text>
+    <text id="-Fleet-Deployment" xml:space="preserve" x="1359" y="634" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Multi-cluster investigation (MCP + RHBK JWT)</text>
+    <text id="-Fleet-Remediation" xml:space="preserve" x="1359" y="652" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Fleet remediation (SP Rego targeting)</text>
+    <text id="-Centralized-Observability" xml:space="preserve" x="1359" y="670" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Centralized observability (ACM Search)</text>
     <text id="Operational-Expansion" xml:space="preserve" x="1579" y="167" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Operational Expansion</text>
     <text id="New-domains-same-intelligent" xml:space="preserve" x="1579" y="190" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">New domains, same intelligent approach</text>
     <text id="-Cost-Optimization-" xml:space="preserve" x="1589" y="219" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Cost Optimization – AI-driven right-sizing</text>
     <text id="-Threat-Remediation-" xml:space="preserve" x="1589" y="237" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Threat Remediation – security response</text>
-    <text id="-Non-Kubernetes-Workflows-VMs" xml:space="preserve" x="1589" y="255" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Non-Kubernetes Workflows (VMs, cloud, IaC)</text>
+    <text id="-Non-Kubernetes-Workflows-VMs" xml:space="preserve" x="1589" y="255" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Non-Kubernetes Workflows (VMs, cloud, IaC) (v1.7)</text>
     <path id="path22" fill="#000000" stroke="#dddddd" stroke-dasharray="4 4" stroke-dashoffset="0" d="M 630 120 L 630 470"/>
     <path id="path23" fill="#000000" stroke="#dddddd" stroke-dasharray="4 4" stroke-dashoffset="0" d="M 630 530 L 630 720"/>
     <text id="DELIVERED" xml:space="preserve" x="270.064" y="452" font-family="Helvetica Neue" font-size="11" fill="#999999" letter-spacing="2">DELIVERED</text>
     <text id="WHATS-NEXT" xml:space="preserve" x="1101.25" y="452" font-family="Helvetica Neue" font-size="11" fill="#999999" letter-spacing="2">WHAT’S NEXT</text>
     <text id="Design-Principle" xml:space="preserve" x="69" y="832" font-family="Helvetica Neue" font-size="13" font-weight="700" fill="#cc0000">Design Principle</text>
-    <text id="Each-milestone-builds-on" xml:space="preserve" x="69" y="855" font-family="Helvetica Neue" font-size="12" fill="#666666">Each milestone builds on the previous: control → external integration → multi-agent intelligence → fleet scale → domain expansion.</text>
+    <text id="Each-milestone-builds-on" xml:space="preserve" x="69" y="855" font-family="Helvetica Neue" font-size="12" fill="#666666">Each milestone builds on the previous: control → external integration → fleet scale → custom agents &amp; domain expansion.</text>
     <path id="path24" fill="#000000" stroke="#eeeeee" d="M 70 875 L 1850 875"/>
     <text id="text1" xml:space="preserve" x="69" y="907" font-family="Helvetica Neue" font-size="11" font-weight="700" fill="#cc0000">Live Investigation Control</text>
     <text id="Your-AI-isnt-a" xml:space="preserve" x="69" y="924" font-family="Helvetica Neue" font-size="11" font-style="italic" fill="#888888">“Your AI isn’t a black box anymore. Watch it think, step in when needed.”</text>
