@@ -344,19 +344,19 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 	return nil
 }
 
-// nolint:nilnil // intentional "no active driver" sentinel, not an error —
-// canonical repository/lookup idiom; every caller already guards with
-// `if err != nil || sess == nil` before use (Issue #1546 Tier 2).
+// GetDriver returns the current driver session for rrID, or ErrSessionNotFound
+// if no interactive session exists (e.g., the RR is in autonomous mode).
+// Issue #1674: typed sentinel replaces the previous ambiguous (nil, nil).
 func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error) {
 	raw, ok := m.rrIndex.Load(rrID)
 	if !ok {
-		return nil, nil // nolint:nilnil
+		return nil, ErrSessionNotFound
 	}
 	sessionID := raw.(string)
 
 	raw, ok = m.sessions.Load(sessionID)
 	if !ok {
-		return nil, nil // nolint:nilnil
+		return nil, ErrSessionNotFound
 	}
 	entry := raw.(*sessionEntry)
 
