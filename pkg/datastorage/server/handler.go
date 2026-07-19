@@ -39,18 +39,6 @@ type RemediationHistoryQuerier interface {
 	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
 }
 
-// ActionTypeValidator validates action types against the taxonomy before DB insertion.
-// DD-WORKFLOW-016: Explicit validation for clean 400 errors instead of FK constraint 500.
-//
-// #1661 Phase B: this interface's sole caller (HandleCreateWorkflow's
-// validateActionType) was deleted alongside the RW mutation handlers.
-// Deliberately left wired (dead-but-compiling) rather than removed here --
-// mirrors Phase A3's precedent of deferring the actiontype repo/DI cleanup to
-// its own gated step, now Phase C ("prune workflow/crud.go dead methods").
-type ActionTypeValidator interface {
-	ActionTypeExists(ctx context.Context, actionType string) (bool, error)
-}
-
 // SuccessMetricsQuerier computes on-demand workflow success-rate aggregates
 // from audit_events. Issue #1661 Change 7 (DD-WORKFLOW-018): replaces the
 // stored remediation_workflow_catalog total_executions/successful_executions/
@@ -72,12 +60,11 @@ type Handler struct {
 	sqlDB                  *sql.DB // For reconstruction queries (BR-AUDIT-006)
 	logger                 logr.Logger
 	workflowRepo           *repository.WorkflowRepository // BR-STORAGE-013: Workflow catalog (label-only search)
-	actionTypeValidator    ActionTypeValidator             // GAP-4: DD-WORKFLOW-016 taxonomy validation; dead-but-compiling post-Phase-B, see ActionTypeValidator doc comment
-	auditStore             audit.AuditStore                // BR-AUDIT-023: Workflow search audit
-	schemaExtractor        *oci.SchemaExtractor            // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
-	remediationHistoryRepo RemediationHistoryQuerier       // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
-	workflowCache          *workflowcache.Cache            // Issue #1661 Phase 29: informer-backed RW/ActionType CRD view (DD-WORKFLOW-018); nil until Change 6 (Phase 31-33) rewires discovery to consume it
-	successMetricsRepo     SuccessMetricsQuerier            // Issue #1661 Phase 35: on-demand audit_events success-rate aggregation (DD-WORKFLOW-018); nil is valid (metrics degrade to zero-value, logged) so tests without an audit DB keep working
+	auditStore             audit.AuditStore               // BR-AUDIT-023: Workflow search audit
+	schemaExtractor        *oci.SchemaExtractor           // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
+	remediationHistoryRepo RemediationHistoryQuerier      // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
+	workflowCache          *workflowcache.Cache           // Issue #1661 Phase 29: informer-backed RW/ActionType CRD view (DD-WORKFLOW-018); nil until Change 6 (Phase 31-33) rewires discovery to consume it
+	successMetricsRepo     SuccessMetricsQuerier          // Issue #1661 Phase 35: on-demand audit_events success-rate aggregation (DD-WORKFLOW-018); nil is valid (metrics degrade to zero-value, logged) so tests without an audit DB keep working
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -96,15 +83,6 @@ func WithLogger(logger logr.Logger) HandlerOption {
 func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
 	return func(h *Handler) {
 		h.workflowRepo = repo
-	}
-}
-
-// WithActionTypeValidator sets the action type taxonomy validator.
-// DD-WORKFLOW-016 GAP-4: Validates action_type against taxonomy before DB insert
-// for clean 400 errors instead of FK constraint 500.
-func WithActionTypeValidator(v ActionTypeValidator) HandlerOption {
-	return func(h *Handler) {
-		h.actionTypeValidator = v
 	}
 }
 

@@ -18,13 +18,6 @@ package workflow
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"strings"
-
-	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -35,436 +28,48 @@ import (
 // Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
 // Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
 // Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
-// CONVENTION (#213, DD-WORKFLOW-016): All paginated queries on remediation_workflow_catalog
-// must use workflow_id ASC as a deterministic tiebreaker in ORDER BY.
 //
 // Step 1: ListActions -- list action types with active workflow counts
 // Step 2: ListWorkflowsByActionType -- list workflows for an action type
 // Step 3: GetWorkflowWithContextFilters -- get workflow with security gate
+//
+// Issue #1661 Phase C: all three methods' Postgres SQL fallback (and its
+// helper query-builders: countActionTypes/selectActionTypeRows/
+// actionTypeRow/actionTypeRowsToEntries/selectScoredWorkflows/
+// workflowWithScore/buildContextFilterSQL/appendMandatoryLabelConditions/
+// appendDetectedLabelConditions) were deleted -- Repository.cache is
+// unconditionally non-nil in production (validateServerDeps requires
+// ServerDeps.K8sRestConfig, Phase 55), so the `if r.cache != nil` guards
+// were already dead in production, kept alive only by tests. The
+// cache-backed implementations (discovery_cache.go) have their own
+// dedicated coverage (discovery_cache_test.go, scoring_test.go,
+// list_cache_test.go).
 // ========================================
 
 // ListActions returns action types from the taxonomy that have active workflows
 // matching the provided signal context filters (Step 1 of discovery protocol).
 // Returns action type entries with workflow counts, total count for pagination, and error.
-//
-// Issue #1661 Change 6 (DD-WORKFLOW-018): when r.cache is set, reads from the
-// Phase 28/29 informer-backed CRD cache instead of Postgres.
 func (r *Repository) ListActions(ctx context.Context, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.ActionTypeEntry, int, error) {
-	if r.cache != nil {
-		return r.listActionsFromCache(ctx, filters, offset, limit)
-	}
-
-	// Build the context filter WHERE clause for the workflow join
-	whereClause, args := buildContextFilterSQL(filters)
-
-	// Always filter for active workflows and active action types only
-	// GAP-WF-3: DD-WORKFLOW-016 — latest version only
-	// BR-WORKFLOW-007: Disabled action types excluded from discovery
-	activeFilter := "w.status = 'Active' AND w.is_latest_version = true AND t.status = 'Active'"
-	if whereClause != "" {
-		whereClause = activeFilter + " AND " + whereClause
-	} else {
-		whereClause = activeFilter
-	}
-
-	totalCount, err := r.countActionTypes(ctx, whereClause, args)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	rows, err := r.selectActionTypeRows(ctx, whereClause, args, offset, limit)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	return actionTypeRowsToEntries(rows, r.logger), totalCount, nil
-}
-
-// countActionTypes runs ListActions' count query. Extracted from ListActions
-// (Wave 6 6f GREEN: funlen remediation) — pure code motion, no behavior change.
-func (r *Repository) countActionTypes(ctx context.Context, whereClause string, args []interface{}) (int, error) {
-	countQuery := fmt.Sprintf(`
-		SELECT COUNT(DISTINCT t.action_type)
-		FROM action_type_taxonomy t
-		INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
-		WHERE %s
-	`, whereClause)
-
-	var totalCount int
-	if err := r.db.GetContext(ctx, &totalCount, countQuery, args...); err != nil {
-		r.logger.Error(err, "failed to count action types")
-		return 0, fmt.Errorf("failed to count action types: %w", err)
-	}
-	return totalCount, nil
-}
-
-// actionTypeRow is the raw DB projection for ListActions' main query.
-type actionTypeRow struct {
-	ActionType    string          `db:"action_type"`
-	Description   json.RawMessage `db:"description"`
-	WorkflowCount int             `db:"workflow_count"`
-}
-
-// selectActionTypeRows runs ListActions' paginated main query. Extracted from
-// ListActions (Wave 6 6f GREEN: funlen remediation) — pure code motion, no
-// behavior change.
-func (r *Repository) selectActionTypeRows(ctx context.Context, whereClause string, args []interface{}, offset, limit int) ([]actionTypeRow, error) {
-	mainQuery := fmt.Sprintf(`
-		SELECT
-			t.action_type,
-			t.description,
-			COUNT(w.workflow_id) AS workflow_count
-		FROM action_type_taxonomy t
-		INNER JOIN remediation_workflow_catalog w ON w.action_type = t.action_type
-		WHERE %s
-		GROUP BY t.action_type, t.description
-		ORDER BY t.action_type
-		OFFSET $%d LIMIT $%d
-	`, whereClause, len(args)+1, len(args)+2)
-
-	queryArgs := append(args, offset, limit) //nolint:gocritic // args is a locally-built slice, not reused by the caller
-
-	var rows []actionTypeRow
-	if err := r.db.SelectContext(ctx, &rows, mainQuery, queryArgs...); err != nil {
-		r.logger.Error(err, "failed to list action types")
-		return nil, fmt.Errorf("failed to list action types: %w", err)
-	}
-	return rows, nil
-}
-
-// actionTypeRowsToEntries converts raw DB rows to response entries, tolerating
-// malformed per-row description JSON without failing the whole request.
-// Extracted from ListActions (Wave 6 6f GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func actionTypeRowsToEntries(rows []actionTypeRow, logger logr.Logger) []models.ActionTypeEntry {
-	entries := make([]models.ActionTypeEntry, 0, len(rows))
-	for _, row := range rows {
-		var desc models.ActionTypeDescription
-		if err := json.Unmarshal(row.Description, &desc); err != nil {
-			logger.Error(err, "failed to unmarshal action type description",
-				"action_type", row.ActionType)
-			// Use empty description rather than failing the entire request
-			desc = models.ActionTypeDescription{}
-		}
-		entries = append(entries, models.ActionTypeEntry{
-			ActionType:    row.ActionType,
-			Description:   desc,
-			WorkflowCount: row.WorkflowCount,
-		})
-	}
-	return entries
+	return r.listActionsFromCache(ctx, filters, offset, limit)
 }
 
 // ListWorkflowsByActionType returns active workflows matching the specified action type
 // and signal context filters (Step 2 of discovery protocol).
 // #220: Results are scored and ordered by final_score DESC per DD-WORKFLOW-016.
 // Returns workflow list, total count for pagination, and error.
-//
-// Issue #1661 Change 6 (DD-WORKFLOW-018): when r.cache is set, reads from the
-// Phase 28/29 informer-backed CRD cache instead of Postgres.
 func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.RemediationWorkflow, int, error) {
-	if r.cache != nil {
-		return r.listWorkflowsByActionTypeFromCache(ctx, actionType, filters, offset, limit)
-	}
-
-	// Build context filter WHERE clause
-	whereClause, args := buildContextFilterSQL(filters)
-
-	// Always filter for active status, latest version, and specific action_type (GAP-WF-3: DD-WORKFLOW-016)
-	baseFilter := fmt.Sprintf("action_type = $%d AND status = 'Active' AND is_latest_version = true", len(args)+1)
-	args = append(args, actionType)
-
-	if whereClause != "" {
-		whereClause = baseFilter + " AND " + whereClause
-	} else {
-		whereClause = baseFilter
-	}
-
-	// Count query
-	countQuery := fmt.Sprintf(`
-		SELECT COUNT(*)
-		FROM remediation_workflow_catalog
-		WHERE %s
-	`, whereClause)
-
-	var totalCount int
-	err := r.db.GetContext(ctx, &totalCount, countQuery, args...)
-	if err != nil {
-		r.logger.Error(err, "failed to count workflows by action type",
-			"action_type", actionType)
-		return nil, 0, fmt.Errorf("failed to count workflows by action type: %w", err)
-	}
-
-	scoredResults, err := r.selectScoredWorkflows(ctx, whereClause, args, filters, offset, limit, actionType)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	workflows := make([]models.RemediationWorkflow, len(scoredResults))
-	for i, sr := range scoredResults {
-		workflows[i] = sr.RemediationWorkflow
-	}
-
-	return workflows, totalCount, nil
-}
-
-// workflowWithScore is the raw DB projection for ListWorkflowsByActionType's
-// scoring subquery.
-type workflowWithScore struct {
-	models.RemediationWorkflow
-	DetectedLabelBoost float64 `db:"detected_label_boost"`
-	CustomLabelBoost   float64 `db:"custom_label_boost"`
-	LabelPenalty       float64 `db:"label_penalty"`
-	FinalScore         float64 `db:"final_score"`
-}
-
-// selectScoredWorkflows builds and runs ListWorkflowsByActionType's #220
-// final_score scoring query. Extracted from ListWorkflowsByActionType (Wave 6
-// 6f GREEN: funlen remediation) — pure code motion, no behavior change.
-func (r *Repository) selectScoredWorkflows(ctx context.Context, whereClause string, args []interface{}, filters *models.WorkflowDiscoveryFilters, offset, limit int, actionType string) ([]workflowWithScore, error) {
-	// #220: Build scoring SQL using shared functions from scoring.go
-	var dl *models.DetectedLabels
-	var customLabels map[string][]string
-	if filters != nil {
-		dl = filters.DetectedLabels
-		customLabels = filters.CustomLabels
-	}
-
-	detectedBoostSQL := buildDetectedLabelsBoostSQL(dl)
-	customBoostSQL := buildCustomLabelsBoostSQL(customLabels)
-	penaltySQL := buildDetectedLabelsPenaltySQL(dl)
-
-	// #220: Wrap in scoring subquery with final_score computation per DD-WORKFLOW-016
-	// #1088 Phase 6.1: explicit column list replaces SELECT * for schema drift protection
-	mainQuery := fmt.Sprintf(`
-		SELECT `+workflowCatalogColumns+`,
-			detected_label_boost, custom_label_boost, label_penalty, final_score
-		FROM (
-			SELECT `+workflowCatalogColumns+`,
-				%s AS detected_label_boost,
-				%s AS custom_label_boost,
-				%s AS label_penalty,
-				LEAST((5.0 + (%s) + (%s) - (%s)) / 10.0, 1.0) AS final_score
-			FROM remediation_workflow_catalog
-			WHERE %s
-		) scored
-		ORDER BY final_score DESC, workflow_id ASC
-		OFFSET $%d LIMIT $%d
-	`, detectedBoostSQL, customBoostSQL, penaltySQL,
-		detectedBoostSQL, customBoostSQL, penaltySQL,
-		whereClause, len(args)+1, len(args)+2)
-
-	queryArgs := append(args, offset, limit) //nolint:gocritic // args is a locally-built slice, not reused by the caller
-
-	var scoredResults []workflowWithScore
-	if err := r.db.SelectContext(ctx, &scoredResults, mainQuery, queryArgs...); err != nil {
-		r.logger.Error(err, "failed to list workflows by action type",
-			"action_type", actionType)
-		return nil, fmt.Errorf("failed to list workflows by action type: %w", err)
-	}
-	return scoredResults, nil
+	return r.listWorkflowsByActionTypeFromCache(ctx, actionType, filters, offset, limit)
 }
 
 // GetWorkflowWithContextFilters retrieves a workflow by ID with an additional
 // security gate that verifies the workflow matches the provided context filters.
 // Returns nil if the workflow exists but doesn't match the context (security gate).
 // This is Step 3 of the discovery protocol.
-//
-// Issue #1661 Change 6 (DD-WORKFLOW-018): when r.cache is set, reads from the
-// Phase 28/29 informer-backed CRD cache instead of Postgres (#1661 Phase 55
-// prerequisite -- ported ahead of the rest of Phase 55, see discovery_cache.go).
 func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
 	// If no context filters, fall back to simple GetByID
 	if filters == nil || !filters.HasContextFilters() {
 		return r.GetByID(ctx, workflowID)
 	}
 
-	if r.cache != nil {
-		return r.getWorkflowWithContextFiltersFromCache(ctx, workflowID, filters)
-	}
-
-	// Build context filter WHERE clause
-	whereClause, args := buildContextFilterSQL(filters)
-
-	// Add workflow_id filter
-	idFilter := fmt.Sprintf("workflow_id = $%d", len(args)+1)
-	args = append(args, workflowID)
-
-	fullWhere := idFilter
-	if whereClause != "" {
-		fullWhere = idFilter + " AND " + whereClause
-	}
-
-	query := fmt.Sprintf(`
-		SELECT `+workflowCatalogColumns+` FROM remediation_workflow_catalog
-		WHERE %s
-	`, fullWhere)
-
-	var wf models.RemediationWorkflow
-	err := r.db.GetContext(ctx, &wf, query, args...)
-	if errors.Is(err, sql.ErrNoRows) {
-		// Security gate: workflow exists but doesn't match context, or doesn't exist
-		// We intentionally don't distinguish these cases (DD-WORKFLOW-016: prevent info leakage)
-		return nil, nil
-	}
-	if err != nil {
-		r.logger.Error(err, "failed to get workflow with context filters",
-			"workflow_id", workflowID)
-		return nil, fmt.Errorf("failed to get workflow with context filters: %w", err)
-	}
-
-	return &wf, nil
-}
-
-// buildContextFilterSQL builds a WHERE clause from WorkflowDiscoveryFilters.
-// Returns the SQL fragment and positional parameter args.
-// The SQL uses positional parameters ($1, $2, ...) starting from $1.
-//
-// Shared across all three discovery methods (REFACTOR: extracted per TDD methodology).
-//
-// DD-WORKFLOW-016 v2.1: Label values in OCI workflow schemas can be either
-// scalar strings (e.g., "high") or JSON arrays (e.g., ["info", "warning"]).
-// The SQL must handle both types using CASE WHEN jsonb_typeof() checks.
-// Component comparison is case-insensitive (Kubernetes Kind is PascalCase,
-// but OCI labels store lowercase).
-func buildContextFilterSQL(filters *models.WorkflowDiscoveryFilters) (string, []interface{}) {
-	if filters == nil {
-		return "", nil
-	}
-
-	var conditions []string
-	var args []interface{}
-	argIdx := 1
-
-	conditions, args, argIdx = appendMandatoryLabelConditions(filters, conditions, args, argIdx)
-	conditions, args = appendDetectedLabelConditions(filters.DetectedLabels, conditions, args, argIdx)
-
-	if len(conditions) == 0 {
-		return "", nil
-	}
-
-	return strings.Join(conditions, " AND "), args
-}
-
-// appendMandatoryLabelConditions appends buildContextFilterSQL's severity/
-// component/environment/priority JSONB conditions. Extracted from
-// buildContextFilterSQL (Wave 6 6f GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func appendMandatoryLabelConditions(filters *models.WorkflowDiscoveryFilters, conditions []string, args []interface{}, argIdx int) ([]string, []interface{}, int) {
-	// Mandatory label filters (JSONB queries on labels column)
-	// DD-WORKFLOW-001 v2.9: Case-insensitive array matching via EXISTS/jsonb_array_elements_text/LOWER (Issue #595)
-	// DD-WORKFLOW-001 v2.8: severity supports "*" wildcard (like environment/priority)
-	if filters.Severity != "" {
-		conditions = append(conditions, fmt.Sprintf(
-			"(EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'severity') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'severity' ? '*')", argIdx))
-		args = append(args, filters.Severity)
-		argIdx++
-	}
-
-	if filters.Component != "" {
-		// DD-WORKFLOW-016 v2.1: Case-insensitive component matching.
-		// Issue #790: component is now a JSONB array (like severity/environment).
-		// Guard with jsonb_typeof to handle legacy scalar values that would crash
-		// jsonb_array_elements_text (ERROR: cannot extract elements from a scalar).
-		// Kubernetes resource Kind is PascalCase (e.g., "Deployment"),
-		// but OCI workflow labels store lowercase (e.g., "deployment").
-		conditions = append(conditions, fmt.Sprintf(`(CASE WHEN jsonb_typeof(labels->'component') = 'array'
-			THEN EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'component') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'component' ? '*'
-			ELSE LOWER(labels->>'component') = LOWER($%d) OR labels->>'component' = '*'
-		END)`, argIdx, argIdx))
-		args = append(args, filters.Component)
-		argIdx++
-	}
-
-	if filters.Environment != "" {
-		// DD-WORKFLOW-001 v2.9: Case-insensitive array matching (Issue #595); supports "*" wildcard per OpenAPI spec
-		conditions = append(conditions, fmt.Sprintf(
-			"(EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'environment') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'environment' ? '*')", argIdx))
-		args = append(args, filters.Environment)
-		argIdx++
-	}
-
-	if filters.Priority != "" {
-		// DD-WORKFLOW-016 v2.1: Handle both scalar and array JSONB values
-		// Issue #464: array branch must also check wildcard '*' element
-		// Issue #595: array branch uses case-insensitive matching via EXISTS/LOWER
-		conditions = append(conditions, fmt.Sprintf(`(
-			CASE WHEN jsonb_typeof(labels->'priority') = 'array'
-				THEN EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'priority') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'priority' ? '*'
-				ELSE LOWER(labels->>'priority') = LOWER($%d) OR labels->>'priority' = '*'
-			END
-		)`, argIdx, argIdx))
-		args = append(args, filters.Priority)
-		argIdx++
-	}
-
-	if filters.Cluster != "" {
-		// BR-FLEET-003 (#1511): optional cluster business classification filter.
-		// Mirrors severity/environment exactly: case-insensitive JSONB array
-		// matching via EXISTS/jsonb_array_elements_text/LOWER, with '*' wildcard
-		// fallback. EXISTS naturally evaluates false for workflows with no
-		// `cluster` key at all -- exclusion semantics per BR-FLEET-003 R6.
-		conditions = append(conditions, fmt.Sprintf(
-			"(EXISTS (SELECT 1 FROM jsonb_array_elements_text(labels->'cluster') elem WHERE LOWER(elem) = LOWER($%d)) OR labels->'cluster' ? '*')", argIdx))
-		args = append(args, filters.Cluster)
-		argIdx++
-	}
-
-	return conditions, args, argIdx
-}
-
-// appendDetectedLabelConditions appends buildContextFilterSQL's Issue #197
-// DetectedLabels conditions (DD-WORKFLOW-001 v2.7). Extracted from
-// buildContextFilterSQL (Wave 6 6f GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func appendDetectedLabelConditions(dl *models.DetectedLabels, conditions []string, args []interface{}, argIdx int) ([]string, []interface{}) {
-	if dl == nil {
-		return conditions, args
-	}
-
-	// Boolean fields: when true, match workflows that require it OR have no requirement (absent)
-	boolFields := []struct {
-		jsonKey string
-		value   bool
-	}{
-		{"gitOpsManaged", dl.GitOpsManaged},
-		{"pdbProtected", dl.PDBProtected},
-		{"hpaEnabled", dl.HPAEnabled},
-		{"stateful", dl.Stateful},
-		{"helmManaged", dl.HelmManaged},
-		{"networkIsolated", dl.NetworkIsolated},
-		{"virtualMachine", dl.VirtualMachine},
-		{"liveMigratable", dl.LiveMigratable},
-		{"cdiManaged", dl.CDIManaged},
-	}
-	for _, f := range boolFields {
-		if f.value {
-			conditions = append(conditions, fmt.Sprintf(
-				"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' IS NULL)",
-				f.jsonKey, argIdx, f.jsonKey))
-			args = append(args, "true")
-			argIdx++
-		}
-	}
-
-	// String fields: exact match, wildcard "*", or absent (no requirement)
-	stringFields := []struct {
-		jsonKey string
-		value   string
-	}{
-		{"gitOpsTool", dl.GitOpsTool},
-		{"serviceMesh", dl.ServiceMesh},
-		{"storageBackend", dl.StorageBackend},
-	}
-	for _, f := range stringFields {
-		if f.value != "" {
-			conditions = append(conditions, fmt.Sprintf(
-				"(detected_labels->>'%s' = $%d OR detected_labels->>'%s' = '*' OR detected_labels->>'%s' IS NULL)",
-				f.jsonKey, argIdx, f.jsonKey, f.jsonKey))
-			args = append(args, f.value)
-			argIdx++
-		}
-	}
-
-	return conditions, args
+	return r.getWorkflowWithContextFiltersFromCache(ctx, workflowID, filters)
 }

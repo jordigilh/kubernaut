@@ -36,7 +36,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/retention"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
@@ -244,16 +243,20 @@ func buildAuditWriteDependencies(db *sql.DB, redisClient *redis.Client, deps Ser
 
 // workflowCatalogDeps groups the BR-STORAGE-013/014 and BR-WORKFLOW-007
 // workflow catalog dependencies constructed by buildWorkflowCatalogDependencies.
+//
+// Issue #1661 Phase C: actionTypeRepo (*actiontype.Repository) was removed --
+// its sole method, ActionTypeExists, lost its only caller (HandleCreateWorkflow)
+// in Phase B and had zero other production callers (see pkg/datastorage/
+// repository/actiontype, deleted wholesale in this phase).
 type workflowCatalogDeps struct {
 	workflowRepo      *repository.WorkflowRepository
-	actionTypeRepo    *actiontyperepo.Repository
 	schemaExtractor   *oci.SchemaExtractor
 	remHistoryQuerier RemediationHistoryQuerier
 }
 
 // buildWorkflowCatalogDependencies constructs the workflow repository,
-// action-type taxonomy repository, OCI schema extractor (DD-WE-006), and
-// remediation history querier (DD-HAPI-016 v1.1).
+// OCI schema extractor (DD-WE-006), and remediation history querier
+// (DD-HAPI-016 v1.1).
 //
 // V1.0: Embedding service removed (label-only search); see
 // CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence).
@@ -265,8 +268,6 @@ func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowC
 	logger.V(1).Info("Workflow catalog dependencies created (label-only search)",
 		"workflow_repo_nil", workflowRepo == nil)
 
-	actionTypeRepo := actiontyperepo.NewRepository(sqlxDB, logger)
-
 	imagePuller := oci.NewCraneImagePuller(logger)
 	schemaParser := schema.NewParser()
 	schemaExtractor := oci.NewSchemaExtractor(imagePuller, schemaParser)
@@ -276,7 +277,6 @@ func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowC
 
 	return &workflowCatalogDeps{
 		workflowRepo:      workflowRepo,
-		actionTypeRepo:    actionTypeRepo,
 		schemaExtractor:   schemaExtractor,
 		remHistoryQuerier: remHistoryQuerier,
 	}
@@ -322,11 +322,10 @@ func buildWorkflowCache(deps ServerDeps, logger logr.Logger, cleanups *startupCl
 // AuthWebhook now owns the RemediationWorkflow CRD lifecycle entirely locally
 // (DD-WORKFLOW-018).
 func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps, wfCache *workflowcache.Cache) *Handler {
-	opts := make([]HandlerOption, 0, 8+len(deps.HandlerOpts))
+	opts := make([]HandlerOption, 0, 7+len(deps.HandlerOpts))
 	opts = append(opts,
 		WithLogger(logger),
 		WithWorkflowRepository(catalogDeps.workflowRepo),
-		WithActionTypeValidator(catalogDeps.actionTypeRepo),
 		WithAuditStore(auditDeps.auditStore),
 		WithSQLDB(db),
 		WithSchemaExtractor(catalogDeps.schemaExtractor),

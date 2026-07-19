@@ -34,48 +34,26 @@ import (
 // into focused modules for better maintainability
 // ========================================
 
-// workflowCatalogColumns is the explicit column list for remediation_workflow_catalog,
-// derived from RemediationWorkflow struct db: tags. #1088 Phase 6.1: replaces SELECT *
-// to protect against schema drift and avoid fetching deprecated columns (e.g., embedding).
-//
-// Issue #1661 Change 7 (DD-WORKFLOW-018): actual_success_rate/total_executions/
-// successful_executions are deliberately excluded -- migration 015 dropped
-// their backing columns. They are computed on demand from audit_events by
-// Handler.overlaySuccessMetrics (pkg/datastorage/server/workflow_success_metrics.go),
-// not scanned from this table.
-const workflowCatalogColumns = "workflow_id, workflow_name, version, schema_version, " +
-	"name, description, owner, maintainer, " +
-	"content, content_hash, " +
-	"action_type, " +
-	"parameters, execution_engine, " +
-	"schema_image, schema_digest, " +
-	"execution_bundle, execution_bundle_digest, " +
-	"engine_config, service_account_name, " +
-	"labels, custom_labels, detected_labels, " +
-	"status, status_reason, " +
-	"disabled_at, disabled_by, disabled_reason, " +
-	"is_latest_version, previous_version, deprecation_notice, " +
-	"version_notes, change_summary, approved_by, approved_at, " +
-	"expected_success_rate, expected_duration_seconds, " +
-	"created_at, updated_at, created_by, updated_by"
-
 // Repository handles workflow catalog operations
 // V1.0: Label-only search architecture (no embeddings)
+//
+// Issue #1661 Phase C: GetByID/List/ListActions/ListWorkflowsByActionType/
+// GetWorkflowWithContextFilters are now unconditionally cache-backed (see
+// crud.go/discovery.go) -- db is retained on the struct (and NewRepository's
+// signature is unchanged) to avoid an unrelated, wide-reaching constructor
+// signature change across every call site; it currently has no reader in
+// this package outside _test.go files.
 type Repository struct {
 	db     *sqlx.DB
 	logger logr.Logger
 
 	// cache is the Issue #1661 Phase 28/29 informer-backed RemediationWorkflow/
-	// ActionType CRD view (DD-WORKFLOW-018). When set (via SetCache), List,
-	// ListActions, ListWorkflowsByActionType, GetByID, and
-	// GetWorkflowWithContextFilters all read from it instead of issuing SQL
-	// against remediation_workflow_catalog/action_type_taxonomy. nil means
-	// "no cache wired" -- callers (tests, server_construction.go without
-	// K8sRestConfig) keep the existing SQL path unconditionally. GetByID/
-	// GetWorkflowWithContextFilters (Step 3) and List were ported ahead of
-	// the rest of Phase 55 once AuthWebhook stopped writing to Postgres
-	// (Change 8c) made their SQL paths unable to see any post-cutover
-	// workflow -- an already-broken production read path, not just a test gap.
+	// ActionType CRD view (DD-WORKFLOW-018), unconditionally non-nil in
+	// production (validateServerDeps requires ServerDeps.K8sRestConfig,
+	// Phase 55) -- List, ListActions, ListWorkflowsByActionType, GetByID, and
+	// GetWorkflowWithContextFilters all read from it exclusively (Phase C
+	// deleted their Postgres SQL fallback). Tests that need a Repository
+	// must call SetCache before exercising these methods.
 	cache *workflowcache.Cache
 }
 
@@ -89,11 +67,9 @@ func NewRepository(db *sqlx.DB, logger logr.Logger) *Repository {
 }
 
 // SetCache wires the Issue #1661 Phase 28/29 informer-backed CRD cache into
-// the repository, switching ListActions/ListWorkflowsByActionType from SQL
-// to in-memory reads (DD-WORKFLOW-018). A nil cache is a no-op (keeps the
-// SQL path) -- callers should only pass a non-nil cache once it has
-// completed its initial sync (workflowcache.NewInformerCache blocks until
-// then).
+// the repository (DD-WORKFLOW-018) -- callers should only pass a non-nil
+// cache once it has completed its initial sync (workflowcache.NewInformerCache
+// blocks until then).
 func (r *Repository) SetCache(cache *workflowcache.Cache) {
 	r.cache = cache
 }
