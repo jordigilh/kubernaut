@@ -185,13 +185,14 @@ jobs:
           version: v2.9.0
           args: --timeout=10m cmd/... pkg/... internal/... test/...
 
-      - name: Lint Go code (godox TODO/BUG/FIXME report -- informational only)
+      - name: Lint Go code (godox TODO/FIXME report -- informational only)
         # godox is deliberately excluded from .golangci.yml's blocking linter
-        # set (see the NOTE there, Issue #1546 Tier 4): most current findings
-        # are "Bug:"/"BUG FIX" doc-comment prose describing the historical
-        # bug a regression test guards against, not actionable TODO markers,
-        # and blocking merges on the presence of the word TODO would defeat
-        # the purpose of TODO comments as a deferred-work tracking tool.
+        # set (see the NOTE there, Issue #1546 Tier 4): blocking merges on the
+        # presence of the word TODO would defeat the purpose of TODO comments
+        # as a deferred-work tracking tool. .golangci.yml also scopes godox's
+        # keywords to [TODO, FIXME] (dropping the default BUG keyword), since
+        # ~72 of ~97 raw findings were retrospective "Bug:"/"BUG FIX" doc-
+        # comment prose describing an already-fixed defect, not pending work.
         # continue-on-error keeps this annotation-only -- it never fails the job.
         continue-on-error: true
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9

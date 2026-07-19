@@ -183,14 +183,11 @@ linters:
                       # every caller in lockstep) -- each documents why in the
                       # comment rather than a blanket exclusion.
     # NOTE: godox (Issue #1546 Tier 4) is intentionally NOT in this enabled
-    # list. Of its ~97 current repo-wide findings, ~60% are "Bug:"/"BUG FIX"/
-    # "BUG REPRODUCTION" prose in regression-test doc comments explaining the
-    # historical bug a test guards against -- valuable documentation, not an
-    # actionable marker -- and the remainder are genuine TODO comments, whose
-    # entire purpose is deferred-work tracking that should not block merges.
-    # It runs as a separate, deliberately non-blocking `continue-on-error`
-    # step in .github/workflows/ci-pipeline.yml (lint-go job) instead, so
-    # findings are visible without gating CI.
+    # list -- even the narrowed TODO/FIXME-only set below (see settings)
+    # should not block merges, since deferred-work tracking is its entire
+    # purpose. It runs as a separate, deliberately non-blocking
+    # `continue-on-error` step in .github/workflows/ci-pipeline.yml
+    # (lint-go job) instead, so findings are visible without gating CI.
 
   settings:
     govet:
@@ -215,6 +212,19 @@ linters:
       min-complexity: 5
     maintidx:
       under: 20
+    godox:
+      # Default keywords are [TODO, BUG, FIXME] and this list REPLACES the
+      # default rather than extending it. BUG is deliberately dropped: audit
+      # of all ~97 repo-wide findings (Issue #1546 Tier 4 follow-up) showed
+      # ~72 "Bug:"/"BUG FIX"/"BUG REPRODUCTION"/"BUG DISCOVERED" hits are
+      # retrospective doc-comment prose describing a historical defect a
+      # regression test now guards against (every numbered issue reference
+      # sampled -- #195, #197, #260, #261, #266, #464, #570, #595 -- is
+      # closed on GitHub), not a pending-work marker. Keeping only TODO/
+      # FIXME leaves the ~25 remaining findings as near-pure signal.
+      keywords:
+        - TODO
+        - FIXME
     forbidigo:
       # ANTI-PATTERN DETECTION: Per TESTING_GUIDELINES.md and NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md
       forbid:
