@@ -86,10 +86,10 @@ var RegisteredWorkflowUUIDs = make(map[string]string)
 //
 // Returns the registered workflow bundle references for use in WorkflowExecution specs.
 // Also populates RegisteredWorkflowUUIDs for tests that need DS UUIDs (DD-WE-006).
-func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
+func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
 	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
 	// Issue #785: TLS-aware seeding to DataStorage API (inter-service CA).
-	if err := SeedActionTypesViaAPIWithTLS(dataStorageURL, saToken, kubeconfigPath, 30*time.Second, output); err != nil {
+	if err := SeedActionTypesViaAPIWithTLS(ctx, dataStorageURL, saToken, kubeconfigPath, 30*time.Second, output); err != nil {
 		return nil, fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -120,21 +120,20 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 		name       string
 		version    string
 		fixtureDIR string
-		desc       string
 	}{
-		{"test-hello-world", "v1.0.0", "hello-world", "Simple hello-world workflow for E2E testing"},
-		{"test-intentional-failure", "v1.0.0", "failing", "Intentionally failing workflow for E2E failure handling tests"},
-		{"test-dep-secret-job", "v1.0.0", "dep-secret-job", "Job workflow with Secret dependency for DD-WE-006 E2E testing"},
-		{"test-dep-secret-tekton", "v1.0.0", "dep-secret-tekton", "Tekton workflow with Secret dependency for DD-WE-006 E2E testing"},
-		{"test-dep-configmap-job", "v1.0.0", "dep-configmap-job", "Job workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
-		{"test-dep-configmap-tekton", "v1.0.0", "dep-configmap-tekton", "Tekton workflow with ConfigMap dependency for DD-WE-006 E2E testing"},
-		{"test-job-hello-world", "v1.0.0", "job-hello-world", "Job backend hello-world workflow for BR-WE-014 E2E testing"},
-		{"test-job-intentional-failure", "v1.0.0", "job-failing", "Job backend intentionally failing workflow for BR-WE-014 E2E testing"},
-		{"test-job-oomkill", "v1.0.0", "job-oomkill", "Job backend OOM-kill-simulation workflow for DD-WE-008 E2E testing"},
-		{"test-ansible-success", "v1.0.0", "ansible-success", "Ansible engine success workflow for BR-WE-015 E2E testing"},
-		{"test-ansible-failure", "v1.0.0", "ansible-failure", "Ansible engine failure workflow for BR-WE-015 E2E testing"},
-		{"test-dep-secret-ansible", "v1.0.0", "dep-secret-ansible", "Ansible workflow with Secret dependency for DD-WE-006/BR-WE-015 E2E testing"},
-		{"test-dep-configmap-ansible", "v1.0.0", "dep-configmap-ansible", "Ansible workflow with ConfigMap dependency for DD-WE-006/BR-WE-015 E2E testing"},
+		{"test-hello-world", "v1.0.0", "hello-world"},
+		{"test-intentional-failure", "v1.0.0", "failing"},
+		{"test-dep-secret-job", "v1.0.0", "dep-secret-job"},
+		{"test-dep-secret-tekton", "v1.0.0", "dep-secret-tekton"},
+		{"test-dep-configmap-job", "v1.0.0", "dep-configmap-job"},
+		{"test-dep-configmap-tekton", "v1.0.0", "dep-configmap-tekton"},
+		{"test-job-hello-world", "v1.0.0", "job-hello-world"},
+		{"test-job-intentional-failure", "v1.0.0", "job-failing"},
+		{"test-job-oomkill", "v1.0.0", "job-oomkill"},
+		{"test-ansible-success", "v1.0.0", "ansible-success"},
+		{"test-ansible-failure", "v1.0.0", "ansible-failure"},
+		{"test-dep-secret-ansible", "v1.0.0", "dep-secret-ansible"},
+		{"test-dep-configmap-ansible", "v1.0.0", "dep-configmap-ansible"},
 	}
 
 	for _, bw := range bundleWorkflows {
@@ -144,13 +143,13 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 		}
 
 		wfUUID, regErr := registerTestBundleWorkflow(
+			ctx,
 			dataStorageURL,
 			saToken,
 			kubeconfigPath,
 			bw.name,
 			bw.version,
 			content,
-			bw.desc,
 			output,
 		)
 		if regErr != nil {
@@ -187,7 +186,7 @@ func readWorkflowFixtureContent(fixtureName string) (string, error) {
 // ADR-058: Sends CRD YAML content directly (inline) instead of OCI pullspec.
 // Returns the DS-assigned UUID for use in WorkflowExecution specs (DD-WE-006).
 // Includes DD-AUTH-014 ServiceAccount authentication.
-func registerTestBundleWorkflow(dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent, description string, output io.Writer) (string, error) {
+func registerTestBundleWorkflow(ctx context.Context, dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent string, output io.Writer) (string, error) {
 	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) inline\n", workflowName, version)
 
 	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
@@ -203,7 +202,7 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, kubeconfigPath, workflo
 		return "", fmt.Errorf("failed to create DataStorage client: %w", err)
 	}
 
-	uuid, reEnabled, err := callCreateWorkflowInline(client, schemaContent, "e2e-test-infra")
+	uuid, reEnabled, err := callCreateWorkflowInline(ctx, client, schemaContent, "e2e-test-infra")
 	if err != nil {
 		return "", fmt.Errorf("failed to register workflow: %w", err)
 	}
@@ -223,14 +222,13 @@ func registerTestBundleWorkflow(dataStorageURL, saToken, kubeconfigPath, workflo
 // All ogen response types are handled so that the caller receives an actionable
 // error with the DS detail message instead of a generic "unexpected response type".
 // A *workflowConflictError is returned for 409 so callers can fall back to query.
-func callCreateWorkflowInline(client *dsgen.Client, content, registeredBy string) (string, bool, error) {
+func callCreateWorkflowInline(ctx context.Context, client *dsgen.Client, content, registeredBy string) (string, bool, error) {
 	req := &dsgen.CreateWorkflowInlineRequest{
 		Content: content,
 	}
 	req.Source.SetTo("e2e-test")
 	req.RegisteredBy.SetTo(registeredBy)
 
-	ctx := context.Background()
 	resp, err := client.CreateWorkflow(ctx, req)
 	if err != nil {
 		return "", false, fmt.Errorf("transport error: %w", err)

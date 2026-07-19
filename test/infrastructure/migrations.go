@@ -137,7 +137,7 @@ func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Wri
 	}
 	defer pf.Close()
 
-	db, err := openPostgresConnection(pf.localPort, config)
+	db, err := openPostgresConnection(ctx, pf.localPort, config)
 	if err != nil {
 		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
@@ -178,7 +178,7 @@ func applyGooseMigrationsE2E(ctx context.Context, config MigrationConfig, migrat
 	}
 	defer pf.Close()
 
-	db, err := openPostgresConnection(pf.localPort, config)
+	db, err := openPostgresConnection(ctx, pf.localPort, config)
 	if err != nil {
 		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
 	}
@@ -269,7 +269,7 @@ type portForward struct {
 // startPortForward creates a kubectl port-forward tunnel to a PostgreSQL pod.
 // It allocates a random available local port and waits until the tunnel is ready.
 func startPortForward(ctx context.Context, kubeconfigPath, namespace, podName string, writer io.Writer) (*portForward, error) {
-	listener, err := net.Listen("tcp", "localhost:0")
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "localhost:0")
 	if err != nil {
 		return nil, fmt.Errorf("failed to find available port: %w", err)
 	}
@@ -288,7 +288,7 @@ func startPortForward(ctx context.Context, kubeconfigPath, namespace, podName st
 
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
-		conn, dialErr := net.DialTimeout("tcp", fmt.Sprintf("localhost:%d", port), time.Second)
+		conn, dialErr := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", fmt.Sprintf("localhost:%d", port))
 		if dialErr == nil {
 			_ = conn.Close()
 			_, _ = fmt.Fprintf(writer, "   ✅ Port-forward ready (localhost:%d)\n", port)
@@ -311,14 +311,14 @@ func (pf *portForward) Close() {
 }
 
 // openPostgresConnection opens a database/sql connection to PostgreSQL via a forwarded local port.
-func openPostgresConnection(localPort int, config MigrationConfig) (*sql.DB, error) {
+func openPostgresConnection(ctx context.Context, localPort int, config MigrationConfig) (*sql.DB, error) {
 	connStr := fmt.Sprintf("host=localhost port=%d user=%s password=%s dbname=%s sslmode=disable",
 		localPort, config.PostgresUser, config.PostgresPassword, config.PostgresDB)
 	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open connection: %w", err)
 	}
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}

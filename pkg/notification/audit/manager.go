@@ -142,7 +142,7 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 
 	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
 	// MANDATORY: Use RemediationRequest.Name as correlation_id (not UID)
-	correlationID := ""
+	var correlationID string
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
 		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name
@@ -168,7 +168,6 @@ func (m *Manager) CreateMessageSentEvent(notification *notificationv1alpha1.Noti
 
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageSent)
 	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, ActionSent)
@@ -212,7 +211,7 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 	}
 
 	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
-	correlationID := ""
+	var correlationID string
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
 		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name
@@ -241,7 +240,6 @@ func (m *Manager) CreateMessageFailedEvent(notification *notificationv1alpha1.No
 
 	// Create audit event following ADR-034 format (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageFailed)
 	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, ActionSent) // Action was "sent" (attempted), outcome is "failure"
@@ -280,7 +278,7 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 	}
 
 	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
-	correlationID := ""
+	var correlationID string
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
 		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name
@@ -302,7 +300,6 @@ func (m *Manager) CreateMessageAcknowledgedEvent(notification *notificationv1alp
 
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageAcknowledged)
 	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, ActionAcknowledged)
@@ -341,7 +338,7 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 	}
 
 	// Extract correlation ID per DD-AUDIT-CORRELATION-002 (Universal Correlation ID Standard)
-	correlationID := ""
+	var correlationID string
 	if notification.Spec.RemediationRequestRef != nil && notification.Spec.RemediationRequestRef.Name != "" {
 		// Primary: Use RemediationRequest.Name (DD-AUDIT-CORRELATION-002)
 		correlationID = notification.Spec.RemediationRequestRef.Name
@@ -364,7 +361,6 @@ func (m *Manager) CreateMessageEscalatedEvent(notification *notificationv1alpha1
 
 	// Create audit event (DD-AUDIT-002 V2.2: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeMessageEscalated)
 	audit.SetEventCategory(event, EventCategoryNotification)
 	audit.SetEventAction(event, ActionEscalated)

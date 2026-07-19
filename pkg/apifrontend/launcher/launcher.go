@@ -250,16 +250,24 @@ func enrichRRDetail(ctx context.Context, detail map[string]string) {
 	}
 }
 
+// personaSRE is the default/fallback persona used when the user has no
+// group membership matching a more specific persona (or is unauthenticated).
+const personaSRE = "sre"
+
+// a2aMethodMessageSend is the A2A JSON-RPC method string for the default/
+// fallback and non-streaming send-message call paths.
+const a2aMethodMessageSend = "message/send"
+
 // resolvePersona maps the authenticated user's group membership to the
 // OpenAPI persona enum used in triage audit events.
 func resolvePersona(user *auth.UserIdentity) string {
 	if user == nil {
-		return "sre"
+		return personaSRE
 	}
 	for _, g := range user.Groups {
 		switch g {
-		case "sre":
-			return "sre"
+		case personaSRE:
+			return personaSRE
 		case "ai-orchestrator":
 			return "orchestrator"
 		case "cicd":
@@ -272,7 +280,7 @@ func resolvePersona(user *auth.UserIdentity) string {
 			return "approver"
 		}
 	}
-	return "sre"
+	return personaSRE
 }
 
 // resolveA2AMethod maps the a2asrv CallContext method name to the corresponding
@@ -280,14 +288,14 @@ func resolvePersona(user *auth.UserIdentity) string {
 func resolveA2AMethod(ctx context.Context) string {
 	callCtx, ok := a2asrv.CallContextFrom(ctx)
 	if !ok {
-		return "message/send"
+		return a2aMethodMessageSend
 	}
 	switch callCtx.Method() {
 	case "OnSendMessageStream":
 		return "message/stream"
 	case "OnSendMessage":
-		return "message/send"
+		return a2aMethodMessageSend
 	default:
-		return "message/send"
+		return a2aMethodMessageSend
 	}
 }

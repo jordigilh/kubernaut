@@ -169,7 +169,7 @@ var _ = SynchronizedBeforeSuite(
 			"test/integration/gateway/config",
 			authConfig,
 		)
-		dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+		dsInfra, err = infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 
 	// Store shared envtest for cleanup

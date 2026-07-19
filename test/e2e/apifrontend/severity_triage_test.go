@@ -21,6 +21,11 @@ import (
 	kinfra "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	urlLocalhost9190 = "http://localhost:9190"
+)
+
 var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12"), func() {
 	var authToken string
 
@@ -58,7 +63,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 
 		if rpc.Result != nil {
 			task, taskErr := extractTaskFromResult(rpc.Result)
-			if taskErr == nil && task.Status.State == "failed" {
+			if taskErr == nil && task.Status.State == failed {
 				Fail(fmt.Sprintf("A2A task failed: %s", string(task.Status.Message)))
 			}
 			if taskErr == nil && task.Status.Message != nil {
@@ -90,7 +95,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 	}
 
 	It("TC-E2E-SEV-01: Tier 1 — Firing alert", func() {
-		promURL := "http://localhost:9190"
+		promURL := urlLocalhost9190
 		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
 			promURL = envProm
 		}
@@ -124,7 +129,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 	})
 
 	It("TC-E2E-SEV-03: Tier 2 — Inactive rule with live data", func() {
-		promURL := "http://localhost:9190"
+		promURL := urlLocalhost9190
 		if envProm := os.Getenv("AF_E2E_PROMETHEUS_URL"); envProm != "" {
 			promURL = envProm
 		}

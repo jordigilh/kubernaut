@@ -48,7 +48,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001: Port 30082 (API), 30182 (Metrics)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// DD-TEST-007: Create coverdata directory BEFORE everything
 	projectRoot := getProjectRoot()
@@ -90,7 +90,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 			BuildContextPath: "",
 			EnableCoverage:   true,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "SignalProcessing (coverage)", imageName: imageName, err: err}
 	}()
 
@@ -101,9 +101,9 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
@@ -138,25 +138,25 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Start: %s\n", phase2Start.Format("15:04:05.000"))
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
-	if err := createSignalProcessingKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createSignalProcessingKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// OPTIMIZATION #2: Install both CRDs in a single kubectl apply (3-5s savings)
 	_, _ = fmt.Fprintln(writer, "📋 Installing CRDs (batched: SignalProcessing + RemediationRequest)...")
-	if err := installSignalProcessingCRDsBatched(kubeconfigPath, writer); err != nil {
+	if err := installSignalProcessingCRDsBatched(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install CRDs (batched): %w", err)
 	}
 
 	// Create kubernaut-system namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createSignalProcessingNamespace(kubeconfigPath, writer); err != nil {
+	if err := createSignalProcessingNamespace(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	// Deploy Rego policy ConfigMaps
 	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
-	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
+	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy policies: %w", err)
 	}
 
@@ -188,14 +188,14 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// Load SignalProcessing coverage image
 	go func() {
 		spImage := builtImages["SignalProcessing (coverage)"]
-		err := LoadImageToKind(spImage, "signalprocessing-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, spImage, "signalprocessing-controller", clusterName, writer)
 		loadResults <- loadResult{name: "SignalProcessing coverage", err: err}
 	}()
 
 	// Load DataStorage image
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
@@ -295,7 +295,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		// Per Consolidated API Migration (January 2026):
 		// Use SignalProcessing image name from builtImages map (built in Phase 1)
 		spImage := builtImages["SignalProcessing (coverage)"]
-		err := DeploySignalProcessingControllerWithCoverage(kubeconfigPath, spImage, writer)
+		err := DeploySignalProcessingControllerWithCoverage(ctx, kubeconfigPath, spImage, writer)
 		deployResults <- deployResult{"SignalProcessing", err}
 	}()
 
@@ -337,7 +337,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	if err != nil {
 		return fmt.Errorf("failed to get seed SA token: %w", err)
 	}
-	if err := SeedActionTypesViaAPIWithTLS("https://localhost:30081", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
+	if err := SeedActionTypesViaAPIWithTLS(ctx, "https://localhost:30081", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -452,7 +452,7 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 
 	// Build with GOFLAGS=-cover for E2E coverage
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
-	cmd := exec.Command(containerCmd, "build",
+	cmd := exec.CommandContext(context.Background(), containerCmd, "build",
 		"--no-cache", // Force fresh build to include latest code changes
 		"-t", imageName,
 		"-f", dockerfilePath,
@@ -468,8 +468,8 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
-// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
+func createSignalProcessingKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:    clusterName,
 		KubeconfigPath: kubeconfigPath,
@@ -478,7 +478,7 @@ func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, write
 		DeleteExisting: false,
 		ReuseExisting:  true, // Original behavior: reuse if exists
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
 // ============================================================================
@@ -489,7 +489,7 @@ func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, write
 // signalProcessingImageTag holds the unique tag for this test run (set once, reused)
 var signalProcessingImageTag string
 
-func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer) error {
+func installSignalProcessingCRDsBatched(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// Find SignalProcessing CRD file
 	spCRDPaths := []string{
 		"config/crd/bases/kubernaut.ai_signalprocessings.yaml",
@@ -527,7 +527,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 	}
 
 	// Apply both CRDs in a single kubectl call (OPTIMIZATION #2)
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "-f", spCRDPath, "-f", rrCRDPath)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -541,7 +541,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 
 	// Check SignalProcessing CRD
 	for i := 0; i < 30; i++ {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "signalprocessings.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			_, _ = fmt.Fprintln(writer, "  ✓ SignalProcessing CRD established")
@@ -555,7 +555,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 
 	// Check RemediationRequest CRD
 	for i := 0; i < 30; i++ {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "remediationrequests.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			_, _ = fmt.Fprintln(writer, "  ✓ RemediationRequest CRD established")
@@ -570,7 +570,7 @@ func installSignalProcessingCRDsBatched(kubeconfigPath string, writer io.Writer)
 	return nil
 }
 
-func createSignalProcessingNamespace(kubeconfigPath string, writer io.Writer) error {
+func createSignalProcessingNamespace(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	manifest := `
 apiVersion: v1
 kind: Namespace
@@ -580,14 +580,14 @@ metadata:
     app.kubernetes.io/name: kubernaut
     app.kubernetes.io/component: signalprocessing
 `
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
 }
 
-func deploySignalProcessingPolicies(kubeconfigPath string, writer io.Writer) error {
+func deploySignalProcessingPolicies(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// ADR-060: Deploy unified Rego policy as a single ConfigMap (replaces 5 separate ConfigMaps).
 	// The SP controller expects a single policy.rego file under package signalprocessing.
 	unifiedPolicy := `---
@@ -702,7 +702,7 @@ data:
       PredictedNodeNotReady: NodeNotReady
 `
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(unifiedPolicy)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -724,7 +724,7 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 		attempt++
 		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"rollout", "status", "deployment/signalprocessing-controller",
-			"-n", "kubernaut-system", "--timeout=5s")
+			"-n", kubernautSystem, "--timeout=5s")
 		if err := cmd.Run(); err == nil {
 			_, _ = fmt.Fprintln(writer, "  ✓ Controller ready")
 			return nil
@@ -735,14 +735,14 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 			_, _ = fmt.Fprintf(writer, "  ⏳ Controller not ready yet (attempt %d)...\n", attempt)
 			// Get pod status
 			podCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-				"get", "pods", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "-o", "wide")
+				"get", "pods", "-n", kubernautSystem, "-l", "app=signalprocessing-controller", "-o", "wide")
 			podCmd.Stdout = writer
 			podCmd.Stderr = writer
 			_ = podCmd.Run()
 
 			// Get pod logs (last 10 lines)
 			logsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-				"logs", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "--tail=10")
+				"logs", "-n", kubernautSystem, "-l", "app=signalprocessing-controller", "--tail=10")
 			logsCmd.Stdout = writer
 			logsCmd.Stderr = writer
 			_ = logsCmd.Run()
@@ -753,13 +753,13 @@ func waitForSignalProcessingController(ctx context.Context, kubeconfigPath strin
 	// Final diagnostic dump before failure
 	_, _ = fmt.Fprintln(writer, "  ❌ Controller not ready after timeout. Final diagnostics:")
 	describeCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"describe", "pod", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller")
+		"describe", "pod", "-n", kubernautSystem, "-l", "app=signalprocessing-controller")
 	describeCmd.Stdout = writer
 	describeCmd.Stderr = writer
 	_ = describeCmd.Run()
 
 	logsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"logs", "-n", "kubernaut-system", "-l", "app=signalprocessing-controller", "--tail=50")
+		"logs", "-n", kubernautSystem, "-l", "app=signalprocessing-controller", "--tail=50")
 	logsCmd.Stdout = writer
 	logsCmd.Stderr = writer
 	_ = logsCmd.Run()
@@ -782,7 +782,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	imageName := GetSignalProcessingCoverageFullImageName()
 
 	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
-	saveCmd := exec.Command("podman", "save",
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save",
 		"-o", tmpFile,
 		imageName,
 	)
@@ -793,7 +793,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Loading coverage image into Kind...")
-	loadCmd := exec.Command("kind", "load", "image-archive",
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive",
 		tmpFile,
 		"--name", clusterName,
 	)
@@ -809,7 +809,7 @@ func LoadSignalProcessingCoverageImage(clusterName string, writer io.Writer) err
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -1031,7 +1031,7 @@ spec:
 `, imageName, imagePullPolicy)
 }
 
-func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName string, writer io.Writer) error {
+func DeploySignalProcessingControllerWithCoverage(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 
@@ -1039,7 +1039,7 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName stri
 	imagePullPolicy := GetImagePullPolicy()
 	manifest := signalProcessingControllerCoverageManifestWithPolicy(imageName, imagePullPolicy)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1050,7 +1050,6 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName stri
 
 	// Wait for controller to be ready
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled controller to be ready...")
-	ctx := context.Background()
 	return waitForSignalProcessingController(ctx, kubeconfigPath, writer)
 }
 
@@ -1084,7 +1083,7 @@ func GetSignalProcessingImageTag() string {
 }
 
 func getSignalProcessingGitHash() string {
-	cmd := exec.Command("git", "rev-parse", "--short", "HEAD")
+	cmd := exec.CommandContext(context.Background(), "git", "rev-parse", "--short", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return "unknown"
@@ -1093,6 +1092,7 @@ func getSignalProcessingGitHash() string {
 }
 
 // GetProjectRoot returns the absolute path to the project root.
+//
 // Deprecated: Use the shared getProjectRoot() from shared_integration_utils.go
 // and CollectE2EBinaryCoverage from coverage.go instead.
 // Kept temporarily for backward compatibility.

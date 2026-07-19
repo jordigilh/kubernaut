@@ -71,7 +71,7 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 			testAT = &atv1alpha1.ActionType{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("it-at-548-%d", GinkgoParallelProcess()),
-					Namespace: "default",
+					Namespace: defaultFixture,
 				},
 				Spec: atv1alpha1.ActionTypeSpec{
 					Name: fmt.Sprintf("ITScaleMemory%d", GinkgoParallelProcess()),
@@ -85,7 +85,7 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 			testRW = &rwv1alpha1.RemediationWorkflow{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("it-rw-548-%d", GinkgoParallelProcess()),
-					Namespace: "default",
+					Namespace: defaultFixture,
 				},
 				Spec: rwv1alpha1.RemediationWorkflowSpec{
 					Version:    "1.0.0",
@@ -176,7 +176,7 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 			testAT := &atv1alpha1.ActionType{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("it-at-548-fail-%d", GinkgoParallelProcess()),
-					Namespace: "default",
+					Namespace: defaultFixture,
 				},
 				Spec: atv1alpha1.ActionTypeSpec{
 					Name: fmt.Sprintf("ITFailType%d", GinkgoParallelProcess()),

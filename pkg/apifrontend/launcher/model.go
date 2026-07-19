@@ -25,7 +25,6 @@ import (
 	"time"
 
 	adkanthropic "github.com/Alcova-AI/adk-anthropic-go"
-	"github.com/anthropics/anthropic-sdk-go"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
@@ -64,7 +63,7 @@ func NewModelFromConfig(ctx context.Context, cfg types.LLMConfig) (model.LLM, er
 	case types.LLMProviderAnthropic:
 		return newAnthropicModel(ctx, cfg)
 	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
-		return newOpenAICompatibleModel(cfg)
+		return newOpenAICompatibleModel(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q", cfg.Provider)
 	}
@@ -84,7 +83,7 @@ func newVertexAIModel(ctx context.Context, cfg types.LLMConfig) (m model.LLM, er
 	if cfg.Endpoint != "" {
 		adkCfg.BaseURL = cfg.Endpoint
 	}
-	return adkanthropic.NewModel(ctx, anthropic.Model(cfg.Model), adkCfg)
+	return adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
 }
 
 func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
@@ -98,7 +97,7 @@ func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error)
 		}
 	}
 
-	httpClient, err := BuildLLMHTTPClient(cfg)
+	httpClient, err := BuildLLMHTTPClient(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	if err != nil {
 		return nil, fmt.Errorf("build HTTP client: %w", err)
 	}
@@ -117,7 +116,7 @@ func newAnthropicModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, err
 	if cfg.Endpoint != "" {
 		adkCfg.BaseURL = cfg.Endpoint
 	}
-	return adkanthropic.NewModel(ctx, anthropic.Model(cfg.Model), adkCfg)
+	return adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
 }
 
 // BuildLLMHTTPClient constructs an HTTP client with the transport chain
@@ -132,6 +131,10 @@ func BuildLLMHTTPClient(cfg types.LLMConfig) (*http.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	// nolint:nilnil // intentional "no custom transport" sentinel, not an
+	// error — all 3 callers already guard with `if httpClient != nil` before
+	// use, and http.Client falls back to DefaultTransport when Transport is
+	// nil (Issue #1546 Tier 2).
 	if rt == nil {
 		return nil, nil
 	}
@@ -199,6 +202,10 @@ func buildTransportChain(cfg types.LLMConfig) (http.RoundTripper, error) {
 		needsCustom = true
 	}
 
+	// nolint:nilnil // intentional "no custom transport" sentinel, not an
+	// error — already documented above ("Returns (nil, nil) when no custom
+	// transport is needed"); sole caller (BuildLLMHTTPClient) already guards
+	// with `if rt == nil` (Issue #1546 Tier 2).
 	if !needsCustom {
 		return nil, nil
 	}

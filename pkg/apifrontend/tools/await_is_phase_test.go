@@ -29,9 +29,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-func newTypedIS(ns, name, rrName string, phase isv1alpha1.SessionPhase) *isv1alpha1.InvestigationSession {
+func newTypedIS(name, rrName string, phase isv1alpha1.SessionPhase) *isv1alpha1.InvestigationSession {
 	is := &isv1alpha1.InvestigationSession{
-		ObjectMeta: objMeta(ns, name),
+		ObjectMeta: objMeta("kubernaut-system", name),
 		Spec: isv1alpha1.InvestigationSessionSpec{
 			RemediationRequestRef: isv1alpha1.ObjectRef{Name: rrName},
 			A2ATaskID:             name,
@@ -59,7 +59,7 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-001: returns true immediately when IS is already Active", func() {
 		It("should detect Active phase without delay", func() {
-			is := newTypedIS("kubernaut-system", "isess-001", "rr-poll-001", isv1alpha1.SessionPhaseActive)
+			is := newTypedIS("isess-001", "rr-poll-001", isv1alpha1.SessionPhaseActive)
 			tc := newISTypedClient(is)
 
 			start := time.Now()
@@ -73,7 +73,7 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-002: returns false on timeout when phase stays empty", func() {
 		It("should timeout when IS exists but phase is never set to Active", func() {
-			is := newTypedIS("kubernaut-system", "isess-002", "rr-poll-002", "")
+			is := newTypedIS("isess-002", "rr-poll-002", "")
 			tc := newISTypedClient(is)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -125,7 +125,7 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-007: ignores IS CRDs for different RR", func() {
 		It("should not match an Active IS belonging to a different RR", func() {
-			is := newTypedIS("kubernaut-system", "isess-other", "rr-other", isv1alpha1.SessionPhaseActive)
+			is := newTypedIS("isess-other", "rr-other", isv1alpha1.SessionPhaseActive)
 			tc := newISTypedClient(is)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -138,7 +138,7 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-008: ignores terminal phase IS CRDs", func() {
 		It("should not match a Completed IS for the same RR", func() {
-			is := newTypedIS("kubernaut-system", "isess-done", "rr-done", isv1alpha1.SessionPhaseCompleted)
+			is := newTypedIS("isess-done", "rr-done", isv1alpha1.SessionPhaseCompleted)
 			tc := newISTypedClient(is)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -151,7 +151,7 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-009: detects Active phase set asynchronously", func() {
 		It("should detect when IS phase transitions to Active during polling", func() {
-			is := newTypedIS("kubernaut-system", "isess-async", "rr-async", "")
+			is := newTypedIS("isess-async", "rr-async", "")
 			tc := newISTypedClient(is)
 
 			go func() {
@@ -174,7 +174,7 @@ var _ = Describe("AwaitISPhaseActive — BR-INTERACTIVE-010 IS phase polling", f
 
 	Describe("UT-AF-IS-POLL-010: respects parent context cancellation", func() {
 		It("should return false when parent context is cancelled", func() {
-			is := newTypedIS("kubernaut-system", "isess-cancel", "rr-cancel", "")
+			is := newTypedIS("isess-cancel", "rr-cancel", "")
 			tc := newISTypedClient(is)
 
 			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)

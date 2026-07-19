@@ -141,7 +141,7 @@ var _ = SynchronizedBeforeSuite(
 			"test/integration/kubernautagent/mcp/config",
 			authConfig,
 		)
-		dsInfra, err := infrastructure.StartDSBootstrap(dsCfg, GinkgoWriter)
+		dsInfra, err := infrastructure.StartDSBootstrap(ctx, dsCfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		sharedDSInfra = dsInfra
 		sharedDSEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)
@@ -159,7 +159,7 @@ var _ = SynchronizedBeforeSuite(
 			{WorkflowID: "oomkill-increase-memory-v1", Name: "OOMKill Recovery", ActionType: "IncreaseMemoryLimits", Environment: "production"},
 			{WorkflowID: "generic-restart-v1", Name: "Generic Pod Restart", ActionType: "RestartPod", Environment: "production"},
 		}
-		workflowUUIDs, seedErr := infrastructure.SeedWorkflowsInDataStorage(
+		workflowUUIDs, seedErr := infrastructure.SeedWorkflowsInDataStorage(ctx, 
 			sharedDSClient, discoveryWorkflows, "KA MCP IT", GinkgoWriter,
 		)
 		Expect(seedErr).ToNot(HaveOccurred(), "discovery workflows must seed in DataStorage")

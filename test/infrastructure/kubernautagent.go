@@ -63,7 +63,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"datastorage", imageName, err}
 	}()
 
@@ -74,9 +74,9 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			ImageName:        "kubernautagent",
 			DockerfilePath:   "docker/kubernautagent.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
 	}()
 
@@ -88,7 +88,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"mock-llm", imageName, err}
 	}()
 
@@ -106,7 +106,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// PHASE 2: Create Kind cluster (reuse AIAnalysis E2E Kind config — same ports)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🏗️  PHASE 2: Creating Kind cluster...")
-	if err := createKAKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createKAKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -118,7 +118,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	} else {
 		_, _ = fmt.Fprintln(writer, "\n📤 PHASE 3: Loading images into Kind...")
 		for name, image := range images {
-			if err := loadImageToKind(clusterName, image, writer); err != nil {
+			if err := loadImageToKind(ctx, clusterName, image, writer); err != nil {
 				return fmt.Errorf("failed to load %s image: %w", name, err)
 			}
 			_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", name)
@@ -130,7 +130,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// Reuses the same inline pattern as CreateAIAnalysisClusterHybrid.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 4: Deploying DataStorage stack...")
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -215,12 +215,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create DS client: %w", err)
 	}
 
-	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
+	if err := SeedActionTypesViaAPI(ctx, seedClient, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
 	testWorkflows := GetKAE2ETestWorkflows()
-	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "KA E2E (via infrastructure)", writer)
+	workflowUUIDs, err := SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "KA E2E (via infrastructure)", writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed workflows: %w", err)
 	}
@@ -243,7 +243,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// CR creation with "no matches for kubernaut.ai/v1alpha1".
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 5.5: Installing CRDs for interactive tests (#703)...")
-	if err := installKAE2ECRDs(kubeconfigPath, writer); err != nil {
+	if err := installKAE2ECRDs(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install CRDs: %w", err)
 	}
 
@@ -278,13 +278,13 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// DD-AUTH-MCP-001 v2.0: Pattern B validation with real OIDC provider.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5.8: Deploying DEX OIDC Provider (#1009)...")
-	if err := PreloadDexImage(clusterName, writer); err != nil {
+	if err := PreloadDexImage(ctx, clusterName, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to preload DEX image (non-fatal, Kind may pull): %v\n", err)
 	}
 	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy DEX: %w", err)
 	}
-	if err := waitForDexReady(5556, writer); err != nil {
+	if err := waitForDexReady(ctx, kubeconfigPath, 5556, writer); err != nil {
 		return fmt.Errorf("DEX not ready: %w", err)
 	}
 	if err := createDexUserRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -298,7 +298,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy KA RBAC: %w", err)
 	}
-	if err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
+	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
 		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
 	}
 
@@ -320,7 +320,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 // installKAE2ECRDs installs the Kubernaut CRDs required by interactive E2E tests.
 // The RemediationRequest CRD is mandatory for createTestRemediationRequest() which
 // provisions RR fixtures so the RRExistenceChecker (HARM-004) allows sessions to start.
-func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
+func installKAE2ECRDs(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	crdFiles := []string{
 		"kubernaut.ai_remediationrequests.yaml",
@@ -328,7 +328,7 @@ func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
 		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
-		crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 		crdCmd.Stdout = writer
 		crdCmd.Stderr = writer
 		if err := crdCmd.Run(); err != nil {
@@ -347,10 +347,11 @@ func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
 // created so that it triggers HardFail as expected.
 //
 // Resources created:
-//   production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
-//               ambiguous-pod, failed-analysis-pod (Pods), batch-job-pvc-expired (PVC)
-//   staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
-//               re-enrichment to worker/staging preserves pdbProtected detection)
+//
+//	production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
+//	            ambiguous-pod, failed-analysis-pod (Pods), batch-job-pvc-expired (PVC)
+//	staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
+//	            re-enrichment to worker/staging preserves pdbProtected detection)
 //
 // Note: an empty enrichment: {} YAML section in the KA ConfigMap will zero out the
 // HAPI defaults (MaxRetries=3 → 0), silently disabling retry+fail-hard. The E2E
@@ -863,11 +864,11 @@ subjects:
 // DeployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
 // Port mapping: 30088 → 8443 (container), host 8088. KA defaults to 8443 since the H1 GA finding.
 // enableJWT controls whether jwtProviders are included in the config (requires DEX to be deployed).
-func DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
+func DeployKubernautAgentOnly(ctx context.Context, clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
 
 	// DD-TEST-007: Build GOCOVERDIR YAML snippets for binary coverage instrumentation
-	covEnv := coverageEnvYAML("kubernautagent")
+	covEnv := coverageEnvYAML()
 	covMount := coverageVolumeMountYAML()
 	covVol := coverageVolumeYAML()
 
@@ -1064,7 +1065,7 @@ spec:
     app: kubernaut-agent
 `, namespace, namespace, namespace, jwtConfigSection, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
 
-	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1076,7 +1077,7 @@ spec:
 
 	// Wait for pod readiness
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Kubernaut Agent pod to be ready...")
-	waitCmd := exec.Command("kubectl", "rollout", "status", "deployment/kubernaut-agent",
+	waitCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status", "deployment/kubernaut-agent",
 		"-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer

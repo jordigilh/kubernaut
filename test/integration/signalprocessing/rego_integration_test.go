@@ -80,7 +80,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			sp := createSignalProcessingCR(ns, "rego-env-load-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-env-01"],
 				Name:        "RegoEnvLoadTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -90,10 +90,10 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying environment.rego was loaded and evaluated")
@@ -125,10 +125,10 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying priority.rego was loaded and evaluated")
@@ -159,7 +159,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			sp := createSignalProcessingCR(ns, "rego-eval-env-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-eve-01"],
 				Name:        "RegoEvalEnvTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -169,10 +169,10 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying environment evaluation")
@@ -194,7 +194,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			sp := createSignalProcessingCR(ns, "rego-eval-pri-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-evp-01"],
 				Name:        "RegoEvalPriTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -204,10 +204,10 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying priority evaluation")
@@ -235,14 +235,14 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 		// Missing Rego policy ConfigMap falls back to defaults
 		It("BR-SP-053: should fall back to defaults when Rego policy ConfigMap is missing", func() {
 			By("Creating namespace without any Rego policy ConfigMaps")
-			ns := createTestNamespace("rego-fallback-missing")
+			ns := createTestNamespace(ctx, "rego-fallback-missing")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
 			sp := createSignalProcessingCR(ns, "rego-fallback-missing-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-fms-01"],
 				Name:        "RegoFallbackMissingTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -252,10 +252,10 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying fallback to defaults")
@@ -294,7 +294,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 					sp := createSignalProcessingCR(ns, "rego-concurrent-"+string(rune('a'+idx)), signalprocessingv1alpha1.SignalData{
 						Fingerprint: GenerateConcurrentFingerprint("rego-concurrent", idx),
 						Name:        "RegoConcurrentTest",
-						Severity: "high",
+						Severity:    "high",
 						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -312,9 +312,9 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 			By("Waiting for all to complete")
 			for _, sp := range sps {
 				if sp != nil {
-					err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+					err := waitForCompletion(sp.Name, sp.Namespace)
 					Expect(err).ToNot(HaveOccurred())
-					_ = deleteAndWait(sp, timeout)
+					_ = deleteAndWait(sp)
 				}
 			}
 		})
@@ -330,7 +330,7 @@ var _ = Describe("SignalProcessing Rego Integration", func() {
 		// 5s timeout enforcement
 		It("DD-WORKFLOW-001: should enforce 5s timeout on Rego evaluation", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("rego-timeout")
+			ns := createTestNamespace(ctx, "rego-timeout")
 			defer deleteTestNamespace(ns)
 
 			By("Creating ConfigMap with slow policy (infinite loop protection)")
@@ -360,7 +360,7 @@ labels["computed"] := [result] if {
 			sp := createSignalProcessingCR(ns, "rego-timeout-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["rego-tim-01"],
 				Name:        "RegoTimeoutTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -370,10 +370,10 @@ labels["computed"] := [result] if {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion (should complete or timeout within 5s)")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying completion")
@@ -403,7 +403,7 @@ labels["computed"] := [result] if {
 		// Value truncation (100 chars)
 		It("DD-WORKFLOW-001: should truncate values longer than 100 characters", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("rego-val-value")
+			ns := createTestNamespace(ctx, "rego-val-value")
 			defer deleteTestNamespace(ns)
 
 			By("Updating unified policy with long-value labels rules")
@@ -426,10 +426,10 @@ labels["shortvalue"] := ["ok"] if { true }
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying value truncation")
@@ -447,7 +447,7 @@ labels["shortvalue"] := ["ok"] if { true }
 		// Max keys truncation (10)
 		It("DD-WORKFLOW-001: should limit CustomLabels to 10 keys maximum", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("rego-val-maxkeys")
+			ns := createTestNamespace(ctx, "rego-val-maxkeys")
 			defer deleteTestNamespace(ns)
 
 			By("Updating unified policy with 15 label keys")
@@ -471,10 +471,10 @@ labels["shortvalue"] := ["ok"] if { true }
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying max keys limit")

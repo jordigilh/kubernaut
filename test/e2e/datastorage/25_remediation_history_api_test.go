@@ -44,6 +44,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	dsnHost = "host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable"
+)
+
 var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1.1)", Label("e2e", "remediation-history"), func() {
 	var (
 		testDB          *sql.DB
@@ -71,7 +76,7 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 		}, "10s", "500ms").Should(Equal(200), "DataStorage service should be ready")
 
 		// Connect to PostgreSQL for direct data insertion (same as 12_audit_write_api_test.go)
-		connStr := "host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable"
+		connStr := dsnHost
 		var err error
 		testDB, err = sql.Open("pgx", connStr)
 		Expect(err).ToNot(HaveOccurred())
@@ -125,9 +130,9 @@ var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1
 				"target_resource":           target,
 				"pre_remediation_spec_hash": preHash,
 				"action_type":               actionType,
-				"signal_type":              "HighCPULoad",
+				"signal_type":               "HighCPULoad",
 				"signal_fingerprint":        "fp-e2e-" + testID,
-				"outcome":                  "success",
+				"outcome":                   "success",
 			}, ts)
 	}
 

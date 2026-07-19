@@ -151,6 +151,11 @@ func (h *ProcessingHandler) handleSPCompleted(ctx context.Context, rr *remediati
 	})
 	if err != nil {
 		logger.Error(err, "Failed to set AIAnalysisRef in status")
+		// nolint:nilerr // controller-runtime requeue idiom: the error is
+		// logged above and converted into an explicit phase.Requeue result
+		// so the caller controls backoff timing instead of triggering
+		// controller-runtime's default exponential backoff on a returned
+		// error (Issue #1546 Tier 3).
 		return phase.Requeue(config.RequeueGenericError, "AI ref update failed"), nil
 	}
 	logger.V(1).Info("Set AIAnalysisRef in status", "aiName", aiName)

@@ -134,10 +134,10 @@ func (h *Handler) resolveDisabledVersionDuplicate(ctx context.Context, disabled,
 	repo := h.workflowIntegrityRepo
 
 	if disabled.ContentHash == incomingHash {
-		if err := repo.UpdateStatus(ctx, disabled.WorkflowID, disabled.Version, "Active", "re-enabled via CRD re-creation", ""); err != nil {
+		if err := repo.UpdateStatus(ctx, disabled.WorkflowID, disabled.Version, models.WorkflowStatusActive, "re-enabled via CRD re-creation", ""); err != nil {
 			return nil, fmt.Errorf("re-enable workflow %s: %w", disabled.WorkflowID, err)
 		}
-		disabled.Status = "Active"
+		disabled.Status = models.WorkflowStatusActive
 		disabled.DisabledAt = nil
 		disabled.DisabledBy = nil
 		disabled.DisabledReason = nil
@@ -249,16 +249,16 @@ func (h *Handler) tryReEnableWorkflow(ctx context.Context, workflow *models.Reme
 		return nil, fmt.Errorf("workflow not found after conflict")
 	}
 
-	if existing.Status != "Disabled" {
+	if existing.Status != models.WorkflowStatusDisabled {
 		return nil, fmt.Errorf("workflow is %s, not disabled", existing.Status)
 	}
 
 	reason := "re-enabled via CRD re-creation"
-	if err := repo.UpdateStatus(ctx, existing.WorkflowID, existing.Version, "Active", reason, ""); err != nil {
+	if err := repo.UpdateStatus(ctx, existing.WorkflowID, existing.Version, models.WorkflowStatusActive, reason, ""); err != nil {
 		return nil, fmt.Errorf("update status to active: %w", err)
 	}
 
-	existing.Status = "Active"
+	existing.Status = models.WorkflowStatusActive
 	existing.DisabledAt = nil
 	existing.DisabledBy = nil
 	existing.DisabledReason = nil
@@ -307,10 +307,7 @@ func (h *Handler) buildWorkflowCommon(
 		return nil, err
 	}
 
-	workflow, err := buildWorkflowCore(schemaParser, parsedSchema, rawContent, rawParams)
-	if err != nil {
-		return nil, err
-	}
+	workflow := buildWorkflowCore(schemaParser, parsedSchema, rawContent, rawParams)
 
 	if err := applyWorkflowLabels(schemaParser, parsedSchema, workflow); err != nil {
 		return nil, err
@@ -326,8 +323,10 @@ func (h *Handler) buildWorkflowCommon(
 // (description, execution engine, execution bundle/digest, engine config,
 // service account) that do not depend on label extraction. Extracted from
 // buildWorkflowCommon (Wave 6 6f GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.WorkflowSchema, rawContent string, rawParams json.RawMessage) (*models.RemediationWorkflow, error) {
+// motion, no behavior change. Issue #1546 Tier 4: dropped the vestigial
+// error return (bundle-digest parse failures are already handled
+// internally by falling back to an unset digest, so this never failed).
+func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.WorkflowSchema, rawContent string, rawParams json.RawMessage) *models.RemediationWorkflow {
 	desc := models.StructuredDescription{
 		What:          parsedSchema.Description.What,
 		WhenToUse:     parsedSchema.Description.WhenToUse,
@@ -347,7 +346,7 @@ func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.Workflo
 		Parameters:      &rawParams,
 		ExecutionEngine: execEngine,
 		ActionType:      parsedSchema.ActionType,
-		Status:          "Active",
+		Status:          models.WorkflowStatusActive,
 		IsLatestVersion: true,
 	}
 
@@ -361,7 +360,7 @@ func buildWorkflowCore(schemaParser *schema.Parser, parsedSchema *models.Workflo
 	workflow.EngineConfig = schemaParser.ExtractEngineConfig(parsedSchema)
 	workflow.ServiceAccountName = schemaParser.ExtractServiceAccountName(parsedSchema)
 
-	return workflow, nil
+	return workflow
 }
 
 // applyWorkflowLabels extracts and unmarshals the schema's labels and

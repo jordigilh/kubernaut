@@ -40,6 +40,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	datastorageE2e = "datastorage-e2e"
+)
+
 // Test suite for Data Storage E2E tests
 // This suite sets up a complete production-like environment:
 // - Kind cluster (2 nodes: 1 control-plane + 1 worker) with NodePort exposure
@@ -107,7 +112,7 @@ var (
 	testDB *sql.DB
 
 	// Shared namespace for all tests (services deployed ONCE)
-	sharedNamespace string = "datastorage-e2e"
+	sharedNamespace string = datastorageE2e
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -162,7 +167,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Set cluster configuration
-		clusterName = "datastorage-e2e"
+		clusterName = datastorageE2e
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
 		// Use isolated kubeconfig path per TESTING_GUIDELINES.md section "Kubeconfig Isolation Policy"
@@ -213,7 +218,7 @@ var _ = SynchronizedBeforeSuite(
 		// DD-API-001 + DD-AUTH-014: Initialize OpenAPI client with ServiceAccount authentication
 		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating ServiceAccount for E2E tests...")
 		e2eSAName := "datastorage-e2e-client"
-		testNamespace := "datastorage-e2e"
+		testNamespace := datastorageE2e
 		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(
 			ctx,
 			testNamespace,
@@ -250,7 +255,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
 		// DD-WORKFLOW-016: Seed action types before any workflow operations (FK constraint)
-		Expect(infrastructure.SeedActionTypesViaAPI(DSClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
+		Expect(infrastructure.SeedActionTypesViaAPI(ctx, DSClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
 
 		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)
 		AuthHTTPClient = &http.Client{
@@ -302,7 +307,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal setup data")
 		kubeconfigPath = setupData["kubeconfig"]
 		e2eToken := setupData["token"]
-		clusterName = "datastorage-e2e"
+		clusterName = datastorageE2e
 
 		// Set shared URLs - NodePort or port-forward depending on Kind provider
 		// Per DD-TEST-001: DataStorage E2E uses ports 25433-28139
@@ -349,7 +354,7 @@ var _ = SynchronizedBeforeSuite(
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
-					"-n", "datastorage-e2e",
+					"-n", datastorageE2e,
 					"svc/postgresql",
 					fmt.Sprintf("%d:5432", pgLocalPort))
 				if err := cmd.Run(); err != nil {
@@ -361,7 +366,7 @@ var _ = SynchronizedBeforeSuite(
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
-					"-n", "datastorage-e2e",
+					"-n", datastorageE2e,
 					"svc/data-storage-service",
 					fmt.Sprintf("%d:8080", dsLocalPort))
 				if err := cmd.Run(); err != nil {
@@ -373,7 +378,7 @@ var _ = SynchronizedBeforeSuite(
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
-					"-n", "datastorage-e2e",
+					"-n", datastorageE2e,
 					"svc/data-storage-service",
 					fmt.Sprintf("%d:9090", metricsLocalPort))
 				if err := cmd.Run(); err != nil {
@@ -385,7 +390,7 @@ var _ = SynchronizedBeforeSuite(
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
-					"-n", "datastorage-e2e",
+					"-n", datastorageE2e,
 					"svc/data-storage-service",
 					fmt.Sprintf("%d:8081", healthLocalPort))
 				if err := cmd.Run(); err != nil {

@@ -115,12 +115,12 @@ var _ = Describe("EA Dual-Target Types (DD-EM-003)", func() {
 		Expect(ea.Spec.SignalTarget.Kind).ToNot(Equal(ea.Spec.RemediationTarget.Kind),
 			"hpa-maxed: signal target (Deployment) should differ from remediation target (HPA)")
 
-		copy := ea.DeepCopy()
-		Expect(copy.Spec.SignalTarget.Kind).To(Equal("Deployment"))
-		Expect(copy.Spec.RemediationTarget.Kind).To(Equal("HorizontalPodAutoscaler"))
+		eaCopy := ea.DeepCopy()
+		Expect(eaCopy.Spec.SignalTarget.Kind).To(Equal("Deployment"))
+		Expect(eaCopy.Spec.RemediationTarget.Kind).To(Equal("HorizontalPodAutoscaler"))
 
 		ea.Spec.SignalTarget.Name = "mutated"
-		Expect(copy.Spec.SignalTarget.Name).To(Equal("api-frontend"),
+		Expect(eaCopy.Spec.SignalTarget.Name).To(Equal("api-frontend"),
 			"deep copy should be independent")
 	})
 })

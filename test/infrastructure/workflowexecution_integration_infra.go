@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -117,7 +118,7 @@ const (
 // - Metrics (port 19097): DataStorage metrics endpoint
 //
 // Returns error if any infrastructure component fails to start.
-func StartWEIntegrationInfrastructure(writer io.Writer) error {
+func StartWEIntegrationInfrastructure(ctx context.Context, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -133,7 +134,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 1: Cleanup existing containers (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
-	CleanupContainers([]string{
+	CleanupContainers(ctx, []string{
 		WEIntegrationDataStorageContainer,
 		WEIntegrationRedisContainer,
 		WEIntegrationPostgresContainer,
@@ -151,7 +152,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 3: Start PostgreSQL FIRST (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
-	if err := StartPostgreSQL(PostgreSQLConfig{
+	if err := StartPostgreSQL(ctx, PostgreSQLConfig{
 		ContainerName: WEIntegrationPostgresContainer,
 		Port:          WEIntegrationPostgresPort,
 		DBName:        WEIntegrationDBName,
@@ -163,7 +164,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 
 	// CRITICAL: Wait for PostgreSQL to be ready before proceeding (using shared utility)
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
-	if err := WaitForPostgreSQLReady(WEIntegrationPostgresContainer, WEIntegrationDBUser, WEIntegrationDBName, writer); err != nil {
+	if err := WaitForPostgreSQLReady(ctx, WEIntegrationPostgresContainer, WEIntegrationDBUser, WEIntegrationDBName, writer); err != nil {
 		return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready\n\n")
@@ -172,7 +173,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 4: Run migrations
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
-	if err := runWEMigrations(projectRoot, writer); err != nil {
+	if err := runWEMigrations(ctx, projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
@@ -181,7 +182,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 5: Start Redis SECOND (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🔴 Starting Redis...\n")
-	if err := StartRedis(RedisConfig{
+	if err := StartRedis(ctx, RedisConfig{
 		ContainerName: WEIntegrationRedisContainer,
 		Port:          WEIntegrationRedisPort,
 	}, writer); err != nil {
@@ -190,7 +191,7 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 
 	// Wait for Redis to be ready (using shared utility)
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
-	if err := WaitForRedisReady(WEIntegrationRedisContainer, writer); err != nil {
+	if err := WaitForRedisReady(ctx, WEIntegrationRedisContainer, writer); err != nil {
 		return fmt.Errorf("redis failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
@@ -199,20 +200,20 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 6: Start DataStorage LAST
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	if err := startWEDataStorage(projectRoot, writer); err != nil {
+	if err := startWEDataStorage(ctx, projectRoot, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
 	// CRITICAL: Wait for DataStorage HTTP endpoint to be ready (using shared utility)
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
-	if err := WaitForHTTPHealth(
+	if err := WaitForHTTPHealth(ctx,
 		fmt.Sprintf("http://127.0.0.1:%d/readyz", WEIntegrationHealthPort),
 		30*time.Second,
 		writer,
 	); err != nil {
 		// Print container logs for debugging
 		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
-		logsCmd := exec.Command("podman", "logs", WEIntegrationDataStorageContainer)
+		logsCmd := exec.CommandContext(ctx, "podman", "logs", WEIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
@@ -237,11 +238,11 @@ func StartWEIntegrationInfrastructure(writer io.Writer) error {
 }
 
 // StopWEIntegrationInfrastructure stops all WorkflowExecution integration infrastructure containers.
-func StopWEIntegrationInfrastructure(writer io.Writer) error {
+func StopWEIntegrationInfrastructure(ctx context.Context, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🛑 Stopping WorkflowExecution integration infrastructure...\n")
 
 	// Stop and remove containers (using shared utility)
-	CleanupContainers([]string{
+	CleanupContainers(ctx, []string{
 		WEIntegrationDataStorageContainer,
 		WEIntegrationRedisContainer,
 		WEIntegrationPostgresContainer,
@@ -257,7 +258,7 @@ func StopWEIntegrationInfrastructure(writer io.Writer) error {
 
 // Service-specific helper functions (common functions moved to shared_integration_utils.go)
 
-func runWEMigrations(projectRoot string, writer io.Writer) error {
+func runWEMigrations(ctx context.Context, projectRoot string, writer io.Writer) error {
 	// Apply migrations using custom script (same pattern as Gateway)
 	// Per DD-SCHEMA-001: Data Storage team owns migrations, but test infrastructure must apply them
 	migrationsDir := filepath.Join(projectRoot, "migrations")
@@ -275,10 +276,10 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 
 	// Use host.containers.internal for macOS compatibility (Podman VM can reach host)
 	const migrationsImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(migrationsImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, migrationsImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull migrations image: %w", err)
 	}
-	cmd := exec.Command("podman", "run", "--rm",
+	cmd := exec.CommandContext(ctx, "podman", "run", "--rm",
 		"--name", WEIntegrationMigrationsContainer,
 		"-v", fmt.Sprintf("%s:/migrations:ro", migrationsDir),
 		"-e", "PGHOST=host.containers.internal",
@@ -294,7 +295,7 @@ func runWEMigrations(projectRoot string, writer io.Writer) error {
 	return cmd.Run()
 }
 
-func startWEDataStorage(projectRoot string, writer io.Writer) error {
+func startWEDataStorage(ctx context.Context, projectRoot string, writer io.Writer) error {
 	// DD-TEST-001 v1.3: Use infrastructure image format for parallel test isolation
 	// Format: localhost/{infrastructure}:{consumer}-{uuid}
 	// Example: localhost/datastorage:workflowexecution-1884d074
@@ -302,7 +303,7 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 
 	_, _ = fmt.Fprintf(writer, "   Resolving DataStorage image (%s)...\n", dsImage)
 	// Use shared build function (includes --no-cache, coverage support, and registry optimization)
-	actualImage, err := buildDataStorageImageWithTag(dsImage, writer)
+	actualImage, err := buildDataStorageImageWithTag(ctx, dsImage, writer)
 	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
@@ -313,7 +314,7 @@ func startWEDataStorage(projectRoot string, writer io.Writer) error {
 
 	// DataStorage connects to PostgreSQL and Redis via host.containers.internal
 	// This allows containers to reach services on the host via port mapping
-	cmd := exec.Command("podman", "run",
+	cmd := exec.CommandContext(ctx, "podman", "run",
 		"-d",
 		"--name", WEIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", WEIntegrationDataStoragePort),

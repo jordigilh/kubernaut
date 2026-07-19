@@ -332,6 +332,36 @@ const (
 	PhaseFailed = "Failed"
 )
 
+// AIAnalysis SubReason constants (subset of the full kubebuilder enum on
+// AIAnalysisStatus.SubReason below) for values referenced from multiple
+// call sites in pkg/aianalysis/handlers.
+const (
+	// SubReasonWorkflowNotFound indicates no matching workflow was found in the catalog
+	SubReasonWorkflowNotFound = "WorkflowNotFound"
+	// SubReasonNoMatchingWorkflows indicates the catalog query returned zero candidates
+	SubReasonNoMatchingWorkflows = "NoMatchingWorkflows"
+	// SubReasonTransientError indicates a retryable error occurred (network, API, timeout)
+	SubReasonTransientError = "TransientError"
+	// SubReasonProblemResolved indicates KA reported the problem self-resolved (no workflow needed)
+	SubReasonProblemResolved = "ProblemResolved"
+	// SubReasonLowConfidence indicates workflow selection confidence fell below threshold
+	SubReasonLowConfidence = "LowConfidence"
+	// SubReasonMaxRetriesExceeded indicates a transient error persisted past the retry budget
+	SubReasonMaxRetriesExceeded = "MaxRetriesExceeded"
+)
+
+// AIAnalysis HumanReviewReason constants (subset of the full kubebuilder enum
+// on AIAnalysisStatus.HumanReviewReason below) for values referenced from
+// multiple call sites in pkg/aianalysis/handlers.
+const (
+	// HumanReviewReasonRCAIncomplete indicates KA could not determine the remediation target
+	HumanReviewReasonRCAIncomplete = "rca_incomplete"
+	// HumanReviewReasonNoMatchingWorkflows indicates investigation succeeded but no workflow matched (#768)
+	HumanReviewReasonNoMatchingWorkflows = "no_matching_workflows"
+	// HumanReviewReasonLowConfidence indicates workflow selection confidence fell below threshold
+	HumanReviewReasonLowConfidence = "low_confidence"
+)
+
 // AIAnalysisStatus defines the observed state of AIAnalysis.
 type AIAnalysisStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.

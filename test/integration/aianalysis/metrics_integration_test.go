@@ -35,6 +35,11 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	defaultFixture = "default"
+)
+
 // ========================================
 // METRICS INTEGRATION TESTS
 // Business Requirement: BR-AI-OBSERVABILITY-001
@@ -72,7 +77,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		Expect(reconciler.Metrics).ToNot(BeNil(), "Reconciler metrics must be initialized")
 
 		ctx = context.Background()
-		namespace = "default" // Use default namespace for integration tests
+		namespace = defaultFixture // Use default namespace for integration tests
 	})
 
 	// Helper to get counter value from reconciler's metrics (WorkflowExecution pattern)
@@ -141,7 +146,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
 		})
@@ -195,7 +200,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
 				"AIAnalysis should complete successfully with mock returning success")
 
@@ -375,7 +380,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 60*time.Second, 500*time.Millisecond).Should(Or(Equal("Completed"), Equal("AwaitingApproval")))
 
 			// 3. Verify Rego evaluation metrics were emitted

@@ -44,6 +44,12 @@ type ActionTypeTaxonomy struct {
 	UpdatedAt   time.Time       `json:"updatedAt" db:"updated_at"`
 }
 
+// ActionTypeTaxonomy.Status values.
+const (
+	ActionTypeStatusActive   = "Active"
+	ActionTypeStatusDisabled = "Disabled"
+)
+
 // ActionTypeDescription is an alias for the shared StructuredDescription type.
 // BR-WORKFLOW-004: camelCase JSON keys (migration 026 updates existing data).
 // DD-WORKFLOW-016: Same format shared between RemediationWorkflow and ActionType.

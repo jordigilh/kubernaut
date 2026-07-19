@@ -156,8 +156,9 @@ func TestContextJWTDelegationTransport_RejectsExpiredToken(t *testing.T) {
 		ExpiresAt: time.Now().Add(-time.Hour), // expired 1h ago
 	})
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, http.NoBody)
-	_, err := client.Do(req)
+	resp, err := client.Do(req)
 	if err == nil {
+		_ = resp.Body.Close()
 		t.Fatal("expected error for expired token delegation")
 	}
 	if !containsSubstring(err.Error(), "token expired") {

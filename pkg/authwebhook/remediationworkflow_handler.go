@@ -200,10 +200,10 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	// ADR-058: Update CRD .status asynchronously after admission to avoid blocking
 	// the API server. The status subresource is used so this doesn't conflict with
 	// the spec stored by the API server.
-	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result)
+	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, result) //nolint:contextcheck // updateCRDStatus runs async after admission response (ADR-058); uses its own bounded context since the admission context is cancelled after response
 
 	// Phase 3c: best-effort cross-update of ActionType CRD status.activeWorkflowCount
-	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
+	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace) //nolint:contextcheck // refreshActionTypeWorkflowCount runs async after admission response (Phase 3c best-effort cross-update); see doc comment
 
 	return admission.Allowed("workflow registered in catalog")
 }
@@ -255,7 +255,7 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 	// Writing the count after a failed disable would actively reinforce stale data.
 	// The finalizer reconciler (RWFinalizerName) handles the guaranteed path.
 	if disableOK {
-		go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace)
+		go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace) //nolint:contextcheck // refreshActionTypeWorkflowCount runs async after admission response (Phase 3c best-effort cross-update); see doc comment
 	}
 
 	return admission.Allowed("workflow disabled in catalog")
@@ -405,10 +405,10 @@ func marshalCleanCRDContent(rw *rwv1alpha1.RemediationWorkflow) ([]byte, error) 
 		Name string `json:"name"`
 	}
 	type cleanCRD struct {
-		APIVersion string                              `json:"apiVersion"`
-		Kind       string                              `json:"kind"`
-		Metadata   cleanMetadata                       `json:"metadata"`
-		Spec       rwv1alpha1.RemediationWorkflowSpec  `json:"spec"`
+		APIVersion string                             `json:"apiVersion"`
+		Kind       string                             `json:"kind"`
+		Metadata   cleanMetadata                      `json:"metadata"`
+		Spec       rwv1alpha1.RemediationWorkflowSpec `json:"spec"`
 	}
 
 	apiVersion := rw.APIVersion
@@ -428,4 +428,3 @@ func marshalCleanCRDContent(rw *rwv1alpha1.RemediationWorkflow) ([]byte, error) 
 	}
 	return json.Marshal(clean)
 }
-

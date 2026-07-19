@@ -117,7 +117,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:       ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalName:       "HighMemoryUsage",
+				SignalName:      "HighMemoryUsage",
 				Namespace:       "test-namespace",
 				Fingerprint:     "abc123def456",
 				SignalType:      ogenclient.GatewayAuditPayloadSignalTypeAlert,
@@ -272,14 +272,14 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			Expect(rr.Spec.SignalType).To(Equal("alert"), "Gap #2: SignalType from gateway.signal.received")
 			Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("app", "frontend"), "Gap #3: SignalLabels from gateway.signal.received")
 			Expect(rr.Spec.SignalAnnotations).To(HaveKeyWithValue("summary", "Memory usage above 90%"), "Gap #3: SignalAnnotations from gateway.signal.received")
-			Expect(string(rr.Spec.OriginalPayload)).To(ContainSubstring("memory-high"), "Gap #3: OriginalPayload from gateway.signal.received")
+			Expect(rr.Spec.OriginalPayload).To(ContainSubstring("memory-high"), "Gap #3: OriginalPayload from gateway.signal.received")
 
 			// Gap #4: Provider data
 			Expect(rr.Spec.ProviderData).ToNot(BeNil(), "Gap #4: ProviderData should be populated")
 			Expect(rr.Spec.ProviderData).ToNot(BeEmpty(), "Gap #4: ProviderData should not be empty")
 			// ProviderData is stored as JSON string (issue #96) - contains ProviderResponseSummary fields
 			Expect(rr.Spec.ProviderData).To(ContainSubstring("incident-memory-high"), "Gap #4: incident_id from aianalysis.analysis.completed")
-			Expect(string(rr.Spec.ProviderData)).To(ContainSubstring("Memory leak detected"), "Gap #4: analysis_preview from aianalysis.analysis.completed")
+			Expect(rr.Spec.ProviderData).To(ContainSubstring("Memory leak detected"), "Gap #4: analysis_preview from aianalysis.analysis.completed")
 
 			// Gap #5: Workflow selection
 			Expect(rr.Status.SelectedWorkflowRef).ToNot(BeNil(), "Gap #5: SelectedWorkflowRef should be populated")
@@ -319,7 +319,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			// ✅ Using typed ogenclient payloads
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalName:   "PartialAlert",
+				SignalName:  "PartialAlert",
 				Namespace:   "test-namespace",
 				Fingerprint: "partial123",
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
@@ -392,7 +392,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			// ✅ Using typed ogenclient payload
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-				SignalName:   "FailureAlert",
+				SignalName:  "FailureAlert",
 				Namespace:   "test-namespace",
 				Fingerprint: "failure123",
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,

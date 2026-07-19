@@ -378,11 +378,11 @@ func extractText(result *mcp.CallToolResult) string {
 	return ""
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
 		return s
 	}
-	return s[:max] + "..."
+	return s[:maxLen] + "..."
 }
 
 // diffClusters returns elements in a that are not in b (set difference a - b).

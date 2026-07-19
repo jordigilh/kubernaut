@@ -92,7 +92,7 @@ func (h *Handler) HandleListAvailableActions(w http.ResponseWriter, r *http.Requ
 		if event, err := dsaudit.NewActionsListedAuditEvent(filters, totalCount, durationMs); err != nil {
 			h.logger.Error(err, "Failed to create actions_listed audit event")
 		} else {
-			h.emitAuditEventsAsync([]*api.AuditEventRequest{event})
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{event}) //nolint:contextcheck // emitAuditEventsAsync is the standard non-blocking audit pattern (BR-AUDIT-024); see doc comment on emitAuditEventsAsync
 		}
 	}
 
@@ -157,7 +157,7 @@ func (h *Handler) HandleListWorkflowsByActionType(w http.ResponseWriter, r *http
 		if event, err := dsaudit.NewWorkflowsListedAuditEvent(actionType, filters, totalCount, durationMs); err != nil {
 			h.logger.Error(err, "Failed to create workflows_listed audit event", "action_type", actionType)
 		} else {
-			h.emitAuditEventsAsync([]*api.AuditEventRequest{event}, "action_type", actionType)
+			h.emitAuditEventsAsync([]*api.AuditEventRequest{event}, "action_type", actionType) //nolint:contextcheck // emitAuditEventsAsync is the standard non-blocking audit pattern (BR-AUDIT-024); see doc comment on emitAuditEventsAsync
 		}
 	}
 

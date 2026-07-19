@@ -31,8 +31,14 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	remediationworkflowv1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	completed           = "Completed"
+	operatorKubernautAi = "operator@kubernaut.ai"
 )
 
 // TDD Phase: RED — Issue #594 RO Integration Tests
@@ -57,7 +63,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			sp := &signalprocessingv1.SignalProcessing{}
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		Eventually(func() error {
@@ -67,7 +73,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 
 		ai := &aianalysisv1.AIAnalysis{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-		ai.Status.Phase = "Completed"
+		ai.Status.Phase = completed
 		ai.Status.ApprovalRequired = true
 		ai.Status.ApprovalReason = "Confidence below threshold"
 		ai.Status.SelectedWorkflow = aiWorkflow
@@ -137,13 +143,13 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 
 	defaultAIWorkflow := func() *aianalysisv1.SelectedWorkflow {
 		return &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-ai-original",
-			Version:         "1.0.0",
-			Confidence:      0.72,
-			ExecutionBundle: "ai-bundle:v1.0@sha256:aaa",
+			WorkflowID:            "wf-ai-original",
+			Version:               "1.0.0",
+			Confidence:            0.72,
+			ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
 			ExecutionBundleDigest: "sha256:aaa",
-			ExecutionEngine: "tekton",
-			Rationale:       "AI recommended restart",
+			ExecutionEngine:       "tekton",
+			Rationale:             "AI recommended restart",
 			Parameters: map[string]string{
 				"NAMESPACE": "default",
 				"POD_NAME":  "app-pod-1",
@@ -152,7 +158,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 	}
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-override")
+		namespace = createTestNamespace(ctx, "ro-override")
 		rrName = fmt.Sprintf("rr-ovr-%s", uuid.New().String()[:13])
 	})
 
@@ -176,7 +182,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			By("Approving with workflow override")
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)).To(Succeed())
 			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = "operator@kubernaut.ai"
+			rar.Status.DecidedBy = operatorKubernautAi
 			rar.Status.DecisionMessage = "Override to drain-restart"
 			decidedAt := metav1.Now()
 			rar.Status.DecidedAt = &decidedAt
@@ -212,7 +218,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			By("Approving without override (standard flow)")
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)).To(Succeed())
 			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = "operator@kubernaut.ai"
+			rar.Status.DecidedBy = operatorKubernautAi
 			rar.Status.DecisionMessage = "Approved as recommended"
 			decidedAt := metav1.Now()
 			rar.Status.DecidedAt = &decidedAt
@@ -244,7 +250,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			By("Approving with params-only override")
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)).To(Succeed())
 			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = "operator@kubernaut.ai"
+			rar.Status.DecidedBy = operatorKubernautAi
 			rar.Status.DecisionMessage = "Override params"
 			decidedAt := metav1.Now()
 			rar.Status.DecidedAt = &decidedAt
@@ -283,7 +289,7 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 			By("Approving with override")
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)).To(Succeed())
 			rar.Status.Decision = remediationv1.ApprovalDecisionApproved
-			rar.Status.DecidedBy = "operator@kubernaut.ai"
+			rar.Status.DecidedBy = operatorKubernautAi
 			decidedAt := metav1.Now()
 			rar.Status.DecidedAt = &decidedAt
 			rar.Status.WorkflowOverride = &remediationv1.WorkflowOverride{

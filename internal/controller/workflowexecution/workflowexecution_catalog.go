@@ -40,6 +40,10 @@ import (
 // resolveExecutionBundle, resolveDependencies, and GetWorkflowEngineConfig.
 // Idempotent: returns nil immediately if the engine is already resolved.
 func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
+	// nolint:nilnil // intentional "already resolved, nothing to do" sentinel,
+	// not an error — already documented above ("Idempotent: returns nil
+	// immediately..."); the sole caller discards the metadata value entirely
+	// and only checks the error (Issue #1546 Tier 2).
 	if wfe.Status.ExecutionEngine != "" {
 		return nil, nil
 	}
@@ -104,13 +108,14 @@ func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context
 	return meta, nil
 }
 
-// resolveExecutionEngine returns the cached execution engine from the WFE status.
-// In non-Pending phases the engine was already resolved during Pending and persisted
-// to wfe.Status.ExecutionEngine. Returns an error only if the engine is missing,
-// which indicates a programming error (Pending handler should have set it).
-func (r *WorkflowExecutionReconciler) resolveExecutionEngine(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+// validateExecutionEngineResolved checks that the WFE status already carries
+// a resolved execution engine. In non-Pending phases the engine was already
+// resolved during Pending and persisted to wfe.Status.ExecutionEngine, which
+// all callers read directly after this check passes; there is a programming
+// error (Pending handler should have set it) only if it is still missing.
+func (r *WorkflowExecutionReconciler) validateExecutionEngineResolved(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	if wfe.Status.ExecutionEngine != "" {
-		return wfe.Status.ExecutionEngine, nil
+		return nil
 	}
-	return "", fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
+	return fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
 }

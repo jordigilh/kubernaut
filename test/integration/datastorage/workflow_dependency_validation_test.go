@@ -42,6 +42,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	quayIoKubernautCicdTest = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
+)
+
 // ========================================
 // Issue #1481: Registration No Longer Pre-Flight-Validates Dependencies
 // ========================================
@@ -72,7 +77,7 @@ func depTestBaseSchemaUnique() string {
 	crd.Spec.Labels.Environment = []string{"*"}
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
-	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
+	crd.Spec.Execution.Bundle = quayIoKubernautCicdTest
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
 	}
@@ -99,7 +104,7 @@ func depTestSchemaWithSecrets(workflowName string, secretNames ...string) string
 	crd.Spec.Labels.Environment = []string{"*"}
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
-	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
+	crd.Spec.Execution.Bundle = quayIoKubernautCicdTest
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
 	}
@@ -123,7 +128,7 @@ func depTestSchemaWithConfigMaps(workflowName string, cmNames ...string) string 
 	crd.Spec.Labels.Environment = []string{"*"}
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
 	crd.Spec.Labels.Priority = "*"
-	crd.Spec.Execution.Bundle = "quay.io/kubernaut-cicd/test-workflows/dep-test:v1.0.0@sha256:f313b9632f3a8d0ffd41150b12715a43a41c6c8e7871bb830fd82c09b5988cc4"
+	crd.Spec.Execution.Bundle = quayIoKubernautCicdTest
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "TARGET_NAMESPACE", Type: "string", Required: true, Description: "Namespace of the affected resource"},
 	}
@@ -149,7 +154,7 @@ func createDepTestServer(schemaYAML string) (*httptest.Server, *server.Server) {
 
 	pgHost := os.Getenv("POSTGRES_HOST")
 	if pgHost == "" {
-		pgHost = "localhost"
+		pgHost = localhost
 	}
 	pgPort := os.Getenv("POSTGRES_PORT")
 	if pgPort == "" {
@@ -159,7 +164,7 @@ func createDepTestServer(schemaYAML string) (*httptest.Server, *server.Server) {
 
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
-		redisHost = "localhost"
+		redisHost = localhost
 	}
 	redisPort := os.Getenv("REDIS_PORT")
 	if redisPort == "" {

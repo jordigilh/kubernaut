@@ -98,7 +98,6 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSignalProcessed)
 	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, ActionProcessed)
@@ -223,7 +222,6 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypePhaseTransition)
 	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, ActionPhaseTransition)
@@ -355,7 +353,6 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeClassificationDecision)
 	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, ActionClassification)
@@ -415,7 +412,6 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeBusinessClassified)
 	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, ActionClassification)
@@ -466,7 +462,6 @@ func (c *AuditClient) RecordEnrichmentComplete(ctx context.Context, sp *signalpr
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeEnrichmentComplete)
 	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, ActionEnrichment)
@@ -508,7 +503,6 @@ func (c *AuditClient) RecordError(ctx context.Context, sp *signalprocessingv1alp
 
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeError)
 	audit.SetEventCategory(event, CategorySignalProcessing)
 	audit.SetEventAction(event, ActionError)

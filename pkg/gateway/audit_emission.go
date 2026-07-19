@@ -116,7 +116,6 @@ func (s *Server) EmitConfigReloadAudit(ctx context.Context, component string, re
 	}
 
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetActor(event, "service", "gateway")
 	audit.SetResource(event, "Config", component)
@@ -161,7 +160,6 @@ func (s *Server) emitSignalReceivedAudit(ctx context.Context, signal *types.Norm
 
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSignalReceived)
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, ActionReceived)
@@ -246,7 +244,6 @@ func (s *Server) emitSignalDeduplicatedAudit(ctx context.Context, signal *types.
 
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSignalDeduplicated)
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, ActionDeduplicated)
@@ -316,7 +313,6 @@ func (s *Server) emitCRDCreatedAudit(ctx context.Context, signal *types.Normaliz
 
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeCRDCreated)
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, ActionCreated)
@@ -387,7 +383,6 @@ func (s *Server) emitCRDCreationFailedAudit(ctx context.Context, signal *types.N
 
 	// Use OpenAPI helper functions (DD-AUDIT-002 V2.0.1)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeCRDFailed)
 	audit.SetEventCategory(event, CategoryGateway)
 	audit.SetEventAction(event, ActionFailed)

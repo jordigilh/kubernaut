@@ -48,7 +48,7 @@ var _ = Describe("CNV DetectedLabels Integration — #1378", Label("it", "ka", "
 		It("should detect all 4 CNV labels in a single DetectLabels call [BR-WORKFLOW-018]", func() {
 			scheme := newCNVScheme()
 
-			vm := makeUnstructuredVM("full-cnv-vm", "cnv-ns", "LiveMigrate")
+			vm := makeUnstructuredVM("full-cnv-vm", "LiveMigrate")
 
 			dv := &unstructured.Unstructured{}
 			dv.SetGroupVersionKind(schema.GroupVersionKind{Group: "cdi.kubevirt.io", Version: "v1beta1", Kind: "DataVolume"})
@@ -126,7 +126,7 @@ var _ = Describe("CNV DetectedLabels Integration — #1378", Label("it", "ka", "
 	Describe("IT-KA-1378-003: DetectLabels with RBAC-denied PVC LIST", func() {
 		It("should detect virtualMachine=true and record cdiManaged+storageBackend failures [BR-WORKFLOW-018]", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("rbac-pvc-vm", "cnv-ns", "LiveMigrate")
+			vm := makeUnstructuredVM("rbac-pvc-vm", "LiveMigrate")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
 			dynClient.PrependReactor("list", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
 				return true, nil, fmt.Errorf("simulated RBAC denied: forbidden")

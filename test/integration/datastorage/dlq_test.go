@@ -29,6 +29,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	auditDlqNotifications = "audit:dlq:notifications"
+	auditDlqEvents        = "audit:dlq:events"
+)
+
 // ========================================
 // DLQ INTEGRATION TESTS (TDD RED Phase)
 // 📋 Tests Define Contract: Real Redis required
@@ -81,7 +87,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 
 	BeforeEach(func() {
 		// Clean up DLQ
-		streamKey := "audit:dlq:notifications"
+		streamKey := auditDlqNotifications
 		redisClient.Del(ctx, streamKey)
 
 		// Create test audit
@@ -110,7 +116,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// ✅ CORRECTNESS TEST: Message in Redis with correct structure
-				streamKey := "audit:dlq:notifications"
+				streamKey := auditDlqNotifications
 				length, err := redisClient.XLen(ctx, streamKey).Result()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(length).To(Equal(int64(1)))
@@ -163,7 +169,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// ✅ CORRECTNESS TEST: Both messages in stream
-				streamKey := "audit:dlq:notifications"
+				streamKey := auditDlqNotifications
 				length, err := redisClient.XLen(ctx, streamKey).Result()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(length).To(Equal(int64(2)))
@@ -202,7 +208,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				Expect(depth).To(Equal(int64(3)))
 
 				// ✅ CORRECTNESS TEST: Verify with direct Redis query
-				streamKey := "audit:dlq:notifications"
+				streamKey := auditDlqNotifications
 				redisDepth, err := redisClient.XLen(ctx, streamKey).Result()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(depth).To(Equal(redisDepth))
@@ -225,7 +231,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 
 		BeforeEach(func() {
 			// Clean up DLQ
-			streamKey := "audit:dlq:events"
+			streamKey := auditDlqEvents
 			redisClient.Del(ctx, streamKey)
 
 			// Create test audit event
@@ -255,7 +261,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				// ✅ CORRECTNESS TEST: Message in Redis with correct structure
-				streamKey := "audit:dlq:events"
+				streamKey := auditDlqEvents
 				length, err := redisClient.XLen(ctx, streamKey).Result()
 				Expect(err).ToNot(HaveOccurred())
 				Expect(length).To(Equal(int64(1)), "Should have exactly 1 message in DLQ stream")
@@ -294,8 +300,8 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 	Describe("Stream Key Isolation", func() {
 		BeforeEach(func() {
 			// Clean up both DLQ streams
-			redisClient.Del(ctx, "audit:dlq:events")
-			redisClient.Del(ctx, "audit:dlq:notifications")
+			redisClient.Del(ctx, auditDlqEvents)
+			redisClient.Del(ctx, auditDlqNotifications)
 		})
 
 		It("should use separate Redis Streams for audit events and notification audits", func() {
@@ -337,11 +343,11 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 			Expect(err2).ToNot(HaveOccurred())
 
 			// ✅ CORRECTNESS TEST: Verify separate streams
-			auditStream, err := redisClient.XRange(ctx, "audit:dlq:events", "-", "+").Result()
+			auditStream, err := redisClient.XRange(ctx, auditDlqEvents, "-", "+").Result()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(auditStream).To(HaveLen(1), "audit:dlq:events should have 1 message")
 
-			notificationStream, err := redisClient.XRange(ctx, "audit:dlq:notifications", "-", "+").Result()
+			notificationStream, err := redisClient.XRange(ctx, auditDlqNotifications, "-", "+").Result()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(notificationStream).To(HaveLen(1), "audit:dlq:notifications should have 1 message")
 
@@ -371,7 +377,7 @@ var _ = Describe("DLQ Client Integration", Serial, func() {
 
 		BeforeEach(func() {
 			// Clean up DLQ streams and consumer groups
-			streamKey := "audit:dlq:events"
+			streamKey := auditDlqEvents
 			redisClient.Del(ctx, streamKey)
 
 			// Generate unique consumer group for each test

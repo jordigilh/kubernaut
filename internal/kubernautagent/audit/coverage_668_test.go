@@ -22,12 +22,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	testModel = "test-model"
 )
 
 // batchSpy implements pkg/audit.DataStorageClient for buffered store tests (BR-AI-056 audit trail).
@@ -60,11 +65,11 @@ var _ = Describe("Kubernaut Agent audit coverage 668 (BR-HAPI-197 DD-AUDIT-002)"
 			store := audit.NewDSAuditStore(recorder)
 
 			rd, err := json.Marshal(map[string]interface{}{
-				"rca_summary":           "incomplete RCA",
-				"severity":              "high",
-				"confidence":            0.4,
-				"needs_human_review":    true,
-				"human_review_reason":   "rca_incomplete",
+				"rca_summary":         "incomplete RCA",
+				"severity":            "high",
+				"confidence":          0.4,
+				"needs_human_review":  true,
+				"human_review_reason": "rca_incomplete",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -90,11 +95,11 @@ var _ = Describe("Kubernaut Agent audit coverage 668 (BR-HAPI-197 DD-AUDIT-002)"
 			store := audit.NewDSAuditStore(recorder)
 
 			rd, err := json.Marshal(map[string]interface{}{
-				"rca_summary":          "x",
-				"severity":           "info",
-				"confidence":         0.1,
-				"needs_human_review": true,
-				"human_review_reason":  "free_text_from_model",
+				"rca_summary":         "x",
+				"severity":            "info",
+				"confidence":          0.1,
+				"needs_human_review":  true,
+				"human_review_reason": "free_text_from_model",
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -126,7 +131,7 @@ var _ = Describe("Kubernaut Agent audit coverage 668 (BR-HAPI-197 DD-AUDIT-002)"
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-buf-668")
 			event.EventAction = audit.ActionLLMRequest
 			event.EventOutcome = audit.OutcomeSuccess
-			event.Data["model"] = "test-model"
+			event.Data["model"] = testModel
 			event.Data["prompt_length"] = 4
 			event.Data["prompt_preview"] = "ping"
 

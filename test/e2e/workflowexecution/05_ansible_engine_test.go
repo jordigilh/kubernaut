@@ -28,8 +28,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -37,6 +37,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
 	"github.com/google/uuid"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	noFailureDetailsAvailable = "no failure details available"
 )
 
 // Ansible Engine E2E Tests (BR-WE-015)
@@ -176,7 +181,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					return false, nil
 				}
 				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
-					details := "no failure details available"
+					details := noFailureDetailsAvailable
 					if updated.Status.FailureDetails != nil {
 						details = fmt.Sprintf("reason=%s, message=%s",
 							updated.Status.FailureDetails.Reason,
@@ -249,7 +254,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					return false, nil
 				}
 				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
-					details := "no failure details available"
+					details := noFailureDetailsAvailable
 					if updated.Status.FailureDetails != nil {
 						details = fmt.Sprintf("reason=%s, message=%s",
 							updated.Status.FailureDetails.Reason,
@@ -349,12 +354,12 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
 					"WFE should reach Running — ephemeral AWX credential injection must succeed")
 
-		By("E2E-WE-015-005: Verifying ephemeral credential IDs in status")
-		runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
-			"WFE status should contain ephemeral credential IDs (#479)")
-		GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
+			By("E2E-WE-015-005: Verifying ephemeral credential IDs in status")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
+				"WFE status should contain ephemeral credential IDs (#479)")
+			GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
 
 			By("E2E-WE-015-005: Waiting for WFE to complete (playbook validates env var)")
 			Eventually(func() string {
@@ -493,12 +498,12 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
 					"WFE should reach Running — AWX must not reject the launch with 400 about missing credentials")
 
-		By("E2E-WE-365-001: Verifying ephemeral credential IDs in status")
-		runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
-			"WFE status should contain ephemeral credential IDs (#479)")
-		GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
+			By("E2E-WE-365-001: Verifying ephemeral credential IDs in status")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
+				"WFE status should contain ephemeral credential IDs (#479)")
+			GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
 
 			By("E2E-WE-365-001: Verifying WFE completes (playbook validates env var from merged credentials)")
 			Eventually(func() string {
@@ -620,7 +625,7 @@ func phaseOrFailFast(name, namespace string) func() (string, error) {
 		}
 		phase := updated.Status.Phase
 		if phase == workflowexecutionv1alpha1.PhaseFailed {
-			details := "no failure details available"
+			details := noFailureDetailsAvailable
 			if updated.Status.FailureDetails != nil {
 				details = fmt.Sprintf("reason=%s, message=%s",
 					updated.Status.FailureDetails.Reason,

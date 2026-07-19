@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -112,8 +113,8 @@ const (
 //
 // Manual Infrastructure Control:
 //   import "github.com/jordigilh/kubernaut/test/infrastructure"
-//   infrastructure.StartNotificationIntegrationInfrastructure(os.Stdout)
-//   defer infrastructure.StopNotificationIntegrationInfrastructure(os.Stdout)
+//   infrastructure.StartNotificationIntegrationInfrastructure(ctx, os.Stdout)
+//   defer infrastructure.StopNotificationIntegrationInfrastructure(ctx, os.Stdout)
 //
 // Health Check:
 //   curl http://127.0.0.1:18096/health  # Should return 200 OK
@@ -141,7 +142,7 @@ const (
 //
 // Returns:
 // - error: Any errors during infrastructure startup
-func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
+func StartNotificationIntegrationInfrastructure(ctx context.Context, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "Notification Integration Test Infrastructure Setup\n")
 	_, _ = fmt.Fprintf(writer, "Per DD-TEST-002: Sequential Startup Pattern\n")
@@ -155,7 +156,7 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 1: Cleanup existing containers
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
-	CleanupContainers([]string{
+	CleanupContainers(ctx, []string{
 		NTIntegrationPostgresContainer,
 		NTIntegrationRedisContainer,
 		NTIntegrationDataStorageContainer,
@@ -167,7 +168,7 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 2: Start PostgreSQL FIRST (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
-	if err := StartPostgreSQL(PostgreSQLConfig{
+	if err := StartPostgreSQL(ctx, PostgreSQLConfig{
 		ContainerName: NTIntegrationPostgresContainer,
 		Port:          NTIntegrationPostgresPort,
 		DBName:        NTIntegrationDBName,
@@ -181,7 +182,7 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	// STEP 3: Wait for PostgreSQL to be ready (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for PostgreSQL to be ready...\n")
-	if err := WaitForPostgreSQLReady(
+	if err := WaitForPostgreSQLReady(ctx,
 		NTIntegrationPostgresContainer,
 		NTIntegrationDBUser,
 		NTIntegrationDBName,
@@ -197,10 +198,10 @@ func StartNotificationIntegrationInfrastructure(writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
 	projectRoot := getProjectRoot()
 	const migrationsImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(migrationsImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, migrationsImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull migrations image: %w", err)
 	}
-	migrationsCmd := exec.Command("podman", "run", "--rm",
+	migrationsCmd := exec.CommandContext(ctx, "podman", "run", "--rm",
 		"-e", "PGHOST=host.containers.internal", // Use host.containers.internal for port-mapped PostgreSQL
 		"-e", fmt.Sprintf("PGPORT=%d", NTIntegrationPostgresPort),
 		"-e", fmt.Sprintf("PGUSER=%s", NTIntegrationDBUser),
@@ -228,7 +229,7 @@ echo "Migrations complete!"`)
 	// STEP 5: Start Redis (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "🔴 Starting Redis...\n")
-	if err := StartRedis(RedisConfig{
+	if err := StartRedis(ctx, RedisConfig{
 		ContainerName: NTIntegrationRedisContainer,
 		Port:          NTIntegrationRedisPort,
 	}, writer); err != nil {
@@ -239,7 +240,7 @@ echo "Migrations complete!"`)
 	// STEP 6: Wait for Redis to be ready (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
-	if err := WaitForRedisReady(NTIntegrationRedisContainer, writer); err != nil {
+	if err := WaitForRedisReady(ctx, NTIntegrationRedisContainer, writer); err != nil {
 		return fmt.Errorf("redis failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "\n")
@@ -249,7 +250,7 @@ echo "Migrations complete!"`)
 	// ============================================================================
 	dsImageTag := GenerateInfraImageName("datastorage", "notification")
 	_, _ = fmt.Fprintf(writer, "🏗️  Resolving DataStorage image (%s)...\n", dsImageTag)
-	actualDSImage, err := buildDataStorageImageWithTag(dsImageTag, writer)
+	actualDSImage, err := buildDataStorageImageWithTag(ctx, dsImageTag, writer)
 	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
@@ -259,7 +260,7 @@ echo "Migrations complete!"`)
 	// STEP 8: Start DataStorage LAST (service-specific)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	if err := startNotificationDataStorage(actualDSImage, writer); err != nil {
+	if err := startNotificationDataStorage(ctx, actualDSImage, writer); err != nil {
 		return fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
@@ -267,14 +268,14 @@ echo "Migrations complete!"`)
 	// STEP 9: Wait for DataStorage HTTP endpoint (using shared utility)
 	// ============================================================================
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
-	if err := WaitForHTTPHealth(
+	if err := WaitForHTTPHealth(ctx,
 		fmt.Sprintf("http://127.0.0.1:%d/readyz", NTIntegrationHealthPort),
 		30*time.Second,
 		writer,
 	); err != nil {
 		// Print container logs for debugging
 		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
-		logsCmd := exec.Command("podman", "logs", NTIntegrationDataStorageContainer)
+		logsCmd := exec.CommandContext(ctx, "podman", "logs", NTIntegrationDataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
@@ -306,11 +307,11 @@ echo "Migrations complete!"`)
 //
 // Returns:
 // - error: Any errors during infrastructure cleanup
-func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
+func StopNotificationIntegrationInfrastructure(ctx context.Context, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🛑 Stopping Notification Integration Infrastructure...\n")
 
 	// Stop and remove containers (uses shared utility)
-	CleanupContainers([]string{
+	CleanupContainers(ctx, []string{
 		NTIntegrationDataStorageContainer,
 		NTIntegrationRedisContainer,
 		NTIntegrationPostgresContainer,
@@ -318,7 +319,7 @@ func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
 	}, writer)
 
 	// Remove network (ignore errors)
-	networkCmd := exec.Command("podman", "network", "rm", NTIntegrationNetwork)
+	networkCmd := exec.CommandContext(ctx, "podman", "network", "rm", NTIntegrationNetwork)
 	_ = networkCmd.Run()
 
 	_, _ = fmt.Fprintf(writer, "✅ Notification Integration Infrastructure stopped and cleaned up\n")
@@ -331,14 +332,14 @@ func StopNotificationIntegrationInfrastructure(writer io.Writer) error {
 
 // startNotificationDataStorage starts the DataStorage container for Notification integration tests
 // This is service-specific because it needs to connect to Notification-specific PostgreSQL/Redis instances
-func startNotificationDataStorage(imageTag string, writer io.Writer) error {
+func startNotificationDataStorage(ctx context.Context, imageTag string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 
 	// Use existing config file from test/integration/notification/config/
 	configDir := filepath.Join(projectRoot, "test", "integration", "notification", "config")
 	configMount := fmt.Sprintf("%s:/etc/datastorage:ro", configDir)
 
-	cmd := exec.Command("podman", "run", "-d",
+	cmd := exec.CommandContext(ctx, "podman", "run", "-d",
 		"--name", NTIntegrationDataStorageContainer,
 		"-p", fmt.Sprintf("%d:8080", NTIntegrationDataStoragePort),
 		"-p", fmt.Sprintf("%d:8081", NTIntegrationHealthPort),

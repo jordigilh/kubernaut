@@ -32,10 +32,15 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	sha256FixtureHash = "sha256:fixture-hash"
 )
 
 // staticCatalogFetcher returns a pre-built validator for tests that need
@@ -93,7 +98,7 @@ func (f *k8sFixtureClient) GetOwnerChain(_ context.Context, _, _, _, _ string) (
 }
 
 func (f *k8sFixtureClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
-	return "sha256:fixture-hash", nil
+	return sha256FixtureHash, nil
 }
 
 // resourceAwareFixtureClient returns different owner chains based on resource name.
@@ -110,7 +115,7 @@ func (r *resourceAwareFixtureClient) GetOwnerChain(_ context.Context, _, name, _
 }
 
 func (r *resourceAwareFixtureClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, error) {
-	return "sha256:fixture-hash", nil
+	return sha256FixtureHash, nil
 }
 
 type fakeTool struct {
@@ -361,7 +366,7 @@ var _ = Describe("Kubernaut Agent Investigator Integration — #433", func() {
 		It("should NOT include enrichment in RCA prompt; remediation history appears in Phase 3 only", func() {
 			By("Seeding remediation history into PostgreSQL so the real DS returns it")
 			testCtx := context.Background()
-			specHash := "sha256:fixture-hash"
+			specHash := sha256FixtureHash
 			corrID := "oom-increase-memory"
 			target := "production/Pod/api-server-abc"
 			now := time.Now()
@@ -604,7 +609,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 					"worker": {}, // Deployment is root, empty chain
 				},
 			}
-						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled in worker deployment","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
@@ -647,7 +652,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 					{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop"},
 				},
 			}
-						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"CrashLoop in worker pod"}`}},
@@ -690,7 +695,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 					"worker": {}, // Deployment is root, empty chain
 				},
 			}
-						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled targeting Deployment worker","remediation_target":{"kind":"Deployment","name":"worker","namespace":"demo-crashloop"}}`}},
@@ -897,7 +902,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 					},
 				},
 			}
-						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				wfToolResp(`{"workflow_id":"oom-fix","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"api-server","namespace":"production","api_version":"apps/v1"}}`),
@@ -993,7 +998,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 					"worker": {},
 				},
 			}
-						enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
+			enricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
 
 			mockClient.responses = []llm.ChatResponse{
 				wfToolResp(`{"workflow_id":"oom-fix","confidence":0.9,"remediation_target":{"kind":"Deployment","name":"worker","namespace":"production","api_version":"apps/v1"}}`),

@@ -92,7 +92,7 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
-				Namespace: "default",
+				Namespace: defaultFixture,
 			},
 			Spec: rwv1alpha1.RemediationWorkflowSpec{
 				Version:    "1.0.0",
@@ -126,7 +126,7 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
-				Namespace: "default",
+				Namespace: defaultFixture,
 			},
 			Spec: atv1alpha1.ActionTypeSpec{
 				Name: name,
@@ -278,7 +278,7 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 						Group: "kubernaut.ai", Version: "v1alpha1", Kind: "RemediationWorkflow",
 					},
 					Name:      "it-rw-denied",
-					Namespace: "default",
+					Namespace: defaultFixture,
 					Operation: admissionv1.Create,
 					UserInfo: authv1.UserInfo{
 						Username: "it-audit-user@kubernaut.ai",
@@ -338,7 +338,7 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 						Group: "kubernaut.ai", Version: "v1alpha1", Kind: "ActionType",
 					},
 					Name:      atName,
-					Namespace: "default",
+					Namespace: defaultFixture,
 					Operation: admissionv1.Update,
 					UserInfo: authv1.UserInfo{
 						Username: "it-audit-user@kubernaut.ai",
@@ -398,7 +398,7 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 						Group: "kubernaut.ai", Version: "v1alpha1", Kind: "ActionType",
 					},
 					Name:      "at-immutable-test",
-					Namespace: "default",
+					Namespace: defaultFixture,
 					Operation: admissionv1.Update,
 					UserInfo: authv1.UserInfo{
 						Username: "it-audit-user@kubernaut.ai",

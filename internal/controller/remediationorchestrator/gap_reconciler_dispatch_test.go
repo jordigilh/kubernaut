@@ -56,11 +56,11 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-805-001"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysis("ai-"+rrName, "default", rrName, aianalysisv1.PhaseCompleted)
+		ai := newAIAnalysis("ai-"+rrName, defaultFixture, rrName, aianalysisv1.PhaseCompleted)
 		now := metav1.Now()
 		ai.Status.CompletedAt = &now
 		ai.Status.NeedsHumanReview = true
@@ -74,11 +74,11 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
 				Name:      "test-deployment",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			},
 		}
 
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -98,20 +98,20 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-manual-review-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "ManualReview NR should exist for NeedsHumanReview with no workflow")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 
 		updatedRR := &remediationv1.RemediationRequest{}
-		err = fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: "default"}, updatedRR)
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: rrName, Namespace: defaultFixture}, updatedRR)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(updatedRR.Status.Outcome).To(Equal("ManualReviewRequired"))
 		Expect(updatedRR.Status.RequiresManualReview).To(BeTrue())
@@ -123,14 +123,14 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-805-002"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
 		ai.Status.NeedsHumanReview = true
 
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -150,7 +150,7 @@ var _ = Describe("BR-ORCH-036 GAP-1: NeedsHumanReview dispatch (#805)", func() {
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -172,15 +172,15 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-807-001"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseExecuting, "sp-"+rrName, "ai-"+rrName, "we-"+rrName)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		execStart := metav1.Now()
 		rr.Status.ExecutingStartTime = &execStart
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
-		we := newWorkflowExecutionFailed("we-"+rrName, "default", rrName, "Pipeline run timed out")
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
+		we := newWorkflowExecutionFailed("we-"+rrName, defaultFixture, rrName, "Pipeline run timed out")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -200,14 +200,14 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-manual-review-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "ManualReview NR should exist after WFE failure")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
@@ -221,15 +221,15 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-807-002"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseExecuting, "sp-"+rrName, "ai-"+rrName, "we-"+rrName)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		execStart := metav1.Now()
 		rr.Status.ExecutingStartTime = &execStart
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
-		we := newWorkflowExecutionFailed("we-"+rrName, "default", rrName, "Pipeline failed")
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
+		we := newWorkflowExecutionFailed("we-"+rrName, defaultFixture, rrName, "Pipeline failed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -249,7 +249,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -264,15 +264,15 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-807-003"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseExecuting, "sp-"+rrName, "ai-"+rrName, "we-"+rrName)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 		execStart := metav1.Now()
 		rr.Status.ExecutingStartTime = &execStart
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
-		we := newWorkflowExecutionFailed("we-"+rrName, "default", rrName, "Pipeline failed")
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
+		we := newWorkflowExecutionFailed("we-"+rrName, defaultFixture, rrName, "Pipeline failed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -293,7 +293,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 
 		// First reconcile
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -301,7 +301,7 @@ var _ = Describe("BR-ORCH-036 GAP-3: WFE PhaseFailed ManualReview NR (#807)", fu
 
 		// Second reconcile
 		_, err = reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 

@@ -405,6 +405,8 @@ func (r *NotificationRequestReconciler) refreshAndGuardBeforeDelivery(ctx contex
 // When: CRD deleted during reconciliation
 // Action: Log deletion, remove from retry queue
 // Recovery: Normal (no action needed)
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches Reconcile's (ctrl.Result, error) return contract for its sole call site (Issue #1546 Tier 4)
 func (r *NotificationRequestReconciler) handleNotFound(ctx context.Context, name string) (ctrl.Result, error) {
 	log := log.FromContext(ctx)
 	log.Info("NotificationRequest not found, likely deleted", "name", name)

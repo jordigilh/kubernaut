@@ -19,6 +19,7 @@ package datastorage_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -170,7 +171,8 @@ var _ = Describe("NotificationAuditRepository", func() {
 
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
-				validationErr, ok := err.(*validation.ValidationError)
+				var validationErr *validation.ValidationError
+				ok := errors.As(err, &validationErr)
 				Expect(ok).To(BeTrue())
 				Expect(validationErr.FieldErrors).To(HaveKey("remediation_id"))
 			})
@@ -182,7 +184,8 @@ var _ = Describe("NotificationAuditRepository", func() {
 
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
-				validationErr, ok := err.(*validation.ValidationError)
+				var validationErr *validation.ValidationError
+				ok := errors.As(err, &validationErr)
 				Expect(ok).To(BeTrue())
 				Expect(validationErr.FieldErrors).To(HaveKey("notification_id"))
 			})
@@ -194,7 +197,8 @@ var _ = Describe("NotificationAuditRepository", func() {
 
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
-				validationErr, ok := err.(*validation.ValidationError)
+				var validationErr *validation.ValidationError
+				ok := errors.As(err, &validationErr)
 				Expect(ok).To(BeTrue())
 				Expect(validationErr.FieldErrors).To(HaveKey("channel"))
 			})
@@ -221,7 +225,8 @@ var _ = Describe("NotificationAuditRepository", func() {
 
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
-				problem, ok := err.(*validation.RFC7807Problem)
+				var problem *validation.RFC7807Problem
+				ok := errors.As(err, &problem)
 				Expect(ok).To(BeTrue())
 				Expect(problem.Status).To(Equal(409)) // Conflict
 				Expect(mock.ExpectationsWereMet()).To(Succeed())
@@ -332,7 +337,8 @@ var _ = Describe("NotificationAuditRepository", func() {
 
 				Expect(err).To(HaveOccurred())
 				Expect(result).To(BeNil())
-				problem, ok := err.(*validation.RFC7807Problem)
+				var problem *validation.RFC7807Problem
+				ok := errors.As(err, &problem)
 				Expect(ok).To(BeTrue())
 				Expect(problem.Status).To(Equal(404)) // Not Found
 				Expect(mock.ExpectationsWereMet()).To(Succeed())

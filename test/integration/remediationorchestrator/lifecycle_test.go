@@ -50,7 +50,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-lifecycle")
+			namespace = createTestNamespace(ctx, "ro-lifecycle")
 			rrName = fmt.Sprintf("rr-%s", uuid.New().String()[:13])
 		})
 
@@ -132,7 +132,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-phase")
+			namespace = createTestNamespace(ctx, "ro-phase")
 			rrName = fmt.Sprintf("rr-phase-%s", uuid.New().String()[:13])
 		})
 
@@ -152,7 +152,7 @@ var _ = Describe("RemediationOrchestrator Lifecycle", Label("integration", "life
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating SignalProcessing completion")
-			err := updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)
+			err := updateSPStatus(spName)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Waiting for RR to transition to Analyzing phase")
@@ -196,7 +196,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-manual-review")
+			namespace = createTestNamespace(ctx, "ro-manual-review")
 			rrName = fmt.Sprintf("rr-mr-%s", uuid.New().String()[:13])
 		})
 
@@ -216,7 +216,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating SignalProcessing completion")
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Waiting for AIAnalysis to be created")
 			aiName := fmt.Sprintf("ai-%s", rrName)
@@ -229,9 +229,9 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 
-			ai.Status.Phase = "Failed"
-			ai.Status.Reason = "WorkflowResolutionFailed"
-			ai.Status.SubReason = "NoMatchingWorkflows"
+			ai.Status.Phase = aianalysisv1.PhaseFailed
+			ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
+			ai.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows
 			ai.Status.Message = "No workflow found matching the investigation outcome"
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
@@ -272,7 +272,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-infra-fail")
+			namespace = createTestNamespace(ctx, "ro-infra-fail")
 			rrName = fmt.Sprintf("rr-if-%s", uuid.New().String()[:13])
 		})
 
@@ -292,7 +292,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating SignalProcessing completion")
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Waiting for AIAnalysis to be created")
 			aiName := fmt.Sprintf("ai-%s", rrName)
@@ -305,7 +305,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 
-			ai.Status.Phase = "Failed"
+			ai.Status.Phase = aianalysisv1.PhaseFailed
 			ai.Status.Reason = "APIError"
 			ai.Status.SubReason = "MaxRetriesExceeded"
 			ai.Status.Message = "Transient error exceeded max retries (5 attempts): KA request timeout"
@@ -354,7 +354,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-no-action")
+			namespace = createTestNamespace(ctx, "ro-no-action")
 			rrName = fmt.Sprintf("rr-na-%s", uuid.New().String()[:13])
 		})
 
@@ -372,7 +372,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 				sp := &signalprocessingv1.SignalProcessing{}
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Waiting for AIAnalysis to be created")
 			aiName := fmt.Sprintf("ai-%s", rrName)
@@ -385,7 +385,7 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.RootCause = "Problem self-resolved - container restarted successfully"
 			ai.Status.Reason = "WorkflowNotNeeded"
 			ai.Status.SubReason = "ProblemResolved"
@@ -443,7 +443,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-approval")
+			namespace = createTestNamespace(ctx, "ro-approval")
 			rrName = fmt.Sprintf("rr-appr-%s", uuid.New().String()[:13])
 		})
 
@@ -461,7 +461,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				sp := &signalprocessingv1.SignalProcessing{}
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Waiting for AIAnalysis to be created")
 			aiName := fmt.Sprintf("ai-%s", rrName)
@@ -474,15 +474,15 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = "Confidence below 80% threshold"
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pods",
-				Version:        "v1.0.0",
-				Confidence:     0.72,
+				WorkflowID:      "wf-restart-pods",
+				Version:         "v1.0.0",
+				Confidence:      0.72,
 				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:      "Pod restart recommended based on OOM patterns",
+				Rationale:       "Pod restart recommended based on OOM patterns",
 			}
 			ai.Status.RootCause = "Memory leak causing OOM kills"
 			now := metav1.Now()
@@ -524,7 +524,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				sp := &signalprocessingv1.SignalProcessing{}
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			// Progress through AI with approval required
 			aiName := fmt.Sprintf("ai-%s", rrName)
@@ -535,15 +535,15 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = "Confidence below threshold"
+			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pods",
-				Version:        "v1.0.0",
-				Confidence:     0.70,
+				WorkflowID:      "wf-restart-pods",
+				Version:         "v1.0.0",
+				Confidence:      0.70,
 				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:      "Restart recommended",
+				Rationale:       "Restart recommended",
 			}
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
@@ -577,96 +577,96 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			GinkgoWriter.Printf("✅ BR-ORCH-026: RR transitioned to Executing after RAR approval\n")
 		})
 
-	It("should detect RAR missing and handle gracefully", func() {
-		// Scenario: RAR deleted after creation (simulates accidental deletion or external cleanup)
-		// Business Outcome: Controller detects missing RAR and handles gracefully (requeues, recreates)
-		// Confidence: 95% - Uses real approval flow, validates resilience to RAR deletion
-		// Multi-Controller Pattern: Safe for parallel execution (uses natural controller flow)
+		It("should detect RAR missing and handle gracefully", func() {
+			// Scenario: RAR deleted after creation (simulates accidental deletion or external cleanup)
+			// Business Outcome: Controller detects missing RAR and handles gracefully (requeues, recreates)
+			// Confidence: 95% - Uses real approval flow, validates resilience to RAR deletion
+			// Multi-Controller Pattern: Safe for parallel execution (uses natural controller flow)
 
-		ctx := context.Background()
+			ctx := context.Background()
 
-		By("Creating RR and progressing to AwaitingApproval naturally")
-		rrName := fmt.Sprintf("rr-missing-rar-%s", uuid.New().String()[:13])
-		_ = createRemediationRequest(namespace, rrName)
+			By("Creating RR and progressing to AwaitingApproval naturally")
+			rrName := fmt.Sprintf("rr-missing-rar-%s", uuid.New().String()[:13])
+			_ = createRemediationRequest(namespace, rrName)
 
-		// Progress through SP (natural flow)
-		spName := fmt.Sprintf("sp-%s", rrName)
-		Eventually(func() error {
-			sp := &signalprocessingv1.SignalProcessing{}
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
-		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			// Progress through SP (natural flow)
+			spName := fmt.Sprintf("sp-%s", rrName)
+			Eventually(func() error {
+				sp := &signalprocessingv1.SignalProcessing{}
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
+			}, timeout, interval).Should(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
-		// Progress through AI with approval required (natural flow)
-		aiName := fmt.Sprintf("ai-%s", rrName)
-		Eventually(func() error {
+			// Progress through AI with approval required (natural flow)
+			aiName := fmt.Sprintf("ai-%s", rrName)
+			Eventually(func() error {
+				ai := &aianalysisv1.AIAnalysis{}
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
+			}, timeout, interval).Should(Succeed())
+
 			ai := &aianalysisv1.AIAnalysis{}
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
-		}, timeout, interval).Should(Succeed())
-
-		ai := &aianalysisv1.AIAnalysis{}
-		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-		ai.Status.Phase = "Completed"
-		ai.Status.ApprovalRequired = true
-		ai.Status.ApprovalReason = "Confidence below threshold"
-		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:     "wf-restart-pods",
-			Version:        "v1.0.0",
-			Confidence:     0.70,
-			ExecutionBundle: "kubernaut/workflows:latest",
-			Rationale:      "Restart recommended",
-		}
-		now := metav1.Now()
-		ai.Status.CompletedAt = &now
-		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
-
-		By("Waiting for RR to reach AwaitingApproval")
-		Eventually(func() string {
-			rr := &remediationv1.RemediationRequest{}
-			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr); err != nil {
-				return ""
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
+			ai.Status.ApprovalRequired = true
+			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
+			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowID:      "wf-restart-pods",
+				Version:         "v1.0.0",
+				Confidence:      0.70,
+				ExecutionBundle: "kubernaut/workflows:latest",
+				Rationale:       "Restart recommended",
 			}
-			return string(rr.Status.OverallPhase)
-		}, timeout, interval).Should(Equal("AwaitingApproval"))
+			now := metav1.Now()
+			ai.Status.CompletedAt = &now
+			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-		By("Waiting for RAR to be created automatically")
-		rarName := fmt.Sprintf("rar-%s", rrName)
-		rar := &remediationv1.RemediationApprovalRequest{}
-		Eventually(func() error {
-			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
-		}, timeout, interval).Should(Succeed())
+			By("Waiting for RR to reach AwaitingApproval")
+			Eventually(func() string {
+				rr := &remediationv1.RemediationRequest{}
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr); err != nil {
+					return ""
+				}
+				return string(rr.Status.OverallPhase)
+			}, timeout, interval).Should(Equal("AwaitingApproval"))
 
-		By("Deleting the RAR to simulate accidental deletion")
-		Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
+			By("Waiting for RAR to be created automatically")
+			rarName := fmt.Sprintf("rar-%s", rrName)
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Eventually(func() error {
+				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
+			}, timeout, interval).Should(Succeed())
 
-		By("Verifying RAR deletion")
-		Eventually(func() bool {
-			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
-			return errors.IsNotFound(err)
-		}, timeout, interval).Should(BeTrue(), "RAR should be deleted")
+			By("Deleting the RAR to simulate accidental deletion")
+			Expect(k8sClient.Delete(ctx, rar)).To(Succeed())
 
-		By("Verifying RR remains in AwaitingApproval (graceful degradation)")
-		// Controller should detect missing RAR, log it, and requeue without crashing
-		// Logs should show: "RemediationApprovalRequest not found, will be created by approval handler"
-		Consistently(func() remediationv1.RemediationPhase {
+			By("Verifying RAR deletion")
+			Eventually(func() bool {
+				err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rarName, Namespace: ROControllerNamespace}, rar)
+				return errors.IsNotFound(err)
+			}, timeout, interval).Should(BeTrue(), "RAR should be deleted")
+
+			By("Verifying RR remains in AwaitingApproval (graceful degradation)")
+			// Controller should detect missing RAR, log it, and requeue without crashing
+			// Logs should show: "RemediationApprovalRequest not found, will be created by approval handler"
+			Consistently(func() remediationv1.RemediationPhase {
+				rr := &remediationv1.RemediationRequest{}
+				if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr); err != nil {
+					return ""
+				}
+				return rr.Status.OverallPhase
+			}, "10s", "500ms").Should(Equal(remediationv1.PhaseAwaitingApproval),
+				"RR should remain in AwaitingApproval when RAR deleted (graceful degradation)")
+
+			By("Verifying RR doesn't crash or error out")
+			// Final check: RR should still be healthy after RAR deletion
 			rr := &remediationv1.RemediationRequest{}
-			if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr); err != nil {
-				return ""
-			}
-			return rr.Status.OverallPhase
-		}, "10s", "500ms").Should(Equal(remediationv1.PhaseAwaitingApproval),
-			"RR should remain in AwaitingApproval when RAR deleted (graceful degradation)")
+			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
+			Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseAwaitingApproval))
+			// Message should indicate waiting for approval (not an error state)
+			Expect(rr.Status.Message).ToNot(ContainSubstring("error"))
+			Expect(rr.Status.Message).ToNot(ContainSubstring("failed"))
 
-		By("Verifying RR doesn't crash or error out")
-		// Final check: RR should still be healthy after RAR deletion
-		rr := &remediationv1.RemediationRequest{}
-		Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rrName, Namespace: ROControllerNamespace}, rr)).To(Succeed())
-		Expect(rr.Status.OverallPhase).To(Equal(remediationv1.PhaseAwaitingApproval))
-		// Message should indicate waiting for approval (not an error state)
-		Expect(rr.Status.Message).ToNot(ContainSubstring("error"))
-		Expect(rr.Status.Message).ToNot(ContainSubstring("failed"))
-
-		GinkgoWriter.Printf("✅ BR-ORCH-026: RR handles missing RAR gracefully (stays stable, no crash, proper logging)\n")
-	})
+			GinkgoWriter.Printf("✅ BR-ORCH-026: RR handles missing RAR gracefully (stays stable, no crash, proper logging)\n")
+		})
 	})
 })

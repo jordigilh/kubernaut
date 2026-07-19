@@ -29,7 +29,7 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 					"kind":       "RemediationRequest",
 					"metadata": map[string]any{
 						"name":      "test-rr-035",
-						"namespace": "default",
+						"namespace": defaultFixture,
 					},
 					"spec": map[string]any{
 						"signalName":        "TestAlert",
@@ -46,14 +46,14 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 					},
 				},
 			}
-			_, err := dynamicClient.Resource(rrGVR).Namespace("default").Create(ctx, rr, metav1.CreateOptions{})
+			_, err := dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Create(ctx, rr, metav1.CreateOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			DeferCleanup(func() {
-				_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, "test-rr-035", metav1.DeleteOptions{})
+				_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, "test-rr-035", metav1.DeleteOptions{})
 			})
 
 			result, err := tools.HandleListRemediations(ctx, k8sClient, tools.ListRemediationsArgs{
-				Namespace: "default",
+				Namespace: defaultFixture,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Count).To(BeNumerically(">=", 1))
@@ -64,7 +64,7 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 
 			result, err := tools.HandleKubectlList(ctx, &tools.DynamicResourceReader{Client: dynamicClient}, nil, tools.KubectlListArgs{
 				Kind:      "Pod",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Items).NotTo(BeNil())
@@ -75,7 +75,7 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 
 			result, err := tools.HandleKubectlList(ctx, &tools.DynamicResourceReader{Client: dynamicClient}, nil, tools.KubectlListArgs{
 				Kind:      "Deployment",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Items).NotTo(BeNil())
@@ -92,7 +92,7 @@ var _ = Describe("CRD Tools Integration (tools/ via envtest)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// AF SA has read permissions on remediationrequests (ADR-022)
-			_, err = client.Resource(rrGVR).Namespace("default").List(ctx, metav1.ListOptions{})
+			_, err = client.Resource(rrGVR).Namespace(defaultFixture).List(ctx, metav1.ListOptions{})
 			Expect(err).NotTo(HaveOccurred(), "AF SA should have permission to list remediations")
 		})
 	})

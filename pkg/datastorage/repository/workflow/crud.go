@@ -358,6 +358,9 @@ func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.Re
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowID)
 	if errors.Is(err, sql.ErrNoRows) {
+		// nolint:nilnil // intentional "not found" sentinel, not an error —
+		// canonical repository idiom; all callers already guard with
+		// `if x != nil` before use (Issue #1546 Tier 2).
 		return nil, nil // Not found
 	}
 	if err != nil {
@@ -380,6 +383,9 @@ func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, vers
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowName, version)
 	if errors.Is(err, sql.ErrNoRows) {
+		// nolint:nilnil // intentional "not found" sentinel, not an error —
+		// canonical repository idiom; all callers already guard with
+		// `if x != nil` before use (Issue #1546 Tier 2).
 		return nil, nil // Not found
 	}
 	if err != nil {
@@ -403,6 +409,9 @@ func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
 	if errors.Is(err, sql.ErrNoRows) {
+		// nolint:nilnil // intentional "not found" sentinel, not an error —
+		// canonical repository idiom; all callers already guard with
+		// `if x != nil` before use (Issue #1546 Tier 2).
 		return nil, nil
 	}
 	if err != nil {
@@ -427,6 +436,9 @@ func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, work
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
 	if errors.Is(err, sql.ErrNoRows) {
+		// nolint:nilnil // intentional "not found" sentinel, not an error —
+		// canonical repository idiom; all callers already guard with
+		// `if x != nil` before use (Issue #1546 Tier 2).
 		return nil, nil
 	}
 	if err != nil {
@@ -451,6 +463,9 @@ func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName s
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName)
 	if errors.Is(err, sql.ErrNoRows) {
+		// nolint:nilnil // intentional "not found" sentinel, not an error —
+		// canonical repository idiom; all callers already guard with
+		// `if x != nil` before use (Issue #1546 Tier 2).
 		return nil, nil
 	}
 	if err != nil {
@@ -472,6 +487,9 @@ func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) 
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowName)
 	if errors.Is(err, sql.ErrNoRows) {
+		// nolint:nilnil // intentional "not found" sentinel, not an error —
+		// canonical repository idiom; all callers already guard with
+		// `if x != nil` before use (Issue #1546 Tier 2).
 		return nil, nil // Not found
 	}
 	if err != nil {

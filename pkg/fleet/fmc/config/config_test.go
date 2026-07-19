@@ -27,6 +27,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	urlGateway8080 = "http://gateway:8080"
+	urlIdpToken    = "https://idp/token"
+)
+
 func TestConfig(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "FMC Config Suite")
@@ -121,7 +127,7 @@ oauth2:
 			Expect(cfg.MCPGateway.Endpoint).To(Equal("http://gw:8080"))
 			Expect(cfg.Server.APIAddr).To(Equal(":8080"), "unset fields keep defaults")
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"), "unset fields keep defaults")
-			Expect(cfg.Sync.Interval).To(Equal(30 * time.Second), "unset fields keep defaults")
+			Expect(cfg.Sync.Interval).To(Equal(30*time.Second), "unset fields keep defaults")
 			Expect(cfg.OAuth2.Scopes).To(Equal([]string{"openid", "groups"}), "unset scopes keep defaults")
 			Expect(cfg.OAuth2.TokenTimeout).To(Equal(10*time.Second), "unset tokenTimeout keeps default")
 		})
@@ -145,15 +151,15 @@ oauth2:
 	Describe("Validate", func() {
 		It("UT-FMC-CFG-007: passes with all required fields set [IA-5, SC-8]", func() {
 			cfg := config.DefaultServiceConfig()
-			cfg.MCPGateway.Endpoint = "http://gateway:8080"
-			cfg.OAuth2.TokenURL = "https://idp/token"
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
 
 			Expect(cfg.Validate()).To(Succeed())
 		})
 
 		It("UT-FMC-CFG-008: fails when mcpGateway.endpoint is empty [SC-7]", func() {
 			cfg := config.DefaultServiceConfig()
-			cfg.OAuth2.TokenURL = "https://idp/token"
+			cfg.OAuth2.TokenURL = urlIdpToken
 
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
@@ -162,8 +168,8 @@ oauth2:
 
 		It("UT-FMC-CFG-009: fails when valkey.addr is empty [SC-7]", func() {
 			cfg := config.DefaultServiceConfig()
-			cfg.MCPGateway.Endpoint = "http://gateway:8080"
-			cfg.OAuth2.TokenURL = "https://idp/token"
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
 			cfg.Valkey.Addr = ""
 
 			err := cfg.Validate()
@@ -173,7 +179,7 @@ oauth2:
 
 		It("UT-FMC-CFG-010: fails when oauth2.tokenUrl is empty — OAuth2 is mandatory [IA-5, SC-8]", func() {
 			cfg := config.DefaultServiceConfig()
-			cfg.MCPGateway.Endpoint = "http://gateway:8080"
+			cfg.MCPGateway.Endpoint = urlGateway8080
 
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())

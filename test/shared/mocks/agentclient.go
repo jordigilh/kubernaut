@@ -556,7 +556,7 @@ func (m *MockAgentClient) WithHumanReviewAndHistory(
 	var history []agentclient.ValidationAttempt
 	for _, attempt := range validationAttempts {
 		va := agentclient.ValidationAttempt{
-			Attempt:   int(attempt["attempt"].(int)),
+			Attempt:   attempt["attempt"].(int),
 			IsValid:   attempt["is_valid"].(bool),
 			Timestamp: attempt["timestamp"].(string),
 		}

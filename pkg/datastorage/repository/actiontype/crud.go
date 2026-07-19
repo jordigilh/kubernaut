@@ -57,7 +57,7 @@ func (r *Repository) Create(ctx context.Context, actionType string, description 
 	}
 
 	if existing != nil {
-		if existing.Status == "Active" {
+		if existing.Status == models.ActionTypeStatusActive {
 			return &CreateResult{ActionType: existing, Status: "exists", WasReenabled: false}, nil
 		}
 
@@ -105,6 +105,10 @@ func (r *Repository) GetByName(ctx context.Context, actionType string) (*models.
 	).StructScan(&at)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
+			// nolint:nilnil // intentional "not found" sentinel, not an error —
+			// canonical repository idiom; documented in the GetByName doc
+			// comment above ("or nil if not found"); callers already guard
+			// with `if x != nil` before use (Issue #1546 Tier 2).
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get action type %q: %w", actionType, err)
@@ -130,7 +134,7 @@ func (r *Repository) UpdateDescription(ctx context.Context, actionType string, n
 	if existing == nil {
 		return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
 	}
-	if existing.Status != "Active" {
+	if existing.Status != models.ActionTypeStatusActive {
 		return nil, fmt.Errorf("%w: %s", ErrActionTypeDisabled, actionType)
 	}
 
@@ -222,7 +226,7 @@ func (r *Repository) disableOnce(ctx context.Context, actionType string, disable
 		return nil, fmt.Errorf("check action type for disable: %w", err)
 	}
 
-	if existing.Status != "Active" {
+	if existing.Status != models.ActionTypeStatusActive {
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("commit (already disabled): %w", err)
 		}
@@ -290,7 +294,7 @@ func (r *Repository) forceDisableOnce(ctx context.Context, actionType string, di
 		return nil, fmt.Errorf("check action type for force-disable: %w", err)
 	}
 
-	if existing.Status != "Active" {
+	if existing.Status != models.ActionTypeStatusActive {
 		if err := tx.Commit(); err != nil {
 			return nil, fmt.Errorf("commit (already disabled): %w", err)
 		}
@@ -457,18 +461,18 @@ func (r *Repository) ActionTypeExists(ctx context.Context, actionType string) (b
 }
 
 // descriptionDiff returns the list of field names that differ between two descriptions.
-func descriptionDiff(old, new models.ActionTypeDescription) []string {
+func descriptionDiff(old, updated models.ActionTypeDescription) []string {
 	var changed []string
-	if old.What != new.What {
+	if old.What != updated.What {
 		changed = append(changed, "what")
 	}
-	if old.WhenToUse != new.WhenToUse {
+	if old.WhenToUse != updated.WhenToUse {
 		changed = append(changed, "whenToUse")
 	}
-	if old.WhenNotToUse != new.WhenNotToUse {
+	if old.WhenNotToUse != updated.WhenNotToUse {
 		changed = append(changed, "whenNotToUse")
 	}
-	if old.Preconditions != new.Preconditions {
+	if old.Preconditions != updated.Preconditions {
 		changed = append(changed, "preconditions")
 	}
 	return changed

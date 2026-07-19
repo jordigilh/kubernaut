@@ -49,7 +49,7 @@ func InvestigateRegistration(tool *InvestigateTool, eventStore *mcpinternal.Dele
 				return nil, output, ErrorBoundary(logger, "kubernaut_investigate", err)
 			}
 
-			registerMCPSessionMapping(req.Session, output, eventStore, notifier, logger)
+			registerMCPSessionMapping(req.Session, output, eventStore, notifier, logger) //nolint:contextcheck // registerMCPSessionMapping's notifier callback fires at an arbitrary future time, detached from the registering request
 			wireInvestigationEventBridge(ctx, req.Session, tool, output, logger)
 
 			return nil, output, nil
@@ -109,7 +109,7 @@ func wireInvestigationEventBridge(ctx context.Context, sess *mcpsdk.ServerSessio
 			"investigation_session_id", output.InvestigationSessionID)
 		return
 	}
-	bridge := NewEventLogBridge(eventCh, func(level, loggerName string, data json.RawMessage) error {
+	bridge := NewEventLogBridge(eventCh, func(level, loggerName string, data json.RawMessage) error { //nolint:contextcheck // wireInvestigationEventBridge's log-bridge callback fires for the life of the investigation, detached from the registering request
 		return sess.Log(context.Background(), &mcpsdk.LoggingMessageParams{
 			Level:  mcpsdk.LoggingLevel(level),
 			Logger: loggerName,
@@ -119,7 +119,7 @@ func wireInvestigationEventBridge(ctx context.Context, sess *mcpsdk.ServerSessio
 	logger.Info("EventLogBridge wired",
 		"investigation_session_id", output.InvestigationSessionID,
 		"mcp_session_id", sess.ID())
-	go bridge.Run(context.Background())
+	go bridge.Run(context.Background()) //nolint:contextcheck // event bridge runs detached for the life of the investigation session, independent of the registering request
 }
 
 // SelectWorkflowRegistration returns a ToolRegistration that registers the

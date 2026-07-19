@@ -413,8 +413,8 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 	return tokenResp.IDToken, nil
 }
 
-func buildRR(namespace, rrName, targetKind, targetName string) *remediationv1alpha1.RemediationRequest {
-	h := sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-%s-%s", namespace, targetKind, targetName)))
+func buildRR(namespace, rrName, targetName string) *remediationv1alpha1.RemediationRequest {
+	h := sha256.Sum256([]byte(fmt.Sprintf("e2e-%s-Deployment-%s", namespace, targetName)))
 	fp := hex.EncodeToString(h[:])
 	firingTime := metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
 	receivedTime := metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC))
@@ -432,15 +432,17 @@ func buildRR(namespace, rrName, targetKind, targetName string) *remediationv1alp
 			ReceivedTime:      receivedTime,
 			TargetType:        "kubernetes",
 			TargetResource: remediationv1alpha1.ResourceIdentifier{
-				Kind: targetKind,
+				Kind: "Deployment",
 				Name: targetName,
 			},
 		},
 	}
 }
 
-func createRR(namespace, rrName, targetKind, targetName string) error {
-	rr := buildRR(namespace, rrName, targetKind, targetName)
+// createRR creates a RemediationRequest targeting a Deployment (the only
+// target kind used across all e2e/apifrontend tests).
+func createRR(namespace, rrName, targetName string) error {
+	rr := buildRR(namespace, rrName, targetName)
 	return k8sClient.Create(context.Background(), rr)
 }
 
@@ -468,12 +470,12 @@ func buildRAR(namespace, rarName, rrName string) *remediationv1alpha1.Remediatio
 			AIAnalysisRef: remediationv1alpha1.ObjectRef{
 				Name: "e2e-analysis-" + rarName,
 			},
-			Confidence:             0.65,
-			ConfidenceLevel:        "medium",
-			InvestigationSummary:   fmt.Sprintf("E2E RAR flow — RR %s", rrName),
-			Reason:                 "E2E approval gate",
-			WhyApprovalRequired:    "E2E coverage G5",
-			RequiredBy:             metav1.NewTime(time.Now().UTC()),
+			Confidence:           0.65,
+			ConfidenceLevel:      "medium",
+			InvestigationSummary: fmt.Sprintf("E2E RAR flow — RR %s", rrName),
+			Reason:               "E2E approval gate",
+			WhyApprovalRequired:  "E2E coverage G5",
+			RequiredBy:           metav1.NewTime(time.Now().UTC()),
 			RecommendedActions: []remediationv1alpha1.ApprovalRecommendedAction{
 				{
 					Action:    "RestartPod",

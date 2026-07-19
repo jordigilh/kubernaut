@@ -72,8 +72,6 @@ func NewWorkflowCreatedAuditEvent(workflow *models.RemediationWorkflow) (*ogencl
 	pkgaudit.SetActor(auditEvent, "service", "datastorage")
 	pkgaudit.SetResource(auditEvent, "Workflow", workflow.WorkflowID)
 	pkgaudit.SetCorrelationID(auditEvent, workflow.WorkflowID)
-	auditEvent.Version = "1.0"
-
 	// V2.0: Use OpenAPI-generated typed schema (eliminates map[string]interface{})
 	// Convert workflow.Labels (MandatoryLabels struct) to map[string]interface{}
 	labelsMap := make(map[string]interface{})
@@ -144,8 +142,6 @@ func NewWorkflowUpdatedAuditEvent(workflowID string, updatedFields ogenclient.Wo
 	pkgaudit.SetActor(auditEvent, "service", "datastorage")
 	pkgaudit.SetResource(auditEvent, "Workflow", workflowID)
 	pkgaudit.SetCorrelationID(auditEvent, workflowID)
-	auditEvent.Version = "1.0"
-
 	// V2.0: Use OpenAPI-generated typed schema (eliminates map[string]interface{})
 	// Parse WorkflowID as UUID
 	workflowUUID, err := uuid.Parse(workflowID)

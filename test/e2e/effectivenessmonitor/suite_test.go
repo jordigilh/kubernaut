@@ -63,6 +63,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 // Test constants
 const (
 	timeout  = 150 * time.Second
@@ -92,7 +97,7 @@ var (
 	e2eAuthToken string
 
 	// Prometheus and AlertManager URLs for test data injection
-	prometheusURL  string
+	prometheusURL   string
 	alertManagerURL string
 
 	// Track test failures for cluster cleanup decision
@@ -234,7 +239,7 @@ var _ = SynchronizedAfterSuite(
 		setupFailed := k8sClient == nil
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == trueFixture || os.Getenv("KEEP_CLUSTER") == trueFixture
 
 		if preserveCluster {
 			GinkgoWriter.Println("  CLUSTER PRESERVED FOR DEBUGGING")
@@ -248,7 +253,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "effectivenessmonitor",
 				ClusterName:    clusterName,
@@ -289,6 +294,11 @@ var _ = SynchronizedAfterSuite(
 // ============================================================================
 
 // createTestNamespace creates a managed test namespace and waits for Active.
+//
+// Investigated per Issue #1546 review: no ctx parameter here is not a
+// missed-wiring bug. CreateTestNamespaceAndWait uses context.Background() internally
+// per DD-E2E-PARALLEL, since namespace lifecycle must not be affected by test-level
+// timeouts (see test/shared/helpers/namespace.go).
 func createTestNamespace(prefix string) string {
 	return helpers.CreateTestNamespaceAndWait(k8sClient, prefix)
 }

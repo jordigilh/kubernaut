@@ -22,10 +22,15 @@ import (
 	. "github.com/onsi/gomega"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	oomkilled = "OOMKilled"
 )
 
 // Unit Tests: RequestBuilder - Signal Mode Pass-through
@@ -46,7 +51,7 @@ var _ = Describe("RequestBuilder", func() {
 				// Arrange: AA with reactive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
 				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "reactive"
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled"
+				analysis.Spec.AnalysisRequest.SignalContext.SignalName = oomkilled
 
 				// Act
 				req := builder.BuildIncidentRequest(analysis)
@@ -54,14 +59,14 @@ var _ = Describe("RequestBuilder", func() {
 				// Assert
 				Expect(req.SignalMode.Set).To(BeTrue())
 				Expect(req.SignalMode.Value).To(Equal(agentclient.SignalMode("reactive")))
-				Expect(req.SignalName).To(Equal("OOMKilled"))
+				Expect(req.SignalName).To(Equal(oomkilled))
 			})
 
 			It("UT-AA-084-002: should pass signalMode = proactive to KA", func() {
 				// Arrange: AA with proactive signal mode
 				analysis := helpers.NewAIAnalysis("ai-test", "default")
 				analysis.Spec.AnalysisRequest.SignalContext.SignalMode = "proactive"
-				analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled" // normalized by SP
+				analysis.Spec.AnalysisRequest.SignalContext.SignalName = oomkilled // normalized by SP
 
 				// Act
 				req := builder.BuildIncidentRequest(analysis)
@@ -70,7 +75,7 @@ var _ = Describe("RequestBuilder", func() {
 				Expect(req.SignalMode.Set).To(BeTrue())
 				Expect(req.SignalMode.Value).To(Equal(agentclient.SignalMode("proactive")))
 				// SignalName should be the normalized type from SP (not PredictedOOMKill)
-				Expect(req.SignalName).To(Equal("OOMKilled"))
+				Expect(req.SignalName).To(Equal(oomkilled))
 			})
 
 			It("should not set signalMode when empty (backwards compatible)", func() {
@@ -91,7 +96,7 @@ var _ = Describe("RequestBuilder", func() {
 		It("should set all required KA fields", func() {
 			analysis := helpers.NewAIAnalysis("ai-test", "default")
 			analysis.Spec.AnalysisRequest.SignalContext.Severity = "critical"
-			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "OOMKilled"
+			analysis.Spec.AnalysisRequest.SignalContext.SignalName = oomkilled
 			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
 			analysis.Spec.AnalysisRequest.SignalContext.BusinessPriority = "P0"
 			analysis.Spec.AnalysisRequest.SignalContext.TargetResource = aianalysisv1.TargetResource{
@@ -102,7 +107,7 @@ var _ = Describe("RequestBuilder", func() {
 
 			req := builder.BuildIncidentRequest(analysis)
 
-			Expect(req.SignalName).To(Equal("OOMKilled"))
+			Expect(req.SignalName).To(Equal(oomkilled))
 			Expect(req.Severity).To(Equal(agentclient.Severity("critical")))
 			Expect(req.Environment).To(Equal("production"))
 			Expect(req.Priority).To(Equal("P0"))

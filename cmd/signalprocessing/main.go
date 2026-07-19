@@ -306,7 +306,7 @@ func wireFleetMCPClient(ctx context.Context, cfg *config.Config, localClient cli
 		"endpoint", cfg.Fleet.Endpoint,
 		"oauth2Enabled", cfg.Fleet.OAuth2.Enabled)
 
-	fleetOpts := buildFleetOAuth2Options(cfg)
+	fleetOpts := buildFleetOAuth2Options(cfg) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	resilienceCfg := fleetclient.DefaultResilienceConfig()
 	fleetResilientClient, fleetErr := fleetclient.NewResilient(
 		ctx, cfg.Fleet.Endpoint, resilienceCfg,
@@ -574,6 +574,14 @@ func configureSignalProcessingTLSAndHotReload(ctx context.Context, cfg *config.C
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (policyEvaluator.Stop, fleetGate.Stop,
+	// cleanupHotReload, fleet client Close, cluster registry Stop, audit flush)
+	// always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ========================================
 	// ADR-030: Configuration via YAML file
 	// Single --config flag; all functional config in YAML ConfigMap
@@ -645,6 +653,7 @@ func main() {
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

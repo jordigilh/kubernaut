@@ -94,7 +94,7 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 	if _, known := h.registry.Get(resource.ClusterID); !known {
 		h.logger.V(1).Info("scope check rejected: unknown cluster",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
-		writeJSON(w, http.StatusOK, ScopeCheckResponse{Managed: false})
+		writeJSON(w, ScopeCheckResponse{Managed: false})
 		return
 	}
 
@@ -102,11 +102,11 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error(err, "scope check failed",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
-		writeJSON(w, http.StatusOK, ScopeCheckResponse{Managed: false})
+		writeJSON(w, ScopeCheckResponse{Managed: false})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, ScopeCheckResponse{Managed: managed})
+	writeJSON(w, ScopeCheckResponse{Managed: managed})
 }
 
 // ClusterListResponse is the JSON response for cluster listing.
@@ -141,7 +141,7 @@ func (h *Handler) handleListClusters(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, resp)
 }
 
 // Pinger checks connectivity to a backend store.
@@ -177,8 +177,11 @@ func requireGET(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+// writeJSON writes a 200 OK JSON response. All current call sites in this
+// package are success paths; non-2xx responses use http.Error/WriteHeader
+// directly (see requireGET, the readiness check above).
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(v)
 }

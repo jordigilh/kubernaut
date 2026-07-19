@@ -109,7 +109,7 @@ var _ = Describe("Validity Window Runtime Guard (Issue #188, BR-EM-009)", func()
 	// ========================================
 	It("UT-EM-VWG-001: should extend ValidityDeadline when StabilizationWindow exceeds ValidityWindow", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-vwg-001"
 
 		stabilizationWindow := 5 * time.Minute
@@ -149,7 +149,7 @@ var _ = Describe("Validity Window Runtime Guard (Issue #188, BR-EM-009)", func()
 	// ========================================
 	It("UT-EM-VWG-002: should not extend ValidityDeadline when StabilizationWindow is less than ValidityWindow", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-vwg-002"
 
 		stabilizationWindow := 30 * time.Second
@@ -180,7 +180,7 @@ var _ = Describe("Validity Window Runtime Guard (Issue #188, BR-EM-009)", func()
 	// ========================================
 	It("UT-EM-VWG-003: should extend ValidityDeadline when StabilizationWindow equals ValidityWindow", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-vwg-003"
 
 		window := 2 * time.Minute

@@ -29,6 +29,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	jsonSteps = "{\"steps\":[]}"
+)
+
 // ========================================
 // WORKFLOW CATALOG REPOSITORY INTEGRATION TESTS
 // ========================================
@@ -214,7 +219,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			It("should return unique constraint violation error", func() {
 				// ARRANGE: Create first workflow
 				workflowName := fmt.Sprintf("wf-repo-%s-duplicate", testID)
-				content := `{"steps":[]}`
+				content := jsonSteps
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
@@ -281,7 +286,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 		BeforeEach(func() {
 			// Insert test workflow
 			workflowName = fmt.Sprintf("wf-repo-%s-get", testID)
-			content := `{"steps":[]}`
+			content := jsonSteps
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 			// V1.0: Use structured MandatoryLabels
@@ -371,7 +376,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 			}
 
 			for _, wf := range workflows {
-				content := `{"steps":[]}`
+				content := jsonSteps
 				contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 				// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)
@@ -509,7 +514,7 @@ var _ = Describe("Workflow Catalog Repository Integration Tests", func() {
 		BeforeEach(func() {
 			// Insert active workflow
 			workflowName = fmt.Sprintf("wf-repo-%s-update", testID)
-			content := `{"steps":[]}`
+			content := jsonSteps
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 			// V1.0: Use structured MandatoryLabels (Issue #274: signalName removed)

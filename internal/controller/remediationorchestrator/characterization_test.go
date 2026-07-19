@@ -46,6 +46,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	targetResourceBusy = "Target resource busy"
+)
+
 // ErrorRoutingEngine returns configurable errors/blocks from routing methods.
 type ErrorRoutingEngine struct {
 	MockRoutingEngine
@@ -87,9 +92,10 @@ func newCharTimeouts() prodcontroller.TimeoutConfig {
 	}
 }
 
-func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, routingEngine routing.Engine) (*prodcontroller.Reconciler, *record.FakeRecorder) {
+// newCharReconciler is also called from apply_transition_test.go in this package.
+func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime.Scheme, routingEngine routing.Engine) *prodcontroller.Reconciler {
 	recorder := record.NewFakeRecorder(20)
-	r := prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
+	return prodcontroller.NewReconciler(prodcontroller.ReconcilerDeps{
 		Client:        c,
 		APIReader:     apiReader,
 		Scheme:        scheme,
@@ -99,7 +105,6 @@ func newCharReconciler(c client.Client, apiReader client.Reader, scheme *runtime
 		Timeouts:      newCharTimeouts(),
 		RoutingEngine: routingEngine,
 	})
-	return r, recorder
 }
 
 var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migration", func() {
@@ -119,7 +124,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 	Describe("Group 1: handlePendingPhase", func() {
 
 		It("UT-RO-CHAR-PND-001: routing engine error returns requeue", func() {
-			rr := newRemediationRequest("pnd001", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd001", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 
 			fakeClient := fake.NewClientBuilder().
@@ -129,28 +134,28 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				Build()
 
 			routingErr := fmt.Errorf("simulated routing failure")
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
 				PreAnalysisErr: routingErr,
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "pnd001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "pnd001", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5*time.Second), "should requeue after RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "pnd001", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "pnd001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhasePending), "should remain Pending on routing error")
 
 			var spList signalprocessingv1.SignalProcessingList
-			Expect(fakeClient.List(ctx, &spList, client.InNamespace("default"))).To(Succeed())
+			Expect(fakeClient.List(ctx, &spList, client.InNamespace(defaultFixture))).To(Succeed())
 			Expect(spList.Items).To(BeEmpty(), "should NOT create SignalProcessing on routing error")
 		})
 
 		It("UT-RO-CHAR-PND-002: SP create error returns 5s requeue and remains Pending", func() {
-			rr := newRemediationRequest("pnd002", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd002", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 
 			spCreateErr := fmt.Errorf("simulated SP creation failure")
@@ -168,22 +173,22 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "pnd002", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "pnd002", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5*time.Second), "should requeue after RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "pnd002", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "pnd002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhasePending), "should remain Pending on SP create error")
 		})
 
 		It("UT-RO-CHAR-PND-003: SP create in terminating namespace returns no requeue", func() {
-			rr := newRemediationRequest("pnd003", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd003", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 
 			nsTerminatingErr := fmt.Errorf("namespace default is being terminated")
@@ -201,10 +206,10 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "pnd003", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "pnd003", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -212,7 +217,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		})
 
 		It("UT-RO-CHAR-PND-004: UpdateRemediationRequestStatus failure after SP create returns requeue", func() {
-			rr := newRemediationRequest("pnd004", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd004", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 
 			statusUpdateCallCount := 0
@@ -242,10 +247,10 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "pnd004", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "pnd004", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -259,7 +264,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 	Describe("Group 2: handleProcessingPhase", func() {
 
 		It("UT-RO-CHAR-PRC-001: SP ref set but SP object missing returns 5s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("prc001", "default",
+			rr := newRemediationRequestWithChildRefs("prc001", defaultFixture,
 				remediationv1.PhaseProcessing, "sp-prc001", "", "")
 
 			fakeClient := fake.NewClientBuilder().
@@ -268,26 +273,26 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prc001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prc001", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5*time.Second), "should requeue at RequeueGenericError (5s) when SP object is missing")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prc001", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prc001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseProcessing),
 				"should remain Processing when SP is not found (will retry)")
 		})
 
 		It("UT-RO-CHAR-PRC-002: AI create error returns 5s requeue and remains Processing", func() {
-			rr := newRemediationRequestWithChildRefs("prc002", "default",
+			rr := newRemediationRequestWithChildRefs("prc002", defaultFixture,
 				remediationv1.PhaseProcessing, "sp-prc002", "", "")
 
-			sp := newSignalProcessingCompleted("sp-prc002", "default", "prc002")
+			sp := newSignalProcessingCompleted("sp-prc002", "prc002")
 
 			aiCreateErr := fmt.Errorf("simulated AI creation failure")
 			fakeClient := fake.NewClientBuilder().
@@ -307,22 +312,22 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prc002", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prc002", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5*time.Second), "should requeue after RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prc002", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prc002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseProcessing),
 				"should remain Processing on AI create error")
 
 			var aiList aianalysisv1.AIAnalysisList
-			Expect(fakeClient.List(ctx, &aiList, client.InNamespace("default"))).To(Succeed())
+			Expect(fakeClient.List(ctx, &aiList, client.InNamespace(defaultFixture))).To(Succeed())
 			Expect(aiList.Items).To(BeEmpty(), "should NOT have created an AIAnalysis object")
 		})
 	})
@@ -333,7 +338,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 	Describe("Group 3: handleAnalyzingPhase", func() {
 
 		It("UT-RO-CHAR-ANZ-001: AI Get NotFound (ref set, object missing) returns 5s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("anz001", "default",
+			rr := newRemediationRequestWithChildRefs("anz001", defaultFixture,
 				remediationv1.PhaseAnalyzing, "sp-anz001", "ai-anz001", "")
 
 			fakeClient := fake.NewClientBuilder().
@@ -342,25 +347,25 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "anz001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "anz001", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5*time.Second), "AI NotFound should requeue at RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "anz001", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "anz001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing), "should remain Analyzing")
 		})
 
 		It("UT-RO-CHAR-ANZ-002: AI in-progress with ref set returns 10s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("anz002", "default",
+			rr := newRemediationRequestWithChildRefs("anz002", defaultFixture,
 				remediationv1.PhaseAnalyzing, "sp-anz002", "ai-anz002", "")
 
-			ai := newAIAnalysis("ai-anz002", "default", "anz002", "Investigating")
+			ai := newAIAnalysis("ai-anz002", defaultFixture, "anz002", "Investigating")
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -368,25 +373,25 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "anz002", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "anz002", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(10*time.Second), "AI in-progress should requeue at 10s")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "anz002", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "anz002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing), "should remain Analyzing")
 		})
 
 		It("UT-RO-CHAR-ANZ-003: CheckPostAnalysisConditions error returns 5s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("anz003", "default",
+			rr := newRemediationRequestWithChildRefs("anz003", defaultFixture,
 				remediationv1.PhaseAnalyzing, "sp-anz003", "ai-anz003", "")
 
-			ai := newAIAnalysisCompleted("ai-anz003", "default", "anz003", 0.95, "wf-test")
+			ai := newAIAnalysisCompleted("ai-anz003", defaultFixture, "anz003", 0.95, "wf-test")
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -394,28 +399,28 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
 				PostAnalysisErr: fmt.Errorf("simulated post-analysis routing failure"),
 			})
 			reconciler.SetRESTMapper(newTestRESTMapper())
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "anz003", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "anz003", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5*time.Second), "routing error should requeue at RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "anz003", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "anz003", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing), "should remain Analyzing on routing error")
 		})
 
 		It("UT-RO-CHAR-ANZ-005: WE create failure returns 5s requeue and remains Analyzing", func() {
-			rr := newRemediationRequestWithChildRefs("anz005", "default",
+			rr := newRemediationRequestWithChildRefs("anz005", defaultFixture,
 				remediationv1.PhaseAnalyzing, "sp-anz005", "ai-anz005", "")
 
-			ai := newAIAnalysisCompleted("ai-anz005", "default", "anz005", 0.95, "wf-test")
+			ai := newAIAnalysisCompleted("ai-anz005", defaultFixture, "anz005", 0.95, "wf-test")
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -431,22 +436,22 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 			reconciler.SetRESTMapper(newTestRESTMapper())
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "anz005", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "anz005", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5*time.Second), "WE create failure should requeue at RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "anz005", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "anz005", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing), "should remain Analyzing on WE create error")
 
 			var weList workflowexecutionv1.WorkflowExecutionList
-			Expect(fakeClient.List(ctx, &weList, client.InNamespace("default"))).To(Succeed())
+			Expect(fakeClient.List(ctx, &weList, client.InNamespace(defaultFixture))).To(Succeed())
 			Expect(weList.Items).To(BeEmpty(), "should NOT have created a WorkflowExecution object")
 		})
 	})
@@ -457,7 +462,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 	Describe("Group 4: handleAwaitingApprovalPhase", func() {
 
 		It("UT-RO-CHAR-APR-001: RAR Get non-NotFound error returns error", func() {
-			rr := newRemediationRequestWithChildRefs("apr001", "default",
+			rr := newRemediationRequestWithChildRefs("apr001", defaultFixture,
 				remediationv1.PhaseAwaitingApproval, "sp-apr001", "ai-apr001", "")
 
 			rarGetErr := fmt.Errorf("simulated API server failure")
@@ -475,10 +480,10 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "apr001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "apr001", Namespace: defaultFixture},
 			})
 
 			Expect(err).To(HaveOccurred(), "non-NotFound RAR Get error should be propagated")
@@ -486,10 +491,10 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		})
 
 		It("UT-RO-CHAR-APR-002: AIAnalysisRef nil after approval returns 5s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("apr002", "default",
+			rr := newRemediationRequestWithChildRefs("apr002", defaultFixture,
 				remediationv1.PhaseAwaitingApproval, "sp-apr002", "", "")
 
-			rar := newRemediationApprovalRequestApproved("rar-apr002", "default", "apr002", "admin")
+			rar := newRemediationApprovalRequestApproved("rar-apr002", "apr002", "admin")
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -500,10 +505,10 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "apr002", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "apr002", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -511,17 +516,17 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				"AIAnalysisRef nil should requeue at RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "apr002", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "apr002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAwaitingApproval),
 				"should remain AwaitingApproval")
 		})
 
 		It("UT-RO-CHAR-APR-003: WE create failure after approval returns 5s requeue and remains AwaitingApproval", func() {
-			rr := newRemediationRequestWithChildRefs("apr003", "default",
+			rr := newRemediationRequestWithChildRefs("apr003", defaultFixture,
 				remediationv1.PhaseAwaitingApproval, "sp-apr003", "ai-apr003", "")
 
-			rar := newRemediationApprovalRequestApproved("rar-apr003", "default", "apr003", "admin")
-			ai := newAIAnalysisCompleted("ai-apr003", "default", "apr003", 0.95, "wf-test")
+			rar := newRemediationApprovalRequestApproved("rar-apr003", "apr003", "admin")
+			ai := newAIAnalysisCompleted("ai-apr003", defaultFixture, "apr003", 0.95, "wf-test")
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -541,11 +546,11 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 			reconciler.SetRESTMapper(newTestRESTMapper())
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "apr003", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "apr003", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -553,7 +558,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				"WE create failure after approval should requeue at RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "apr003", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "apr003", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAwaitingApproval),
 				"should remain AwaitingApproval on WE create error")
 		})
@@ -565,7 +570,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 	Describe("Group 5: handleExecutingPhase", func() {
 
 		It("UT-RO-CHAR-EXE-001: aggregator WE phase empty + unhealthy transitions to Failed", func() {
-			rr := newRemediationRequestWithChildRefs("exe001", "default",
+			rr := newRemediationRequestWithChildRefs("exe001", defaultFixture,
 				remediationv1.PhaseExecuting, "sp-exe001", "ai-exe001", "we-exe001")
 
 			fakeClient := fake.NewClientBuilder().
@@ -574,16 +579,16 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "exe001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "exe001", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "exe001", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "exe001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"WE missing (phase empty + unhealthy) should transition to Failed")
 			Expect(finalRR.Status.FailurePhase).ToNot(BeNil(), "FailurePhase should be set")
@@ -599,14 +604,14 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 	Describe("Group 6: handleVerifyingPhase", func() {
 
 		It("UT-RO-CHAR-VER-001: EA Get error returns 30s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("ver001", "default",
+			rr := newRemediationRequestWithChildRefs("ver001", defaultFixture,
 				remediationv1.PhaseVerifying, "sp-ver001", "ai-ver001", "we-ver001")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",
 				Name:       "ea-ver001",
-				Namespace:  "default",
+				Namespace:  defaultFixture,
 			}
 			rr.Status.EffectivenessAssessmentRef = &eaRef
 
@@ -616,29 +621,29 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "ver001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "ver001", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(30*time.Second), "EA Get error should requeue at RequeueResourceBusy (30s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver001", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseVerifying), "should remain Verifying")
 		})
 
 		It("UT-RO-CHAR-VER-002: EA in progress (non-terminal phase) returns 30s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("ver002", "default",
+			rr := newRemediationRequestWithChildRefs("ver002", defaultFixture,
 				remediationv1.PhaseVerifying, "sp-ver002", "ai-ver002", "we-ver002")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",
 				Name:       "ea-ver002",
-				Namespace:  "default",
+				Namespace:  defaultFixture,
 			}
 			rr.Status.EffectivenessAssessmentRef = &eaRef
 			deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
@@ -647,7 +652,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			ea := &eav1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "ea-ver002",
-					Namespace: "default",
+					Namespace: defaultFixture,
 				},
 				Status: eav1.EffectivenessAssessmentStatus{
 					Phase: eav1.PhasePending,
@@ -660,24 +665,24 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "ver002", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "ver002", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(30*time.Second), "EA in progress should requeue at 30s")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver002", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseVerifying), "should remain Verifying")
 		})
 
 		It("UT-RO-CHAR-VER-003: nil EA creator causes EA ref unset path, returns 30s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("ver003", "default",
+			rr := newRemediationRequestWithChildRefs("ver003", defaultFixture,
 				remediationv1.PhaseVerifying, "sp-ver003", "ai-ver003", "we-ver003")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -685,36 +690,36 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "ver003", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "ver003", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(30*time.Second), "should requeue at RequeueResourceBusy (30s) even with tracking errors")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver003", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver003", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseVerifying), "should remain Verifying (non-fatal)")
 		})
 
 		It("UT-RO-CHAR-VER-004: ValidityDeadline not yet set, age under timeout, returns 30s requeue", func() {
-			rr := newRemediationRequestWithChildRefs("ver004", "default",
+			rr := newRemediationRequestWithChildRefs("ver004", defaultFixture,
 				remediationv1.PhaseVerifying, "sp-ver004", "ai-ver004", "we-ver004")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			eaRef := corev1.ObjectReference{
 				APIVersion: eav1.GroupVersion.String(),
 				Kind:       "EffectivenessAssessment",
 				Name:       "ea-ver004",
-				Namespace:  "default",
+				Namespace:  defaultFixture,
 			}
 			rr.Status.EffectivenessAssessmentRef = &eaRef
 
 			ea := &eav1.EffectivenessAssessment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "ea-ver004",
-					Namespace: "default",
+					Namespace: defaultFixture,
 				},
 				Status: eav1.EffectivenessAssessmentStatus{
 					Phase: eav1.PhasePending,
@@ -727,17 +732,17 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "ver004", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "ver004", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(30*time.Second), "ValidityDeadline not set yet should requeue at 30s")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver004", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "ver004", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseVerifying), "should remain Verifying")
 			Expect(finalRR.Status.VerificationDeadline).To(BeNil(), "VerificationDeadline should not be set yet")
 		})
@@ -749,13 +754,13 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 	Describe("Group 7: handleBlockedPhase", func() {
 
 		It("UT-RO-CHAR-BLK-001: ResourceBusy with terminal blocking WFE clears block", func() {
-			rr := newRemediationRequestWithChildRefs("blk001", "default",
+			rr := newRemediationRequestWithChildRefs("blk001", defaultFixture,
 				remediationv1.PhaseBlocked, "sp-blk001", "ai-blk001", "")
 			rr.Status.BlockReason = remediationv1.BlockReasonResourceBusy
 			rr.Status.BlockingWorkflowExecution = "we-blocking-blk001"
-			rr.Status.BlockMessage = "Target resource busy"
+			rr.Status.BlockMessage = targetResourceBusy
 
-			blockingWE := newWorkflowExecutionCompleted("we-blocking-blk001", "default", "other-rr")
+			blockingWE := newWorkflowExecutionCompleted("we-blocking-blk001", defaultFixture, "other-rr")
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -766,16 +771,16 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "blk001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "blk001", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk001", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing),
 				"should clear ResourceBusy block and return to Analyzing")
 			Expect(string(finalRR.Status.BlockReason)).To(BeEmpty(),
@@ -785,11 +790,11 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		})
 
 		It("UT-RO-CHAR-BLK-002: ResourceBusy with missing WFE clears block", func() {
-			rr := newRemediationRequestWithChildRefs("blk002", "default",
+			rr := newRemediationRequestWithChildRefs("blk002", defaultFixture,
 				remediationv1.PhaseBlocked, "sp-blk002", "ai-blk002", "")
 			rr.Status.BlockReason = remediationv1.BlockReasonResourceBusy
 			rr.Status.BlockingWorkflowExecution = "we-gone-blk002"
-			rr.Status.BlockMessage = "Target resource busy"
+			rr.Status.BlockMessage = targetResourceBusy
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -797,16 +802,16 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "blk002", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "blk002", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk002", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing),
 				"should clear ResourceBusy block (WFE gone) and return to Analyzing")
 			Expect(string(finalRR.Status.BlockReason)).To(BeEmpty(),
@@ -816,13 +821,13 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		})
 
 		It("UT-RO-CHAR-BLK-003: ResourceBusy with active WFE requeues at 30s", func() {
-			rr := newRemediationRequestWithChildRefs("blk003", "default",
+			rr := newRemediationRequestWithChildRefs("blk003", defaultFixture,
 				remediationv1.PhaseBlocked, "sp-blk003", "ai-blk003", "")
 			rr.Status.BlockReason = remediationv1.BlockReasonResourceBusy
 			rr.Status.BlockingWorkflowExecution = "we-active-blk003"
-			rr.Status.BlockMessage = "Target resource busy"
+			rr.Status.BlockMessage = targetResourceBusy
 
-			activeWE := newWorkflowExecution("we-active-blk003", "default", "other-rr", workflowexecutionv1.PhaseRunning)
+			activeWE := newWorkflowExecution("we-active-blk003", defaultFixture, "other-rr", workflowexecutionv1.PhaseRunning)
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -833,10 +838,10 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "blk003", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "blk003", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
@@ -844,16 +849,16 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				"active blocking WFE should requeue at RequeueResourceBusy (30s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk003", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk003", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked),
 				"should remain Blocked")
 		})
 
 		It("UT-RO-CHAR-BLK-004: IneffectiveChain via post-analysis sets Outcome+RequiresManualReview", func() {
-			rr := newRemediationRequestWithChildRefs("blk004", "default",
+			rr := newRemediationRequestWithChildRefs("blk004", defaultFixture,
 				remediationv1.PhaseAnalyzing, "sp-blk004", "ai-blk004", "")
 
-			ai := newAIAnalysisCompleted("ai-blk004", "default", "blk004", 0.95, "wf-test")
+			ai := newAIAnalysisCompleted("ai-blk004", defaultFixture, "blk004", 0.95, "wf-test")
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -861,7 +866,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}, &aianalysisv1.AIAnalysis{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &ErrorRoutingEngine{
 				PostAnalysisBlock: &routing.BlockingCondition{
 					Blocked:      true,
 					Reason:       string(remediationv1.BlockReasonIneffectiveChain),
@@ -872,13 +877,13 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 			reconciler.SetRESTMapper(newTestRESTMapper())
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "blk004", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "blk004", Namespace: defaultFixture},
 			})
 
 			Expect(err).ToNot(HaveOccurred())
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk004", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "blk004", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked),
 				"should transition to Blocked on IneffectiveChain")
 			Expect(string(finalRR.Status.BlockReason)).To(Equal(string(remediationv1.BlockReasonIneffectiveChain)),
@@ -898,7 +903,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 	Describe("Group 9: Cross-cutting", func() {
 
 		It("UT-RO-CHAR-XCT-001: terminal Ready safety net sets Ready on terminal RR without Ready condition", func() {
-			rr := newRemediationRequest("xct001", "default", remediationv1.PhaseFailed)
+			rr := newRemediationRequest("xct001", defaultFixture, remediationv1.PhaseFailed)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			reason := "test failure"
 			rr.Status.FailureReason = &reason
@@ -909,15 +914,15 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "xct001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "xct001", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "xct001", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "xct001", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed), "should remain Failed")
 
 			hasReady := false
@@ -931,7 +936,7 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 		})
 
 		It("UT-RO-CHAR-XCT-002: phase start times set on transitions", func() {
-			rr := newRemediationRequest("xct002", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("xct002", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 
 			fakeClient := fake.NewClientBuilder().
@@ -943,17 +948,17 @@ var _ = Describe("Issue #666: Characterization Tests for RO Phase Handler Migrat
 				).
 				Build()
 
-			reconciler, _ := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
+			reconciler := newCharReconciler(fakeClient, fakeClient, scheme, &MockRoutingEngine{})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "xct002", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "xct002", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5*time.Second),
 				"transitionPhase to Processing requeues at RequeueGenericError (5s)")
 
 			var finalRR remediationv1.RemediationRequest
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "xct002", Namespace: "default"}, &finalRR)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "xct002", Namespace: defaultFixture}, &finalRR)).To(Succeed())
 			Expect(finalRR.Status.OverallPhase).To(Equal(remediationv1.PhaseProcessing),
 				"should transition from Pending to Processing")
 			Expect(finalRR.Status.ProcessingStartTime).ToNot(BeNil(),

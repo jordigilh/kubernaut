@@ -137,7 +137,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 15*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 15*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")
 
 			paramMap := make(map[string]string)
@@ -162,7 +162,7 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 15*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 15*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")
 
 			paramMap := make(map[string]string)

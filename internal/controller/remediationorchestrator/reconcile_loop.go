@@ -95,7 +95,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Terminal-phase housekeeping (Issue #88, #265)
-	if phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
+	if phase.IsTerminal(rr.Status.OverallPhase) {
 		return r.handleTerminalPhaseHousekeeping(ctx, rr, logger)
 	}
 
@@ -118,7 +118,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Issue #666: Check phase handler registry first
-	currentPhase := phase.Phase(rr.Status.OverallPhase)
+	currentPhase := rr.Status.OverallPhase
 	if h, ok := r.phaseRegistry.Lookup(currentPhase); ok {
 		intent, err := h.Handle(ctx, rr)
 		if err != nil {
@@ -201,7 +201,7 @@ func (r *Reconciler) shouldSkipPendingReconcile(rr *remediationv1.RemediationReq
 	// Log when we proceed during active orchestration (helps understand behavior)
 	if rr.Status.ObservedGeneration == rr.Generation &&
 		rr.Status.OverallPhase != "" &&
-		!phase.IsTerminal(phase.Phase(rr.Status.OverallPhase)) {
+		!phase.IsTerminal(rr.Status.OverallPhase) {
 		logger.V(1).Info("✅ PROCEEDING: Active orchestration phase",
 			"phase", rr.Status.OverallPhase,
 			"generation", rr.Generation,
@@ -327,10 +327,9 @@ func (r *Reconciler) handleTerminalPhaseHousekeeping(ctx context.Context, rr *re
 	// #1421: Cascade terminal phase to non-terminal child CRDs.
 	// Kubernetes-native parent-manages-children: RO is responsible for
 	// transitioning children to a terminal state when the parent RR terminates.
-	if err := r.cascadeTerminalToChildren(ctx, rr); err != nil {
-		logger.Error(err, "Failed to cascade terminal phase to children")
-		// Non-fatal: continue to return
-	}
+	// Per-child errors are logged internally by cascadeTerminalToChildren and
+	// never fail the parent reconcile.
+	r.cascadeTerminalToChildren(ctx, rr)
 
 	// BR-ORCH-044: Track routing decision - no action needed
 	r.Metrics.NoActionNeededTotal.WithLabelValues(string(rr.Status.OverallPhase), rr.Namespace).Inc()

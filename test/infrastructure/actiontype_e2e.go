@@ -58,12 +58,12 @@ var e2eActionTypes = []actionTypeDef{
 // Idempotent: the API returns 200 (exists) if the action type is already present.
 // Must be called AFTER DataStorage is healthy, BEFORE any workflow registration.
 // DD-WORKFLOW-016: FK constraint for remediation_workflow_catalog.
-func SeedActionTypesViaAPI(client *ogenclient.Client, writer io.Writer) error {
+func SeedActionTypesViaAPI(ctx context.Context, client *ogenclient.Client, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(writer, "🏷️  Seeding %d action types via DataStorage API\n", len(e2eActionTypes))
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	for _, at := range e2eActionTypes {
@@ -99,7 +99,7 @@ func SeedActionTypesViaAPI(client *ogenclient.Client, writer io.Writer) error {
 // SeedActionTypesViaAPIWithURL is a convenience wrapper that creates a temporary
 // authenticated ogen client and delegates to SeedActionTypesViaAPI.
 // Use when the caller has a DS URL + SA token but not a pre-built ogen client.
-func SeedActionTypesViaAPIWithURL(dsURL, token string, timeout time.Duration, writer io.Writer) error {
+func SeedActionTypesViaAPIWithURL(ctx context.Context, dsURL, token string, timeout time.Duration, writer io.Writer) error {
 	httpClient := &http.Client{
 		Transport: testauth.NewServiceAccountTransport(token),
 		Timeout:   timeout,
@@ -108,7 +108,7 @@ func SeedActionTypesViaAPIWithURL(dsURL, token string, timeout time.Duration, wr
 	if err != nil {
 		return fmt.Errorf("failed to create ogen client for action type seeding: %w", err)
 	}
-	return SeedActionTypesViaAPI(client, writer)
+	return SeedActionTypesViaAPI(ctx, client, writer)
 }
 
 // SeedActionTypesViaAPIWithTLS is a TLS-aware convenience wrapper that creates a
@@ -117,7 +117,7 @@ func SeedActionTypesViaAPIWithURL(dsURL, token string, timeout time.Duration, wr
 // Use in E2E tests where DataStorage serves HTTPS with a private CA.
 //
 // Issue #785: E2E HTTPS migration requires TLS-aware seeding.
-func SeedActionTypesViaAPIWithTLS(dsURL, token, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
+func SeedActionTypesViaAPIWithTLS(ctx context.Context, dsURL, token, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
 	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to create TLS-aware transport for action type seeding: %w", err)
@@ -130,14 +130,14 @@ func SeedActionTypesViaAPIWithTLS(dsURL, token, kubeconfigPath string, timeout t
 	if err != nil {
 		return fmt.Errorf("failed to create ogen client for action type seeding: %w", err)
 	}
-	return SeedActionTypesViaAPI(client, writer)
+	return SeedActionTypesViaAPI(ctx, client, writer)
 }
 
 // SeedE2EActionTypes creates the ActionType CRs required by E2E test workflows.
 // Must be called AFTER CRDs are installed and the AuthWebhook is deployed, but
 // BEFORE SeedWorkflowsInDataStorage — the AW webhook registers each AT in the DB,
 // satisfying the action_type_taxonomy FK constraint for workflow registration.
-func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) error {
+func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d E2E ActionType CRDs in %s\n", len(e2eActionTypes), namespace)
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -145,7 +145,7 @@ func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) erro
 	for _, at := range e2eActionTypes {
 		yaml := buildActionTypeYAML(at, namespace)
 
-		cmd := exec.Command("kubectl", "apply",
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-f", "-")
 		cmd.Stdin = strings.NewReader(yaml)
@@ -160,7 +160,7 @@ func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) erro
 
 	_, _ = fmt.Fprintf(output, "\n⏳ Waiting for ActionTypes to register in DataStorage...\n")
 	for _, at := range e2eActionTypes {
-		cmd := exec.Command("kubectl", "wait",
+		cmd := exec.CommandContext(ctx, "kubectl", "wait",
 			"--kubeconfig", kubeconfigPath,
 			"--for=jsonpath={.status.registered}=true",
 			fmt.Sprintf("actiontype/%s", at.MetadataName),

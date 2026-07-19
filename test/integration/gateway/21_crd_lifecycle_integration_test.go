@@ -42,6 +42,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	testalert = "TestAlert"
+)
+
 // Test 21: CRD Lifecycle Operations (BR-GATEWAY-068, BR-GATEWAY-076, BR-GATEWAY-077)
 // Business Outcome: Validate Gateway CRD creation and field validation business logic
 // Coverage Target: pkg/gateway/processing/* + pkg/gateway/validation/* (+30% estimated)
@@ -98,9 +103,9 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Con
 		testLogger.Info("Step 1: Create normalized signal")
 		signal := createNormalizedSignal(SignalBuilder{
 			AlertName: "HighCPUUsage",
-			Namespace:  testNamespace,
-			Severity:   "critical",
-			Source:     "prometheus",
+			Namespace: testNamespace,
+			Severity:  "critical",
+			Source:    "prometheus",
 			Labels: map[string]string{
 				"component": "frontend",
 				"pod":       "test-pod-12345",
@@ -144,9 +149,9 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Con
 		testLogger.Info("Step 1: Create signal with empty AlertName (helper applies default)")
 		signalWithDefaults := createNormalizedSignal(SignalBuilder{
 			AlertName: "", // Empty - helper will apply default "TestAlert"
-			Namespace:  testNamespace,
-			Severity:   "critical",
-			Source:     "prometheus",
+			Namespace: testNamespace,
+			Severity:  "critical",
+			Source:    "prometheus",
 		})
 
 		testLogger.Info("Step 2: Call ProcessSignal - helper applies defaults, so signal is valid")
@@ -164,7 +169,7 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Con
 		// Filter by test-specific signal name (ADR-057: avoid cross-test contamination)
 		var defaultCRD *remediationv1alpha1.RemediationRequest
 		for i := range crdList.Items {
-			if crdList.Items[i].Spec.SignalName == "TestAlert" {
+			if crdList.Items[i].Spec.SignalName == testalert {
 				defaultCRD = &crdList.Items[i]
 				break
 			}
@@ -177,11 +182,11 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Con
 			switch crdList.Items[i].Spec.SignalName {
 			case "HighCPUUsage":
 				highCPUCount++
-			case "TestAlert":
+			case testalert:
 				testAlertCount++
 			}
 		}
-		Expect(highCPUCount + testAlertCount).To(BeNumerically(">=", 2), "2 CRDs should exist (21b + 21c)")
+		Expect(highCPUCount+testAlertCount).To(BeNumerically(">=", 2), "2 CRDs should exist (21b + 21c)")
 		testLogger.Info("✅ Test 21c PASSED: Defaults applied correctly", "signalName", defaultCRD.Spec.SignalName)
 	})
 
@@ -206,14 +211,14 @@ var _ = Describe("Test 21: CRD Lifecycle Operations (Integration)", Ordered, Con
 
 		testLogger.Info("Step 1b: Create signal with rich metadata")
 		signal := createNormalizedSignal(SignalBuilder{
-			AlertName: "DiskPressure",
-			Namespace:  testNamespace,
-			Severity:   "warning",
-			Source:     "kubernetes-events",
-			Kind:       "Node",
+			AlertName:    "DiskPressure",
+			Namespace:    testNamespace,
+			Severity:     "warning",
+			Source:       "kubernetes-events",
+			Kind:         "Node",
 			ResourceName: "worker-node-01",
 			Labels: map[string]string{
-				"zone":         "us-west-2a",
+				"zone":          "us-west-2a",
 				"instance_type": "m5.xlarge",
 			},
 		})

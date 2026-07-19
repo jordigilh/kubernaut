@@ -189,7 +189,9 @@ func (r *Reconciler) emitScheduledEventIfFirst(ctx context.Context, ea *eav1.Eff
 
 // emitAssessingTransitionEvents emits the AssessmentStarted K8s event for the
 // transition to Assessing phase. Called after the status update succeeds.
-func (r *Reconciler) emitAssessingTransitionEvents(ctx context.Context, ea *eav1.EffectivenessAssessment) {
+// Unlike its sibling emit* helpers, this one only records a K8s event (no
+// audit call), so it needs no context.
+func (r *Reconciler) emitAssessingTransitionEvents(ea *eav1.EffectivenessAssessment) {
 	r.Recorder.Event(ea, corev1.EventTypeNormal, events.EventReasonAssessmentStarted,
 		fmt.Sprintf("Assessment started for correlation %s", ea.Spec.CorrelationID))
 }

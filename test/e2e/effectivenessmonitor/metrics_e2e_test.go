@@ -71,12 +71,12 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 			{Name: "container_memory_working_set_bytes", Labels: labels, Value: 250_000_000, Timestamp: now.Add(-5 * time.Second)},
 			{Name: "container_memory_working_set_bytes", Labels: labels, Value: 200_000_000, Timestamp: now},
 		}
-		err := infrastructure.InjectMetrics(prometheusURL, series)
+		err := infrastructure.InjectMetrics(ctx, prometheusURL, series)
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject metric series")
 
 		By("Creating a target pod and EA")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		name := uniqueName("ea-mc-improve")
 		correlationID := uniqueName("corr-mc-improve")
@@ -122,12 +122,12 @@ var _ = Describe("EffectivenessMonitor Metric Comparison E2E Tests", Label("e2e"
 			{Name: "container_memory_working_set_bytes", Labels: labels, Value: 300_000_000, Timestamp: now.Add(-5 * time.Second)},
 			{Name: "container_memory_working_set_bytes", Labels: labels, Value: 300_000_000, Timestamp: now},
 		}
-		err := infrastructure.InjectMetrics(prometheusURL, series)
+		err := infrastructure.InjectMetrics(ctx, prometheusURL, series)
 		Expect(err).ToNot(HaveOccurred(), "Failed to inject metric series")
 
 		By("Creating a target pod and EA")
-		createTargetPod(testNS, "target-pod")
-		waitForPodReady(testNS, "target-pod")
+		createTargetPod(testNS)
+		waitForPodReady(testNS)
 
 		name := uniqueName("ea-mc-nochange")
 		correlationID := uniqueName("corr-mc-nochange")

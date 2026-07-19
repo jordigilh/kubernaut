@@ -204,7 +204,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 			}
 			// Filter by controller actor_id after retrieving events
 			events := resp.Data
-			controllerEvents := filterEventsByActorId(events, "notification-controller")
+			controllerEvents := filterEventsByActorId(events)
 			return len(controllerEvents)
 		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 3),
 			"Controller should emit audit events for all 3 processed notifications")
@@ -218,7 +218,7 @@ var _ = Describe("E2E Test 2: Audit Correlation Across Multiple Notifications", 
 		var events []ogenclient.AuditEvent
 		Eventually(func() int {
 			allEvents := queryAuditEvents(dsClient, correlationID)
-			events = filterEventsByActorId(allEvents, "notification-controller")
+			events = filterEventsByActorId(allEvents)
 			return len(events)
 		}, 30*time.Second, 2*time.Second).Should(Equal(6),
 			"Should have exactly 6 controller-emitted audit events with same correlation_id:\n"+

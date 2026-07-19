@@ -199,7 +199,7 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// BR-AUDIT-023: Emit discovery audit events when context filters are present.
-	h.emitWorkflowRetrievedAuditEvents(workflowID, filters, durationMs)
+	h.emitWorkflowRetrievedAuditEvents(workflowID, filters, durationMs) //nolint:contextcheck // emitWorkflowRetrievedAuditEvents forwards to emitAuditEventsAsync (BR-AUDIT-024), fire-and-forget by design
 
 	// Log success
 	h.logger.Info("Workflow retrieved",

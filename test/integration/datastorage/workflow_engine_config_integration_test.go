@@ -217,16 +217,16 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 			content := "test-float-content"
 			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-			min := 0.1
-			max := 99.9
+			minThreshold := 0.1
+			maxThreshold := 99.9
 			params := []models.WorkflowParameter{
 				{
 					Name:        "cpu_threshold",
 					Type:        "float",
 					Description: "CPU threshold percentage",
 					Required:    true,
-					Minimum:     &min,
-					Maximum:     &max,
+					Minimum:     &minThreshold,
+					Maximum:     &maxThreshold,
 				},
 				{
 					Name:        "timeout",

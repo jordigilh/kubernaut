@@ -20,6 +20,10 @@ func redactErr(origErr error) error {
 
 const maxResponseBodyBytes = 10 * 1024 * 1024 // 10 MB
 
+// apiStatusSuccess is the Prometheus HTTP API envelope "status" value for a
+// successful response (https://prometheus.io/docs/prometheus/latest/querying/api/#format-overview).
+const apiStatusSuccess = "success"
+
 // Client defines the interface for querying Prometheus APIs.
 type Client interface {
 	GetAlerts(ctx context.Context) ([]Alert, error)
@@ -69,7 +73,7 @@ func (c *httpClient) GetAlerts(ctx context.Context) ([]Alert, error) {
 		return nil, fmt.Errorf("parsing alerts response: %w", err)
 	}
 
-	if apiResp.Status != "success" {
+	if apiResp.Status != apiStatusSuccess {
 		return nil, redactErr(fmt.Errorf("alerts API error: %s", apiResp.Error))
 	}
 
@@ -118,7 +122,7 @@ func (c *httpClient) GetRules(ctx context.Context) ([]RuleGroup, error) {
 		return nil, fmt.Errorf("parsing rules response: %w", err)
 	}
 
-	if apiResp.Status != "success" {
+	if apiResp.Status != apiStatusSuccess {
 		return nil, redactErr(fmt.Errorf("rules API error: %s", apiResp.Error))
 	}
 
@@ -190,7 +194,7 @@ func (c *httpClient) fetchInstantQuery(ctx context.Context, query string) (*quer
 		return nil, fmt.Errorf("parsing query response: %w", err)
 	}
 
-	if apiResp.Status != "success" {
+	if apiResp.Status != apiStatusSuccess {
 		return nil, redactErr(fmt.Errorf("query API error: %s", apiResp.Error))
 	}
 

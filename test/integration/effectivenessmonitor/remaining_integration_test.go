@@ -46,7 +46,7 @@ var _ = Describe("Reconciler Gaps (BR-EM-005)", func() {
 	// IT-EM-RC-004: EA for missing target pod -> health score 0.0
 	// ========================================
 	It("IT-EM-RC-004: should handle missing target pod with health score 0.0", func() {
-		ns := createTestNamespace("em-rc-004")
+		ns := createTestNamespace(ctx, "em-rc-004")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA without any matching pod (no pod with app=test-app)")
@@ -71,7 +71,7 @@ var _ = Describe("Reconciler Gaps (BR-EM-005)", func() {
 	// (Since AuditEmitter is nil, DS errors don't block reconciliation)
 	// ========================================
 	It("IT-EM-RC-008: should complete despite AuditEmitter being nil", func() {
-		ns := createTestNamespace("em-rc-008")
+		ns := createTestNamespace(ctx, "em-rc-008")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA (AuditEmitter is nil)")
@@ -93,7 +93,7 @@ var _ = Describe("Reconciler Gaps (BR-EM-005)", func() {
 	// IT-EM-RC-009: EA for unhealthy target -> assessment proceeds with low scores
 	// ========================================
 	It("IT-EM-RC-009: should complete assessment with low scores for unhealthy state", func() {
-		ns := createTestNamespace("em-rc-009")
+		ns := createTestNamespace(ctx, "em-rc-009")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock AM with active alert (unhealthy)")
@@ -134,7 +134,7 @@ var _ = Describe("Validity Window Gaps (BR-EM-006, BR-EM-007)", func() {
 	// IT-EM-VW-003: Partial data collected, then validity expires
 	// ========================================
 	It("IT-EM-VW-003: should complete with partial reason when some data collected before expiry", func() {
-		ns := createTestNamespace("em-vw-003")
+		ns := createTestNamespace(ctx, "em-vw-003")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock Prometheus to return empty (will cause requeue)")
@@ -186,7 +186,7 @@ var _ = Describe("Validity Window Gaps (BR-EM-006, BR-EM-007)", func() {
 	// IT-EM-VW-004: No data collected before expiry
 	// ========================================
 	It("IT-EM-VW-004: should complete with expired reason when immediately expired", func() {
-		ns := createTestNamespace("em-vw-004")
+		ns := createTestNamespace(ctx, "em-vw-004")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an already-expired EA")
@@ -219,7 +219,7 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 	// IT-EM-FF-001: Controller operational with all services reachable
 	// ========================================
 	It("IT-EM-FF-001: should be operational when all external services reachable", func() {
-		ns := createTestNamespace("em-ff-001")
+		ns := createTestNamespace(ctx, "em-ff-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA (controller is already running and healthy)")
@@ -241,7 +241,7 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 	// IT-EM-FF-002: Controller handles DS not wired (AuditEmitter nil)
 	// ========================================
 	It("IT-EM-FF-002: should operate without AuditEmitter (graceful degradation)", func() {
-		ns := createTestNamespace("em-ff-002")
+		ns := createTestNamespace(ctx, "em-ff-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA (AuditEmitter is nil in integration tests)")
@@ -263,7 +263,7 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 	// IT-EM-FF-003: Controller handles Prometheus mock reachable
 	// ========================================
 	It("IT-EM-FF-003: should query Prometheus when enabled and reachable", func() {
-		ns := createTestNamespace("em-ff-003")
+		ns := createTestNamespace(ctx, "em-ff-003")
 		defer deleteTestNamespace(ns)
 
 		mockProm.ResetRequestLog()
@@ -283,7 +283,7 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 		requests := mockProm.GetRequestLog()
 		queryCount := 0
 		for _, req := range requests {
-			if req.Path == "/api/v1/query_range" {
+			if req.Path == pathQueryRange {
 				queryCount++
 			}
 		}
@@ -295,7 +295,7 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 	// IT-EM-FF-004: Controller handles AM mock reachable
 	// ========================================
 	It("IT-EM-FF-004: should query AlertManager when enabled and reachable", func() {
-		ns := createTestNamespace("em-ff-004")
+		ns := createTestNamespace(ctx, "em-ff-004")
 		defer deleteTestNamespace(ns)
 
 		mockAM.ResetRequestLog()
@@ -315,7 +315,7 @@ var _ = Describe("Fail-Fast Startup (BR-EM-008)", func() {
 		requests := mockAM.GetRequestLog()
 		alertCount := 0
 		for _, req := range requests {
-			if req.Path == "/api/v2/alerts" {
+			if req.Path == pathV2Alerts {
 				alertCount++
 			}
 		}
@@ -334,7 +334,7 @@ var _ = Describe("Observability Metrics (BR-EM-008, DD-METRICS-001)", func() {
 	// IT-EM-OM-001: Reconciliation counter incremented
 	// ========================================
 	It("IT-EM-OM-001: should track reconciliation in controller metrics", func() {
-		ns := createTestNamespace("em-om-001")
+		ns := createTestNamespace(ctx, "em-om-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating and completing an EA")
@@ -357,7 +357,7 @@ var _ = Describe("Observability Metrics (BR-EM-008, DD-METRICS-001)", func() {
 	// IT-EM-OM-002: Reconciliation duration tracked
 	// ========================================
 	It("IT-EM-OM-002: should complete reconciliation within reasonable time", func() {
-		ns := createTestNamespace("em-om-002")
+		ns := createTestNamespace(ctx, "em-om-002")
 		defer deleteTestNamespace(ns)
 
 		startTime := time.Now()
@@ -382,7 +382,7 @@ var _ = Describe("Observability Metrics (BR-EM-008, DD-METRICS-001)", func() {
 	// IT-EM-OM-003: Error counter handling
 	// ========================================
 	It("IT-EM-OM-003: should handle error paths without panicking", func() {
-		ns := createTestNamespace("em-om-003")
+		ns := createTestNamespace(ctx, "em-om-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a standard EA (exercises all metric recording paths)")
@@ -412,7 +412,7 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 	// should cause the reconciler to skip those components)
 	// ========================================
 	It("IT-EM-RR-001: should skip already-assessed components on re-reconcile", func() {
-		ns := createTestNamespace("em-rr-001")
+		ns := createTestNamespace(ctx, "em-rr-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
@@ -454,7 +454,7 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 	// IT-EM-RR-002: EA with all components assessed -> completes on reconcile
 	// ========================================
 	It("IT-EM-RR-002: should complete quickly when all components already done", func() {
-		ns := createTestNamespace("em-rr-002")
+		ns := createTestNamespace(ctx, "em-rr-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
@@ -488,7 +488,7 @@ var _ = Describe("Restart/Resume (BR-EM-005)", func() {
 	// IT-EM-RR-003: EA with partial components -> completes remaining
 	// ========================================
 	It("IT-EM-RR-003: should handle normal progression through all components", func() {
-		ns := createTestNamespace("em-rr-003")
+		ns := createTestNamespace(ctx, "em-rr-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
@@ -519,7 +519,7 @@ var _ = Describe("Graceful Shutdown (BR-EM-005)", func() {
 	// IT-EM-GS-001: In-flight EA assessment completes before suite teardown
 	// ========================================
 	It("IT-EM-GS-001: should process EA to completion during normal operation", func() {
-		ns := createTestNamespace("em-gs-001")
+		ns := createTestNamespace(ctx, "em-gs-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA during normal operation")
@@ -541,7 +541,7 @@ var _ = Describe("Graceful Shutdown (BR-EM-005)", func() {
 	// IT-EM-GS-002: Audit buffer flush (non-blocking when AuditEmitter nil)
 	// ========================================
 	It("IT-EM-GS-002: should not block shutdown when audit emitter is nil", func() {
-		ns := createTestNamespace("em-gs-002")
+		ns := createTestNamespace(ctx, "em-gs-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating and completing an EA")
@@ -563,7 +563,7 @@ var _ = Describe("Graceful Shutdown (BR-EM-005)", func() {
 	// IT-EM-GS-003: Controller manager stop ordering
 	// ========================================
 	It("IT-EM-GS-003: should maintain status consistency through reconcile lifecycle", func() {
-		ns := createTestNamespace("em-gs-003")
+		ns := createTestNamespace(ctx, "em-gs-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")

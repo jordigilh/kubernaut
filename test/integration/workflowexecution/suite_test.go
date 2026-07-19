@@ -56,7 +56,7 @@ import (
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	westatus "github.com/jordigilh/kubernaut/pkg/workflowexecution/status"
-	"github.com/jordigilh/kubernaut/test/infrastructure"    // Shared infrastructure (PostgreSQL + Redis + DS)
+	"github.com/jordigilh/kubernaut/test/infrastructure"     // Shared infrastructure (PostgreSQL + Redis + DS)
 	"github.com/jordigilh/kubernaut/test/shared/integration" // DD-AUTH-014: Authenticated DataStorage clients
 	"github.com/prometheus/client_golang/prometheus"
 	// +kubebuilder:scaffold:imports
@@ -153,17 +153,17 @@ func (q *configurableWorkflowQuerier) GetWorkflowExecutionBundle(_ context.Conte
 // - Complies with testing-strategy.md >50% integration coverage requirement
 
 var (
-	ctx                context.Context
-	cancel             context.CancelFunc
-	testEnv            *envtest.Environment
-	cfg                *rest.Config
-	k8sClient          client.Client
-	k8sManager         ctrl.Manager
-	dataStorageBaseURL    string = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port (IPv4 explicit for CI, DD-TEST-001)
-	dataStorageHealthURL string = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationHealthPort)     // Issue #753: dedicated health probe port
-	auditStore         audit.AuditStore                                                                                                                 // REAL audit store (DD-AUDIT-003 compliance)
-	reconciler         *workflowexecution.WorkflowExecutionReconciler                                                                                   // Controller instance for metrics access
-	
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	testEnv              *envtest.Environment
+	cfg                  *rest.Config
+	k8sClient            client.Client
+	k8sManager           ctrl.Manager
+	dataStorageBaseURL   string                                         = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationDataStoragePort) // WE integration port (IPv4 explicit for CI, DD-TEST-001)
+	dataStorageHealthURL string                                         = fmt.Sprintf("http://127.0.0.1:%d", infrastructure.WEIntegrationHealthPort)      // Issue #753: dedicated health probe port
+	auditStore           audit.AuditStore                                                                                                                 // REAL audit store (DD-AUDIT-003 compliance)
+	reconciler           *workflowexecution.WorkflowExecutionReconciler                                                                                   // Controller instance for metrics access
+
 	// DD-AUTH-014: Authenticated DataStorage clients (audit + OpenAPI with ServiceAccount tokens)
 	dsClients *integration.AuthenticatedDataStorageClients
 
@@ -207,7 +207,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	// DD-AUTH-014: Real Kubernetes authentication via envtest
 	// DD-TEST-010: Multi-Controller Pattern for Parallel Test Execution
 	// ======================================================================
-	
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -224,12 +224,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	// DD-AUTH-014: Start shared envtest for DataStorage auth
 	By("Starting shared envtest for DataStorage authentication (DD-AUTH-014)")
-	
+
 	// DD-AUTH-014: Force envtest to bind to IPv4 (critical for macOS!)
 	// Problem: envtest defaults to "localhost" which Go resolves to [::1] on macOS
 	// Solution: Explicitly set Address to "127.0.0.1" before calling Start()
 	_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s") // Explicitly ignore - test setup
-	
+
 	sharedTestEnv := &envtest.Environment{
 		CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
 		ErrorIfCRDPathMissing: true,
@@ -247,7 +247,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	sharedCfg, err := sharedTestEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(sharedCfg).NotTo(BeNil())
-	
+
 	GinkgoWriter.Printf("✅ Shared envtest started\n")
 	GinkgoWriter.Printf("   📍 envtest URL: %s\n", sharedCfg.Host)
 	GinkgoWriter.Printf("   ℹ️  Forced IPv4 binding (127.0.0.1)\n")
@@ -279,7 +279,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		"test/integration/workflowexecution/config",
 		authConfig,
 	)
-	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err := infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
 
@@ -423,12 +423,12 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		Scheme:             k8sManager.GetScheme(),
 		Recorder:           k8sManager.GetEventRecorderFor("workflowexecution-controller"),
 		ExecutionNamespace: WorkflowExecutionNS,
-		CooldownPeriod:     10 * time.Second, // Short cooldown for integration tests (default 5min too long)
-		AuditStore:         auditStore,       // REAL audit store for integration tests
-		Metrics:            testMetrics,      // Test-isolated metrics (DD-METRICS-001)
-		StatusManager:      statusManager,    // DD-PERF-001: Atomic status updates
-		AuditManager:       auditManager,     // P3: Audit Manager pattern
-		ExecutorRegistry:   executorRegistry, // BR-WE-014: Strategy pattern dispatch
+		CooldownPeriod:     10 * time.Second,     // Short cooldown for integration tests (default 5min too long)
+		AuditStore:         auditStore,           // REAL audit store for integration tests
+		Metrics:            testMetrics,          // Test-isolated metrics (DD-METRICS-001)
+		StatusManager:      statusManager,        // DD-PERF-001: Atomic status updates
+		AuditManager:       auditManager,         // P3: Audit Manager pattern
+		ExecutorRegistry:   executorRegistry,     // BR-WE-014: Strategy pattern dispatch
 		WorkflowQuerier:    &testWorkflowQuerier, // DD-WE-006: Configurable per-test (default: nil deps)
 	}
 	err = reconciler.SetupWithManager(k8sManager)
@@ -511,6 +511,7 @@ var _ = SynchronizedAfterSuite(func() {
 
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
+
 // ========================================
 // Test Helpers - Parallel-Safe (4 procs)
 // ========================================
@@ -534,8 +535,8 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 				Namespace:  DefaultNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:     "test-workflow",
-				Version:        "v1.0.0",
+				WorkflowID:      "test-workflow",
+				Version:         "v1.0.0",
 				ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 			},
 			TargetResource: targetResource,
@@ -575,6 +576,11 @@ func waitForWFEPhase(name, namespace string, expectedPhase string, timeout time.
 		var err error
 		wfe, err = getWFE(name, namespace)
 		if err != nil {
+			// nolint:nilerr // intentional: wait.PollUntilContextTimeout
+			// condition-function contract -- returning a non-nil error here
+			// would abort polling immediately on a single transient Get
+			// failure; (false, nil) means "not ready yet, keep polling" and
+			// the outer timeout is the real backstop (Issue #1546 Tier 3).
 			return false, nil // Keep waiting on error
 		}
 		return wfe.Status.Phase == expectedPhase, nil
@@ -584,7 +590,7 @@ func waitForWFEPhase(name, namespace string, expectedPhase string, timeout time.
 }
 
 // waitForPipelineRunCreation waits for a PipelineRun to be created for a WFE
-func waitForPipelineRunCreation(wfeName, wfeNamespace string, timeout time.Duration) (*tektonv1.PipelineRun, error) {
+func waitForPipelineRunCreation(wfeName string, timeout time.Duration) (*tektonv1.PipelineRun, error) {
 	var pr *tektonv1.PipelineRun
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -597,6 +603,9 @@ func waitForPipelineRunCreation(wfeName, wfeNamespace string, timeout time.Durat
 			"kubernaut.ai/workflow-execution": wfeName,
 		})
 		if err != nil {
+			// nolint:nilerr // intentional: wait.PollUntilContextTimeout
+			// condition-function contract, same as waitForWFEPhase above
+			// (Issue #1546 Tier 3).
 			return false, nil
 		}
 		if len(prList.Items) > 0 {
@@ -647,6 +656,12 @@ func deleteWFEAndWait(wfe *workflowexecutionv1alpha1.WorkflowExecution, timeout 
 
 		if err != nil {
 			// Object not found = deletion complete
+			// nolint:nilerr // intentional: wait.PollUntilContextTimeout
+			// condition-function contract -- any Get error here (in
+			// practice always NotFound in this envtest suite) is treated
+			// as "deletion complete" rather than propagated, so a single
+			// transient Get failure doesn't abort the poll (Issue #1546
+			// Tier 3).
 			return true, nil
 		}
 
@@ -654,6 +669,7 @@ func deleteWFEAndWait(wfe *workflowexecutionv1alpha1.WorkflowExecution, timeout 
 		return false, nil
 	})
 }
+
 // cleanupWFE cleans up a WFE and its associated PipelineRun
 func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 	// Delete WFE (will cascade to PipelineRun via owner reference)
@@ -669,6 +685,7 @@ func cleanupWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 		}
 	}
 }
+
 // cleanupJobWFE cleans up a WFE and its associated Job
 func cleanupJobWFE(wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 	// Delete WFE
@@ -701,6 +718,9 @@ func waitForJobCreation(wfeName string, timeout time.Duration) (*batchv1.Job, er
 			"kubernaut.ai/workflow-execution": wfeName,
 		})
 		if err != nil {
+			// nolint:nilerr // intentional: wait.PollUntilContextTimeout
+			// condition-function contract, same as waitForWFEPhase/
+			// waitForPipelineRunCreation above (Issue #1546 Tier 3).
 			return false, nil
 		}
 		if len(jobList.Items) > 0 {

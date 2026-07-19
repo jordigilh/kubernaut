@@ -61,7 +61,7 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 		var discoveryWorkflowID string
 
 		BeforeEach(func() {
-			discoveryWorkflowID, _ = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent, "e2e-stub")
+			discoveryWorkflowID, _ = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent)
 			logger.Info("✅ Discovery test workflow ready", "uuid", discoveryWorkflowID)
 		})
 
@@ -266,10 +266,10 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			// GetWorkflow with MISMATCHED context — should return 404
 			step3Resp, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{
 				WorkflowID:  workflowUUID,
-				Severity:    dsgen.NewOptGetWorkflowByIDSeverity(dsgen.GetWorkflowByIDSeverityInfo),   // mismatch: info != critical
+				Severity:    dsgen.NewOptGetWorkflowByIDSeverity(dsgen.GetWorkflowByIDSeverityInfo), // mismatch: info != critical
 				Component:   dsgen.NewOptString("apps/v1/StatefulSet"),                              // mismatch: StatefulSet != Pod
-				Environment: dsgen.NewOptString("staging"),                                           // mismatch: staging != production
-				Priority:    dsgen.NewOptGetWorkflowByIDPriority(dsgen.GetWorkflowByIDPriorityP3),    // mismatch: P3 != P0
+				Environment: dsgen.NewOptString("staging"),                                          // mismatch: staging != production
+				Priority:    dsgen.NewOptGetWorkflowByIDPriority(dsgen.GetWorkflowByIDPriorityP3),   // mismatch: P3 != P0
 			})
 			Expect(err).ToNot(HaveOccurred())
 

@@ -92,7 +92,7 @@ func (m *MockAuditStoreRW) Close() error                  { return nil }
 const testUserEmail = "admin@example.com"
 const testUserUID = "uid-12345"
 
-func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWorkflow {
+func buildRemediationWorkflow(name string) *rwv1alpha1.RemediationWorkflow {
 	return &rwv1alpha1.RemediationWorkflow{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "kubernaut.ai/v1alpha1",
@@ -100,7 +100,7 @@ func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWor
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: "kubernaut-system",
 			UID:       "crd-uid-001",
 		},
 		Spec: rwv1alpha1.RemediationWorkflowSpec{
@@ -127,8 +127,11 @@ func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWor
 	}
 }
 
-func buildRemediationWorkflowWithStatus(name, namespace, workflowID string) *rwv1alpha1.RemediationWorkflow {
-	rw := buildRemediationWorkflow(name, namespace)
+// buildRemediationWorkflowWithStatus builds a RemediationWorkflow with status
+// in the fixed "kubernaut-system" namespace (the only namespace used across
+// all authwebhook tests calling this helper).
+func buildRemediationWorkflowWithStatus(name, workflowID string) *rwv1alpha1.RemediationWorkflow {
+	rw := buildRemediationWorkflow(name)
 	rw.Status = rwv1alpha1.RemediationWorkflowStatus{
 		WorkflowID:    workflowID,
 		CatalogStatus: sharedtypes.CatalogStatusActive,
@@ -206,8 +209,8 @@ func buildUpdateAdmissionRequest(rw *rwv1alpha1.RemediationWorkflow) admission.R
 	}
 }
 
-func fakeK8sKey(namespace, name string) types.NamespacedName {
-	return types.NamespacedName{Namespace: namespace, Name: name}
+func fakeK8sKey(name string) types.NamespacedName {
+	return types.NamespacedName{Namespace: "kubernaut-system", Name: name}
 }
 
 // ========================================
@@ -235,7 +238,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-001: CREATE handler forwards CRD spec to DS", func() {
 		It("should return Allowed and call DS CreateWorkflowInline", func() {
 			// Arrange
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			var capturedContent string
 			var capturedSource string
 			var capturedBy string
@@ -274,7 +277,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-002: DELETE handler disables workflow in DS", func() {
 		It("should return Allowed and call DS DisableWorkflow", func() {
 			// Arrange
-			rw := buildRemediationWorkflowWithStatus("scale-memory", "kubernaut-system", "550e8400-e29b-41d4-a716-446655440000")
+			rw := buildRemediationWorkflowWithStatus("scale-memory", "550e8400-e29b-41d4-a716-446655440000")
 			var capturedID string
 			var capturedReason string
 			var capturedBy string
@@ -312,7 +315,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				return nil, fmt.Errorf("connection refused: data storage service unavailable")
 			}
 
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildCreateAdmissionRequest(rw)
 
 			// Act
@@ -342,7 +345,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				}, nil
 			}
 
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildCreateAdmissionRequest(rw)
 
 			// Act
@@ -360,7 +363,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-005: CREATE audit event with actor attribution", func() {
 		It("should emit remediationworkflow.admitted.create audit event", func() {
 			// Arrange
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildCreateAdmissionRequest(rw)
 
 			// Act
@@ -387,7 +390,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-006: DELETE audit event with actor attribution", func() {
 		It("should emit remediationworkflow.admitted.delete audit event", func() {
 			// Arrange
-			rw := buildRemediationWorkflowWithStatus("scale-memory", "kubernaut-system", "550e8400-e29b-41d4-a716-446655440000")
+			rw := buildRemediationWorkflowWithStatus("scale-memory", "550e8400-e29b-41d4-a716-446655440000")
 			admReq := buildDeleteAdmissionRequest(rw)
 
 			// Act
@@ -417,7 +420,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				return nil, fmt.Errorf("connection refused")
 			}
 
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildCreateAdmissionRequest(rw)
 
 			// Act
@@ -437,7 +440,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-008: User extraction from AdmissionReview.userInfo", func() {
 		It("should extract username, UID, and groups from admission request", func() {
 			// Arrange
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildCreateAdmissionRequest(rw)
 			admReq.UserInfo.Groups = []string{"system:masters", "kubernaut-admins"}
 
@@ -466,7 +469,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-299-009: UPDATE triggers DS registration (Issue #371)", func() {
 		It("should allow UPDATE and call DS CreateWorkflowInline", func() {
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildUpdateAdmissionRequest(rw)
 
 			createCalled := false
@@ -499,7 +502,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-371-001: UPDATE forwards CRD spec changes to DS", func() {
 		It("should call DS CreateWorkflowInline and return Allowed", func() {
-			rw := buildRemediationWorkflow("git-revert-v1", "kubernaut-system")
+			rw := buildRemediationWorkflow("git-revert-v1")
 			admReq := buildUpdateAdmissionRequest(rw)
 
 			var capturedContent string
@@ -528,7 +531,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-371-002: UPDATE with unchanged content is idempotent", func() {
 		It("should return Allowed with PreviouslyExisted=true from DS", func() {
-			rw := buildRemediationWorkflow("git-revert-v1", "kubernaut-system")
+			rw := buildRemediationWorkflow("git-revert-v1")
 			admReq := buildUpdateAdmissionRequest(rw)
 
 			mockDS.createFn = func(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
@@ -587,7 +590,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-773-002: UPDATE denied on auth failure", func() {
 		It("should return Denied and emit denied audit event when user extraction fails", func() {
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildUpdateAdmissionRequest(rw)
 			admReq.UserInfo = authv1.UserInfo{}
 
@@ -613,7 +616,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				return nil, fmt.Errorf("connection refused: data storage service unavailable")
 			}
 
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildUpdateAdmissionRequest(rw)
 
 			resp := handler.Handle(ctx, admReq)
@@ -641,7 +644,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-773-005: UPDATE success emits distinct update audit event", func() {
 		It("should emit remediationworkflow.admitted.update audit event on success", func() {
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			admReq := buildUpdateAdmissionRequest(rw)
 
 			resp := handler.Handle(ctx, admReq)
@@ -661,7 +664,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-773-006: UPDATE during deletion skips DS registration", func() {
 		It("should allow the update without calling DS when deletionTimestamp is set", func() {
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			now := metav1.Now()
 			rw.DeletionTimestamp = &now
 
@@ -693,7 +696,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				return fmt.Errorf("connection refused: data storage unavailable")
 			}
 
-			rw := buildRemediationWorkflowWithStatus("scale-memory", "kubernaut-system", "550e8400-e29b-41d4-a716-446655440000")
+			rw := buildRemediationWorkflowWithStatus("scale-memory", "550e8400-e29b-41d4-a716-446655440000")
 			admReq := buildDeleteAdmissionRequest(rw)
 
 			// Act
@@ -711,7 +714,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-011: CREATE includes source and registeredBy in DS request", func() {
 		It("should pass source='crd' and registeredBy from userInfo to DS", func() {
 			// Arrange
-			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory")
 			var capturedSource string
 			var capturedBy string
 			mockDS.createFn = func(_ context.Context, _, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
@@ -741,7 +744,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-INTEGRITY-001: CREATE patches new UUID into CRD status on supersede", func() {
 		It("should populate CRD .status with the NEW workflow UUID when DS indicates supersede", func() {
-			rw := buildRemediationWorkflow("integrity-supersede", "kubernaut-system")
+			rw := buildRemediationWorkflow("integrity-supersede")
 
 			scheme := runtime.NewScheme()
 			_ = rwv1alpha1.AddToScheme(scheme)
@@ -774,7 +777,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-supersede"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("integrity-supersede"), updated)
 				if err != nil {
 					return ""
 				}
@@ -790,7 +793,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-INTEGRITY-002: CREATE patches same UUID into CRD status on re-enable", func() {
 		It("should populate CRD .status with the ORIGINAL UUID when DS re-enables", func() {
-			rw := buildRemediationWorkflow("integrity-reenable", "kubernaut-system")
+			rw := buildRemediationWorkflow("integrity-reenable")
 
 			scheme := runtime.NewScheme()
 			_ = rwv1alpha1.AddToScheme(scheme)
@@ -821,7 +824,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("integrity-reenable"), updated)
 				if err != nil {
 					return ""
 				}
@@ -830,7 +833,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				"CRD status should contain the ORIGINAL UUID from the re-enable")
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)).To(Succeed())
+			Expect(fakeK8s.Get(ctx, fakeK8sKey("integrity-reenable"), updated)).To(Succeed())
 			Expect(updated.Status.PreviouslyExisted).To(BeTrue(),
 				"PreviouslyExisted should be true for re-enabled workflows")
 		})
@@ -841,7 +844,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-299-012: DELETE with empty status (production scenario)", func() {
 		It("should allow DELETE and skip DS disable when WorkflowID is empty", func() {
-			rw := buildRemediationWorkflow("test-rw", "kubernaut-system")
+			rw := buildRemediationWorkflow("test-rw")
 
 			mockDS.disableFn = func(_ context.Context, _, _, _ string) error {
 				Fail("DisableWorkflow should NOT be called when WorkflowID is empty")
@@ -869,7 +872,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-299-013: CREATE updates CRD status asynchronously", func() {
 		It("should populate .status with DS registration result via k8sClient.Status().Update()", func() {
-			rw := buildRemediationWorkflow("scale-memory-status", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory-status")
 
 			scheme := runtime.NewScheme()
 			_ = rwv1alpha1.AddToScheme(scheme)
@@ -899,7 +902,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			// Wait for async goroutine to complete
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-status"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("scale-memory-status"), updated)
 				if err != nil {
 					return ""
 				}
@@ -908,7 +911,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			// Verify all status fields
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-status"), updated)).To(Succeed())
+			Expect(fakeK8s.Get(ctx, fakeK8sKey("scale-memory-status"), updated)).To(Succeed())
 			Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
 			Expect(updated.Status.RegisteredBy).To(Equal(testUserEmail))
 			Expect(updated.Status.RegisteredAt).NotTo(BeNil())

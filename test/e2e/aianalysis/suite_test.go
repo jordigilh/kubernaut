@@ -61,6 +61,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 func TestAIAnalysisE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
 
@@ -224,7 +229,7 @@ var _ = SynchronizedBeforeSuite(
 		// Increase timeout from 60s to 300s for coverage builds (5 min)
 		// Initial delay to allow HTTP servers to start accepting connections
 		healthTimeout := 60 * time.Second
-		if os.Getenv("E2E_COVERAGE") == "true" {
+		if os.Getenv("E2E_COVERAGE") == trueFixture {
 			healthTimeout = 300 * time.Second // 5 minutes for coverage builds
 			initialDelay := 10 * time.Second  // Give servers 10s to start
 			logger.Info("Coverage build detected - using extended health check timeout (300s) with 10s initial delay")
@@ -303,12 +308,12 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Determine cleanup strategy
-		preserveCluster := os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != ""
+		preserveCluster := os.Getenv("SKIP_CLEANUP") == trueFixture || os.Getenv("KEEP_CLUSTER") != ""
 
 		if preserveCluster {
 			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
 			logger.Info("Reason:")
-			if os.Getenv("SKIP_CLEANUP") == "true" {
+			if os.Getenv("SKIP_CLEANUP") == trueFixture {
 				logger.Info("  • SKIP_CLEANUP=true")
 			}
 			if os.Getenv("KEEP_CLUSTER") != "" {
@@ -333,7 +338,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "aianalysis",
 				ClusterName:    clusterName,
@@ -420,6 +425,6 @@ func randomSuffix() string {
 
 // createTestNamespace creates a managed test namespace for test isolation.
 // Delegates to shared helpers.CreateTestNamespace with kubernaut.ai/managed=true.
-func createTestNamespace(prefix string) string {
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }

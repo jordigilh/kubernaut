@@ -108,15 +108,15 @@ var _ = Describe("KA-Owned Target Resource [BR-496]", func() {
 			for _, pod := range pods.Items {
 				for _, cs := range pod.Status.ContainerStatuses {
 					if cs.LastTerminationState.Terminated != nil &&
-						cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+						cs.LastTerminationState.Terminated.Reason == oomkilled {
 						return true
 					}
 					if cs.State.Terminated != nil &&
-						cs.State.Terminated.Reason == "OOMKilled" {
+						cs.State.Terminated.Reason == oomkilled {
 						return true
 					}
 					if cs.RestartCount > 0 && cs.State.Waiting != nil &&
-						cs.State.Waiting.Reason == "CrashLoopBackOff" {
+						cs.State.Waiting.Reason == crashloopbackoff {
 						return true
 					}
 				}
@@ -140,7 +140,7 @@ var _ = Describe("KA-Owned Target Resource [BR-496]", func() {
 					continue
 				}
 				sig := strings.ToLower(rr.Spec.SignalName)
-				if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" || strings.Contains(sig, "oom") {
+				if sig == backoff || sig == oomkilledLower || sig == "oomkill" || strings.Contains(sig, "oom") {
 					remediationRequest = rr
 					GinkgoWriter.Printf("  ✅ RemediationRequest found: %s (signal: %s)\n", rr.Name, rr.Spec.SignalName)
 					return true

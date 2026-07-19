@@ -77,7 +77,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 
 		It("should transition from Blocked to Failed when cooldown period has expired", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("routing-cooldown-expired")
+			ns := createTestNamespace(ctx, "routing-cooldown-expired")
 			defer deleteTestNamespace(ns)
 
 			GinkgoWriter.Println("📋 Testing cooldown expiry by setting BlockedUntil in the past")
@@ -149,7 +149,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 		It("should block duplicate RR when active RR exists with same fingerprint", FlakeAttempts(3), func() {
 			// FlakeAttempts(3): Timing-sensitive test with concurrent CRD operations - retry up to 3 times in CI
 			// Create unique namespace for this test
-			ns := createTestNamespace("routing-signal-cooldown")
+			ns := createTestNamespace(ctx, "routing-signal-cooldown")
 			defer deleteTestNamespace(ns)
 
 			// ========================================
@@ -230,7 +230,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 
 		It("should allow RR when original RR completes (no longer active)", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("routing-signal-after-complete")
+			ns := createTestNamespace(ctx, "routing-signal-after-complete")
 			defer deleteTestNamespace(ns)
 
 			// Use a specific fingerprint for this test
@@ -273,7 +273,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 				if err != nil {
 					return err
 				}
-				rr.Status.OverallPhase = "Completed"
+				rr.Status.OverallPhase = completed
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed(), "RR1 should be manually marked as Completed")
 
@@ -289,7 +289,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 				}
 				// Controller must have observed the completion (ObservedGeneration == Generation)
 				// AND status must be Completed
-				return rr.Status.OverallPhase == "Completed" &&
+				return rr.Status.OverallPhase == completed &&
 					rr.Status.ObservedGeneration == rr.Generation
 			}, timeout, interval).Should(BeTrue(), "RR1 should be fully completed with ObservedGeneration == Generation")
 
@@ -332,7 +332,7 @@ var _ = Describe("V1.0 Centralized Routing Integration (DD-RO-002)", func() {
 var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 
 	It("IT-RO-WE001-001: should block with RecentlyRemediated when Kind casing matches WFE", func() {
-		ns := createTestNamespace("ro-we001-001")
+		ns := createTestNamespace(ctx, "ro-we001-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a RemediationRequest")
@@ -350,7 +350,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {

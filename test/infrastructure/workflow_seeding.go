@@ -55,13 +55,13 @@ type TestWorkflow struct {
 	WorkflowID      string // Must match Mock LLM workflow_id in scenarios registry
 	Name            string
 	Description     string
-	ActionType      string // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
-	Severity        string // Metadata only: "critical", "high", "warning", "info" (ADR-066 canonical values)
+	ActionType      string   // DD-WORKFLOW-016: FK to action_type_taxonomy (e.g., "ScaleReplicas", "RestartPod")
+	Severity        string   // Metadata only: "critical", "high", "warning", "info" (ADR-066 canonical values)
 	Component       []string // Metadata only: e.g. []string{"deployment"}, []string{"pod"} (actual value from fixture)
-	Environment     string // Metadata only + map key: "staging", "production", "test" (actual value from fixture)
-	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from fixture)
-	SchemaImage     string // Legacy: retained for fixture directory name mapping
-	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
+	Environment     string   // Metadata only + map key: "staging", "production", "test" (actual value from fixture)
+	Priority        string   // Metadata only: "P0", "P1", "P2", "P3" (actual value from fixture)
+	SchemaImage     string   // Legacy: retained for fixture directory name mapping
+	ExecutionEngine string   // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
 	// SchemaParameters defines workflow input parameters per ADR-043 (BR-HAPI-191)
 	// Used to generate valid workflow-schema.yaml content that DataStorage will parse
 	// and store in the parameters JSONB column for KA validation and MCP tool results
@@ -83,7 +83,7 @@ type TestWorkflow struct {
 // Returns: map[workflow_name]workflow_id (UUID) for test reference
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUIDs (cannot be specified by client)
 // DD-AUTH-014: Accepts authenticated client for real K8s authentication
-func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkflow, testSuiteName string, output io.Writer) (map[string]string, error) {
+func SeedWorkflowsInDataStorage(ctx context.Context, client *ogenclient.Client, workflows []TestWorkflow, testSuiteName string, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🌱 Seeding Test Workflows in DataStorage (%s)\n", testSuiteName)
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -94,7 +94,7 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 	workflowUUIDs := make(map[string]string)
 
 	for _, wf := range workflows {
-		workflowID, err := RegisterWorkflowInDataStorage(client, wf, output)
+		workflowID, err := RegisterWorkflowInDataStorage(ctx, client, wf, output)
 		if err != nil {
 			return nil, fmt.Errorf("failed to register workflow %s: %w", wf.WorkflowID, err)
 		}
@@ -124,14 +124,14 @@ func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkf
 // is returned immediately — no misleading fallback.
 //
 // Returns: The actual UUID assigned by DataStorage (either from creation or query)
-func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
+func RegisterWorkflowInDataStorage(ctx context.Context, client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
 	fixtureDir := workflowIDToImageName(wf.WorkflowID)
 	content, readErr := readWorkflowFixtureContent(fixtureDir)
 	if readErr != nil {
 		return "", fmt.Errorf("read fixture for %s: %w", wf.WorkflowID, readErr)
 	}
 
-	uuid, _, err := callCreateWorkflowInline(client, content, "e2e-test-seeder")
+	uuid, _, err := callCreateWorkflowInline(ctx, client, content, "e2e-test-seeder")
 	if err == nil {
 		return uuid, nil
 	}
@@ -145,7 +145,7 @@ func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, o
 
 	_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409), querying for existing UUID...\n")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	listResp, listErr := client.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
 		WorkflowName: ogenclient.NewOptString(wf.WorkflowID),
@@ -211,7 +211,7 @@ type WorkflowSeedSpec struct {
 //  4. Returns map["<crd-name>:<environment>"] = "<uuid>"
 //
 // Prerequisites: AuthWebhook deployed, DataStorage healthy, ActionTypes seeded.
-func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
+func SeedWorkflowsViaKubectlApply(ctx context.Context, kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🌱 Seeding %d workflows via kubectl apply (declarative)\n", len(workflows))
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -225,7 +225,7 @@ func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []
 			return nil, fmt.Errorf("read fixture %s: %w", wf.FixtureDir, err)
 		}
 
-		cmd := exec.Command("kubectl", "apply",
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-n", namespace,
 			"-f", "-")
@@ -255,7 +255,7 @@ func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []
 		name := appliedNames[i]
 		key := fmt.Sprintf("%s:%s", name, wf.Environment)
 
-		uuid, err := waitForWorkflowUUID(kubeconfigPath, namespace, name, 90*time.Second)
+		uuid, err := waitForWorkflowUUID(ctx, kubeconfigPath, namespace, name, 90*time.Second)
 		if err != nil {
 			return nil, fmt.Errorf("workflow %s UUID not populated: %w", name, err)
 		}
@@ -269,10 +269,10 @@ func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []
 
 // waitForWorkflowUUID polls a RemediationWorkflow's .status.workflowId until it
 // is non-empty or the timeout expires.
-func waitForWorkflowUUID(kubeconfigPath, namespace, name string, timeout time.Duration) (string, error) {
+func waitForWorkflowUUID(ctx context.Context, kubeconfigPath, namespace, name string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		cmd := exec.Command("kubectl", "get",
+		cmd := exec.CommandContext(ctx, "kubectl", "get",
 			fmt.Sprintf("remediationworkflow/%s", name),
 			"-n", namespace,
 			"--kubeconfig", kubeconfigPath,

@@ -35,6 +35,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/processing"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	gatewayPodCrashed = "gateway-pod-crashed"
+)
+
 // ========================================
 // TDD RED PHASE: Unit Tests for DistributedLockManager
 // Business Requirements: BR-GATEWAY-190 (Multi-Replica Deduplication Safety)
@@ -204,7 +209,7 @@ var _ = Describe("DistributedLockManager", func() {
 				leaseDuration := int32(30)
 				// Set renew time to 35 seconds ago (expired)
 				expiredTime := metav1.NewMicroTime(time.Now().Add(-35 * time.Second))
-				otherPodID := "gateway-pod-crashed"
+				otherPodID := gatewayPodCrashed
 
 				lease := &coordinationv1.Lease{
 					ObjectMeta: metav1.ObjectMeta{
@@ -317,7 +322,7 @@ var _ = Describe("DistributedLockManager", func() {
 				leaseName := "gw-lock-" + fingerprint[:16]
 				leaseDuration := int32(30)
 				expiredTime := metav1.NewMicroTime(time.Now().Add(-35 * time.Second))
-				otherPodID := "gateway-pod-crashed"
+				otherPodID := gatewayPodCrashed
 				lease := &coordinationv1.Lease{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      leaseName,
@@ -384,7 +389,7 @@ var _ = Describe("DistributedLockManager", func() {
 				leaseName := "gw-lock-" + fingerprint[:16]
 				leaseDuration := int32(30)
 				expiredTime := metav1.NewMicroTime(time.Now().Add(-35 * time.Second))
-				otherPodID := "gateway-pod-crashed"
+				otherPodID := gatewayPodCrashed
 				lease := &coordinationv1.Lease{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      leaseName,

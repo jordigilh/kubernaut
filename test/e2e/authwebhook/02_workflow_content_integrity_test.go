@@ -34,16 +34,17 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// buildRemediationWorkflowCRD constructs a RemediationWorkflow CRD object.
+// buildRemediationWorkflowCRD constructs a RemediationWorkflow CRD object at
+// version "1.0.0" (the only version used across all e2e/authwebhook tests).
 // Per #329, metadata.name IS the workflow name (no separate workflowName field).
-func buildRemediationWorkflowCRD(crdName, version, description string) *rwv1alpha1.RemediationWorkflow {
+func buildRemediationWorkflowCRD(crdName, description string) *rwv1alpha1.RemediationWorkflow {
 	return &rwv1alpha1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      crdName,
 			Namespace: sharedNamespace,
 		},
 		Spec: rwv1alpha1.RemediationWorkflowSpec{
-			Version: version,
+			Version: "1.0.0",
 			Description: rwv1alpha1.RemediationWorkflowDescription{
 				What:      description,
 				WhenToUse: "E2E content integrity test",
@@ -71,8 +72,10 @@ func buildRemediationWorkflowCRD(crdName, version, description string) *rwv1alph
 	}
 }
 
-// waitForCRDStatus polls the CRD until the .status.workflowId is non-empty.
-func waitForCRDStatus(crdName string, timeout time.Duration) *rwv1alpha1.RemediationWorkflow {
+// waitForCRDStatus polls the CRD until the .status.workflowId is non-empty,
+// with a fixed 30s timeout (the only timeout used across all e2e/authwebhook tests).
+func waitForCRDStatus(crdName string) *rwv1alpha1.RemediationWorkflow {
+	const timeout = 30 * time.Second
 	rw := &rwv1alpha1.RemediationWorkflow{}
 	Eventually(func() string {
 		if err := k8sClient.Get(ctx, types.NamespacedName{
@@ -157,11 +160,11 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 			suffix := uuid.New().String()[:8]
 			crdName := fmt.Sprintf("e2e-integrity-001-%s", suffix)
 
-			rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "First registration E2E test")
+			rw := buildRemediationWorkflowCRD(crdName, "First registration E2E test")
 			Expect(k8sClient.Create(ctx, rw)).To(Succeed(),
 				"CRD creation should be allowed by the webhook")
 
-			updatedRW := waitForCRDStatus(crdName, 30*time.Second)
+			updatedRW := waitForCRDStatus(crdName)
 			Expect(updatedRW.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive),
 				"CRD .status.catalogStatus should be 'active' after registration")
 		})
@@ -175,10 +178,10 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 			suffix := uuid.New().String()[:8]
 			crdName := fmt.Sprintf("e2e-integrity-002-%s", suffix)
 
-			rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Delete triggers disable E2E")
+			rw := buildRemediationWorkflowCRD(crdName, "Delete triggers disable E2E")
 			Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
-			updatedRW := waitForCRDStatus(crdName, 30*time.Second)
+			updatedRW := waitForCRDStatus(crdName)
 			dsWorkflowID := updatedRW.Status.WorkflowID
 
 			deleteCRDAndWait(crdName)
@@ -198,19 +201,19 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 			suffix := uuid.New().String()[:8]
 			crdName := fmt.Sprintf("e2e-integrity-003-%s", suffix)
 
-			rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Re-enable same content E2E")
+			rw := buildRemediationWorkflowCRD(crdName, "Re-enable same content E2E")
 			Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
-			updatedRW := waitForCRDStatus(crdName, 30*time.Second)
+			updatedRW := waitForCRDStatus(crdName)
 			originalUUID := updatedRW.Status.WorkflowID
 
 			deleteCRDAndWait(crdName)
 
 			// Recreate with identical spec
-			rw2 := buildRemediationWorkflowCRD(crdName, "1.0.0", "Re-enable same content E2E")
+			rw2 := buildRemediationWorkflowCRD(crdName, "Re-enable same content E2E")
 			Expect(k8sClient.Create(ctx, rw2)).To(Succeed())
 
-			updatedRW2 := waitForCRDStatus(crdName, 30*time.Second)
+			updatedRW2 := waitForCRDStatus(crdName)
 			Expect(updatedRW2.Status.WorkflowID).To(Equal(originalUUID),
 				"Re-enabled workflow should have the original UUID")
 			Expect(updatedRW2.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive),
@@ -226,19 +229,19 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 			suffix := uuid.New().String()[:8]
 			crdName := fmt.Sprintf("e2e-integrity-004-%s", suffix)
 
-			rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Original content before delete")
+			rw := buildRemediationWorkflowCRD(crdName, "Original content before delete")
 			Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
-			updatedRW := waitForCRDStatus(crdName, 30*time.Second)
+			updatedRW := waitForCRDStatus(crdName)
 			originalUUID := updatedRW.Status.WorkflowID
 
 			deleteCRDAndWait(crdName)
 
 			// Recreate with different description (changes content hash)
-			rw2 := buildRemediationWorkflowCRD(crdName, "1.0.0", "Modified content after delete")
+			rw2 := buildRemediationWorkflowCRD(crdName, "Modified content after delete")
 			Expect(k8sClient.Create(ctx, rw2)).To(Succeed())
 
-			updatedRW2 := waitForCRDStatus(crdName, 30*time.Second)
+			updatedRW2 := waitForCRDStatus(crdName)
 			Expect(updatedRW2.Status.WorkflowID).ToNot(Equal(originalUUID),
 				"Different content should produce a new UUID")
 			Expect(updatedRW2.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive),

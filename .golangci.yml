@@ -56,6 +56,138 @@ linters:
                      # findings repo-wide.
     - loggercheck    # Validates structured logr key-value pair arity/typing.
                      # Verified 0 findings repo-wide.
+    - bodyclose      # Flags HTTP response bodies that may not be closed on
+                     # all paths (Issue #1546 Tier 2). Real leak risk given
+                     # heavy outbound HTTP usage (LLM APIs, Prometheus,
+                     # AlertManager clients). Two verified false positives on
+                     # generic gobreaker.NewCircuitBreaker[*http.Response]
+                     # constructors carry scoped //nolint:bodyclose comments.
+    - noctx          # Flags HTTP requests / DB calls / net.Listen / exec.Command
+                     # missing context.Context propagation (Issue #1546 Tier 2).
+                     # Production code (cmd/pkg/internal) and test/ helper
+                     # libraries (test/infrastructure/, test/testutil/,
+                     # test/services/) are held to this: they drive real Kind
+                     # clusters/containers and a hung/uncancellable call there
+                     # is a genuine CI-hygiene risk (leaked kubectl subprocesses,
+                     # stalled E2E runs), not just a style nit. Only _test.go
+                     # Ginkgo spec files are excluded below (see exclusions).
+    - nilnil         # Flags functions returning (nil, nil) — classic source
+                     # of downstream nil-pointer bugs (Issue #1546 Tier 2).
+                     # Three verified, well-documented "not configured/not
+                     # applicable" sentinel idioms (single- or well-guarded
+                     # multi-caller, all correctly err-checked before nil-
+                     # checked) carry scoped //nolint:nilnil comments; test
+                     # doubles are excluded below.
+    - wastedassign   # Flags dead assignments overwritten before use (Issue
+                     # #1546 Tier 2). Verified 0 findings repo-wide.
+    - unconvert      # Flags unnecessary type conversions (Issue #1546 Tier
+                     # 2). 117 findings auto-remediated via `unconvert -apply`;
+                     # generated ogen-client code is excluded implicitly (same
+                     # as golangci-lint's default generated-file skip).
+    - predeclared    # Flags parameters/variables shadowing Go builtins (max,
+                     # min, new, close, copy, real, etc.) (Issue #1546 Tier 3).
+                     # 24 findings remediated via mechanical rename (or, for
+                     # locally-defined min()/max() helpers now redundant on
+                     # Go 1.21+, removed in favor of the builtin).
+    - errorlint      # Validates error wrapping/comparison: %w vs %v in
+                     # fmt.Errorf, errors.Is/As vs == / type assertions (Issue
+                     # #1546 Tier 3). Directly complements AGENTS.md's "wrap
+                     # errors with %w" rule. ~76 findings remediated: ~30
+                     # mechanical %v->%w double-wrap fixes (2 with a combined
+                     # err/status message split into separate checks), 7
+                     # converted from == / != to errors.Is, 39 type
+                     # assertions converted to errors.As (mostly repeated
+                     # `err.(*SomeError)` patterns in Ginkgo test assertions).
+    - nilerr         # Flags functions that check err != nil but still return
+                     # a nil error (Issue #1546 Tier 3) -- a subtler, riskier
+                     # sibling of nilnil since it can mask a real failure
+                     # rather than just return an ambiguous value. 18 findings
+                     # reviewed individually against their callers/doc
+                     # comments; all fell into 3 documented idioms (context-
+                     # cancellation-as-typed-result, ogen typed-HTTP-error
+                     # responses, wait.PollUntilContextTimeout's "keep
+                     # polling" contract, Kubebuilder webhook soft-fail) and
+                     # carry scoped //nolint:nilerr comments -- no blanket
+                     # exclusion.
+    - gocritic       # Diagnostics for bugs, performance, and style issues
+                     # (Issue #1546 Tier 4). 30 findings remediated: 10
+                     # exitAfterDefer (all 10 controller/service main.go
+                     # entry points refactored to the run()-returns-int
+                     # pattern so os.Exit no longer skips deferred cleanup —
+                     # a real shutdown-hygiene bug, not just style), 7
+                     # ifElseChain and 1 singleCaseSwitch (switch rewrites),
+                     # 5 deprecatedComment (Deprecated: casing/paragraph
+                     # fixes), 3 unlambda (func literals replaced with a
+                     # matching-signature named function reference), 2
+                     # assignOp (x = x * n -> x *= n), and 1 appendAssign
+                     # (in-place slice filter idiom restructured to satisfy
+                     # the checker without changing behavior).
+    - goconst        # Flags repeated string/numeric literals that should be
+                     # promoted to a constant (Issue #1546 Tier 4). 223
+                     # findings remediated: 48 in production code (pkg/,
+                     # internal/, cmd/, api/), 175 across ~127 test files.
+                     # Reuse policy: a literal matching an existing exported
+                     # production constant is reused only when the test is
+                     # setting/comparing the exact struct field the constant
+                     # was defined for (e.g. RemediationPhase, AIAnalysisReason/
+                     # SubReason, ActionTypeTaxonomy.Status, RemediationWorkflow.
+                     # Status, severity levels, audit outcomes) -- not just any
+                     # field that happens to share the same string value. One
+                     # new exported production constant was added where none
+                     # existed (remediationv1.OutcomeRemediated). Literals with
+                     # no production counterpart (fixture names, mock payloads,
+                     # test-only status strings) were promoted to scoped
+                     # unexported constants local to the test file/package
+                     # rather than new production types.
+    - contextcheck   # Flags call chains that manufacture a new context instead
+                     # of propagating an inherited one (Issue #1546 Tier 4). 90
+                     # production findings triaged individually against source:
+                     # 1 genuine fix (sanitizeBridgeText was dropping the
+                     # caller's ctx, silently discarding structured-logger
+                     # fields on its truncation-log line, #1435) and 1 false
+                     # positive (a recover() closure with no context-requiring
+                     # call, carries a scoped //nolint). The remaining 88 are
+                     # verified-intentional patterns already documented in
+                     # their own doc comments/ADRs before this audit: fire-
+                     # and-forget/best-effort audit emission (ADR-038,
+                     # BR-AUDIT-024, BR-STORAGE-183), background OAuth2 token
+                     # refresh, one-time main() bootstrap wiring (including
+                     # controller-runtime's own SetupWithManager contract),
+                     # graceful-shutdown/drain contexts, detached long-lived
+                     # MCP/investigation sessions, and cleanup paths that must
+                     # survive a caller context that is already cancelled
+                     # (advisory-lock release, DLQ fallback). Each carries a
+                     # scoped //nolint citing the specific reason rather than
+                     # a blanket exclusion. test/infrastructure/ helper
+                     # libraries are NOT exempted (same real-Kind/AWX-network
+                     # CI-hygiene rationale as noctx); only _test.go Ginkgo
+                     # spec files are excluded below.
+    - unparam        # Flags unused function parameters and results that are
+                      # always the same value (Issue #1546 Tier 4). No blanket
+                      # test exemption -- production and test findings were
+                      # both remediated, case-by-case, across ~38 commits:
+                      # "result always nil"/"always receives X" findings were
+                      # fixed by simplifying the signature (dropping the dead
+                      # return/param and hardcoding the constant) and updating
+                      # every call site; genuinely unused parameters were
+                      # either wired up (one real bug found and fixed: a
+                      # cascade-to-signal-processing failure path wasn't
+                      # setting sp.Status.Error, unlike its sibling branches)
+                      # or removed. A minority of findings (~25 files) carry a
+                      # scoped //nolint: production dispatch-table/Reconcile-
+                      # style functions whose (ctrl.Result{}, nil) signature
+                      # must match sibling handlers in the same call family,
+                      # and shared test helpers whose "always same value"
+                      # call sites span multiple files beyond the one being
+                      # fixed (removing the param would require touching
+                      # every caller in lockstep) -- each documents why in the
+                      # comment rather than a blanket exclusion.
+    # NOTE: godox (Issue #1546 Tier 4) is intentionally NOT in this enabled
+    # list -- even the narrowed TODO/FIXME-only set below (see settings)
+    # should not block merges, since deferred-work tracking is its entire
+    # purpose. It runs as a separate, deliberately non-blocking
+    # `continue-on-error` step in .github/workflows/ci-pipeline.yml
+    # (lint-go job) instead, so findings are visible without gating CI.
 
   settings:
     govet:
@@ -80,6 +212,19 @@ linters:
       min-complexity: 5
     maintidx:
       under: 20
+    godox:
+      # Default keywords are [TODO, BUG, FIXME] and this list REPLACES the
+      # default rather than extending it. BUG is deliberately dropped: audit
+      # of all ~97 repo-wide findings (Issue #1546 Tier 4 follow-up) showed
+      # ~72 "Bug:"/"BUG FIX"/"BUG REPRODUCTION"/"BUG DISCOVERED" hits are
+      # retrospective doc-comment prose describing a historical defect a
+      # regression test now guards against (every numbered issue reference
+      # sampled -- #195, #197, #260, #261, #266, #464, #570, #595 -- is
+      # closed on GitHub), not a pending-work marker. Keeping only TODO/
+      # FIXME leaves the ~25 remaining findings as near-pure signal.
+      keywords:
+        - TODO
+        - FIXME
     forbidigo:
       # ANTI-PATTERN DETECTION: Per TESTING_GUIDELINES.md and NT_TEST_ANTI_PATTERN_TRIAGE_DEC_17_2025.md
       forbid:
@@ -232,6 +377,44 @@ linters:
       - path: (_test\.go|^test/)
         linters:
           - containedctx
+      # nilnil: test doubles/mocks legitimately return (nil, nil) to satisfy
+      # an interface with "do nothing" behavior (e.g. a nop resolver used
+      # only to test structural wiring, never exercised for data flow).
+      # Production code sentinel idioms are handled with scoped //nolint
+      # comments instead, so each one gets an explicit, reviewed justification.
+      - path: (_test\.go|^test/)
+        linters:
+          - nilnil
+      # noctx: only Ginkgo/Gomega *_test.go spec files are exempted — these are
+      # almost always one-shot calls against an in-process httptest.Server,
+      # already bounded by an http.Client.Timeout and the outer `go test
+      # -timeout`. test/infrastructure/ and other non-_test.go helper
+      # libraries are NOT exempted: they orchestrate real subprocesses
+      # (kubectl/podman/kind) and real network calls (Kind pods, Postgres,
+      # Keycloak, AWX) where an uncancellable hang can leak subprocesses or
+      # stall CI for the full outer job timeout (Issue #1546 Tier 2).
+      - path: _test\.go
+        linters:
+          - noctx
+      # gocritic appendAssign: test/infrastructure/ builds derived CLI-arg
+      # slices (kubectl args, container lists) from a common base slice that
+      # is never read/mutated again afterward. Verified safe for all 12
+      # occurrences: each base is a fresh literal/short slice with cap==len,
+      # so append always reallocates rather than aliasing across the
+      # multiple derived slices built from it (Issue #1546 Tier 4).
+      - path: ^test/infrastructure/
+        linters:
+          - gocritic
+        text: "appendAssign"
+      # contextcheck: only Ginkgo/Gomega *_test.go spec files are exempted —
+      # same carve-out as noctx above. test/infrastructure/ and other non-
+      # _test.go helper libraries are NOT exempted: they orchestrate real
+      # subprocesses and real network calls (Kind pods, AWX, Postgres,
+      # Keycloak) where a manufactured context.Background() cannot be
+      # cancelled by the outer test/suite timeout (Issue #1546 Tier 4).
+      - path: _test\.go
+        linters:
+          - contextcheck
 
 issues:
   max-issues-per-linter: 0

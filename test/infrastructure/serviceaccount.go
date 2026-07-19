@@ -588,7 +588,7 @@ func VerifyRBACPermission(ctx context.Context, namespace, saName, kubeconfigPath
 func VerifyServiceAccountAccess(namespace, saName, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔍 Verifying ServiceAccount RBAC permissions...\n")
 
-	cmd := exec.Command("kubectl", "auth", "can-i", "create",
+	cmd := exec.CommandContext(context.Background(), "kubectl", "auth", "can-i", "create",
 		"services/data-storage-service",
 		fmt.Sprintf("--as=system:serviceaccount:%s:%s", namespace, saName),
 		"-n", namespace,
@@ -661,7 +661,7 @@ type IntegrationAuthConfig struct {
 //	Expect(err).ToNot(HaveOccurred())
 //
 //	// Pass to DataStorage container:
-//	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+//	dsInfra, err := infrastructure.StartDSBootstrap(ctx, infrastructure.DSBootstrapConfig{
 //	    // ... other config ...
 //	    EnvtestKubeconfig: authConfig.KubeconfigPath, // ← DataStorage uses envtest API
 //	}, GinkgoWriter)
@@ -1139,7 +1139,7 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 //	kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(cfg, "gateway")
 //
 //	// Pass to DataStorage:
-//	dsInfra, err := infrastructure.StartDSBootstrap(infrastructure.DSBootstrapConfig{
+//	dsInfra, err := infrastructure.StartDSBootstrap(ctx, infrastructure.DSBootstrapConfig{
 //	    EnvtestKubeconfig: kubeconfigPath,
 //	    ...
 //	})

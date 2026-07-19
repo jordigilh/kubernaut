@@ -33,6 +33,11 @@ import (
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	prodEastResourcesCreateOrUpdate = "prod-east__resources_create_or_update"
+)
+
 var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 	var (
 		ctx context.Context
@@ -85,7 +90,7 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 
 			var found bool
 			for _, call := range calls {
-				if call.ToolName == "prod-east__resources_create_or_update" {
+				if call.ToolName == prodEastResourcesCreateOrUpdate {
 					found = true
 					var args map[string]interface{}
 					Expect(json.Unmarshal(call.Arguments, &args)).To(Succeed())
@@ -192,7 +197,7 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 			calls := gw.CallLog()
 			var found bool
 			for _, call := range calls {
-				if call.ToolName == "prod-east__resources_create_or_update" {
+				if call.ToolName == prodEastResourcesCreateOrUpdate {
 					found = true
 					var args map[string]interface{}
 					Expect(json.Unmarshal(call.Arguments, &args)).To(Succeed())
@@ -320,7 +325,7 @@ var _ = Describe("WriterClient (BR-FLEET-054)", func() {
 			calls := gw.CallLog()
 			var found bool
 			for _, call := range calls {
-				if call.ToolName == "prod-east__resources_create_or_update" {
+				if call.ToolName == prodEastResourcesCreateOrUpdate {
 					found = true
 					var args map[string]interface{}
 					Expect(json.Unmarshal(call.Arguments, &args)).To(Succeed())

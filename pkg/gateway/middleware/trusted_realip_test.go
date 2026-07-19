@@ -26,6 +26,11 @@ import (
 	gwmiddleware "github.com/jordigilh/kubernaut/pkg/gateway/middleware"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	lit12700112345 = "127.0.0.1:12345"
+)
+
 // BR-GATEWAY-102: Trusted proxy middleware -- validates that X-Forwarded-For and related
 // headers are only honoured when the immediate connection is from a trusted CIDR.
 // DD-AUTH-003: Design pattern for isFromTrustedProxy.
@@ -43,7 +48,7 @@ var _ = Describe("Issue #673 L-1: TrustedRealIP Middleware", func() {
 			})
 
 			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
-			req.RemoteAddr = "127.0.0.1:12345"
+			req.RemoteAddr = lit12700112345
 			req.Header.Set("X-Forwarded-For", "203.0.113.50, 10.0.0.1")
 
 			rec := httptest.NewRecorder()
@@ -62,7 +67,7 @@ var _ = Describe("Issue #673 L-1: TrustedRealIP Middleware", func() {
 			})
 
 			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
-			req.RemoteAddr = "127.0.0.1:12345"
+			req.RemoteAddr = lit12700112345
 			req.Header.Set("X-Real-IP", "198.51.100.10")
 			req.Header.Set("X-Forwarded-For", "203.0.113.50")
 
@@ -166,7 +171,7 @@ var _ = Describe("Issue #673 L-1: TrustedRealIP Middleware", func() {
 			})
 
 			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
-			req.RemoteAddr = "127.0.0.1:12345"
+			req.RemoteAddr = lit12700112345
 			req.Header.Set("X-Forwarded-For", "203.0.113.50")
 
 			rec := httptest.NewRecorder()
@@ -185,14 +190,14 @@ var _ = Describe("Issue #673 L-1: TrustedRealIP Middleware", func() {
 			})
 
 			req := httptest.NewRequest("POST", "/api/v1/signals/prometheus", nil)
-			req.RemoteAddr = "127.0.0.1:12345"
+			req.RemoteAddr = lit12700112345
 			req.Header.Set("X-Forwarded-For", "not-an-ip")
 
 			rec := httptest.NewRecorder()
 			mw(inner).ServeHTTP(rec, req)
 
 			// Then: RemoteAddr is unchanged (invalid XFF IP is rejected)
-			Expect(capturedRemoteAddr).To(Equal("127.0.0.1:12345"))
+			Expect(capturedRemoteAddr).To(Equal(lit12700112345))
 		})
 
 		It("[UT-GW-673-029] should handle RemoteAddr without port", func() {

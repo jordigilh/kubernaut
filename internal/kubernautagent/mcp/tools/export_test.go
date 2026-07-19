@@ -16,25 +16,14 @@ limitations under the License.
 
 package tools
 
-import (
-	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-)
-
 // BuildFinalResult exposes buildFinalResult for external test packages.
-var BuildFinalResult = func(rca *katypes.InvestigationResult, workflow *CatalogWorkflow, discovery *mcpinternal.WorkflowDiscoveryResult) *katypes.InvestigationResult {
-	return buildFinalResult(rca, workflow, discovery)
-}
+var BuildFinalResult = buildFinalResult
 
 // IsWorkflowInDiscoveryResult exposes isWorkflowInDiscoveryResult for external test packages.
-var IsWorkflowInDiscoveryResult = func(workflowID string, dr *mcpinternal.WorkflowDiscoveryResult) bool {
-	return isWorkflowInDiscoveryResult(workflowID, dr)
-}
+var IsWorkflowInDiscoveryResult = isWorkflowInDiscoveryResult
 
 // ExtractDiscoveryResult exposes extractDiscoveryResult for external test packages.
-var ExtractDiscoveryResult = func(result *katypes.InvestigationResult) *mcpinternal.WorkflowDiscoveryResult {
-	return extractDiscoveryResult(result)
-}
+var ExtractDiscoveryResult = extractDiscoveryResult
 
 // GetReconstructedHistory exposes the reconHistory sync.Map for test assertions.
 // Returns nil if no history is stored for the given rrID.

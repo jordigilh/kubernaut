@@ -23,9 +23,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -46,7 +46,7 @@ import (
 
 var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 	It("IT-WE-016-003: should pass engineConfig from AIAnalysis to WorkflowExecution CRD", func() {
-		ns := createTestNamespace("ro-ec-003")
+		ns := createTestNamespace(ctx, "ro-ec-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a RemediationRequest")
@@ -64,7 +64,7 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {

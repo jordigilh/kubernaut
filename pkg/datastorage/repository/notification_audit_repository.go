@@ -108,7 +108,8 @@ func (r *NotificationAuditRepository) Create(ctx context.Context, audit *models.
 
 	if err != nil {
 		// Check for unique constraint violation (DD-010: pgx uses pgconn.PgError)
-		if pgErr, ok := err.(*pgconn.PgError); ok {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
 			if pgErr.Code == "23505" { // unique_violation
 				return nil, validation.NewConflictProblem("notification_audit", "notification_id", audit.NotificationID)
 			}

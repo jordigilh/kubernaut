@@ -60,9 +60,15 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 
 // phaseGuardBefore blocks MCP-dependent tool calls unless a driver session is
 // active in state, and injects a stashed rr_id when the caller omitted one.
+//
+// nolint:nilnil // every (nil, nil) below is the ADK
+// llmagent.BeforeToolCallback contract's documented "proceed, run the tool
+// normally" signal, not our design choice — a non-nil map here would
+// short-circuit the actual tool call (see newMetricsToolCallbacks in
+// root.go for the full rationale) (Issue #1546 Tier 2).
 func phaseGuardBefore(ctx tool.Context, t tool.Tool, args map[string]any) (map[string]any, error) {
 	if !mcpDependentTools[t.Name()] {
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	logger := logr.FromContextOrDiscard(ctx)
@@ -73,7 +79,7 @@ func phaseGuardBefore(ctx tool.Context, t tool.Tool, args map[string]any) (map[s
 	}
 
 	injectStoredRRID(state, args, t.Name(), logger)
-	return nil, nil
+	return nil, nil // nolint:nilnil
 }
 
 // driverIsActive reports whether the session state records an active

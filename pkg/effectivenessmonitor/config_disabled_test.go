@@ -60,7 +60,7 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	// makeReconciler creates a Reconciler with the given config toggles,
 	// a fake K8s client seeded with the provided objects, and nil external
 	// clients for disabled services.
-	makeReconciler := func(s *runtime.Scheme, promEnabled, amEnabled bool, objs ...client.Object) (*controller.Reconciler, client.Client) {
+	makeReconciler := func(s *runtime.Scheme, objs ...client.Object) (*controller.Reconciler, client.Client) {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
 			WithObjects(objs...).
@@ -68,8 +68,8 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 			Build()
 
 		cfg := controller.DefaultReconcilerConfig()
-		cfg.PrometheusEnabled = promEnabled
-		cfg.AlertManagerEnabled = amEnabled
+		cfg.PrometheusEnabled = false
+		cfg.AlertManagerEnabled = false
 
 		r := controller.NewReconciler(controller.ReconcilerDeps{
 			Client:    fakeClient,
@@ -84,19 +84,19 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	}
 
 	// seedEA returns a minimal EA object for fake client seeding.
-	seedEA := func(ns, name, corrID string) *eav1.EffectivenessAssessment {
+	seedEA := func(name, corrID string) *eav1.EffectivenessAssessment {
 		return &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: name, Namespace: ns,
+				Name: name, Namespace: "default",
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           corrID,
 				RemediationRequestPhase: "Completed",
 				SignalTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: "default",
 				},
 				RemediationTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: "default",
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 0}, // No wait
@@ -106,9 +106,9 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	}
 
 	// reconcileUntilDone calls Reconcile() until the EA reaches Completed.
-	reconcileUntilDone := func(r *controller.Reconciler, fc client.Client, ns, name string) *eav1.EffectivenessAssessment {
+	reconcileUntilDone := func(r *controller.Reconciler, fc client.Client, name string) *eav1.EffectivenessAssessment {
 		ctx := context.Background()
-		req := ctrl.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: ns}}
+		req := ctrl.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: "default"}}
 
 		var ea *eav1.EffectivenessAssessment
 		Eventually(func(g Gomega) {
@@ -129,10 +129,10 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	// ========================================================================
 	It("UT-EM-CF-009: should complete with nil alert/metrics scores when both Prom and AM disabled", func() {
 		s := buildScheme()
-		ea := seedEA("default", "ea-cf-009", "rr-cf-009")
-		r, fc := makeReconciler(s, false, false, ea)
+		ea := seedEA("ea-cf-009", "rr-cf-009")
+		r, fc := makeReconciler(s, ea)
 
-		result := reconcileUntilDone(r, fc, "default", "ea-cf-009")
+		result := reconcileUntilDone(r, fc, "ea-cf-009")
 
 		Expect(result.Status.Components.HealthAssessed).To(BeTrue(),
 			"health must be assessed (always-on)")
@@ -155,10 +155,10 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	// ========================================================================
 	It("UT-EM-CF-010: should produce nil alert score when AM disabled with nil client", func() {
 		s := buildScheme()
-		ea := seedEA("default", "ea-cf-010", "rr-cf-010")
-		r, fc := makeReconciler(s, false, false, ea)
+		ea := seedEA("ea-cf-010", "rr-cf-010")
+		r, fc := makeReconciler(s, ea)
 
-		result := reconcileUntilDone(r, fc, "default", "ea-cf-010")
+		result := reconcileUntilDone(r, fc, "ea-cf-010")
 
 		Expect(result.Status.Components.AlertAssessed).To(BeTrue(),
 			"alert flag should be true (marked assessed-as-skipped)")
@@ -172,10 +172,10 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	// ========================================================================
 	It("UT-EM-CF-011: should produce nil metrics score when Prom disabled with nil client", func() {
 		s := buildScheme()
-		ea := seedEA("default", "ea-cf-011", "rr-cf-011")
-		r, fc := makeReconciler(s, false, false, ea)
+		ea := seedEA("ea-cf-011", "rr-cf-011")
+		r, fc := makeReconciler(s, ea)
 
-		result := reconcileUntilDone(r, fc, "default", "ea-cf-011")
+		result := reconcileUntilDone(r, fc, "ea-cf-011")
 
 		Expect(result.Status.Components.MetricsAssessed).To(BeTrue(),
 			"metrics flag should be true (marked assessed-as-skipped)")
@@ -190,10 +190,10 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	// ========================================================================
 	It("UT-EM-CF-012: should have nil scores only for disabled components", func() {
 		s := buildScheme()
-		ea := seedEA("default", "ea-cf-012", "rr-cf-012")
-		r, fc := makeReconciler(s, false, false, ea)
+		ea := seedEA("ea-cf-012", "rr-cf-012")
+		r, fc := makeReconciler(s, ea)
 
-		result := reconcileUntilDone(r, fc, "default", "ea-cf-012")
+		result := reconcileUntilDone(r, fc, "ea-cf-012")
 
 		// All 4 flags should be true (2 real + 2 skipped)
 		Expect(result.Status.Components.HealthAssessed).To(BeTrue())
@@ -216,8 +216,8 @@ var _ = Describe("Config-Disabled Reconciler (BR-EM-006, BR-EM-007, BR-EM-008)",
 	// ========================================================================
 	It("UT-EM-CF-013: should not panic when Reconcile called with nil Prom and AM clients", func() {
 		s := buildScheme()
-		ea := seedEA("default", "ea-cf-013", "rr-cf-013")
-		r, fc := makeReconciler(s, false, false, ea)
+		ea := seedEA("ea-cf-013", "rr-cf-013")
+		r, fc := makeReconciler(s, ea)
 
 		ctx := context.Background()
 		req := ctrl.Request{NamespacedName: types.NamespacedName{

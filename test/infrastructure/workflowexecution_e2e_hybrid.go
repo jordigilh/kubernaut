@@ -34,6 +34,16 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	arm642 = "arm64"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	arm64 = arm642
+)
+
 const (
 	// WorkflowExecutionClusterName is the default Kind cluster name
 	WorkflowExecutionClusterName = "workflowexecution-e2e"
@@ -43,7 +53,7 @@ const (
 	TektonPipelinesVersion = "v1.7.0"
 
 	// WorkflowExecutionNamespace is where the controller runs
-	WorkflowExecutionNamespace = "kubernaut-system"
+	WorkflowExecutionNamespace = kubernautSystem
 
 	// ExecutionNamespace is where PipelineRuns are created
 	ExecutionNamespace = "kubernaut-workflows"
@@ -81,7 +91,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to find project root: %w", err)
 	}
 
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		coverdataPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/coverdata")
 		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
 		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
@@ -116,7 +126,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
 	go func() {
 		// Disable coverage on ARM64 (Go runtime crash workaround)
-		enableCoverage := os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64"
+		enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH != arm64
 		cfg := E2EImageConfig{
 			ServiceName:      "workflowexecution", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/workflowexecution",
@@ -124,7 +134,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			BuildContextPath: "",
 			EnableCoverage:   enableCoverage,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "WorkflowExecution (coverage)", imageName: imageName, err: err}
 	}()
 
@@ -135,9 +145,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
@@ -148,9 +158,9 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			ImageName:        "authwebhook",
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
 	}()
 
@@ -187,7 +197,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 
 	// Create Kind cluster
-	createCmd := exec.Command("kind", "create", "cluster",
+	createCmd := exec.CommandContext(ctx, "kind", "create", "cluster",
 		"--name", clusterName,
 		"--config", configPath,
 		"--kubeconfig", kubeconfigPath,
@@ -201,7 +211,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Deploy WorkflowExecution CRD
 	_, _ = fmt.Fprintln(writer, "📋 Installing WorkflowExecution CRD...")
 	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")
-	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
 	crdCmd.Stderr = writer
 	if err := crdCmd.Run(); err != nil {
@@ -210,7 +220,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 
 	// Create namespaces (idempotent - ignore AlreadyExists errors)
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", WorkflowExecutionNamespace)
-	nsCmd := exec.Command("kubectl", "create", "namespace", WorkflowExecutionNamespace,
+	nsCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", WorkflowExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
 	nsOutput, nsErr := nsCmd.CombinedOutput()
 	if nsErr != nil && !strings.Contains(string(nsOutput), "AlreadyExists") {
@@ -222,7 +232,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Only application/workload namespaces should have kubernaut.ai/managed=true.
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", ExecutionNamespace)
-	execNsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
+	execNsCmd := exec.CommandContext(ctx, "kubectl", "create", "namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
 	execNsOutput, execNsErr := execNsCmd.CombinedOutput()
 	if execNsErr != nil && !strings.Contains(string(execNsOutput), "AlreadyExists") {
@@ -231,7 +241,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Namespace %s ready\n", ExecutionNamespace)
 	// BR-SCOPE-001: Label namespace as managed by Kubernaut
-	_ = exec.Command("kubectl", "label", "namespace", ExecutionNamespace,
+	_ = exec.CommandContext(ctx, "kubectl", "label", "namespace", ExecutionNamespace,
 		"kubernaut.ai/managed=true", "--overwrite", "--kubeconfig", kubeconfigPath).Run()
 
 	_, _ = fmt.Fprintln(writer, "\n✅ Kind cluster ready!")
@@ -258,21 +268,21 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Load WorkflowExecution controller image
 	go func() {
 		wfeImage := builtImages["WorkflowExecution (coverage)"]
-		err := LoadImageToKind(wfeImage, "workflowexecution-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, wfeImage, "workflowexecution-controller", clusterName, writer)
 		loadResults <- loadResult{name: "WorkflowExecution coverage", err: err}
 	}()
 
 	// Load DataStorage image
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
@@ -289,7 +299,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			"quay.io/centos/centos:stream9",
 		}
 		for _, img := range thirdPartyImages {
-			if preloadErr := PreloadExternalImage(img, clusterName, writer); preloadErr != nil {
+			if preloadErr := PreloadExternalImage(ctx, img, clusterName, writer); preloadErr != nil {
 				loadResults <- loadResult{name: "AWX third-party images", err: fmt.Errorf("preload %s: %w", img, preloadErr)}
 				return
 			}
@@ -374,7 +384,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 
 	// Launch ALL kubectl apply commands concurrently (including AWX — BR-WE-015)
 	go func() {
-		err := installTektonPipelines(kubeconfigPath, writer)
+		err := installTektonPipelines(ctx, kubeconfigPath, writer)
 		deployResults <- deployResult{"Tekton Pipelines", err}
 	}()
 	go func() {
@@ -491,7 +501,7 @@ subjects:
     name: data-storage-sa
     namespace: %[2]s
 `, ExecutionNamespace, WorkflowExecutionNamespace)
-	depRBACCmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath,
+	depRBACCmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath,
 		"--server-side", "--field-manager=e2e-test", "-f", "-")
 	depRBACCmd.Stdin = strings.NewReader(depRBACYAML)
 	depRBACCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
@@ -505,7 +515,7 @@ subjects:
 	// DS validates that declared dependencies exist at registration time; the Secret must
 	// be present for the dep-secret-job workflow to register successfully.
 	_, _ = fmt.Fprintf(writer, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
-	depSecretCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret",
+	depSecretCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "generic", "e2e-dep-secret",
 		"--from-literal=token=e2e-test-value",
 		"--namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
@@ -519,7 +529,7 @@ subjects:
 	// DD-WE-006: Separate secret for the Tekton dependency injection test so that
 	// the drift test (E2E-WE-006-002) can delete e2e-dep-secret without racing
 	// against E2E-WE-006-004 running in a parallel Ginkgo process.
-	depSecretTektonCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret-tekton",
+	depSecretTektonCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "generic", "e2e-dep-secret-tekton",
 		"--from-literal=token=e2e-test-value-tekton",
 		"--namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
@@ -543,7 +553,7 @@ subjects:
 	}
 	for _, res := range depResources {
 		fullArgs := append(res.args, "--namespace", ExecutionNamespace, "--kubeconfig", kubeconfigPath)
-		cmd := exec.Command("kubectl", fullArgs...)
+		cmd := exec.CommandContext(ctx, "kubectl", fullArgs...)
 		out, err := cmd.CombinedOutput()
 		if err != nil && !strings.Contains(string(out), "AlreadyExists") {
 			_, _ = fmt.Fprintf(writer, "⚠️  Failed to create %s (non-fatal): %s\n", res.desc, string(out))
@@ -566,7 +576,7 @@ subjects:
 
 	// Goroutine 1: Seed workflows in DataStorage (includes ansible workflows — BR-WE-015)
 	go func() {
-		if _, seedErr := BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); seedErr != nil {
+		if _, seedErr := BuildAndRegisterTestWorkflows(ctx, clusterName, kubeconfigPath, dataStorageURL, saToken, writer); seedErr != nil {
 			postDeployCh <- postDeployResult{"workflow seeding", seedErr}
 			return
 		}
@@ -595,12 +605,12 @@ subjects:
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n📋 Creating test pipeline...")
-	if err := CreateSimpleTestPipeline(kubeconfigPath, writer); err != nil {
+	if err := CreateSimpleTestPipeline(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create test pipeline: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n🔑 Creating image pull secret...")
-	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, writer); err != nil {
+	if err := createQuayPullSecret(ctx, kubeconfigPath, ExecutionNamespace, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Could not create quay.io pull secret: %v\n", err)
 	}
 
@@ -660,16 +670,16 @@ func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Write
 	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
 	// Root cause: taggedPointerPack fatal error in Go 1.25.3 (Red Hat) on ARM64
 	// TODO: Re-enable after switching to upstream Go builder (Solution B)
-	if os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH != "arm64" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH != arm64 {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
 		_, _ = fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
-	} else if os.Getenv("E2E_COVERAGE") == "true" && runtime.GOARCH == "arm64" {
+	} else if os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH == arm64 {
 		_, _ = fmt.Fprintln(writer, "     ⚠️  Coverage disabled on ARM64 (Go runtime crash workaround)")
 	}
 
 	buildArgs = append(buildArgs, projectRoot)
 
-	buildCmd := exec.Command("podman", buildArgs...)
+	buildCmd := exec.CommandContext(context.Background(), "podman", buildArgs...)
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 	if err := buildCmd.Run(); err != nil {
@@ -688,7 +698,7 @@ func LoadWorkflowExecutionCoverageImage(clusterName, projectRoot string, writer 
 
 	// Save image to tarball for Kind loading (Podman images need explicit save/load)
 	tarPath := filepath.Join(projectRoot, "workflowexecution-controller.tar")
-	saveCmd := exec.Command("podman", "save", "-o", tarPath, imageName)
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "-o", tarPath, imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 	if err := saveCmd.Run(); err != nil {
@@ -697,7 +707,7 @@ func LoadWorkflowExecutionCoverageImage(clusterName, projectRoot string, writer 
 	defer func() { _ = os.Remove(tarPath) }()
 
 	// Load image into Kind from tarball
-	loadCmd := exec.Command("kind", "load", "image-archive", tarPath,
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", tarPath,
 		"--name", clusterName,
 	)
 	loadCmd.Stdout = writer
@@ -800,7 +810,7 @@ func findKindConfig(filename string) (string, error) {
 
 	return "", fmt.Errorf("kind config file %s not found in any expected location (tried from %s)", filename, projectRoot)
 }
-func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
+func installTektonPipelines(ctx context.Context, kubeconfigPath string, output io.Writer) error {
 	// Install Tekton Pipelines from GitHub releases (v1.0+ use GitHub releases)
 	// NOTE: storage.googleapis.com/tekton-releases requires auth since 2025
 	releaseURL := fmt.Sprintf("https://github.com/tektoncd/pipeline/releases/download/%s/release.yaml", TektonPipelinesVersion)
@@ -820,7 +830,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 			_, _ = fmt.Fprintf(output, "  🔄 Retry attempt %d/%d...\n", attempt+1, maxRetries)
 		}
 
-		applyCmd := exec.Command("kubectl", "apply",
+		applyCmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"-f", releaseURL,
 			"--kubeconfig", kubeconfigPath,
 		)
@@ -848,7 +858,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	// Phase 1 E2E Stabilization: Increased timeout to 1 hour (3600s) to prevent timeout failures
 	// Root cause: Slow Tekton image pulls in Kind cluster (see WE_E2E_INFRASTRUCTURE_STABILIZATION_PLAN.md)
 	_, _ = fmt.Fprintf(output, "  ⏳ Waiting for Tekton Pipelines controller (up to 1 hour)...\n")
-	waitCmd := exec.Command("kubectl", "wait",
+	waitCmd := exec.CommandContext(ctx, "kubectl", "wait",
 		"-n", "tekton-pipelines",
 		"--for=condition=available",
 		"deployment/tekton-pipelines-controller",
@@ -864,7 +874,7 @@ func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
 	// Wait for Tekton webhook to be ready
 	// Phase 1 E2E Stabilization: Increased timeout to 1 hour (3600s)
 	_, _ = fmt.Fprintf(output, "  ⏳ Waiting for Tekton webhook (up to 1 hour)...\n")
-	webhookWaitCmd := exec.Command("kubectl", "wait",
+	webhookWaitCmd := exec.CommandContext(ctx, "kubectl", "wait",
 		"-n", "tekton-pipelines",
 		"--for=condition=available",
 		"deployment/tekton-pipelines-webhook",
@@ -892,7 +902,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	// CRDs must exist before any CR can be created
 	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")
 	_, _ = fmt.Fprintf(output, "  Applying WorkflowExecution CRDs...\n")
-	crdCmd := exec.Command("kubectl", "apply",
+	crdCmd := exec.CommandContext(ctx, "kubectl", "apply",
 		"-f", crdPath,
 		"--kubeconfig", kubeconfigPath,
 	)
@@ -911,7 +921,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 
 	// Create quay.io pull secret in execution namespace so Job pods can pull
 	// the placeholder-execution image used by workflow schemas.
-	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, output); err != nil {
+	if err := createQuayPullSecret(ctx, kubeconfigPath, ExecutionNamespace, output); err != nil {
 		_, _ = fmt.Fprintf(output, "⚠️  Warning: Could not create quay.io pull secret in %s: %v\n", ExecutionNamespace, err)
 	}
 
@@ -920,7 +930,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	// DD-WE-005 v2.0: Operators pre-create SAs; workflows reference them via
 	// execution.serviceAccountName. The mock LLM returns service_account_name
 	// in selected_workflow so the AA→RO→WFE chain propagates it to the Job pod.
-	if err := createWorkflowJobExecutorRBAC(kubeconfigPath, ExecutionNamespace, output); err != nil {
+	if err := createWorkflowJobExecutorRBAC(ctx, kubeconfigPath, ExecutionNamespace, output); err != nil {
 		return fmt.Errorf("failed to create workflow-job-executor RBAC: %w", err)
 	}
 
@@ -932,7 +942,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 // ClusterRoleBinding so Job pods spawned by the WE controller can get/patch
 // workload resources (Deployments, StatefulSets, DaemonSets, Pods) in any
 // namespace. Used by oomkill-increase-memory-job's remediate.sh.
-func createWorkflowJobExecutorRBAC(kubeconfigPath, namespace string, output io.Writer) error {
+func createWorkflowJobExecutorRBAC(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "  🔐 Creating workflow-job-executor SA + RBAC in %s...\n", namespace)
 
 	rbacYAML := fmt.Sprintf(`---
@@ -976,7 +986,7 @@ subjects:
   namespace: %[1]s
 `, namespace)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(rbacYAML)
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -987,7 +997,7 @@ subjects:
 	return nil
 }
 
-func CreateSimpleTestPipeline(kubeconfigPath string, output io.Writer) error {
+func CreateSimpleTestPipeline(ctx context.Context, kubeconfigPath string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "\n📝 Creating test pipelines (success + failure)...\n")
 
 	pipelineYAML := `
@@ -1083,7 +1093,7 @@ spec:
 	}
 	_ = tmpFile.Close()
 
-	applyCmd := exec.Command("kubectl", "apply",
+	applyCmd := exec.CommandContext(ctx, "kubectl", "apply",
 		"-f", tmpFile.Name(),
 		"--kubeconfig", kubeconfigPath,
 	)
@@ -1097,7 +1107,7 @@ spec:
 	return nil
 }
 
-func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) error {
+func createQuayPullSecret(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "🔐 Creating quay.io pull secret...\n")
 
 	// Get the auth config from podman
@@ -1112,7 +1122,7 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	}
 
 	// Create the secret in the execution namespace
-	secretCmd := exec.Command("kubectl", "create", "secret", "docker-registry", "quay-pull-secret",
+	secretCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "docker-registry", "quay-pull-secret",
 		"--from-file=.dockerconfigjson="+authFile,
 		"--namespace", namespace,
 		"--kubeconfig", kubeconfigPath,
@@ -1124,7 +1134,7 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	}
 
 	// Create the secret in tekton-pipelines-resolvers namespace for bundle resolver
-	secretResolverCmd := exec.Command("kubectl", "create", "secret", "docker-registry", "quay-pull-secret",
+	secretResolverCmd := exec.CommandContext(ctx, "kubectl", "create", "secret", "docker-registry", "quay-pull-secret",
 		"--from-file=.dockerconfigjson="+authFile,
 		"--namespace", "tekton-pipelines-resolvers",
 		"--kubeconfig", kubeconfigPath,
@@ -1134,7 +1144,7 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	_ = secretResolverCmd.Run() // Ignore error if namespace doesn't exist
 
 	// Patch the default service account in execution namespace (DD-WE-005 v2: no platform workflow-runner SA)
-	patchDefaultCmd := exec.Command("kubectl", "patch", "serviceaccount", "default",
+	patchDefaultCmd := exec.CommandContext(ctx, "kubectl", "patch", "serviceaccount", "default",
 		"-n", namespace,
 		"--kubeconfig", kubeconfigPath,
 		"-p", `{"imagePullSecrets": [{"name": "quay-pull-secret"}]}`,
@@ -1144,7 +1154,7 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	_ = patchDefaultCmd.Run()
 
 	// Patch the tekton-pipelines-resolvers service account
-	patchResolverCmd := exec.Command("kubectl", "patch", "serviceaccount", "tekton-pipelines-resolvers",
+	patchResolverCmd := exec.CommandContext(ctx, "kubectl", "patch", "serviceaccount", "tekton-pipelines-resolvers",
 		"-n", "tekton-pipelines-resolvers",
 		"--kubeconfig", kubeconfigPath,
 		"-p", `{"imagePullSecrets": [{"name": "quay-pull-secret"}]}`,
@@ -1157,8 +1167,8 @@ func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) er
 	return nil
 }
 
-func deployWorkflowExecutionControllerDeployment(_ context.Context, namespace, kubeconfigPath, imageName string, output io.Writer) error {
-	coverageEnabled := os.Getenv("E2E_COVERAGE") == "true"
+func deployWorkflowExecutionControllerDeployment(ctx context.Context, namespace, kubeconfigPath, imageName string, output io.Writer) error {
+	coverageEnabled := os.Getenv("E2E_COVERAGE") == trueFixture
 	_, _ = fmt.Fprintf(output, "   DD-TEST-007: E2E_COVERAGE=%s (enabled=%v)\n", os.Getenv("E2E_COVERAGE"), coverageEnabled)
 
 	// DD-TEST-007: Coverage-conditional sections injected into the YAML template
@@ -1413,7 +1423,7 @@ spec:
 		coverageVolume,       // [8] hostPath volume (coverage only)
 	)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "--server-side", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "--server-side", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -1424,8 +1434,8 @@ spec:
 	return nil
 }
 
-func waitForDeploymentReady(kubeconfigPath, deploymentName string, output io.Writer) error {
-	waitCmd := exec.Command("kubectl", "wait",
+func waitForDeploymentReady(ctx context.Context, kubeconfigPath, deploymentName string, output io.Writer) error {
+	waitCmd := exec.CommandContext(ctx, "kubectl", "wait",
 		"-n", WorkflowExecutionNamespace,
 		"--for=condition=available",
 		"deployment/"+deploymentName,

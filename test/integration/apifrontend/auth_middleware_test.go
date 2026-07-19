@@ -162,7 +162,7 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			sa := &corev1.ServiceAccount{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "af-it-tokenreview-sa",
-					Namespace: "default",
+					Namespace: defaultFixture,
 				},
 			}
 			err := k8sClient.Create(context.Background(), sa)
@@ -175,7 +175,7 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 					ExpirationSeconds: ptr(int64(3600)),
 				},
 			}
-			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts("default").CreateToken(
+			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts(defaultFixture).CreateToken(
 				context.Background(), "af-it-tokenreview-sa", tokenReq, metav1.CreateOptions{},
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -340,9 +340,9 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 
 			token := signValidToken("delegation-user")
 			identity := &auth.UserIdentity{
-				Username: "delegation-user",
-				Issuer:   jwksServer.URL,
-				RawToken: token,
+				Username:  "delegation-user",
+				Issuer:    jwksServer.URL,
+				RawToken:  token,
 				ExpiresAt: time.Now().Add(1 * time.Hour),
 			}
 
@@ -360,17 +360,17 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			resp.Body.Close()
 
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-			Expect(receivedAuthHeader).To(Equal("Bearer " + token),
+			Expect(receivedAuthHeader).To(Equal("Bearer "+token),
 				"delegation transport must forward the user's raw JWT to downstream")
 		})
 	})
 
 	Describe("Multi-issuer JWT validation (#1436)", func() {
 		var (
-			kcKeyPair    *testKeyPair
-			spireKeyPair *testKeyPair
-			kcJWKS       *httptest.Server
-			spireJWKS    *httptest.Server
+			kcKeyPair      *testKeyPair
+			spireKeyPair   *testKeyPair
+			kcJWKS         *httptest.Server
+			spireJWKS      *httptest.Server
 			multiValidator *auth.JWTValidator
 		)
 
@@ -537,7 +537,7 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			defer srv.Close()
 
 			sa := &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-oidc-sa", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-oidc-sa", Namespace: defaultFixture},
 			}
 			err = k8sClient.Create(context.Background(), sa)
 			if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -547,7 +547,7 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			tokenReq := &authv1.TokenRequest{
 				Spec: authv1.TokenRequestSpec{ExpirationSeconds: ptr(int64(3600))},
 			}
-			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts("default").CreateToken(
+			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts(defaultFixture).CreateToken(
 				context.Background(), "af-it-1309-oidc-sa", tokenReq, metav1.CreateOptions{},
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -585,7 +585,7 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			defer srv.Close()
 
 			sa := &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-tr-sa", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-tr-sa", Namespace: defaultFixture},
 			}
 			err = k8sClient.Create(context.Background(), sa)
 			if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -595,7 +595,7 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			tokenReq := &authv1.TokenRequest{
 				Spec: authv1.TokenRequestSpec{ExpirationSeconds: ptr(int64(3600))},
 			}
-			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts("default").CreateToken(
+			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts(defaultFixture).CreateToken(
 				context.Background(), "af-it-1309-tr-sa", tokenReq, metav1.CreateOptions{},
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -639,7 +639,7 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			defer srv.Close()
 
 			sa := &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-audit-sa", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "af-it-1309-audit-sa", Namespace: defaultFixture},
 			}
 			err = k8sClient.Create(context.Background(), sa)
 			if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -649,7 +649,7 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 			tokenReq := &authv1.TokenRequest{
 				Spec: authv1.TokenRequestSpec{ExpirationSeconds: ptr(int64(3600))},
 			}
-			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts("default").CreateToken(
+			tokenResult, err := k8sClientset.CoreV1().ServiceAccounts(defaultFixture).CreateToken(
 				context.Background(), "af-it-1309-audit-sa", tokenReq, metav1.CreateOptions{},
 			)
 			Expect(err).NotTo(HaveOccurred())
@@ -673,4 +673,3 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 		})
 	})
 })
-

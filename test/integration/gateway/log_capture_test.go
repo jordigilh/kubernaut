@@ -290,11 +290,3 @@ func VerifyLogsHavePerformanceMetrics(capture *LogCapture) (bool, int) {
 	return len(logsWithEndpoint) > 0 && len(logsWithDuration) > 0,
 		min(len(logsWithEndpoint), len(logsWithDuration))
 }
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

@@ -48,7 +48,7 @@ var _ = Describe("Notification Lifecycle Integration", Label("integration", "not
 
 	BeforeEach(func() {
 		// Create unique namespace for TargetResource scope validation
-		testNamespace = createTestNamespace("ro-notif-lifecycle")
+		testNamespace = createTestNamespace(ctx, "ro-notif-lifecycle")
 
 		// ADR-057: RR must be in ROControllerNamespace; controller only watches this NS
 		now := metav1.Now()

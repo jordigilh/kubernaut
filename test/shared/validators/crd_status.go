@@ -87,11 +87,11 @@ func checkNonZeroTime(field, impact string, t metav1.Time) string {
 	return fmt.Sprintf("%s not populated -- %s", field, impact)
 }
 
-func checkConditions(field, impact string, c []metav1.Condition) string {
+func checkConditions(field string, c []metav1.Condition) string {
 	if len(c) > 0 {
 		return ""
 	}
-	return fmt.Sprintf("%s not populated -- %s", field, impact)
+	return fmt.Sprintf("%s not populated -- controller status conditions missing", field)
 }
 
 func appendIfNonEmpty(failures []string, msg string) []string {
@@ -152,7 +152,7 @@ func ValidateSPStatus(sp *signalprocessingv1.SignalProcessing) []string {
 	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalMode", "reactive vs proactive classification missing", s.SignalMode))
 	f = appendIfNonEmpty(f, checkNonEmpty("SP: SignalType", "signal type unknown, workflow matching may fail", s.SignalName))
 	f = appendIfNonEmpty(f, checkNonEmpty("SP: PolicyHash", "policy versioning broken, cannot detect policy drift", s.PolicyHash))
-	f = appendIfNonEmpty(f, checkConditions("SP: Conditions", "controller status conditions missing", s.Conditions))
+	f = appendIfNonEmpty(f, checkConditions("SP: Conditions", s.Conditions))
 
 	return f
 }
@@ -215,7 +215,7 @@ func ValidateAAStatus(aa *aianalysisv1.AIAnalysis, opts ...ValidationOption) []s
 		f = appendIfNonEmpty(f, checkTimeSet("AA: PostRCAContext.SetAt", "audit trail missing PostRCAContext timestamp", s.PostRCAContext.SetAt))
 	}
 
-	f = appendIfNonEmpty(f, checkConditions("AA: Conditions", "controller status conditions missing", s.Conditions))
+	f = appendIfNonEmpty(f, checkConditions("AA: Conditions", s.Conditions))
 
 	// Approval-specific fields
 	if cfg.approvalFlow {
@@ -282,7 +282,7 @@ func ValidateRRStatus(rr *remediationv1.RemediationRequest, opts ...ValidationOp
 		f = appendIfNonEmpty(f, checkNonEmpty("RR: SelectedWorkflowRef.ExecutionBundle", "audit trail missing execution bundle reference", s.SelectedWorkflowRef.ExecutionBundle))
 	}
 
-	f = appendIfNonEmpty(f, checkConditions("RR: Conditions", "controller status conditions missing", s.Conditions))
+	f = appendIfNonEmpty(f, checkConditions("RR: Conditions", s.Conditions))
 
 	if cfg.approvalFlow {
 		if !s.ApprovalNotificationSent {
@@ -315,7 +315,7 @@ func ValidateWEStatus(we *workflowexecutionv1.WorkflowExecution) []string {
 	} else {
 		f = appendIfNonEmpty(f, checkNonEmpty("WE: ExecutionStatus.Status", "execution result status missing", string(s.ExecutionStatus.Status)))
 	}
-	f = appendIfNonEmpty(f, checkConditions("WE: Conditions", "controller status conditions missing", s.Conditions))
+	f = appendIfNonEmpty(f, checkConditions("WE: Conditions", s.Conditions))
 
 	return f
 }
@@ -345,7 +345,7 @@ func ValidateNTStatus(nr *notificationv1.NotificationRequest) []string {
 	if len(s.DeliveryAttempts) < 1 {
 		f = append(f, "NT: DeliveryAttempts empty -- no delivery attempt details recorded")
 	}
-	f = appendIfNonEmpty(f, checkConditions("NT: Conditions", "controller status conditions missing", s.Conditions))
+	f = appendIfNonEmpty(f, checkConditions("NT: Conditions", s.Conditions))
 
 	return f
 }
@@ -372,7 +372,7 @@ func ValidateEAStatus(ea *eav1.EffectivenessAssessment) []string {
 	if c.HealthScore == nil {
 		f = append(f, "EA: Components.HealthScore not populated -- remediation effectiveness unknown")
 	}
-	f = appendIfNonEmpty(f, checkConditions("EA: Conditions", "controller status conditions missing", s.Conditions))
+	f = appendIfNonEmpty(f, checkConditions("EA: Conditions", s.Conditions))
 
 	return f
 }
@@ -391,7 +391,7 @@ func ValidateRARStatus(rar *remediationv1.RemediationApprovalRequest) []string {
 	if s.Expired {
 		f = append(f, "RAR: Expired is true -- approval should not be expired after approval")
 	}
-	f = appendIfNonEmpty(f, checkConditions("RAR: Conditions", "controller status conditions missing", s.Conditions))
+	f = appendIfNonEmpty(f, checkConditions("RAR: Conditions", s.Conditions))
 
 	return f
 }

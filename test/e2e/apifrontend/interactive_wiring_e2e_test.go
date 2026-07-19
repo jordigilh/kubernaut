@@ -73,7 +73,7 @@ var _ = Describe("Interactive Wiring E2E (W6)", Label("e2e", "phase4", "wiring")
 
 		It("E2E-AF-1332-W01b: kubernaut_investigate dispatches to KA and returns structured response", func() {
 			rrName := fmt.Sprintf("e2e-rr-w01b-%s", uuid.New().String()[:8])
-			Expect(createRR("default", rrName, "Deployment", "test-deploy-w01b")).To(Succeed())
+			Expect(createRR("default", rrName, "test-deploy-w01b")).To(Succeed())
 			DeferCleanup(func() { deleteRR("default", rrName) })
 
 			rpcID := fmt.Sprintf("w01b-%d", time.Now().UnixNano())
@@ -185,7 +185,7 @@ var _ = Describe("Escalation Routing E2E (#1418)", Label("e2e", "phase4", "escal
 
 	It("E2E-KA-1418-001: kubernaut_complete_no_action (dismiss) returns completed_no_action", func() {
 		rrName := fmt.Sprintf("e2e-rr-1418-dismiss-%s", uuid.New().String()[:8])
-		Expect(createRR("kubernaut-system", rrName, "Deployment", "test-deploy-1418")).To(Succeed())
+		Expect(createRR("kubernaut-system", rrName, "test-deploy-1418")).To(Succeed())
 		DeferCleanup(func() { deleteRR("kubernaut-system", rrName) })
 
 		// Start investigation to acquire a session
@@ -214,7 +214,7 @@ var _ = Describe("Escalation Routing E2E (#1418)", Label("e2e", "phase4", "escal
 
 	It("E2E-KA-1418-002: kubernaut_complete_no_action (escalate) returns escalated", func() {
 		rrName := fmt.Sprintf("e2e-rr-1418-escalate-%s", uuid.New().String()[:8])
-		Expect(createRR("kubernaut-system", rrName, "Deployment", "test-deploy-1418-esc")).To(Succeed())
+		Expect(createRR("kubernaut-system", rrName, "test-deploy-1418-esc")).To(Succeed())
 		DeferCleanup(func() { deleteRR("kubernaut-system", rrName) })
 
 		// Start investigation to acquire a session

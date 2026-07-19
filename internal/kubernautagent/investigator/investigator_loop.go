@@ -69,6 +69,10 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 
 	if ctx.Err() != nil {
 		emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
+		// nolint:nilerr // intentional: cancellation is a documented normal
+		// outcome for this function (see doc comment above), not a failure
+		// -- ctx.Err() is converted into a typed cancelled result, not
+		// propagated as err (Issue #1546 Tier 3).
 		return buildCancelledResult(messages, turn, string(phase), tokens), messages, true, nil
 	}
 
@@ -143,7 +147,6 @@ func (inv *Investigator) doLLMCall(ctx context.Context, state *loopTurnState, me
 		turn:          turn,
 		phase:         string(phase),
 		correlationID: llmCtx.CorrelationID,
-		modelName:     llmCtx.ModelName,
 		runtimeParams: llmCtx.RuntimeParams,
 		tokens:        llmCtx.Tokens,
 		loopStart:     state.loopStart,
@@ -187,7 +190,6 @@ type llmTurnCallParams struct {
 	turn          int
 	phase         string
 	correlationID string
-	modelName     string
 	runtimeParams llm.RuntimeParams
 	tokens        *TokenAccumulator
 	loopStart     time.Time
@@ -199,7 +201,7 @@ type llmTurnCallParams struct {
 // event and returned wrapped (err non-nil); success returns the response
 // with both cancelled and err nil.
 func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (llm.ChatResponse, LoopResult, error) {
-	resp, err := inv.chatOrStream(ctx, p.client, p.chatReq, p.turn, p.phase, p.modelName, p.runtimeParams)
+	resp, err := inv.chatOrStream(ctx, p.client, p.chatReq, p.turn, p.phase, p.runtimeParams)
 	if err == nil {
 		return resp, nil, nil
 	}
@@ -213,6 +215,9 @@ func (inv *Investigator) callLLMTurn(ctx context.Context, p llmTurnCallParams) (
 	// ctx.Err() verbatim.
 	if errors.Is(err, context.Canceled) || (errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil) {
 		emitToSink(ctx, session.EventTypeCancelled, p.turn, p.phase, nil)
+		// nolint:nilerr // intentional: cancellation (see #1612 rationale
+		// above) is converted into a typed cancelled result, not
+		// propagated as err (Issue #1546 Tier 3).
 		return llm.ChatResponse{}, buildCancelledResult(p.messages, p.turn, p.phase, p.tokens), nil
 	}
 	failEvent := audit.NewEvent(audit.EventTypeResponseFailed, p.correlationID)
@@ -373,8 +378,11 @@ func (inv *Investigator) buildTruncationRetryMessages(ctx context.Context, resp 
 // the same llm.RetryWithBackoff machinery and RuntimeParams-driven policy
 // (MaxRetries, RetryBackoff) — previously RuntimeParams.MaxRetries was
 // silently dead here, since StreamChat was called exactly once with no
-// retry at all.
-func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string, modelName string, runtimeParams llm.RuntimeParams) (llm.ChatResponse, error) {
+// retry at all. The retry-attempt telemetry (RecordLLMCallRetry) is
+// deliberately labeled by phase/outcome only, not model (DD-LLM-009), so
+// this takes no modelName -- callers already emit the model on the
+// request/gate audit events before invoking this.
+func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string, runtimeParams llm.RuntimeParams) (llm.ChatResponse, error) {
 	sink := session.EventSinkFromContext(ctx)
 	if sink == nil {
 		inv.logger.Info("chatOrStream: sink is nil, falling back to non-streaming Chat",
@@ -505,5 +513,5 @@ func (inv *Investigator) emitCancellationAudit(ctx context.Context, result *katy
 			event.Data["accumulated_messages"] = s
 		}
 	}
-	audit.StoreBestEffort(context.Background(), inv.auditStore, event, inv.logger)
+	audit.StoreBestEffort(context.Background(), inv.auditStore, event, inv.logger) //nolint:contextcheck // audit.StoreBestEffort is intentionally fire-and-forget so a cancelled investigation context cannot drop the event
 }

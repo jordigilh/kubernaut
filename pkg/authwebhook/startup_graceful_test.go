@@ -134,15 +134,15 @@ var _ = Describe("StartupReconciler Graceful Degradation (#1246)", func() {
 
 			// Verify good RW has Active status
 			good := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-good"), good)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-good"), good)).To(Succeed())
 			Expect(string(good.Status.CatalogStatus)).To(Equal("Active"))
 
 			// Verify bad RW has Disabled status + Ready=False condition
 			bad := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-bad"), bad)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-bad"), bad)).To(Succeed())
 			Expect(string(bad.Status.CatalogStatus)).To(Equal("Disabled"))
 
-			readyCond := findCondition(bad.Status.Conditions, rwv1alpha1.ConditionReady)
+			readyCond := findCondition(bad.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil(), "Ready condition should exist on failed RW")
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal(rwv1alpha1.ReasonDependencyMissing))
@@ -185,7 +185,7 @@ var _ = Describe("StartupReconciler Graceful Degradation (#1246)", func() {
 
 			for _, name := range []string{"wf-fail-1", "wf-fail-2"} {
 				rw := &rwv1alpha1.RemediationWorkflow{}
-				Expect(k8sClient.Get(ctx, nsName("default", name), rw)).To(Succeed())
+				Expect(k8sClient.Get(ctx, nsName(name), rw)).To(Succeed())
 				Expect(string(rw.Status.CatalogStatus)).To(Equal("Disabled"))
 			}
 		})
@@ -240,7 +240,7 @@ var _ = Describe("StartupReconciler Graceful Degradation (#1246)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-transient"), updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-transient"), updated)).To(Succeed())
 			Expect(string(updated.Status.CatalogStatus)).To(Equal("Active"))
 			Expect(callCount).To(BeNumerically(">=", 3))
 		})
@@ -314,9 +314,9 @@ var _ = Describe("StartupReconciler Graceful Degradation (#1246)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-ready"), updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-ready"), updated)).To(Succeed())
 
-			readyCond := findCondition(updated.Status.Conditions, rwv1alpha1.ConditionReady)
+			readyCond := findCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil(), "Ready condition should exist")
 			Expect(readyCond.Status).To(Equal(metav1.ConditionTrue))
 			Expect(readyCond.Reason).To(Equal(rwv1alpha1.ReasonRegistered))
@@ -450,10 +450,10 @@ var _ = Describe("StartupReconciler Graceful Degradation (#1246)", func() {
 			Expect(err).NotTo(HaveOccurred(), "startup should still succeed gracefully")
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(context.Background(), nsName("default", "wf-cancel"), updated)).To(Succeed())
+			Expect(k8sClient.Get(context.Background(), nsName("wf-cancel"), updated)).To(Succeed())
 			Expect(string(updated.Status.CatalogStatus)).To(Equal("Disabled"))
 
-			readyCond := findCondition(updated.Status.Conditions, rwv1alpha1.ConditionReady)
+			readyCond := findCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal(rwv1alpha1.ReasonDataStorageError))
@@ -500,10 +500,10 @@ var _ = Describe("StartupReconciler Graceful Degradation (#1246)", func() {
 			Expect(err).NotTo(HaveOccurred(), "startup should succeed gracefully")
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-deadline"), updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-deadline"), updated)).To(Succeed())
 			Expect(string(updated.Status.CatalogStatus)).To(Equal("Disabled"))
 
-			readyCond := findCondition(updated.Status.Conditions, rwv1alpha1.ConditionReady)
+			readyCond := findCondition(updated.Status.Conditions)
 			Expect(readyCond).NotTo(BeNil())
 			Expect(readyCond.Status).To(Equal(metav1.ConditionFalse))
 			Expect(readyCond.Reason).To(Equal(rwv1alpha1.ReasonDataStorageError))
@@ -554,10 +554,10 @@ func (m *mockAuditStore) StoreAudit(_ context.Context, event *ogenclient.AuditEv
 func (m *mockAuditStore) Flush(_ context.Context) error { return nil }
 func (m *mockAuditStore) Close() error                  { return nil }
 
-// findCondition looks up a condition by type in the conditions slice.
-func findCondition(conditions []metav1.Condition, condType string) *metav1.Condition {
+// findCondition looks up the ConditionReady condition in the conditions slice.
+func findCondition(conditions []metav1.Condition) *metav1.Condition {
 	for i := range conditions {
-		if conditions[i].Type == condType {
+		if conditions[i].Type == rwv1alpha1.ConditionReady {
 			return &conditions[i]
 		}
 	}

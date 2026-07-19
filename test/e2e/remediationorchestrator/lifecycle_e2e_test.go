@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -47,7 +48,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-e2e")
+		testNS = createTestNamespace(ctx, "ro-e2e")
 	})
 
 	AfterEach(func() {
@@ -133,7 +134,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "CriticalError",
-					Severity:          "critical",
+					Severity:          signalprocessingv1.SeverityCritical,
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -202,7 +203,7 @@ var _ = Describe("RemediationOrchestrator E2E Tests", Label("e2e"), func() {
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "DangerousOperation",
-					Severity:          "critical",
+					Severity:          signalprocessingv1.SeverityCritical,
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{

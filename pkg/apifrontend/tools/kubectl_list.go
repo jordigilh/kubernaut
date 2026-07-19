@@ -37,15 +37,15 @@ func HandleKubectlList(ctx context.Context, reader ResourceReader, mapper meta.R
 		return KubectlListResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Kind(args.Kind); err != nil {
-		return KubectlListResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return KubectlListResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return KubectlListResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return KubectlListResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	gvr, gvk, err := resolveGVRAndGVK(mapper, args.Kind)
 	if err != nil {
-		return KubectlListResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return KubectlListResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	ns := ResolveEffectiveNamespace(mapper, args.Kind, args.Namespace, logr.FromContextOrDiscard(ctx))

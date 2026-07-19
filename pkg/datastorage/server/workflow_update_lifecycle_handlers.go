@@ -84,7 +84,7 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// BR-STORAGE-183: Audit workflow update (business logic operation)
-	h.auditWorkflowUpdateAsync(workflow, updateReq)
+	h.auditWorkflowUpdateAsync(workflow, updateReq) //nolint:contextcheck // auditWorkflowUpdateAsync emits in a background goroutine by design, decoupled from the request lifecycle
 
 	h.logger.Info("Workflow updated",
 		"workflow_id", workflowID,
@@ -142,7 +142,7 @@ func (h *Handler) applyMutableWorkflowUpdate(w http.ResponseWriter, workflow *mo
 	}
 
 	workflow.Status = *updateReq.Status
-	if *updateReq.Status == "Disabled" {
+	if *updateReq.Status == models.WorkflowStatusDisabled {
 		now := time.Now()
 		workflow.DisabledAt = &now
 		workflow.DisabledBy = updateReq.DisabledBy
@@ -164,7 +164,7 @@ func (h *Handler) auditWorkflowUpdateAsync(workflow *models.RemediationWorkflow,
 	wfID := workflow.WorkflowID
 	wfDisabledBy := getStringValue(workflow.DisabledBy)
 	wfDisabledReason := getStringValue(workflow.DisabledReason)
-	isDisabling := updateReq.Status != nil && *updateReq.Status == "Disabled"
+	isDisabling := updateReq.Status != nil && *updateReq.Status == models.WorkflowStatusDisabled
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -380,7 +380,7 @@ func (h *Handler) HandleEnableWorkflow(w http.ResponseWriter, r *http.Request) {
 	workflow.DisabledBy = nil
 	workflow.DisabledReason = nil
 
-	h.auditWorkflowLifecycleChange(workflowID, "Active", workflow, "enable", nil)
+	h.auditWorkflowLifecycleChange(workflowID, "Active", workflow, "enable", nil) //nolint:contextcheck // auditWorkflowLifecycleChange emits in a background goroutine (BR-STORAGE-183); see doc comment
 
 	h.logger.Info("Workflow enabled",
 		"workflow_id", workflowID,
@@ -431,7 +431,7 @@ func (h *Handler) HandleDeprecateWorkflow(w http.ResponseWriter, r *http.Request
 
 	workflow.Status = "Deprecated"
 
-	h.auditWorkflowLifecycleChange(workflowID, "Deprecated", workflow, "deprecate", nil)
+	h.auditWorkflowLifecycleChange(workflowID, "Deprecated", workflow, "deprecate", nil) //nolint:contextcheck // auditWorkflowLifecycleChange emits in a background goroutine (BR-STORAGE-183); see doc comment
 
 	h.logger.Info("Workflow deprecated",
 		"workflow_id", workflowID,
@@ -462,7 +462,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	repo, workflow, ok := h.getWorkflowForLifecycleTransition(w, r, workflowID, "disable", "Disabled")
+	repo, workflow, ok := h.getWorkflowForLifecycleTransition(w, r, workflowID, "disable", models.WorkflowStatusDisabled)
 	if !ok {
 		return
 	}
@@ -470,7 +470,7 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 	reason := getStringValue(disableReq.Reason)
 	updatedBy := getStringValue(disableReq.UpdatedBy)
 
-	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, "Disabled", reason, updatedBy); err != nil {
+	if err := repo.UpdateStatus(r.Context(), workflow.WorkflowID, workflow.Version, models.WorkflowStatusDisabled, reason, updatedBy); err != nil {
 		h.logger.Error(err, "Failed to disable workflow",
 			"workflow_id", workflowID,
 		)
@@ -479,14 +479,14 @@ func (h *Handler) HandleDisableWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	workflow.Status = "Disabled"
+	workflow.Status = models.WorkflowStatusDisabled
 	now := time.Now()
 	workflow.DisabledAt = &now
 	workflow.DisabledBy = disableReq.UpdatedBy
 	workflow.DisabledReason = disableReq.Reason
 
 	// DD-AUDIT-002 V2.0.1: Workflow disable is a status update (captured via workflow.updated)
-	h.auditWorkflowLifecycleChange(workflowID, "Disabled", workflow, "disable", func(fields *api.WorkflowCatalogUpdatedFields) {
+	h.auditWorkflowLifecycleChange(workflowID, models.WorkflowStatusDisabled, workflow, "disable", func(fields *api.WorkflowCatalogUpdatedFields) { //nolint:contextcheck // auditWorkflowLifecycleChange emits in a background goroutine (BR-STORAGE-183); see doc comment
 		fields.DisabledBy.SetTo(updatedBy)
 		fields.DisabledReason.SetTo(reason)
 	})

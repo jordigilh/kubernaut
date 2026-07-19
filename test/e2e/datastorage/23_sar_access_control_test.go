@@ -200,7 +200,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:   "sar-test-authorized",
+						SignalName:  "sar-test-authorized",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint",
 					},
@@ -246,7 +246,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:   "sar-test-unauthorized",
+						SignalName:  "sar-test-unauthorized",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint-unauth",
 					},
@@ -285,7 +285,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:   "sar-test-readonly",
+						SignalName:  "sar-test-readonly",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint-readonly",
 					},
@@ -313,7 +313,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 
 			// DD-WORKFLOW-017: Register workflow inline for SAR validation
 			// Uses authorizedClient to validate RBAC "create" permission
-			_, generatedWorkflowID := ensureWorkflowRegistered(testCtx, authorizedClient, e2eTestWorkflowStubContent, "e2e-stub")
+			_, generatedWorkflowID := ensureWorkflowRegistered(testCtx, authorizedClient, e2eTestWorkflowStubContent)
 			logger.Info("✅ Workflow ready for SAR validation", "workflowID", generatedWorkflowID)
 
 			// Verify audit event was created with user attribution
@@ -324,8 +324,8 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 			Eventually(func() bool {
 				auditResp, err := authorizedClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
 					CorrelationID: dsgen.NewOptString(generatedWorkflowID.String()),
-				EventCategory: dsgen.NewOptString(dsaudit.EventCategoryWorkflow),
-				EventType:     dsgen.NewOptString(dsaudit.EventTypeWorkflowCreated),
+					EventCategory: dsgen.NewOptString(dsaudit.EventCategoryWorkflow),
+					EventType:     dsgen.NewOptString(dsaudit.EventTypeWorkflowCreated),
 					Limit:         dsgen.NewOptInt(10),
 				})
 				if err != nil {

@@ -58,8 +58,8 @@ var (
 	k8sClient client.Client // DD-E2E-K8S-CLIENT-001: Suite-level K8s client (1 per process)
 
 	// Cluster configuration (shared across all tests)
-	clusterName      string
-	kubeconfigPath   string
+	clusterName       string
+	kubeconfigPath    string
 	gatewayURL        string // Gateway API URL for E2E tests (NodePort or port-forward)
 	gatewayHealthURL  string // Gateway health URL (Issue #753: dedicated :8081 port)
 	gatewayMetricsURL string // Gateway metrics URL (Issue #753: dedicated :9090 port)
@@ -86,7 +86,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		})
 
 		// DD-TEST-007: Check for coverage mode
-		tempCoverageMode := os.Getenv("E2E_COVERAGE") == "true"
+		tempCoverageMode := os.Getenv("E2E_COVERAGE") == trueFixture
 
 		tempLogger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		tempLogger.Info("Gateway E2E Test Suite - Setup (Process 1)")
@@ -162,7 +162,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 		http.DefaultTransport = tlsTransport
 
 		// DD-TEST-007: Set coverage mode for all processes
-		coverageMode = os.Getenv("E2E_COVERAGE") == "true"
+		coverageMode = os.Getenv("E2E_COVERAGE") == trueFixture
 
 		// Initialize context (use simple WithCancel, will be managed by Ginkgo lifecycle)
 		// Per DD-E2E-PARALLEL: Context managed through entire suite execution
@@ -213,9 +213,9 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute),
 
 		// Set cluster configuration (shared across all processes)
 		clusterName = "gateway-e2e"
-		gatewayURL = "http://127.0.0.1:8080"         // Gateway serves plain HTTP (TLS opt-in via config)
-		gatewayHealthURL = "http://127.0.0.1:28080"  // Issue #753: dedicated health port (maps to NodePort 30180)
-		gatewayMetricsURL = "http://127.0.0.1:9090"  // Issue #753: dedicated metrics port (maps to NodePort 30090)
+		gatewayURL = "http://127.0.0.1:8080"        // Gateway serves plain HTTP (TLS opt-in via config)
+		gatewayHealthURL = "http://127.0.0.1:28080" // Issue #753: dedicated health port (maps to NodePort 30180)
+		gatewayMetricsURL = "http://127.0.0.1:9090" // Issue #753: dedicated metrics port (maps to NodePort 30090)
 		gatewayNamespace = "kubernaut-system"
 
 		// BR-GATEWAY-036/037: Create suite-level authorized SA for all E2E webhook requests.
@@ -308,7 +308,7 @@ var _ = SynchronizedAfterSuite(
 				logger.Error(err, "Failed to collect E2E binary coverage (non-fatal)")
 			}
 		}
-		preserveCluster := os.Getenv("SKIP_CLEANUP") == "true" || os.Getenv("KEEP_CLUSTER") != ""
+		preserveCluster := os.Getenv("SKIP_CLEANUP") == trueFixture || os.Getenv("KEEP_CLUSTER") != ""
 
 		if preserveCluster {
 			logger.Info("⚠️  CLUSTER PRESERVED FOR DEBUGGING")

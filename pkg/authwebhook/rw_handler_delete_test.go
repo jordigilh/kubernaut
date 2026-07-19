@@ -59,7 +59,7 @@ var _ = Describe("RemediationWorkflow Handler DELETE — Fix A (#418)", func() {
 	// ========================================
 	Describe("UT-AW-418-007: DELETE with DS success triggers AT count refresh goroutine", func() {
 		It("should invoke refreshActionTypeWorkflowCount when DisableWorkflow succeeds", func() {
-			rw := buildRemediationWorkflowWithStatus("fix-a-success", "kubernaut-system", "uuid-fix-a-007")
+			rw := buildRemediationWorkflowWithStatus("fix-a-success", "uuid-fix-a-007")
 
 			scheme := newTestScheme()
 			at := buildATForReconciler("scale-memory-at", "kubernaut-system", "ScaleMemory", 1)
@@ -98,7 +98,7 @@ var _ = Describe("RemediationWorkflow Handler DELETE — Fix A (#418)", func() {
 	// ========================================
 	Describe("UT-AW-418-008: DELETE with DS failure does NOT trigger AT count refresh goroutine", func() {
 		It("should NOT invoke refreshActionTypeWorkflowCount when DisableWorkflow fails", func() {
-			rw := buildRemediationWorkflowWithStatus("fix-a-fail", "kubernaut-system", "uuid-fix-a-008")
+			rw := buildRemediationWorkflowWithStatus("fix-a-fail", "uuid-fix-a-008")
 
 			scheme := newTestScheme()
 			at := buildATForReconciler("scale-memory-at-2", "kubernaut-system", "ScaleMemory", 1)

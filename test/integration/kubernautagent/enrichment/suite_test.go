@@ -69,6 +69,8 @@ var (
 
 var _ = SynchronizedBeforeSuite(
 	func() []byte {
+		ctx := context.Background()
+
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("KA Enrichment IT - PHASE 1: Infrastructure Setup")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -98,7 +100,7 @@ var _ = SynchronizedBeforeSuite(
 			"test/integration/kubernautagent/enrichment/config",
 			authConfig,
 		)
-		dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+		dsInfra, err = infrastructure.StartDSBootstrap(ctx, cfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		dsInfra.SharedTestEnv = sharedTestEnv
 

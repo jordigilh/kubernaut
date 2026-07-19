@@ -39,6 +39,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	reasoning = "reasoning"
+)
+
 var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP investigate", func() {
 
 	Describe("UT-AF-1326-020: starts autonomous MCP investigation and returns immediately", func() {
@@ -176,9 +181,7 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 
 			registry.Stop("sess-stop-001")
 
-			Eventually(func() int32 {
-				return closerCalled.Load()
-			}, 2*time.Second).Should(BeNumerically(">=", 1))
+			Eventually(closerCalled.Load, 2*time.Second).Should(BeNumerically(">=", 1))
 
 			Expect(registry.Active("sess-stop-001")).To(BeFalse())
 		})
@@ -429,7 +432,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 				if !ok {
 					continue
 				}
-				if metaType, ok := se.Metadata["type"].(string); ok && metaType == "reasoning" {
+				if metaType, ok := se.Metadata["type"].(string); ok && metaType == reasoning {
 					reasoningEvents = append(reasoningEvents, se)
 				}
 			}
@@ -438,7 +441,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 
 			text := reasoningEvents[0].Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).To(ContainSubstring("Pod is in CrashLoopBackOff"))
-			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", "reasoning"))
+			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", reasoning))
 		})
 	})
 
@@ -464,7 +467,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 				if !ok {
 					continue
 				}
-				if metaType, ok := se.Metadata["type"].(string); ok && metaType == "reasoning" {
+				if metaType, ok := se.Metadata["type"].(string); ok && metaType == reasoning {
 					reasoningEvents = append(reasoningEvents, se)
 				}
 			}
@@ -473,7 +476,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 
 			text := reasoningEvents[0].Status.Message.Parts[0].(a2a.TextPart).Text
 			Expect(text).To(ContainSubstring("The root cause"))
-			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", "reasoning"))
+			Expect(reasoningEvents[0].Metadata).To(HaveKeyWithValue("type", reasoning))
 		})
 	})
 
@@ -550,7 +553,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 					continue
 				}
 				switch metaType {
-				case "reasoning":
+				case reasoning:
 					reasoningCount++
 				case "status":
 					statusCount++
@@ -586,7 +589,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 					continue
 				}
 				metaType, _ := se.Metadata["type"].(string)
-				if metaType != "reasoning" {
+				if metaType != reasoning {
 					continue
 				}
 				text := se.Status.Message.Parts[0].(a2a.TextPart).Text
@@ -1596,7 +1599,7 @@ func (m *mockPoolSession) CallTool(_ context.Context, _ *mcp.CallToolParams) (*m
 	return &mcp.CallToolResult{}, nil
 }
 func (m *mockPoolSession) Ping(_ context.Context, _ *mcp.PingParams) error { return nil }
-func (m *mockPoolSession) Close() error { return nil }
+func (m *mockPoolSession) Close() error                                    { return nil }
 
 // Suppress unused import warning for json and time
 var _ = json.Marshal

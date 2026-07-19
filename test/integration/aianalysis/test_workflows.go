@@ -192,8 +192,8 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 // DD-WORKFLOW-002 v3.0: DataStorage generates UUIDs (cannot be specified by client)
 // DD-AUTH-014: Updated to accept authenticated client for real K8s authentication
 //
-// REFACTOR: Now uses shared infrastructure.SeedWorkflowsInDataStorage()
-func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer) (map[string]string, error) {
+// REFACTOR: Now uses shared infrastructure.SeedWorkflowsInDataStorage(ctx)
+func SeedTestWorkflowsInDataStorage(ctx context.Context, client *ogenclient.Client, output io.Writer) (map[string]string, error) {
 	// Convert AIAnalysis-specific TestWorkflow to shared infrastructure.TestWorkflow
 	workflows := GetAIAnalysisTestWorkflows()
 	sharedWorkflows := make([]infrastructure.TestWorkflow, len(workflows))
@@ -212,10 +212,10 @@ func SeedTestWorkflowsInDataStorage(client *ogenclient.Client, output io.Writer)
 	}
 
 	// Delegate to shared infrastructure function
-	return infrastructure.SeedWorkflowsInDataStorage(client, sharedWorkflows, "AIAnalysis Integration", output)
+	return infrastructure.SeedWorkflowsInDataStorage(ctx, client, sharedWorkflows, "AIAnalysis Integration", output)
 }
 
-// REMOVED: registerWorkflowInDataStorage() - Now uses infrastructure.RegisterWorkflowInDataStorage()
+// REMOVED: registerWorkflowInDataStorage() - Now uses infrastructure.RegisterWorkflowInDataStorage(ctx)
 // See: test/infrastructure/workflow_seeding.go for shared implementation
 
 // Deprecated: WriteMockLLMConfigFile is part of the legacy ConfigMap sync infrastructure.
@@ -246,7 +246,8 @@ func WriteMockLLMConfigFile(configPath string, workflowUUIDs map[string]string, 
 }
 
 // UpdateMockLLMWithUUIDs sends the actual workflow UUIDs to Mock LLM
-// DEPRECATED: Use WriteMockLLMConfigFile for DD-TEST-011 v2.0 file-based pattern
+//
+// Deprecated: Use WriteMockLLMConfigFile for DD-TEST-011 v2.0 file-based pattern.
 // Pattern: DD-WORKFLOW-002 v3.0 UUID synchronization
 // DataStorage auto-generates UUIDs, so Mock LLM must be updated with actual values
 // This ensures LLM responses contain UUIDs that exist in DataStorage catalog

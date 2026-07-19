@@ -32,9 +32,9 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -186,7 +186,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(analysis.Status.KASession.CreatedAt).NotTo(BeNil(), "CreatedAt should be set")
 
 				// Condition: InvestigationSessionReady=True, Reason=SessionCreated
-				cond := getCondition(analysis, "InvestigationSessionReady")
+				cond := getCondition(analysis)
 				Expect(cond).NotTo(BeNil(), "InvestigationSessionReady condition should be set")
 				Expect(string(cond.Status)).To(Equal("True"))
 				Expect(cond.Reason).To(Equal("SessionCreated"))
@@ -229,7 +229,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(analysis.Status.KASession.CreatedAt).NotTo(BeNil(), "CreatedAt should be updated")
 
 				// Condition: InvestigationSessionReady=True, Reason=SessionRegenerated
-				cond := getCondition(analysis, "InvestigationSessionReady")
+				cond := getCondition(analysis)
 				Expect(cond).NotTo(BeNil())
 				Expect(string(cond.Status)).To(Equal("True"))
 				Expect(cond.Reason).To(Equal("SessionRegenerated"))
@@ -422,7 +422,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(analysis.Status.KASession.ID).To(BeEmpty(), "Session ID should be cleared")
 
 				// Condition: InvestigationSessionReady=False, Reason=SessionLost
-				cond := getCondition(analysis, "InvestigationSessionReady")
+				cond := getCondition(analysis)
 				Expect(cond).NotTo(BeNil())
 				Expect(string(cond.Status)).To(Equal("False"))
 				Expect(cond.Reason).To(Equal("SessionLost"))
@@ -487,7 +487,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(analysis.Status.SubReason).To(Equal("SessionRegenerationExceeded"), "SubReason should indicate cap exceeded")
 
 				// Condition: InvestigationSessionReady=False, Reason=SessionRegenerationExceeded
-				cond := getCondition(analysis, "InvestigationSessionReady")
+				cond := getCondition(analysis)
 				Expect(cond).NotTo(BeNil())
 				Expect(string(cond.Status)).To(Equal("False"))
 				Expect(cond.Reason).To(Equal("SessionRegenerationExceeded"))
@@ -740,7 +740,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				}
 
 				// BR-AA-HAPI-064.10: Timeout removal - verify config value
-				Expect(cfg.Timeout).To(Equal(30 * time.Second), "Async client should use 30s timeout, not 10m workaround")
+				Expect(cfg.Timeout).To(Equal(30*time.Second), "Async client should use 30s timeout, not 10m workaround")
 			})
 		})
 	})
@@ -1109,10 +1109,10 @@ var _ = Describe("InvestigatingHandler Canonical Plan Tests [BR-INTERACTIVE-010]
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: aianalysis.PhaseInvestigating,
 					KASession: &aianalysisv1.KASession{
-						ID:        "session-terminal",
+						ID:          "session-terminal",
 						Interactive: false, // already cleared by prior mismatch check reconcile
-						CreatedAt: &now,
-						PollCount: 5,
+						CreatedAt:   &now,
+						PollCount:   5,
 					},
 				},
 			}
@@ -1425,9 +1425,9 @@ var _ = Describe("Fix #1390: AA Takeover Simplification — BR-INTERACTIVE-004",
 
 // mockISPhaseUpdater1390 tracks SetActivePhase calls for #1390 tests.
 type mockISPhaseUpdater1390 struct {
-	activePhaseCount  int
-	lastActiveRRName  string
-	setActiveErr      error
+	activePhaseCount int
+	lastActiveRRName string
+	setActiveErr     error
 }
 
 func (m *mockISPhaseUpdater1390) SetActivePhase(_ context.Context, rrName string) error {
@@ -1444,10 +1444,10 @@ func (m *mockISPhaseUpdater1390) SetTerminalPhase(_ context.Context, _ string, _
 // Helper Functions
 // ========================================
 
-// getCondition returns the condition with the specified type from the AIAnalysis status
-func getCondition(analysis *aianalysisv1.AIAnalysis, conditionType string) *metav1.Condition {
+// getCondition returns the InvestigationSessionReady condition from the AIAnalysis status
+func getCondition(analysis *aianalysisv1.AIAnalysis) *metav1.Condition {
 	for i := range analysis.Status.Conditions {
-		if analysis.Status.Conditions[i].Type == conditionType {
+		if analysis.Status.Conditions[i].Type == "InvestigationSessionReady" {
 			return &analysis.Status.Conditions[i]
 		}
 	}

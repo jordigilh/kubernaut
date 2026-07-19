@@ -318,7 +318,7 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 	case ka.EventTypeSessionEnded:
 		reason := evt.Phase
 		if reason == "" {
-			reason = "unknown"
+			reason = unknownValue
 		}
 		return "Session ended: " + reason
 	case ka.EventTypeAlignmentVerdict:
@@ -388,7 +388,7 @@ func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEven
 				emitWatcherTerminal(relayCtxOrDefault(relay, ctx), evt)
 				return
 			}
-			relayLiveEvent(relay, evt)
+			relayLiveEvent(relay, evt) //nolint:contextcheck // relayLiveEvent deliberately ignores the watcher's own ctx and sources relay.Current() instead -- the whole point is to relay onto whichever pooled call's ctx is currently in flight, not the watcher's detached one
 		case <-done:
 			drainBufferedTerminalEvent(relayCtxOrDefault(relay, ctx), events)
 			return

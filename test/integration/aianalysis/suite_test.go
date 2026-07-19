@@ -83,17 +83,22 @@ import (
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	linux = "linux"
 )
 
 // DD-TEST-010: Per-process variables (no shared state between processes)
@@ -280,7 +285,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// KA is an HTTP server (like DataStorage) that validates incoming Bearer tokens
 	// Platform-specific: Linux uses host network, macOS uses bridge network
 	By("Creating ServiceAccount for Kubernaut Agent service with TokenReview/SAR permissions")
-	useHostNetworkForKA := runtime.GOOS == "linux"
+	useHostNetworkForKA := runtime.GOOS == linux
 	kaServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
 		sharedCfg,
 		"kubernaut-agent-service",
@@ -454,7 +459,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		"test/integration/aianalysis/config",
 		authConfig,
 	)
-	dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err = infrastructure.StartDSBootstrap(specCtx, cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ DataStorage infrastructure started (PostgreSQL, Redis, DataStorage)")
 
@@ -476,7 +481,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// Must seed workflows first so Mock LLM can load UUIDs at startup
 	// DD-AUTH-014: Now uses authenticated client (matches KA pattern)
 	By("Seeding test workflows into DataStorage (with authentication)")
-	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(seedClient.OpenAPIClient, GinkgoWriter)
+	workflowUUIDs, err := SeedTestWorkflowsInDataStorage(specCtx, seedClient.OpenAPIClient, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Test workflows must be seeded successfully")
 
 	// Write Mock LLM config file with workflow UUIDs
@@ -498,7 +503,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	mockLLMConfig.ImageTag = mockLLMImageName        // Use the built image tag
 	mockLLMConfig.ConfigFilePath = mockLLMConfigPath // DD-TEST-011 v2.0: Mount config file
 	// DD-AUTH-014: Platform-specific network (must match KA's network mode)
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == linux {
 		mockLLMConfig.Network = "host" // Linux CI: Host network (KA will reach via 127.0.0.1)
 	} else {
 		mockLLMConfig.Network = "aianalysis_test_network" // macOS: Bridge network with container-to-container DNS
@@ -526,7 +531,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	err = os.MkdirAll(kaConfigDir, 0755)
 	Expect(err).ToNot(HaveOccurred())
 
-	useHostNetwork := runtime.GOOS == "linux"
+	useHostNetwork := runtime.GOOS == linux
 	var llmEndpoint, dsURL string
 	if useHostNetwork {
 		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMConfig.Port)
@@ -585,9 +590,9 @@ timeoutSeconds: 120
 		},
 		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
 		Volumes: map[string]string{
-			kaConfigDir:                          "/etc/kubernautagent:ro",
-			kaLLMRuntimeDir:                      "/etc/kubernautagent-llm-runtime:ro",
-			kaServiceAuthConfig.KubeconfigPath:   "/tmp/kubeconfig:ro",
+			kaConfigDir:                        "/etc/kubernautagent:ro",
+			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
+			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
 			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
 		},
 		HealthCheck: &infrastructure.HealthCheckConfig{
@@ -820,11 +825,11 @@ timeoutSeconds: 120
 	isChecker := handlers.NewK8sInvestigationSessionChecker(k8sManager.GetAPIReader(), controllerNS)
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), controllerNS)
 	investigatingHandler := handlers.NewInvestigatingHandler(realAgentClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode(),                            // BR-AA-HAPI-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(2*time.Second),       // Fast polling for tests (production default: 15s)
-		handlers.WithInvestigationSessionChecker(isChecker),   // BR-INTERACTIVE-010: IS CRD awareness
-		handlers.WithISPhaseUpdater(isPhaseUpdater))           // BR-INTERACTIVE-010: Set IS Active after submit
+		handlers.WithRecorder(eventRecorder),                // DD-EVENT-001: Session lifecycle events
+		handlers.WithSessionMode(),                          // BR-AA-HAPI-064: Async submit/poll/result flow
+		handlers.WithSessionPollInterval(2*time.Second),     // Fast polling for tests (production default: 15s)
+		handlers.WithInvestigationSessionChecker(isChecker), // BR-INTERACTIVE-010: IS CRD awareness
+		handlers.WithISPhaseUpdater(isPhaseUpdater))         // BR-INTERACTIVE-010: Set IS Active after submit
 	// #225: Mock LLM current_scenario persists across analyses (statefulness),
 	// so unrecognized signals inherit high confidence (e.g., 0.88 from crashloop).
 	// Threshold 0.9 ensures mock scenarios requiring approval stay below threshold.
@@ -919,8 +924,8 @@ var _ = SynchronizedAfterSuite(func() {
 			dsInfra.DataStorageContainer,
 			dsInfra.PostgresContainer,
 			dsInfra.RedisContainer,
-			"mock-llm-aianalysis",  // Mock LLM service
-			"aianalysis_ka_test", // Kubernaut Agent service
+			"mock-llm-aianalysis", // Mock LLM service
+			"aianalysis_ka_test",  // Kubernaut Agent service
 		}, GinkgoWriter)
 	}
 

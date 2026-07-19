@@ -265,9 +265,7 @@ var _ = Describe("CP-5 UX: User Experience & Operational Tests", Label("e2e", "k
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Step 3: Checking metrics after session start")
-			Eventually(func() string {
-				return scrapeKAMetrics()
-			}, 10*time.Second, 1*time.Second).Should(Or(
+			Eventually(scrapeKAMetrics, 10*time.Second, 1*time.Second).Should(Or(
 				ContainSubstring("aiagent_mcp_interactive_sessions_active"),
 				ContainSubstring("aiagent_mcp_interactive_takeover_total"),
 			), "interactive metrics should appear after session start")

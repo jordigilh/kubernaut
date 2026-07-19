@@ -89,7 +89,7 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("Corrupted state", func() {
 		It("UT-PRC-H-003: no SignalProcessingRef returns Failed intent", func() {
-			rr := newRemediationRequest("prc-no-ref", "default", remediationv1.PhaseProcessing)
+			rr := newRemediationRequest("prc-no-ref", defaultFixture, remediationv1.PhaseProcessing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -108,11 +108,11 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("SP fetch error", func() {
 		It("UT-PRC-H-004: SP CRD not found returns 5s requeue", func() {
-			rr := newRemediationRequest("prc-sp-missing", "default", remediationv1.PhaseProcessing)
+			rr := newRemediationRequest("prc-sp-missing", defaultFixture, remediationv1.PhaseProcessing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 				Name:      "nonexistent-sp",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -131,14 +131,14 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("SP Completed (happy path)", func() {
 		It("UT-PRC-H-005: SP Completed creates AIAnalysis and returns Advance(Analyzing)", func() {
-			rr := newRemediationRequest("prc-happy", "default", remediationv1.PhaseProcessing)
+			rr := newRemediationRequest("prc-happy", defaultFixture, remediationv1.PhaseProcessing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 				Name:      "sp-completed",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			sp := &signalprocessingv1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{Name: "sp-completed", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "sp-completed", Namespace: defaultFixture},
 				Status: signalprocessingv1.SignalProcessingStatus{
 					Phase: signalprocessingv1.PhaseCompleted,
 				},
@@ -160,14 +160,14 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("SP Completed (AI create error)", func() {
 		It("UT-PRC-H-006: AI creation error returns 5s requeue", func() {
-			rr := newRemediationRequest("prc-ai-err", "default", remediationv1.PhaseProcessing)
+			rr := newRemediationRequest("prc-ai-err", defaultFixture, remediationv1.PhaseProcessing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 				Name:      "sp-completed-err",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			sp := &signalprocessingv1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{Name: "sp-completed-err", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "sp-completed-err", Namespace: defaultFixture},
 				Status: signalprocessingv1.SignalProcessingStatus{
 					Phase: signalprocessingv1.PhaseCompleted,
 				},
@@ -198,14 +198,14 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("SP Failed", func() {
 		It("UT-PRC-H-007: SP Failed returns Failed intent", func() {
-			rr := newRemediationRequest("prc-sp-failed", "default", remediationv1.PhaseProcessing)
+			rr := newRemediationRequest("prc-sp-failed", defaultFixture, remediationv1.PhaseProcessing)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 				Name:      "sp-failed",
-				Namespace: "default",
+				Namespace: defaultFixture,
 			}
 			sp := &signalprocessingv1.SignalProcessing{
-				ObjectMeta: metav1.ObjectMeta{Name: "sp-failed", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "sp-failed", Namespace: defaultFixture},
 				Status: signalprocessingv1.SignalProcessingStatus{
 					Phase: signalprocessingv1.PhaseFailed,
 				},
@@ -228,14 +228,14 @@ var _ = Describe("Issue #666: ProcessingHandler (BR-ORCH-025)", func() {
 	Describe("SP In Progress", func() {
 		DescribeTable("UT-PRC-H-008: non-terminal SP phases return 10s requeue",
 			func(spPhase string) {
-				rr := newRemediationRequest("prc-sp-phase", "default", remediationv1.PhaseProcessing)
+				rr := newRemediationRequest("prc-sp-phase", defaultFixture, remediationv1.PhaseProcessing)
 				rr.Status.StartTime = ptrMetaTime(time.Now())
 				rr.Status.SignalProcessingRef = &corev1.ObjectReference{
 					Name:      "sp-phase",
-					Namespace: "default",
+					Namespace: defaultFixture,
 				}
 				sp := &signalprocessingv1.SignalProcessing{
-					ObjectMeta: metav1.ObjectMeta{Name: "sp-phase", Namespace: "default"},
+					ObjectMeta: metav1.ObjectMeta{Name: "sp-phase", Namespace: defaultFixture},
 					Status: signalprocessingv1.SignalProcessingStatus{
 						Phase: signalprocessingv1.SignalProcessingPhase(spPhase),
 					},

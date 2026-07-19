@@ -8,6 +8,11 @@ import (
 	"sync"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	vector = "vector"
+)
+
 // ============================================================================
 // Prometheus Mock Server for Integration Tests (Tier 2)
 // ============================================================================
@@ -130,7 +135,7 @@ func NewMockPrometheus(config MockPrometheusConfig) *MockPrometheus {
 			resp = &PromQueryResponse{
 				Status: "success",
 			}
-			resp.Data.ResultType = "vector"
+			resp.Data.ResultType = vector
 			resp.Data.Result = []PromQueryResult{}
 		}
 
@@ -282,7 +287,7 @@ func NewPromVectorResponse(metric map[string]string, value float64, timestamp fl
 	resp := &PromQueryResponse{
 		Status: "success",
 	}
-	resp.Data.ResultType = "vector"
+	resp.Data.ResultType = vector
 	resp.Data.Result = []PromQueryResult{
 		{
 			Metric: metric,
@@ -297,7 +302,7 @@ func NewPromEmptyVectorResponse() *PromQueryResponse {
 	resp := &PromQueryResponse{
 		Status: "success",
 	}
-	resp.Data.ResultType = "vector"
+	resp.Data.ResultType = vector
 	resp.Data.Result = []PromQueryResult{}
 	return resp
 }

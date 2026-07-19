@@ -41,7 +41,7 @@ import (
 
 func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io.Writer) error {
 	ctx := context.Background()
-	namespace := "kubernaut-system" // Infrastructure always in kubernaut-system; tests use dynamic namespaces
+	namespace := kubernautSystem // Infrastructure always in kubernaut-system; tests use dynamic namespaces
 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 AIAnalysis E2E Infrastructure (HYBRID PARALLEL + DISK OPTIMIZATION)")
@@ -82,9 +82,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"datastorage", imageName, err}
 	}()
 
@@ -96,7 +96,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
 	}()
 
@@ -106,9 +106,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			ImageName:        "kubernaut/aianalysis",
 			DockerfilePath:   "docker/aianalysis.Dockerfile", // Dockerfile can have suffix (but this one doesn't)
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"aianalysis", imageName, err}
 	}()
 
@@ -121,7 +121,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"mock-llm", imageName, err}
 	}()
 
@@ -159,7 +159,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// DD-TEST-007: Create coverdata directory BEFORE Kind cluster creation
 	// The Kind config extraMount uses ./coverdata relative to project root
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
 		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
@@ -172,12 +172,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Creating Kind cluster...")
-	if err := createAIAnalysisKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createAIAnalysisKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "📁 Creating namespace...")
-	createNsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	createNsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"create", "namespace", namespace)
 	nsOutput := &strings.Builder{}
 	createNsCmd.Stdout = io.MultiWriter(writer, nsOutput)
@@ -288,7 +288,11 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	ready := false
 	for i := 0; i < 30; i++ { // 30 seconds max
 		time.Sleep(1 * time.Second)
-		resp, err := http.Get(fmt.Sprintf("%s/readyz", dataStorageHealthURL))
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/readyz", dataStorageHealthURL), http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build readyz request: %w", reqErr)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil && resp.StatusCode == 200 {
 			_ = resp.Body.Close() // Explicitly ignore - health check cleanup
 			ready = true
@@ -331,12 +335,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	}
 
 	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
-	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
+	if err := SeedActionTypesViaAPI(ctx, seedClient, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
 	// Inline workflow definitions (CANNOT use test/integration/aianalysis wrapper - import cycle)
-	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage() function
+	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage(ctx) function
 	// Note: test/integration/aianalysis imports test/infrastructure, creating circular dependency
 	// Acceptable trade-off: Small duplication avoids architectural issues
 	// Source of truth: test/integration/aianalysis/test_workflows.go:GetAIAnalysisTestWorkflows()
@@ -396,7 +400,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"v1/Pod"}, Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 	}
 
-	workflowUUIDs, err := SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
+	workflowUUIDs, err := SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
@@ -437,12 +441,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			deployResults <- deployResult{"Kubernaut Agent", rbacErr}
 			return
 		}
-		err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
+		err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		deployResults <- deployResult{"Kubernaut Agent", err}
 	}()
 
 	go func() {
-		err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, builtImages["aianalysis"], writer)
+		err := deployAIAnalysisControllerManifestOnly(ctx, kubeconfigPath, builtImages["aianalysis"], writer)
 		deployResults <- deployResult{"AIAnalysis", err}
 	}()
 
@@ -496,8 +500,8 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, testsFailed boo
 	return nil
 }
 
-func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
+func createAIAnalysisKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
 		KubeconfigPath:            kubeconfigPath,
@@ -508,12 +512,12 @@ func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.W
 		CleanupOrphanedContainers: true, // Original behavior: cleanup Podman containers on macOS
 		ProjectRootAsWorkingDir:   true, // DD-TEST-007: For ./coverdata resolution in Kind config
 	}
-	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
+	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return err
 	}
 
 	// Wait for cluster to be ready (original behavior preserved)
-	return waitForClusterReady(kubeconfigPath, writer)
+	return waitForClusterReady(ctx, kubeconfigPath, writer)
 }
 
 func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
@@ -523,7 +527,7 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 		return fmt.Errorf("AIAnalysis CRD not found")
 	}
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "-f", crdPath)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -534,7 +538,7 @@ func installAIAnalysisCRD(kubeconfigPath string, writer io.Writer) error {
 	// Wait for CRD to be established
 	_, _ = fmt.Fprintln(writer, "  Waiting for CRD to be established...")
 	for i := 0; i < 30; i++ {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "aianalyses.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			return nil
@@ -550,7 +554,7 @@ func installInvestigationSessionCRD(kubeconfigPath string, writer io.Writer) err
 		return fmt.Errorf("InvestigationSession CRD not found")
 	}
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "-f", crdPath)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -560,7 +564,7 @@ func installInvestigationSessionCRD(kubeconfigPath string, writer io.Writer) err
 
 	_, _ = fmt.Fprintln(writer, "  Waiting for InvestigationSession CRD to be established...")
 	for i := 0; i < 30; i++ {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "crd", "investigationsessions.kubernaut.ai")
 		if err := cmd.Run(); err == nil {
 			return nil
@@ -578,7 +582,7 @@ func installInvestigationSessionCRD(kubeconfigPath string, writer io.Writer) err
 // - Deterministic ordering, no timing issues
 // Removed: createMockLLMConfigMap (unused) - Mock LLM now uses direct deployment with seeded workflows
 
-func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
+func deployAIAnalysisControllerManifestOnly(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Use dynamic image name parameter (built by BuildImageForKind)
 	_, _ = fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
@@ -789,10 +793,10 @@ spec:
     targetPort: 8081
     nodePort: 30284
 `, imageName, GetImagePullPolicy(),
-		coverageEnvYAML("aianalysis"),
+		coverageEnvYAML(),
 		coverageVolumeMountYAML(),
 		coverageVolumeYAML())
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -801,7 +805,7 @@ spec:
 	}
 
 	// Deploy Rego policy ConfigMap (inline fixture, self-contained)
-	return createInlineRegoPolicyConfigMap(kubeconfigPath, writer)
+	return createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer)
 }
 
 func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -885,10 +889,10 @@ func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath stri
 
 	return nil
 }
-func waitForClusterReady(kubeconfigPath string, writer io.Writer) error {
+func waitForClusterReady(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  Waiting for cluster to be ready...")
 	for i := 0; i < 60; i++ {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 			"get", "nodes", "-o", "jsonpath={.items[*].status.conditions[?(@.type=='Ready')].status}")
 		output, err := cmd.Output()
 		if err == nil && containsReady(string(output)) {
@@ -934,7 +938,7 @@ func containsReady(s string) bool {
 	return len(s) > 0 && s != "" && (s == "True" || s == "True True")
 }
 
-func createInlineRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
+func createInlineRegoPolicyConfigMap(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// Simplified E2E test policy - requires approval for all production
 	// This is intentionally simpler than production policy for E2E test predictability
 	manifest := `
@@ -974,7 +978,7 @@ data:
     reason := f.reason if { some f in risk_factors; f.score == max_risk_score }
     default reason := "Auto-approved"
 `
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -985,7 +989,7 @@ data:
 // with DataStorage access using DD-AUTH-014 (SubjectAccessReview authorization)
 func createAIAnalysisE2EServiceAccount(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	// Create a fresh context (workaround for potential context issues)
-	freshCtx := context.Background()
+	freshCtx := ctx
 
 	// Create ServiceAccount
 	saName := "aianalysis-e2e-sa"
@@ -1010,7 +1014,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 `, namespace, saName, namespace)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(roleBindingYAML)
 	cmd.Stdout = writer
 	cmd.Stderr = writer

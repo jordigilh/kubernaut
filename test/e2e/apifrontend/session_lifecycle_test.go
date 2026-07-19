@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	investigationsessionv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
-
 )
 
 var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4", "g19"), func() {
@@ -36,7 +35,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(err).NotTo(HaveOccurred())
 
 		sharedRRName = fmt.Sprintf("e2e-rr-g19-%s", uuid.New().String()[:8])
-		Expect(createRR(rrNamespace, sharedRRName, "Deployment", "test-deploy-g19-shared")).To(Succeed())
+		Expect(createRR(rrNamespace, sharedRRName, "test-deploy-g19-shared")).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, sharedRRName) })
 	})
 
@@ -101,7 +100,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		// Create a prerequisite RR directly — this test validates session
 		// lifecycle (disconnect/reconnect), not RR creation by the LLM.
 		rrName := fmt.Sprintf("rr-join02-%d", time.Now().UnixNano())
-		Expect(createRR(rrNamespace, rrName, "Deployment", "test-deploy")).To(Succeed())
+		Expect(createRR(rrNamespace, rrName, "test-deploy")).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		// #1332: IS CRD creation handled by kubernaut_investigate.
@@ -209,7 +208,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		// guard (User B rejected when User A holds the session), not RR creation.
 		tokenA := authTokenA
 		rrName := fmt.Sprintf("rr-join06-%d", time.Now().UnixNano())
-		Expect(createRR(rrNamespace, rrName, "Deployment", "web-join06")).To(Succeed())
+		Expect(createRR(rrNamespace, rrName, "web-join06")).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		// #1332: User A invokes kubernaut_investigate via MCP to create the IS CRD.
@@ -262,7 +261,7 @@ var _ = Describe("Session Join/Takeover/Reconnect (G19)", Label("e2e", "phase4",
 		Expect(lower).To(Or(
 			ContainSubstring("session_active"),
 			ContainSubstring("already exists"),
-			ContainSubstring("failed"),
+			ContainSubstring(failed),
 		), "User B's takeover must be rejected — single-driver enforcement (BR-INTERACTIVE-004)")
 
 		// Verify IS CRD still shows User A

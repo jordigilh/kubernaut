@@ -270,7 +270,7 @@ func (h *InvestigatingHandler) retryTransientError(analysis *aianalysisv1.AIAnal
 	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
 
 	// Record metric for transient errors
-	h.metrics.RecordFailure("TransientError", "Retrying")
+	h.metrics.RecordFailure(aianalysisv1.SubReasonTransientError, "Retrying")
 
 	// Requeue with exponential backoff (error classifier handles jitter internally)
 	return ctrl.Result{RequeueAfter: backoffDuration}, nil
@@ -296,10 +296,10 @@ func (h *InvestigatingHandler) failMaxRetriesExceeded(ctx context.Context, analy
 	analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 		analysis.Status.ConsecutiveFailures, err)
 	analysis.Status.Reason = aianalysisv1.ReasonAPIError
-	analysis.Status.SubReason = "MaxRetriesExceeded"
+	analysis.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
 
 	// Record metric for max retries exceeded
-	h.metrics.RecordFailure("APIError", "MaxRetriesExceeded")
+	h.metrics.RecordFailure(string(aianalysisv1.ReasonAPIError), aianalysisv1.SubReasonMaxRetriesExceeded)
 
 	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
 	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
@@ -369,13 +369,13 @@ func mapErrorTypeToSubReason(errorType ErrorType) string {
 	switch errorType {
 	case ErrorTypeNetwork, ErrorTypeTimeout, ErrorTypeRateLimit, ErrorTypeTransient:
 		// All transient/retryable errors map to "TransientError"
-		return "TransientError"
+		return aianalysisv1.SubReasonTransientError
 	case ErrorTypePermanent, ErrorTypeAuthentication, ErrorTypeAuthorization, ErrorTypeConfiguration:
 		// All non-retryable errors map to "PermanentError"
 		return "PermanentError"
 	default:
 		// Fallback for unknown error types
-		return "TransientError"
+		return aianalysisv1.SubReasonTransientError
 	}
 }
 
@@ -662,7 +662,7 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 			analysis.Status.ObservedGeneration = analysis.Generation
 			analysis.Status.CompletedAt = &now
 			analysis.Status.Reason = aianalysisv1.ReasonTransientError
-			analysis.Status.SubReason = "TransientError"
+			analysis.Status.SubReason = aianalysisv1.SubReasonTransientError
 			analysis.Status.Message = fmt.Sprintf(
 				"Interactive investigation timed out after %s (limit: %s)",
 				elapsed.Truncate(time.Second), h.maxInvestigationDuration,
@@ -731,7 +731,7 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 			analysis.Status.ObservedGeneration = analysis.Generation
 			analysis.Status.CompletedAt = &now
 			analysis.Status.Reason = aianalysisv1.ReasonTransientError
-			analysis.Status.SubReason = "TransientError"
+			analysis.Status.SubReason = aianalysisv1.SubReasonTransientError
 			analysis.Status.Message = fmt.Sprintf(
 				"Investigation timed out after %s (limit: %s)",
 				elapsed.Truncate(time.Second), h.maxInvestigationDuration,

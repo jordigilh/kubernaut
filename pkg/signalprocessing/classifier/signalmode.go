@@ -23,6 +23,8 @@ import (
 
 	"github.com/go-logr/logr"
 	"gopkg.in/yaml.v3"
+
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 // SignalModeResult contains the classification outcome for a signal name.
@@ -103,9 +105,9 @@ func (c *SignalModeClassifier) LoadConfig(configPath string) error {
 
 // Classify determines the signal mode and normalized name for a given signal name.
 //
-// - If the signal name is in the proactive mappings, it returns mode "proactive"
-//   with the normalized (base) name and preserves the original for audit.
-// - Otherwise, it returns mode "reactive" with the name unchanged.
+//   - If the signal name is in the proactive mappings, it returns mode "proactive"
+//     with the normalized (base) name and preserves the original for audit.
+//   - Otherwise, it returns mode "reactive" with the name unchanged.
 //
 // This is a pure function (no I/O) after config is loaded. Safe for concurrent use.
 func (c *SignalModeClassifier) Classify(signalName string) SignalModeResult {
@@ -115,14 +117,14 @@ func (c *SignalModeClassifier) Classify(signalName string) SignalModeResult {
 
 	if found {
 		return SignalModeResult{
-			SignalMode:       "proactive",
+			SignalMode:       signalprocessingv1alpha1.SignalModeProactive,
 			SignalName:       baseName,
 			SourceSignalName: signalName,
 		}
 	}
 
 	return SignalModeResult{
-		SignalMode:       "reactive",
+		SignalMode:       signalprocessingv1alpha1.SignalModeReactive,
 		SignalName:       signalName,
 		SourceSignalName: "",
 	}

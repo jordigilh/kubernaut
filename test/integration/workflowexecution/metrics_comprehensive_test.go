@@ -73,7 +73,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(pr).ToNot(BeNil())
 
@@ -90,7 +90,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			By("Waiting for WorkflowExecution to transition to Completed")
 			Eventually(func() string {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Verifying ExecutionTotal{outcome='Completed'} incremented")
@@ -124,7 +124,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(pr).ToNot(BeNil())
 
@@ -142,7 +142,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			By("Waiting for WorkflowExecution to transition to Failed")
 			Eventually(func() string {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			By("Verifying ExecutionTotal{outcome='Failed'} incremented")
@@ -194,7 +194,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			By("Verifying successful completion and duration recording")
 			Eventually(func() string {
 				updated, _ := getWFE(wfeSuccess.Name, wfeSuccess.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			GinkgoWriter.Println("✅ BR-WE-008: Duration histogram recorded for successful completion")
@@ -205,7 +205,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			Expect(k8sClient.Create(ctx, wfeFailed)).To(Succeed())
 
 			// Wait for PipelineRun creation
-			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, wfeFailed.Namespace, 10*time.Second)
+			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Simulating PipelineRun failure")
@@ -222,7 +222,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			By("Verifying failed completion and duration recording")
 			Eventually(func() string {
 				updated, _ := getWFE(wfeFailed.Name, wfeFailed.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			GinkgoWriter.Println("✅ BR-WE-008: Duration histogram recorded for failed execution")
@@ -250,7 +250,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Completing workflow successfully")
@@ -265,7 +265,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			Eventually(func() string {
 				updated, _ := getWFE(wfe.Name, wfe.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Verifying only valid label values are used")
@@ -295,7 +295,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			wfeSuccess := createUniqueWFE("slo-success", targetSuccess)
 			Expect(k8sClient.Create(ctx, wfeSuccess)).To(Succeed())
 
-			prSuccess, err := waitForPipelineRunCreation(wfeSuccess.Name, wfeSuccess.Namespace, 10*time.Second)
+			prSuccess, err := waitForPipelineRunCreation(wfeSuccess.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			prSuccess.Status.Conditions = duckv1.Conditions{
@@ -305,7 +305,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			Eventually(func() string {
 				updated, _ := getWFE(wfeSuccess.Name, wfeSuccess.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Creating failed workflow")
@@ -313,7 +313,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 			wfeFailed := createUniqueWFE("slo-failed", targetFailed)
 			Expect(k8sClient.Create(ctx, wfeFailed)).To(Succeed())
 
-			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, wfeFailed.Namespace, 10*time.Second)
+			prFailed, err := waitForPipelineRunCreation(wfeFailed.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			prFailed.Status.Conditions = duckv1.Conditions{
@@ -323,7 +323,7 @@ var _ = Describe("WorkflowExecution Metrics - Comprehensive Coverage", func() {
 
 			Eventually(func() string {
 				updated, _ := getWFE(wfeFailed.Name, wfeFailed.Namespace)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			By("Verifying counters allow success rate calculation")

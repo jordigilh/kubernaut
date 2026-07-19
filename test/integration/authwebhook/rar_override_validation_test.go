@@ -41,7 +41,7 @@ var _ = Describe("BR-ORCH-031: RAR Override Webhook Validation (#594)", Label("i
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "default"
+		namespace = defaultFixture
 	})
 
 	Context("IT-AW-594-005: Override referencing non-existent RW → webhook denies", func() {

@@ -210,7 +210,13 @@ func (s *Server) acquireDistributedLockWithRetry(ctx context.Context, signal *ty
 //
 // Returns:
 //   - *ProcessingResponse: Duplicate response with existing RR reference
-//   - error: Non-nil if status update or audit emission fails critically
+//   - error: always nil today (status-update and audit-emission failures are
+//     both handled as non-critical/logged internally); kept because this is
+//     a direct tail-call return at both call sites, alongside a sibling
+//     branch (createRemediationRequestCRD) that can genuinely fail
+//     (Issue #1546 Tier 4)
+//
+//nolint:unparam // see doc comment above
 func (s *Server) handleDuplicateSignal(ctx context.Context, signal *types.NormalizedSignal, existingRR *remediationv1alpha1.RemediationRequest) (*ProcessingResponse, error) {
 	logger := middleware.GetLogger(ctx)
 

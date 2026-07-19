@@ -61,12 +61,12 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-810-001"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(1 * time.Hour)
 		fakeClient := fake.NewClientBuilder().
@@ -96,14 +96,14 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-block-consecutivefailures-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "Escalation NR should exist after ConsecutiveFailures block")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))
@@ -121,12 +121,12 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-810-002"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(5 * time.Second)
 		fakeClient := fake.NewClientBuilder().
@@ -156,14 +156,14 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-block-unmanagedresource-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "Escalation NR should exist after UnmanagedResource block")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeEscalation))
@@ -180,12 +180,12 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-810-003"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -212,14 +212,14 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-block-duplicateinprogress-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "StatusUpdate NR should exist after DuplicateInProgress block")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeStatusUpdate))
@@ -232,12 +232,12 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-810-004"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -264,14 +264,14 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-block-resourcebusy-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "StatusUpdate NR should exist after ResourceBusy block")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeStatusUpdate))
@@ -284,12 +284,12 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-810-005"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(5 * time.Minute)
 		fakeClient := fake.NewClientBuilder().
@@ -319,14 +319,14 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-block-recentlyremediated-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "StatusUpdate NR should exist after RecentlyRemediated block")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeStatusUpdate))
@@ -338,12 +338,12 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-810-006"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(2 * time.Minute)
 		fakeClient := fake.NewClientBuilder().
@@ -373,14 +373,14 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-block-exponentialbackoff-" + rrName,
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "StatusUpdate NR should exist after ExponentialBackoff block")
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeStatusUpdate))
@@ -396,12 +396,12 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 		recorder := record.NewFakeRecorder(20)
 
 		rrName := "test-rr-810-007"
-		rr := newRemediationRequestWithChildRefs(rrName, "default",
+		rr := newRemediationRequestWithChildRefs(rrName, defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-"+rrName, "ai-"+rrName, "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-"+rrName, "default", rrName, 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-"+rrName, "default", rrName)
+		ai := newAIAnalysisCompleted("ai-"+rrName, defaultFixture, rrName, 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-"+rrName, rrName)
 
 		blockedUntil := time.Now().Add(1 * time.Hour)
 		fakeClient := fake.NewClientBuilder().
@@ -432,14 +432,14 @@ var _ = Describe("BR-ORCH-036 GAP-6: Block reason notifications (#810)", func() 
 
 		// First reconcile
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 		drainEvents(recorder)
 
 		// Second reconcile
 		_, err = reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: rrName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: rrName, Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 

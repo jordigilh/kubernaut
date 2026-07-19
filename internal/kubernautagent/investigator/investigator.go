@@ -358,10 +358,9 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
 	signalNS = inv.normalizeNamespace(signalKind, signalNS)
 	enrichData := inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
-	promptEnrichment := toPromptEnrichment(enrichData)
 	tokens := &TokenAccumulator{}
 
-	rcaResult, err := inv.runRCA(ctx, signal, promptEnrichment, LLMInvocationContext{
+	rcaResult, err := inv.runRCA(ctx, signal, LLMInvocationContext{
 		Tokens:        tokens,
 		CorrelationID: correlationID,
 		Client:        rcaClient,
@@ -578,7 +577,7 @@ func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnriched
 	if reEnriched != nil && reEnriched.HardFail {
 		inv.logger.Error(reEnriched.OwnerChainError, "enrichment owner chain hard-failed, triggering rca_incomplete")
 		p.RCAResult.HumanReviewNeeded = true
-		p.RCAResult.HumanReviewReason = "rca_incomplete"
+		p.RCAResult.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
 		return enrichData, true
 	}
 

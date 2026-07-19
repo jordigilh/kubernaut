@@ -58,12 +58,12 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		scheme := setupScheme()
 		recorder := record.NewFakeRecorder(20)
 
-		rr := newRemediationRequestWithChildRefs("test-rr-803-003", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-803-003", defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-test-rr-803-003", "ai-test-rr-803-003", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-803-003", "default", "test-rr-803-003", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-803-003", "default", "test-rr-803-003")
+		ai := newAIAnalysisCompleted("ai-test-rr-803-003", defaultFixture, "test-rr-803-003", 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-803-003", "test-rr-803-003")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -91,21 +91,21 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-803-003", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-803-003", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
 		nr := &notificationv1.NotificationRequest{}
 		err = fakeClient.Get(ctx, types.NamespacedName{
 			Name:      "nr-manual-review-test-rr-803-003",
-			Namespace: "default",
+			Namespace: defaultFixture,
 		}, nr)
 		Expect(err).ToNot(HaveOccurred(), "ManualReview NR should exist after IneffectiveChain block")
 		Expect(nr.Spec.ReviewSource).To(Equal(notificationv1.ReviewSourceRoutingEngine))
 		Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview))
 
 		updatedRR := &remediationv1.RemediationRequest{}
-		err = fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-803-003", Namespace: "default"}, updatedRR)
+		err = fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr-803-003", Namespace: defaultFixture}, updatedRR)
 		Expect(err).ToNot(HaveOccurred())
 
 		foundRef := false
@@ -126,12 +126,12 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		scheme := setupScheme()
 		recorder := record.NewFakeRecorder(20)
 
-		rr := newRemediationRequestWithChildRefs("test-rr-803-004", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-803-004", defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-test-rr-803-004", "ai-test-rr-803-004", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-803-004", "default", "test-rr-803-004", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-803-004", "default", "test-rr-803-004")
+		ai := newAIAnalysisCompleted("ai-test-rr-803-004", defaultFixture, "test-rr-803-004", 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-803-004", "test-rr-803-004")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -159,7 +159,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-803-004", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-803-004", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -176,12 +176,12 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		scheme := setupScheme()
 		recorder := record.NewFakeRecorder(20)
 
-		rr := newRemediationRequestWithChildRefs("test-rr-803-005", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-803-005", defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-test-rr-803-005", "ai-test-rr-803-005", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-803-005", "default", "test-rr-803-005", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-803-005", "default", "test-rr-803-005")
+		ai := newAIAnalysisCompleted("ai-test-rr-803-005", defaultFixture, "test-rr-803-005", 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-803-005", "test-rr-803-005")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -209,7 +209,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-803-005", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-803-005", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -230,12 +230,12 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 		scheme := setupScheme()
 		recorder := record.NewFakeRecorder(20)
 
-		rr := newRemediationRequestWithChildRefs("test-rr-803-006", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-803-006", defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-test-rr-803-006", "ai-test-rr-803-006", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-803-006", "default", "test-rr-803-006", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-803-006", "default", "test-rr-803-006")
+		ai := newAIAnalysisCompleted("ai-test-rr-803-006", defaultFixture, "test-rr-803-006", 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-803-006", "test-rr-803-006")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -264,7 +264,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 
 		// First reconcile
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-803-006", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-803-006", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -273,7 +273,7 @@ var _ = Describe("Issue #803: handleBlocked NotificationRequest Creation", Label
 
 		// Second reconcile (re-reconcile on requeue)
 		_, err = reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-803-006", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-803-006", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 

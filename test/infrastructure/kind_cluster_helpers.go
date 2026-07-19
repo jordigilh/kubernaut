@@ -17,6 +17,7 @@ License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -64,8 +65,8 @@ func checkKindVersionOutput(versionStr string) error {
 
 // validateKindVersion shells out to `kind version` and validates the result
 // against the minimum required version, logging progress to writer.
-func validateKindVersion(writer io.Writer) error {
-	versionCmd := exec.Command("kind", "version")
+func validateKindVersion(ctx context.Context, writer io.Writer) error {
+	versionCmd := exec.CommandContext(ctx, "kind", "version")
 	versionOutput, err := versionCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to get kind version: %w", err)
@@ -111,14 +112,14 @@ type ExtraMount struct {
 //	    {HostPath: "/Users/me/.kubernaut/e2e-notifications", ContainerPath: "/tmp/e2e-notifications", ReadOnly: false},
 //	    {HostPath: "./coverdata", ContainerPath: "/coverdata", ReadOnly: false},
 //	}
-//	err := infrastructure.CreateKindClusterWithExtraMounts("notification-e2e", kubeconfig, "test/infrastructure/kind-notification-config.yaml", mounts, writer)
+//	err := infrastructure.CreateKindClusterWithExtraMounts(ctx, "notification-e2e", kubeconfig, "test/infrastructure/kind-notification-config.yaml", mounts, writer)
 //
 // Benefits over service-specific implementations:
 //   - ✅ Single source of truth for Kind cluster creation with mounts
 //   - ✅ Consistent YAML manipulation logic
 //   - ✅ Reusable across Notification, Gateway, WorkflowExecution, etc.
 //   - ✅ Easier to maintain and test
-func CreateKindClusterWithExtraMounts(
+func CreateKindClusterWithExtraMounts(ctx context.Context,
 	clusterName string,
 	kubeconfigPath string,
 	baseConfigPath string,
@@ -126,7 +127,7 @@ func CreateKindClusterWithExtraMounts(
 	writer io.Writer,
 ) error {
 	// 0. Validate Kind version (minimum version required for E2E tests)
-	if err := validateKindVersion(writer); err != nil {
+	if err := validateKindVersion(ctx, writer); err != nil {
 		return err
 	}
 
@@ -134,11 +135,11 @@ func CreateKindClusterWithExtraMounts(
 	// When --flake-attempts or CI retry re-runs the suite, the cluster from
 	// the failed attempt is still alive. Reuse it so cascade failures remain
 	// visible — cleaning up would mask correlations between tests.
-	checkCmd := exec.Command("kind", "get", "clusters")
+	checkCmd := exec.CommandContext(ctx, "kind", "get", "clusters")
 	checkOutput, _ := checkCmd.CombinedOutput()
 	if strings.Contains(string(checkOutput), clusterName) {
 		_, _ = fmt.Fprintf(writer, "  ♻️  Cluster %s already exists, reusing (retry-safe)\n", clusterName)
-		return exportKubeconfigIfNeeded(clusterName, kubeconfigPath, writer)
+		return exportKubeconfigIfNeeded(ctx, clusterName, kubeconfigPath, writer)
 	}
 
 	// 1. Find workspace root
@@ -195,7 +196,7 @@ func CreateKindClusterWithExtraMounts(
 	}
 
 	// 7. Create Kind cluster
-	cmd := exec.Command("kind", "create", "cluster",
+	cmd := exec.CommandContext(ctx, "kind", "create", "cluster",
 		"--name", clusterName,
 		"--config", tmpConfig.Name(),
 		"--kubeconfig", kubeconfigPath)
@@ -335,28 +336,28 @@ type KindClusterOptions struct {
 //	    UsePodman:      true,
 //	    ProjectRootAsWorkingDir: true,
 //	}
-//	err := infrastructure.CreateKindClusterWithConfig(opts, writer)
-func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) error {
+//	err := infrastructure.CreateKindClusterWithConfig(ctx, opts, writer)
+func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔧 Creating Kind cluster: %s\n", opts.ClusterName)
 
 	// 0. Validate Kind version (minimum version required for E2E tests)
-	if err := validateKindVersion(writer); err != nil {
+	if err := validateKindVersion(ctx, writer); err != nil {
 		return err
 	}
 
 	// 1. Check if cluster already exists
-	checkCmd := exec.Command("kind", "get", "clusters")
+	checkCmd := exec.CommandContext(ctx, "kind", "get", "clusters")
 	checkOutput, _ := checkCmd.CombinedOutput()
 	clusterExists := strings.Contains(string(checkOutput), opts.ClusterName)
 
 	if clusterExists {
 		if opts.ReuseExisting {
 			_, _ = fmt.Fprintf(writer, "  ℹ️  Cluster %s already exists, reusing...\n", opts.ClusterName)
-			return exportKubeconfigIfNeeded(opts.ClusterName, opts.KubeconfigPath, writer)
+			return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, writer)
 		}
 		if opts.DeleteExisting {
 			_, _ = fmt.Fprintf(writer, "  ⚠️  Cluster already exists, deleting...\n")
-			delCmd := exec.Command("kind", "delete", "cluster", "--name", opts.ClusterName)
+			delCmd := exec.CommandContext(ctx, "kind", "delete", "cluster", "--name", opts.ClusterName)
 			if output, err := delCmd.CombinedOutput(); err != nil {
 				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to delete existing cluster: %s\n", output)
 			}
@@ -367,7 +368,7 @@ func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) erro
 	if opts.CleanupOrphanedContainers {
 		_, _ = fmt.Fprintln(writer, "  🧹 Cleaning up any leftover Podman containers...")
 		// Only control-plane node (single-node clusters for resource efficiency)
-		cleanupCmd := exec.Command("podman", "rm", "-f", opts.ClusterName+"-control-plane")
+		cleanupCmd := exec.CommandContext(ctx, "podman", "rm", "-f", opts.ClusterName+"-control-plane")
 		_ = cleanupCmd.Run() // Ignore errors - container may not exist
 	}
 
@@ -399,7 +400,7 @@ func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) erro
 		waitTimeout = "60s"
 	}
 
-	cmd := exec.Command("kind", "create", "cluster",
+	cmd := exec.CommandContext(ctx, "kind", "create", "cluster",
 		"--name", opts.ClusterName,
 		"--config", absoluteConfigPath,
 		"--kubeconfig", opts.KubeconfigPath,
@@ -429,18 +430,18 @@ func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) erro
 	// Defense-in-depth: even if the host directory is 0777, DirectoryOrCreate may
 	// create a root-owned 0755 directory inside the Kind node. This ensures the
 	// container user (UID 1001) can always write coverage data.
-	if os.Getenv("E2E_COVERAGE") == "true" {
-		ensureCoverdataWritableInKindNode(opts.ClusterName, writer)
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
+		ensureCoverdataWritableInKindNode(ctx, opts.ClusterName, writer)
 	}
 
 	// 11. Export kubeconfig explicitly (kind create --kubeconfig doesn't always work reliably)
-	return exportKubeconfigIfNeeded(opts.ClusterName, opts.KubeconfigPath, writer)
+	return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, writer)
 }
 
 // exportKubeconfigIfNeeded exports the kubeconfig for a Kind cluster
 // This is a workaround for unreliable --kubeconfig flag behavior
-func exportKubeconfigIfNeeded(clusterName, kubeconfigPath string, writer io.Writer) error {
-	kubeconfigCmd := exec.Command("kind", "get", "kubeconfig", "--name", clusterName)
+func exportKubeconfigIfNeeded(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	kubeconfigCmd := exec.CommandContext(ctx, "kind", "get", "kubeconfig", "--name", clusterName)
 	kubeconfigOutput, err := kubeconfigCmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get kubeconfig: %w", err)
@@ -460,12 +461,12 @@ func exportKubeconfigIfNeeded(clusterName, kubeconfigPath string, writer io.Writ
 // coverage data. This is a defense-in-depth measure: if the hostPath volume's
 // DirectoryOrCreate creates a root-owned directory, the container user would
 // be unable to write without this fix.
-func ensureCoverdataWritableInKindNode(clusterName string, writer io.Writer) {
+func ensureCoverdataWritableInKindNode(ctx context.Context, clusterName string, writer io.Writer) {
 	nodeName := clusterName + "-control-plane"
 
 	// Try both runtimes (podman for local, docker for CI)
 	for _, runtime := range []string{"podman", "docker"} {
-		cmd := exec.Command(runtime, "exec", nodeName,
+		cmd := exec.CommandContext(ctx, runtime, "exec", nodeName,
 			"sh", "-c", "mkdir -p /coverdata && chmod 777 /coverdata")
 		output, err := cmd.CombinedOutput()
 		if err == nil {

@@ -95,7 +95,7 @@ func (m *mockATWorkflowCounter) GetActiveWorkflowCount(ctx context.Context, acti
 // ActionType Test Helpers
 // ========================================
 
-func buildActionType(name, specName, namespace string) *atv1alpha1.ActionType {
+func buildActionType(name, specName string) *atv1alpha1.ActionType {
 	return &atv1alpha1.ActionType{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "kubernaut.ai/v1alpha1",
@@ -103,7 +103,7 @@ func buildActionType(name, specName, namespace string) *atv1alpha1.ActionType {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: "kubernaut-system",
 			UID:       "at-uid-001",
 		},
 		Spec: atv1alpha1.ActionTypeSpec{
@@ -212,7 +212,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-001: CREATE registers new ActionType in DS", func() {
 		It("should return Allowed and call DS CreateActionType with spec fields", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			var capturedName, capturedBy string
 			var capturedDesc ogenclient.ActionTypeDescription
 			mockDS.createFn = func(_ context.Context, name string, desc ogenclient.ActionTypeDescription, registeredBy string) (*authwebhook.ActionTypeRegistrationResult, error) {
@@ -245,7 +245,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-002: Idempotent CREATE for already-active action type", func() {
 		It("should return Allowed when DS indicates action type already exists", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			mockDS.createFn = func(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
 				return &authwebhook.ActionTypeRegistrationResult{
 					ActionType: name, Status: "exists", WasReenabled: false,
@@ -265,7 +265,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-003: CREATE re-enables disabled action type", func() {
 		It("should return Allowed and populate status with previouslyExisted=true", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -302,8 +302,8 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-004: UPDATE description change generates audit", func() {
 		It("should return Allowed and call DS UpdateActionType when description changes", func() {
-			oldAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
-			newAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			oldAT := buildActionType("restart-pod", "RestartPod")
+			newAT := buildActionType("restart-pod", "RestartPod")
 			newAT.Spec.Description.What = "Gracefully restart one or more pods with rolling strategy."
 
 			var capturedName string
@@ -335,8 +335,8 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-005: UPDATE spec.name change is denied by webhook", func() {
 		It("should return Denied when spec.name is changed", func() {
-			oldAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
-			newAT := buildActionType("restart-pod", "GracefulRestart", "kubernaut-system")
+			oldAT := buildActionType("restart-pod", "RestartPod")
+			newAT := buildActionType("restart-pod", "GracefulRestart")
 
 			updateCalled := false
 			mockDS.updateFn = func(_ context.Context, _ string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeUpdateResult, error) {
@@ -369,7 +369,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-006: DELETE with no dependent workflows soft-disables", func() {
 		It("should return Allowed when DS confirms disable (no dependencies)", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			var capturedName, capturedBy string
 			mockDS.disableFn = func(_ context.Context, name string, disabledBy string) (*authwebhook.ActionTypeDisableResult, error) {
 				capturedName = name
@@ -397,7 +397,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-007: DELETE denied with N dependent workflows", func() {
 		It("should return Denied with count and workflow names when dependencies exist", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			mockDS.disableFn = func(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
 				return &authwebhook.ActionTypeDisableResult{
 					Disabled:               false,
@@ -430,7 +430,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-008: CREATE audit event payload contains all required fields", func() {
 		It("should emit actiontype.admitted.create with correct payload structure", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 
 			resp := handler.Handle(ctx, buildATCreateAdmissionRequest(at))
 			Expect(resp.Allowed).To(BeTrue())
@@ -460,8 +460,8 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-009: UPDATE audit event contains correct payload", func() {
 		It("should emit actiontype.admitted.update with action=update", func() {
-			oldAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
-			newAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			oldAT := buildActionType("restart-pod", "RestartPod")
+			newAT := buildActionType("restart-pod", "RestartPod")
 			newAT.Spec.Description.What = "Updated description."
 
 			resp := handler.Handle(ctx, buildATUpdateAdmissionRequest(oldAT, newAT))
@@ -485,7 +485,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-010: Disable denied audit event contains denial details", func() {
 		It("should emit actiontype.denied.delete with denial reason and operation", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			mockDS.disableFn = func(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
 				return &authwebhook.ActionTypeDisableResult{
 					Disabled:               false,
@@ -521,7 +521,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				return nil, fmt.Errorf("connection refused: data storage service unavailable")
 			}
 
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			resp := handler.Handle(ctx, buildATCreateAdmissionRequest(at))
 
 			Expect(resp.Allowed).To(BeFalse(),
@@ -541,7 +541,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UPDATE with no description change is allowed without DS call", func() {
 		It("should allow UPDATE without calling DS when descriptions are identical", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 
 			updateCalled := false
 			mockDS.updateFn = func(_ context.Context, _ string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeUpdateResult, error) {
@@ -565,7 +565,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("DELETE denied when DS disable returns error", func() {
 		It("should return Denied when DS returns an error (fail-closed)", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			mockDS.disableFn = func(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
 				return nil, fmt.Errorf("connection refused")
 			}
@@ -588,7 +588,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("CREATE updates CRD status asynchronously", func() {
 		It("should populate .status with DS registration result via k8sClient.Status().Update()", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -631,7 +631,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-512-001: DELETE with orphaned DS entries triggers orphan recovery", func() {
 		It("should return Allowed when DS denies but no live RWs exist in K8s", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -669,8 +669,8 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-512-002: DELETE denied when live RWs exist in K8s", func() {
 		It("should return Denied when DS-reported dependents are live in K8s", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
-			rw := buildRemediationWorkflow("live-wf", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
+			rw := buildRemediationWorkflow("live-wf")
 			rw.Spec.ActionType = "RestartPod"
 
 			scheme := newATScheme()
@@ -708,7 +708,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-512-003: DELETE denied when force-disable fails", func() {
 		It("should return Denied when orphans detected but force-disable errors", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -740,8 +740,8 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-512-004: DELETE denied with mixed live and orphaned workflows", func() {
 		It("should return Denied when some dependents are live and some orphaned", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
-			rw := buildRemediationWorkflow("live-wf", "kubernaut-system")
+			at := buildActionType("restart-pod", "RestartPod")
+			rw := buildRemediationWorkflow("live-wf")
 			rw.Spec.ActionType = "RestartPod"
 
 			scheme := newATScheme()
@@ -784,7 +784,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-011: RW CREATE triggers async activeWorkflowCount update", func() {
 		It("should update ActionType CRD status.activeWorkflowCount after RW CREATE", func() {
-			at := buildActionType("scale-memory-at", "ScaleMemory", "kubernaut-system")
+			at := buildActionType("scale-memory-at", "ScaleMemory")
 			scheme := newATScheme()
 
 			fakeK8s := fake.NewClientBuilder().
@@ -810,7 +810,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				authwebhook.WithActionTypeWorkflowCounter(mockCounter),
 			)
 
-			rw := buildRemediationWorkflow("scale-memory-wf", "kubernaut-system")
+			rw := buildRemediationWorkflow("scale-memory-wf")
 			rw.Spec.ActionType = "ScaleMemory"
 
 			resp := rwHandler.Handle(ctx, buildCreateAdmissionRequest(rw))

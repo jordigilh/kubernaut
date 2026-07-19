@@ -74,9 +74,7 @@ var _ = Describe("Controller Shutdown", func() {
 			cancel()
 
 			// Worker should exit within reasonable time
-			Eventually(func() bool {
-				return workerExited.Load()
-			}, 100*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
+			Eventually(workerExited.Load, 100*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
 		})
 
 		// Test 2: Multiple workers exit on shared context cancellation
@@ -155,17 +153,13 @@ var _ = Describe("Controller Shutdown", func() {
 			}()
 
 			// Wait for operation to start
-			Eventually(func() bool {
-				return operationStarted.Load()
-			}, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
+			Eventually(operationStarted.Load, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
 
 			// Cancel context while operation is in progress
 			cancel()
 
 			// Operation should complete gracefully
-			Eventually(func() bool {
-				return operationCompleted.Load()
-			}, 200*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
+			Eventually(operationCompleted.Load, 200*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
 		})
 	})
 
@@ -235,9 +229,7 @@ var _ = Describe("Controller Shutdown", func() {
 			cancel()
 
 			// Verify cleanup executed
-			Eventually(func() bool {
-				return cleanupExecuted.Load()
-			}, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
+			Eventually(cleanupExecuted.Load, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
 		})
 	})
 
@@ -267,9 +259,7 @@ var _ = Describe("Controller Shutdown", func() {
 			cancel()
 
 			// Channel should be closed
-			Eventually(func() bool {
-				return chanClosed.Load()
-			}, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
+			Eventually(chanClosed.Load, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
 
 			// Verify channel is actually closed
 			_, ok := <-workChan
@@ -352,9 +342,7 @@ var _ = Describe("Controller Shutdown", func() {
 			cancel()
 
 			// Verify Close() was called
-			Eventually(func() bool {
-				return closeCalled.Load()
-			}, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue(),
+			Eventually(closeCalled.Load, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue(),
 				"ADR-032 §2: auditStore.Close() MUST be called during shutdown to flush pending events")
 		})
 
@@ -383,9 +371,7 @@ var _ = Describe("Controller Shutdown", func() {
 			cancel()
 
 			// Verify flush completes before process continues
-			Eventually(func() bool {
-				return flushCompleted.Load()
-			}, 200*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
+			Eventually(flushCompleted.Load, 200*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
 
 			// Process should not complete until flush is done
 			Expect(processCompleted.Load()).To(BeTrue(),
@@ -411,14 +397,10 @@ var _ = Describe("Controller Shutdown", func() {
 			cancel()
 
 			// Verify Close() was attempted
-			Eventually(func() bool {
-				return closeCalled.Load()
-			}, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
+			Eventually(closeCalled.Load, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue())
 
 			// Error should be available for logging (simulates setupLog.Error)
-			Eventually(func() interface{} {
-				return closeErr.Load()
-			}, 100*time.Millisecond, 5*time.Millisecond).Should(Equal(context.DeadlineExceeded))
+			Eventually(closeErr.Load, 100*time.Millisecond, 5*time.Millisecond).Should(Equal(context.DeadlineExceeded))
 		})
 
 		// Test 13: Rego hot-reloader Stop() pattern is called on context cancellation
@@ -443,9 +425,7 @@ var _ = Describe("Controller Shutdown", func() {
 			cancel()
 
 			// Verify Stop() was called
-			Eventually(func() bool {
-				return stopCalled.Load()
-			}, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue(),
+			Eventually(stopCalled.Load, 100*time.Millisecond, 5*time.Millisecond).Should(BeTrue(),
 				"DD-AIANALYSIS-002: regoEvaluator.Stop() MUST be called during shutdown to stop hot-reloader")
 		})
 
@@ -511,9 +491,7 @@ var _ = Describe("Controller Shutdown", func() {
 			cancel()
 
 			// Verify shutdown completes quickly
-			Eventually(func() bool {
-				return shutdownCompleted.Load()
-			}, 200*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
+			Eventually(shutdownCompleted.Load, 200*time.Millisecond, 10*time.Millisecond).Should(BeTrue())
 
 			shutdownDuration := time.Since(shutdownStart)
 			Expect(shutdownDuration).To(BeNumerically("<", 10*time.Second),

@@ -24,6 +24,12 @@ import (
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	kubernautSystem = "kubernaut-system"
+	production      = "production"
+)
+
 type noopPromClient struct{}
 
 func (n *noopPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) {
@@ -184,8 +190,8 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-NS-005: namespace comes from AF, not LLM args", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
-				Namespace: "kubernaut-system", Kind: "Deployment", Name: "web", Description: "ns from AF", APIVersion: "apps/v1",
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem}, &tools.CreateRRArgs{
+				Namespace: kubernautSystem, Kind: "Deployment", Name: "web", Description: "ns from AF", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).To(HavePrefix("rr-"))
@@ -222,7 +228,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("UT-AF-1282-SRC-002: dedup does not create new RR (signalSource not applicable)", func() {
-			rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+			rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			tc := newTypedFakeClient(rr)
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
@@ -393,7 +399,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			alerts: []prom.Alert{
 				{State: "firing", Labels: map[string]string{
 					"alertname": "HighCPU",
-					"namespace": "production",
+					"namespace": production,
 					"kind":      "Deployment",
 					"name":      "web-server",
 					"severity":  "critical",
@@ -402,8 +408,8 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		}
 		triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
 
-		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: triager}, &tools.CreateRRArgs{
-			Namespace: "production", Kind: "Deployment", Name: "web-server", Description: "cross-ns triage", APIVersion: "apps/v1",
+		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: triager}, &tools.CreateRRArgs{
+			Namespace: production, Kind: "Deployment", Name: "web-server", Description: "cross-ns triage", APIVersion: "apps/v1",
 		}, "user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Severity).To(Equal("critical"),
@@ -414,8 +420,8 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	Describe("ADR-057 namespace split (F-NS-SPLIT)", func() {
 		It("UT-AF-1292-NS-001: cross-namespace — CRD in controllerNS, targetResource in workloadNS (BR-PLATFORM-057)", func() {
 			tc := newTypedFakeClient()
-			controllerNS := "kubernaut-system"
-			workloadNS := "production"
+			controllerNS := kubernautSystem
+			workloadNS := production
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS}, &tools.CreateRRArgs{
 				Namespace:   workloadNS,
@@ -434,12 +440,12 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("UT-AF-1292-NS-002: dedup fingerprint uses workload NS (BR-SAFETY-001)", func() {
-			controllerNS := "kubernaut-system"
-			workloadNS := "production"
+			controllerNS := kubernautSystem
+			workloadNS := production
 			existingRR := &remediationv1.RemediationRequest{
 				ObjectMeta: objMeta(controllerNS, "rr-deploy-web-existing"),
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: testFingerprint(workloadNS, "Deployment", "web"),
+					SignalFingerprint: testFingerprint(workloadNS),
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "web",
@@ -465,8 +471,8 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("UT-AF-1292-NS-003: deriveSignalName queries events in workloadNS (BR-AI-056)", func() {
-			controllerNS := "kubernaut-system"
-			workloadNS := "production"
+			controllerNS := kubernautSystem
+			workloadNS := production
 			ev := newUnstructuredEventWithType(workloadNS, "ev-oom", "OOMKilling", "killed", "Deployment", "web", "Warning")
 			dc := newDynEventClient(ev)
 			tc := newTypedFakeClient()
@@ -488,7 +494,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1292-NS-004: empty workload namespace rejected (BR-SAFETY-002)", func() {
 			tc := newTypedFakeClient()
 
-			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem}, &tools.CreateRRArgs{
 				Namespace:   "",
 				Kind:        "Deployment",
 				Name:        "web",
@@ -500,8 +506,8 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("UT-AF-1292-NS-005: triage labels use workloadNS for rule matching (BR-AI-056)", func() {
-			controllerNS := "kubernaut-system"
-			workloadNS := "production"
+			controllerNS := kubernautSystem
+			workloadNS := production
 			tc := newTypedFakeClient()
 			noopLLM := severity.NewNoopLLMTriager(logr.Discard())
 			cfg := severity.DefaultConfig()
@@ -546,7 +552,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	})
 
 	It("UT-AF-1282-DEDUP: returns existing RR when non-terminal match found", func() {
-		rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+		rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 		tc := newTypedFakeClient(rr)
 
 		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod"}, &tools.CreateRRArgs{
@@ -560,7 +566,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	Describe("APIVersion and ClusterScoped (#1372)", func() {
 		It("UT-AF-1372-060: RR created with targetResource.apiVersion populated", func() {
 			tc := newTypedFakeClient()
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem}, &tools.CreateRRArgs{
 				Namespace:  "prod",
 				Kind:       "Deployment",
 				Name:       "web",
@@ -569,13 +575,13 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 
-			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
+			created := verifyTypedRR(tc, kubernautSystem, extractRRName(result.RRID))
 			Expect(created.Spec.TargetResource.APIVersion).To(Equal("apps/v1"))
 		})
 
 		It("UT-AF-1372-061: cluster-scoped RR (Node) with empty namespace creates successfully", func() {
 			tc := newTypedFakeClient()
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem}, &tools.CreateRRArgs{
 				Kind:          "Node",
 				Name:          "worker-03",
 				APIVersion:    "v1",
@@ -587,7 +593,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 		It("UT-AF-1372-062: namespaced RR with empty namespace rejects", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem}, &tools.CreateRRArgs{
 				Kind:          "Deployment",
 				Name:          "web",
 				APIVersion:    "apps/v1",
@@ -610,7 +616,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			tc := newTypedFakeClient()
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
-				ControllerNS: "kubernaut-system",
+				ControllerNS: kubernautSystem,
 			}, &tools.CreateRRArgs{
 				Namespace:   "prod",
 				Kind:        "Deployment",
@@ -622,7 +628,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeFalse())
 
-			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
+			created := verifyTypedRR(tc, kubernautSystem, extractRRName(result.RRID))
 			Expect(created.Spec.ClusterID).To(Equal("prod-east-1"))
 		})
 
@@ -630,7 +636,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			tc := newTypedFakeClient()
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
-				ControllerNS: "kubernaut-system",
+				ControllerNS: kubernautSystem,
 			}, &tools.CreateRRArgs{
 				Namespace:   "prod",
 				Kind:        "Deployment",
@@ -640,7 +646,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 
-			created := verifyTypedRR(tc, "kubernaut-system", extractRRName(result.RRID))
+			created := verifyTypedRR(tc, kubernautSystem, extractRRName(result.RRID))
 			Expect(created.Spec.ClusterID).To(BeEmpty())
 		})
 
@@ -649,7 +655,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			result1, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
-				ControllerNS: "kubernaut-system",
+				ControllerNS: kubernautSystem,
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "east", APIVersion: "apps/v1", ClusterID: "cluster-east",
@@ -659,7 +665,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			result2, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
-				ControllerNS: "kubernaut-system",
+				ControllerNS: kubernautSystem,
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "west", APIVersion: "apps/v1", ClusterID: "cluster-west",
@@ -688,7 +694,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("UT-AF-1409-004: dedup branch attributes ClusterID from the actual existing RR, not the caller's args", func() {
-			existing := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+			existing := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			existing.Spec.ClusterID = "cluster-original"
 			existing.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-original", gwtypes.ResourceIdentifier{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
@@ -716,7 +722,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
-				ControllerNS: "kubernaut-system",
+				ControllerNS: kubernautSystem,
 				Auditor:      rec,
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
@@ -736,7 +742,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("emits EventRRDeduplicated with existing_rr detail when a non-terminal RR already exists", func() {
-			rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+			rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			tc := newTypedFakeClient(rr)
 			rec := &auditRecorder{}
 
@@ -778,7 +784,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		})
 
 		It("UT-AF-1409-010b: EventRRDeduplicated Detail map includes cluster_id for fleet-originated RRs", func() {
-			existing := newTypedRRWithFingerprint("prod", "rr-deploy-web-existing", "Executing", "Deployment", "web")
+			existing := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			existing.Spec.ClusterID = "cluster-east-1"
 			existing.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-east-1", gwtypes.ResourceIdentifier{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
@@ -805,7 +811,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			tc := newTypedFakeClient()
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
-				ControllerNS: "kubernaut-system",
+				ControllerNS: kubernautSystem,
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "no auditor", APIVersion: "apps/v1",

@@ -52,7 +52,7 @@ func createIntegrityTestServer(schemaYAML string) (*httptest.Server, *server.Ser
 
 	pgHost := os.Getenv("POSTGRES_HOST")
 	if pgHost == "" {
-		pgHost = "localhost"
+		pgHost = localhost
 	}
 	pgPort := os.Getenv("POSTGRES_PORT")
 	if pgPort == "" {
@@ -62,7 +62,7 @@ func createIntegrityTestServer(schemaYAML string) (*httptest.Server, *server.Ser
 
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
-		redisHost = "localhost"
+		redisHost = localhost
 	}
 	redisPort := os.Getenv("REDIS_PORT")
 	if redisPort == "" {
@@ -418,32 +418,32 @@ var _ = Describe("Workflow Content Integrity Integration Tests (BR-WORKFLOW-006)
 
 			// Direct DB insert: create first active workflow
 			wf1 := &models.RemediationWorkflow{
-				WorkflowName:     testID,
-				Version:          "1.0.0",
-				SchemaVersion:    "1.0",
-				Name:             testID,
-				Status:           "Active",
-				IsLatestVersion:  true,
-				Content:          "content-1",
-				ContentHash:      "hash-1",
-				ActionType:       "IncreaseMemoryLimits",
-				ExecutionEngine:  "job",
+				WorkflowName:    testID,
+				Version:         "1.0.0",
+				SchemaVersion:   "1.0",
+				Name:            testID,
+				Status:          "Active",
+				IsLatestVersion: true,
+				Content:         "content-1",
+				ContentHash:     "hash-1",
+				ActionType:      "IncreaseMemoryLimits",
+				ExecutionEngine: "job",
 			}
 
 			err := workflowRepo.Create(ctx, wf1)
 			Expect(err).ToNot(HaveOccurred(), "First create should succeed")
 
 			wf2 := &models.RemediationWorkflow{
-				WorkflowName:     testID,
-				Version:          "1.0.0",
-				SchemaVersion:    "1.0",
-				Name:             testID,
-				Status:           "Active",
-				IsLatestVersion:  true,
-				Content:          "content-2",
-				ContentHash:      "hash-2",
-				ActionType:       "IncreaseMemoryLimits",
-				ExecutionEngine:  "job",
+				WorkflowName:    testID,
+				Version:         "1.0.0",
+				SchemaVersion:   "1.0",
+				Name:            testID,
+				Status:          "Active",
+				IsLatestVersion: true,
+				Content:         "content-2",
+				ContentHash:     "hash-2",
+				ActionType:      "IncreaseMemoryLimits",
+				ExecutionEngine: "job",
 			}
 
 			err = workflowRepo.Create(ctx, wf2)

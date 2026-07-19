@@ -179,6 +179,10 @@ func (NopAutonomousManager) StartInvestigation(context.Context, session.Investig
 	return "", nil
 }
 func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.InvestigationEvent, error) {
+	// nolint:nilnil // no-op test double, never the production
+	// AutonomousSessionManager (that's session.Manager) — nil channel/nil
+	// error here just means this stub method is unused by the tests that
+	// construct NopAutonomousManager (Issue #1546 Tier 2).
 	return nil, nil
 }
 func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool) { return nil, false }
@@ -360,9 +364,9 @@ func (t *InvestigateTool) dispatch(ctx context.Context, input InvestigateInput, 
 	case ActionMessage:
 		return t.handleMessage(ctx, input, user)
 	case ActionComplete:
-		return t.handleComplete(input, user)
+		return t.handleComplete(input, user) //nolint:contextcheck // emitInteractiveCompleted uses audit.StoreBestEffort by design (ADR-038); see investigate_autonomous.go doc comment
 	case ActionCancel:
-		return t.handleCancel(input, user)
+		return t.handleCancel(input, user) //nolint:contextcheck // emitInteractiveCompleted uses audit.StoreBestEffort by design (ADR-038); see investigate_autonomous.go doc comment
 	case ActionStatus:
 		return t.handleStatus(input, user)
 	case ActionReconnect:

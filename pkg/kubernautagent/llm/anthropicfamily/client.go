@@ -288,7 +288,7 @@ func classifyErr(err error) error {
 
 func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(c.model),
+		Model:     c.model,
 		MaxTokens: int64(4096),
 	}
 
@@ -312,7 +312,7 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 		reasoning = c.defaultReasoning
 	}
 	if reasoning != nil && reasoning.Enabled {
-		thinking, effort := resolveThinkingParam(reasoning, anthropic.Model(c.model))
+		thinking, effort := resolveThinkingParam(reasoning, c.model)
 		params.Thinking = thinking
 		if effort != "" {
 			params.OutputConfig.Effort = effort

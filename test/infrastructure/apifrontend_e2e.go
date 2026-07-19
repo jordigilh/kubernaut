@@ -47,7 +47,7 @@ const (
 	// AFDefaultClusterName is the Kind cluster name for apifrontend E2E tests.
 	AFDefaultClusterName = "apifrontend-e2e"
 	// AFDefaultNamespace is the Kubernetes namespace for AF E2E workloads.
-	AFDefaultNamespace = "kubernaut-system"
+	AFDefaultNamespace = kubernautSystem
 )
 
 // SetupAPIFrontendE2EInfrastructure is the top-level orchestrator for AF E2E tests.
@@ -109,14 +109,14 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 				DockerfilePath:   dockerfile,
 				BuildContextPath: buildCtx,
 			}
-			img, err := BuildImageForKind(cfg, writer)
+			img, err := BuildImageForKind(ctx, cfg, writer)
 			results <- buildResult{name, img, err}
 		}(svc.name, svc.image, svc.dockerfile, svc.buildCtx)
 	}
 
 	// DD-TEST-007: AF is always built locally with GOFLAGS=-cover
 	go func() {
-		img, err := BuildAFImage(writer)
+		img, err := BuildAFImage(ctx, writer)
 		results <- buildResult{"apifrontend", img, err}
 	}()
 
@@ -144,7 +144,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
 	}
-	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
+	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -153,14 +153,14 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	if imageRegistry != "" {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading AF image into Kind (coverage build); others pull from GHCR...")
-		if err := LoadImageToKind(images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load apifrontend image: %w", err)
 		}
 		_, _ = fmt.Fprintln(writer, "  apifrontend loaded")
 	} else {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading images into Kind...")
 		for name, img := range images {
-			if err := LoadImageToKind(img, name, clusterName, writer); err != nil {
+			if err := LoadImageToKind(ctx, img, name, clusterName, writer); err != nil {
 				return fmt.Errorf("failed to load %s image: %w", name, err)
 			}
 			_, _ = fmt.Fprintf(writer, "  %s loaded\n", name)
@@ -172,7 +172,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 4: Deploying kubernaut stack...")
 
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -195,7 +195,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
-	if err := afDeployMockLLM(ctx, kubeconfigPath, namespace, images["mock-llm"], writer); err != nil {
+	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], writer); err != nil {
 		return fmt.Errorf("mock-LLM deploy failed: %w", err)
 	}
 
@@ -204,12 +204,12 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("KA RBAC failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  Deploying Kubernaut Agent...")
-	if err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], false, writer); err != nil {
+	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, images["kubernautagent"], false, writer); err != nil {
 		return fmt.Errorf("KA deploy failed: %w", err)
 	}
 
 	certDir := filepath.Join(os.TempDir(), "apifrontend-e2e-certs")
-	if err := AFGenerateCerts(certDir, writer); err != nil {
+	if err := AFGenerateCerts(ctx, certDir, writer); err != nil {
 		return fmt.Errorf("failed to generate AF certs: %w", err)
 	}
 	if err := AFCreateTLSSecrets(ctx, kubeconfigPath, namespace, certDir, writer); err != nil {
@@ -246,11 +246,11 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	if seedErr != nil {
 		return fmt.Errorf("create DS seed client: %w", seedErr)
 	}
-	if seedErr = SeedActionTypesViaAPI(seedClient, writer); seedErr != nil {
+	if seedErr = SeedActionTypesViaAPI(ctx, seedClient, writer); seedErr != nil {
 		return fmt.Errorf("seed action types: %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
-	if _, seedErr = SeedWorkflowsInDataStorage(seedClient, testWorkflows, "AF E2E", writer); seedErr != nil {
+	if _, seedErr = SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "AF E2E", writer); seedErr != nil {
 		return fmt.Errorf("seed workflows: %w", seedErr)
 	}
 
@@ -292,21 +292,21 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 
 // BuildAFImage builds the apifrontend container image locally with coverage
 // instrumentation (GOFLAGS=-cover).
-func BuildAFImage(writer io.Writer) (string, error) {
+func BuildAFImage(ctx context.Context, writer io.Writer) (string, error) {
 	cfg := E2EImageConfig{
 		ServiceName:    "apifrontend",
 		ImageName:      "apifrontend",
 		DockerfilePath: "docker/apifrontend.Dockerfile",
 		EnableCoverage: true,
 	}
-	return BuildImageForKind(cfg, writer)
+	return BuildImageForKind(ctx, cfg, writer)
 }
 
 // AFGenerateCerts runs the AF cert generation script.
-func AFGenerateCerts(certDir string, writer io.Writer) error {
+func AFGenerateCerts(ctx context.Context, certDir string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	script := projectRoot + "/deploy/apifrontend/overlays/e2e/generate-certs.sh"
-	cmd := exec.Command("bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
+	cmd := exec.CommandContext(ctx, "bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -385,7 +385,7 @@ func CollectAFE2EBinaryCoverage(clusterName string, writer io.Writer) error {
 		ServiceName:    "apifrontend",
 		ClusterName:    clusterName,
 		DeploymentName: "apifrontend",
-		Namespace:      "kubernaut-system",
+		Namespace:      kubernautSystem,
 		KubeconfigPath: kcPath,
 	}, writer)
 }
@@ -676,7 +676,7 @@ subjects:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
-func afDeployMockLLM(ctx context.Context, kubeconfigPath, namespace, mockLLMImage string, writer io.Writer) error {
+func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	mockLLMManifest := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "mock-llm.yaml")
 

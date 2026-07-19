@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 )
 
 // ============================================================================
@@ -45,7 +44,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", Label("integration
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-retention")
+			namespace = createTestNamespace(ctx, "ro-retention")
 			rrName = fmt.Sprintf("rr-ret-%s", uuid.New().String()[:8])
 		})
 
@@ -81,7 +80,7 @@ var _ = Describe("Issue #265: CRD Retention TTL Enforcement", Label("integration
 			}, timeout, interval).Should(BeTrue())
 
 			By("Completing SP to trigger transition to Analyzing")
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Waiting for RR to reach Analyzing phase")
 			Eventually(func() remediationv1.RemediationPhase {
