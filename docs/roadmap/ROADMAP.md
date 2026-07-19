@@ -46,7 +46,7 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 *Multiple AI perspectives, one root cause.*
 
 - **Multi-agent consensus RCA** — Ensemble investigation with independent LLM agents from different model families; a consolidator validates agreement and cross-examines on divergence ([#648](https://github.com/jordigilh/kubernaut/issues/648))
-- **Investigation Recipes** — Operators inject SOPs into the investigation pipeline via Goose recipes packaged as OCI artifacts. KA acts as a pure orchestrator; all LLM reasoning is delegated to Goose ([#711](https://github.com/jordigilh/kubernaut/issues/711))
+- **Investigation Recipes** — Operators inject SOPs into the investigation pipeline via customer-authored agents packaged as opaque OCI images, executed via the image's own entrypoint. KA acts as a supervised harness — no Kubernaut-known runtime, no LLM calls of its own ([#711](https://github.com/jordigilh/kubernaut/issues/711), [#1536](https://github.com/jordigilh/kubernaut/issues/1536))
 - **Remediation history analysis** — LLM-driven review of past RCA and remediation chains to improve future investigation accuracy ([#842](https://github.com/jordigilh/kubernaut/issues/842))
 
 ---

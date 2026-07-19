@@ -4,13 +4,15 @@ Technical spikes validating key architectural decisions before committing to imp
 
 This directory contains both spike summary documents and spike source code.
 
-**Tracking**: [#1240 — v1.6: AgenticWorkflow Multi-Runtime Architecture](https://github.com/jordigilh/kubernaut/issues/1240)
+**Tracking**: [#1240 — v1.6: AgenticWorkflow Multi-Runtime Architecture](https://github.com/jordigilh/kubernaut/issues/1240) (closed) → current direction: [#1536](https://github.com/jordigilh/kubernaut/issues/1536) (CRD spec v2, runtime-agnostic OCI), [#1535](https://github.com/jordigilh/kubernaut/issues/1535) / [#1681](https://github.com/jordigilh/kubernaut/issues/1681) (AuthBridge audit relay + shadow-evaluator tee), milestone v1.7
 
 ---
 
 ## Spike Index
 
 ### v1.6 — AgenticWorkflow Multi-Runtime Architecture
+
+⚠️ **This entire section is superseded** — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536). The spikes below validated real techniques (still useful — see [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md) for the security-relevant ones) but the multi-runtime CRD model they fed into is dead.
 
 | Spike | Status | Confidence | Proposal | Code |
 |---|---|---|---|---|

@@ -1,8 +1,8 @@
 # Spike: Goose CLI -> ACP MCP Roundtrip
 
 **Date**: May 2026
-**Status**: PASS
-**Proposal**: [PROPOSAL-EXT-004](../../docs/architecture/proposals/PROPOSAL-EXT-004-goose-recipes.md)
+**Status**: PASS — roundtrip mechanics validated, but the CRD-integration model it fed into is ⚠️ SUPERSEDED by [#1536](https://github.com/jordigilh/kubernaut/issues/1536)
+**Proposal**: [PROPOSAL-EXT-004](../../docs/architecture/proposals/PROPOSAL-EXT-004-goose-recipes.md) (superseded)
 
 ## Purpose
 

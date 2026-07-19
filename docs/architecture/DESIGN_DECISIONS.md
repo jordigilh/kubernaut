@@ -132,11 +132,11 @@
 |---|---|---|---|---|
 | PROPOSAL-EXT-001 | External Integration Strategy (MCP, A2A, API Frontend) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-001-external-integration-strategy.md](proposals/PROPOSAL-EXT-001-external-integration-strategy.md) |
 | PROPOSAL-EXT-002 | Investigation Prompt Bundles (OCI-packaged prompts and skills) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-002-investigation-prompt-bundles.md](proposals/PROPOSAL-EXT-002-investigation-prompt-bundles.md) |
-| PROPOSAL-EXT-003 | Goose Runtime Evaluation and Phased Adoption (ACP Go SDK, 6-phase pipeline, KA-as-compiler) | ❌ Superseded | 2026-04-15 | [PROPOSAL-EXT-003-goose-runtime-evaluation.md](proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) |
-| PROPOSAL-EXT-004 | Goose Recipes as AgenticWorkflow Runtime (pluggable multi-runtime model) | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-004-goose-recipes.md](proposals/PROPOSAL-EXT-004-goose-recipes.md) |
-| PROPOSAL-EXT-005 | Oracle Agent Spec (PyAgentSpec + LangGraph) as AgenticWorkflow Runtime | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-005-oracle-agent-spec.md](proposals/PROPOSAL-EXT-005-oracle-agent-spec.md) |
-| PROPOSAL-EXT-006 | LangChain Deep Agents as AgenticWorkflow Runtime (specialist investigations) | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-006-deep-agents.md](proposals/PROPOSAL-EXT-006-deep-agents.md) |
-| PROPOSAL-EXT-007 | Pre-Investigation AgenticWorkflow Pipeline in SP (adaptive triage, multi-domain correlation) | 📋 Draft | 2026-05-23 | [PROPOSAL-EXT-007-pre-investigation-pipeline.md](proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) |
+| PROPOSAL-EXT-003 | Goose Runtime Evaluation and Phased Adoption (ACP Go SDK, 6-phase pipeline, KA-as-compiler) | ❌ Superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) — security model extracted to [ADR-KA-002](decisions/ADR-KA-002-agent-security-defense-in-depth.md) | 2026-04-15 | [PROPOSAL-EXT-003-goose-runtime-evaluation.md](proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) |
+| PROPOSAL-EXT-004 | Goose Recipes as AgenticWorkflow Runtime (pluggable multi-runtime model) | ❌ Superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) | 2026-05-19 | [PROPOSAL-EXT-004-goose-recipes.md](proposals/PROPOSAL-EXT-004-goose-recipes.md) |
+| PROPOSAL-EXT-005 | Oracle Agent Spec (PyAgentSpec + LangGraph) as AgenticWorkflow Runtime | ❌ Superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) | 2026-05-19 | [PROPOSAL-EXT-005-oracle-agent-spec.md](proposals/PROPOSAL-EXT-005-oracle-agent-spec.md) |
+| PROPOSAL-EXT-006 | LangChain Deep Agents as AgenticWorkflow Runtime (specialist investigations) | ❌ Superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) | 2026-05-19 | [PROPOSAL-EXT-006-deep-agents.md](proposals/PROPOSAL-EXT-006-deep-agents.md) |
+| PROPOSAL-EXT-007 | Pre-Investigation AgenticWorkflow Pipeline in SP (adaptive triage, multi-domain correlation) | ❌ Rejected — routing already owned by Gateway/AF (`TargetType`/`SignalSource`) + Rego; cross-domain RCA is investigation work, not a new SP-owned agent tier | 2026-05-23 | [PROPOSAL-EXT-007-pre-investigation-pipeline.md](proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) |
 
 ---
 
