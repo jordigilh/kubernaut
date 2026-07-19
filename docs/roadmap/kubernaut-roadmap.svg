@@ -18,11 +18,12 @@
     <rect id="accent2" x="528" y="150" width="405" height="4" fill="#cc0000"/>
     <text id="badge2" xml:space="preserve" x="528" y="172" font-family="Helvetica Neue" font-size="11" font-weight="700" letter-spacing="1.5" fill="#cc0000">PLANNED · V1.7</text>
     <text id="title2" xml:space="preserve" x="528" y="200" font-family="Helvetica Neue" font-size="19" font-weight="700" fill="#cc0000">Custom Investigation Agents</text>
-    <text id="tagline2" xml:space="preserve" x="528" y="222" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">Bring your own agent, safely</text>
-    <text id="bullet2-1" xml:space="preserve" x="536" y="250" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Custom investigation agents (AgenticWorkflow CRD)</text>
-    <text id="bullet2-2" xml:space="preserve" x="536" y="271" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ AuthBridge / OpenShell: credential injection, audit,</text>
-    <text id="bullet2-2b" xml:space="preserve" x="551" y="288" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">sandbox isolation, shadow tee</text>
-    <text id="bullet2-3" xml:space="preserve" x="536" y="313" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ kube-mcp-server as default K8s access layer</text>
+    <text id="tagline2" xml:space="preserve" x="528" y="222" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">Inject your team's know-how into the investigation</text>
+    <text id="bullet2-1" xml:space="preserve" x="536" y="250" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Custom SOPs as agents — e.g. budget checks, known</text>
+    <text id="bullet2-1b" xml:space="preserve" x="551" y="267" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">conditions for a resource — like user-provided RAG</text>
+    <text id="bullet2-2" xml:space="preserve" x="536" y="288" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ AuthBridge / OpenShell: credential injection, audit,</text>
+    <text id="bullet2-2b" xml:space="preserve" x="551" y="305" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">sandbox isolation, shadow tee</text>
+    <text id="bullet2-3" xml:space="preserve" x="536" y="330" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ kube-mcp-server as default K8s access layer</text>
 
     <!-- Card 3: Collective Intelligence (unscheduled) -->
     <rect id="accent3" x="987" y="150" width="405" height="4" fill="#999999"/>

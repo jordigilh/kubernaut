@@ -52,9 +52,9 @@ Track progress on the [v1.6 milestone](https://github.com/jordigilh/kubernaut/mi
 
 ## v1.7 — Custom Investigation Agents
 
-*Bring your own agent, safely.*
+*Inject your team's know-how into the investigation, on demand.*
 
-- **Custom investigation agents** — Operators inject SOPs into the investigation pipeline via customer-authored agents packaged as opaque OCI images, executed via the image's own entrypoint. KA acts as a supervised harness — no Kubernaut-known runtime, no LLM calls of its own. Defined by the `AgenticWorkflow` CRD ([#1536](https://github.com/jordigilh/kubernaut/issues/1536))
+- **Custom investigation agents** — Operators plug their own SOPs into specific points of an investigation via customer-authored agents — e.g., "is this resource within its cost budget?" or "does this alert match a known condition for this service?" The agent's answer is retrieved and injected into the investigation's context, much like a user-provided RAG step for knowledge the base investigation agent doesn't have. Packaged as opaque OCI images, executed via the image's own entrypoint — KA acts as a supervised harness, not a runtime; no Kubernaut-known agent code, no LLM calls of its own. Defined by the `AgenticWorkflow` CRD ([#1536](https://github.com/jordigilh/kubernaut/issues/1536))
 - **AuthBridge / OpenShell integration** — AuthBridge intercepts every outbound LLM/MCP call from an opaque agent for credential injection and audit relay, extensible to a shadow-evaluator tee for security review; OpenShell provides sandbox isolation as a coexisting sidecar in the same pod ([#1535](https://github.com/jordigilh/kubernaut/issues/1535), [#1681](https://github.com/jordigilh/kubernaut/issues/1681))
 - **kube-mcp-server by default** — Standardized Kubernetes access layer for agents, deprecating direct K8s Go bindings ([#1516](https://github.com/jordigilh/kubernaut/issues/1516))
 
