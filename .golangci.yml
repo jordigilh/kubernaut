@@ -162,6 +162,26 @@ linters:
                      # libraries are NOT exempted (same real-Kind/AWX-network
                      # CI-hygiene rationale as noctx); only _test.go Ginkgo
                      # spec files are excluded below.
+    - unparam        # Flags unused function parameters and results that are
+                      # always the same value (Issue #1546 Tier 4). No blanket
+                      # test exemption -- production and test findings were
+                      # both remediated, case-by-case, across ~38 commits:
+                      # "result always nil"/"always receives X" findings were
+                      # fixed by simplifying the signature (dropping the dead
+                      # return/param and hardcoding the constant) and updating
+                      # every call site; genuinely unused parameters were
+                      # either wired up (one real bug found and fixed: a
+                      # cascade-to-signal-processing failure path wasn't
+                      # setting sp.Status.Error, unlike its sibling branches)
+                      # or removed. A minority of findings (~25 files) carry a
+                      # scoped //nolint: production dispatch-table/Reconcile-
+                      # style functions whose (ctrl.Result{}, nil) signature
+                      # must match sibling handlers in the same call family,
+                      # and shared test helpers whose "always same value"
+                      # call sites span multiple files beyond the one being
+                      # fixed (removing the param would require touching
+                      # every caller in lockstep) -- each documents why in the
+                      # comment rather than a blanket exclusion.
     # NOTE: godox (Issue #1546 Tier 4) is intentionally NOT in this enabled
     # list. Of its ~97 current repo-wide findings, ~60% are "Bug:"/"BUG FIX"/
     # "BUG REPRODUCTION" prose in regression-test doc comments explaining the
