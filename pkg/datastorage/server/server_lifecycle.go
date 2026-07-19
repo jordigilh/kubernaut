@@ -303,7 +303,9 @@ func (s *Server) shutdownStep5CloseResources(shutdownID string) error {
 	}
 
 	// Issue #1661 Phase 29 / DD-WORKFLOW-018: stop the workflow cache's informers.
-	// nil when ServerDeps.K8sRestConfig was not supplied.
+	// Always set as of Phase 55 (K8sRestConfig is mandatory); the nil guard
+	// remains as defense-in-depth against a Server built by unusual test
+	// helpers that bypass NewServer's validation.
 	if s.cancelWorkflowCache != nil {
 		s.cancelWorkflowCache()
 	}

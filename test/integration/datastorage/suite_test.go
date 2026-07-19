@@ -940,6 +940,7 @@ func seedActionTypesViaInProcessServer() {
 			},
 		},
 		AuthNamespace: "datastorage-test",
+		K8sRestConfig: dsK8sRestConfig,
 	})
 	Expect(err).ToNot(HaveOccurred(), "temp server creation for action type seeding should succeed")
 

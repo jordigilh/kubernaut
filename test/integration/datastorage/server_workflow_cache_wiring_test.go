@@ -158,17 +158,12 @@ var _ = Describe("IT-DS-1661-P29 Server wiring: workflow cache", Label("integrat
 				"created directly against etcd")
 	})
 
-	It("IT-DS-1661-P29-002: NewServer leaves the workflow cache nil when K8sRestConfig is omitted (backward compatibility)", func() {
+	It("IT-DS-1661-P55-001: NewServer fails when K8sRestConfig is omitted (etcd is now the sole source of truth)", func() {
 		srv, err := server.NewServer(buildServerDeps(server.ServerDeps{}))
-		Expect(err).ToNot(HaveOccurred(), "server should still build successfully without a K8s rest.Config")
-		DeferCleanup(func() {
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(shutdownCtx)
-		})
-
-		Expect(srv.WorkflowCache()).To(BeNil(),
-			"omitting K8sRestConfig must be a no-op, preserving every existing caller of server.NewServer "+
-				"that does not set it")
+		Expect(err).To(HaveOccurred(),
+			"Phase 55: K8sRestConfig is now mandatory -- the workflow cache is the only source of "+
+				"workflow/action-type data now that Postgres's catalog tables are gone, so NewServer "+
+				"must fail hard rather than silently building a cache-less server")
+		Expect(srv).To(BeNil(), "a failed NewServer call must not return a partially-built server")
 	})
 })

@@ -132,8 +132,9 @@ type Server struct {
 }
 
 // WorkflowCache returns the informer-backed RemediationWorkflow/ActionType
-// CRD cache (Issue #1661 Phase 29 / DD-WORKFLOW-018), or nil if
-// ServerDeps.K8sRestConfig was not supplied when the server was built.
+// CRD cache (Issue #1661 Phase 29 / DD-WORKFLOW-018). Always non-nil: as of
+// Phase 55, validateServerDeps rejects ServerDeps.K8sRestConfig == nil, so
+// NewServer never returns a Server without a workflow cache.
 func (s *Server) WorkflowCache() *workflowcache.Cache {
 	return s.handler.workflowCache
 }
@@ -171,11 +172,12 @@ type ServerDeps struct {
 
 	// K8sRestConfig is the Kubernetes API server config used to build the
 	// Issue #1661 / DD-WORKFLOW-018 workflow cache (informer-backed view of
-	// RemediationWorkflow/ActionType CRDs). Optional: when nil, the workflow
-	// cache is not built and Server.WorkflowCache() returns nil -- existing
-	// callers (most unit/integration tests) are unaffected. cmd/datastorage/
-	// main.go always supplies this in production (buildK8sAuthDeps already
-	// builds the same rest.Config for DD-AUTH-014's auth middleware).
+	// RemediationWorkflow/ActionType CRDs). Mandatory as of Phase 55:
+	// validateServerDeps rejects a nil K8sRestConfig, since etcd is now the
+	// sole source of truth for workflows/action types (Postgres's catalog
+	// is audit-only). cmd/datastorage/main.go always supplies this in
+	// production (buildK8sAuthDeps already builds the same rest.Config for
+	// DD-AUTH-014's auth middleware).
 	K8sRestConfig *rest.Config
 }
 

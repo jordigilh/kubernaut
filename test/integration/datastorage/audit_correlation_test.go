@@ -255,6 +255,7 @@ var _ = Describe("Audit Correlation Query Integration Tests (Issue #1199)", func
 					},
 				},
 				AuthNamespace: "datastorage-test",
+				K8sRestConfig: dsK8sRestConfig,
 			})
 			Expect(err).ToNot(HaveOccurred())
 

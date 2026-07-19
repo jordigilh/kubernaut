@@ -64,6 +64,9 @@ func validateServerDeps(deps ServerDeps) error {
 	if deps.AuthNamespace == "" {
 		return fmt.Errorf("authNamespace is empty - DD-AUTH-014 requires namespace for SAR checks")
 	}
+	if deps.K8sRestConfig == nil {
+		return fmt.Errorf("k8sRestConfig is nil - DD-WORKFLOW-018 requires a K8s rest.Config to build the workflow cache (etcd is now the sole source of truth for workflows/action types)")
+	}
 	return nil
 }
 
@@ -280,24 +283,18 @@ func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowC
 }
 
 // buildWorkflowCache constructs the Issue #1661 Phase 29 / DD-WORKFLOW-018
-// informer-backed RemediationWorkflow/ActionType CRD cache when
-// deps.K8sRestConfig is supplied, blocking until the initial sync completes.
-// Returns (nil, nil, nil) when K8sRestConfig is nil -- preserves existing
-// behavior for the many unit/integration tests that build a Server without
-// a Kubernetes dependency. cmd/datastorage/main.go always supplies
-// K8sRestConfig in production, so DS fails fast (like Postgres/Redis above)
-// if etcd is unreachable at startup, rather than silently running with a
-// stale/empty catalog.
+// informer-backed RemediationWorkflow/ActionType CRD cache, blocking until
+// the initial sync completes. deps.K8sRestConfig is guaranteed non-nil here
+// -- validateServerDeps (Phase 55) rejects ServerDeps before NewServer
+// reaches this call, since etcd is now the sole source of truth for
+// workflows/action types (Postgres's catalog is audit-only). DS therefore
+// fails fast (like Postgres/Redis above) if etcd is unreachable at startup,
+// rather than silently running with a stale/empty catalog.
 //
 // The returned cancel func is registered with cleanups (unwound if a later
 // startup step fails) AND must also be stored on Server for the graceful
 // Shutdown() path, since cleanups only run on startup failure.
 func buildWorkflowCache(deps ServerDeps, logger logr.Logger, cleanups *startupCleanups) (*workflowcache.Cache, func(), error) {
-	if deps.K8sRestConfig == nil {
-		logger.Info("Workflow cache disabled (no K8sRestConfig supplied)")
-		return nil, nil, nil
-	}
-
 	scheme, err := workflowcache.NewScheme()
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to build workflow cache scheme: %w", err)
@@ -319,7 +316,8 @@ func buildWorkflowCache(deps ServerDeps, logger logr.Logger, cleanups *startupCl
 //
 // BR-AUDIT-006: Pass sqlDB for reconstruction queries.
 // GAP-WF-1: WithWorkflowLifecycleRepository enables enable/disable/deprecate handlers.
-// Issue #1661 Phase 29: wfCache is nil when ServerDeps.K8sRestConfig was not supplied.
+// Issue #1661 Phase 29 / Phase 55: wfCache is always non-nil (validateServerDeps
+// requires ServerDeps.K8sRestConfig).
 func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps, wfCache *workflowcache.Cache) *Handler {
 	opts := make([]HandlerOption, 0, 11+len(deps.HandlerOpts))
 	opts = append(opts,
