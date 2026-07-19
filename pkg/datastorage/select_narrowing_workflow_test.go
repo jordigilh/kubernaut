@@ -118,71 +118,14 @@ var _ = Describe("Phase 6: SELECT * Narrowing — Workflow Repository (TP-1088-P
 		})
 	})
 
-	Describe("GetByNameAndVersion (crud.go:381)", func() {
-		It("UT-DS-1088-P6-003: query must use explicit column list, not SELECT *", func() {
-			sqlMock.ExpectQuery(workflowColumnsRegex).
-				WithArgs("pod-restart", "v1.0.0").
-				WillReturnRows(emptyWorkflowRows())
-
-			_, err := repo.GetByNameAndVersion(ctx, "pod-restart", "v1.0.0")
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
-
-	Describe("GetActiveByNameAndVersion (crud.go:404)", func() {
-		It("UT-DS-1088-P6-004: query must use explicit column list, not SELECT *", func() {
-			sqlMock.ExpectQuery(workflowColumnsRegex).
-				WithArgs("pod-restart", "v1.0.0").
-				WillReturnRows(emptyWorkflowRows())
-
-			_, err := repo.GetActiveByNameAndVersion(ctx, "pod-restart", "v1.0.0")
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
-
-	Describe("GetLatestDisabledByNameAndVersion (crud.go:426)", func() {
-		It("UT-DS-1088-P6-005: query must use explicit column list, not SELECT *", func() {
-			sqlMock.ExpectQuery(workflowColumnsRegex).
-				WithArgs("pod-restart", "v1.0.0").
-				WillReturnRows(emptyWorkflowRows())
-
-			_, err := repo.GetLatestDisabledByNameAndVersion(ctx, "pod-restart", "v1.0.0")
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
-
-	Describe("GetActiveByWorkflowName (crud.go:450)", func() {
-		It("UT-DS-1088-P6-006: query must use explicit column list, not SELECT *", func() {
-			sqlMock.ExpectQuery(workflowColumnsRegex).
-				WithArgs("pod-restart").
-				WillReturnRows(emptyWorkflowRows())
-
-			_, err := repo.GetActiveByWorkflowName(ctx, "pod-restart")
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
-
-	Describe("GetLatestVersion (crud.go:473)", func() {
-		It("UT-DS-1088-P6-007: query must use explicit column list, not SELECT *", func() {
-			sqlMock.ExpectQuery(workflowColumnsRegex).
-				WithArgs("pod-restart").
-				WillReturnRows(emptyWorkflowRows())
-
-			_, err := repo.GetLatestVersion(ctx, "pod-restart")
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
-
-	Describe("GetVersionsByName (crud.go:495)", func() {
-		It("UT-DS-1088-P6-008: query must use explicit column list, not SELECT *", func() {
-			sqlMock.ExpectQuery(workflowColumnsRegex).
-				WithArgs("pod-restart").
-				WillReturnRows(emptyWorkflowRows())
-
-			_, err := repo.GetVersionsByName(ctx, "pod-restart")
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
+	// GetByNameAndVersion, GetActiveByNameAndVersion,
+	// GetLatestDisabledByNameAndVersion, GetActiveByWorkflowName,
+	// GetLatestVersion, and GetVersionsByName Describes were removed here
+	// (#1661 Phase F): all six are Postgres-only "dying" methods with zero
+	// production callers post-Phase-B (DD-WORKFLOW-018 makes metadata.name
+	// the workflow's sole identity, eliminating the "version" dimension these
+	// methods existed to disambiguate) and no cache-backed equivalent -- they
+	// are pruned outright in Phase C, not carried forward.
 
 	// ========================================
 	// discovery.go queries (2 queries)

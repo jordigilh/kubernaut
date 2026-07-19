@@ -117,24 +117,12 @@ var _ = Describe("Workflow Catalog Deterministic Ordering (#213)", func() {
 		})
 	})
 
-	Describe("GetVersionsByName", func() {
-		It("UT-DS-213-003: ORDER BY must include workflow_id ASC tiebreaker", func() {
-			sqlMock.ExpectQuery(`ORDER BY created_at DESC, workflow_id ASC`).
-				WillReturnRows(sqlmock.NewRows([]string{
-					"workflow_id", "workflow_name", "version", "schema_version", "name", "description",
-					"content", "content_hash", "action_type", "status",
-					"labels", "detected_labels", "custom_labels",
-					"execution_engine", "execution_bundle",
-					"owner", "maintainer",
-					"is_latest_version",
-					"expected_success_rate",
-					"created_at", "updated_at",
-				}))
-
-			_, err := repo.GetVersionsByName(ctx, "restart-pod")
-			Expect(err).ToNot(HaveOccurred())
-		})
-	})
+	// GetVersionsByName (UT-DS-213-003) was removed by Issue #1661 Phase F:
+	// it is a Postgres-only "dying" method with zero production callers
+	// post-Phase-B and no cache-backed equivalent (DD-WORKFLOW-018 makes
+	// metadata.name the workflow's sole identity, eliminating the "versions
+	// of a name" concept this method existed to enumerate) -- pruned outright
+	// in Phase C, not carried forward.
 
 	Describe("List", func() {
 		It("UT-DS-213-004: ORDER BY must include workflow_id ASC tiebreaker", func() {

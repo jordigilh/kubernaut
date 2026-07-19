@@ -18,7 +18,6 @@ package datastorage
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -32,7 +31,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 )
 
@@ -52,18 +50,21 @@ import (
 // ========================================
 var _ = Describe("On-demand workflow success-rate aggregation (Issue #1661 Change 7)", Label("integration", "datastorage"), func() {
 	var (
-		workflowRepo *workflow.Repository
-		auditRepo    *repository.AuditEventsRepository
-		handler      *server.Handler
-		testID       string
+		auditRepo *repository.AuditEventsRepository
+		handler   *server.Handler
+		testID    string
 	)
 
 	BeforeEach(func() {
-		workflowRepo = workflow.NewRepository(db, logger)
 		auditRepo = repository.NewAuditEventsRepository(db.DB, logger)
+		// #1661 Phase F: workflows are seeded via CRD (seedWorkflowCRD below), not
+		// Postgres, so the handler's workflow repository must read from the shared
+		// cache instead of falling back to Postgres (DD-WORKFLOW-018).
+		cachedWorkflowRepo := repository.NewWorkflowRepository(db, logger)
+		cachedWorkflowRepo.SetCache(sharedWorkflowCache)
 		handler = server.NewHandler(
 			server.WithLogger(logger),
-			server.WithWorkflowRepository(repository.NewWorkflowRepository(db, logger)),
+			server.WithWorkflowRepository(cachedWorkflowRepo),
 			server.WithSuccessMetricsRepository(auditRepo),
 		)
 
@@ -75,34 +76,16 @@ var _ = Describe("On-demand workflow success-rate aggregation (Issue #1661 Chang
 			return
 		}
 		_, _ = db.ExecContext(ctx,
-			"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1",
-			fmt.Sprintf("wf-successmetrics-%s%%", testID))
-		_, _ = db.ExecContext(ctx,
 			"DELETE FROM audit_events WHERE correlation_id LIKE $1",
 			fmt.Sprintf("test-successmetrics-%s%%", testID))
 	})
 
-	createWorkflow := func(name string) *models.RemediationWorkflow {
-		content := `{"steps":[{"action":"scale","replicas":3}]}`
-		contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-		wf := &models.RemediationWorkflow{
-			WorkflowName:    name,
-			Version:         "v1.0.0",
-			SchemaVersion:   "1.0",
-			Name:            name,
-			Description:     models.StructuredDescription{What: "IT-DS-1661-702 success metrics test workflow", WhenToUse: "Testing"},
-			Content:         content,
-			ContentHash:     contentHash,
-			Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: []string{"v1/Pod"}, Priority: "P1", Environment: []string{"production"}},
-			CustomLabels:    models.CustomLabels{},
-			DetectedLabels:  models.DetectedLabels{},
-			Status:          "Active",
-			ExecutionEngine: "argo-workflows",
-			IsLatestVersion: true,
-			ActionType:      "ScaleReplicas",
-		}
-		Expect(workflowRepo.Create(ctx, wf)).To(Succeed())
-		return wf
+	createWorkflow := func(name string) string {
+		return seedWorkflowCRD(workflowCRDSpec{
+			Name:       name,
+			ActionType: "ScaleReplicas",
+			Engine:     "job",
+		})
 	}
 
 	// seedExecutionEvent writes a workflowexecution.workflow.completed/.failed
@@ -150,16 +133,16 @@ var _ = Describe("On-demand workflow success-rate aggregation (Issue #1661 Chang
 	}
 
 	It("IT-DS-1661-702-001: HandleGetWorkflowByID computes actual_success_rate from audit_events, not a stored column", func() {
-		wf := createWorkflow(fmt.Sprintf("wf-successmetrics-%s-executed", testID))
-		seedExecutionEvent(wf.WorkflowID, "workflowexecution.workflow.completed")
-		seedExecutionEvent(wf.WorkflowID, "workflowexecution.workflow.completed")
-		seedExecutionEvent(wf.WorkflowID, "workflowexecution.workflow.failed")
+		workflowID := createWorkflow(fmt.Sprintf("wf-successmetrics-%s-executed", testID))
+		seedExecutionEvent(workflowID, "workflowexecution.workflow.completed")
+		seedExecutionEvent(workflowID, "workflowexecution.workflow.completed")
+		seedExecutionEvent(workflowID, "workflowexecution.workflow.failed")
 
 		Eventually(func() int {
-			return getWorkflowByID(wf.WorkflowID).TotalExecutions
+			return getWorkflowByID(workflowID).TotalExecutions
 		}, 10*time.Second, 200*time.Millisecond).Should(Equal(3), "audit_events writes must be visible before asserting on them")
 
-		got := getWorkflowByID(wf.WorkflowID)
+		got := getWorkflowByID(workflowID)
 		Expect(got.TotalExecutions).To(Equal(3))
 		Expect(got.SuccessfulExecutions).To(Equal(2))
 		Expect(got.ActualSuccessRate).ToNot(BeNil())
@@ -167,9 +150,9 @@ var _ = Describe("On-demand workflow success-rate aggregation (Issue #1661 Chang
 	})
 
 	It("IT-DS-1661-702-002: a never-executed workflow returns zero-value metrics, not a stale stored value", func() {
-		wf := createWorkflow(fmt.Sprintf("wf-successmetrics-%s-neverexecuted", testID))
+		workflowID := createWorkflow(fmt.Sprintf("wf-successmetrics-%s-neverexecuted", testID))
 
-		got := getWorkflowByID(wf.WorkflowID)
+		got := getWorkflowByID(workflowID)
 		Expect(got.TotalExecutions).To(Equal(0))
 		Expect(got.SuccessfulExecutions).To(Equal(0))
 		Expect(got.ActualSuccessRate).To(BeNil())

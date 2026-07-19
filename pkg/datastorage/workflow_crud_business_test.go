@@ -120,20 +120,12 @@ var _ = Describe("Workflow CRUD business-level gap closure (Wave 6 6f)", func() 
 		})
 	})
 
-	Describe("GetVersionsByName", func() {
-		It("UT-DS-6f-004: propagates a database error instead of returning an empty slice", func() {
-			// Complements the existing UT-DS-213-003 ordering test (success path);
-			// this closes the previously-uncovered error branch so a query failure
-			// is distinguishable from "workflow has zero versions".
-			sqlMock.ExpectQuery(`ORDER BY created_at DESC, workflow_id ASC`).
-				WillReturnError(errors.New("connection refused"))
-
-			versions, err := repo.GetVersionsByName(ctx, "restart-pod")
-
-			Expect(err).To(HaveOccurred(), "BR-STORAGE-012: a query failure must not be reported as zero versions")
-			Expect(versions).To(BeNil())
-		})
-	})
+	// GetVersionsByName (UT-DS-6f-004) was removed by Issue #1661 Phase F:
+	// it is a Postgres-only "dying" method with zero production callers
+	// post-Phase-B and no cache-backed equivalent (DD-WORKFLOW-018 makes
+	// metadata.name the workflow's sole identity, eliminating the "versions
+	// of a name" concept this method existed to enumerate) -- pruned outright
+	// in Phase C, not carried forward.
 
 	// UpdateSuccessMetrics (UT-DS-6f-005..008) was removed by Issue #1661
 	// Change 7 (DD-WORKFLOW-018): success metrics are no longer a stored,
