@@ -30,11 +30,11 @@ type ParsedAuditData struct {
 	// Metadata
 	EventType     string
 	CorrelationID string
-	ClusterName   string // DD-AUDIT-003 v2.2: cluster provenance for fleet reconstruction (CC8.1)
+	ClusterID     string // DD-AUDIT-003 v2.2: cluster provenance for fleet reconstruction (CC8.1)
 
 	// Gateway fields (from gateway.signal.received)
 	SignalType        string
-	SignalName         string
+	SignalName        string
 	SignalFingerprint string // BR-AUDIT-005: SHA256 deduplication fingerprint
 	SignalLabels      map[string]string
 	SignalAnnotations map[string]string
@@ -53,8 +53,8 @@ type ParsedAuditData struct {
 	ProviderData string // from aianalysis.analysis.completed (stored as JSON string)
 
 	// Workflow fields (Gap #5-6)
-	SelectedWorkflowRef *WorkflowRefData     // from workflowexecution.selection.completed
-	ExecutionRef        *ExecutionRefData    // from workflowexecution.execution.started
+	SelectedWorkflowRef *WorkflowRefData  // from workflowexecution.selection.completed
+	ExecutionRef        *ExecutionRefData // from workflowexecution.execution.started
 }
 
 // TimeoutConfigData represents timeout configuration extracted from audit events.
@@ -118,9 +118,9 @@ func ParseAuditEvent(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 		return nil, err
 	}
 
-	// DD-AUDIT-003 v2.2: Extract cluster_name from event envelope (top-level column, not event_data)
-	if event.ClusterName.IsSet() && !event.ClusterName.Null {
-		parsed.ClusterName = event.ClusterName.Value
+	// DD-AUDIT-003 v2.2: Extract cluster_id from event envelope (top-level column, not event_data)
+	if event.ClusterID.IsSet() && !event.ClusterID.Null {
+		parsed.ClusterID = event.ClusterID.Value
 	}
 
 	return parsed, nil
@@ -138,7 +138,7 @@ func parseGatewaySignalReceived(event ogenclient.AuditEvent) (*ParsedAuditData, 
 		EventType:         event.EventType,
 		CorrelationID:     event.CorrelationID,
 		SignalType:        normalizeSignalType(string(payload.SignalType)),
-		SignalName:         payload.SignalName,
+		SignalName:        payload.SignalName,
 		SignalFingerprint: payload.Fingerprint, // BR-AUDIT-005: SHA256 deduplication identity
 		SignalLabels:      make(map[string]string),
 		SignalAnnotations: make(map[string]string),

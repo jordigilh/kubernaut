@@ -49,7 +49,7 @@ import (
 //
 // Coverage Gap Addressed:
 // This file addresses the gap identified in TEST_COVERAGE_GAP_ANALYSIS_AUDIT_FIELDS.md
-// where missing unit tests allowed the bug (missing version, namespace, cluster_name)
+// where missing unit tests allowed the bug (missing version, namespace, cluster_id)
 // to reach Gateway E2E tests.
 //
 // Defense-in-Depth Strategy:
@@ -94,7 +94,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 	// ========================================
 	Describe("Create", func() {
 		Context("with all ADR-034 required fields", func() {
-			It("should persist audit event with version, namespace, cluster_name", func() {
+			It("should persist audit event with version, namespace, cluster_id", func() {
 				// ARRANGE: Create test event with ALL ADR-034 fields
 				testEvent := &repository.AuditEvent{
 					EventID:           uuid.New(),
@@ -129,7 +129,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 				// ASSERT: Verify ALL ADR-034 fields persisted to database
 				// This is the critical test that would have caught the bug
 				var (
-					dbVersion, dbNamespace, dbClusterName                       sql.NullString
+					dbVersion, dbNamespace, dbClusterID                         sql.NullString
 					dbEventType, dbEventCategory, dbEventAction, dbEventOutcome string
 					dbCorrelationID, dbResourceType, dbResourceID               string
 					dbActorType, dbActorID, dbSeverity                          sql.NullString
@@ -137,7 +137,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 
 				row := db.QueryRowContext(ctx, `
 					SELECT event_version, event_type, event_category, event_action, event_outcome,
-					       correlation_id, resource_type, resource_id, namespace, cluster_name,
+					       correlation_id, resource_type, resource_id, namespace, cluster_id,
 					       actor_type, actor_id, severity
 					FROM audit_events
 					WHERE event_id = $1
@@ -152,8 +152,8 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 					&dbCorrelationID,
 					&dbResourceType,
 					&dbResourceID,
-					&dbNamespace,   // namespace (was missing in bug)
-					&dbClusterName, // cluster_name (was missing in bug)
+					&dbNamespace, // namespace (was missing in bug)
+					&dbClusterID, // cluster_id (was missing in bug)
 					&dbActorType,
 					&dbActorID,
 					&dbSeverity,
@@ -168,8 +168,8 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 				Expect(dbNamespace.Valid).To(BeTrue(), "namespace should not be NULL")
 				Expect(dbNamespace.String).To(Equal("default"), "namespace should match input")
 
-				Expect(dbClusterName.Valid).To(BeTrue(), "cluster_name should not be NULL")
-				Expect(dbClusterName.String).To(Equal("prod-cluster"), "cluster_name should match input")
+				Expect(dbClusterID.Valid).To(BeTrue(), "cluster_id should not be NULL")
+				Expect(dbClusterID.String).To(Equal("prod-cluster"), "cluster_id should match input")
 
 				// Verify other ADR-034 fields
 				Expect(dbEventType).To(Equal("gateway.signal.received"))
@@ -213,7 +213,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 				Expect(dbVersion).To(Equal("1.0"), "Should default to '1.0' per ADR-034")
 			})
 
-			It("should handle NULL optional fields (namespace, cluster_name)", func() {
+			It("should handle NULL optional fields (namespace, cluster_id)", func() {
 				// ARRANGE: Event without optional fields
 				testEvent := &repository.AuditEvent{
 					EventID:           uuid.New(),
@@ -235,14 +235,14 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 				// ASSERT: NULL fields handled correctly
 				Expect(err).ToNot(HaveOccurred())
 
-				var dbNamespace, dbClusterName sql.NullString
+				var dbNamespace, dbClusterID sql.NullString
 				err = db.QueryRowContext(ctx,
-					"SELECT namespace, cluster_name FROM audit_events WHERE event_id = $1",
-					result.EventID).Scan(&dbNamespace, &dbClusterName)
+					"SELECT namespace, cluster_id FROM audit_events WHERE event_id = $1",
+					result.EventID).Scan(&dbNamespace, &dbClusterID)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(dbNamespace.Valid).To(BeFalse(), "namespace should be NULL when empty")
-				Expect(dbClusterName.Valid).To(BeFalse(), "cluster_name should be NULL when empty")
+				Expect(dbClusterID.Valid).To(BeFalse(), "cluster_id should be NULL when empty")
 			})
 		})
 	})
@@ -252,7 +252,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 	// ========================================
 	//
 	// These tests would have caught the missing field bug where
-	// version, namespace, cluster_name weren't being selected/scanned.
+	// version, namespace, cluster_id weren't being selected/scanned.
 	//
 	// ========================================
 	Describe("Query", func() {
@@ -296,7 +296,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 		})
 
 		Context("with correlation_id filter", func() {
-			It("should retrieve events with ALL ADR-034 fields including version, namespace, cluster_name", func() {
+			It("should retrieve events with ALL ADR-034 fields including version, namespace, cluster_id", func() {
 				// ACT: Build query and execute
 				querySQL, args, err := builder.Build()
 				Expect(err).ToNot(HaveOccurred())
@@ -323,7 +323,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 						"Namespace field MUST be populated from namespace column (ADR-034)")
 
 					Expect(event.ClusterID).To(Equal("prod-cluster"),
-						"ClusterID field MUST be populated from cluster_name column (ADR-034)")
+						"ClusterID field MUST be populated from cluster_id column (ADR-034)")
 
 					// Standard ADR-034 fields
 					Expect(event.EventType).To(ContainSubstring("gateway.signal.received"))
@@ -338,7 +338,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 				}
 			})
 
-			It("should handle NULL namespace and cluster_name", func() {
+			It("should handle NULL namespace and cluster_id", func() {
 				// ARRANGE: Insert event with NULL optional fields
 				testEvent := &repository.AuditEvent{
 					EventID:           uuid.New(),
@@ -376,7 +376,7 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 
 				event := events[0]
 				Expect(event.ResourceNamespace).To(BeEmpty(), "NULL namespace should be empty string")
-				Expect(event.ClusterID).To(BeEmpty(), "NULL cluster_name should be empty string")
+				Expect(event.ClusterID).To(BeEmpty(), "NULL cluster_id should be empty string")
 			})
 		})
 
@@ -495,17 +495,17 @@ var _ = Describe("AuditEventsRepository Integration Tests", func() {
 
 			// ASSERT: Verify all events persisted with correct fields
 			for i, event := range events {
-				var dbVersion, dbNamespace, dbClusterName string
+				var dbVersion, dbNamespace, dbClusterID string
 				err := db.QueryRowContext(ctx, `
-					SELECT event_version, namespace, cluster_name
+					SELECT event_version, namespace, cluster_id
 					FROM audit_events
 					WHERE event_id = $1
-				`, event.EventID).Scan(&dbVersion, &dbNamespace, &dbClusterName)
+				`, event.EventID).Scan(&dbVersion, &dbNamespace, &dbClusterID)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(dbVersion).To(Equal("1.0"))
 				Expect(dbNamespace).To(Equal(fmt.Sprintf("ns-%d", i+1)))
-				Expect(dbClusterName).To(Equal(fmt.Sprintf("cluster-%d", i+1)))
+				Expect(dbClusterID).To(Equal(fmt.Sprintf("cluster-%d", i+1)))
 			}
 		})
 	})

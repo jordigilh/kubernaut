@@ -291,14 +291,6 @@ func ExtractClusterInfo(u *unstructured.Unstructured) (ClusterInfo, error) {
 		ToolPrefix: name + "__",
 	}
 
-	// Extract display name from annotation or label.
-	annotations := u.GetAnnotations()
-	if displayName, ok := annotations["kubernaut.ai/cluster-name"]; ok {
-		info.Name = displayName
-	} else {
-		info.Name = name
-	}
-
 	// Extract MCP endpoint from status.endpoint or spec.
 	endpoint, found, _ := unstructured.NestedString(u.Object, "status", "endpoint")
 	if found && endpoint != "" {

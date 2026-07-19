@@ -71,7 +71,7 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		Expect(clusterReg.Start(ctx)).To(Succeed(), "EAIGWRegistry should start against envtest")
 
 		By("Creating Backend 'it-cluster' in envtest")
-		createBackend(ctx, "it-cluster", "IT Cluster")
+		createBackend(ctx, "it-cluster")
 		Eventually(func() bool {
 			_, ok := clusterReg.Get("it-cluster")
 			return ok
@@ -221,4 +221,3 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		})
 	})
 })
-

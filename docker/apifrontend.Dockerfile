@@ -11,14 +11,14 @@
 # ============================================================================
 # Stage 1: Build (native cross-compile, no QEMU needed for Go)
 # ============================================================================
-FROM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:85871d8ad1657b23575ebbb732ac672b5545b1c31c044bf6511d5772566a66e9 AS builder
+FROM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:e0b7c6e41776a1cef9b2a2294e4bd440c75ccf8ee66a11fbc1338a1f10b3e912 AS builder
 
 ARG TARGETARCH
 ARG GOOS=linux
 ARG GOARCH=${TARGETARCH}
 ARG GOFLAGS=""
 ENV GOTOOLCHAIN=auto
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -61,7 +61,7 @@ USER 65534
 EXPOSE 8443 8081 9090
 ENTRYPOINT ["/apifrontend"]
 
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut-apifrontend" \
@@ -96,7 +96,7 @@ USER 1001
 EXPOSE 8443 8081 9090
 ENTRYPOINT ["/usr/local/bin/apifrontend"]
 
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut-apifrontend" \

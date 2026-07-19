@@ -115,15 +115,16 @@ type ClusterListResponse struct {
 }
 
 // ClusterInfoResponse represents a single cluster in the list response.
+// ID-only (issue #1651): cluster display names are non-unique and unsafe
+// for disambiguation, so only the unique ID is surfaced.
 type ClusterInfoResponse struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID string `json:"id"`
 }
 
 // handleListClusters returns all clusters known to the FMC cluster registry.
 //
 //	GET /api/v1/clusters
-//	-> 200 {"clusters": [{"id": "...", "name": "..."}, ...]}
+//	-> 200 {"clusters": [{"id": "..."}, ...]}
 //	-> 405 if not GET
 func (h *Handler) handleListClusters(w http.ResponseWriter, r *http.Request) {
 	if !requireGET(w, r) {
@@ -136,8 +137,7 @@ func (h *Handler) handleListClusters(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, c := range clusters {
 		resp.Clusters = append(resp.Clusters, ClusterInfoResponse{
-			ID:   c.ID,
-			Name: c.Name,
+			ID: c.ID,
 		})
 	}
 

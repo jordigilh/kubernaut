@@ -198,6 +198,26 @@ func LastContentIsFunctionResponse(contents []GeminiContent) bool {
 	return false
 }
 
+// HasFunctionResponseNamed scans all Gemini contents (not just the last entry)
+// for a FunctionResponse matching the given tool name. Used to guard
+// NextToolCall chaining (#1409): unlike LastContentIsFunctionResponse (which
+// only looks at the most recent turn), NextToolCall must stop firing once its
+// own target tool has responded ANYWHERE in history, even though the ADK
+// reasoning loop keeps appending new (non-matching) content afterward —
+// otherwise the same NextToolCall re-fires every subsequent round-trip,
+// producing an unbounded loop (confirmed via must-gather: scenario firing
+// every ~0.5s for 60+ seconds before the client-side timeout).
+func HasFunctionResponseNamed(contents []GeminiContent, name string) bool {
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			if p.FunctionResponse != nil && p.FunctionResponse.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ExtractFieldFromFunctionResponse scans Gemini contents for a FunctionResponse
 // with the given tool name and extracts a top-level string field from its JSON
 // response object. Returns empty string if not found.

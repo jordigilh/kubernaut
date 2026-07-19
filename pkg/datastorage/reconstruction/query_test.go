@@ -55,7 +55,7 @@ var _ = Describe("QueryAuditEventsForReconstruction", func() {
 		"event_id", "event_version", "event_type", "event_category", "event_action",
 		"correlation_id", "event_timestamp", "event_outcome", "severity",
 		"resource_type", "resource_id", "actor_type", "actor_id", "parent_event_id",
-		"event_data", "event_date", "namespace", "cluster_name",
+		"event_data", "event_date", "namespace", "cluster_id",
 		"duration_ms", "error_code", "error_message",
 	}
 
@@ -103,7 +103,7 @@ var _ = Describe("QueryAuditEventsForReconstruction", func() {
 		func(eventType string, eventDataJSON string) {
 			ts := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 			mock.ExpectQuery("SELECT").
-				WithArgs("corr-"+eventType).
+				WithArgs("corr-" + eventType).
 				WillReturnRows(sqlmock.NewRows(auditEventColumns).AddRow(
 					"11111111-1111-1111-1111-111111111111", "1.0", eventType, "test", "action",
 					"corr-"+eventType, ts, "success", nil,

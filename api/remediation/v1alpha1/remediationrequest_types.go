@@ -335,14 +335,6 @@ type RemediationRequestSpec struct {
 	// +kubebuilder:validation:MaxLength=253
 	ClusterID string `json:"clusterID,omitempty"`
 
-	// ClusterName is a human-readable display name for the cluster.
-	// Used for audit trail, notifications, and operator-facing UIs.
-	// May differ from ClusterID (e.g., ClusterID="prod-east-1", ClusterName="Production US-East").
-	// Reference: ADR-065 (Multi-Cluster Federation)
-	// +optional
-	// +kubebuilder:validation:MaxLength=253
-	ClusterName string `json:"clusterName,omitempty"`
-
 	// Temporal Data
 	// When the signal first started firing (from upstream source)
 	FiringTime metav1.Time `json:"firingTime"`

@@ -357,3 +357,86 @@ var _ = Describe("PooledMCPClient (#1306)", func() {
 		})
 	})
 })
+
+// #1637: PooledMCPClient must attach the caller's ctx to the pooled entry's
+// EventRelay for the exact duration of the pooled CallTool, so that
+// WatchTerminalEvents (the sole consumer of the session's residual event
+// channel after handoff) can discover which A2A call is "live" and relay
+// KA's mid-call notifications to it. See DD-AF-009.
+var _ = Describe("PooledMCPClient live event relay attach/detach — #1637", func() {
+
+	It("IT-AF-1637-003: callPooledTool attaches ctx to the relay during CallTool and detaches after", func() {
+		var duringCallCurrent context.Context
+		var duringCallOK bool
+
+		session := &mockPoolSession{}
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				return session, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		relay, err := pool.InjectVerified(context.Background(), "ns/rr-relay-call", "alice", session)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(relay).NotTo(BeNil())
+
+		session.callFn = func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+			duringCallCurrent = relay.Current()
+			duringCallOK = duringCallCurrent != nil
+			resp := `{"status":"message_received","session_id":"sess-relay"}`
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+			}, nil
+		}
+
+		client := ka.NewPooledMCPClient(pool, logr.Discard())
+		ctx := ctxWithIdentity("alice", []string{"sre"})
+
+		_, err = client.InvokeAction(ctx, ka.InvokeActionArgs{
+			RRID: "ns/rr-relay-call", Action: "message", Message: "hello",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(duringCallOK).To(BeTrue(),
+			"IT-AF-1637-003: relay.Current() must be non-nil while CallTool is in flight")
+		Expect(duringCallCurrent).To(Equal(ctx),
+			"IT-AF-1637-003: relay.Current() during the call must be the exact ctx passed to InvokeAction")
+		Expect(relay.Current()).To(BeNil(),
+			"IT-AF-1637-003: relay must be detached after the pooled call returns")
+	})
+
+	It("IT-AF-1637-003: does not attach when the pooled entry has no relay (plain Inject, no events channel)", func() {
+		var duringCallCurrent context.Context
+
+		session := &mockPoolSession{}
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				return session, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+		pool.Inject("ns/rr-no-relay", "alice", session)
+		Expect(pool.RelayFor("ns/rr-no-relay", "alice")).To(BeNil())
+
+		session.callFn = func(_ context.Context, _ *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+			duringCallCurrent = context.Background() // sentinel: overwritten only if a relay existed
+			resp := `{"status":"message_received","session_id":"sess-no-relay"}`
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: resp}},
+			}, nil
+		}
+
+		client := ka.NewPooledMCPClient(pool, logr.Discard())
+		ctx := ctxWithIdentity("alice", []string{"sre"})
+
+		_, err := client.InvokeAction(ctx, ka.InvokeActionArgs{
+			RRID: "ns/rr-no-relay", Action: "message", Message: "hello",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(duringCallCurrent).To(Equal(context.Background()),
+			"no relay means callPooledTool has nothing to attach — call must still succeed unaffected")
+	})
+})

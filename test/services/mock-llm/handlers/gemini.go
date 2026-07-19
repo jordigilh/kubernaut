@@ -173,7 +173,15 @@ func (h *handler) handleGeminiToolResponse(
 	// NextToolCall: when the initial tool has been called (FunctionResponse
 	// present) and a chained next_tool_call is configured, emit it. This
 	// simulates the LLM auto-proceeding to a second tool in the same session.
-	if hasFunctionResults && cfg.NextToolCall != nil {
+	//
+	// Guard against infinite NextToolCall loops (#1409): fire at most once —
+	// stop once NextToolCall's own target tool has already responded anywhere
+	// in history. Without this, the ADK reasoning loop keeps calling back
+	// after NextToolCall's FunctionResponse is appended, and this handler
+	// would re-fire the same NextToolCall forever (see HasFunctionResponseNamed
+	// doc for the confirmed failure mode).
+	nextToolAlreadyFired := cfg.NextToolCall != nil && response.HasFunctionResponseNamed(contents, cfg.NextToolCall.Name)
+	if hasFunctionResults && cfg.NextToolCall != nil && !nextToolAlreadyFired {
 		h.trackToolCall(cfg.NextToolCall.Name)
 		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(cfg.NextToolCall.Name, scenarios.MockScenarioConfig{
 			ToolCallName: cfg.NextToolCall.Name,

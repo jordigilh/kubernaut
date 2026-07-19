@@ -523,7 +523,7 @@ func (r *Reconciler) emitApprovalRequestedAudit(ctx context.Context, rr *remedia
 			CorrelationID: correlationID,
 			Namespace:     rr.Namespace,
 			RRName:        rr.Name,
-			ClusterName:   rr.Spec.ClusterID,
+			ClusterID:     rr.Spec.ClusterID,
 			RARName:       rarName,
 		},
 		workflowID,
@@ -573,7 +573,7 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 	audit.SetNamespace(event, rr.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if rr.Spec.ClusterID != "" {
-		audit.SetClusterName(event, rr.Spec.ClusterID)
+		audit.SetClusterID(event, rr.Spec.ClusterID)
 	}
 	audit.SetDuration(event, int(durationMs))
 
@@ -631,7 +631,7 @@ func (r *Reconciler) emitRetentionCleanupAudit(ctx context.Context, rr *remediat
 	audit.SetNamespace(event, rr.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if rr.Spec.ClusterID != "" {
-		audit.SetClusterName(event, rr.Spec.ClusterID)
+		audit.SetClusterID(event, rr.Spec.ClusterID)
 	}
 
 	payload := api.RemediationOrchestratorAuditPayload{

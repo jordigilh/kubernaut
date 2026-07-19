@@ -47,7 +47,7 @@ type ExpectedAuditEvent struct {
 	ResourceID    *string
 	ResourceType  *string
 	Namespace     *string
-	ClusterName   *string
+	ClusterID     *string
 
 	// EventData fields (validated if non-nil)
 	EventDataFields map[string]interface{}
@@ -130,10 +130,10 @@ func ValidateAuditEvent(event ogenclient.AuditEvent, expected ExpectedAuditEvent
 			"Audit event namespace mismatch")
 	}
 
-	if expected.ClusterName != nil {
-		Expect(event.ClusterName.IsSet()).To(BeTrue(), "Audit event cluster_name should be set")
-		Expect(event.ClusterName.Value).To(Equal(*expected.ClusterName),
-			"Audit event cluster name mismatch")
+	if expected.ClusterID != nil {
+		Expect(event.ClusterID.IsSet()).To(BeTrue(), "Audit event cluster_id should be set")
+		Expect(event.ClusterID.Value).To(Equal(*expected.ClusterID),
+			"Audit event cluster ID mismatch")
 	}
 
 	// Validate EventData fields if specified

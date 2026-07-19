@@ -130,8 +130,10 @@ type AuditEvent struct {
 	// Namespace is the Kubernetes namespace (optional)
 	Namespace *string `json:"namespace,omitempty"`
 
-	// ClusterName is the Kubernetes cluster name (optional)
-	ClusterName *string `json:"cluster_name,omitempty"`
+	// ClusterID is the unique cluster identifier (optional). Renamed from
+	// ClusterName in #1651 — never populated as a display name in any
+	// shipped release; its actual intent is the unique cluster identifier.
+	ClusterID *string `json:"cluster_id,omitempty"`
 
 	// ========================================
 	// EVENT PAYLOAD (JSONB - flexible, queryable)
@@ -192,7 +194,7 @@ func NewAuditEvent() *AuditEvent {
 		EventID:        uuid.New(),
 		EventVersion:   "1.0",
 		EventTimestamp: time.Now().UTC(), // ✅ Force UTC to match DataStorage server timezone
-		RetentionDays:  2555, // 7 years (SOC 2 / ISO 27001)
+		RetentionDays:  2555,             // 7 years (SOC 2 / ISO 27001)
 		IsSensitive:    false,
 	}
 }

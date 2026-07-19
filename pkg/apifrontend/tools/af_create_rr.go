@@ -58,9 +58,6 @@ type CreateRRArgs struct {
 	// ClusterID is the cluster identifier from Thanos external_labels.
 	// Empty string indicates local hub cluster (ADR-065).
 	ClusterID string `json:"cluster_id,omitempty"`
-	// ClusterName is the human-readable display name for the cluster.
-	// Populated from the MCP Gateway Backend CRD displayName (ADR-065).
-	ClusterName string `json:"cluster_name,omitempty"`
 }
 
 // CreateRRResult is the output of RR creation.
@@ -71,6 +68,11 @@ type CreateRRResult struct {
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
 	SignalName     string `json:"signal_name,omitempty"`
+	// ClusterID attributes the returned RR to its cluster of origin (#1409,
+	// AU-3). On the create branch this echoes args.ClusterID; on the dedup
+	// branch it is read from the *existing* RR object (not the caller's
+	// args) to avoid misattributing audit provenance under a create race.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
@@ -80,10 +82,6 @@ type CreateRRResult struct {
 // and the check_existing_rr safety net prevents duplicate CRDs regardless.
 // Note: parallel tests with the same fingerprint may share flights (by design).
 var rrCreateGroup singleflight.Group
-
-func rrFingerprint(namespace, kind, name string) string {
-	return rrFingerprintWithCluster("", namespace, kind, name)
-}
 
 // rrFingerprintWithCluster generates a dedup fingerprint that includes the cluster
 // context. Delegates to gwtypes.CalculateClusterAwareFingerprint to ensure GW and
@@ -112,10 +110,11 @@ func checkExistingRRByFingerprint(ctx context.Context, client crclient.Client, c
 		phase := string(item.Status.OverallPhase)
 		if !IsTerminalPhase(phase) {
 			return CheckExistingRRResult{
-				Exists:   true,
-				RRID:     item.Name,
-				Phase:    phase,
-				Severity: item.Spec.Severity,
+				Exists:    true,
+				RRID:      item.Name,
+				Phase:     phase,
+				Severity:  item.Spec.Severity,
+				ClusterID: item.Spec.ClusterID,
 			}, nil
 		}
 	}
@@ -194,6 +193,9 @@ func validateCreateRRArgs(d *ToolDeps, args *CreateRRArgs) error {
 			return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 		}
 	}
+	if err := validate.ClusterID(args.ClusterID); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
+	}
 	return nil
 }
 
@@ -247,6 +249,7 @@ func createOrReuseRR(ctx context.Context, d *ToolDeps, req createRRRequest) (*Cr
 			Message:       fmt.Sprintf("RemediationRequest already exists (%s)", existing.Phase),
 			AlreadyExists: true,
 			Severity:      existing.Severity,
+			ClusterID:     existing.ClusterID,
 		}, nil
 	}
 
@@ -259,6 +262,7 @@ func createOrReuseRR(ctx context.Context, d *ToolDeps, req createRRRequest) (*Cr
 		RRID:       rrObj.Name,
 		Message:    fmt.Sprintf("RemediationRequest created for %s/%s by %s", req.Args.Kind, req.Args.Name, req.Username),
 		SignalName: req.SignalName,
+		ClusterID:  req.Args.ClusterID,
 	}
 	if req.TriageResult != nil {
 		out.Severity = req.TriageResult.Severity
@@ -295,7 +299,6 @@ func buildRRObject(controllerNS string, args *CreateRRArgs, fingerprint, signalN
 			TargetType:        "kubernetes",
 			TargetResource:    buildTypedTargetResource(args),
 			ClusterID:         args.ClusterID,
-			ClusterName:       args.ClusterName,
 		},
 	}
 
@@ -321,28 +324,30 @@ func emitCreateRRAudit(ctx context.Context, d *ToolDeps, args *CreateRRArgs, use
 	}
 	if res.AlreadyExists {
 		d.Auditor.Emit(ctx, &audit.Event{
-			Type:        audit.EventRRDeduplicated,
-			UserID:      username,
-			ClusterName: args.ClusterName,
+			Type:      audit.EventRRDeduplicated,
+			UserID:    username,
+			ClusterID: args.ClusterID,
 			Detail: map[string]string{
 				"namespace":   d.ControllerNS,
 				"kind":        args.Kind,
 				"name":        args.Name,
 				"existing_rr": res.RRID,
+				"cluster_id":  res.ClusterID,
 			},
 		})
 		return
 	}
 	d.Auditor.Emit(ctx, &audit.Event{
-		Type:        audit.EventRRCreated,
-		UserID:      username,
-		ClusterName: args.ClusterName,
+		Type:      audit.EventRRCreated,
+		UserID:    username,
+		ClusterID: args.ClusterID,
 		Detail: map[string]string{
-			"namespace": d.ControllerNS,
-			"kind":      args.Kind,
-			"name":      args.Name,
-			"rr_id":     res.RRID,
-			"severity":  resolvedSeverity,
+			"namespace":  d.ControllerNS,
+			"kind":       args.Kind,
+			"name":       args.Name,
+			"rr_id":      res.RRID,
+			"severity":   resolvedSeverity,
+			"cluster_id": res.ClusterID,
 		},
 	})
 }

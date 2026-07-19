@@ -8096,9 +8096,12 @@ type AuditEvent struct {
 	CorrelationID string       `json:"correlation_id"`
 	ParentEventID OptNilUUID   `json:"parent_event_id"`
 	Namespace     OptNilString `json:"namespace"`
-	ClusterName   OptNilString `json:"cluster_name"`
-	Severity      OptNilString `json:"severity"`
-	DurationMs    OptNilInt    `json:"duration_ms"`
+	// Unique cluster identifier for fleet provenance (SOC2 CC8.1, DD-AUDIT-003 v2.2).
+	// Renamed from cluster_name in #1651 (never populated as a display name in any
+	// shipped release; the column's actual intent is the unique cluster identifier).
+	ClusterID  OptNilString `json:"cluster_id"`
+	Severity   OptNilString `json:"severity"`
+	DurationMs OptNilInt    `json:"duration_ms"`
 	// Parent row partition timestamp; required with parent_event_id so the FK hits the correct
 	// audit_events partition (DATE derived at persistence—align with parent's event_timestamp).
 	ParentEventDate OptNilDateTime `json:"parent_event_date"`
@@ -8194,9 +8197,9 @@ func (s *AuditEvent) GetNamespace() OptNilString {
 	return s.Namespace
 }
 
-// GetClusterName returns the value of ClusterName.
-func (s *AuditEvent) GetClusterName() OptNilString {
-	return s.ClusterName
+// GetClusterID returns the value of ClusterID.
+func (s *AuditEvent) GetClusterID() OptNilString {
+	return s.ClusterID
 }
 
 // GetSeverity returns the value of Severity.
@@ -8349,9 +8352,9 @@ func (s *AuditEvent) SetNamespace(val OptNilString) {
 	s.Namespace = val
 }
 
-// SetClusterName sets the value of ClusterName.
-func (s *AuditEvent) SetClusterName(val OptNilString) {
-	s.ClusterName = val
+// SetClusterID sets the value of ClusterID.
+func (s *AuditEvent) SetClusterID(val OptNilString) {
+	s.ClusterID = val
 }
 
 // SetSeverity sets the value of Severity.
@@ -11765,9 +11768,12 @@ type AuditEventRequest struct {
 	CorrelationID string       `json:"correlation_id"`
 	ParentEventID OptNilUUID   `json:"parent_event_id"`
 	Namespace     OptNilString `json:"namespace"`
-	ClusterName   OptNilString `json:"cluster_name"`
-	Severity      OptNilString `json:"severity"`
-	DurationMs    OptNilInt    `json:"duration_ms"`
+	// Unique cluster identifier for fleet provenance (SOC2 CC8.1, DD-AUDIT-003 v2.2).
+	// Renamed from cluster_name in #1651 (never populated as a display name in any
+	// shipped release; the column's actual intent is the unique cluster identifier).
+	ClusterID  OptNilString `json:"cluster_id"`
+	Severity   OptNilString `json:"severity"`
+	DurationMs OptNilInt    `json:"duration_ms"`
 	// Parent row partition timestamp; required with parent_event_id so the FK hits the correct
 	// audit_events partition (DATE derived at persistence—align with parent's event_timestamp).
 	ParentEventDate OptNilDateTime `json:"parent_event_date"`
@@ -11853,9 +11859,9 @@ func (s *AuditEventRequest) GetNamespace() OptNilString {
 	return s.Namespace
 }
 
-// GetClusterName returns the value of ClusterName.
-func (s *AuditEventRequest) GetClusterName() OptNilString {
-	return s.ClusterName
+// GetClusterID returns the value of ClusterID.
+func (s *AuditEventRequest) GetClusterID() OptNilString {
+	return s.ClusterID
 }
 
 // GetSeverity returns the value of Severity.
@@ -11968,9 +11974,9 @@ func (s *AuditEventRequest) SetNamespace(val OptNilString) {
 	s.Namespace = val
 }
 
-// SetClusterName sets the value of ClusterName.
-func (s *AuditEventRequest) SetClusterName(val OptNilString) {
-	s.ClusterName = val
+// SetClusterID sets the value of ClusterID.
+func (s *AuditEventRequest) SetClusterID(val OptNilString) {
+	s.ClusterID = val
 }
 
 // SetSeverity sets the value of Severity.
@@ -26864,10 +26870,12 @@ type ReconstructionResponse struct {
 	ReconstructedAt OptDateTime `json:"reconstructed_at"`
 	// Correlation ID used for reconstruction.
 	CorrelationID OptString `json:"correlation_id"`
-	// Cluster name where the remediation originated (DD-AUDIT-003 v2.2).
+	// Unique cluster identifier where the remediation originated (DD-AUDIT-003 v2.2).
 	// Empty for single-cluster deployments (backward compatible).
 	// Used by auditors to attribute fleet remediations to source clusters (SOC2 CC8.1).
-	ClusterName OptString `json:"cluster_name"`
+	// Renamed from cluster_name in #1651 (never populated as a display name in any
+	// shipped release; the column's actual intent is the unique cluster identifier).
+	ClusterID OptString `json:"cluster_id"`
 }
 
 // GetRemediationRequestYaml returns the value of RemediationRequestYaml.
@@ -26890,9 +26898,9 @@ func (s *ReconstructionResponse) GetCorrelationID() OptString {
 	return s.CorrelationID
 }
 
-// GetClusterName returns the value of ClusterName.
-func (s *ReconstructionResponse) GetClusterName() OptString {
-	return s.ClusterName
+// GetClusterID returns the value of ClusterID.
+func (s *ReconstructionResponse) GetClusterID() OptString {
+	return s.ClusterID
 }
 
 // SetRemediationRequestYaml sets the value of RemediationRequestYaml.
@@ -26915,9 +26923,9 @@ func (s *ReconstructionResponse) SetCorrelationID(val OptString) {
 	s.CorrelationID = val
 }
 
-// SetClusterName sets the value of ClusterName.
-func (s *ReconstructionResponse) SetClusterName(val OptString) {
-	s.ClusterName = val
+// SetClusterID sets the value of ClusterID.
+func (s *ReconstructionResponse) SetClusterID(val OptString) {
+	s.ClusterID = val
 }
 
 func (*ReconstructionResponse) reconstructRemediationRequestRes() {}

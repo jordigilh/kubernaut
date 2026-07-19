@@ -28,7 +28,7 @@ ARG GOOS=linux
 ARG GOARCH=${TARGETARCH}
 # Support coverage profiling for E2E tests (E2E_COVERAGE_COLLECTION.md)
 ARG GOFLAGS=""
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -96,7 +96,7 @@ EXPOSE 8080 8081 9090
 ENTRYPOINT ["/data-storage"]
 CMD []
 
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
@@ -136,7 +136,7 @@ EXPOSE 8080 8081 9090
 ENTRYPOINT ["/usr/local/bin/data-storage"]
 CMD []
 
-ARG APP_VERSION=v1.5.2
+ARG APP_VERSION=v1.6.0
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \

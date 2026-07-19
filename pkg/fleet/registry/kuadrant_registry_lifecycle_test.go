@@ -73,7 +73,6 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(info.ID).To(Equal("loopback-cluster"))
 			Expect(info.ToolPrefix).To(Equal("loopback_cluster_"))
-			Expect(info.Name).To(Equal("loopback-cluster"))
 			Expect(info.Namespace).To(Equal("kuadrant-system"))
 		})
 	})

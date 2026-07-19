@@ -145,7 +145,7 @@ func (m *Manager) BuildRemediationCreatedEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	// Gap #8: Build timeout_config structure for audit
@@ -202,7 +202,7 @@ func (m *Manager) BuildLifecycleStartedEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	// Use ogen union constructor (OGEN-MIGRATION)
@@ -235,7 +235,7 @@ func (m *Manager) BuildLifecycleVerifyingStartedEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
@@ -270,7 +270,7 @@ func (m *Manager) BuildLifecycleVerificationCompletedEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
@@ -306,7 +306,7 @@ func (m *Manager) BuildLifecycleVerificationTimedOutEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
@@ -353,7 +353,7 @@ func (m *Manager) BuildPhaseTransitionEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
@@ -403,7 +403,7 @@ func (m *Manager) BuildCompletionEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 	audit.SetDuration(event, int(durationMs))
 
@@ -471,7 +471,7 @@ func (m *Manager) BuildFailureEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 	audit.SetDuration(event, int(durationMs))
 
@@ -512,7 +512,7 @@ type ApprovalEventContext struct {
 	CorrelationID string
 	Namespace     string
 	RRName        string
-	ClusterName   string
+	ClusterID     string
 	RARName       string
 }
 
@@ -525,8 +525,8 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	confidence string,
 	requiredBy time.Time,
 ) (*api.AuditEventRequest, error) {
-	correlationID, namespace, rrName, clusterName, rarName :=
-		evtCtx.CorrelationID, evtCtx.Namespace, evtCtx.RRName, evtCtx.ClusterName, evtCtx.RARName
+	correlationID, namespace, rrName, clusterID, rarName :=
+		evtCtx.CorrelationID, evtCtx.Namespace, evtCtx.RRName, evtCtx.ClusterID, evtCtx.RARName
 	// Build audit event (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
 	audit.SetEventType(event, EventTypeApprovalRequested)
@@ -538,8 +538,8 @@ func (m *Manager) BuildApprovalRequestedEvent(
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+	if clusterID != "" {
+		audit.SetClusterID(event, clusterID)
 	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
@@ -569,8 +569,8 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	decidedBy string,
 	message string,
 ) (*api.AuditEventRequest, error) {
-	correlationID, namespace, rrName, clusterName, rarName :=
-		evtCtx.CorrelationID, evtCtx.Namespace, evtCtx.RRName, evtCtx.ClusterName, evtCtx.RARName
+	correlationID, namespace, rrName, clusterID, rarName :=
+		evtCtx.CorrelationID, evtCtx.Namespace, evtCtx.RRName, evtCtx.ClusterID, evtCtx.RARName
 
 	// REFACTOR-RO-AUD-001: Get decision mapping (replaces triple switch statement)
 	mapping, _ := GetApprovalDecisionMapping(decision)
@@ -589,8 +589,8 @@ func (m *Manager) BuildApprovalDecisionEvent(
 	audit.SetCorrelationID(event, correlationID)
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
-	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+	if clusterID != "" {
+		audit.SetClusterID(event, clusterID)
 	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
@@ -644,7 +644,7 @@ func (m *Manager) BuildManualReviewEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 	audit.SetSeverity(event, "warning")
 
@@ -706,7 +706,7 @@ func (m *Manager) BuildRoutingBlockedEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	// Event data (DD-AUDIT-002 V2.2: Direct struct assignment, zero unstructured data)
@@ -767,7 +767,7 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	payload := api.RemediationOrchestratorAuditPayload{
@@ -800,13 +800,13 @@ func (m *Manager) BuildRemediationWorkflowCreatedEvent(
 // EACreatedData holds the propagation delay breakdown for the orchestrator.ea.created audit event.
 // Issue #277: The RO is the source of truth for propagation delays; EM no longer carries them.
 type EACreatedData struct {
-	EAName               string
+	EAName                 string
 	HashComputeDelay       time.Duration
-	AlertCheckDelay      time.Duration
-	GitOpsSyncDelay      time.Duration
+	AlertCheckDelay        time.Duration
+	GitOpsSyncDelay        time.Duration
 	OperatorReconcileDelay time.Duration
-	IsGitOpsManaged      bool
-	IsCRD                bool
+	IsGitOpsManaged        bool
+	IsCRD                  bool
 }
 
 // BuildEACreatedEvent builds the orchestrator.ea.created audit event with propagation delay
@@ -830,7 +830,7 @@ func (m *Manager) BuildEACreatedEvent(
 	audit.SetNamespace(event, namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if clusterName != "" {
-		audit.SetClusterName(event, clusterName)
+		audit.SetClusterID(event, clusterName)
 	}
 
 	payload := api.RemediationOrchestratorAuditPayload{

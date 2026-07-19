@@ -15,7 +15,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
-	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 )
 
 // RemediateArgs defines the LLM-supplied input for kubernaut_remediate.
@@ -29,6 +28,9 @@ type RemediateArgs struct {
 	// APIVersion is the Kubernetes API group/version (e.g., "apps/v1", "v1").
 	// Required when providing namespace/kind/name (#1372).
 	APIVersion string `json:"api_version"`
+	// ClusterID identifies the fleet cluster the target resource lives on
+	// (#1409, ADR-065). Empty for the local hub cluster.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // RemediateResult is the output of kubernaut_remediate.
@@ -39,6 +41,10 @@ type RemediateResult struct {
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
 	SignalName     string `json:"signal_name,omitempty"`
+	// ClusterID attributes the RR to its cluster of origin (#1409). Kept as
+	// the trailing field, matching CreateRRResult's field order, so the
+	// RemediateResult(result) conversion below stays valid.
+	ClusterID string `json:"cluster_id,omitempty"`
 }
 
 // HandleRemediate creates a RemediationRequest CRD without creating an
@@ -78,6 +84,7 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 			RRID:          rr.Name,
 			Message:       fmt.Sprintf("RemediationRequest already exists (%s)", rr.Status.OverallPhase),
 			AlreadyExists: true,
+			ClusterID:     rr.Spec.ClusterID,
 		}, nil
 	}
 
@@ -92,6 +99,7 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 		Description:   args.Description,
 		APIVersion:    args.APIVersion,
 		ClusterScoped: args.Namespace == "",
+		ClusterID:     args.ClusterID,
 	}
 
 	result, err := HandleCreateRR(ctx, d, createArgs, username)
@@ -99,14 +107,7 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 		return RemediateResult{}, err
 	}
 
-	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
-		RRID:      result.RRID,
-		Namespace: args.Namespace,
-		Kind:      args.Kind,
-		Target:    remediationrequest.FormatResourceDisplay(args.Kind, args.Name),
-		AlertName: result.SignalName,
-		Phase:     "Investigating",
-	})
+	launcher.SetRRContextSafe(ctx, newlyCreatedRRContext(result.RRID, args.Namespace, args.Kind, args.Name, result.SignalName, result.ClusterID))
 
 	return RemediateResult(result), nil
 }
@@ -124,7 +125,9 @@ func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, contr
 	}
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_remediate",
-		Description: "Create a RemediationRequest for autonomous remediation. Use when fixing issues without interactive investigation. The pipeline will analyze and remediate automatically.",
+		Description: "Create a RemediationRequest for autonomous remediation. Use when fixing issues without interactive investigation. " +
+			"The pipeline will analyze and remediate automatically. " +
+			"For fleet (multi-cluster) deployments, also provide cluster_id to identify which cluster the resource lives on; omit for the local hub cluster.",
 	}, func(ctx tool.Context, args RemediateArgs) (RemediateResult, error) {
 		return HandleRemediate(ctx, d, &args, usernameFromContext(ctx))
 	})

@@ -2041,3 +2041,92 @@ var _ = Describe("Event-aware text routing (#1410)", func() {
 		})
 	})
 })
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// #1409: Fleet cluster_id propagation into investigation_summary artifact
+// ═══════════════════════════════════════════════════════════════════════════════
+
+var _ = Describe("Fleet cluster_id propagation into investigation_summary (#1409)", func() {
+	var convert launcher.PartConverterFunc
+
+	BeforeEach(func() {
+		convert = launcher.BuildPartConverterForTest()
+	})
+
+	decisionPart := func(args map[string]any) *genai.Part {
+		return &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "kubernaut_present_decision",
+				Args: args,
+			},
+		}
+	}
+
+	It("UT-AF-1409-006: emitDecisionEvent merges cluster_id from RRContext into the investigation_summary DataPart", func() {
+		queue, ctx := partConverterBridgeCtx()
+		launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-1409-006", ClusterID: "cluster-fleet-a"})
+
+		part := decisionPart(map[string]any{
+			"session_id": "sess-1409-006",
+			"summary":    "OOMKill detected",
+			"rca":        map[string]any{"severity": "critical", "confidence": 0.9, "explanation": "memory limit exceeded"},
+			"options":    []any{},
+		})
+		result, err := convert(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue())
+		Expect(dp.Data).To(HaveKeyWithValue("cluster_id", "cluster-fleet-a"),
+			"AU-3: investigation_summary DataPart must carry cluster_id from RRContext for Console multi-cluster banners")
+	})
+
+	It("UT-AF-1409-006b: emitDecisionEvent never overwrites a caller-supplied cluster_id (SI-10 precedence)", func() {
+		queue, ctx := partConverterBridgeCtx()
+		launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-1409-006b", ClusterID: "cluster-server-side"})
+
+		part := decisionPart(map[string]any{
+			"session_id": "sess-1409-006b",
+			"summary":    "OOMKill detected",
+			"rca":        map[string]any{"severity": "critical", "confidence": 0.9, "explanation": "memory limit exceeded"},
+			"options":    []any{},
+			"cluster_id": "cluster-caller-supplied",
+		})
+		_, err := convert(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue())
+		Expect(dp.Data).To(HaveKeyWithValue("cluster_id", "cluster-caller-supplied"),
+			"SI-10: caller-supplied cluster_id in the decision payload must take precedence over RRContext")
+	})
+
+	It("UT-AF-1409-006c: emitDecisionEvent omits cluster_id when RRContext has none (local-hub RR)", func() {
+		queue, ctx := partConverterBridgeCtx()
+		launcher.SetRRContextSafe(ctx, &launcher.RRContext{RRID: "rr-1409-006c"})
+
+		part := decisionPart(map[string]any{
+			"session_id": "sess-1409-006c",
+			"summary":    "OOMKill detected",
+			"rca":        map[string]any{"severity": "critical", "confidence": 0.9, "explanation": "memory limit exceeded"},
+			"options":    []any{},
+		})
+		_, err := convert(ctx, nil, part)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(queue.events).To(HaveLen(1))
+		artifactEvt, ok := queue.events[0].(*a2a.TaskArtifactUpdateEvent)
+		Expect(ok).To(BeTrue())
+		dp, ok := artifactEvt.Artifact.Parts[0].(a2a.DataPart)
+		Expect(ok).To(BeTrue())
+		Expect(dp.Data).NotTo(HaveKey("cluster_id"),
+			"AU-3: local-hub RRs (no ClusterID) must not inject a false empty cluster_id attribution")
+	})
+})

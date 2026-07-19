@@ -110,6 +110,25 @@ var _ = Describe("AF RBAC parity (UT-INFRA-RBAC-001)", func() {
 		Entry("SAR",                 "authorization.k8s.io", "subjectaccessreviews",    []string{"create"}),
 		Entry("token reviews",       "authentication.k8s.io", "tokenreviews",           []string{"create"}),
 	)
+
+	// IT-AF-1409-008 [AC-6]: #1409's takeover-path context-reconstruction fetch
+	// (ka_investigate_mcp.go's resolveInvestigationRR) relies on a client.Get()
+	// against RemediationRequest. This regression-pins that the ClusterRole
+	// already grants "get" (least privilege — no broader verb is required for
+	// the new fetch), so a future RBAC edit that narrows this rule fails CI
+	// before it breaks the takeover-path Console banner in production.
+	It("IT-AF-1409-008: AC-6 — ClusterRole grants get (not list/watch/delete) on remediationrequests for the takeover-path fetch", func() {
+		var rrRule *rbacv1.PolicyRule
+		for i := range rules {
+			if slices.Contains(rules[i].APIGroups, "kubernaut.ai") && slices.Contains(rules[i].Resources, "remediationrequests") {
+				rrRule = &rules[i]
+				break
+			}
+		}
+		Expect(rrRule).NotTo(BeNil(), "02-rbac.yaml must contain a rule for kubernaut.ai/remediationrequests")
+		Expect(rrRule.Verbs).To(ContainElement("get"),
+			"AC-6: least privilege — AF's takeover-path client.Get() fetch requires the 'get' verb on remediationrequests")
+	})
 })
 
 var _ = Describe("IT-AF-1460-021: StatusHandler production wiring", func() {

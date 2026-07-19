@@ -408,10 +408,13 @@ func (inv *Investigator) attemptWorkflowSubmitRetry(ctx context.Context, p workf
 		p.tokens.Add(resp.Usage)
 	}
 
+	// #1634: field name must be "text" (see investigator_loop.go for rationale).
 	emitToSink(ctx, session.EventTypeReasoningDelta, p.attempt+1, string(katypes.PhaseWorkflowDiscovery), map[string]interface{}{
-		"content":       resp.Message.Content,
+		"text":          resp.Message.Content,
 		"retry_attempt": p.attempt + 1,
 	})
+	// #1635 / BR-AI-086 AC10 (see investigator_loop.go for rationale).
+	emitReasoningContentEvent(ctx, resp.Message.Reasoning, p.attempt+1, string(katypes.PhaseWorkflowDiscovery))
 
 	retryMessages := p.retryMessages
 	if len(resp.ToolCalls) > 0 {

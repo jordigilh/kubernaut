@@ -161,7 +161,7 @@ const insertAuditEventBatchSQL = `
 		event_id, event_version, event_timestamp, event_date, event_type,
 		event_category, event_action, event_outcome,
 		correlation_id, parent_event_id, parent_event_date,
-		resource_type, resource_id, namespace, cluster_name,
+		resource_type, resource_id, namespace, cluster_id,
 		actor_id, actor_type, actor_ip,
 		severity, duration_ms, error_code, error_message,
 		retention_days, is_sensitive, event_data,

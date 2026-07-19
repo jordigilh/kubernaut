@@ -75,7 +75,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	result := h.registry.Detect(detCtx)
 	if result == nil {
 		actionable := true
-		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, scenarios.MockScenarioConfig{
+		writeChatCompletion(w, req.Stream, response.BuildTextResponse(model, scenarios.MockScenarioConfig{
 			ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "warning",
 			InvestigationOutcome: "actionable", IsActionable: &actionable, Confidence: 0.5,
 		}))
@@ -89,7 +89,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 
 	cfg, ok := resolveScenarioConfig(result.Scenario, detCtx)
 	if !ok {
-		writeJSON(w, http.StatusOK, response.BuildTextResponse(model, scenarios.MockScenarioConfig{}))
+		writeChatCompletion(w, req.Stream, response.BuildTextResponse(model, scenarios.MockScenarioConfig{}))
 		return
 	}
 
@@ -130,14 +130,14 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	// wants a structured RCA (e.g. discover_workflows). Respond immediately
 	// with a submit_result tool call regardless of mode or forceText.
 	if hasSubmitOnly {
-		h.respondWithRCAExtraction(w, model, cfg)
+		h.respondWithRCAExtraction(w, req.Stream, model, cfg)
 		h.recordRequestMetric(r.URL.Path, scenarioName, time.Since(start).Seconds())
 		return
 	}
 
 	switch h.mode {
 	case config.ModeInteractive:
-		h.respondWithText(w, model, cfg)
+		h.respondWithText(w, req.Stream, model, cfg)
 
 	case config.ModeAutonomous:
 		effectiveForceText := true
@@ -146,10 +146,10 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		}
 		if effectiveForceText || len(req.Tools) == 0 {
 			if hasSplit && !resolved {
-				h.respondWithSubmitToolCall(w, model, cfg)
+				h.respondWithSubmitToolCall(w, req.Stream, model, cfg)
 				notifySubmit()
 			} else {
-				h.respondWithText(w, model, cfg)
+				h.respondWithText(w, req.Stream, model, cfg)
 			}
 		} else {
 			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
@@ -162,10 +162,10 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 		}
 		if effectiveForceText || len(req.Tools) == 0 {
 			if hasSplit && !resolved {
-				h.respondWithSubmitToolCall(w, model, cfg)
+				h.respondWithSubmitToolCall(w, req.Stream, model, cfg)
 				notifySubmit()
 			} else {
-				h.respondWithText(w, model, cfg)
+				h.respondWithText(w, req.Stream, model, cfg)
 			}
 		} else {
 			h.handleFullDAG(w, model, cfg, req, ctx, hasSplit, resolved, notifySubmit)
@@ -176,25 +176,25 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 }
 
 // respondWithText writes a text-only response (no tool calls).
-func (h *handler) respondWithText(w http.ResponseWriter, model string, cfg scenarios.MockScenarioConfig) {
-	writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
+func (h *handler) respondWithText(w http.ResponseWriter, stream bool, model string, cfg scenarios.MockScenarioConfig) {
+	writeChatCompletion(w, stream, response.BuildTextResponse(model, cfg))
 }
 
 // respondWithRCAExtraction writes a submit_result tool call with structured RCA.
 // Used when discover_workflows triggers RCA extraction from an interactive session.
-func (h *handler) respondWithRCAExtraction(w http.ResponseWriter, model string, cfg scenarios.MockScenarioConfig) {
+func (h *handler) respondWithRCAExtraction(w http.ResponseWriter, stream bool, model string, cfg scenarios.MockScenarioConfig) {
 	h.trackToolCall(openai.ToolSubmitResult)
-	writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, openai.ToolSubmitResult, cfg))
+	writeChatCompletion(w, stream, response.BuildToolCallResponse(model, openai.ToolSubmitResult, cfg))
 }
 
 // respondWithSubmitToolCall writes the appropriate submit_result tool call.
-func (h *handler) respondWithSubmitToolCall(w http.ResponseWriter, model string, cfg scenarios.MockScenarioConfig) {
+func (h *handler) respondWithSubmitToolCall(w http.ResponseWriter, stream bool, model string, cfg scenarios.MockScenarioConfig) {
 	toolName := openai.ToolSubmitResultWithWorkflow
 	if cfg.WorkflowID == "" {
 		toolName = openai.ToolSubmitResultNoWorkflow
 	}
 	h.trackToolCall(toolName)
-	writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, toolName, cfg))
+	writeChatCompletion(w, stream, response.BuildToolCallResponse(model, toolName, cfg))
 }
 
 // handleFullDAG executes the complete DAG path for tool-calling scenarios.
@@ -215,19 +215,19 @@ func (h *handler) handleFullDAG(
 		for _, tc := range cfg.MultiToolCalls {
 			h.trackToolCall(tc.Name)
 		}
-		writeJSON(w, http.StatusOK, response.BuildMultiToolCallResponse(model, cfg.MultiToolCalls))
+		writeChatCompletion(w, req.Stream, response.BuildMultiToolCallResponse(model, cfg.MultiToolCalls))
 		return
 	}
 
 	if cfg.ToolCallName != "" && (!hasToolResults(req.Messages) || repeatAllowed) {
 		h.trackToolCall(cfg.ToolCallName)
-		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))
+		writeChatCompletion(w, req.Stream, response.BuildToolCallResponse(model, cfg.ToolCallName, cfg))
 		return
 	}
 
 	if cfg.NextToolCall != nil && ctx.CountToolResults() == 1 {
 		h.trackToolCall(cfg.NextToolCall.Name)
-		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, cfg.NextToolCall.Name, scenarios.MockScenarioConfig{
+		writeChatCompletion(w, req.Stream, response.BuildToolCallResponse(model, cfg.NextToolCall.Name, scenarios.MockScenarioConfig{
 			ToolCallName: cfg.NextToolCall.Name,
 			ToolCallArgs: cfg.NextToolCall.Arguments,
 		}))
@@ -251,13 +251,13 @@ func (h *handler) handleFullDAG(
 	switch hr.ResponseType {
 	case conversation.StepToolCall:
 		h.trackToolCall(hr.ToolName)
-		writeJSON(w, http.StatusOK, response.BuildToolCallResponse(model, hr.ToolName, cfg))
+		writeChatCompletion(w, req.Stream, response.BuildToolCallResponse(model, hr.ToolName, cfg))
 	default:
 		if hasSplit && !resolved {
-			h.respondWithSubmitToolCall(w, model, cfg)
+			h.respondWithSubmitToolCall(w, req.Stream, model, cfg)
 			notifySubmit()
 		} else {
-			writeJSON(w, http.StatusOK, response.BuildTextResponse(model, cfg))
+			writeChatCompletion(w, req.Stream, response.BuildTextResponse(model, cfg))
 		}
 	}
 }

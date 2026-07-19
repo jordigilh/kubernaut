@@ -85,12 +85,16 @@ func (r *ctxCapturingDiscoveryRunner) getCapturedCtx() context.Context {
 // user_driving status via takeover.
 type mockAutoMgrWithHTTPSession struct {
 	mcptools.NopAutonomousManager
-	mu             sync.Mutex
-	httpSessionID  string
-	rcaResult      *katypes.InvestigationResult
-	subscribeCh    <-chan session.InvestigationEvent
-	subscribeErr   error
-	subscribedID   string
+	mu            sync.Mutex
+	httpSessionID string
+	rcaResult     *katypes.InvestigationResult
+	subscribeCh   <-chan session.InvestigationEvent
+	subscribeErr  error
+	subscribedID  string
+	// lazySink, when set, is returned by GetSessionLazySink (#1639) so tests
+	// can prove a live-event sink was actually attached to ctx, not just the
+	// session_id. nil preserves the original #1384 behavior (no sink).
+	lazySink *session.LazySink
 }
 
 func (m *mockAutoMgrWithHTTPSession) FindUserDrivingByRemediationID(_ string) (string, bool) {
@@ -119,7 +123,12 @@ func (m *mockAutoMgrWithHTTPSession) Subscribe(_ context.Context, id string) (<-
 }
 
 func (m *mockAutoMgrWithHTTPSession) GetSessionLazySink(_ string) (*session.LazySink, bool) {
-	return nil, false
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lazySink == nil {
+		return nil, false
+	}
+	return m.lazySink, true
 }
 
 var _ = Describe("Fix #1384 Bug A — Session context propagation (AU-2/AU-3, BR-INTERACTIVE-010 SC-2)", func() {

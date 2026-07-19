@@ -272,14 +272,8 @@ func extractKuadrantClusterInfo(u *unstructured.Unstructured) (ClusterInfo, erro
 
 	info := ClusterInfo{
 		ID:        name,
-		Name:      name,
 		Namespace: u.GetNamespace(),
 		Labels:    u.GetLabels(),
-	}
-
-	annotations := u.GetAnnotations()
-	if displayName, ok := annotations["kubernaut.ai/cluster-name"]; ok {
-		info.Name = displayName
 	}
 
 	prefix, _, _ := unstructured.NestedString(u.Object, "spec", "prefix")

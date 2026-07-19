@@ -269,32 +269,77 @@ Key concepts:
 
 ### Step 1: Create the maintenance branch (first patch only)
 
-If `release/v1.1` does not already exist, create it from the GA tag:
+If `release/vX.Y` does not already exist, create it from the GA tag — **not**
+from `main`, which may have diverged significantly since the tag was cut:
 
 ```bash
-git checkout main && git pull origin main
+git fetch --tags origin
+git checkout -b release/vX.Y vX.Y.0
+git push -u origin release/vX.Y
+```
+
+If `release/vX.Y` already exists (from a previous patch), skip this step and
+pull it instead: `git checkout release/vX.Y && git pull origin release/vX.Y`.
+
+### Step 1a: Add Dependabot coverage (first patch only)
+
+Dependabot's `target-branch` option does not support wildcards
+([dependabot/dependabot-core#6890](https://github.com/dependabot/dependabot-core/issues/6890)
+is still open), so `.github/dependabot.yml` cannot express "all `release/**`
+branches" the way `ci-pipeline.yml`/`codeql.yml` do. Each actively maintained
+maintenance branch needs its own explicit `updates:` block per ecosystem
+(gomod, github-actions, docker).
+
+When you create a new `release/vX.Y` maintenance branch (Step 1 above), add
+three new blocks to `.github/dependabot.yml` — copy the existing
+`release/v1.5` blocks and change `target-branch` and the commit-message
+suffix to match the new branch (e.g. `deps(vX.Y)`).
+
+When a maintenance branch stops receiving patches (superseded by a newer
+minor, or end-of-support), remove its three blocks from `dependabot.yml` in
+the same PR that declares it retired — leaving stale blocks around just
+generates PRs against a branch nobody merges.
+
+Note: any `updates:` entry with a non-default `target-branch` is excluded
+from Dependabot's security-update PRs (those always target the default
+branch, `main`), so maintenance branches only get scheduled version updates
+via this config, not the separate security-alert flow.
+
+### Step 2: Create the fix branch from the maintenance branch
+
+```bash
+git checkout release/vX.Y
 git checkout -b fix/vX.Y.Z
 ```
 
-### Step 2: Cherry-pick or implement the fix
+### Step 3: Cherry-pick or implement the fix
 
-If the fix already exists on a feature branch:
+If the fix already exists as a commit on `main` (e.g., landed there first),
+try to cherry-pick it:
 
 ```bash
 git cherry-pick <commit-sha>
 ```
 
-Otherwise, implement the fix directly on the hotfix branch following TDD.
+If the maintenance branch has diverged structurally from `main` (moved/renamed
+files, refactors that postdate the tag), the cherry-pick will conflict or
+silently apply against the wrong code shape. In that case, hand-port the fix:
+re-implement the same behavioral change directly against the code as it exists
+on the maintenance branch, following TDD. Always diff the result conceptually
+against the original commit to confirm the fix is equivalent in intent.
 
-### Step 3: Bump Chart.yaml and CHANGELOG
+### Step 4: Bump Chart.yaml and CHANGELOG
 
 Update `Chart.yaml` to the patch version. Add a CHANGELOG entry under a new
 `## [X.Y.Z]` section above the previous release.
 
-### Step 4: PR, merge, tag
+### Step 5: PR, merge, tag
 
-Follow the same PR → merge → tag flow as the [GA Release Workflow](#ga-release-workflow),
-substituting the patch version.
+Open the PR against the **maintenance branch** (`release/vX.Y`), not `main`.
+Otherwise follow the same PR → merge → tag flow as the
+[GA Release Workflow](#ga-release-workflow), substituting the patch version.
+Once merged and tagged, forward-port the fix to `main` (via cherry-pick or a
+follow-up PR) unless it already originated there.
 
 ---
 

@@ -108,7 +108,7 @@ func (c *AuditClient) RecordSignalProcessed(ctx context.Context, sp *signalproce
 	audit.SetNamespace(event, sp.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if sp.Spec.Signal.ClusterID != "" {
-		audit.SetClusterName(event, sp.Spec.Signal.ClusterID)
+		audit.SetClusterID(event, sp.Spec.Signal.ClusterID)
 	}
 
 	// Set structured payload using union constructor (OGEN-MIGRATION)
@@ -238,7 +238,7 @@ func (c *AuditClient) RecordPhaseTransition(ctx context.Context, sp *signalproce
 	audit.SetNamespace(event, sp.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if sp.Spec.Signal.ClusterID != "" {
-		audit.SetClusterName(event, sp.Spec.Signal.ClusterID)
+		audit.SetClusterID(event, sp.Spec.Signal.ClusterID)
 	}
 
 	// Set structured payload using union constructor (OGEN-MIGRATION)
@@ -364,7 +364,7 @@ func (c *AuditClient) RecordClassificationDecision(ctx context.Context, sp *sign
 	audit.SetNamespace(event, sp.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if sp.Spec.Signal.ClusterID != "" {
-		audit.SetClusterName(event, sp.Spec.Signal.ClusterID)
+		audit.SetClusterID(event, sp.Spec.Signal.ClusterID)
 	}
 
 	// Set structured payload using union constructor (OGEN-MIGRATION)
@@ -428,7 +428,7 @@ func (c *AuditClient) RecordBusinessClassification(ctx context.Context, sp *sign
 	audit.SetNamespace(event, sp.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if sp.Spec.Signal.ClusterID != "" {
-		audit.SetClusterName(event, sp.Spec.Signal.ClusterID)
+		audit.SetClusterID(event, sp.Spec.Signal.ClusterID)
 	}
 
 	// Set structured payload using union constructor (OGEN-MIGRATION)
@@ -479,7 +479,7 @@ func (c *AuditClient) RecordEnrichmentComplete(ctx context.Context, sp *signalpr
 	audit.SetNamespace(event, sp.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if sp.Spec.Signal.ClusterID != "" {
-		audit.SetClusterName(event, sp.Spec.Signal.ClusterID)
+		audit.SetClusterID(event, sp.Spec.Signal.ClusterID)
 	}
 
 	// Set structured payload using union constructor (OGEN-MIGRATION)
@@ -519,7 +519,7 @@ func (c *AuditClient) RecordError(ctx context.Context, sp *signalprocessingv1alp
 	audit.SetNamespace(event, sp.Namespace)
 	// DD-AUDIT-003 v2.2: Fleet cluster provenance (CC8.1)
 	if sp.Spec.Signal.ClusterID != "" {
-		audit.SetClusterName(event, sp.Spec.Signal.ClusterID)
+		audit.SetClusterID(event, sp.Spec.Signal.ClusterID)
 	}
 
 	// Set structured payload using union constructor (OGEN-MIGRATION)

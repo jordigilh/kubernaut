@@ -103,7 +103,7 @@ func convertAuditEventOptionalFields(event *audit.AuditEvent) convertAuditEventO
 
 	return convertAuditEventOptionalFieldsResult{
 		resourceNamespace: ptrStringOrEmpty(event.Namespace),
-		clusterID:         ptrStringOrEmpty(event.ClusterName),
+		clusterID:         ptrStringOrEmpty(event.ClusterID),
 		severity:          severity,
 		durationMs:        durationMs,
 		retentionDays:     retentionDays,

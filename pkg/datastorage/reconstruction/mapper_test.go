@@ -34,13 +34,13 @@ var _ = Describe("Audit Event Mapper", func() {
 			// TDD RED: Test mapping gateway audit data to RR spec fields
 			// BR-AUDIT-005: signalFingerprint is required for deduplication identity
 			parsedData := &reconstructionpkg.ParsedAuditData{
-				EventType:        "gateway.signal.received",
-				SignalType:       "alert",
+				EventType:         "gateway.signal.received",
+				SignalType:        "alert",
 				SignalName:        "HighCPU",
 				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-				SignalLabels:     map[string]string{"alertname": "HighCPU", "severity": "critical"},
+				SignalLabels:      map[string]string{"alertname": "HighCPU", "severity": "critical"},
 				SignalAnnotations: map[string]string{"summary": "CPU usage is high"},
-				OriginalPayload:  `{"alert":"data"}`,
+				OriginalPayload:   `{"alert":"data"}`,
 			}
 
 			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
@@ -140,11 +140,11 @@ var _ = Describe("Audit Event Mapper", func() {
 			// Validates merging multiple audit events into complete RR
 			// BR-AUDIT-005: signalFingerprint must survive merge
 			gatewayData := &reconstructionpkg.ParsedAuditData{
-				EventType:        "gateway.signal.received",
-				SignalType:       "alert",
+				EventType:         "gateway.signal.received",
+				SignalType:        "alert",
 				SignalName:        "HighMemory",
 				SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
-				SignalLabels:     map[string]string{"alertname": "HighMemory"},
+				SignalLabels:      map[string]string{"alertname": "HighMemory"},
 				SignalAnnotations: map[string]string{"summary": "Memory usage is high"},
 			}
 
@@ -190,35 +190,35 @@ var _ = Describe("Audit Event Mapper", func() {
 	})
 
 	// ========================================
-	// MAPPER-CLUSTER-01: ClusterName → Spec.ClusterID mapping [CC8.1]
+	// MAPPER-CLUSTER-01: ClusterID → Spec.ClusterID mapping [CC8.1]
 	// BR-AUDIT-005 v2.0 / DD-AUDIT-003 v2.2: Fleet cluster-scoped audit
 	// ========================================
-	Context("MAPPER-CLUSTER-01: Map ClusterName to RR Spec.ClusterID (DD-AUDIT-003 v2.2)", func() {
-		It("should map ClusterName from gateway event to Spec.ClusterID [CC8.1]", func() {
+	Context("MAPPER-CLUSTER-01: Map ClusterID to RR Spec.ClusterID (DD-AUDIT-003 v2.2)", func() {
+		It("should map ClusterID from gateway event to Spec.ClusterID [CC8.1]", func() {
 			parsedData := &reconstructionpkg.ParsedAuditData{
-				EventType:        "gateway.signal.received",
-				SignalType:       "alert",
+				EventType:         "gateway.signal.received",
+				SignalType:        "alert",
 				SignalName:        "HighCPU",
 				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-				SignalLabels:     map[string]string{"alertname": "HighCPU"},
-				ClusterName:      "prod-east",
+				SignalLabels:      map[string]string{"alertname": "HighCPU"},
+				ClusterID:         "prod-east",
 			}
 
 			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields.Spec.ClusterID).To(Equal("prod-east"),
-				"CC8.1: Mapper must set Spec.ClusterID from ClusterName for fleet reconstruction")
+				"CC8.1: Mapper must set Spec.ClusterID from ClusterID for fleet reconstruction")
 		})
 
 		It("should leave Spec.ClusterID empty for single-cluster events (backward compat)", func() {
 			parsedData := &reconstructionpkg.ParsedAuditData{
-				EventType:        "gateway.signal.received",
-				SignalType:       "alert",
+				EventType:         "gateway.signal.received",
+				SignalType:        "alert",
 				SignalName:        "HighCPU",
 				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-				SignalLabels:     map[string]string{"alertname": "HighCPU"},
-				// ClusterName intentionally empty (single-cluster)
+				SignalLabels:      map[string]string{"alertname": "HighCPU"},
+				// ClusterID intentionally empty (single-cluster)
 			}
 
 			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
@@ -229,15 +229,15 @@ var _ = Describe("Audit Event Mapper", func() {
 		})
 	})
 
-	Context("MAPPER-MERGE-CLUSTER-01: ClusterName survives merge (DD-AUDIT-003 v2.2)", func() {
-		It("should preserve ClusterName through merge of gateway + orchestrator events [CC8.1]", func() {
+	Context("MAPPER-MERGE-CLUSTER-01: ClusterID survives merge (DD-AUDIT-003 v2.2)", func() {
+		It("should preserve ClusterID through merge of gateway + orchestrator events [CC8.1]", func() {
 			gatewayData := &reconstructionpkg.ParsedAuditData{
-				EventType:        "gateway.signal.received",
-				SignalType:       "alert",
+				EventType:         "gateway.signal.received",
+				SignalType:        "alert",
 				SignalName:        "HighMemory",
 				SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
-				SignalLabels:     map[string]string{"alertname": "HighMemory"},
-				ClusterName:      "prod-west",
+				SignalLabels:      map[string]string{"alertname": "HighMemory"},
+				ClusterID:         "prod-west",
 			}
 
 			orchestratorData := &reconstructionpkg.ParsedAuditData{
@@ -245,7 +245,7 @@ var _ = Describe("Audit Event Mapper", func() {
 				TimeoutConfig: &reconstructionpkg.TimeoutConfigData{
 					Global: "2h0m0s",
 				},
-				ClusterName: "prod-west",
+				ClusterID: "prod-west",
 			}
 
 			rrFields, err := reconstructionpkg.MergeAuditData(
@@ -254,7 +254,7 @@ var _ = Describe("Audit Event Mapper", func() {
 
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFields.Spec.ClusterID).To(Equal("prod-west"),
-				"CC8.1: ClusterName must survive merge for fleet RR reconstruction")
+				"CC8.1: ClusterID must survive merge for fleet RR reconstruction")
 		})
 	})
 
@@ -370,11 +370,11 @@ var _ = Describe("Audit Event Mapper", func() {
 	Context("MAPPER-MERGE-FAILURE: FailurePhase/FailureReason survive merge [CC8.1]", func() {
 		It("should preserve FailurePhase and FailureReason through merge of gateway + failed orchestrator events [CC8.1]", func() {
 			gatewayData := &reconstructionpkg.ParsedAuditData{
-				EventType:        "gateway.signal.received",
-				SignalType:       "alert",
+				EventType:         "gateway.signal.received",
+				SignalType:        "alert",
 				SignalName:        "HighCPU",
 				SignalFingerprint: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-				SignalLabels:     map[string]string{"alertname": "HighCPU"},
+				SignalLabels:      map[string]string{"alertname": "HighCPU"},
 			}
 
 			failedData := &reconstructionpkg.ParsedAuditData{

@@ -148,6 +148,20 @@ func LabelValue(v string) error {
 	return nil
 }
 
+// MaxClusterIDLen is the maximum length for a fleet cluster identifier (ADR-065).
+const MaxClusterIDLen = 253
+
+// ClusterID validates an optional fleet cluster identifier (ADR-065). Empty is
+// valid (single-cluster/local-hub deployments carry no cluster attribution).
+// Format is intentionally not further constrained here (ADR-065 documents a
+// pre-existing format inconsistency across producers, out of scope for this fix).
+func ClusterID(clusterID string) error {
+	if len(clusterID) > MaxClusterIDLen {
+		return fmt.Errorf("cluster_id %q exceeds max length %d", clusterID, MaxClusterIDLen)
+	}
+	return nil
+}
+
 // MaxEscalationReasonLen is the maximum allowed length for an escalation reason.
 const MaxEscalationReasonLen = 1024
 

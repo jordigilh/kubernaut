@@ -267,7 +267,6 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Name:        "web-fleet-004-" + uuid.New().String()[:6],
 			Description: "fleet cluster wiring IT",
 			ClusterID:   "prod-east-1",
-			ClusterName: "Production US-East",
 		}, "fleet-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
@@ -278,9 +277,9 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		clusterID, _, _ := unstructured.NestedString(created.Object, "spec", "clusterID")
 		Expect(clusterID).To(Equal("prod-east-1"),
 			"ClusterID must be persisted on the RR CRD via envtest K8s API")
-		clusterName, _, _ := unstructured.NestedString(created.Object, "spec", "clusterName")
-		Expect(clusterName).To(Equal("Production US-East"),
-			"ClusterName must be persisted on the RR CRD via envtest K8s API")
+		// Issue #1651: clusterName was removed — non-unique, unsafe for disambiguation.
+		_, found, _ := unstructured.NestedString(created.Object, "spec", "clusterName")
+		Expect(found).To(BeFalse(), "spec.clusterName must not be persisted (issue #1651)")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})

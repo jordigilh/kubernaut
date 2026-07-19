@@ -179,7 +179,7 @@ func (r *RARReconciler) buildAndStoreApprovalAudit(ctx context.Context, rar *rem
 			CorrelationID: parentRRName, // correlation_id = parent RR name
 			Namespace:     rar.Namespace,
 			RRName:        parentRRName,
-			ClusterName:   rar.Spec.ClusterID, // DD-AUDIT-003 v2.2
+			ClusterID:     rar.Spec.ClusterID, // DD-AUDIT-003 v2.2
 			RARName:       rar.Name,
 		},
 		decision,                   // decision (Approved/Rejected/Expired)

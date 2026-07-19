@@ -173,7 +173,7 @@ type AuditEvent struct {
 	ResourceType      string `json:"resource_type,omitempty"` // e.g., pod, node, deployment
 	ResourceID        string `json:"resource_id,omitempty"`   // Resource identifier
 	ResourceNamespace string `json:"namespace,omitempty"`     // Kubernetes namespace (DB column: namespace)
-	ClusterID         string `json:"cluster_name,omitempty"`  // Cluster identifier (DB column: cluster_name)
+	ClusterID         string `json:"cluster_id,omitempty"`    // Cluster identifier (DB column: cluster_id, renamed from cluster_name in #1651)
 
 	// ========================================
 	// AUDIT METADATA (ADR-034)

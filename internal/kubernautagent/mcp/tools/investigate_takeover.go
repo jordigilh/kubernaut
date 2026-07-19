@@ -113,6 +113,13 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 		}
 	}
 
+	// #1639: Enrich context with the HTTP investigation session's LazySink so
+	// this turn's RunInteractiveTurn call streams live KA events (reasoning,
+	// reasoning_content, etc.) to any subscriber — the same wiring
+	// discover_workflows has had since #1384. Without this, live streaming
+	// only ever worked for the initial kubernaut_investigate call.
+	ctx = t.enrichLiveEventContext(ctx, input.RRID, "message")
+
 	// Clear DiscoveryResult before the LLM call: any message after
 	// discover_workflows invalidates stale recommendations, forcing re-discovery
 	// before select_workflow can be called.

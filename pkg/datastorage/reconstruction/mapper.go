@@ -85,9 +85,9 @@ func mapGatewaySignalFields(parsedData *ParsedAuditData, result *ReconstructedRR
 		result.Spec.OriginalPayload = parsedData.OriginalPayload
 	}
 
-	// DD-AUDIT-003 v2.2: Map cluster_name to Spec.ClusterID for fleet reconstruction (CC8.1)
-	if parsedData.ClusterName != "" {
-		result.Spec.ClusterID = parsedData.ClusterName
+	// DD-AUDIT-003 v2.2: Map cluster_id to Spec.ClusterID for fleet reconstruction (CC8.1)
+	if parsedData.ClusterID != "" {
+		result.Spec.ClusterID = parsedData.ClusterID
 	}
 
 	return nil

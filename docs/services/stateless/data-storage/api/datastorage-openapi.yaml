@@ -290,7 +290,7 @@ components:
         namespace:
           type: string
           nullable: true
-        cluster_name:
+        cluster_id:
           type: string
           nullable: true
         severity:

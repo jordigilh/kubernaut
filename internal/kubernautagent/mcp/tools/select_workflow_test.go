@@ -491,6 +491,75 @@ var _ = Describe("kubernaut_select_workflow — discovery gating & auto-complete
 			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
 		})
 	})
+
+	// #1654: select_workflow terminates the interactive session (same as
+	// complete_no_action, see UT-KA-1351-005), so it must cancel the
+	// session's inactivity timer the same way. Before this fix, only
+	// InvestigateTool/CompleteNoActionTool called StopTracking; select_workflow
+	// had no way to, since it never received a TimeoutTracker at all — the
+	// inactivity timer kept running after a successful selection and fired
+	// ~InactivityTimeout later against an already-terminal session.
+	Describe("UT-KA-1654-D-001: select_workflow calls StopTracking on completion", func() {
+		It("should stop the timeout tracker synchronously before returning", func() {
+			wfID := "wf-stoptrack"
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID, WorkflowName: "restart-pod"},
+			}
+			completer := &mockHTTPCompleter{foundID: "http-sess-002", found: true}
+			tracker := &mockTimeoutTracker{}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-stoptrack-001",
+					CorrelationID:   "rr-stoptrack-001",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "OOM crash", Confidence: 0.9},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions,
+				mcptools.WithHTTPSessionCompleter(completer),
+				mcptools.WithSelectWorkflowTimeoutTracker(tracker),
+			)
+			output, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-stoptrack-001",
+				WorkflowID: wfID,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflow_selected"))
+
+			// StopTracking must run synchronously within Handle (not deferred to
+			// the async completion goroutine), so no Eventually() is needed here.
+			Expect(tracker.stoppedSessionID()).To(Equal("sess-stoptrack-001"),
+				"select_workflow must call StopTracking on completion (#1654)")
+		})
+
+		It("should be a no-op when no tracker is configured (backward compatible)", func() {
+			wfID := "wf-notracker"
+			catalog := &mockWorkflowCatalog{
+				workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID, WorkflowName: "restart-pod"},
+			}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-notracker-001",
+					CorrelationID:   "rr-notracker-001",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "OOM crash", Confidence: 0.9},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(catalog, sessions)
+			output, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-notracker-001",
+				WorkflowID: wfID,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflow_selected"))
+		})
+	})
 })
 
 var _ = Describe("kubernaut_select_workflow — helper functions", func() {

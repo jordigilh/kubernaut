@@ -161,8 +161,8 @@ func applyOptionalContextFields(event *audit.AuditEvent, req ogenclient.AuditEve
 	if req.Namespace.IsSet() {
 		event.Namespace = &req.Namespace.Value
 	}
-	if req.ClusterName.IsSet() {
-		event.ClusterName = &req.ClusterName.Value
+	if req.ClusterID.IsSet() {
+		event.ClusterID = &req.ClusterID.Value
 	}
 	if req.Severity.IsSet() {
 		event.Severity = &req.Severity.Value

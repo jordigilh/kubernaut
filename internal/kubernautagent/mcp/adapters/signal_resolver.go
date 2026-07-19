@@ -88,7 +88,5 @@ func (r *SessionSignalContextResolver) ResolveSignalContext(ctx context.Context,
 		ResourceName:  rr.Spec.TargetResource.Name,
 		Namespace:     rr.Spec.TargetResource.Namespace,
 		ClusterID:     rr.Spec.ClusterID,
-		ClusterName:   rr.Spec.ClusterName,
 	}, nil
 }
-

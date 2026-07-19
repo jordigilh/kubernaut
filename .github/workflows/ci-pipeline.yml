@@ -530,6 +530,7 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          version: v0.72.0
 
       - name: Save image to tarball
         run: |
@@ -641,6 +642,7 @@ jobs:
           exit-code: 1
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          version: v0.72.0
 
       - name: Save image to tarball
         run: |
@@ -730,6 +732,31 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
+
+      - name: Free disk space (kubernautagent IT builds 4 concurrent DataStorage images)
+        if: matrix.service == 'kubernautagent'
+        run: |
+          # #1657: kubernautagent's 4 Ginkgo suites (investigator, mcp, tools/custom,
+          # enrichment) each independently build a fresh DataStorage Podman image with
+          # --procs=$(nproc) parallelism, so multiple full multi-stage builds run
+          # concurrently. This deterministically exhausted the runner's ~14GB disk
+          # budget (writing blob: ... no space left on device). Same remediation
+          # already used by the E2E jobs below for the same class of problem.
+          echo "Disk before cleanup:"
+          df -h /
+          sudo apt-get purge -y \
+            google-cloud-cli azure-cli microsoft-edge-stable google-chrome-stable \
+            dotnet-sdk-* powershell mono-devel 2>/dev/null || true
+          sudo apt-get autoremove -y 2>/dev/null || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+            /usr/share/swift /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/chromium /usr/local/share/powershell \
+            /usr/local/share/edge_driver /opt/microsoft 2>/dev/null || true
+          sudo docker image prune -a -f 2>/dev/null || true
+          sudo podman system prune -a -f 2>/dev/null || true
+          echo "Disk after cleanup:"
+          df -h /
+
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: '1.26.5'

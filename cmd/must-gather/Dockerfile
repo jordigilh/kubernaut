@@ -26,10 +26,13 @@ LABEL maintainer="Kubernaut Platform Team" \
 # UBI Standard already includes: tar, gzip, findutils, util-linux, coreutils
 # Only install additional tools we need
 
-# Install kubectl (Kubernetes 1.31 - compatible with Kubernetes 1.30-1.32)
+# Install kubectl (client v1.36.2 - Issue #1663: bumped from v1.31.0 to pick up
+# upstream CVE fixes; validated against server versions 1.30-1.32 via kind-cluster
+# spike since v1.36 is outside kubectl's official +/-1 minor version-skew window
+# for those older API servers -- see DD-PLATFORM-003)
 # Use TARGETARCH to download correct architecture binary
 ARG TARGETARCH
-RUN curl -LO "https://dl.k8s.io/release/v1.31.0/bin/linux/${TARGETARCH}/kubectl" && \
+RUN curl -LO "https://dl.k8s.io/release/v1.36.2/bin/linux/${TARGETARCH}/kubectl" && \
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/kubectl
 

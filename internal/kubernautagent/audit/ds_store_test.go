@@ -378,8 +378,8 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 		})
 	})
 
-	Describe("DD-AUDIT-003 v2.2: DSAuditStore ClusterName propagation (CC8.1)", func() {
-		It("UT-KA-DS-FLEET-001: sets ClusterName on AuditEventRequest when event has ClusterName", func() {
+	Describe("DD-AUDIT-003 v2.2: DSAuditStore ClusterID propagation (CC8.1)", func() {
+		It("UT-KA-DS-FLEET-001: sets ClusterID on AuditEventRequest when event has ClusterID", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)
 
@@ -387,19 +387,19 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				EventType:     audit.EventTypeLLMRequest,
 				EventCategory: audit.EventCategory,
 				CorrelationID: "corr-fleet-ds",
-				ClusterName:   "prod-east",
+				ClusterID:     "prod-east",
 			}
 			err := store.StoreAudit(context.Background(), event)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(recorder.calls).To(HaveLen(1))
 
 			req := recorder.calls[0]
-			Expect(req.ClusterName.IsSet()).To(BeTrue(),
-				"CC8.1: DSAuditStore must set ClusterName on AuditEventRequest")
-			Expect(req.ClusterName.Value).To(Equal("prod-east"))
+			Expect(req.ClusterID.IsSet()).To(BeTrue(),
+				"CC8.1: DSAuditStore must set ClusterID on AuditEventRequest")
+			Expect(req.ClusterID.Value).To(Equal("prod-east"))
 		})
 
-		It("UT-KA-DS-FLEET-002: leaves ClusterName unset when event has empty ClusterName", func() {
+		It("UT-KA-DS-FLEET-002: leaves ClusterID unset when event has empty ClusterID", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)
 
@@ -413,8 +413,8 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			Expect(recorder.calls).To(HaveLen(1))
 
 			req := recorder.calls[0]
-			Expect(req.ClusterName.IsSet()).To(BeFalse(),
-				"Single-cluster events must not set ClusterName")
+			Expect(req.ClusterID.IsSet()).To(BeFalse(),
+				"Single-cluster events must not set ClusterID")
 		})
 	})
 })

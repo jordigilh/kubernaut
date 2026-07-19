@@ -215,7 +215,7 @@ func (m *Manager) attachInvestigationContext(id, correlationID, clusterName stri
 	ls := &LazySink{}
 	bgCtx = WithLazySink(bgCtx, ls)
 	bgCtx = WithSessionID(bgCtx, id)
-	bgCtx = audit.WithClusterName(bgCtx, clusterName)
+	bgCtx = audit.WithClusterID(bgCtx, clusterName)
 	// GAP-13 (Issue #1505): correlationID on ctx lets deep call sites (e.g.
 	// the K8s resolver's secret-access observer) emit correctly-correlated
 	// audit events without threading correlationID through every signature.

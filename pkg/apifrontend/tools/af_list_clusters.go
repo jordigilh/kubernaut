@@ -31,9 +31,10 @@ import (
 type ListClustersArgs struct{}
 
 // ClusterSummary is a subset of registry.ClusterInfo exposed to the LLM.
+// ID-only (issue #1651): cluster display names are non-unique and unsafe
+// for disambiguation, so only the unique ClusterID is surfaced.
 type ClusterSummary struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID string `json:"id"`
 }
 
 // ListClustersResult is the output of list_clusters.
@@ -53,8 +54,7 @@ func HandleListClusters(_ context.Context, reg registry.ClusterRegistry) (ListCl
 	summaries := make([]ClusterSummary, 0, len(clusters))
 	for _, c := range clusters {
 		summaries = append(summaries, ClusterSummary{
-			ID:   c.ID,
-			Name: c.Name,
+			ID: c.ID,
 		})
 	}
 	return ListClustersResult{

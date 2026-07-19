@@ -108,14 +108,6 @@ spec:
                   Reference: ADR-065 (Multi-Cluster Federation)
                 maxLength: 253
                 type: string
-              clusterName:
-                description: |-
-                  ClusterName is a human-readable display name for the cluster.
-                  Used for audit trail, notifications, and operator-facing UIs.
-                  May differ from ClusterID (e.g., ClusterID="prod-east-1", ClusterName="Production US-East").
-                  Reference: ADR-065 (Multi-Cluster Federation)
-                maxLength: 253
-                type: string
               firingTime:
                 description: |-
                   Temporal Data

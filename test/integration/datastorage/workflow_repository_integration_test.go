@@ -57,7 +57,7 @@ const (
 // Coverage Gap Addressed:
 // This file addresses the gap identified in TEST_COVERAGE_GAP_WORKFLOW_CATALOG.md
 // where missing integration tests could allow field mapping bugs similar to
-// the audit events bug (missing version, namespace, cluster_name).
+// the audit events bug (missing version, namespace, cluster_id).
 //
 // Defense-in-Depth Strategy:
 // - Integration tests (this file): Catch schema/field mapping bugs with real DB

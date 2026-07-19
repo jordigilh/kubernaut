@@ -19,6 +19,7 @@ package registry_test
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -41,6 +42,14 @@ func TestFleetRegistry(t *testing.T) {
 
 var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 
+	// Issue #1651: ClusterInfo.Name (and the kubernaut.ai/cluster-name
+	// annotation that populated it) were removed — non-unique, unsafe for
+	// disambiguation. ClusterInfo.ID only.
+	It("UT-FLEET-1651-001: Name field has been removed from ClusterInfo", func() {
+		_, found := reflect.TypeOf(registry.ClusterInfo{}).FieldByName("Name")
+		Expect(found).To(BeFalse(), "ClusterInfo.Name must not exist (issue #1651: non-unique, unsafe for disambiguation)")
+	})
+
 	It("UT-FLEET-003-001: populates all ClusterInfo fields including MCPEndpoint from status", func() {
 		u := &unstructured.Unstructured{
 			Object: map[string]interface{}{
@@ -53,9 +62,6 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 						"kubernaut.ai/managed": "true",
 						"env":                  "production",
 					},
-					"annotations": map[string]interface{}{
-						"kubernaut.ai/cluster-name": "Production US-East",
-					},
 				},
 				"status": map[string]interface{}{
 					"endpoint": "https://mcp-gateway.example.com/clusters/prod-east-1/mcp",
@@ -66,7 +72,6 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 		info, err := registry.ExtractClusterInfo(u)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(info.ID).To(Equal("prod-east-1"))
-		Expect(info.Name).To(Equal("Production US-East"))
 		Expect(info.MCPEndpoint).To(Equal("https://mcp-gateway.example.com/clusters/prod-east-1/mcp"))
 		Expect(info.Namespace).To(Equal("kubernaut-system"))
 		Expect(info.Labels).To(HaveKeyWithValue("kubernaut.ai/managed", "true"))
@@ -88,26 +93,6 @@ var _ = Describe("extractClusterInfo (BR-INTEGRATION-065)", func() {
 		_, err := registry.ExtractClusterInfo(u)
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("empty name"))
-	})
-
-	It("UT-FLEET-003-003: falls back to name as display name when annotation missing", func() {
-		u := &unstructured.Unstructured{
-			Object: map[string]interface{}{
-				"apiVersion": "gateway.envoyproxy.io/v1alpha1",
-				"kind":       "Backend",
-				"metadata": map[string]interface{}{
-					"name":      "staging-west",
-					"namespace": "kubernaut-system",
-					"labels": map[string]interface{}{
-						"kubernaut.ai/managed": "true",
-					},
-				},
-			},
-		}
-
-		info, err := registry.ExtractClusterInfo(u)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(info.Name).To(Equal("staging-west"))
 	})
 
 	It("UT-REG-EAIGW-001 [AC-3]: ExtractClusterInfo sets ToolPrefix to {name}__ for EAIGW Backend CRDs", func() {

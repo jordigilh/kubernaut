@@ -260,10 +260,13 @@ func (inv *Investigator) attemptRCASubmitRetry(ctx context.Context, p rcaSubmitR
 		p.tokens.Add(resp.Usage)
 	}
 
+	// #1634: field name must be "text" (see investigator_loop.go for rationale).
 	emitToSink(ctx, session.EventTypeReasoningDelta, p.attempt+1, string(katypes.PhaseRCA), map[string]interface{}{
-		"content":       resp.Message.Content,
+		"text":          resp.Message.Content,
 		"retry_attempt": p.attempt + 1,
 	})
+	// #1635 / BR-AI-086 AC10 (see investigator_loop.go for rationale).
+	emitReasoningContentEvent(ctx, resp.Message.Reasoning, p.attempt+1, string(katypes.PhaseRCA))
 
 	if parsed, ok := inv.tryParseRCASubmitToolCall(resp, p.correlationID); ok {
 		return parsed, resp.Message.Reasoning, p.retryMessages, true

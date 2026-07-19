@@ -16,7 +16,9 @@ import (
 
 // BuildProgressSnapshot constructs the structured payload for an execution_progress
 // artifact event. The returned map is suitable for use as an a2a.DataPart.Data field.
-func BuildProgressSnapshot(currentPhase, rrName, startedAt, completedAt string) map[string]any {
+// clusterID is omitted entirely when empty (AU-3: avoids false attribution for
+// local-hub RemediationRequests that have no fleet cluster identity).
+func BuildProgressSnapshot(currentPhase, rrName, startedAt, completedAt, clusterID string) map[string]any {
 	payload := map[string]any{
 		"type":           "execution_progress",
 		"schema_version": "1.0",
@@ -26,6 +28,9 @@ func BuildProgressSnapshot(currentPhase, rrName, startedAt, completedAt string) 
 	}
 	if completedAt != "" {
 		payload["completed_at"] = completedAt
+	}
+	if clusterID != "" {
+		payload["cluster_id"] = clusterID
 	}
 	return payload
 }

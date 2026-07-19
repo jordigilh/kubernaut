@@ -27,8 +27,13 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
@@ -1321,6 +1326,269 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — session ID forwarding (
 			Expect(recorder.events[0].Detail["ka_correlation_id"]).To(Equal("ka-confirmed-1452-006"),
 				"AU-3: audit event must reference the KA-confirmed session ID for traceability")
 		})
+	})
+})
+
+// Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8.1, SI-17, AU-2).
+// Exercises resolveInvestigationRR's business logic directly (via the
+// ResolveInvestigationRR export), bypassing HandleInvestigationMCPWithRegistry's
+// await/signal machinery — that wiring is proven separately at the IT tier
+// (IT-AF-1409-004/005) through the real registered-tool dispatch path.
+var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8.1, SI-17, AU-2)", func() {
+	It("UT-AF-1409-011: successful fetch populates the complete context (namespace, kind, target, alert_name, cluster_id)", func() {
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rr-takeover-011"),
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalName: "PodCrashLooping",
+				ClusterID:  "cluster-east-1",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "web",
+					Namespace: "prod",
+				},
+			},
+		}
+		tc := newTypedFakeClient(rr)
+
+		queue := &bridgeQueue{}
+		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-011", "ctx-1409-011", nil)
+
+		_, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+			Client:    tc,
+			Namespace: "kubernaut-system",
+		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-011"})
+		Expect(err).NotTo(HaveOccurred())
+
+		rc := launcher.RRContextSafe(ctx)
+		Expect(rc).NotTo(BeNil())
+		Expect(rc.RRID).To(Equal("rr-takeover-011"))
+		Expect(rc.Namespace).To(Equal("prod"),
+			"AU-3: takeover must reconstruct the workload namespace from the fetched RR")
+		Expect(rc.Kind).To(Equal("Deployment"))
+		Expect(rc.Target).To(Equal("Deployment/web"))
+		Expect(rc.AlertName).To(Equal("PodCrashLooping"))
+		Expect(rc.ClusterID).To(Equal("cluster-east-1"),
+			"CC8.1: cluster identity must be reconstructable from the RR alone (closes #1423 gap)")
+		Expect(rc.Phase).To(Equal("Investigating"))
+	})
+
+	It("UT-AF-1409-012: fetch failure degrades to minimal (rr_id + phase) context instead of failing the call", func() {
+		tc := newTypedFakeClientWithGetInterceptor(func(_ context.Context, key crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+			return apierrors.NewNotFound(schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationrequests"}, key.Name)
+		})
+
+		queue := &bridgeQueue{}
+		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-012", "ctx-1409-012", nil)
+
+		_, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+			Client:    tc,
+			Namespace: "kubernaut-system",
+		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-012"})
+		Expect(err).NotTo(HaveOccurred(),
+			"SI-17: takeover must fail safe (degrade), not fail closed, when the RR fetch errors")
+
+		rc := launcher.RRContextSafe(ctx)
+		Expect(rc).NotTo(BeNil())
+		Expect(rc.RRID).To(Equal("rr-takeover-012"))
+		Expect(rc.Phase).To(Equal("Investigating"))
+		Expect(rc.Namespace).To(BeEmpty(), "degraded context must not fabricate fields it couldn't fetch")
+		Expect(rc.ClusterID).To(BeEmpty())
+	})
+
+	It("UT-AF-1409-013: no client configured (MCP-bridge-only setup) preserves pre-#1423 minimal context (backward compat)", func() {
+		queue := &bridgeQueue{}
+		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-013", "ctx-1409-013", nil)
+
+		_, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+			Namespace: "kubernaut-system",
+		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-013"})
+		Expect(err).NotTo(HaveOccurred())
+
+		rc := launcher.RRContextSafe(ctx)
+		Expect(rc).NotTo(BeNil())
+		Expect(rc.RRID).To(Equal("rr-takeover-013"))
+		Expect(rc.Phase).To(Equal("Investigating"))
+		Expect(rc.Namespace).To(BeEmpty())
+	})
+})
+
+// Fleet cluster_id end-to-end wiring — #1409 (AU-3, SI-4, CC8.1, SI-17, AU-2).
+// Unlike the UT-AF-1409-011/012/013 tests above (which exercise
+// resolveInvestigationRR's decision logic directly via the export), these
+// drive the real registered-tool dispatch path (HandleInvestigationMCPWithRegistry),
+// proving the create-path and takeover-path wiring end to end.
+var _ = Describe("HandleInvestigationMCPWithRegistry — fleet cluster_id wiring (#1409)", func() {
+	closedEventsMCP := func() *ka.MockMCPClient {
+		eventCh := make(chan ka.InvestigationEvent)
+		close(eventCh)
+		return &ka.MockMCPClient{
+			StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				return &ka.StartInvestigationResult{
+					SessionID: "sess-" + args.RRID,
+					Status:    "started",
+					Events:    eventCh,
+					Closer:    func() {},
+				}, nil
+			},
+		}
+	}
+
+	It("IT-AF-1409-003: AU-3, SI-4 — kubernaut_investigate's create path correctly attributes and correlates cluster identity end-to-end", func() {
+		origTimeout := tools.AwaitSessionTimeout
+		tools.AwaitSessionTimeout = 10 * time.Millisecond
+		defer func() { tools.AwaitSessionTimeout = origTimeout }()
+
+		tc := newTypedClientForInvestigate()
+		queue := &bridgeQueue{}
+		ctx := launcher.WithEventBridge(
+			auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice", Groups: []string{"sre"}}),
+			queue, "task-1409-003", "ctx-1409-003", nil,
+		)
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		result, err := tools.HandleInvestigationMCPWithRegistry(
+			ctx, &tools.InvestigateConfig{
+				MCPClient: closedEventsMCP(),
+				Client:    tc,
+				Namespace: "kubernaut-system",
+			}, tools.InvestigateMCPArgs{
+				APIVersion: "apps/v1",
+				Namespace:  "prod",
+				Kind:       "Deployment",
+				Name:       "web-1409-003",
+				ClusterID:  "cluster-fleet-it-003",
+			},
+			true, "alice",
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).NotTo(BeEmpty())
+
+		created := verifyTypedRR(tc, "kubernaut-system", result.RRID)
+		Expect(created.Spec.ClusterID).To(Equal("cluster-fleet-it-003"),
+			"AU-3, SI-4: cluster_id must reach the RR spec for cross-cluster correlation")
+
+		var eventSaw bool
+		for _, evt := range queue.Events() {
+			statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+			if !ok || statusEvt.Metadata == nil {
+				continue
+			}
+			if statusEvt.Metadata["cluster_id"] == "cluster-fleet-it-003" {
+				eventSaw = true
+			}
+		}
+		Expect(eventSaw).To(BeTrue(),
+			"AU-3, SI-4: A2A status events must carry cluster_id from RRContext for Console cross-cluster correlation")
+	})
+
+	It("IT-AF-1409-004: AU-3, CC8.1 — takeover session (rr_id only) reconstructs complete remediation context from the RR alone, end-to-end", func() {
+		origTimeout := tools.AwaitSessionTimeout
+		tools.AwaitSessionTimeout = 10 * time.Millisecond
+		defer func() { tools.AwaitSessionTimeout = origTimeout }()
+
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rr-takeover-it-004"),
+			Spec: remediationv1.RemediationRequestSpec{
+				SignalName: "PodCrashLooping",
+				ClusterID:  "cluster-fleet-it-004",
+				TargetResource: remediationv1.ResourceIdentifier{
+					Kind:      "Deployment",
+					Name:      "web",
+					Namespace: "prod",
+				},
+			},
+		}
+		tc := newTypedClientForInvestigate(rr)
+		queue := &bridgeQueue{}
+		ctx := launcher.WithEventBridge(
+			auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice", Groups: []string{"sre"}}),
+			queue, "task-1409-004", "ctx-1409-004", nil,
+		)
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		result, err := tools.HandleInvestigationMCPWithRegistry(
+			ctx, &tools.InvestigateConfig{
+				MCPClient: closedEventsMCP(),
+				Client:    tc,
+				Namespace: "kubernaut-system",
+			}, tools.InvestigateMCPArgs{RRID: "rr-takeover-it-004"},
+			true, "alice",
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RRID).To(Equal("rr-takeover-it-004"))
+
+		// The takeover path itself emits no automatic status/artifact event
+		// (no RR creation -> no severity-triage fallback RCA). Emit one
+		// explicitly, mirroring UT-AF-1423-020/030's established pattern, to
+		// surface the RRContext HandleInvestigationMCPWithRegistry set on the
+		// EventBridge during the call.
+		Expect(launcher.EmitStatusSafe(ctx, "post-investigate-takeover status")).To(Succeed())
+
+		var meta map[string]any
+		for _, evt := range queue.Events() {
+			statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+			if !ok || statusEvt.Metadata == nil {
+				continue
+			}
+			if rrid, ok := statusEvt.Metadata["rr_id"].(string); ok && rrid == "rr-takeover-it-004" {
+				meta = statusEvt.Metadata
+				break
+			}
+		}
+		Expect(meta).NotTo(BeNil(), "AU-3: at least one status event must carry the takeover session's rr_id")
+		Expect(meta["namespace"]).To(Equal("prod"))
+		Expect(meta["kind"]).To(Equal("Deployment"))
+		Expect(meta["target"]).To(Equal("Deployment/web"))
+		Expect(meta["alert_name"]).To(Equal("PodCrashLooping"))
+		Expect(meta["cluster_id"]).To(Equal("cluster-fleet-it-004"),
+			"CC8.1: complete remediation context, including cluster identity, must be reconstructable from the RR alone (closes #1423 gap)")
+	})
+
+	It("IT-AF-1409-005: SI-17, AU-2 — takeover session against an inaccessible RR fails safe (degrades) instead of failing the whole tool call", func() {
+		origTimeout := tools.AwaitSessionTimeout
+		tools.AwaitSessionTimeout = 10 * time.Millisecond
+		defer func() { tools.AwaitSessionTimeout = origTimeout }()
+
+		tc := newTypedFakeClientWithGetInterceptor(func(_ context.Context, key crclient.ObjectKey, _ crclient.Object, _ ...crclient.GetOption) error {
+			return apierrors.NewNotFound(schema.GroupResource{Group: "remediation.kubernaut.ai", Resource: "remediationrequests"}, key.Name)
+		})
+		queue := &bridgeQueue{}
+		ctx := launcher.WithEventBridge(
+			auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "alice", Groups: []string{"sre"}}),
+			queue, "task-1409-005", "ctx-1409-005", nil,
+		)
+		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+
+		result, err := tools.HandleInvestigationMCPWithRegistry(
+			ctx, &tools.InvestigateConfig{
+				MCPClient: closedEventsMCP(),
+				Client:    tc,
+				Namespace: "kubernaut-system",
+			}, tools.InvestigateMCPArgs{RRID: "rr-takeover-it-005"},
+			true, "alice",
+		)
+		Expect(err).NotTo(HaveOccurred(),
+			"SI-17: a takeover session must proceed (fail safe) even when the RR context fetch fails, not fail closed on the whole tool call")
+		Expect(result.RRID).To(Equal("rr-takeover-it-005"))
+
+		Expect(launcher.EmitStatusSafe(ctx, "post-investigate-takeover status")).To(Succeed())
+
+		var meta map[string]any
+		for _, evt := range queue.Events() {
+			statusEvt, ok := evt.(*a2a.TaskStatusUpdateEvent)
+			if !ok || statusEvt.Metadata == nil {
+				continue
+			}
+			if rrid, ok := statusEvt.Metadata["rr_id"].(string); ok && rrid == "rr-takeover-it-005" {
+				meta = statusEvt.Metadata
+				break
+			}
+		}
+		Expect(meta).NotTo(BeNil(), "degraded takeover context must still carry rr_id for correlation")
+		Expect(meta["cluster_id"]).To(BeNil(), "degraded context must not fabricate cluster_id it couldn't fetch")
 	})
 })
 

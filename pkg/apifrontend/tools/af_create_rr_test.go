@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -20,6 +21,7 @@ import (
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -603,7 +605,14 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	})
 
 	Describe("Multi-Cluster ClusterID propagation (ADR-065, BR-INTEGRATION-065)", func() {
-		It("UT-AF-065-001: populates ClusterID and ClusterName on created RR", func() {
+		// Issue #1651: ClusterName was removed from CreateRRArgs — it is
+		// non-unique and unsafe for cluster disambiguation. ClusterID only.
+		It("UT-AF-1651-001: ClusterName field has been removed from CreateRRArgs", func() {
+			_, found := reflect.TypeOf(tools.CreateRRArgs{}).FieldByName("ClusterName")
+			Expect(found).To(BeFalse(), "CreateRRArgs.ClusterName must not exist (issue #1651: non-unique, unsafe for disambiguation)")
+		})
+
+		It("UT-AF-065-001: populates ClusterID on created RR", func() {
 			tc := newTypedFakeClient()
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
@@ -615,14 +624,12 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Description: "test",
 				APIVersion:  "apps/v1",
 				ClusterID:   "prod-east-1",
-				ClusterName: "Production US-East",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeFalse())
 
 			created := verifyTypedRR(tc, kubernautSystem, extractRRName(result.RRID))
 			Expect(created.Spec.ClusterID).To(Equal("prod-east-1"))
-			Expect(created.Spec.ClusterName).To(Equal("Production US-East"))
 		})
 
 		It("UT-AF-065-002: empty ClusterID indicates local hub (backward compat)", func() {
@@ -641,7 +648,6 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			created := verifyTypedRR(tc, kubernautSystem, extractRRName(result.RRID))
 			Expect(created.Spec.ClusterID).To(BeEmpty())
-			Expect(created.Spec.ClusterName).To(BeEmpty())
 		})
 
 		It("UT-AF-065-003: different clusters produce different fingerprints (no cross-cluster dedup)", func() {
@@ -668,6 +674,44 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(result2.AlreadyExists).To(BeFalse(),
 				"same resource on different clusters should NOT deduplicate")
 			Expect(result2.RRID).NotTo(Equal(result1.RRID))
+		})
+	})
+
+	Describe("CreateRRResult.ClusterID provenance (#1409, AU-3: audit-visible cluster attribution)", func() {
+		It("UT-AF-1409-003: create branch attributes CreateRRResult.ClusterID to the caller-specified cluster", func() {
+			tc := newTypedFakeClient()
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: "kubernaut-system",
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "nginx",
+				Description: "test", APIVersion: "apps/v1", ClusterID: "cluster-east-1",
+			}, "user")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlreadyExists).To(BeFalse())
+			Expect(result.ClusterID).To(Equal("cluster-east-1"),
+				"AU-3: CreateRRResult must attribute the newly created RR's cluster identity so callers can populate RRContext")
+		})
+
+		It("UT-AF-1409-004: dedup branch attributes ClusterID from the actual existing RR, not the caller's args", func() {
+			existing := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
+			existing.Spec.ClusterID = "cluster-original"
+			existing.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-original", gwtypes.ResourceIdentifier{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+			})
+			tc := newTypedFakeClient(existing)
+
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: "prod",
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "race", APIVersion: "apps/v1", ClusterID: "cluster-original",
+			}, "user")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlreadyExists).To(BeTrue())
+			Expect(result.ClusterID).To(Equal("cluster-original"),
+				"AU-3: dedup branch must attribute cluster identity from the actual existing RR object to prevent a race from misattributing audit provenance")
 		})
 	})
 
@@ -718,6 +762,49 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(ev.Type).To(Equal(audit.EventRRDeduplicated))
 			Expect(ev.UserID).To(Equal("bob"))
 			Expect(ev.Detail["existing_rr"]).To(Equal(result.RRID))
+		})
+
+		It("UT-AF-1409-010: EventRRCreated Detail map includes cluster_id for fleet-originated RRs", func() {
+			tc := newTypedFakeClient()
+			rec := &auditRecorder{}
+
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: "kubernaut-system",
+				Auditor:      rec,
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "fleet audit", APIVersion: "apps/v1", ClusterID: "cluster-east-1",
+			}, "alice")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(rec.events).To(HaveLen(1))
+			Expect(rec.events[0].Detail["cluster_id"]).To(Equal("cluster-east-1"),
+				"AU-3: AF-originated fleet RRs must be cluster-attributable in the audit trail, matching Gateway-originated ones")
+		})
+
+		It("UT-AF-1409-010b: EventRRDeduplicated Detail map includes cluster_id for fleet-originated RRs", func() {
+			existing := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
+			existing.Spec.ClusterID = "cluster-east-1"
+			existing.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-east-1", gwtypes.ResourceIdentifier{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+			})
+			tc := newTypedFakeClient(existing)
+			rec := &auditRecorder{}
+
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: "prod",
+				Auditor:      rec,
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "fleet audit dedup", APIVersion: "apps/v1", ClusterID: "cluster-east-1",
+			}, "bob")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(rec.events).To(HaveLen(1))
+			Expect(rec.events[0].Detail["cluster_id"]).To(Equal("cluster-east-1"),
+				"AU-3: dedup audit event must also attribute cluster_id")
 		})
 
 		It("does not panic and creates the RR when no Auditor is configured", func() {

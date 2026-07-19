@@ -28,7 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
-func createBackend(ctx context.Context, name, displayName string) {
+func createBackend(ctx context.Context, name string) {
 	GinkgoHelper()
 	backend := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -39,9 +39,6 @@ func createBackend(ctx context.Context, name, displayName string) {
 				"namespace": "default",
 				"labels": map[string]interface{}{
 					"kubernaut.ai/managed": "true",
-				},
-				"annotations": map[string]interface{}{
-					"kubernaut.ai/cluster-name": displayName,
 				},
 			},
 		},

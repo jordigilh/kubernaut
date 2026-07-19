@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -49,9 +49,16 @@ func main() {
 	router := handlers.NewFullRouterWithMetrics(registry, cfg.ForceText, cfg.Mode, cfg.RecordHeaders, nil, m, overrides)
 
 	srv := &http.Server{
-		Handler:      router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		Handler:     router,
+		ReadTimeout: 30 * time.Second,
+		// #1654: must stay strictly greater than the largest scenario-injected
+		// per-turn delay (e.g. scenario_slow_investigation.go's
+		// SecondTurnDelay=30s) plus response-write overhead. At exactly 30s the
+		// two raced: net/http aborted the in-flight write right as the delayed
+		// handler finished, so KA's client saw an EOF instead of the intended
+		// slow-but-successful response, masking the real E2E-FP-1456-001
+		// session-completion bug behind an unrelated infra timing collision.
+		WriteTimeout: 60 * time.Second,
 		IdleTimeout:  120 * time.Second,
 	}
 

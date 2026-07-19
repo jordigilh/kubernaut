@@ -178,6 +178,65 @@ subjects:
 	return nil
 }
 
+// fleetClusterIDScenarioYAML returns a keyword_scenarios YAML fragment for
+// E2E-AF-1409-001 (#1409, ADR-065): a single-turn conversation where
+// kubernaut_remediate (LLM-supplied cluster_id, creates the RR) is chained
+// via NextToolCall into kubernaut_present_decision (no cluster_id of its
+// own) — so the test can assert cluster_id reaches the SSE-visible
+// investigation_summary artifact purely via RRContext auto-fill (RR spec ->
+// RRContext -> emitDecisionEvent). Single-turn (one HTTP request) is
+// required here: RRContext lives on the per-request EventBridge
+// (WithEventBridge is called fresh per message/send call), so a second,
+// separate HTTP request would start with no RRContext at all and the
+// auto-fill this test exercises would never trigger.
+//
+// NextToolCall has no "fire once" guard by default, and because
+// match_last_only keeps matching this same scenario, mock-llm would
+// otherwise re-emit kubernaut_present_decision on every subsequent ADK
+// reasoning round-trip — an unbounded loop confirmed via must-gather
+// (mock-llm log showed the same scenario firing every ~0.5s for 60+ seconds
+// before the client-side timeout). Fixed at the source
+// (response.HasFunctionResponseNamed guard in handlers/gemini.go, #1409):
+// NextToolCall now stops firing once its own target tool has already
+// responded anywhere in the conversation history.
+//
+// session_id is required by PresentDecisionArgs' JSON schema (ka_tools.go)
+// even though HandlePresentDecision does not validate its value — any
+// non-empty string satisfies ADK's generated schema.
+//
+// Returns "" when fleetNS is empty (KA/AA suites that don't pass a "fleet"
+// key in afRemediateNS), so this is a no-op for suites that don't need it.
+func fleetClusterIDScenarioYAML(fleetNS string) string {
+	if fleetNS == "" {
+		return ""
+	}
+	return fmt.Sprintf(`      - name: "af_remediate_fleet_1409"
+        keywords: ["fleet cluster remediation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            description: "FP E2E fleet cluster_id remediation request (#1409)"
+            cluster_id: "cluster-fleet-e2e-1409"
+        next_tool_call:
+          name: "kubernaut_present_decision"
+          arguments:
+            session_id: "fleet-1409-session"
+            summary: "Fleet investigation complete: memory-eater pod crash loop due to OOM."
+            rca:
+              severity: "warning"
+              confidence: 0.8
+              target: "Deployment/memory-eater"
+              tool_calls_count: 1
+              llm_turns: 1
+            options: []
+`, fleetNS)
+}
+
 // DeployMockLLMInNamespace deploys the Go Mock LLM service to a Kind namespace.
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
 //
@@ -294,7 +353,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_watch"
           arguments:
             name: "$from_tool:kubernaut_remediate:rr_id"
-`
+` + fleetClusterIDScenarioYAML(afRemediateNS["fleet"])
 
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap

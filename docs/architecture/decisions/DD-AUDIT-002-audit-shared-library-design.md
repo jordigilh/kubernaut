@@ -407,8 +407,8 @@ type AuditEvent struct {
     SpanID        string // Optional: OpenTelemetry span ID
 
     // Kubernetes Context
-    Namespace   string // Optional
-    ClusterName string // Optional
+    Namespace string // Optional
+    ClusterID string // Optional (renamed from ClusterName in #1651)
 
     // Event Payload (JSONB - flexible, queryable)
     EventData     []byte // JSONB (use audit.StructToMap() helper with structured types)
