@@ -50,15 +50,13 @@ Track progress on the [v1.6 milestone](https://github.com/jordigilh/kubernaut/mi
 
 ---
 
-## v1.7 — Custom Agents and Non-Kubernetes Remediation
+## v1.7 — Custom Investigation Agents
 
-*Bring your own agent, remediate beyond Kubernetes.*
+*Bring your own agent, safely.*
 
 - **Custom investigation agents** — Operators inject SOPs into the investigation pipeline via customer-authored agents packaged as opaque OCI images, executed via the image's own entrypoint. KA acts as a supervised harness — no Kubernaut-known runtime, no LLM calls of its own. Defined by the `AgenticWorkflow` CRD ([#1536](https://github.com/jordigilh/kubernaut/issues/1536))
-- **AuthBridge traffic relay** — Credential injection and audit relay for opaque agent LLM/tool-call traffic, extensible to a shadow-evaluator tee for security review ([#1535](https://github.com/jordigilh/kubernaut/issues/1535), [#1681](https://github.com/jordigilh/kubernaut/issues/1681))
-- **Non-Kubernetes workflows** — `targetSystem` field enables execution against external systems (VMs, cloud APIs, IaC) with EA evolution for unverifiable outcomes ([#739](https://github.com/jordigilh/kubernaut/issues/739))
-- **kube-mcp-server by default** — Standardized Kubernetes access layer, deprecating direct K8s Go bindings ([#1516](https://github.com/jordigilh/kubernaut/issues/1516))
-- **ITSM integration** — Jira/ServiceNow webhook adapter for the Notification service ([#53](https://github.com/jordigilh/kubernaut/issues/53))
+- **AuthBridge / OpenShell integration** — AuthBridge intercepts every outbound LLM/MCP call from an opaque agent for credential injection and audit relay, extensible to a shadow-evaluator tee for security review; OpenShell provides sandbox isolation as a coexisting sidecar in the same pod ([#1535](https://github.com/jordigilh/kubernaut/issues/1535), [#1681](https://github.com/jordigilh/kubernaut/issues/1681))
+- **kube-mcp-server by default** — Standardized Kubernetes access layer for agents, deprecating direct K8s Go bindings ([#1516](https://github.com/jordigilh/kubernaut/issues/1516))
 
 Track progress on the [v1.7 milestone](https://github.com/jordigilh/kubernaut/milestone/8).
 
@@ -79,3 +77,5 @@ Track progress on the [v1.7 milestone](https://github.com/jordigilh/kubernaut/mi
 
 - **Cost optimization** — LLM-driven FinOps investigation and resource remediation using signals from Red Hat Cost Management (Koku), Kubecost, OpenCost, and VPA ([#555](https://github.com/jordigilh/kubernaut/issues/555))
 - **Threat remediation** — LLM-driven investigation and response for security and compliance signals from Red Hat Advanced Cluster Security (RHACS), Falco, Trivy, and OPA ([#554](https://github.com/jordigilh/kubernaut/issues/554))
+- **Non-Kubernetes workflows** — `targetSystem` field enables execution against external systems (VMs, cloud APIs, IaC) with EA evolution for unverifiable outcomes ([#739](https://github.com/jordigilh/kubernaut/issues/739))
+- **ITSM integration** — Jira/ServiceNow webhook adapter for the Notification service ([#53](https://github.com/jordigilh/kubernaut/issues/53))
