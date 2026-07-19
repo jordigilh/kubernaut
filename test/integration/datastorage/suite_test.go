@@ -384,13 +384,14 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "writing shared envtest kubeconfig")
 		GinkgoWriter.Println("✅ [Process 1] Shared envtest ready (kubernaut-workflows namespace created)")
 
-		// Seed action types directly as CRDs too (DD-WORKFLOW-016). #1661 Phase 53:
+		// Seed action types directly as CRDs (DD-WORKFLOW-016). #1661 Phase 53:
 		// makes them visible via DS's informer-backed cache (IT-DS-1661-P52-001)
 		// AuthWebhook-independently, for specs exercising the cache/CRD path
-		// (e.g. workflow_cache_test.go). This is IN ADDITION to -- not a
-		// replacement for -- the Postgres-backed seeding below: several specs in
-		// this suite still write to remediation_workflow_catalog directly, whose
-		// fk_workflow_action_type FK requires matching action_type_taxonomy rows.
+		// (e.g. workflow_cache_test.go). #1661 Phase G: this is now the suite's
+		// *only* action-type seeding path -- the Postgres-backed
+		// action_type_taxonomy bridge (seedActionTypeTaxonomyRows) was removed
+		// once the table itself was dropped, since etcd/CRDs are the sole
+		// source of truth for workflow/action-type data (DD-WORKFLOW-018).
 		GinkgoWriter.Println("🏷️  Seeding action types via direct CRD creation...")
 		Expect(infrastructure.SeedActionTypesViaCRD(kubeconfigPath, "kubernaut-workflows", GinkgoWriter)).
 			To(Succeed(), "action type CRD seeding should succeed")
@@ -880,59 +881,17 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	`)
 	Expect(err).ToNot(HaveOccurred(), "granting permissions should succeed")
 
-	// 4. Verify and create critical constraints in public schema
-	GinkgoWriter.Println("  🔍 Verifying critical constraints in public schema...")
-	verifyAndCreatePublicSchemaConstraints(ctx, targetDB)
-
-	// 5. Create dynamic partitions for current month (prevents time-based test failures)
+	// 4. Create dynamic partitions for current month (prevents time-based test failures)
 	GinkgoWriter.Println("  📅 Creating dynamic partitions for current month...")
 	createDynamicPartitions(ctx, targetDB)
 
-	// 6. Wait for schema propagation
+	// 5. Wait for schema propagation
 	GinkgoWriter.Println("  ⏳ Waiting for schema propagation...")
 	Eventually(func() error {
 		_, err := targetDB.ExecContext(ctx, "SELECT 1")
 		return err
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
-
-	// 7. Seed action_type_taxonomy rows directly (DD-WORKFLOW-016 FK bridge).
-	// #1661 Phase 55c: remediation_workflow_catalog's fk_workflow_action_type FK
-	// still requires action_type_taxonomy rows for the Postgres-backed specs in this
-	// suite (e.g. workflow_repository_integration_test.go) that insert workflows
-	// directly against Postgres, bypassing the CRD/cache path entirely. DS's REST
-	// registration endpoint that used to satisfy this FK (POST /api/v1/action-types)
-	// was removed in this same phase (DD-WORKFLOW-018), so this now inserts the rows
-	// directly instead of round-tripping through a temporary in-process DS server.
-	// This bridge -- and the action_type_taxonomy table/FK it satisfies -- is removed
-	// entirely once those Postgres-backed specs are migrated or deleted and the table
-	// is dropped.
-	GinkgoWriter.Println("  🏷️  Seeding action_type_taxonomy rows directly (Postgres FK bridge)...")
-	seedActionTypeTaxonomyRows(ctx, targetDB)
-	GinkgoWriter.Println("  ✅ Action types seeded (Postgres)")
-}
-
-// seedActionTypeTaxonomyRows inserts the standard action type rows directly into
-// action_type_taxonomy, satisfying remediation_workflow_catalog's FK for the
-// Postgres-backed specs in this suite. #1661 Phase 55c: replaces the old
-// in-process-DS-server + REST-API seeding path (DS's POST /api/v1/action-types
-// endpoint was removed per DD-WORKFLOW-018); direct insert is simpler now that
-// there is no REST surface to round-trip through.
-func seedActionTypeTaxonomyRows(ctx context.Context, targetDB *sql.DB) {
-	actionTypes := []string{
-		"DeletePod", "DrainNode", "FixAuthorizationPolicy", "FixCertificate",
-		"IncreaseMemoryLimits", "RestartDeployment", "RestartPod", "RollbackDeployment",
-		"IncreaseCPULimits", "ScaleReplicas", "ReconfigureResource",
-	}
-	for _, actionType := range actionTypes {
-		_, err := targetDB.ExecContext(ctx, `
-			INSERT INTO action_type_taxonomy (action_type, description, status)
-			VALUES ($1, $2, 'Active')
-			ON CONFLICT (action_type) DO NOTHING`,
-			actionType, `{"what": "test fixture", "whenToUse": "test fixture"}`,
-		)
-		Expect(err).ToNot(HaveOccurred(), "seed action_type_taxonomy row for %s", actionType)
-	}
 }
 
 // markSeededActionTypesActive status-patches every ActionType CRD in the
@@ -966,74 +925,6 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
 	req.Header.Set("Authorization", "Bearer "+t.token)
 	return http.DefaultTransport.RoundTrip(req)
-}
-
-// verifyAndCreatePublicSchemaConstraints ensures critical constraints exist in public schema
-// verifyAndCreatePublicSchemaConstraints ensures critical constraints exist in public schema.
-// Migration 003 replaced the full UNIQUE constraint with a partial unique index
-// (uq_workflow_name_version_active) that only enforces uniqueness for active workflows,
-// allowing superseded/disabled records to coexist with the same name+version.
-// Authority: Migration 003 (BR-WORKFLOW-006 content integrity)
-// Business Requirement: BR-STORAGE-012, BR-WORKFLOW-006
-func verifyAndCreatePublicSchemaConstraints(ctx context.Context, targetDB *sql.DB) {
-	// Check for the partial unique index (migration 003) — preferred
-	var partialIndexExists bool
-	partialCheckQuery := `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = 'public'
-			  AND c.relname = 'uq_workflow_name_version_active'
-			  AND c.relkind = 'i'
-		)
-	`
-	err := targetDB.QueryRowContext(ctx, partialCheckQuery).Scan(&partialIndexExists)
-	if err != nil {
-		GinkgoWriter.Printf("  ⚠️  Failed to check partial index existence: %v\n", err)
-		Fail(fmt.Sprintf("Failed to verify constraints: %v", err))
-	}
-
-	if partialIndexExists {
-		GinkgoWriter.Println("  ✅ Partial unique index uq_workflow_name_version_active exists (migration 003)")
-		return
-	}
-
-	// Fallback: check for the legacy full UNIQUE constraint (pre-migration 003)
-	var legacyConstraintExists bool
-	legacyCheckQuery := `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_constraint con
-			JOIN pg_class rel ON rel.oid = con.conrelid
-			JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-			WHERE nsp.nspname = 'public'
-			  AND rel.relname = 'remediation_workflow_catalog'
-			  AND con.conname = 'uq_workflow_name_version'
-		)
-	`
-	err = targetDB.QueryRowContext(ctx, legacyCheckQuery).Scan(&legacyConstraintExists)
-	if err != nil {
-		GinkgoWriter.Printf("  ⚠️  Failed to check legacy constraint existence: %v\n", err)
-		Fail(fmt.Sprintf("Failed to verify constraints: %v", err))
-	}
-
-	if legacyConstraintExists {
-		GinkgoWriter.Println("  ✅ Legacy constraint uq_workflow_name_version exists (pre-migration 003)")
-		return
-	}
-
-	// Neither exists — create the partial unique index (migration 003 intent)
-	GinkgoWriter.Println("  ⚠️  No workflow uniqueness constraint found — creating partial index...")
-	createIndexSQL := `
-		CREATE UNIQUE INDEX uq_workflow_name_version_active
-		ON public.remediation_workflow_catalog (workflow_name, version)
-		WHERE status = 'Active'
-	`
-	_, err = targetDB.ExecContext(ctx, createIndexSQL)
-	if err != nil {
-		GinkgoWriter.Printf("  ❌ Failed to create partial index: %v\n", err)
-		Fail(fmt.Sprintf("Failed to create uq_workflow_name_version_active index: %v", err))
-	}
-	GinkgoWriter.Println("  ✅ Created partial unique index uq_workflow_name_version_active")
 }
 
 // NOTE: Container-based service functions (buildDataStorageService, startDataStorageService, waitForServiceReady)

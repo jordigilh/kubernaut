@@ -33,7 +33,7 @@ limitations under the License.
 //
 //	// AIAnalysis needs workflows too:
 //	config := infrastructure.DefaultMigrationConfig(namespace, kubeconfigPath)
-//	config.Tables = []string{"audit_events", "remediation_workflow_catalog"}
+//	config.Tables = []string{"audit_events"}
 //	err := infrastructure.ApplyMigrations(ctx, config, output)
 //
 //	// DS needs everything:
@@ -122,7 +122,6 @@ func VerifyMigrations(ctx context.Context, config MigrationConfig, writer io.Wri
 		tables = []string{
 			"audit_events",
 			"notification_audit",
-			"remediation_workflow_catalog",
 		}
 	}
 
