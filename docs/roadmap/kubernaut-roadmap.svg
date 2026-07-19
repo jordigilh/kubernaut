@@ -10,7 +10,7 @@
     <path id="path2" fill="url(#pattern1)" stroke="none" d="M 66 494 L 314 494 C 317.313721 494 320 496.686279 320 500 L 320 500 C 320 503.313721 317.313721 506 314 506 L 66 506 C 62.686291 506 60 503.313721 60 500 L 60 500 C 60 496.686279 62.686291 494 66 494 Z"/>
     <path id="path3" fill="#cc0000" stroke="none" d="M 108 500 C 108 504.418274 104.418282 508 100 508 C 95.581718 508 92 504.418274 92 500 C 92 495.581726 95.581718 492 100 492 C 104.418282 492 108 495.581726 108 500 Z"/>
     <path id="path4" fill="#cc0000" stroke="none" d="M 248 500 C 248 504.418274 244.418274 508 240 508 C 235.581726 508 232 504.418274 232 500 C 232 495.581726 235.581726 492 240 492 C 244.418274 492 248 495.581726 248 500 Z"/>
-    <path id="path5" fill="#3344cc" stroke="none" d="M 1277 500 C 1277 503.865967 1273.865997 507 1270 507 C 1266.134003 507 1263 503.865967 1263 500 C 1263 496.134033 1266.134003 493 1270 493 C 1273.865997 493 1277 496.134033 1277 500 Z"/>
+    <path id="path5" fill="#3344cc" stroke="none" d="M 1157 500 C 1157 503.865967 1153.865997 507 1150 507 C 1146.134003 507 1143 503.865967 1143 500 C 1143 496.134033 1146.134003 493 1150 493 C 1153.865997 493 1157 496.134033 1157 500 Z"/>
     <path id="path6" fill="#cc0000" stroke="none" d="M 538 500 C 538 504.418274 534.418274 508 530 508 C 525.581726 508 522 504.418274 522 500 C 522 495.581726 525.581726 492 530 492 C 534.418274 492 538 495.581726 538 500 Z"/>
     <path id="path7" fill="#cc0000" stroke="none" d="M 748 500 C 748 504.418274 744.418274 508 740 508 C 735.581726 508 732 504.418274 732 500 C 732 495.581726 735.581726 492 740 492 C 744.418274 492 748 495.581726 748 500 Z"/>
     <path id="path8" fill="#cc0000" stroke="none" d="M 978 500 C 978 504.418274 974.418274 508 970 508 C 965.581726 508 962 504.418274 962 500 C 962 495.581726 965.581726 492 970 492 C 974.418274 492 978 495.581726 978 500 Z"/>
@@ -20,7 +20,7 @@
     <path id="path12" fill="#cc0000" stroke="none" d="M 1880 500.333313 L 1854 483 L 1854 517.666687 Z"/>
     <path id="path13" fill="#000000" stroke="#999999" stroke-width="1.2" d="M 100 508 L 100 560"/>
     <path id="path14" fill="#000000" stroke="#999999" stroke-width="1.2" d="M 240 492 L 240 400"/>
-    <path id="path15" fill="#000000" stroke="#3344cc" stroke-width="1.5" d="M 1270 507 L 1270 560"/>
+    <path id="path15" fill="#000000" stroke="#3344cc" stroke-width="1.5" d="M 1150 493 L 1150 320"/>
     <path id="path16" fill="#000000" stroke="#999999" stroke-width="1.2" d="M 530 508 L 530 560"/>
     <path id="path17" fill="#000000" stroke="#999999" stroke-width="1.2" d="M 740 492 L 740 340"/>
     <path id="path18" fill="#000000" stroke="#999999" stroke-width="1.2" d="M 970 508 L 970 560"/>
@@ -40,7 +40,7 @@
     <text id="Project-inception" xml:space="preserve" x="59" y="602" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">Project inception — built with</text>
     <text id="agentic-AI-from-day-one" xml:space="preserve" x="59" y="618" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">agentic AI from day one</text>
     <text id="Sep25" xml:space="preserve" x="77" y="472" font-family="Helvetica Neue" font-size="13" fill="#444444">Sep’25</text>
-    <text id="Today" xml:space="preserve" x="1215" y="627" font-family="Helvetica Neue" font-size="22" font-weight="700" fill="#1a1a1a">Today</text>
+    <text id="Today" xml:space="preserve" x="1112" y="308" font-family="Helvetica Neue" font-size="22" font-weight="700" fill="#3344cc">Today</text>
     <text id="V140-Release" xml:space="preserve" x="529" y="582" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">V1.4.0 Release</text>
     <text id="Prompt-Injection-Guardrails-" xml:space="preserve"><tspan x="529" y="608" font-family="Helvetica Neue" font-size="12" font-weight="700" fill="#1a1a1a" xml:space="preserve">Prompt Injection Guardrails</tspan><tspan font-family="Helvetica Neue" font-size="12" fill="#000000" xml:space="preserve"> </tspan><tspan font-family="Helvetica Neue" font-size="12" fill="#1a1a1a" xml:space="preserve">–</tspan></text>
     <text id="Shadow-agent-with-a" xml:space="preserve" x="529" y="624" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">Shadow agent with a dedicated scanning</text>
@@ -49,7 +49,7 @@
     <text id="Operator-Overrides--Workflow" xml:space="preserve"><tspan x="529" y="682" font-family="Helvetica Neue" font-size="12" font-weight="700" fill="#1a1a1a" xml:space="preserve">Operator Overrides</tspan><tspan font-family="Helvetica Neue" font-size="12" fill="#000000" xml:space="preserve"> </tspan><tspan font-family="Helvetica Neue" font-size="12" fill="#1a1a1a" xml:space="preserve">– Workflow parameter</tspan></text>
     <text id="override-at-approval-time" xml:space="preserve" x="529" y="698" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">override at approval time.</text>
     <text id="Q226" xml:space="preserve" x="489" y="477" font-family="Helvetica Neue" font-size="14" fill="#444444">Q2’26</text>
-    <text id="Jul26" xml:space="preserve" x="1229" y="477" font-family="Helvetica Neue" font-size="14" fill="#444444">Jul’26</text>
+    <text id="Jul26" xml:space="preserve" x="1109" y="477" font-family="Helvetica Neue" font-size="14" fill="#444444">Jul’26</text>
     <text id="Live-Investigation-Control" xml:space="preserve" x="659" y="167" font-family="Helvetica Neue" font-size="17" font-weight="700" fill="#cc0000">Live Investigation Control (v1.5)</text>
     <text id="See-and-steer-your" xml:space="preserve" x="659" y="190" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">See and steer your AI investigations in real time</text>
     <text id="-Real-time-investigation-streaming" xml:space="preserve" x="669" y="219" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Real-time investigation streaming (SSE)</text>
@@ -77,10 +77,10 @@
     <text id="-Cost-Optimization-" xml:space="preserve" x="1589" y="219" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Cost Optimization – AI-driven right-sizing</text>
     <text id="-Threat-Remediation-" xml:space="preserve" x="1589" y="237" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Threat Remediation – security response</text>
     <text id="-Non-Kubernetes-Workflows-VMs" xml:space="preserve" x="1589" y="255" font-family="Helvetica Neue" font-size="12" fill="#1a1a1a">→ Non-Kubernetes Workflows (VMs, cloud, IaC) (v1.7)</text>
-    <path id="path22" fill="#000000" stroke="#dddddd" stroke-dasharray="4 4" stroke-dashoffset="0" d="M 1270 120 L 1270 470"/>
-    <path id="path23" fill="#000000" stroke="#dddddd" stroke-dasharray="4 4" stroke-dashoffset="0" d="M 1270 530 L 1270 720"/>
-    <text id="DELIVERED" xml:space="preserve" x="620" y="452" font-family="Helvetica Neue" font-size="11" fill="#999999" letter-spacing="2">DELIVERED</text>
-    <text id="WHATS-NEXT" xml:space="preserve" x="1510" y="452" font-family="Helvetica Neue" font-size="11" fill="#999999" letter-spacing="2">WHAT’S NEXT</text>
+    <path id="path22" fill="#000000" stroke="#dddddd" stroke-dasharray="4 4" stroke-dashoffset="0" d="M 1080 120 L 1080 470"/>
+    <path id="path23" fill="#000000" stroke="#dddddd" stroke-dasharray="4 4" stroke-dashoffset="0" d="M 1080 530 L 1080 720"/>
+    <text id="DELIVERED" xml:space="preserve" x="555" y="452" font-family="Helvetica Neue" font-size="11" fill="#999999" letter-spacing="2">DELIVERED</text>
+    <text id="WHATS-NEXT" xml:space="preserve" x="1400" y="452" font-family="Helvetica Neue" font-size="11" fill="#999999" letter-spacing="2">WHAT’S NEXT</text>
     <text id="Design-Principle" xml:space="preserve" x="69" y="832" font-family="Helvetica Neue" font-size="13" font-weight="700" fill="#cc0000">Design Principle</text>
     <text id="Each-milestone-builds-on" xml:space="preserve" x="69" y="855" font-family="Helvetica Neue" font-size="12" fill="#666666">Each milestone builds on the previous: control → external integration → fleet scale → custom agents &amp; domain expansion.</text>
     <path id="path24" fill="#000000" stroke="#eeeeee" d="M 70 875 L 1850 875"/>
