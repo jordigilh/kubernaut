@@ -502,32 +502,10 @@ type WorkflowListResponse struct {
 	Total     int                    `json:"total"`
 }
 
-// WorkflowVersionsResponse represents all versions of a workflow by workflow_name
-// DD-WORKFLOW-002 v3.0: List all versions by workflow_name
-type WorkflowVersionsResponse struct {
-	WorkflowName string                `json:"workflowName"`
-	Versions     []RemediationWorkflow `json:"versions"`
-	Total        int                   `json:"total"`
-}
-
-// WorkflowUpdateRequest represents a request to update mutable workflow fields
-// DD-WORKFLOW-012: Only mutable fields can be updated (status, metrics)
-// Immutable fields (description, content, labels) require creating a new version
-type WorkflowUpdateRequest struct {
-	// Mutable fields (DD-WORKFLOW-012)
-	Status         *string `json:"status,omitempty"`          // active, disabled, deprecated, archived
-	DisabledBy     *string `json:"disabledBy,omitempty"`     // Who disabled the workflow
-	DisabledReason *string `json:"disabledReason,omitempty"` // Why the workflow was disabled
-
-	// Immutable fields - included for validation (will be rejected if provided)
-	Description *StructuredDescription `json:"description,omitempty"` // IMMUTABLE - rejected if provided
-	Content     *string          `json:"content,omitempty"`     // IMMUTABLE - rejected if provided
-	Labels      *json.RawMessage `json:"labels,omitempty"`      // IMMUTABLE - rejected if provided
-}
-
-// WorkflowDisableRequest represents a request to disable a workflow
-// DD-WORKFLOW-012: Convenience endpoint for soft-delete (status = disabled)
-type WorkflowDisableRequest struct {
-	Reason    *string `json:"reason,omitempty"`     // Why the workflow is being disabled
-	UpdatedBy *string `json:"updatedBy,omitempty"` // Who is disabling the workflow
-}
+// #1661 Phase B: WorkflowVersionsResponse/WorkflowUpdateRequest/WorkflowDisableRequest
+// deleted -- their sole consumers were the deleted RW mutation/version-management
+// handlers (create/update/disable/enable/deprecate, and the version-management
+// endpoints removed earlier alongside 07_workflow_version_management_test.go).
+// AuthWebhook now owns the RemediationWorkflow CRD lifecycle entirely locally
+// (DD-WORKFLOW-018); version is no longer a composite primary key component
+// (etcd/Kubernetes metadata.name is the sole primary key).

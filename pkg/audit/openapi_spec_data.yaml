@@ -517,55 +517,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Update workflow mutable fields
-      description: |
-        Update mutable workflow fields (status, metrics).
-        Immutable fields (description, content, labels) require creating a new version.
-
-        **Design Decision**: DD-WORKFLOW-012 (Mutable vs Immutable Fields)
-      operationId: updateWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowUpdateRequest'
-      responses:
-        '200':
-          description: Workflow updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Validation error (attempted to update immutable field)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/action-types/{name}/workflow-count:
     get:
       tags:
@@ -3288,21 +3239,6 @@ components:
           type: integer
         total:
           type: integer
-
-    WorkflowUpdateRequest:
-      type: object
-      description: "Update mutable workflow fields only (DD-WORKFLOW-012)"
-      properties:
-        status:
-          type: string
-          enum: [Active, Disabled, Deprecated, Archived]
-          description: "Workflow status (mutable)"
-        disabledBy:
-          type: string
-          description: "Who disabled the workflow"
-        disabledReason:
-          type: string
-          description: "Why the workflow was disabled"
 
     AuditExportResponse:
       type: object

@@ -53,6 +53,15 @@ const (
 	ActionValidate  = "validate"
 )
 
+// EventCategoryWorkflow is the audit event category for workflow catalog
+// events (per OpenAPI schema, not "workflow_catalog").
+//
+// #1661 Phase B: relocated from the now-deleted workflow_catalog_event.go
+// (its ActionCreate/ActionUpdate/EventTypeWorkflowCreated/EventTypeWorkflowUpdated
+// siblings had zero remaining callers -- AuthWebhook now emits the equivalent
+// workflow lifecycle audit events, DD-WORKFLOW-018 -- and were not relocated).
+const EventCategoryWorkflow = "workflow"
+
 // newBaseDiscoveryEvent creates a base audit event with fields common to all discovery events.
 // Reduces duplication across the 4 discovery event constructors.
 func newBaseDiscoveryEvent(eventType, action string) *ogenclient.AuditEventRequest {

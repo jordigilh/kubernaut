@@ -25939,52 +25939,6 @@ func (o OptWorkflowSearchFilters) Or(d WorkflowSearchFilters) WorkflowSearchFilt
 	return d
 }
 
-// NewOptWorkflowUpdateRequestStatus returns new OptWorkflowUpdateRequestStatus with value set to v.
-func NewOptWorkflowUpdateRequestStatus(v WorkflowUpdateRequestStatus) OptWorkflowUpdateRequestStatus {
-	return OptWorkflowUpdateRequestStatus{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkflowUpdateRequestStatus is optional WorkflowUpdateRequestStatus.
-type OptWorkflowUpdateRequestStatus struct {
-	Value WorkflowUpdateRequestStatus
-	Set   bool
-}
-
-// IsSet returns true if OptWorkflowUpdateRequestStatus was set.
-func (o OptWorkflowUpdateRequestStatus) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkflowUpdateRequestStatus) Reset() {
-	var v WorkflowUpdateRequestStatus
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkflowUpdateRequestStatus) SetTo(v WorkflowUpdateRequestStatus) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkflowUpdateRequestStatus) Get() (v WorkflowUpdateRequestStatus, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkflowUpdateRequestStatus) Or(d WorkflowUpdateRequestStatus) WorkflowUpdateRequestStatus {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // Pagination metadata for discovery endpoints (DD-WORKFLOW-016).
 // Ref: #/components/schemas/PaginationMetadata
 type PaginationMetadata struct {
@@ -29587,7 +29541,6 @@ func (s *RemediationWorkflow) SetUpdatedBy(val OptString) {
 }
 
 func (*RemediationWorkflow) getWorkflowByIDRes() {}
-func (*RemediationWorkflow) updateWorkflowRes()  {}
 
 // Infrastructure resources required by the workflow. spec.dependencies.
 // Ref: #/components/schemas/RemediationWorkflowContentDependencies
@@ -31906,14 +31859,6 @@ func (s *TimeoutConfig) SetExecuting(val OptString) {
 	s.Executing = val
 }
 
-type UpdateWorkflowBadRequest RFC7807Problem
-
-func (*UpdateWorkflowBadRequest) updateWorkflowRes() {}
-
-type UpdateWorkflowNotFound RFC7807Problem
-
-func (*UpdateWorkflowNotFound) updateWorkflowRes() {}
-
 // Validation result for reconstructed RemediationRequest.
 // Indicates completeness, errors, and warnings.
 // Ref: #/components/schemas/ValidationResult
@@ -33751,103 +33696,6 @@ func (s *WorkflowSearchFiltersStatusItem) UnmarshalText(data []byte) error {
 		return nil
 	case WorkflowSearchFiltersStatusItemArchived:
 		*s = WorkflowSearchFiltersStatusItemArchived
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Update mutable workflow fields only (DD-WORKFLOW-012).
-// Ref: #/components/schemas/WorkflowUpdateRequest
-type WorkflowUpdateRequest struct {
-	// Workflow status (mutable).
-	Status OptWorkflowUpdateRequestStatus `json:"status"`
-	// Who disabled the workflow.
-	DisabledBy OptString `json:"disabledBy"`
-	// Why the workflow was disabled.
-	DisabledReason OptString `json:"disabledReason"`
-}
-
-// GetStatus returns the value of Status.
-func (s *WorkflowUpdateRequest) GetStatus() OptWorkflowUpdateRequestStatus {
-	return s.Status
-}
-
-// GetDisabledBy returns the value of DisabledBy.
-func (s *WorkflowUpdateRequest) GetDisabledBy() OptString {
-	return s.DisabledBy
-}
-
-// GetDisabledReason returns the value of DisabledReason.
-func (s *WorkflowUpdateRequest) GetDisabledReason() OptString {
-	return s.DisabledReason
-}
-
-// SetStatus sets the value of Status.
-func (s *WorkflowUpdateRequest) SetStatus(val OptWorkflowUpdateRequestStatus) {
-	s.Status = val
-}
-
-// SetDisabledBy sets the value of DisabledBy.
-func (s *WorkflowUpdateRequest) SetDisabledBy(val OptString) {
-	s.DisabledBy = val
-}
-
-// SetDisabledReason sets the value of DisabledReason.
-func (s *WorkflowUpdateRequest) SetDisabledReason(val OptString) {
-	s.DisabledReason = val
-}
-
-// Workflow status (mutable).
-type WorkflowUpdateRequestStatus string
-
-const (
-	WorkflowUpdateRequestStatusActive     WorkflowUpdateRequestStatus = "Active"
-	WorkflowUpdateRequestStatusDisabled   WorkflowUpdateRequestStatus = "Disabled"
-	WorkflowUpdateRequestStatusDeprecated WorkflowUpdateRequestStatus = "Deprecated"
-	WorkflowUpdateRequestStatusArchived   WorkflowUpdateRequestStatus = "Archived"
-)
-
-// AllValues returns all WorkflowUpdateRequestStatus values.
-func (WorkflowUpdateRequestStatus) AllValues() []WorkflowUpdateRequestStatus {
-	return []WorkflowUpdateRequestStatus{
-		WorkflowUpdateRequestStatusActive,
-		WorkflowUpdateRequestStatusDisabled,
-		WorkflowUpdateRequestStatusDeprecated,
-		WorkflowUpdateRequestStatusArchived,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s WorkflowUpdateRequestStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case WorkflowUpdateRequestStatusActive:
-		return []byte(s), nil
-	case WorkflowUpdateRequestStatusDisabled:
-		return []byte(s), nil
-	case WorkflowUpdateRequestStatusDeprecated:
-		return []byte(s), nil
-	case WorkflowUpdateRequestStatusArchived:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *WorkflowUpdateRequestStatus) UnmarshalText(data []byte) error {
-	switch WorkflowUpdateRequestStatus(data) {
-	case WorkflowUpdateRequestStatusActive:
-		*s = WorkflowUpdateRequestStatusActive
-		return nil
-	case WorkflowUpdateRequestStatusDisabled:
-		*s = WorkflowUpdateRequestStatusDisabled
-		return nil
-	case WorkflowUpdateRequestStatusDeprecated:
-		*s = WorkflowUpdateRequestStatusDeprecated
-		return nil
-	case WorkflowUpdateRequestStatusArchived:
-		*s = WorkflowUpdateRequestStatusArchived
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

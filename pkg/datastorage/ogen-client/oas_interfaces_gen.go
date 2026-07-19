@@ -49,10 +49,6 @@ type ReleaseLegalHoldRes interface {
 	releaseLegalHoldRes()
 }
 
-type UpdateWorkflowRes interface {
-	updateWorkflowRes()
-}
-
 type VerifyAuditChainRes interface {
 	verifyAuditChainRes()
 }

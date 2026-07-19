@@ -22,6 +22,5 @@ const (
 	QueryAuditEventsOperation              OperationName = "QueryAuditEvents"
 	ReconstructRemediationRequestOperation OperationName = "ReconstructRemediationRequest"
 	ReleaseLegalHoldOperation              OperationName = "ReleaseLegalHold"
-	UpdateWorkflowOperation                OperationName = "UpdateWorkflow"
 	VerifyAuditChainOperation              OperationName = "VerifyAuditChain"
 )

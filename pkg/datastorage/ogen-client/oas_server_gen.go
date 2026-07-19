@@ -257,14 +257,6 @@ type Handler interface {
 	//
 	// DELETE /api/v1/audit/legal-hold/{correlation_id}
 	ReleaseLegalHold(ctx context.Context, req *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (ReleaseLegalHoldRes, error)
-	// UpdateWorkflow implements updateWorkflow operation.
-	//
-	// Update mutable workflow fields (status, metrics).
-	// Immutable fields (description, content, labels) require creating a new version.
-	// **Design Decision**: DD-WORKFLOW-012 (Mutable vs Immutable Fields).
-	//
-	// PATCH /api/v1/workflows/{workflow_id}
-	UpdateWorkflow(ctx context.Context, req *WorkflowUpdateRequest, params UpdateWorkflowParams) (UpdateWorkflowRes, error)
 	// VerifyAuditChain implements verifyAuditChain operation.
 	//
 	// Verifies the integrity of audit event hash chains for a given correlation_id.

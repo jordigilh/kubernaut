@@ -310,17 +310,6 @@ func (UnimplementedHandler) ReleaseLegalHold(ctx context.Context, req *ReleaseLe
 	return r, ht.ErrNotImplemented
 }
 
-// UpdateWorkflow implements updateWorkflow operation.
-//
-// Update mutable workflow fields (status, metrics).
-// Immutable fields (description, content, labels) require creating a new version.
-// **Design Decision**: DD-WORKFLOW-012 (Mutable vs Immutable Fields).
-//
-// PATCH /api/v1/workflows/{workflow_id}
-func (UnimplementedHandler) UpdateWorkflow(ctx context.Context, req *WorkflowUpdateRequest, params UpdateWorkflowParams) (r UpdateWorkflowRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // VerifyAuditChain implements verifyAuditChain operation.
 //
 // Verifies the integrity of audit event hash chains for a given correlation_id.

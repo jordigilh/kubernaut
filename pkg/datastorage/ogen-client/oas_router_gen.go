@@ -29,9 +29,6 @@ var (
 	rn27AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn16AllowedHeaders = map[string]string{
-		"PATCH": "Content-Type",
-	}
 )
 
 func (s *Server) cutPrefix(path string) (string, bool) {
@@ -596,16 +593,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							s.handleGetWorkflowByIDRequest([1]string{
 								args[0],
 							}, elemIsEscaped, w, r)
-						case "PATCH":
-							s.handleUpdateWorkflowRequest([1]string{
-								args[0],
-							}, elemIsEscaped, w, r)
 						default:
 							s.notAllowed(w, r, notAllowedParams{
-								allowedMethods: "GET,PATCH",
-								allowedHeaders: rn16AllowedHeaders,
+								allowedMethods: "GET",
+								allowedHeaders: nil,
 								acceptPost:     "",
-								acceptPatch:    "application/json",
+								acceptPatch:    "",
 							})
 						}
 
@@ -1229,15 +1222,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							r.name = GetWorkflowByIDOperation
 							r.summary = "Get workflow by UUID (with optional security gate)"
 							r.operationID = "getWorkflowByID"
-							r.operationGroup = ""
-							r.pathPattern = "/api/v1/workflows/{workflow_id}"
-							r.args = args
-							r.count = 1
-							return r, true
-						case "PATCH":
-							r.name = UpdateWorkflowOperation
-							r.summary = "Update workflow mutable fields"
-							r.operationID = "updateWorkflow"
 							r.operationGroup = ""
 							r.pathPattern = "/api/v1/workflows/{workflow_id}"
 							r.args = args

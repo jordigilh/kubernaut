@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -308,4 +309,26 @@ func (h *Handler) emitWorkflowRetrievedAuditEvents(workflowID string, filters *m
 	if len(events) > 0 {
 		h.emitAuditEventsAsync(events, "workflow_id", workflowID)
 	}
+}
+
+// emitAuditEventsAsync stores one or more audit events asynchronously in a background goroutine.
+// This is the standard pattern for non-blocking audit event emission (BR-AUDIT-024).
+// Events are stored sequentially within a single goroutine to share one context/timeout.
+// If event creation fails for any event, remaining events are still attempted.
+//
+// #1661 Phase B: relocated from workflow_update_lifecycle_handlers.go (deleted along
+// with the RW mutation handlers) — this helper is also shared by
+// workflow_discovery_handlers.go, which survives (read-path, DD-WORKFLOW-018).
+func (h *Handler) emitAuditEventsAsync(events []*api.AuditEventRequest, kvs ...interface{}) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		for _, event := range events {
+			if err := h.auditStore.StoreAudit(ctx, event); err != nil {
+				args := append([]interface{}{"Failed to store audit event", "event_type", event.EventType}, kvs...)
+				h.logger.Error(err, args[0].(string), args[1:]...)
+			}
+		}
+	}()
 }

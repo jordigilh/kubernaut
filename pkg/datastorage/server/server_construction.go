@@ -315,16 +315,17 @@ func buildWorkflowCache(deps ServerDeps, logger logr.Logger, cleanups *startupCl
 // WithSchemaExtractor).
 //
 // BR-AUDIT-006: Pass sqlDB for reconstruction queries.
-// GAP-WF-1: WithWorkflowLifecycleRepository enables enable/disable/deprecate handlers.
 // Issue #1661 Phase 29 / Phase 55: wfCache is always non-nil (validateServerDeps
 // requires ServerDeps.K8sRestConfig).
+// Issue #1661 Phase B: WithWorkflowLifecycleRepository/WithWorkflowContentIntegrityRepository
+// removed -- their handlers (enable/disable/deprecate/create) were deleted;
+// AuthWebhook now owns the RemediationWorkflow CRD lifecycle entirely locally
+// (DD-WORKFLOW-018).
 func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps, wfCache *workflowcache.Cache) *Handler {
-	opts := make([]HandlerOption, 0, 10+len(deps.HandlerOpts))
+	opts := make([]HandlerOption, 0, 8+len(deps.HandlerOpts))
 	opts = append(opts,
 		WithLogger(logger),
 		WithWorkflowRepository(catalogDeps.workflowRepo),
-		WithWorkflowLifecycleRepository(catalogDeps.workflowRepo),
-		WithWorkflowContentIntegrityRepository(catalogDeps.workflowRepo),
 		WithActionTypeValidator(catalogDeps.actionTypeRepo),
 		WithAuditStore(auditDeps.auditStore),
 		WithSQLDB(db),
