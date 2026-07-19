@@ -20,6 +20,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -33,6 +34,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 )
+
+// ErrNoDependencies indicates the workflow catalog entry declares no schema
+// content, and therefore no dependencies to extract. Issue #1674: typed
+// sentinel replacing the previous ambiguous (nil, nil) return from
+// GetWorkflowDependencies.
+var ErrNoDependencies = errors.New("workflow has no dependencies declared")
 
 // WorkflowCatalogMetadata holds all workflow metadata resolved from the DS
 // catalog in a single GetWorkflowByID call (Issue #650). Consolidates what was
@@ -162,7 +169,7 @@ func classifyGetWorkflowResponse(res ogenclient.GetWorkflowByIDRes, workflowID s
 
 // GetWorkflowDependencies fetches the workflow from DS by ID and extracts
 // schema-declared dependencies from the Content field (raw YAML).
-// Returns nil if the workflow has no dependencies declared.
+// Returns ErrNoDependencies if the workflow has no dependencies declared.
 func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workflowID string) (*models.WorkflowDependencies, error) {
 	uid, err := uuid.Parse(workflowID)
 	if err != nil {
@@ -182,12 +189,7 @@ func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workf
 	}
 
 	if wf.Content == "" {
-		// nolint:nilnil // intentional "no dependencies declared" sentinel,
-		// not an error — already documented above ("Returns nil if the
-		// workflow has no dependencies declared"); the WorkflowQuerier
-		// interface contract makes nil an explicit, documented valid result
-		// (Issue #1546 Tier 2).
-		return nil, nil
+		return nil, ErrNoDependencies
 	}
 
 	parser := schema.NewParser()

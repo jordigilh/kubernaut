@@ -21,6 +21,7 @@ package workflowexecution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -213,7 +214,7 @@ func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.
 	// Called BEFORE setting engine from schema so the idempotency guard in
 	// resolveWorkflowCatalog doesn't skip the SA and bundle resolution that
 	// only the catalog provides.
-	if _, catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil {
+	if _, catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil && !errors.Is(catalogErr, ErrAlreadyResolved) {
 		logger.Error(catalogErr, "Failed to resolve workflow catalog from DS (non-fatal)")
 	}
 
