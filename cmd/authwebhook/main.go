@@ -288,18 +288,18 @@ func registerAuthWebhookWorkflowHandlers(mgr ctrl.Manager, cfg *awconfig.Config,
 	}
 	setupLog.Info("Registered RemediationWorkflow finalizer reconciler")
 
-	// ADR-059: CRD-based action type lifecycle. Reuses the same DS client
-	// adapter since it connects to the same Data Storage service.
-	atHandler := authwebhook.NewActionTypeHandler(rwDSClient, auditStore, mgr.GetClient())
+	// ADR-059: CRD-based action type lifecycle. #1661 Phase 55c: no longer
+	// takes a DS client -- CREATE/UPDATE/DELETE are computed and patched
+	// entirely locally (DD-WORKFLOW-018).
+	atHandler := authwebhook.NewActionTypeHandler(auditStore, mgr.GetClient())
 	webhookServer.Register("/validate-actiontype", &webhook.Admission{Handler: atHandler})
-	setupLog.Info("Registered ActionType webhook handler with DS client and audit store")
+	setupLog.Info("Registered ActionType webhook handler with audit store")
 
 	// Issue #548: Startup reconciler syncs existing CRDs with DataStorage on boot.
 	// Issue #1246: Graceful degradation — individual RW failures don't crash the pod.
 	startupReconciler := &authwebhook.StartupReconciler{
 		K8sClient:     mgr.GetClient(),
 		DSWorkflow:    rwDSClient,
-		DSActionType:  rwDSClient,
 		Logger:        ctrl.Log.WithName("startup-reconciler"),
 		Timeout:       cfg.DataStorage.Timeout,
 		EventRecorder: mgr.GetEventRecorderFor("authwebhook-startup"),

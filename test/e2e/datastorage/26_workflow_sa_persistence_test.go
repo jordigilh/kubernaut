@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/testutil"
@@ -57,64 +56,12 @@ var _ = Describe("E2E-DS-481: ServiceAccountName REST API Persistence (#481)", L
 
 	Context("Create and retrieve workflow with ServiceAccountName", func() {
 
-		It("E2E-DS-481-001: should persist serviceAccountName through POST -> GET roundtrip", func() {
-			suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-			workflowName := fmt.Sprintf("e2e-sa-persist-%s", suffix)
-
-			By("Building a workflow CRD with serviceAccountName set")
-			crd := testutil.NewTestWorkflowCRD(workflowName, "RestartPod", "job")
-			crd.Spec.Description.What = "E2E SA persistence test"
-			crd.Spec.Description.WhenToUse = "E2E-DS-481-001: validates serviceAccountName survives REST API roundtrip"
-			crd.Spec.Labels.Priority = "P0"
-			crd.Spec.Labels.Component = []string{"v1/Pod"}
-			crd.Spec.Execution.Bundle = e2eBundleRef
-			crd.Spec.Execution.ServiceAccountName = "e2e-custom-workflow-sa"
-			crd.Spec.Parameters = []models.WorkflowParameter{
-				{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource"},
-			}
-			content := testutil.MarshalWorkflowCRD(crd)
-
-			By("Creating workflow via REST API")
-			createReq := &dsgen.CreateWorkflowInlineRequest{Content: content}
-			createReq.Source.SetTo("e2e-test")
-
-			resp, err := DSClient.CreateWorkflow(testCtx, createReq)
-			Expect(err).ToNot(HaveOccurred())
-
-			var workflow *dsgen.RemediationWorkflow
-			switch v := resp.(type) {
-			case *dsgen.CreateWorkflowCreated:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			case *dsgen.CreateWorkflowOK:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			default:
-				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp))
-			}
-
-			workflowID := workflow.WorkflowId.Value.String()
-			Expect(workflowID).To(HaveLen(36), "UUID should be 36 chars (8-4-4-4-12)")
-			logger.Info("Workflow created", "id", workflowID, "name", workflowName)
-
-			By("Retrieving workflow by ID via REST API")
-			workflowUUID, err := uuid.Parse(workflowID)
-			Expect(err).ToNot(HaveOccurred())
-
-			getResp, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{
-				WorkflowID: workflowUUID,
-			})
-			Expect(err).ToNot(HaveOccurred())
-
-			retrieved, ok := getResp.(*dsgen.RemediationWorkflow)
-			Expect(ok).To(BeTrue(), "Expected *RemediationWorkflow from GetWorkflowByID")
-
-			By("Asserting ServiceAccountName survived the POST -> DB -> GET roundtrip")
-			Expect(retrieved.ServiceAccountName.Set).To(BeTrue(),
-				"ServiceAccountName should be present in GET response (Set=true)")
-			Expect(retrieved.ServiceAccountName.Value).To(Equal("e2e-custom-workflow-sa"),
-				"ServiceAccountName value should match what was submitted")
-
-			GinkgoWriter.Printf("E2E-DS-481-001: serviceAccountName REST API roundtrip verified (POST -> GET)\n")
-		})
+		// E2E-DS-481-001 ("persist serviceAccountName through POST -> GET
+		// roundtrip") removed: #1661 Phase 55b — DS's createWorkflow REST
+		// endpoint was retired (DD-WORKFLOW-018, AuthWebhook is the sole write
+		// path). The POST leg of this roundtrip no longer exists; the GET leg
+		// (serviceAccountName survives CRD -> workflowcache -> REST response)
+		// is still exercised by E2E-DS-481-002 below via discovery.
 
 		It("E2E-DS-481-002: should return serviceAccountName in discovery endpoint", func() {
 			suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -133,24 +80,11 @@ var _ = Describe("E2E-DS-481: ServiceAccountName REST API Persistence (#481)", L
 			}
 			content := testutil.MarshalWorkflowCRD(crd)
 
-			By("Creating workflow via REST API")
-			createReq := &dsgen.CreateWorkflowInlineRequest{Content: content}
-			createReq.Source.SetTo("e2e-test")
-
-			resp, err := DSClient.CreateWorkflow(testCtx, createReq)
-			Expect(err).ToNot(HaveOccurred())
-
-			var workflow *dsgen.RemediationWorkflow
-			switch v := resp.(type) {
-			case *dsgen.CreateWorkflowCreated:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			case *dsgen.CreateWorkflowOK:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			default:
-				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp))
-			}
-
-			createdID := workflow.WorkflowId.Value.String()
+			// #1661 Phase 55b: register workflow via direct CRD creation (no
+			// live AuthWebhook in this suite; DS's REST registration endpoint
+			// was removed per DD-WORKFLOW-018).
+			By("Registering workflow via direct CRD creation")
+			createdID, _ := ensureWorkflowRegistered(testCtx, DSClient, content, workflowName)
 			Expect(createdID).To(HaveLen(36), "UUID should be 36 chars (8-4-4-4-12)")
 			logger.Info("Workflow created for discovery test", "id", createdID, "name", workflowName)
 

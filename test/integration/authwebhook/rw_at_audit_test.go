@@ -55,10 +55,9 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 	BeforeEach(func() {
 		logger := ctrl.Log.WithName("rw-at-audit-it")
 		rwDSClient := authwebhook.NewDSClientAdapterFromClient(dsClient, logger.WithName("rw-ds"))
-		atDSClient := authwebhook.NewDSClientAdapterFromClient(dsClient, logger.WithName("at-ds"))
 
 		rwHandler = authwebhook.NewRemediationWorkflowHandler(rwDSClient, auditStore, k8sClient)
-		atHandler = authwebhook.NewActionTypeHandler(atDSClient, auditStore, k8sClient)
+		atHandler = authwebhook.NewActionTypeHandler(auditStore, k8sClient)
 	})
 
 	flushAndQuery := func(correlationID, eventType string) []ogenclient.AuditEvent {

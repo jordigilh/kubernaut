@@ -27,7 +27,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/workflowcache"
 )
 
@@ -98,7 +97,6 @@ type Handler struct {
 	auditStore             audit.AuditStore                   // BR-AUDIT-023: Workflow search audit
 	schemaExtractor        *oci.SchemaExtractor               // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
 	remediationHistoryRepo RemediationHistoryQuerier          // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
-	actionTypeRepo         *actiontyperepo.Repository         // BR-WORKFLOW-007: ActionType CRD lifecycle
 	workflowCache          *workflowcache.Cache               // Issue #1661 Phase 29: informer-backed RW/ActionType CRD view (DD-WORKFLOW-018); nil until Change 6 (Phase 31-33) rewires discovery to consume it
 	successMetricsRepo     SuccessMetricsQuerier               // Issue #1661 Phase 35: on-demand audit_events success-rate aggregation (DD-WORKFLOW-018); nil is valid (metrics degrade to zero-value, logged) so tests without an audit DB keep working
 }
@@ -179,14 +177,6 @@ func WithWorkflowContentIntegrityRepository(repo WorkflowContentIntegrityReposit
 func WithRemediationHistoryQuerier(repo RemediationHistoryQuerier) HandlerOption {
 	return func(h *Handler) {
 		h.remediationHistoryRepo = repo
-	}
-}
-
-// WithActionTypeRepository sets the action type taxonomy repository.
-// BR-WORKFLOW-007: ActionType CRD lifecycle management.
-func WithActionTypeRepository(repo *actiontyperepo.Repository) HandlerOption {
-	return func(h *Handler) {
-		h.actionTypeRepo = repo
 	}
 }
 

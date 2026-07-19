@@ -18,8 +18,6 @@ package authwebhook_test
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,7 +26,6 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedcontenthash "github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,64 +34,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// callRecord tracks the order and type of DS API calls.
-type callRecord struct {
-	Type string // "CreateActionType" or "CreateWorkflowInline"
-	Name string // action type name or workflow CRD name
-}
-
-// mockStartupDSClient records calls from the startup reconciler.
-type mockStartupDSClient struct {
-	mu             sync.Mutex
-	calls          []callRecord
-	failCount      int // number of times to fail before succeeding
-	currentFails   int
-	atResult       *authwebhook.ActionTypeRegistrationResult
-	alwaysFail     bool
-}
-
-func (m *mockStartupDSClient) CreateActionType(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.alwaysFail || m.currentFails < m.failCount {
-		m.currentFails++
-		return nil, fmt.Errorf("connection refused")
-	}
-	m.calls = append(m.calls, callRecord{Type: "CreateActionType", Name: name})
-	if m.atResult != nil {
-		return m.atResult, nil
-	}
-	return &authwebhook.ActionTypeRegistrationResult{ActionType: name, Status: "created"}, nil
-}
-
-func (m *mockStartupDSClient) UpdateActionType(_ context.Context, _ string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeUpdateResult, error) {
-	return &authwebhook.ActionTypeUpdateResult{}, nil
-}
-
-func (m *mockStartupDSClient) DisableActionType(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
-	return &authwebhook.ActionTypeDisableResult{}, nil
-}
-
-func (m *mockStartupDSClient) ForceDisableActionType(_ context.Context, _ string, _ string, _ []string) (*authwebhook.ActionTypeDisableResult, error) {
-	return &authwebhook.ActionTypeDisableResult{}, nil
-}
-
-// NOTE: CreateWorkflowInline/DisableWorkflow were removed by #1661 Change
-// 8c -- syncWorkflowCRD no longer calls DS at all (workflow_id/content_hash
-// are computed locally), so WorkflowDSClient/WorkflowCatalogClient no longer
-// declare these methods and this mock no longer needs to implement them.
-
-func (m *mockStartupDSClient) GetActiveWorkflowCount(_ context.Context, _ string) (int, error) {
-	return 0, nil
-}
-
-func (m *mockStartupDSClient) getCalls() []callRecord {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]callRecord, len(m.calls))
-	copy(out, m.calls)
-	return out
-}
+// mockStartupDSClient is a placeholder passed to StartupReconciler.DSWorkflow.
+// #1661 Phase 55c: ActionType-side methods (CreateActionType, UpdateActionType,
+// DisableActionType, ForceDisableActionType) were removed once DS's ActionType
+// REST endpoints were deleted (DD-WORKFLOW-018) and StartupReconciler.DSActionType
+// was removed alongside them (Change 8d already made syncActionTypeCRD a pure
+// local computation with zero DS round-trips). CreateWorkflowInline/
+// DisableWorkflow/GetActiveWorkflowCount were removed earlier by #1661 Change
+// 8c/8d for the same reason on the Workflow side. WorkflowDSClient is still an
+// empty marker interface (interface{}), so this type needs zero methods to
+// satisfy it -- it exists only to give DSWorkflow a distinguishable non-nil
+// value in these tests, pending the equivalent DSWorkflow field removal in
+// Phase B.
+type mockStartupDSClient struct{}
 
 func makeActionTypeCRD(name, specName string) *atv1alpha1.ActionType {
 	return &atv1alpha1.ActionType{
@@ -144,21 +96,16 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			err := reconciler.Start(ctx)
 			Expect(err).NotTo(HaveOccurred())
-
-			calls := mockDS.getCalls()
-			Expect(filterCalls(calls, "CreateActionType")).To(BeEmpty(),
-				"#1661 Change 8d: DS is never called for ActionType sync -- it's a pure local computation")
 
 			for _, name := range []string{"at-1", "at-2"} {
 				updated := &atv1alpha1.ActionType{}
@@ -191,22 +138,16 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			err := reconciler.Start(ctx)
 			Expect(err).NotTo(HaveOccurred())
-
-			calls := mockDS.getCalls()
-			rwCalls := filterCalls(calls, "CreateWorkflowInline")
-			Expect(rwCalls).To(BeEmpty(),
-				"#1661 Change 8c: DS is never called for RemediationWorkflow sync -- it's a pure local computation")
 
 			for _, name := range []string{"wf-1", "wf-2", "wf-3"} {
 				updated := &rwv1alpha1.RemediationWorkflow{}
@@ -239,20 +180,16 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			err := reconciler.Start(ctx)
 			Expect(err).NotTo(HaveOccurred())
-
-			Expect(mockDS.getCalls()).To(BeEmpty(),
-				"#1661 Change 8c/8d: neither ActionType nor Workflow sync calls DS anymore")
 
 			updatedAT := &atv1alpha1.ActionType{}
 			Expect(k8sClient.Get(ctx, nsName("default", "at-1"), updatedAT)).To(Succeed())
@@ -288,11 +225,10 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -340,20 +276,16 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			err := reconciler.Start(ctx)
 			Expect(err).NotTo(HaveOccurred())
-
-			calls := mockDS.getCalls()
-			Expect(calls).To(BeEmpty(), "no DS calls for empty CRD lists")
 		})
 	})
 
@@ -379,11 +311,10 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -401,16 +332,6 @@ var _ = Describe("StartupReconciler (#548)", func() {
 		})
 	})
 })
-
-func filterCalls(calls []callRecord, callType string) []callRecord {
-	var filtered []callRecord
-	for _, c := range calls {
-		if c.Type == callType {
-			filtered = append(filtered, c)
-		}
-	}
-	return filtered
-}
 
 func nsName(namespace, name string) types.NamespacedName {
 	return types.NamespacedName{Namespace: namespace, Name: name}

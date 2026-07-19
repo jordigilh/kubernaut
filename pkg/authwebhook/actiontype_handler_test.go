@@ -41,47 +41,6 @@ import (
 )
 
 // ========================================
-// ActionType Mocks
-// ========================================
-
-type mockActionTypeCatalogClient struct {
-	createFn       func(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, registeredBy string) (*authwebhook.ActionTypeRegistrationResult, error)
-	updateFn       func(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, updatedBy string) (*authwebhook.ActionTypeUpdateResult, error)
-	disableFn      func(ctx context.Context, name string, disabledBy string) (*authwebhook.ActionTypeDisableResult, error)
-	forceDisableFn func(ctx context.Context, name string, disabledBy string, orphanedWorkflows []string) (*authwebhook.ActionTypeDisableResult, error)
-}
-
-func (m *mockActionTypeCatalogClient) CreateActionType(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, registeredBy string) (*authwebhook.ActionTypeRegistrationResult, error) {
-	if m.createFn != nil {
-		return m.createFn(ctx, name, desc, registeredBy)
-	}
-	return &authwebhook.ActionTypeRegistrationResult{
-		ActionType: name, Status: "created", WasReenabled: false,
-	}, nil
-}
-
-func (m *mockActionTypeCatalogClient) UpdateActionType(ctx context.Context, name string, desc ogenclient.ActionTypeDescription, updatedBy string) (*authwebhook.ActionTypeUpdateResult, error) {
-	if m.updateFn != nil {
-		return m.updateFn(ctx, name, desc, updatedBy)
-	}
-	return &authwebhook.ActionTypeUpdateResult{ActionType: name, UpdatedFields: []string{"description"}}, nil
-}
-
-func (m *mockActionTypeCatalogClient) DisableActionType(ctx context.Context, name string, disabledBy string) (*authwebhook.ActionTypeDisableResult, error) {
-	if m.disableFn != nil {
-		return m.disableFn(ctx, name, disabledBy)
-	}
-	return &authwebhook.ActionTypeDisableResult{Disabled: true}, nil
-}
-
-func (m *mockActionTypeCatalogClient) ForceDisableActionType(ctx context.Context, name string, disabledBy string, orphanedWorkflows []string) (*authwebhook.ActionTypeDisableResult, error) {
-	if m.forceDisableFn != nil {
-		return m.forceDisableFn(ctx, name, disabledBy, orphanedWorkflows)
-	}
-	return &authwebhook.ActionTypeDisableResult{Disabled: true}, nil
-}
-
-// ========================================
 // ActionType Test Helpers
 // ========================================
 
@@ -185,15 +144,13 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	var (
 		ctx       context.Context
 		handler   *authwebhook.ActionTypeHandler
-		mockDS    *mockActionTypeCatalogClient
 		mockAudit *MockAuditStoreRW
 	)
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		mockDS = &mockActionTypeCatalogClient{}
 		mockAudit = &MockAuditStoreRW{}
-		handler = authwebhook.NewActionTypeHandler(mockDS, mockAudit, nil)
+		handler = authwebhook.NewActionTypeHandler(mockAudit, nil)
 	})
 
 	// ========================================
@@ -218,26 +175,6 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	})
 
 	// ========================================
-	// UT-AT-300-002: Idempotent CREATE for already-active action type
-	// BR-WORKFLOW-007.1
-	// ========================================
-	Describe("UT-AT-300-002: Idempotent CREATE for already-active action type", func() {
-		It("should return Allowed when DS indicates action type already exists", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
-			mockDS.createFn = func(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
-				return &authwebhook.ActionTypeRegistrationResult{
-					ActionType: name, Status: "exists", WasReenabled: false,
-				}, nil
-			}
-
-			resp := handler.Handle(ctx, buildATCreateAdmissionRequest(at))
-
-			Expect(resp.Allowed).To(BeTrue(),
-				"Idempotent CREATE should be Allowed when action type already exists")
-		})
-	})
-
-	// ========================================
 	// UT-AT-300-003: CREATE always reports previouslyExisted=false (#1661 Change 8d)
 	// BR-WORKFLOW-007.1
 	// ========================================
@@ -257,7 +194,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				WithStatusSubresource(&atv1alpha1.ActionType{}).
 				Build()
 
-			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockAudit, fakeK8s)
 
 			resp := handlerWithK8s.Handle(ctx, buildATCreateAdmissionRequest(at))
 			Expect(resp.Allowed).To(BeTrue(),
@@ -315,12 +252,6 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 			oldAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
 			newAT := buildActionType("restart-pod", "GracefulRestart", "kubernaut-system")
 
-			updateCalled := false
-			mockDS.updateFn = func(_ context.Context, _ string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeUpdateResult, error) {
-				updateCalled = true
-				return nil, fmt.Errorf("should not be called")
-			}
-
 			resp := handler.Handle(ctx, buildATUpdateAdmissionRequest(oldAT, newAT))
 
 			Expect(resp.Allowed).To(BeFalse(),
@@ -329,8 +260,6 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				"Denial message should explain that spec.name is immutable")
 			Expect(resp.Result.Message).To(ContainSubstring("RestartPod"))
 			Expect(resp.Result.Message).To(ContainSubstring("GracefulRestart"))
-			Expect(updateCalled).To(BeFalse(),
-				"DS should NOT be called when spec.name change is detected")
 
 			Expect(mockAudit.StoredEvents).To(HaveLen(1),
 				"Denied audit event should be emitted")
@@ -380,7 +309,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				WithScheme(scheme).
 				WithObjects(at, wf1, wf2, wf3).
 				Build()
-			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockAudit, fakeK8s)
 
 			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
 
@@ -397,6 +326,22 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 			event := mockAudit.StoredEvents[0]
 			Expect(event.EventType).To(Equal(authwebhook.EventTypeATDeniedDelete))
 			Expect(string(event.EventOutcome)).To(Equal("failure"))
+		})
+
+		It("should return Denied when a dependent RemediationWorkflow exists in a different namespace than the ActionType (cluster-wide dependents check)", func() {
+			at := buildActionType("scale-memory-cross-ns", "ScaleMemoryCrossNS", "kubernaut-system")
+			liveRW := buildRemediationWorkflow("scale-memory-cross-ns-wf", "other-namespace")
+			liveRW.Spec.ActionType = "ScaleMemoryCrossNS"
+			fakeK8s := fake.NewClientBuilder().
+				WithScheme(newATScheme()).
+				WithObjects(at, liveRW).
+				Build()
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockAudit, fakeK8s)
+
+			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
+
+			Expect(resp.Allowed).To(BeFalse(),
+				"the dependents check is namespace-agnostic (cluster-wide RemediationWorkflow list); a dependent in a different namespace must still deny DELETE")
 		})
 	})
 
@@ -472,7 +417,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				WithScheme(scheme).
 				WithObjects(at, wfAlpha, wfBeta).
 				Build()
-			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockAudit, fakeK8s)
 
 			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
 			Expect(resp.Allowed).To(BeFalse())
@@ -498,18 +443,10 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 		It("should allow UPDATE without calling DS when descriptions are identical", func() {
 			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
 
-			updateCalled := false
-			mockDS.updateFn = func(_ context.Context, _ string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeUpdateResult, error) {
-				updateCalled = true
-				return nil, fmt.Errorf("should not be called")
-			}
-
 			resp := handler.Handle(ctx, buildATUpdateAdmissionRequest(at, at))
 
 			Expect(resp.Allowed).To(BeTrue(),
 				"UPDATE with no changes should be Allowed")
-			Expect(updateCalled).To(BeFalse(),
-				"DS should NOT be called when description is unchanged")
 			Expect(mockAudit.StoredEvents).To(BeEmpty(),
 				"No audit event should be emitted for no-op UPDATE")
 		})
@@ -533,7 +470,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 					},
 				}).
 				Build()
-			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, erroringK8s)
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockAudit, erroringK8s)
 
 			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
 
@@ -552,7 +489,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// BR-WORKFLOW-007.1
 	// ========================================
 	Describe("CREATE updates CRD status asynchronously", func() {
-		It("should populate .status with DS registration result via k8sClient.Status().Update()", func() {
+		It("should populate .status from the local registration computation via k8sClient.Status().Update()", func() {
 			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().
@@ -561,13 +498,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				WithStatusSubresource(&atv1alpha1.ActionType{}).
 				Build()
 
-			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
-
-			mockDS.createFn = func(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
-				return &authwebhook.ActionTypeRegistrationResult{
-					ActionType: name, Status: "created", WasReenabled: false,
-				}, nil
-			}
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockAudit, fakeK8s)
 
 			resp := handlerWithK8s.Handle(ctx, buildATCreateAdmissionRequest(at))
 			Expect(resp.Allowed).To(BeTrue())
@@ -609,7 +540,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				WithObjects(at, rw).
 				Build()
 
-			handlerWithK8s := authwebhook.NewActionTypeHandler(mockDS, mockAudit, fakeK8s)
+			handlerWithK8s := authwebhook.NewActionTypeHandler(mockAudit, fakeK8s)
 			resp := handlerWithK8s.Handle(ctx, buildATDeleteAdmissionRequest(at))
 
 			Expect(resp.Allowed).To(BeFalse(),

@@ -23,9 +23,9 @@ import (
 
 	"github.com/go-logr/logr"
 
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // DSClientAdapter wraps the ogen-generated Data Storage client to implement
@@ -104,44 +104,20 @@ func newDSClientAdapterWithTransport(baseURL string, timeout time.Duration, tran
 // mapOgenWorkflowToResult (the CreateWorkflowInline response mapper) was
 // removed alongside them.
 
-// rfc7807Error formats an RFC 7807 Problem Details response into an actionable error message.
-// DD-004: All DS error responses use this format; this helper ensures consistent extraction.
-func rfc7807Error(prefix string, p *ogenclient.RFC7807Problem) error {
-	return fmt.Errorf("%s: %s — %s", prefix, p.Title, p.Detail.Value)
-}
+// NOTE: rfc7807Error (the RFC 7807 Problem Details formatter used by the
+// removed CreateActionType/CreateWorkflowInline/DisableWorkflow methods) was
+// removed alongside them in #1661 Phase 55c -- DSClientAdapter no longer
+// makes any mutating DS calls that would need to unpack a Problem Details
+// error response.
 
-// ActionTypeRegistrationResult holds the DS response after registering or re-enabling an action type.
-//
-// #1661 Change 8d: DSClientAdapter no longer produces this itself (its
-// CreateActionType method was removed -- ActionTypeHandler computes/patches
-// everything locally). The type is kept because pkg/authwebhook's own test
-// mocks (mockActionTypeCatalogClient, mockStartupDSClient) still return it
-// to satisfy their historical method signatures; see ActionTypeCatalogClient
-// doc for why those mocks aren't removed outright in this REFACTOR pass.
-type ActionTypeRegistrationResult struct {
-	ActionType   string
-	Status       string // "created", "exists", "reenabled"
-	WasReenabled bool
-}
-
-// ActionTypeDisableResult holds the DS response when disabling an action type.
-// #1661 Change 8d: see ActionTypeRegistrationResult doc -- same rationale.
-type ActionTypeDisableResult struct {
-	Disabled               bool
-	DependentWorkflowCount int
-	DependentWorkflows     []string
-}
-
-// ActionTypeUpdateResult holds the DS response after updating an action type description.
-// #1661 Change 8d: see ActionTypeRegistrationResult doc -- same rationale.
-type ActionTypeUpdateResult struct {
-	ActionType    string
-	UpdatedFields []string
-}
-
-// NOTE: CreateActionType, UpdateActionType, DisableActionType, and
-// ForceDisableActionType were removed by #1661 Change 8d -- AW no longer
-// bridges ActionType CRD lifecycle to a DS action-type catalog
+// NOTE: ActionTypeRegistrationResult, ActionTypeDisableResult, and
+// ActionTypeUpdateResult (the CreateActionType/DisableActionType/
+// UpdateActionType response types) were removed by #1661 Phase 55c, once
+// DS's ActionType REST endpoints were deleted (DD-WORKFLOW-018) and the
+// ActionTypeCatalogClient marker interface had zero remaining implementers
+// to migrate. CreateActionType, UpdateActionType, DisableActionType, and
+// ForceDisableActionType were removed earlier by #1661 Change 8d -- AW no
+// longer bridges ActionType CRD lifecycle to a DS action-type catalog
 // (handleCreate/handleUpdate/handleDelete in actiontype_handler.go now
 // compute and patch everything locally, and the K8s-native RemediationWorkflow
 // list is the sole dependents gate on DELETE), mirroring CreateWorkflowInline/

@@ -35,8 +35,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io.Writer) error {
@@ -267,7 +265,6 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// Wait for DataStorage to be ready (use port-forward)
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage to be ready...")
-	dataStorageURL := fmt.Sprintf("https://localhost:%d", 38080)
 	dataStorageHealthURL := fmt.Sprintf("http://localhost:%d", 38081)
 
 	// Start port-forward to DataStorage API and health ports
@@ -305,43 +302,14 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// Seed workflows and capture UUIDs (with DD-AUTH-014 authentication)
 	// Pattern: Uses shared workflow_seeding.go library (refactored from duplicate code)
-	_, _ = fmt.Fprintln(writer, "  🔐 Creating authenticated DataStorage client for workflow seeding...")
-
-	// Get ServiceAccount token for authentication
-	// GetServiceAccountToken signature: (ctx, namespace, saName, kubeconfigPath)
-	saToken, err := GetServiceAccountToken(context.Background(), namespace, "aianalysis-e2e-sa", kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
-	}
-
-	// Create authenticated OpenAPI client for DataStorage (Issue #785: TLS to DS API on port-forward)
-	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to create TLS-aware transport for workflow seeding: %w", err)
-	}
-	seedClient, err := ogenclient.NewClient(
-		dataStorageURL,
-		ogenclient.WithClient(&http.Client{
-			Transport: testauth.NewServiceAccountTransportWithBase(saToken, tlsTransport),
-			Timeout:   30 * time.Second,
-		}),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create DataStorage client: %w", err)
-	}
 
 	// DD-WORKFLOW-016: Seed action types before workflow registration.
-	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. Workflows here
-	// now seed via SeedWorkflowsViaKubectlApply (real AuthWebhook admission, Phase 55),
-	// so this file no longer touches DS's Postgres inline-registration endpoint at all
-	// -- but SeedActionTypesViaAPI's Postgres dual-seed below is retained regardless,
-	// since Phase 55 hasn't yet dropped the action_type_taxonomy table/FK/handlers
-	// (tracked separately; premature removal here would just be dead code until then).
+	// #1661 Phase 55: DS's Postgres-backed POST /api/v1/action-types endpoint was
+	// removed (DD-WORKFLOW-018); action types are now seeded exclusively as CRDs for
+	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
+	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
 	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types (CRD): %w", err)
-	}
-	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
-		return fmt.Errorf("failed to seed action types (Postgres): %w", err)
 	}
 
 	// Inline workflow definitions (CANNOT use test/integration/aianalysis wrapper - import cycle)

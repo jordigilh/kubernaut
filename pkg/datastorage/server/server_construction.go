@@ -319,7 +319,7 @@ func buildWorkflowCache(deps ServerDeps, logger logr.Logger, cleanups *startupCl
 // Issue #1661 Phase 29 / Phase 55: wfCache is always non-nil (validateServerDeps
 // requires ServerDeps.K8sRestConfig).
 func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps, wfCache *workflowcache.Cache) *Handler {
-	opts := make([]HandlerOption, 0, 11+len(deps.HandlerOpts))
+	opts := make([]HandlerOption, 0, 10+len(deps.HandlerOpts))
 	opts = append(opts,
 		WithLogger(logger),
 		WithWorkflowRepository(catalogDeps.workflowRepo),
@@ -330,7 +330,6 @@ func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps
 		WithSQLDB(db),
 		WithSchemaExtractor(catalogDeps.schemaExtractor),
 		WithRemediationHistoryQuerier(catalogDeps.remHistoryQuerier),
-		WithActionTypeRepository(catalogDeps.actionTypeRepo),
 		WithWorkflowCache(wfCache),
 		WithSuccessMetricsRepository(auditDeps.auditEventsRepo),
 	)

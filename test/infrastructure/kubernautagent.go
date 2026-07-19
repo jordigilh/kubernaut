@@ -203,29 +203,12 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create KA E2E client RBAC: %w", err)
 	}
 
-	e2eSAName := "kubernaut-agent-e2e-sa"
-	saToken, err := GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get SA token: %w", err)
-	}
-
-	dsURL := "https://localhost:8089"
-	seedClient, err := CreateTLSAuthenticatedDataStorageClient(dsURL, saToken, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to create DS client: %w", err)
-	}
-
-	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. Workflows here
-	// now seed via SeedWorkflowsViaKubectlApply (real AuthWebhook admission, Phase 55),
-	// so this file no longer touches DS's Postgres inline-registration endpoint at all
-	// -- but SeedActionTypesViaAPI's Postgres dual-seed below is retained regardless,
-	// since Phase 55 hasn't yet dropped the action_type_taxonomy table/FK/handlers
-	// (tracked separately; premature removal here would just be dead code until then).
+	// #1661 Phase 55: DS's Postgres-backed POST /api/v1/action-types endpoint was
+	// removed (DD-WORKFLOW-018); action types are now seeded exclusively as CRDs for
+	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
+	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
 	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types (CRD): %w", err)
-	}
-	if err := SeedActionTypesViaAPI(seedClient, writer); err != nil {
-		return fmt.Errorf("failed to seed action types (Postgres): %w", err)
 	}
 
 	testWorkflows := GetKAE2ETestWorkflows()
@@ -358,10 +341,11 @@ func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
 // created so that it triggers HardFail as expected.
 //
 // Resources created:
-//   production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
-//               ambiguous-pod, failed-analysis-pod (Pods), batch-job-pvc-expired (PVC)
-//   staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
-//               re-enrichment to worker/staging preserves pdbProtected detection)
+//
+//	production: api-server (Deployment), failing-pod, recovered-pod, api-server-def456,
+//	            ambiguous-pod, failed-analysis-pod (Pods), batch-job-pvc-expired (PVC)
+//	staging:    worker (Deployment), worker-pdb (PDB — required so CrashLoopBackOff
+//	            re-enrichment to worker/staging preserves pdbProtected detection)
 //
 // Note: an empty enrichment: {} YAML section in the KA ConfigMap will zero out the
 // HAPI defaults (MaxRetries=3 → 0), silently disabling retry+fail-hard. The E2E

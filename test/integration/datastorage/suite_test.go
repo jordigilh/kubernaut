@@ -21,7 +21,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,13 +49,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -858,103 +853,43 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
 
-	// 7. Seed action types in Postgres via temp in-process DataStorage server
-	// (DD-WORKFLOW-016). Still required as of #1661 Phase 53: remediation_workflow_catalog
-	// has a real FK (fk_workflow_action_type -> action_type_taxonomy), and several specs
-	// in this suite (e.g. workflow_repository_integration_test.go) insert workflows
-	// directly against Postgres, bypassing the CRD/cache path entirely. This seeding
-	// step -- and the action_type_taxonomy table/FK it satisfies -- is removed in
-	// Phase 55 once those specs are migrated or deleted and the table is dropped.
-	GinkgoWriter.Println("  🏷️  Seeding action types via in-process DataStorage server (Postgres FK)...")
-	seedActionTypesViaInProcessServer()
+	// 7. Seed action_type_taxonomy rows directly (DD-WORKFLOW-016 FK bridge).
+	// #1661 Phase 55c: remediation_workflow_catalog's fk_workflow_action_type FK
+	// still requires action_type_taxonomy rows for the Postgres-backed specs in this
+	// suite (e.g. workflow_repository_integration_test.go) that insert workflows
+	// directly against Postgres, bypassing the CRD/cache path entirely. DS's REST
+	// registration endpoint that used to satisfy this FK (POST /api/v1/action-types)
+	// was removed in this same phase (DD-WORKFLOW-018), so this now inserts the rows
+	// directly instead of round-tripping through a temporary in-process DS server.
+	// This bridge -- and the action_type_taxonomy table/FK it satisfies -- is removed
+	// entirely once those Postgres-backed specs are migrated or deleted and the table
+	// is dropped.
+	GinkgoWriter.Println("  🏷️  Seeding action_type_taxonomy rows directly (Postgres FK bridge)...")
+	seedActionTypeTaxonomyRows(ctx, targetDB)
 	GinkgoWriter.Println("  ✅ Action types seeded (Postgres)")
 }
 
-// seedActionTypesViaInProcessServer creates a temporary in-process DataStorage httptest
-// server, seeds all standard action types through its API, then tears it down. The rows
-// persist in the shared PostgreSQL instance so every per-test httptest server sees them.
-//
-// #1661 Phase 53: kept alongside SeedActionTypesViaCRD (called separately from
-// SynchronizedBeforeSuite once envtest is up) because remediation_workflow_catalog's
-// fk_workflow_action_type FK constraint still requires action_type_taxonomy rows for
-// the Postgres-backed specs in this suite. Removed in Phase 55 with the table itself.
-func seedActionTypesViaInProcessServer() {
-	host := os.Getenv("POSTGRES_HOST")
-	if host == "" {
-		host = "localhost"
+// seedActionTypeTaxonomyRows inserts the standard action type rows directly into
+// action_type_taxonomy, satisfying remediation_workflow_catalog's FK for the
+// Postgres-backed specs in this suite. #1661 Phase 55c: replaces the old
+// in-process-DS-server + REST-API seeding path (DS's POST /api/v1/action-types
+// endpoint was removed per DD-WORKFLOW-018); direct insert is simpler now that
+// there is no REST surface to round-trip through.
+func seedActionTypeTaxonomyRows(ctx context.Context, targetDB *sql.DB) {
+	actionTypes := []string{
+		"DeletePod", "DrainNode", "FixAuthorizationPolicy", "FixCertificate",
+		"IncreaseMemoryLimits", "RestartDeployment", "RestartPod", "RollbackDeployment",
+		"IncreaseCPULimits", "ScaleReplicas", "ReconfigureResource",
 	}
-	pgPort := os.Getenv("POSTGRES_PORT")
-	if pgPort == "" {
-		pgPort = "15433"
+	for _, actionType := range actionTypes {
+		_, err := targetDB.ExecContext(ctx, `
+			INSERT INTO action_type_taxonomy (action_type, description, status)
+			VALUES ($1, $2, 'Active')
+			ON CONFLICT (action_type) DO NOTHING`,
+			actionType, `{"what": "test fixture", "whenToUse": "test fixture"}`,
+		)
+		Expect(err).ToNot(HaveOccurred(), "seed action_type_taxonomy row for %s", actionType)
 	}
-	dbConnStr := fmt.Sprintf(
-		"host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'",
-		host, pgPort,
-	)
-
-	redisHost := os.Getenv("REDIS_HOST")
-	if redisHost == "" {
-		redisHost = "localhost"
-	}
-	redisPort := os.Getenv("REDIS_PORT")
-	if redisPort == "" {
-		redisPort = "16379"
-	}
-	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
-
-	appCfg := &dsconfig.Config{
-		Server: dsconfig.ServerConfig{
-			SignerCertDir: datastorageIntegrationSigningCertDirOrDie(),
-		},
-		Database: dsconfig.DatabaseConfig{
-			MaxOpenConns:    5,
-			MaxIdleConns:    2,
-			ConnMaxLifetime: "1m",
-			ConnMaxIdleTime: "1m",
-		},
-	}
-
-	const seedToken = "seed-token"
-	const seedUser = "system:serviceaccount:datastorage-test:action-type-seeder"
-
-	srv, err := server.NewServer(server.ServerDeps{
-		DBConnStr:     dbConnStr,
-		RedisAddr:     redisAddr,
-		RedisPassword: "",
-		Logger:        logr.Discard(),
-		AppConfig:     appCfg,
-		ServerConfig: &server.Config{
-			Port:         18090,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-		},
-		DLQMaxLen: 100,
-		Authenticator: &auth.MockAuthenticator{
-			ValidUsers: map[string]string{
-				seedToken: seedUser,
-			},
-		},
-		Authorizer: &auth.MockAuthorizer{
-			AllowedUsers: map[string]bool{
-				seedUser: true,
-			},
-		},
-		AuthNamespace: "datastorage-test",
-		K8sRestConfig: dsK8sRestConfig,
-	})
-	Expect(err).ToNot(HaveOccurred(), "temp server creation for action type seeding should succeed")
-
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
-
-	httpClient := &http.Client{
-		Transport: &bearerTransport{token: seedToken},
-	}
-	client, err := ogenclient.NewClient(ts.URL, ogenclient.WithClient(httpClient))
-	Expect(err).ToNot(HaveOccurred(), "ogen client creation should succeed")
-
-	err = infrastructure.SeedActionTypesViaAPI(client, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "action type seeding via DS API should succeed")
 }
 
 // bearerTransport injects an Authorization header into every outgoing request.

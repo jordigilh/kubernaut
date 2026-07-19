@@ -17,16 +17,11 @@ limitations under the License.
 package infrastructure
 
 import (
-	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os/exec"
 	"strings"
 	"time"
-
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // actionTypeDef holds the minimal fields needed to create an ActionType CR.
@@ -51,86 +46,6 @@ var e2eActionTypes = []actionTypeDef{
 	{MetadataName: "increase-cpu-limits", SpecName: "IncreaseCPULimits", What: "Increase CPU resource limits on containers.", WhenToUse: "CPU throttling is caused by CPU limits being too low relative to the workload actual requirements."},
 	{MetadataName: "scale-replicas", SpecName: "ScaleReplicas", What: "Horizontally scale a workload by adjusting the replica count.", WhenToUse: "Root cause is insufficient capacity to handle current load."},
 	{MetadataName: "reconfigure-resource", SpecName: "ReconfigureResource", What: "Reconfigure a Kubernetes resource spec to fix misconfiguration.", WhenToUse: "Root cause is a resource misconfiguration that can be corrected by updating spec fields."},
-}
-
-// SeedActionTypesViaAPI populates the action_type_taxonomy table by calling the
-// DataStorage POST /api/v1/action-types endpoint for each standard action type.
-// Idempotent: the API returns 200 (exists) if the action type is already present.
-// Must be called AFTER DataStorage is healthy, BEFORE any workflow registration.
-// DD-WORKFLOW-016: FK constraint for remediation_workflow_catalog.
-func SeedActionTypesViaAPI(client *ogenclient.Client, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	_, _ = fmt.Fprintf(writer, "🏷️  Seeding %d action types via DataStorage API\n", len(e2eActionTypes))
-	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	for _, at := range e2eActionTypes {
-		req := &ogenclient.ActionTypeCreateRequest{
-			Name: at.SpecName,
-			Description: ogenclient.ActionTypeDescription{
-				What:      at.What,
-				WhenToUse: at.WhenToUse,
-			},
-			RegisteredBy: "test-infrastructure-seeder",
-		}
-
-		res, err := client.CreateActionType(ctx, req)
-		if err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s: %v\n", at.SpecName, err)
-			return fmt.Errorf("failed to seed action type %s via API: %w", at.SpecName, err)
-		}
-
-		switch r := res.(type) {
-		case *ogenclient.CreateActionTypeCreated:
-			_, _ = fmt.Fprintf(writer, "  ✅ %s (created)\n", at.SpecName)
-		case *ogenclient.CreateActionTypeOK:
-			_, _ = fmt.Fprintf(writer, "  ✅ %s (status: %s)\n", at.SpecName, r.Status)
-		default:
-			_, _ = fmt.Fprintf(writer, "  ✅ %s (ok)\n", at.SpecName)
-		}
-	}
-
-	_, _ = fmt.Fprintf(writer, "✅ All action types seeded via DataStorage API (%d types)\n\n", len(e2eActionTypes))
-	return nil
-}
-
-// SeedActionTypesViaAPIWithURL is a convenience wrapper that creates a temporary
-// authenticated ogen client and delegates to SeedActionTypesViaAPI.
-// Use when the caller has a DS URL + SA token but not a pre-built ogen client.
-func SeedActionTypesViaAPIWithURL(dsURL, token string, timeout time.Duration, writer io.Writer) error {
-	httpClient := &http.Client{
-		Transport: testauth.NewServiceAccountTransport(token),
-		Timeout:   timeout,
-	}
-	client, err := ogenclient.NewClient(dsURL, ogenclient.WithClient(httpClient))
-	if err != nil {
-		return fmt.Errorf("failed to create ogen client for action type seeding: %w", err)
-	}
-	return SeedActionTypesViaAPI(client, writer)
-}
-
-// SeedActionTypesViaAPIWithTLS is a TLS-aware convenience wrapper that creates a
-// temporary authenticated ogen client with inter-service CA trust and delegates
-// to SeedActionTypesViaAPI.
-// Use in E2E tests where DataStorage serves HTTPS with a private CA.
-//
-// Issue #785: E2E HTTPS migration requires TLS-aware seeding.
-func SeedActionTypesViaAPIWithTLS(dsURL, token, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
-	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to create TLS-aware transport for action type seeding: %w", err)
-	}
-	httpClient := &http.Client{
-		Transport: testauth.NewServiceAccountTransportWithBase(token, tlsTransport),
-		Timeout:   timeout,
-	}
-	client, err := ogenclient.NewClient(dsURL, ogenclient.WithClient(httpClient))
-	if err != nil {
-		return fmt.Errorf("failed to create ogen client for action type seeding: %w", err)
-	}
-	return SeedActionTypesViaAPI(client, writer)
 }
 
 // SeedE2EActionTypes creates the ActionType CRs required by E2E test workflows,

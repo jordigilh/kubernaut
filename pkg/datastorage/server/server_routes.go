@@ -252,10 +252,10 @@ func (s *Server) registerWorkflowRoutes(r chi.Router, writeAuthMiddleware, mutat
 	r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
 	r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
 
-	// BR-WORKFLOW-007: ActionType taxonomy CRUD (ADR-059, DD-ACTIONTYPE-001)
+	// BR-WORKFLOW-007: ActionType workflow-count query (ADR-059, DD-ACTIONTYPE-001).
+	// #1661 Phase A3: createActionType/updateActionType/disableActionType were
+	// removed -- AuthWebhook admission now owns the ActionType CRD lifecycle
+	// entirely locally (DD-WORKFLOW-018); there is no DS-side mutation path.
 	s.logger.V(1).Info("Registering /api/v1/action-types handlers (BR-WORKFLOW-007)")
-	r.With(writeAuthMiddleware.Handler).Post("/action-types", s.handler.HandleCreateActionType)
-	r.With(mutateAuthMiddleware.Handler).Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
-	r.With(mutateAuthMiddleware.Handler).Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
 	r.Get("/action-types/{name}/workflow-count", s.handler.HandleGetActionTypeWorkflowCount)
 }

@@ -44,27 +44,24 @@ const startupRegisteredBy = "system:authwebhook-startup"
 // in this REFACTOR pass; full removal is deferred to Phase 55.
 type WorkflowDSClient interface{}
 
-// ActionTypeDSClient is now an empty marker interface. #1661 Change 8d
-// removed its only method (CreateActionType) -- syncActionTypeCRD
-// computes/patches everything locally with zero DS round-trips, mirroring
-// WorkflowDSClient's Change 8c precedent above. The DSActionType field is
-// kept (rather than removed outright) to avoid an unrelated, high-blast-radius
-// signature change across every test call site and cmd/authwebhook/main.go
-// in this GREEN pass; full removal is deferred to Phase 55.
-type ActionTypeDSClient interface{}
-
 // StartupReconciler lists all ActionType and RemediationWorkflow CRDs at
 // startup and stamps both from a pure local computation with zero DS
 // involvement (#1661 Change 8c for RemediationWorkflow, Change 8d for
 // ActionType). It implements manager.Runnable so that the controller
 // manager blocks readiness until the reconciliation completes.
 //
+// #1661 Phase 55c: ActionTypeDSClient (the vestigial marker interface that
+// used to back a DSActionType field here) was removed once DS's ActionType
+// REST endpoints were deleted (DD-WORKFLOW-018) -- syncActionTypeCRD has
+// computed/patched everything locally with zero DS round-trips since Change
+// 8d; WorkflowDSClient/DSWorkflow remain pending the equivalent RW-side
+// handler removal (Phase B).
+//
 // Issue #548: Ensures PVC-wipe resilience by re-registering CRDs on startup.
 // Issue #1246: Graceful degradation — individual RW failures don't crash the pod.
 type StartupReconciler struct {
 	K8sClient      client.Client
 	DSWorkflow     WorkflowDSClient
-	DSActionType   ActionTypeDSClient
 	Logger         logr.Logger
 	Timeout        time.Duration
 	InitialBackoff time.Duration

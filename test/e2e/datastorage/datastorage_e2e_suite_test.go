@@ -249,13 +249,14 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
-		// DD-WORKFLOW-016: Seed action types before any workflow operations (FK constraint).
-		// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. This is IN
-		// ADDITION to -- not a replacement for -- the Postgres-backed seeding below: most
-		// specs in this suite call DSClient.CreateWorkflow, DS's Postgres-backed inline
-		// endpoint, whose action_type_taxonomy FK check requires the Postgres row too.
+		// DD-WORKFLOW-016: Seed action types before any workflow operations.
+		// #1661 Phase 55c: Postgres-backed seeding removed alongside DS's
+		// createWorkflow/createActionType REST endpoints (DD-WORKFLOW-018 --
+		// AuthWebhook is the sole write path). Every spec in this suite now
+		// registers workflows via direct CRD creation (ensureWorkflowRegistered,
+		// helpers_test.go), so CRD-based action type seeding for DS's
+		// informer-backed cache is the only seeding this suite needs.
 		Expect(infrastructure.SeedActionTypesViaCRD(kubeconfigPath, testNamespace, GinkgoWriter)).To(Succeed(), "Failed to seed action types (CRD)")
-		Expect(infrastructure.SeedActionTypesViaAPI(DSClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types (Postgres)")
 
 		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)
 		AuthHTTPClient = &http.Client{

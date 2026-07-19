@@ -62,9 +62,8 @@ var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (
 	BeforeEach(func() {
 		logger := ctrl.Log.WithName("rw-cluster-it")
 		rwDSClient := authwebhook.NewDSClientAdapterFromClient(dsClient, logger.WithName("rw-ds"))
-		atDSClient := authwebhook.NewDSClientAdapterFromClient(dsClient, logger.WithName("at-ds"))
 		rwHandler = authwebhook.NewRemediationWorkflowHandler(rwDSClient, auditStore, k8sClient)
-		atHandler = authwebhook.NewActionTypeHandler(atDSClient, auditStore, k8sClient)
+		atHandler = authwebhook.NewActionTypeHandler(auditStore, k8sClient)
 	})
 
 	uniqueName := func(prefix string) string {

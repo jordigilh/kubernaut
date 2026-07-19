@@ -23,6 +23,8 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
@@ -74,9 +76,24 @@ func seedOneWorkflowViaDirectCRDCreation(ctx context.Context, k8sClient client.C
 		return "", "", fmt.Errorf("read fixture %s: %w", wf.FixtureDir, err)
 	}
 
+	workflowID, name, err = seedWorkflowContentViaDirectCRDCreation(ctx, k8sClient, namespace, content)
+	if err != nil {
+		return "", "", err
+	}
+
+	_, _ = fmt.Fprintf(output, "  ✅ %s → %s (status patched locally, no AuthWebhook)\n", name, workflowID)
+	return workflowID, name, nil
+}
+
+// seedWorkflowContentViaDirectCRDCreation is the fixture-agnostic core of
+// SeedWorkflowsViaDirectCRDCreation: given already-marshaled RemediationWorkflow
+// CRD YAML, it creates (or reuses) the CRD and stamps its status the same way
+// AuthWebhook would. Shared by the fixture-directory-based seeder above and the
+// inline-content-based exported variants below (#1661 Phase 55b).
+func seedWorkflowContentViaDirectCRDCreation(ctx context.Context, k8sClient client.Client, namespace, content string) (workflowID, name string, err error) {
 	rw := &rwv1alpha1.RemediationWorkflow{}
 	if err := yaml.Unmarshal([]byte(content), rw); err != nil {
-		return "", "", fmt.Errorf("unmarshal fixture %s: %w", wf.FixtureDir, err)
+		return "", "", fmt.Errorf("unmarshal workflow content: %w", err)
 	}
 	rw.Namespace = namespace
 
@@ -84,8 +101,9 @@ func seedOneWorkflowViaDirectCRDCreation(ctx context.Context, k8sClient client.C
 		if !apierrors.IsAlreadyExists(createErr) {
 			return "", "", fmt.Errorf("create RemediationWorkflow %s: %w", rw.Name, createErr)
 		}
-		// Already exists (e.g. re-seeded in the same long-lived process) -- fetch
-		// the live object so the status patch below operates on a fresh copy.
+		// Already exists (e.g. re-registered with identical content within the
+		// same spec, or re-seeded in a long-lived process) -- fetch the live
+		// object so the status patch below operates on a fresh copy.
 		if getErr := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: rw.Name}, rw); getErr != nil {
 			return "", "", fmt.Errorf("get existing RemediationWorkflow %s: %w", rw.Name, getErr)
 		}
@@ -115,6 +133,44 @@ func seedOneWorkflowViaDirectCRDCreation(ctx context.Context, k8sClient client.C
 		return "", "", fmt.Errorf("status update for %s: %w", name, updateErr)
 	}
 
-	_, _ = fmt.Fprintf(output, "  ✅ %s → %s (status patched locally, no AuthWebhook)\n", name, workflowID)
 	return workflowID, name, nil
+}
+
+// SeedWorkflowContentViaDirectCRDCreation registers a single workflow whose CRD
+// YAML is already available inline (e.g. via testutil.MarshalWorkflowCRD),
+// stamping .status.workflowId/.status.contentHash/.status.catalogStatus the same
+// way AuthWebhook would. Use when the caller already has a controller-runtime
+// client.Client (e.g. test/e2e/fleet, which is envtest/client-wired) and wants
+// to seed one workflow at a time without a fixture directory (#1661 Phase 55b).
+func SeedWorkflowContentViaDirectCRDCreation(ctx context.Context, k8sClient client.Client, namespace, content string, output io.Writer) (string, error) {
+	workflowID, name, err := seedWorkflowContentViaDirectCRDCreation(ctx, k8sClient, namespace, content)
+	if err != nil {
+		return "", err
+	}
+	_, _ = fmt.Fprintf(output, "  ✅ %s → %s (status patched locally, no AuthWebhook)\n", name, workflowID)
+	return workflowID, nil
+}
+
+// NewKubeconfigWorkflowClient builds a minimal controller-runtime client.Client
+// (RemediationWorkflow scheme only) from a kubeconfig path, for E2E suites that
+// only carry a kubeconfig string (e.g. test/e2e/datastorage, which talks to a
+// real Kind cluster via kubectl subprocess calls and has no pre-built
+// client.Client) but need direct CRD creation to seed workflows without a live
+// AuthWebhook (#1661 Phase 55b).
+func NewKubeconfigWorkflowClient(kubeconfigPath string) (client.Client, error) {
+	restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("build rest.Config from kubeconfig %s: %w", kubeconfigPath, err)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := rwv1alpha1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("register RemediationWorkflow scheme: %w", err)
+	}
+
+	c, err := client.New(restConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		return nil, fmt.Errorf("create controller-runtime client: %w", err)
+	}
+	return c, nil
 }

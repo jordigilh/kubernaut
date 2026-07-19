@@ -25,9 +25,7 @@ import (
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/types/ogenconv"
 	admissionv1 "k8s.io/api/admission/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -43,8 +41,11 @@ import (
 // dependents-on-delete are all computed locally against the live etcd state
 // (via the cache-backed k8sClient), zero DS round-trips (DD-WORKFLOW-018).
 // BR-WORKFLOW-007.
+//
+// #1661 Phase 55c: the ActionTypeCatalogClient marker interface and dsClient
+// field were removed once DS's ActionType REST endpoints were deleted
+// (DD-WORKFLOW-018) -- there are no more implementers to migrate.
 type ActionTypeHandler struct {
-	dsClient      ActionTypeCatalogClient // vestigial; see ActionTypeCatalogClient doc
 	auditStore    audit.AuditStore
 	k8sClient     client.Client
 	authenticator *Authenticator
@@ -52,12 +53,10 @@ type ActionTypeHandler struct {
 
 // NewActionTypeHandler creates a handler for ActionType admission.
 func NewActionTypeHandler(
-	dsClient ActionTypeCatalogClient,
 	auditStore audit.AuditStore,
 	k8sClient client.Client,
 ) *ActionTypeHandler {
 	return &ActionTypeHandler{
-		dsClient:      dsClient,
 		auditStore:    auditStore,
 		k8sClient:     k8sClient,
 		authenticator: NewAuthenticator(),
@@ -225,9 +224,4 @@ func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy 
 	}
 
 	logger.Info("ActionType CRD status updated", "action_type", name)
-}
-
-// crdDescriptionToOgen converts a CRD ActionTypeDescription to the ogen-generated type.
-func crdDescriptionToOgen(d atv1alpha1.ActionTypeDescription) ogenclient.ActionTypeDescription {
-	return ogenconv.SharedDescriptionToOgen(atv1alpha1.DescriptionToShared(d))
 }

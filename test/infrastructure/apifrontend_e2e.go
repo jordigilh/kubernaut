@@ -238,25 +238,13 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// Seed DS with action types + workflows so kubernaut_list_workflows returns
 	// a non-empty catalog. Must run after afDeployE2ERBAC (creates the apifrontend SA).
 	_, _ = fmt.Fprintln(writer, "  Seeding DS action types + workflows for AF E2E...")
-	saToken, seedErr := GetServiceAccountToken(ctx, namespace, "apifrontend", kubeconfigPath)
-	if seedErr != nil {
-		return fmt.Errorf("get apifrontend SA token for DS seeding: %w", seedErr)
-	}
-	seedClient, seedErr := CreateTLSAuthenticatedDataStorageClient("https://localhost:8089", saToken, kubeconfigPath)
-	if seedErr != nil {
-		return fmt.Errorf("create DS seed client: %w", seedErr)
-	}
-	// #1661 Phase 53: also seed as CRDs for DS's informer-backed cache. Workflows here
-	// now seed via SeedWorkflowsViaKubectlApply (real AuthWebhook admission, Phase 55),
-	// so this file no longer touches DS's Postgres inline-registration endpoint at all
-	// -- but SeedActionTypesViaAPI's Postgres dual-seed below is retained regardless,
-	// since Phase 55 hasn't yet dropped the action_type_taxonomy table/FK/handlers
-	// (tracked separately; premature removal here would just be dead code until then).
+	// #1661 Phase 55: DS's Postgres-backed POST /api/v1/action-types endpoint was
+	// removed (DD-WORKFLOW-018); action types are now seeded exclusively as CRDs for
+	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
+	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
+	var seedErr error
 	if seedErr = SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); seedErr != nil {
 		return fmt.Errorf("seed action types (CRD): %w", seedErr)
-	}
-	if seedErr = SeedActionTypesViaAPI(seedClient, writer); seedErr != nil {
-		return fmt.Errorf("seed action types (Postgres): %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
 	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)

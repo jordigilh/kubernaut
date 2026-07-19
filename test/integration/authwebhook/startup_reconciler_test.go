@@ -27,7 +27,6 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/testutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,20 +34,16 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// integrationMockDS records DS calls from the startup reconciler during
-// integration tests. #1661 Change 8c/8d: neither CreateWorkflowInline nor
-// CreateActionType are part of WorkflowDSClient/ActionTypeDSClient anymore --
-// syncWorkflowCRD and syncActionTypeCRD both compute/patch CRD status
-// locally with zero DS calls. This mock is retained only to satisfy the
-// (now-empty-marker) DSWorkflow/DSActionType field types.
-type integrationMockDS struct {
-	atCreated []string
-}
-
-func (m *integrationMockDS) CreateActionType(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
-	m.atCreated = append(m.atCreated, name)
-	return &authwebhook.ActionTypeRegistrationResult{ActionType: name, Status: "created"}, nil
-}
+// integrationMockDS is a placeholder passed to StartupReconciler.DSWorkflow
+// during integration tests. #1661 Phase 55c: CreateActionType was removed
+// once DS's ActionType REST endpoints were deleted (DD-WORKFLOW-018) and
+// StartupReconciler.DSActionType was removed alongside them --
+// syncActionTypeCRD already computed/patched CRD status locally with zero
+// DS calls since Change 8d. WorkflowDSClient is still an empty marker
+// interface (interface{}), so this type needs zero methods to satisfy it --
+// it exists only to give DSWorkflow a distinguishable non-nil value,
+// pending the equivalent DSWorkflow field removal in Phase B.
+type integrationMockDS struct{}
 
 var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFailure, func() {
 
@@ -131,20 +126,16 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 			mockDS := &integrationMockDS{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("it-startup-548"),
-				Timeout:      30 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("it-startup-548"),
+				Timeout:    30 * time.Second,
 			}
 
 			testCtx, testCancel := context.WithTimeout(ctx, 30*time.Second)
 			defer testCancel()
 			err := reconciler.Start(testCtx)
 			Expect(err).NotTo(HaveOccurred())
-
-			Expect(mockDS.atCreated).To(BeEmpty(),
-				"#1661 Change 8d: ActionType sync is a pure local computation -- DS is never called")
 
 			Eventually(func(g Gomega) {
 				updatedAT := &atv1alpha1.ActionType{}
@@ -184,4 +175,3 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 
 // Compile-time interface compliance check
 var _ authwebhook.WorkflowDSClient = (*integrationMockDS)(nil)
-var _ authwebhook.ActionTypeDSClient = (*integrationMockDS)(nil)

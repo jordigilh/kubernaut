@@ -153,89 +153,11 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 		})
 	})
 
-	// ========================================
-	// E2E-DS-017-001-002: Disabled workflow excluded from discovery
-	// ========================================
-	Describe("Disabled Workflow Exclusion", Label("security"), func() {
-		It("E2E-DS-017-001-002: should exclude disabled workflows from discovery results", func() {
-			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-			logger.Info("E2E-DS-017-001-002: Disabled workflow excluded from discovery")
-			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-			suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-
-			// Create ACTIVE workflow with a unique name
-			activeContent := generateWorkflowContent(fmt.Sprintf("e2e-active-%s", suffix), "1.0.0")
-			activeReq := &dsgen.CreateWorkflowInlineRequest{Content: activeContent}
-			activeReq.Source.SetTo("e2e-test")
-			activeResp, err := DSClient.CreateWorkflow(testCtx, activeReq)
-			Expect(err).ToNot(HaveOccurred())
-			var activeWorkflow *dsgen.RemediationWorkflow
-			switch v := activeResp.(type) {
-			case *dsgen.CreateWorkflowCreated:
-				activeWorkflow = (*dsgen.RemediationWorkflow)(v)
-			case *dsgen.CreateWorkflowOK:
-				activeWorkflow = (*dsgen.RemediationWorkflow)(v)
-			default:
-				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", activeResp))
-			}
-			activeUUID := activeWorkflow.WorkflowId.Value.String()
-
-			// Create a DISTINCT second workflow to be disabled
-			disabledContent := generateWorkflowContent(fmt.Sprintf("e2e-disabled-%s", suffix), "1.0.0")
-			disabledReq := &dsgen.CreateWorkflowInlineRequest{Content: disabledContent}
-			disabledReq.Source.SetTo("e2e-test")
-			disabledResp, err := DSClient.CreateWorkflow(testCtx, disabledReq)
-			Expect(err).ToNot(HaveOccurred())
-			var disabledWorkflow *dsgen.RemediationWorkflow
-			switch v := disabledResp.(type) {
-			case *dsgen.CreateWorkflowCreated:
-				disabledWorkflow = (*dsgen.RemediationWorkflow)(v)
-			case *dsgen.CreateWorkflowOK:
-				disabledWorkflow = (*dsgen.RemediationWorkflow)(v)
-			default:
-				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", disabledResp))
-			}
-			disabledUUID := disabledWorkflow.WorkflowId.Value
-
-			// Disable the second workflow
-			disableReqBody := &dsgen.WorkflowLifecycleRequest{
-				Reason: "E2E test: exclude disabled from discovery",
-			}
-			_, err = DSClient.DisableWorkflow(testCtx, disableReqBody, dsgen.DisableWorkflowParams{
-				WorkflowID: disabledUUID,
-			})
-			Expect(err).ToNot(HaveOccurred())
-
-			// Query discovery with filters matching the stub (ScaleReplicas, critical, v1/Pod, production, P0)
-			step2Resp, err := DSClient.ListWorkflowsByActionType(testCtx, dsgen.ListWorkflowsByActionTypeParams{
-				ActionType:  "ScaleReplicas",
-				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   "v1/Pod",
-				Environment: "production",
-				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
-				Limit:       dsgen.NewOptInt(100),
-			})
-			Expect(err).ToNot(HaveOccurred())
-
-			workflows, ok := step2Resp.(*dsgen.WorkflowDiscoveryResponse)
-			Expect(ok).To(BeTrue())
-
-			var foundActive, foundDisabled bool
-			for _, wf := range workflows.Workflows {
-				if wf.WorkflowId.String() == activeUUID {
-					foundActive = true
-				}
-				if wf.WorkflowId == disabledUUID {
-					foundDisabled = true
-				}
-			}
-			Expect(foundActive).To(BeTrue(), "Active workflow should appear in discovery")
-			Expect(foundDisabled).To(BeFalse(), "Disabled workflow should NOT appear in discovery")
-
-			logger.Info("✅ E2E-DS-017-001-002: Disabled workflow correctly excluded")
-		})
-	})
+	// E2E-DS-017-001-002 ("disabled workflow excluded from discovery") removed:
+	// #1661 Phase 55b — RemediationWorkflow.status.catalogStatus is now "Always
+	// Active once admitted" (DD-WORKFLOW-018); there is no disable/enable state
+	// machine for workflows anymore. Removing a workflow from the catalog means
+	// deleting its CRD, not toggling a status flag.
 
 	// ========================================
 	// E2E-DS-017-001-003: Security gate 404 via E2E
@@ -246,22 +168,10 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			logger.Info("E2E-DS-017-001-003: Security gate — context mismatch → 404")
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-			// DD-WORKFLOW-017: Register workflow inline for security gate test
-			createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
-			createReq.Source.SetTo("e2e-test")
-
-			resp, err := DSClient.CreateWorkflow(testCtx, createReq)
-			Expect(err).ToNot(HaveOccurred())
-			var workflow *dsgen.RemediationWorkflow
-			switch v := resp.(type) {
-			case *dsgen.CreateWorkflowCreated:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			case *dsgen.CreateWorkflowOK:
-				workflow = (*dsgen.RemediationWorkflow)(v)
-			default:
-				Fail(fmt.Sprintf("Expected CreateWorkflowCreated or CreateWorkflowOK, got: %T", resp))
-			}
-			workflowUUID := workflow.WorkflowId.Value
+			// #1661 Phase 55b: register workflow via direct CRD creation (no
+			// live AuthWebhook in this suite; DS's REST registration endpoint
+			// was removed per DD-WORKFLOW-018).
+			_, workflowUUID := ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent, "e2e-stub")
 
 			// GetWorkflow with MISMATCHED context — should return 404
 			step3Resp, err := DSClient.GetWorkflowByID(testCtx, dsgen.GetWorkflowByIDParams{

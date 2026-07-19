@@ -293,44 +293,11 @@ var _ = Describe("E2E-DS-043-005: All 8 DetectedLabels Fields OCI -> DB -> HTTP 
 		allFieldsCtx, allFieldsCancel = context.WithTimeout(ctx, 5*time.Minute)
 		DeferCleanup(allFieldsCancel)
 
-		createReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestAllDetectedLabelsContent}
-		createReq.Source.SetTo("e2e-test")
-
-		resp, err := DSClient.CreateWorkflow(allFieldsCtx, createReq)
-		Expect(err).ToNot(HaveOccurred())
-
-		switch v := resp.(type) {
-		case *dsgen.CreateWorkflowCreated:
-			allFieldsWorkflowID = (*dsgen.RemediationWorkflow)(v).WorkflowId.Value.String()
-		case *dsgen.CreateWorkflowOK:
-			allFieldsWorkflowID = (*dsgen.RemediationWorkflow)(v).WorkflowId.Value.String()
-			logger.Info("All-8-fields workflow registered",
-				"uuid", allFieldsWorkflowID)
-		case *dsgen.CreateWorkflowConflict:
-			logger.Info("All-8-fields workflow already exists (409), fetching by list")
-			listResp, listErr := DSClient.ListWorkflowsByActionType(allFieldsCtx, dsgen.ListWorkflowsByActionTypeParams{
-				ActionType:  "RestartPod",
-				Severity:    dsgen.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   "v1/Pod",
-				Environment: "production",
-				Priority:    dsgen.ListWorkflowsByActionTypePriorityP0,
-				Limit:       dsgen.NewOptInt(100),
-			})
-			Expect(listErr).ToNot(HaveOccurred())
-			workflows, ok := listResp.(*dsgen.WorkflowDiscoveryResponse)
-			Expect(ok).To(BeTrue())
-			for _, wf := range workflows.Workflows {
-				if wf.WorkflowName == "e2e-all-labels" {
-					allFieldsWorkflowID = wf.WorkflowId.String()
-					break
-				}
-			}
-			Expect(allFieldsWorkflowID).ToNot(BeEmpty(),
-				"should find existing e2e-all-labels workflow")
-			logger.Info("Found existing all-8-fields workflow", "uuid", allFieldsWorkflowID)
-		default:
-			Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
-		}
+		// #1661 Phase 55b: register workflow via direct CRD creation (no live
+		// AuthWebhook in this suite; DS's REST registration endpoint was
+		// removed per DD-WORKFLOW-018). ensureWorkflowRegistered is idempotent
+		// by CRD name, replacing the old 409-fallback branch above.
+		allFieldsWorkflowID, _ = ensureWorkflowRegistered(allFieldsCtx, DSClient, e2eTestAllDetectedLabelsContent, "e2e-all-labels")
 	})
 
 	It("E2E-DS-043-005: all 8 detectedLabels fields survive full OCI -> DB -> HTTP round-trip", func() {

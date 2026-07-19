@@ -8,15 +8,6 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
-	// CreateActionType implements createActionType operation.
-	//
-	// Idempotent CREATE: creates a new action type, returns existing if active,
-	// or re-enables if previously disabled.
-	// **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
-	// **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design).
-	//
-	// POST /api/v1/action-types
-	CreateActionType(ctx context.Context, req *ActionTypeCreateRequest) (CreateActionTypeRes, error)
 	// CreateAuditEvent implements createAuditEvent operation.
 	//
 	// Persists a unified audit event to the audit_events table (ADR-034).
@@ -51,50 +42,6 @@ type Handler interface {
 	//
 	// POST /api/v1/audit/notifications
 	CreateNotificationAudit(ctx context.Context, req *NotificationAudit) (CreateNotificationAuditRes, error)
-	// CreateWorkflow implements createWorkflow operation.
-	//
-	// Register a new workflow by providing the raw YAML content of a
-	// RemediationWorkflow CRD. Data Storage parses and validates the schema,
-	// then populates all catalog fields from it.
-	// If the workflow was previously registered and disabled (via CRD deletion),
-	// it is re-enabled and a 200 response is returned instead of 201.
-	// **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
-	// **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration).
-	//
-	// POST /api/v1/workflows
-	CreateWorkflow(ctx context.Context, req *CreateWorkflowInlineRequest) (CreateWorkflowRes, error)
-	// DeprecateWorkflow implements deprecateWorkflow operation.
-	//
-	// Mark a workflow as deprecated. Deprecated workflows are excluded from
-	// discovery results but remain in the catalog for audit history.
-	// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
-	//
-	// PATCH /api/v1/workflows/{workflow_id}/deprecate
-	DeprecateWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (DeprecateWorkflowRes, error)
-	// DisableActionType implements disableActionType operation.
-	//
-	// Soft-disables an action type. Denied with 409 if active workflows reference it.
-	// The denial response includes the count and names of dependent workflows.
-	// **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard).
-	//
-	// PATCH /api/v1/action-types/{name}/disable
-	DisableActionType(ctx context.Context, req *ActionTypeDisableRequest, params DisableActionTypeParams) (DisableActionTypeRes, error)
-	// DisableWorkflow implements disableWorkflow operation.
-	//
-	// Convenience endpoint to disable a workflow (soft delete).
-	// Sets status to 'disabled' with timestamp and reason.
-	// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
-	//
-	// PATCH /api/v1/workflows/{workflow_id}/disable
-	DisableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DisableWorkflowParams) (DisableWorkflowRes, error)
-	// EnableWorkflow implements enableWorkflow operation.
-	//
-	// Re-enable a previously disabled or deprecated workflow.
-	// Sets status to 'active' with timestamp and reason.
-	// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
-	//
-	// PATCH /api/v1/workflows/{workflow_id}/enable
-	EnableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params EnableWorkflowParams) (EnableWorkflowRes, error)
 	// ExportAuditEvents implements exportAuditEvents operation.
 	//
 	// Exports audit events matching the specified filters with cryptographic signatures
@@ -310,14 +257,6 @@ type Handler interface {
 	//
 	// DELETE /api/v1/audit/legal-hold/{correlation_id}
 	ReleaseLegalHold(ctx context.Context, req *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (ReleaseLegalHoldRes, error)
-	// UpdateActionType implements updateActionType operation.
-	//
-	// Updates the description fields of an active action type.
-	// Only spec.description is mutable; spec.name is immutable.
-	// **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit).
-	//
-	// PATCH /api/v1/action-types/{name}
-	UpdateActionType(ctx context.Context, req *ActionTypeUpdateRequest, params UpdateActionTypeParams) (UpdateActionTypeRes, error)
 	// UpdateWorkflow implements updateWorkflow operation.
 	//
 	// Update mutable workflow fields (status, metrics).

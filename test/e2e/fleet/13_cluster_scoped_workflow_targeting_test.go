@@ -31,9 +31,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/testutil"
@@ -44,6 +46,11 @@ import (
 // mandatory dimensions never gate the result) and the given cluster
 // classification label(s), isolating `cluster` as the only discriminating
 // filter dimension for E2E-FLEET-1511-001 below.
+//
+// #1661 Phase 55b: registers via direct CRD creation and waits for the real
+// AuthWebhook (deployed in this suite via SetupFullPipelineInfrastructure) to
+// stamp .status.workflowId, replacing the retired createWorkflow REST call
+// (DD-WORKFLOW-018 -- AuthWebhook is the sole write path).
 func registerFleetClusterWorkflow(name string, cluster []string) {
 	crd := testutil.NewTestWorkflowCRD(name, "ScaleReplicas", "tekton")
 	crd.Spec.Labels.Severity = []string{"*"}
@@ -55,23 +62,20 @@ func registerFleetClusterWorkflow(name string, cluster []string) {
 	crd.Spec.Description.WhenToUse = "E2E-FLEET-1511-001 cluster-scoped workflow targeting"
 
 	content := testutil.MarshalWorkflowCRD(crd)
-	createReq := &ogenclient.CreateWorkflowInlineRequest{Content: content}
-	createReq.Source.SetTo("e2e-test")
 
-	resp, err := dataStorageClient.CreateWorkflow(ctx, createReq)
-	Expect(err).ToNot(HaveOccurred(), "CreateWorkflow HTTP call should succeed for %s", name)
+	rw := &rwv1alpha1.RemediationWorkflow{}
+	Expect(yaml.Unmarshal([]byte(content), rw)).To(Succeed(), "unmarshal workflow CRD fixture for %s", name)
+	rw.Namespace = namespace
 
-	switch resp.(type) {
-	case *ogenclient.CreateWorkflowCreated, *ogenclient.CreateWorkflowOK,
-		*ogenclient.CreateWorkflowConflict, *ogenclient.CreateWorkflowInternalServerError:
-		// 201/200: created or idempotently returned. 409/500: another parallel
-		// Ginkgo process already registered identical content -- the catalog
-		// row exists either way (mirrors ensureWorkflowRegistered in
-		// test/e2e/datastorage/helpers_test.go).
-		return
-	default:
-		Fail(fmt.Sprintf("Unexpected CreateWorkflow response type for %s: %T", name, resp))
+	if createErr := k8sClient.Create(ctx, rw); createErr != nil && !apierrors.IsAlreadyExists(createErr) {
+		Expect(createErr).ToNot(HaveOccurred(), "create RemediationWorkflow %s", name)
 	}
+
+	Eventually(func(g Gomega) {
+		g.Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, rw)).To(Succeed())
+		g.Expect(rw.Status.WorkflowID).ToNot(BeEmpty(),
+			"AuthWebhook should stamp .status.workflowId for %s", name)
+	}, timeout, interval).Should(Succeed())
 }
 
 // E2E-FLEET-1511-001: Cluster-scoped workflow targeting full chain.
