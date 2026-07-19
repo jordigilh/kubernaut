@@ -3,7 +3,7 @@
 **Status**: ACCEPTED
 **Date**: 2026-04-28
 **Issue**: [#601](https://github.com/jordigilh/kubernaut/issues/601)
-**Related**: [#462](https://github.com/jordigilh/kubernaut/issues/462) (security audit framework), [#657](https://github.com/jordigilh/kubernaut/issues/657) (boundary token hardening), PROPOSAL-EXT-003 §8 (Goose runtime shadow agent path)
+**Related**: [#462](https://github.com/jordigilh/kubernaut/issues/462) (security audit framework), [#657](https://github.com/jordigilh/kubernaut/issues/657) (boundary token hardening), [ADR-KA-002](ADR-KA-002-agent-security-defense-in-depth.md) (defense-in-depth model this ADR's Layer 4 fits into), [#1681](https://github.com/jordigilh/kubernaut/issues/1681) (AuthBridge sidecar path — the dedicated-sidecar alternative this ADR deferred, now scoped for opaque agents)
 
 ## Context
 
@@ -21,7 +21,7 @@ BR-AI-601 requires a parallel security auditor ("shadow agent") that monitors AL
 1. **Regex/heuristic scanner** — Rejected. Pattern matching cannot detect novel or obfuscated injection techniques (Unicode homoglyphs, nested JSON encoding, context-dependent authority impersonation). LLM-based evaluation provides semantic understanding of injection intent.
 2. **Inline content filtering before LLM** — Rejected. Pre-filtering would strip potentially legitimate content (e.g., a pod log containing "SYSTEM:" as a normal application prefix). The shadow agent evaluates content in context without modifying the investigation flow.
 3. **Post-investigation batch review** — Rejected. Too late — if the primary LLM is already manipulated, the investigation result is compromised. Real-time parallel evaluation catches injection before the primary LLM acts on it.
-4. **Dedicated sidecar process** — Deferred. The current in-process goroutine-based design avoids network latency and deployment complexity. PROPOSAL-EXT-003 §8 describes the path to a Goose-based sidecar when the ACP Go SDK matures.
+4. **Dedicated sidecar process** — Deferred. The current in-process goroutine-based design avoids network latency and deployment complexity. [#1681](https://github.com/jordigilh/kubernaut/issues/1681) describes the now-current path for opaque agents: `AuthBridge` (which already intercepts agent traffic for credential injection, [#1535](https://github.com/jordigilh/kubernaut/issues/1535)) tees a copy of the intercepted stream to a shadow-style evaluator. See [ADR-KA-002](ADR-KA-002-agent-security-defense-in-depth.md).
 
 ## Decision
 
@@ -178,7 +178,8 @@ When `ai.alignmentCheck.enabled=true`:
 
 ## References
 
-- [PROPOSAL-EXT-003 §8](../proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) — Goose runtime shadow agent integration path
+- [ADR-KA-002](ADR-KA-002-agent-security-defense-in-depth.md) — defense-in-depth model; this ADR implements Layer 4 for KA-side (non-opaque-agent) investigations
+- [#1681](https://github.com/jordigilh/kubernaut/issues/1681) — AuthBridge shadow-evaluator tee (extends Layer 4 coverage to opaque agents)
 - [ADR-039](ADR-039-llm-prompt-response-contract.md) — LLM prompt/response contract
 - [BR-AI-601](../../requirements/) — Prompt injection guardrails business requirement
 - [TP-601-v2.0](../../tests/601/TEST_PLAN_v2.md) — Shadow agent test plan

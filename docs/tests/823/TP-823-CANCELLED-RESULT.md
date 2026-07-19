@@ -61,7 +61,7 @@ in the session Manager.
 - **BR-SESSION-001**: Operator can cancel an autonomous investigation in progress
 - **BR-SESSION-002**: Cancelled investigation preserves accumulated context (snapshot)
 - **BR-SESSION-005**: All session control actions are audited (cancel, observe)
-- **BR-SESSION-007**: Streaming event types are runtime-agnostic, forward-compatible with Goose ACP
+- **BR-SESSION-007**: Streaming event types are runtime-agnostic, forward-compatible with the opaque-OCI-agent/AuthBridge event relay model ([#1535](https://github.com/jordigilh/kubernaut/issues/1535))
 - **ADR-038**: Async Buffered Audit Ingestion — fire-and-forget semantics
 - **Issue #823**: Session Store Cancellation Infrastructure (parent issue)
 - **TP-823-v1.0**: Companion test plan for PR1 cancellation infrastructure

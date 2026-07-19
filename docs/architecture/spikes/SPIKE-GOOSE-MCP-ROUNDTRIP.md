@@ -1,7 +1,7 @@
 # Spike: Goose CLI -> ACP MCP Roundtrip
 
 **Date**: May 23, 2026
-**Status**: COMPLETED
+**Status**: COMPLETED — roundtrip mechanics validated (Goose CLI + MCP works), but the CRD-integration model it fed into ([PROPOSAL-EXT-004](../proposals/PROPOSAL-EXT-004-goose-recipes.md)) is ⚠️ SUPERSEDED by [#1536](https://github.com/jordigilh/kubernaut/issues/1536)
 **Duration**: 1 session
 **Relates to**: [PROPOSAL-EXT-004](../proposals/PROPOSAL-EXT-004-goose-recipes.md)
 **Code**: [goose-mcp-roundtrip/](goose-mcp-roundtrip/)

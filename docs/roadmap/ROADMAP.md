@@ -1,6 +1,6 @@
 # Kubernaut Roadmap
 
-Each milestone builds on the previous: **control** → **external integration** → **multi-agent intelligence** → **fleet scale** → **domain expansion**. See [#818](https://github.com/jordigilh/kubernaut/issues/818) for the full vision.
+Each milestone builds on the previous: **control** → **external integration** → **fleet scale** → **custom agents & domain expansion**. See [#818](https://github.com/jordigilh/kubernaut/issues/818) for the full vision.
 
 <p align="center">
   <img src="kubernaut-roadmap.svg" alt="Kubernaut Roadmap" width="960"/>
@@ -20,54 +20,62 @@ Track progress on the [v1.4 milestone](https://github.com/jordigilh/kubernaut/mi
 
 ---
 
-## Live Investigation Control
+## v1.5 — Live Investigation Control and Native Agent Integration (released)
 
-*See and steer your AI investigations in real time.* ([#822](https://github.com/jordigilh/kubernaut/issues/822))
+*See, steer, and connect to your AI investigations in real time.* ([#822](https://github.com/jordigilh/kubernaut/issues/822))
 
-- **Real-time investigation streaming** — Sub-second token-level reasoning updates streamed to the operator
-- **Cancel and takeover** — Interrupt long-running investigations and take manual control
-- **Investigation snapshots** — Full AI context captured at any point for audit and replay
-
----
-
-## Agentic Integration
-
-*Your tools talk to Kubernaut natively.*
-
-- **MCP Server** — Investigate, enrich, and select workflows through any MCP-compatible interface — Claude, Cursor, Slack bots, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
-- **A2A Protocol** — External AI agents delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([#705](https://github.com/jordigilh/kubernaut/issues/705))
+- **Real-time investigation streaming** — Sub-second token-level reasoning updates streamed to the operator via SSE
+- **Cancel and takeover** — Interrupt long-running investigations and take manual control, or hand control back to the autonomous agent
+- **MCP Interactive Mode** — Investigate, enrich, and select workflows through any MCP-compatible interface — Claude, Cursor, Slack bots, or custom UIs ([#703](https://github.com/jordigilh/kubernaut/issues/703))
+- **A2A Protocol** — External AI agents delegate remediation to Kubernaut and track task lifecycle via the [Agent-to-Agent](https://a2aproject.github.io/A2A/latest/specification/) standard ([kubernaut-apifrontend#15](https://github.com/jordigilh/kubernaut-apifrontend/issues/15))
 - **Kubernaut Console** — Web-based operator dashboard with chat UI, live remediation streaming, and workflow selection ([shipped in v1.5.1](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.1) — [kubernaut-console](https://github.com/jordigilh/kubernaut-console))
-- **Natural language signal intake** — Trigger investigations by describing the problem in plain text; Kubernaut extracts a structured signal and runs the full pipeline ([#714](https://github.com/jordigilh/kubernaut/issues/714))
+- **Natural language signal intake** — Trigger investigations by describing the problem in plain text; moved to the API Frontend as the external-facing entry point ([kubernaut-apifrontend#53](https://github.com/jordigilh/kubernaut-apifrontend/issues/53))
+
+Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/milestone/6) (closed).
 
 ---
 
-## Collective Intelligence
-
-*Multiple AI perspectives, one root cause.*
-
-- **Multi-agent consensus RCA** — Ensemble investigation with independent LLM agents from different model families; a consolidator validates agreement and cross-examines on divergence ([#648](https://github.com/jordigilh/kubernaut/issues/648))
-- **Investigation Recipes** — Operators inject SOPs into the investigation pipeline via Goose recipes packaged as OCI artifacts. KA acts as a pure orchestrator; all LLM reasoning is delegated to Goose ([#711](https://github.com/jordigilh/kubernaut/issues/711))
-- **Remediation history analysis** — LLM-driven review of past RCA and remediation chains to improve future investigation accuracy ([#842](https://github.com/jordigilh/kubernaut/issues/842))
-
----
-
-## Fleet Operations
+## v1.6 — Fleet Operations (release candidate)
 
 *From one cluster to your entire fleet.* ([#54](https://github.com/jordigilh/kubernaut/issues/54))
 
 Single hub deployment manages remediations across multiple clusters using three purpose-built paths: K8s MCP for investigation, ACM for SA provisioning, and AAP for execution — with RHBK (Keycloak) JWT authentication.
 
-- **Multi-cluster investigation** — KA investigates remote clusters via MCP with RHBK JWT authentication — cluster-agnostic RCA from a single hub
-- **Fleet remediation** — AAP executes remediation playbooks on remote clusters with ephemeral SAs provisioned by ACM ManifestWork
-- **Centralized observability** — Aggregated remediation metrics and audit trails across the fleet via Thanos and ACM Observability
-- **Zero-footprint remote clusters** — Only an MCP server pod and existing ACM klusterlet on each managed cluster — no CRDs, no controllers
+- **Multi-cluster investigation** — KA investigates remote clusters via MCP with RHBK JWT authentication — cluster-agnostic RCA from a single hub ([#1510](https://github.com/jordigilh/kubernaut/issues/1510))
+- **Fleet remediation** — Cluster-scoped workflow targeting via SP Rego classification ([#1511](https://github.com/jordigilh/kubernaut/issues/1511))
+- **Centralized observability** — Cluster identity threaded through event payloads for console context and audit trails across the fleet ([#1409](https://github.com/jordigilh/kubernaut/issues/1409))
+- **ACM Search integration** — Bearer-token authenticated ACM Search adapter for fleet-wide resource discovery ([#1556](https://github.com/jordigilh/kubernaut/issues/1556))
+
+Track progress on the [v1.6 milestone](https://github.com/jordigilh/kubernaut/milestone/7) — `v1.6.0-rc1` tagged, GA pending remaining follow-up work.
 
 ---
 
-## Operational Expansion
+## v1.7 — Custom Investigation Agents
+
+*Inject your team's know-how into the investigation, on demand.*
+
+- **Custom investigation agents** — Operators plug their own SOPs into specific points of an investigation via customer-authored agents — e.g., "is this resource within its cost budget?" or "does this alert match a known condition for this service?" The agent's answer is retrieved and injected into the investigation's context, much like a user-provided RAG step for knowledge the base investigation agent doesn't have. Packaged as opaque OCI images, executed via the image's own entrypoint — KA acts as a supervised harness, not a runtime; no Kubernaut-known agent code, no LLM calls of its own. Defined by the `AgenticWorkflow` CRD ([#1536](https://github.com/jordigilh/kubernaut/issues/1536))
+- **AuthBridge / OpenShell integration** — AuthBridge intercepts every outbound LLM/MCP call from an opaque agent for credential injection and audit relay, extensible to a shadow-evaluator tee for security review; OpenShell provides sandbox isolation as a coexisting sidecar in the same pod ([#1535](https://github.com/jordigilh/kubernaut/issues/1535), [#1681](https://github.com/jordigilh/kubernaut/issues/1681))
+- **kube-mcp-server by default** — Standardized Kubernetes access layer for agents, deprecating direct K8s Go bindings ([#1516](https://github.com/jordigilh/kubernaut/issues/1516))
+
+Track progress on the [v1.7 milestone](https://github.com/jordigilh/kubernaut/milestone/8).
+
+---
+
+## Collective Intelligence (unscheduled)
+
+*Multiple AI perspectives, one root cause.*
+
+- **Multi-agent consensus RCA** — Ensemble investigation with independent LLM agents from different model families; a consolidator validates agreement and cross-examines on divergence ([#648](https://github.com/jordigilh/kubernaut/issues/648))
+- **Remediation history analysis** — LLM-driven review of past RCA and remediation chains to improve future investigation accuracy ([#842](https://github.com/jordigilh/kubernaut/issues/842))
+
+---
+
+## Operational Expansion (unscheduled)
 
 *New domains, same intelligent approach.*
 
 - **Cost optimization** — LLM-driven FinOps investigation and resource remediation using signals from Red Hat Cost Management (Koku), Kubecost, OpenCost, and VPA ([#555](https://github.com/jordigilh/kubernaut/issues/555))
 - **Threat remediation** — LLM-driven investigation and response for security and compliance signals from Red Hat Advanced Cluster Security (RHACS), Falco, Trivy, and OPA ([#554](https://github.com/jordigilh/kubernaut/issues/554))
 - **Non-Kubernetes workflows** — `targetSystem` field enables execution against external systems (VMs, cloud APIs, IaC) with EA evolution for unverifiable outcomes ([#739](https://github.com/jordigilh/kubernaut/issues/739))
+- **ITSM integration** — Jira/ServiceNow webhook adapter for the Notification service ([#53](https://github.com/jordigilh/kubernaut/issues/53))
