@@ -1,10 +1,10 @@
 # Spike: OpenShell Sandbox Integration for OAS Runtime
 
 **Date**: May 20, 2026
-**Status**: COMPLETED
+**Status**: COMPLETED — the OpenShell sandbox mechanics validated here survive as Layer 2 of [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md)'s defense-in-depth model; the "OAS Runtime BYOC image" specifically tested is superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) (any opaque OCI agent image applies instead). §8's AuthBridge/OpenShell sidecar coexistence question remains open and unresolved.
 **Duration**: 1 session
 **Issue**: [#1207](https://github.com/jordigilh/kubernaut/issues/1207) (DG-14)
-**Relates to**: PROPOSAL-EXT-003, [SPIKE-OAS-RUNTIME](SPIKE-OAS-RUNTIME.md)
+**Relates to**: PROPOSAL-EXT-003 (superseded), [SPIKE-OAS-RUNTIME](SPIKE-OAS-RUNTIME.md) (superseded)
 
 ---
 
