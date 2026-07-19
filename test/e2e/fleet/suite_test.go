@@ -240,7 +240,7 @@ const fleetKeycloakNodePort = 30557
 // test/infrastructure/fleet_e2e.go, which proved the same pattern during
 // SynchronizedBeforeSuite's readiness probe.
 func fleetAuthenticatedHTTPClient() (*http.Client, error) {
-	cfg := infrastructure.DefaultKeycloakFleetReadConfig(fleetKeycloakNodePort)
+	cfg := infrastructure.DefaultKeycloakFleetReadConfig(fleetKeycloakNodePort, kubeconfigPath)
 	cfg.Scopes = []string{"kube-mcp-server-audience"}
 	token, err := infrastructure.GetKeycloakClientCredentialsToken(ctx, cfg)
 	if err != nil {

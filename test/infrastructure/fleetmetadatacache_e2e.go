@@ -250,10 +250,11 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// so there is no discovery connection needing its own credential.
 	if gatewayType != registry.GatewayEAIGW {
 		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
-			ClientID:      fmcOAuth2Config.ClientID,
-			ClientSecret:  fmcOAuth2Config.ClientSecret,
-			Scopes:        fmcOAuth2Config.Scopes,
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+			ClientID:       fmcOAuth2Config.ClientID,
+			ClientSecret:   fmcOAuth2Config.ClientSecret,
+			Scopes:         fmcOAuth2Config.Scopes,
+			KubeconfigPath: kubeconfigPath,
 		})
 		if brokerCredErr != nil {
 			return "", "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
@@ -280,10 +281,11 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// tools/call, matching FMC's own runtime OAuth2 config above.
 	keycloakFleetReadTokenFunc := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
-			ClientID:      fmcOAuth2Config.ClientID,
-			ClientSecret:  fmcOAuth2Config.ClientSecret,
-			Scopes:        fmcOAuth2Config.Scopes,
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+			ClientID:       fmcOAuth2Config.ClientID,
+			ClientSecret:   fmcOAuth2Config.ClientSecret,
+			Scopes:         fmcOAuth2Config.Scopes,
+			KubeconfigPath: kubeconfigPath,
 		})
 	}
 	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, writer); readyErr != nil {

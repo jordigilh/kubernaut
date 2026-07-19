@@ -394,10 +394,11 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// credential when RequireOAuth=true (see BrokerCredentialToken doc
 	// comment) -- mirrors the FMC E2E lane's Phase 7 broker credential.
 	brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-		TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
-		ClientID:      fmcOAuth2Config.ClientID,
-		ClientSecret:  fmcOAuth2Config.ClientSecret,
-		Scopes:        fmcOAuth2Config.Scopes,
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
+		ClientID:       fmcOAuth2Config.ClientID,
+		ClientSecret:   fmcOAuth2Config.ClientSecret,
+		Scopes:         fmcOAuth2Config.Scopes,
+		KubeconfigPath: kubeconfigPath,
 	})
 	if brokerCredErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
@@ -439,10 +440,11 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 
 	keycloakFleetReadTokenFunc := func() (string, error) {
 		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
-			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
-			ClientID:      fmcOAuth2Config.ClientID,
-			ClientSecret:  fmcOAuth2Config.ClientSecret,
-			Scopes:        fmcOAuth2Config.Scopes,
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
+			ClientID:       fmcOAuth2Config.ClientID,
+			ClientSecret:   fmcOAuth2Config.ClientSecret,
+			Scopes:         fmcOAuth2Config.Scopes,
+			KubeconfigPath: kubeconfigPath,
 		})
 	}
 	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, 31975, "remote_cluster_", writer); readyErr != nil {
