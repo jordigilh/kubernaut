@@ -25,6 +25,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	workflowrepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	deterministicuuid "github.com/jordigilh/kubernaut/pkg/datastorage/uuid"
 )
@@ -68,8 +69,12 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 	// re-registering the same CRD content after a PVC wipe recovers the original ID.
 	workflow.WorkflowID = deterministicuuid.DeterministicUUID(incomingHash)
 
+	// Issue #1674: the repo methods below return workflowrepo.ErrNotFound
+	// (not (nil, nil)) when no row matches; that's the expected outcome on
+	// this decision tree's "none" path, not a failure, so it must not be
+	// wrapped and propagated as a real error.
 	active, err := repo.GetActiveByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
-	if err != nil {
+	if err != nil && !errors.Is(err, workflowrepo.ErrNotFound) {
 		return nil, fmt.Errorf("lookup active workflow: %w", err)
 	}
 	if active != nil {
@@ -77,7 +82,7 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 	}
 
 	disabled, err := repo.GetLatestDisabledByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
-	if err != nil {
+	if err != nil && !errors.Is(err, workflowrepo.ErrNotFound) {
 		return nil, fmt.Errorf("lookup disabled workflow: %w", err)
 	}
 	if disabled != nil {
@@ -89,7 +94,7 @@ func (h *Handler) handleDuplicateWorkflow(ctx context.Context, workflow *models.
 	// version upgrade and the old entry must be superseded to enforce single-active
 	// per (workflow_name, action_type).
 	activeAnyVersion, err := repo.GetActiveByWorkflowName(ctx, workflow.WorkflowName)
-	if err != nil {
+	if err != nil && !errors.Is(err, workflowrepo.ErrNotFound) {
 		return nil, fmt.Errorf("lookup active workflow by name: %w", err)
 	}
 	if activeAnyVersion != nil {
@@ -205,7 +210,7 @@ func (h *Handler) retryOnUniqueViolation(ctx context.Context, createErr error, w
 	)
 
 	active, err := h.workflowIntegrityRepo.GetActiveByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
-	if err != nil {
+	if err != nil && !errors.Is(err, workflowrepo.ErrNotFound) {
 		h.logger.Error(err, "Retry lookup failed after 23505",
 			"workflow_name", workflow.WorkflowName, "version", workflow.Version)
 		return nil, false
@@ -242,7 +247,7 @@ func (h *Handler) tryReEnableWorkflow(ctx context.Context, workflow *models.Reme
 	}
 
 	existing, err := h.workflowRepo.GetByNameAndVersion(ctx, workflow.WorkflowName, workflow.Version)
-	if err != nil {
+	if err != nil && !errors.Is(err, workflowrepo.ErrNotFound) {
 		return nil, fmt.Errorf("lookup existing workflow: %w", err)
 	}
 	if existing == nil {

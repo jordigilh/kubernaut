@@ -22,6 +22,7 @@ package workflowexecution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -35,17 +36,18 @@ import (
 // Issue #518: Runtime Execution Engine Resolution
 // ========================================
 
+// ErrAlreadyResolved indicates the WFE's execution engine is already set, so
+// resolveWorkflowCatalog is a no-op (idempotency guard). Issue #1674: typed
+// sentinel replacing the previous ambiguous (nil, nil) return.
+var ErrAlreadyResolved = errors.New("workflow catalog already resolved")
+
 // resolveWorkflowCatalog fetches all workflow metadata from the DS catalog in a
 // single GetWorkflowByID call (Issue #650). Consolidates resolveExecutionEngine,
 // resolveExecutionBundle, resolveDependencies, and GetWorkflowEngineConfig.
-// Idempotent: returns nil immediately if the engine is already resolved.
+// Idempotent: returns ErrAlreadyResolved if the engine is already resolved.
 func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
-	// nolint:nilnil // intentional "already resolved, nothing to do" sentinel,
-	// not an error — already documented above ("Idempotent: returns nil
-	// immediately..."); the sole caller discards the metadata value entirely
-	// and only checks the error (Issue #1546 Tier 2).
 	if wfe.Status.ExecutionEngine != "" {
-		return nil, nil
+		return nil, ErrAlreadyResolved
 	}
 
 	if r.WorkflowQuerier == nil {

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -248,7 +249,7 @@ func (h *AnalyzingHandler) handleDirectExecution(ctx context.Context, rr *remedi
 
 	// Routing checks
 	blocked, err := h.callbacks.CheckPostAnalysisConditions(ctx, rr, hashCtx.workflowID, hashCtx.targetResource, hashCtx.preHash, hashCtx.actionType)
-	if err != nil {
+	if err != nil && !errors.Is(err, routing.ErrNotBlocked) {
 		logger.Error(err, "Failed to check routing conditions")
 		return phase.Requeue(config.RequeueGenericError, "routing check failed"), nil
 	}

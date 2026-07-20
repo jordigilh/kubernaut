@@ -52,7 +52,7 @@ func (r *Repository) Create(ctx context.Context, actionType string, description 
 	}
 
 	existing, err := r.GetByName(ctx, actionType)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrActionTypeNotFound) {
 		return nil, fmt.Errorf("check existing action type: %w", err)
 	}
 
@@ -95,7 +95,10 @@ func (r *Repository) Create(ctx context.Context, actionType string, description 
 	return &CreateResult{ActionType: created, Status: "created", WasReenabled: false}, nil
 }
 
-// GetByName returns the action type by its PascalCase name, or nil if not found.
+// GetByName returns the action type by its PascalCase name.
+// Returns ErrActionTypeNotFound (wrapped with the queried name) if no
+// matching row exists (Issue #1674: typed sentinel replaces the previous
+// ambiguous (nil, nil) return).
 func (r *Repository) GetByName(ctx context.Context, actionType string) (*models.ActionTypeTaxonomy, error) {
 	var at models.ActionTypeTaxonomy
 	err := r.db.QueryRowxContext(ctx,
@@ -105,11 +108,7 @@ func (r *Repository) GetByName(ctx context.Context, actionType string) (*models.
 	).StructScan(&at)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// nolint:nilnil // intentional "not found" sentinel, not an error —
-			// canonical repository idiom; documented in the GetByName doc
-			// comment above ("or nil if not found"); callers already guard
-			// with `if x != nil` before use (Issue #1546 Tier 2).
-			return nil, nil
+			return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
 		}
 		return nil, fmt.Errorf("get action type %q: %w", actionType, err)
 	}
@@ -130,9 +129,6 @@ func (r *Repository) UpdateDescription(ctx context.Context, actionType string, n
 	existing, err := r.GetByName(ctx, actionType)
 	if err != nil {
 		return nil, fmt.Errorf("fetch action type for update: %w", err)
-	}
-	if existing == nil {
-		return nil, fmt.Errorf("%w: %s", ErrActionTypeNotFound, actionType)
 	}
 	if existing.Status != models.ActionTypeStatusActive {
 		return nil, fmt.Errorf("%w: %s", ErrActionTypeDisabled, actionType)

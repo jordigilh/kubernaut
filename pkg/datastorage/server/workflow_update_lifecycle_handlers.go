@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	workflowrepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
@@ -62,11 +64,26 @@ func (h *Handler) HandleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	workflow, err := h.workflowRepo.GetByID(r.Context(), workflowID)
 	if err != nil {
+		// Issue #1674: previously this branch always returned 404 for ANY
+		// error, including real DB failures — masking outages as "not
+		// found" and, worse, GetByID's old (nil, nil) "not found" contract
+		// meant err was nil here, so this guard never even fired for the
+		// not-found case: workflow stayed nil and reached
+		// applyMutableWorkflowUpdate below, dereferencing workflow.Status
+		// on a nil pointer whenever the request set "status" (panic,
+		// recovered as an HTTP 500). Now that GetByID returns
+		// workflowrepo.ErrNotFound, the two cases are distinguished
+		// correctly.
+		if errors.Is(err, workflowrepo.ErrNotFound) {
+			response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+				fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+			return
+		}
 		h.logger.Error(err, "Failed to get workflow for update",
 			"workflow_id", workflowID,
 		)
-		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
-			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to get workflow", h.logger)
 		return
 	}
 
@@ -286,13 +303,21 @@ func (h *Handler) getWorkflowForLifecycleTransition(w http.ResponseWriter, r *ht
 
 	workflow, err := repo.GetByID(r.Context(), workflowID)
 	if err != nil {
+		if errors.Is(err, workflowrepo.ErrNotFound) {
+			response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
+				fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+			return nil, nil, false
+		}
 		h.logger.Error(err, fmt.Sprintf("Failed to get workflow for %s", opName),
 			"workflow_id", workflowID,
 		)
-		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
-			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
+		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
+			"Failed to get workflow", h.logger)
 		return nil, nil, false
 	}
+	// Defensive: repo is the WorkflowLifecycleRepository interface, and test
+	// doubles (see workflow_lifecycle_handler_test.go) may still return
+	// (nil, nil) directly rather than the workflowrepo.ErrNotFound sentinel.
 	if workflow == nil {
 		response.WriteRFC7807Error(w, http.StatusNotFound, "not-found", "Not Found",
 			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)

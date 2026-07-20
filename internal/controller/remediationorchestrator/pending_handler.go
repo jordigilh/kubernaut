@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -82,7 +83,7 @@ func (h *PendingHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 	logger.Info("Handling Pending phase - checking routing conditions")
 
 	blocked, err := h.routingEngine.CheckPreAnalysisConditions(ctx, rr)
-	if err != nil {
+	if err != nil && !errors.Is(err, routing.ErrNotBlocked) {
 		logger.Error(err, "Failed to check routing conditions")
 		return phase.Requeue(config.RequeueGenericError, "routing check failed"), nil
 	}

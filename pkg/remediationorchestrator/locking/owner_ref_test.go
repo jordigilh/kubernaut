@@ -18,6 +18,7 @@ package locking_test
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -118,7 +119,7 @@ var _ = Describe("CheckResourceBusy Owner-Ref Self-Detection (BR-ORCH-050)", fun
 
 			// CheckResourceBusy should skip because the WFE belongs to the same RR
 			blocked, err := engine.CheckResourceBusy(ctx, rr, targetResource)
-			Expect(err).NotTo(HaveOccurred())
+			Expect(errors.Is(err, routing.ErrNotBlocked)).To(BeTrue())
 			Expect(blocked).To(BeNil(), "should not be blocked by own WFE (owner UID match)")
 		})
 	})

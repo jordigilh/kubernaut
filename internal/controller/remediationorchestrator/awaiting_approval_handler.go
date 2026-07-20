@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -243,7 +244,7 @@ func (h *AwaitingApprovalHandler) capturePostApprovalHash(ctx context.Context, r
 // caller must return (intent, err) immediately.
 func (h *AwaitingApprovalHandler) checkApprovalTargetBusy(ctx context.Context, rr *remediationv1.RemediationRequest, approvalTargetResource string, logger logr.Logger) (phase.TransitionIntent, bool, error) {
 	busyBlock, busyErr := h.callbacks.CheckResourceBusy(ctx, rr, approvalTargetResource)
-	if busyErr != nil {
+	if busyErr != nil && !errors.Is(busyErr, routing.ErrNotBlocked) {
 		logger.Error(busyErr, "Failed to check resource busy (approval path)")
 		return phase.Requeue(config.RequeueGenericError, "resource busy check failed"), true, nil
 	}

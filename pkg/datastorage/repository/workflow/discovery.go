@@ -253,7 +253,9 @@ func (r *Repository) selectScoredWorkflows(ctx context.Context, whereClause stri
 
 // GetWorkflowWithContextFilters retrieves a workflow by ID with an additional
 // security gate that verifies the workflow matches the provided context filters.
-// Returns nil if the workflow exists but doesn't match the context (security gate).
+// Returns ErrNotFound if the workflow doesn't exist OR exists but doesn't match
+// the context (security gate) — DD-WORKFLOW-016: the two cases are
+// deliberately not distinguished to prevent information leakage.
 // This is Step 3 of the discovery protocol.
 func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
 	// If no context filters, fall back to simple GetByID
@@ -281,12 +283,7 @@ func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflow
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, args...)
 	if errors.Is(err, sql.ErrNoRows) {
-		// nolint:nilnil // intentional "not found" sentinel, not an error —
-		// security gate: workflow exists but doesn't match context, or doesn't
-		// exist. We intentionally don't distinguish these cases (DD-WORKFLOW-016:
-		// prevent info leakage). Caller already guards with `if x != nil`
-		// (Issue #1546 Tier 2).
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
 	}
 	if err != nil {
 		r.logger.Error(err, "failed to get workflow with context filters",

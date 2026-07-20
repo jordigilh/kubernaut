@@ -18,6 +18,7 @@ package datastorage
 
 import (
 	"crypto/sha256"
+	"errors"
 	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -304,7 +305,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		// IT-DS-017-001-006: GetWorkflowWithContextFilters -- context mismatch returns nil
 		// ========================================
 		Context("IT-DS-017-001-006: context mismatch returns nil (security gate)", func() {
-			It("should return nil when context filters do not match", func() {
+			It("should return workflow.ErrNotFound when context filters do not match", func() {
 				// Arrange: workflow with severity=critical, environment=production
 				wf := createTestWorkflow("scale-mismatch", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
 
@@ -317,8 +318,12 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 				}
 				result, err := workflowRepo.GetWorkflowWithContextFilters(ctx, wf.WorkflowID, filters)
 
-				// Assert: Security gate -- no workflow returned
-				Expect(err).ToNot(HaveOccurred())
+				// Assert: Security gate -- no workflow returned. Issue #1674: the
+				// repository now signals "not found OR filtered out" via the
+				// workflow.ErrNotFound sentinel instead of the ambiguous (nil, nil)
+				// return; the two cases are still deliberately not distinguished
+				// from each other to prevent information leakage (DD-WORKFLOW-016).
+				Expect(errors.Is(err, workflow.ErrNotFound)).To(BeTrue(), "Security gate should surface ErrNotFound for mismatched workflow")
 				Expect(result).To(BeNil(), "Security gate should prevent returning mismatched workflow")
 			})
 		})

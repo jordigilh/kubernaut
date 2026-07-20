@@ -19,6 +19,7 @@ package workflowexecution_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -370,6 +371,20 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 				ContainSubstring("internal server error"),
 				ContainSubstring("500"),
 			))
+		})
+
+		It("UT-WE-1674-001: GetWorkflowDependencies returns ErrNoDependencies when the catalog entry declares no content", func() {
+			// Issue #1674: replaces the previous ambiguous (nil, nil) — the
+			// WorkflowQuerier interface now makes "no dependencies declared" an
+			// explicit, checkable sentinel rather than an implicit nil.
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{Content: ""},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			deps, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
+			Expect(errors.Is(err, weclient.ErrNoDependencies)).To(BeTrue())
+			Expect(deps).To(BeNil())
 		})
 
 		It("UT-WE-658-006: GetWorkflowEngineConfig should classify DS 500 as server error", func() {
