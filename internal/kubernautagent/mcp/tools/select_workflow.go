@@ -94,6 +94,11 @@ type SelectWorkflowInput struct {
 	ActingUserGroups []string       `json:"acting_user_groups,omitempty"`
 }
 
+// actingUserOverride implements actingUserInput (registration.go).
+func (i SelectWorkflowInput) actingUserOverride() (string, []string) {
+	return i.ActingUser, i.ActingUserGroups
+}
+
 // SelectWorkflowOutput defines the output schema for the kubernaut_select_workflow MCP tool.
 type SelectWorkflowOutput struct {
 	Status     string                       `json:"status"`

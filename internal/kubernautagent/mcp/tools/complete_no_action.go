@@ -36,6 +36,11 @@ type CompleteNoActionInput struct {
 	ActingUserGroups []string `json:"acting_user_groups,omitempty"`
 }
 
+// actingUserOverride implements actingUserInput (registration.go).
+func (i CompleteNoActionInput) actingUserOverride() (string, []string) {
+	return i.ActingUser, i.ActingUserGroups
+}
+
 // CompleteNoActionOutput defines the output schema for the kubernaut_complete_no_action tool.
 type CompleteNoActionOutput struct {
 	Status           string `json:"status"`

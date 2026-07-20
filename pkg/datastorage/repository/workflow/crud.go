@@ -359,6 +359,27 @@ func insertOrReactivateWorkflow(ctx context.Context, tx *sqlx.Tx, newWorkflow *m
 // filters" to avoid leaking which case occurred to the caller.
 var ErrNotFound = errors.New("workflow not found")
 
+// getOneByQuery runs a single-row workflow lookup against
+// remediation_workflow_catalog and applies the ErrNotFound-wrap / log-and-wrap
+// error handling shared by all Get*By* methods below. Issue #1530 (dupl):
+// extracted from GetByID, GetByNameAndVersion, GetActiveByNameAndVersion,
+// GetLatestDisabledByNameAndVersion, GetActiveByWorkflowName, and
+// GetLatestVersion, which shared this exact query -> ErrNotFound -> wrap
+// shape and differed only in the query, its args, the not-found identifier,
+// and the log/error context description.
+func (r *Repository) getOneByQuery(ctx context.Context, query string, args []interface{}, notFoundID, opDesc string, logKV ...interface{}) (*models.RemediationWorkflow, error) {
+	var workflow models.RemediationWorkflow
+	err := r.db.GetContext(ctx, &workflow, query, args...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, notFoundID)
+	}
+	if err != nil {
+		r.logger.Error(err, "failed to get "+opDesc, logKV...)
+		return nil, fmt.Errorf("failed to get %s: %w", opDesc, err)
+	}
+	return &workflow, nil
+}
+
 // GetByID retrieves a workflow by UUID (primary key)
 // DD-WORKFLOW-002 v3.0: workflow_id is the sole UUID primary key
 // Returns ErrNotFound (wrapped with the queried ID) if no workflow exists.
@@ -367,19 +388,8 @@ func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.Re
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_id = $1
 	`
-
-	var workflow models.RemediationWorkflow
-	err := r.db.GetContext(ctx, &workflow, query, workflowID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
-	}
-	if err != nil {
-		r.logger.Error(err, "failed to get workflow by ID",
-			"workflow_id", workflowID)
-		return nil, fmt.Errorf("failed to get workflow by ID: %w", err)
-	}
-
-	return &workflow, nil
+	return r.getOneByQuery(ctx, query, []interface{}{workflowID}, workflowID,
+		"workflow by ID", "workflow_id", workflowID)
 }
 
 // GetByNameAndVersion retrieves a workflow by workflow_name and version
@@ -390,20 +400,8 @@ func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, vers
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1 AND version = $2
 	`
-
-	var workflow models.RemediationWorkflow
-	err := r.db.GetContext(ctx, &workflow, query, workflowName, version)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s@%s", ErrNotFound, workflowName, version)
-	}
-	if err != nil {
-		r.logger.Error(err, "failed to get workflow by name and version",
-			"workflow_name", workflowName,
-			"version", version)
-		return nil, fmt.Errorf("failed to get workflow by name and version: %w", err)
-	}
-
-	return &workflow, nil
+	return r.getOneByQuery(ctx, query, []interface{}{workflowName, version}, fmt.Sprintf("%s@%s", workflowName, version),
+		"workflow by name and version", "workflow_name", workflowName, "version", version)
 }
 
 // GetActiveByNameAndVersion retrieves an active workflow by name and version.
@@ -414,18 +412,8 @@ func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1 AND version = $2 AND status = 'Active'
 	`
-
-	var wf models.RemediationWorkflow
-	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s@%s", ErrNotFound, workflowName, version)
-	}
-	if err != nil {
-		r.logger.Error(err, "failed to get active workflow by name and version",
-			"workflow_name", workflowName, "version", version)
-		return nil, fmt.Errorf("failed to get active workflow: %w", err)
-	}
-	return &wf, nil
+	return r.getOneByQuery(ctx, query, []interface{}{workflowName, version}, fmt.Sprintf("%s@%s", workflowName, version),
+		"active workflow by name and version", "workflow_name", workflowName, "version", version)
 }
 
 // GetLatestDisabledByNameAndVersion retrieves the most recently disabled workflow
@@ -439,18 +427,8 @@ func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, work
 		ORDER BY updated_at DESC
 		LIMIT 1
 	`
-
-	var wf models.RemediationWorkflow
-	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s@%s", ErrNotFound, workflowName, version)
-	}
-	if err != nil {
-		r.logger.Error(err, "failed to get disabled workflow by name and version",
-			"workflow_name", workflowName, "version", version)
-		return nil, fmt.Errorf("failed to get disabled workflow: %w", err)
-	}
-	return &wf, nil
+	return r.getOneByQuery(ctx, query, []interface{}{workflowName, version}, fmt.Sprintf("%s@%s", workflowName, version),
+		"disabled workflow by name and version", "workflow_name", workflowName, "version", version)
 }
 
 // GetActiveByWorkflowName retrieves any active workflow entry for a given workflow_name,
@@ -464,18 +442,8 @@ func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName s
 		ORDER BY created_at DESC
 		LIMIT 1
 	`
-
-	var wf models.RemediationWorkflow
-	err := r.db.GetContext(ctx, &wf, query, workflowName)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowName)
-	}
-	if err != nil {
-		r.logger.Error(err, "failed to get active workflow by name",
-			"workflow_name", workflowName)
-		return nil, fmt.Errorf("failed to get active workflow by name: %w", err)
-	}
-	return &wf, nil
+	return r.getOneByQuery(ctx, query, []interface{}{workflowName}, workflowName,
+		"active workflow by name", "workflow_name", workflowName)
 }
 
 // GetLatestVersion retrieves the latest version of a workflow by workflow_name
@@ -487,19 +455,8 @@ func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) 
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
 		WHERE workflow_name = $1 AND is_latest_version = true
 	`
-
-	var workflow models.RemediationWorkflow
-	err := r.db.GetContext(ctx, &workflow, query, workflowName)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowName)
-	}
-	if err != nil {
-		r.logger.Error(err, "failed to get latest workflow version",
-			"workflow_name", workflowName)
-		return nil, fmt.Errorf("failed to get latest workflow version: %w", err)
-	}
-
-	return &workflow, nil
+	return r.getOneByQuery(ctx, query, []interface{}{workflowName}, workflowName,
+		"latest workflow version", "workflow_name", workflowName)
 }
 
 // GetVersionsByName retrieves all versions of a workflow by workflow_name
