@@ -73,9 +73,22 @@ var RegisteredWorkflowUUIDs = make(map[string]string)
 // Also populates RegisteredWorkflowUUIDs for tests that need DS UUIDs (DD-WE-006).
 func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
 	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
-	// #1661 Phase 53: direct CRD creation -- no AuthWebhook/DataStorage round-trip
-	// dependency for ActionType, unlike the removed SeedActionTypesViaAPIWithTLS.
-	if err := SeedActionTypesViaCRD(kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
+	// #1661 Phase 53: direct CRD creation -- no DataStorage round-trip dependency for
+	// ActionType, unlike the removed SeedActionTypesViaAPIWithTLS.
+	//
+	// #1661 Phase 56 (discovered gap): this suite deploys a REAL, live AuthWebhook
+	// (DeployAuthWebhookManifestsOnly, for SOC2 CC8.1 attribution), unlike the other
+	// SeedActionTypesViaCRD callers (Gateway/AIAnalysis/APIFrontend/KA/
+	// SignalProcessing) which run with no admission webhook at all. That live AW
+	// intercepts this ActionType CREATE too and asynchronously patches
+	// status.catalogStatus=Active (pkg/authwebhook/actiontype_handler.go
+	// updateCRDStatusCreate) -- SeedActionTypesViaCRD's plain "kubectl apply" returns
+	// before that goroutine lands, racing the very next step (workflow registration,
+	// whose RemediationWorkflow admission synchronously requires
+	// status.catalogStatus=Active via validateActionTypeExists). SeedE2EActionTypes
+	// is the AW-aware variant: same "kubectl apply", but blocks on
+	// `.status.registered=true` before returning, closing that race.
+	if err := SeedE2EActionTypes(kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
 		return nil, fmt.Errorf("failed to seed action types: %w", err)
 	}
 

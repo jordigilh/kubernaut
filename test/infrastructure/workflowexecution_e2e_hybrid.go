@@ -75,18 +75,27 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-007: Coverage instrumentation enabled")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// DD-TEST-007: Create coverdata directory BEFORE everything
+	// DD-TEST-007: Create coverdata directory BEFORE everything.
+	//
+	// kind-workflowexecution-config.yaml's extraMounts binds this host path
+	// into the control-plane container UNCONDITIONALLY -- Kind's static YAML
+	// config has no way to read E2E_COVERAGE at cluster-creation time. Gating
+	// this mkdir behind that env var (as before) meant a fresh checkout with
+	// E2E_COVERAGE unset would only work by accident, if a stale directory
+	// happened to survive from a prior coverage-enabled run; on a genuinely
+	// clean checkout, podman's bind-mount rejects the missing source path
+	// outright ("statfs ...: no such file or directory") before Kind even
+	// starts the container. Always creating it (empty, if coverage is off)
+	// is harmless and removes that footgun.
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find project root: %w", err)
 	}
 
-	if os.Getenv("E2E_COVERAGE") == "true" {
-		coverdataPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/coverdata")
-		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
-		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
-			return fmt.Errorf("failed to create coverdata directory: %w", err)
-		}
+	coverdataPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/coverdata")
+	_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+		return fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -198,14 +207,18 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
-	// Deploy WorkflowExecution CRD
-	_, _ = fmt.Fprintln(writer, "📋 Installing WorkflowExecution CRD...")
-	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")
-	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
-	crdCmd.Stdout = writer
-	crdCmd.Stderr = writer
-	if err := crdCmd.Run(); err != nil {
-		return fmt.Errorf("failed to install WorkflowExecution CRD: %w", err)
+	// Deploy ALL kubernaut.ai CRDs (WorkflowExecution, RemediationWorkflow,
+	// ActionType, etc.), not just WorkflowExecution. Issue #1661
+	// (DD-WORKFLOW-018): DataStorage's workflow cache is a controller-runtime
+	// informer directly over RemediationWorkflow/ActionType CRDs, so its
+	// startup fails outright ("failed to build workflow cache: ... no
+	// matches for kind \"RemediationWorkflow\"") if those definitions aren't
+	// registered yet -- this suite deploys a real DataStorage instance
+	// (helpers_test.go) but, unlike authwebhook_shared.go, never applied the
+	// full CRD set itself.
+	_, _ = fmt.Fprintln(writer, "📋 Installing kubernaut.ai CRDs (WorkflowExecution, RemediationWorkflow, ActionType, ...)...")
+	if err := applyRemediationWorkflowCRDs(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install kubernaut.ai CRDs: %w", err)
 	}
 
 	// Create namespaces (idempotent - ignore AlreadyExists errors)

@@ -23,6 +23,17 @@ nodes:
   - containerPort: 30432  # PostgreSQL NodePort in cluster
     hostPort: 25433       # Port on host machine (localhost:25433) - Per DD-TEST-001
     protocol: TCP
+  # Issue #1661 Phase 56: second, test-owned/isolated DataStorage instance for the
+  # DS-restart-and-cache-recovery E2E case (27_ds_restart_cache_recovery_test.go).
+  # Deployed in its own namespace within this SAME cluster so the restart doesn't
+  # disturb the shared instance above. Ports allocated from DS's DD-TEST-001 block
+  # (28090-28099); 28090-28092 are already used by the shared instance above.
+  - containerPort: 30082  # Isolated DataStorage API NodePort
+    hostPort: 28093       # Per DD-TEST-001 Data Storage block (28090-28099)
+    protocol: TCP
+  - containerPort: 30282  # Isolated DataStorage Health NodePort
+    hostPort: 28094       # Per DD-TEST-001 Data Storage block (28090-28099)
+    protocol: TCP
   # DD-TEST-007: Mount coverage directory for E2E coverage collection
   extraMounts:
   - hostPath: ./coverdata

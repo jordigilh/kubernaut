@@ -523,6 +523,18 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 2: Creating Kind cluster + namespace...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~10-15 seconds")
 
+	// kind-datastorage-config.yaml's extraMounts binds host "./coverdata"
+	// (relative to this process's CWD, i.e. this suite's own package
+	// directory) into the control-plane container. Unlike ensure-coverage-dirs
+	// (Makefile), which only creates the repo-root coverdata/ used by unit/
+	// integration coverage, nothing else creates this suite-local directory --
+	// on a fresh checkout, podman's bind-mount rejects a missing source path
+	// outright ("statfs ...: no such file or directory") before Kind even
+	// starts the container.
+	if err := CreateHostDirectoryIfNeeded("./coverdata", 0777, writer); err != nil {
+		return fmt.Errorf("failed to create coverdata mount directory: %w", err)
+	}
+
 	// Create Kind cluster
 	if err := createKindCluster(clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
@@ -532,6 +544,20 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow/action-type catalog
+	// is now a controller-runtime informer cache directly over the
+	// RemediationWorkflow/ActionType CRDs (etcd is the sole source of truth) --
+	// DS's startup indexes RemediationWorkflow by .spec.actionType, which
+	// requires the kubernaut.ai/v1alpha1 API group to already be registered
+	// with the apiserver. This suite runs DS without a live AuthWebhook (see
+	// helpers_test.go's ensureWorkflowRegistered comment), so nothing else
+	// applies these CRD definitions -- apply them directly, mirroring
+	// authwebhook_shared.go's "Apply ALL CRDs" step.
+	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
 	}
 
 	// Deploy ClusterRole for client access (DD-AUTH-014)
@@ -1517,8 +1543,8 @@ func buildDataStorageImage(writer io.Writer) error {
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
 	buildArgs := []string{
 		"build",
-		"--no-cache",                                                 // Force fresh build to include latest code changes
-		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),      // Native arch — avoid cross-compile penalty
+		"--no-cache",                                            // Force fresh build to include latest code changes
+		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH), // Native arch — avoid cross-compile penalty
 		"-t", "localhost/kubernaut-datastorage:e2e-test-datastorage", // DD-TEST-001: service-specific tag
 		"-f", "docker/data-storage.Dockerfile",
 	}
@@ -1995,6 +2021,32 @@ func buildDataStorageService(writer io.Writer) error {
 // findWorkspaceRoot delegates to the shared testutil implementation.
 func findWorkspaceRoot() (string, error) {
 	return testutil.FindWorkspaceRoot()
+}
+
+// applyRemediationWorkflowCRDs applies the full config/crd/bases/ manifest set
+// (RemediationWorkflow, ActionType, plus every other kubernaut.ai CRD) to the
+// target cluster. Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache
+// is a controller-runtime informer directly over these CRDs, so its startup
+// fails outright ("failed to build workflow cache: ... no matches for
+// kubernaut.ai/v1alpha1") if the CRD definitions aren't registered yet -- this
+// is true even in suites (like this one) that never deploy a live
+// AuthWebhook, since AW was previously the only caller applying these CRDs.
+func applyRemediationWorkflowCRDs(kubeconfigPath string, writer io.Writer) error {
+	workspaceRoot, err := findWorkspaceRoot()
+	if err != nil {
+		return fmt.Errorf("failed to find workspace root: %w", err)
+	}
+
+	cmd := exec.Command("kubectl", "apply",
+		"--kubeconfig", kubeconfigPath,
+		"-f", "config/crd/bases/")
+	cmd.Dir = workspaceRoot
+	if output, err := cmd.CombinedOutput(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ❌ CRD apply failed: %s\n", output)
+		return fmt.Errorf("kubectl apply crds failed: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "   ✅ All CRDs applied")
+	return nil
 }
 
 func startDataStorageService(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer io.Writer) error {
