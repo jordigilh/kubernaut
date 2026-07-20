@@ -53,6 +53,7 @@ type mockWorkflowIntegrityRepo struct {
 	createdWorkflows     []*models.RemediationWorkflow
 	updateStatusCalls    []statusUpdateCall
 	createErr            error
+	getActiveErr         error // Issue #1674: simulates a real DB error from GetActiveByNameAndVersion
 }
 
 type statusUpdateCall struct {
@@ -63,6 +64,9 @@ type statusUpdateCall struct {
 }
 
 func (m *mockWorkflowIntegrityRepo) GetActiveByNameAndVersion(_ context.Context, _, _ string) (*models.RemediationWorkflow, error) {
+	if m.getActiveErr != nil {
+		return nil, m.getActiveErr
+	}
 	return m.activeWorkflow, nil
 }
 
@@ -536,6 +540,30 @@ var _ = Describe("Workflow Content Integrity (BR-WORKFLOW-006)", func() {
 			Expect(json.Unmarshal(rr.Body.Bytes(), &resp)).To(Succeed())
 			Expect(resp["workflowId"]).To(Equal(existingUUID),
 				"Response should return the existing UUID")
+		})
+	})
+
+	// ========================================
+	// UT-DS-1674-009: A real DB error from the lookup must still surface as
+	// a failure, not be swallowed by the workflow.ErrNotFound guard added to
+	// handleDuplicateWorkflow (Issue #1674).
+	// ========================================
+	Describe("UT-DS-1674-009: Real database error during duplicate lookup is not mistaken for not-found", func() {
+		It("should return 500 Internal Server Error, not proceed as if no active workflow existed", func() {
+			mockRepo := &mockWorkflowIntegrityRepo{
+				getActiveErr: fmt.Errorf("connection refused"),
+			}
+
+			handler := newIntegrityHandler(mockRepo)
+			req := makeInlineRequest(integrityBaseYAML)
+			rr := httptest.NewRecorder()
+
+			handler.HandleCreateWorkflow(rr, req)
+
+			Expect(rr.Code).To(Equal(http.StatusInternalServerError),
+				"Issue #1674: a real DB error must not be conflated with workflow.ErrNotFound and treated as 'no active workflow'")
+			Expect(mockRepo.createdWorkflows).To(BeEmpty(),
+				"No workflow should be created when the duplicate-check lookup itself fails")
 		})
 	})
 })

@@ -19,6 +19,7 @@ package datastorage_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/jmoiron/sqlx"
@@ -110,7 +111,8 @@ var _ = Describe("Phase 6: SELECT * Narrowing — Workflow Repository (TP-1088-P
 				WillReturnRows(emptyWorkflowRows())
 
 			_, err := repo.GetByID(ctx, "test-uuid")
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, workflowrepo.ErrNotFound)).To(BeTrue(),
+				"Issue #1674: an empty result set is expected not-found, not a real error")
 		})
 	})
 
@@ -121,7 +123,8 @@ var _ = Describe("Phase 6: SELECT * Narrowing — Workflow Repository (TP-1088-P
 				WillReturnRows(emptyWorkflowRows())
 
 			_, err := repo.GetByNameAndVersion(ctx, "pod-restart", "v1.0.0")
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, workflowrepo.ErrNotFound)).To(BeTrue(),
+				"Issue #1674: an empty result set is expected not-found, not a real error")
 		})
 	})
 
@@ -132,7 +135,8 @@ var _ = Describe("Phase 6: SELECT * Narrowing — Workflow Repository (TP-1088-P
 				WillReturnRows(emptyWorkflowRows())
 
 			_, err := repo.GetActiveByNameAndVersion(ctx, "pod-restart", "v1.0.0")
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, workflowrepo.ErrNotFound)).To(BeTrue(),
+				"Issue #1674: an empty result set is expected not-found, not a real error")
 		})
 	})
 
@@ -143,7 +147,8 @@ var _ = Describe("Phase 6: SELECT * Narrowing — Workflow Repository (TP-1088-P
 				WillReturnRows(emptyWorkflowRows())
 
 			_, err := repo.GetLatestDisabledByNameAndVersion(ctx, "pod-restart", "v1.0.0")
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, workflowrepo.ErrNotFound)).To(BeTrue(),
+				"Issue #1674: an empty result set is expected not-found, not a real error")
 		})
 	})
 
@@ -154,7 +159,8 @@ var _ = Describe("Phase 6: SELECT * Narrowing — Workflow Repository (TP-1088-P
 				WillReturnRows(emptyWorkflowRows())
 
 			_, err := repo.GetActiveByWorkflowName(ctx, "pod-restart")
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, workflowrepo.ErrNotFound)).To(BeTrue(),
+				"Issue #1674: an empty result set is expected not-found, not a real error")
 		})
 	})
 
@@ -165,7 +171,8 @@ var _ = Describe("Phase 6: SELECT * Narrowing — Workflow Repository (TP-1088-P
 				WillReturnRows(emptyWorkflowRows())
 
 			_, err := repo.GetLatestVersion(ctx, "pod-restart")
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, workflowrepo.ErrNotFound)).To(BeTrue(),
+				"Issue #1674: an empty result set is expected not-found, not a real error")
 		})
 	})
 
@@ -215,7 +222,8 @@ var _ = Describe("Phase 6: SELECT * Narrowing — Workflow Repository (TP-1088-P
 				WillReturnRows(emptyWorkflowRows())
 
 			_, err := repo.GetWorkflowWithContextFilters(ctx, "test-uuid", nil)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, workflowrepo.ErrNotFound)).To(BeTrue(),
+				"Issue #1674: an empty result set is expected not-found, not a real error")
 		})
 	})
 })

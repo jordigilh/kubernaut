@@ -65,17 +65,18 @@ var _ = Describe("Workflow CRUD business-level gap closure (Wave 6 6f)", func() 
 	})
 
 	Describe("GetByID", func() {
-		It("UT-DS-6f-001: returns (nil, nil) — not an error — when no workflow matches the ID", func() {
-			// BR-STORAGE-012: callers (server/workflow_query_handlers.go) distinguish
-			// "not found" (nil, nil -> HTTP 404) from a real DB failure (non-nil error
-			// -> HTTP 500). Conflating the two would either mask outages as 404s or
-			// leak DB errors as "not found".
+		It("UT-DS-6f-001: returns workflow.ErrNotFound — not (nil, nil) — when no workflow matches the ID", func() {
+			// Issue #1674: callers (server/workflow_query_handlers.go) distinguish
+			// "not found" (workflow.ErrNotFound -> HTTP 404) from a real DB failure
+			// (a different non-nil error -> HTTP 500) by checking errors.Is against
+			// the sentinel, rather than nil-checking the result. Conflating the two
+			// would either mask outages as 404s or leak DB errors as "not found".
 			sqlMock.ExpectQuery(`SELECT .* FROM remediation_workflow_catalog WHERE workflow_id = \$1`).
 				WillReturnError(sql.ErrNoRows)
 
 			wf, err := repo.GetByID(ctx, "00000000-0000-0000-0000-000000000000")
 
-			Expect(err).ToNot(HaveOccurred(), "BR-STORAGE-012: not-found must not surface as an error")
+			Expect(errors.Is(err, workflow.ErrNotFound)).To(BeTrue(), "Issue #1674: not-found must be workflow.ErrNotFound")
 			Expect(wf).To(BeNil())
 		})
 

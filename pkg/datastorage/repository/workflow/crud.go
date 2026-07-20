@@ -347,8 +347,21 @@ func insertOrReactivateWorkflow(ctx context.Context, tx *sqlx.Tx, newWorkflow *m
 // READ OPERATIONS
 // ========================================
 
+// ErrNotFound is returned by the Get* lookup methods below when no row
+// matches the query. Issue #1674: replaces the ambiguous (nil, nil) return
+// that forced every caller to distinguish "not found" from "real error" by
+// nil-checking the result instead of checking err. Callers should use
+// errors.Is(err, ErrNotFound).
+//
+// DD-WORKFLOW-016: GetWorkflowWithContextFilters (discovery.go) also returns
+// this sentinel for its security gate — it deliberately does not distinguish
+// "workflow doesn't exist" from "workflow exists but doesn't match context
+// filters" to avoid leaking which case occurred to the caller.
+var ErrNotFound = errors.New("workflow not found")
+
 // GetByID retrieves a workflow by UUID (primary key)
 // DD-WORKFLOW-002 v3.0: workflow_id is the sole UUID primary key
+// Returns ErrNotFound (wrapped with the queried ID) if no workflow exists.
 func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error) {
 	query := `
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
@@ -358,10 +371,7 @@ func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.Re
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowID)
 	if errors.Is(err, sql.ErrNoRows) {
-		// nolint:nilnil // intentional "not found" sentinel, not an error —
-		// canonical repository idiom; all callers already guard with
-		// `if x != nil` before use (Issue #1546 Tier 2).
-		return nil, nil // Not found
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
 	}
 	if err != nil {
 		r.logger.Error(err, "failed to get workflow by ID",
@@ -374,6 +384,7 @@ func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.Re
 
 // GetByNameAndVersion retrieves a workflow by workflow_name and version
 // DD-WORKFLOW-002 v3.0: workflow_name is the human-readable identifier
+// Returns ErrNotFound (wrapped with name+version) if no workflow exists.
 func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error) {
 	query := `
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
@@ -383,10 +394,7 @@ func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, vers
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowName, version)
 	if errors.Is(err, sql.ErrNoRows) {
-		// nolint:nilnil // intentional "not found" sentinel, not an error —
-		// canonical repository idiom; all callers already guard with
-		// `if x != nil` before use (Issue #1546 Tier 2).
-		return nil, nil // Not found
+		return nil, fmt.Errorf("%w: %s@%s", ErrNotFound, workflowName, version)
 	}
 	if err != nil {
 		r.logger.Error(err, "failed to get workflow by name and version",
@@ -400,6 +408,7 @@ func (r *Repository) GetByNameAndVersion(ctx context.Context, workflowName, vers
 
 // GetActiveByNameAndVersion retrieves an active workflow by name and version.
 // BR-WORKFLOW-006: Used by content integrity check to detect idempotent re-apply vs supersede.
+// Returns ErrNotFound (wrapped with name+version) if no active workflow exists.
 func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error) {
 	query := `
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
@@ -409,10 +418,7 @@ func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
 	if errors.Is(err, sql.ErrNoRows) {
-		// nolint:nilnil // intentional "not found" sentinel, not an error —
-		// canonical repository idiom; all callers already guard with
-		// `if x != nil` before use (Issue #1546 Tier 2).
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s@%s", ErrNotFound, workflowName, version)
 	}
 	if err != nil {
 		r.logger.Error(err, "failed to get active workflow by name and version",
@@ -425,6 +431,7 @@ func (r *Repository) GetActiveByNameAndVersion(ctx context.Context, workflowName
 // GetLatestDisabledByNameAndVersion retrieves the most recently disabled workflow
 // by name and version. BR-WORKFLOW-006: Used by content integrity check to decide
 // between re-enable (same hash) and create-new (different hash).
+// Returns ErrNotFound (wrapped with name+version) if no disabled workflow exists.
 func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error) {
 	query := `
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
@@ -436,10 +443,7 @@ func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, work
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName, version)
 	if errors.Is(err, sql.ErrNoRows) {
-		// nolint:nilnil // intentional "not found" sentinel, not an error —
-		// canonical repository idiom; all callers already guard with
-		// `if x != nil` before use (Issue #1546 Tier 2).
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s@%s", ErrNotFound, workflowName, version)
 	}
 	if err != nil {
 		r.logger.Error(err, "failed to get disabled workflow by name and version",
@@ -452,6 +456,7 @@ func (r *Repository) GetLatestDisabledByNameAndVersion(ctx context.Context, work
 // GetActiveByWorkflowName retrieves any active workflow entry for a given workflow_name,
 // regardless of version. Issue #371, BR-WORKFLOW-006: Used by handleDuplicateWorkflow
 // for cross-version supersession when a new version of an existing workflow is registered.
+// Returns ErrNotFound (wrapped with the queried name) if no active workflow exists.
 func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error) {
 	query := `
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
@@ -463,10 +468,7 @@ func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName s
 	var wf models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &wf, query, workflowName)
 	if errors.Is(err, sql.ErrNoRows) {
-		// nolint:nilnil // intentional "not found" sentinel, not an error —
-		// canonical repository idiom; all callers already guard with
-		// `if x != nil` before use (Issue #1546 Tier 2).
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowName)
 	}
 	if err != nil {
 		r.logger.Error(err, "failed to get active workflow by name",
@@ -478,6 +480,8 @@ func (r *Repository) GetActiveByWorkflowName(ctx context.Context, workflowName s
 
 // GetLatestVersion retrieves the latest version of a workflow by workflow_name
 // DD-WORKFLOW-002 v3.0: Uses is_latest_version flag for efficient lookup
+// Returns ErrNotFound (wrapped with the queried name) if no workflow exists.
+// Note: as of Issue #1674, this method has zero production callers.
 func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error) {
 	query := `
 		SELECT ` + workflowCatalogColumns + ` FROM remediation_workflow_catalog
@@ -487,10 +491,7 @@ func (r *Repository) GetLatestVersion(ctx context.Context, workflowName string) 
 	var workflow models.RemediationWorkflow
 	err := r.db.GetContext(ctx, &workflow, query, workflowName)
 	if errors.Is(err, sql.ErrNoRows) {
-		// nolint:nilnil // intentional "not found" sentinel, not an error —
-		// canonical repository idiom; all callers already guard with
-		// `if x != nil` before use (Issue #1546 Tier 2).
-		return nil, nil // Not found
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowName)
 	}
 	if err != nil {
 		r.logger.Error(err, "failed to get latest workflow version",
