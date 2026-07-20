@@ -32,6 +32,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/shared/sizeutil"
 )
 
 const (
@@ -572,7 +573,9 @@ func buildDependencyVolumes(deps *models.WorkflowDependencies) ([]corev1.Volume,
 // Also adds TARGET_RESOURCE for consistency with Tekton pipelines.
 // #243: Accepts pre-filtered params (filtering is done in buildJob).
 func buildEnvVars(targetResource string, params map[string]string) []corev1.EnvVar {
-	envVars := make([]corev1.EnvVar, 0, 1+len(params))
+	// Issue #1684: sizeutil.SafeCap makes the overflow check on this capacity
+	// hint explicit (see its doc comment for why CodeQL flags raw "a+b").
+	envVars := make([]corev1.EnvVar, 0, sizeutil.SafeCap(1, len(params)))
 	envVars = append(envVars, corev1.EnvVar{
 		Name:  "TARGET_RESOURCE",
 		Value: targetResource,
