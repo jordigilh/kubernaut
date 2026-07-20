@@ -137,13 +137,33 @@ func ResolveAnyFailure(clusterName string, setupFailed, anyTestFailed bool, writ
 // - namespace: Kubernetes namespace to collect logs from (e.g., "kubernaut-system")
 // - serviceName: Service name for directory naming (e.g., "fullpipeline", "aianalysis")
 // - writer: Output writer for logging
+// mustGatherDirPath builds the on-disk directory a single MustGatherPodLogs
+// call writes into.
+//
+// Issue #1690 RCA follow-up: this MUST include clusterName. Multi-cluster
+// E2E suites (fleet, fleetmetadatacache, fleetmetadatacache/eaigw) call
+// MustGatherPodLogs once per cluster with the *same* serviceName and the
+// *same* namespace ("kubernaut-system" exists on both the primary and the
+// remote cluster) -- only clusterName differs between the calls. Without it
+// in the path, the second cluster's call silently overwrote the first
+// cluster's namespace-level files (events.txt, jobs.txt, jobs_describe.txt,
+// pod_status.txt/json -- everything except per-pod log files, which happen
+// to not collide because pod names differ). This is exactly what destroyed
+// the primary cluster's WorkflowFailed event during the RCA for the
+// E2E-FLEET-014 BackoffLimitExceeded flake: the event was captured, then
+// clobbered by the remote cluster's must-gather pass moments later in the
+// same run.
+func mustGatherDirPath(serviceName, clusterName, namespace string) string {
+	return fmt.Sprintf("/tmp/kubernaut-must-gather/%s/%s/%s", serviceName, clusterName, namespace)
+}
+
 func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName string, writer io.Writer) {
 	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n")
 	_, _ = fmt.Fprintf(writer, "📋 MUST-GATHER: Collecting pod logs via kubectl\n")
 	_, _ = fmt.Fprintf(writer, "   Cluster: %s | Namespace: %s | Service: %s\n", clusterName, namespace, serviceName)
 	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n\n")
 
-	mustGatherDir := fmt.Sprintf("/tmp/kubernaut-must-gather/%s/%s", serviceName, namespace)
+	mustGatherDir := mustGatherDirPath(serviceName, clusterName, namespace)
 	if err := os.MkdirAll(mustGatherDir, 0755); err != nil {
 		_, _ = fmt.Fprintf(writer, "❌ Failed to create must-gather directory %s: %v\n", mustGatherDir, err)
 		return
