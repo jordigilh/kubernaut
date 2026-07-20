@@ -55,19 +55,22 @@ func setupScheme() *runtime.Scheme {
 	return scheme
 }
 
-// MockRoutingEngine is a mock implementation for unit tests
+// MockRoutingEngine is a mock implementation for unit tests.
+//
+// Issue #1674: Check* methods return routing.ErrNotBlocked (not a bare nil
+// error) to match the production RoutingEngine's sentinel-error contract.
 type MockRoutingEngine struct{}
 
 func (m *MockRoutingEngine) CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*routing.BlockingCondition, error) {
-	return nil, nil // Always return not blocked for unit tests
+	return nil, routing.ErrNotBlocked // Always return not blocked for unit tests
 }
 
 func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, actionType string) (*routing.BlockingCondition, error) {
-	return nil, nil // Always return not blocked for unit tests
+	return nil, routing.ErrNotBlocked // Always return not blocked for unit tests
 }
 
 func (m *MockRoutingEngine) CheckResourceBusy(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*routing.BlockingCondition, error) {
-	return nil, nil
+	return nil, routing.ErrNotBlocked
 }
 
 func (m *MockRoutingEngine) CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *routing.BlockingCondition {
