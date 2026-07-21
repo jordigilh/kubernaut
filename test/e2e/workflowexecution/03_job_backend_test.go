@@ -533,14 +533,15 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 	// P1: Edge Cases and Cross-Cutting Concerns
 	// ========================================
 
-	Context("E2E-WE-014-005: Execution engine resolution (runtime)", func() {
-		It("documents that unsupported engines are validated at runtime, not on the WFE Spec (BR-WE-014)", func() {
-			// ExecutionEngine was removed from WorkflowExecutionSpec; the WE controller resolves the engine
-			// from DataStorage and ExecutorRegistry at runtime. An unsupported engine fails reconciliation
-			// rather than API admission. Exercising that failure path in E2E would require mocking DS.
-			Skip("Unsupported execution engine is validated at runtime via ExecutorRegistry; not exercised in E2E without DataStorage mocks")
-		})
-	})
+	// E2E-WE-014-005 ("Invalid executionEngine rejected by API server") is intentionally
+	// absent: ExecutionEngine was removed from WorkflowExecutionSpec, so the CRD-level
+	// admission scenario this test ID originally covered no longer applies. The
+	// replacement runtime behavior (WE controller rejects an unsupported engine resolved
+	// from DataStorage/ExecutorRegistry) is already proven without a permanent Skip():
+	//   - UT-WE-659-002 (pkg/workflowexecution/controller_events_test.go) proves the logic
+	//   - IT-WE-015-001 (test/integration/workflowexecution/ansible_dispatch_integration_test.go)
+	//     proves the controller wiring via envtest with a real reconciler
+	// See docs/testing/BR-WE-014/E2E_TEST_PLAN_BR_WE_014.md for the updated scope note.
 
 	Context("E2E-WE-014-006: Deterministic Job Naming for Resource Locking", func() {
 		It("should use deterministic Job name based on targetResource (BR-WE-014, BR-WE-009)", func() {

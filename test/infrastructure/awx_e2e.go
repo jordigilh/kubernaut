@@ -544,6 +544,52 @@ func awxAPIRequest(ctx context.Context, method, url string, body interface{}) (m
 	return result, resp.StatusCode, nil
 }
 
+// awxTaskInstanceReady inspects a decoded /api/v2/instances/ response body
+// and reports whether at least one instance satisfies the same precondition
+// AWX itself requires before it can queue a background job (see
+// awx.main.dispatch.get_task_queuename): node_type in {control, hybrid},
+// node_state == "ready", and enabled == true.
+func awxTaskInstanceReady(instancesResponse map[string]interface{}) bool {
+	if instancesResponse == nil {
+		return false
+	}
+	results, ok := instancesResponse["results"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, r := range results {
+		inst, ok := r.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		enabled, _ := inst["enabled"].(bool)
+		nodeState, _ := inst["node_state"].(string)
+		nodeType, _ := inst["node_type"].(string)
+		if enabled && nodeState == "ready" && (nodeType == "control" || nodeType == "hybrid") {
+			return true
+		}
+	}
+	return false
+}
+
+// waitForAWXTaskInstance polls AWX's /api/v2/instances/ endpoint until at
+// least one instance is READY and Enabled (per awxTaskInstanceReady), or the
+// timeout elapses. See issue #1700 for the readiness race this closes.
+func waitForAWXTaskInstance(ctx context.Context, awxBaseURL string, timeout, pollInterval time.Duration, writer io.Writer) error {
+	deadline := time.Now().Add(timeout)
+	for attempt := 0; time.Now().Before(deadline); attempt++ {
+		result, status, err := awxAPIRequest(ctx, "GET", awxBaseURL+"/api/v2/instances/", nil)
+		if err == nil && status == http.StatusOK && awxTaskInstanceReady(result) {
+			return nil
+		}
+		if attempt%3 == 0 {
+			_, _ = fmt.Fprintf(writer, "   ⏳ AWX task instance not ready yet (attempt %d), retrying...\n", attempt+1)
+		}
+		time.Sleep(pollInterval)
+	}
+	return fmt.Errorf("no AWX instance became READY and Enabled within %s", timeout)
+}
+
 // AWXConfig holds the IDs created during AWX configuration.
 type AWXConfig struct {
 	APIURL            string
@@ -582,6 +628,22 @@ func ConfigureAWX(ctx context.Context, awxBaseURL string, writer io.Writer) (*AW
 		return nil, fmt.Errorf("AWX API authentication not ready after 2 minutes")
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ AWX API authentication is ready\n")
+
+	// 0.5. Task-instance readiness gate (issue #1700): the web pod can answer
+	// authenticated requests before the separate task pod (awx-e2e-task) has
+	// finished registering itself as a dispatcher Instance. Without this
+	// gate, the org/project bootstrap calls below can race AWX's own
+	// internal check (awx.main.dispatch.get_task_queuename, which requires
+	// an Instance with node_type in {control, hybrid}, node_state=ready,
+	// enabled=true) and fail with "ValueError: No task instances are READY
+	// and Enabled." (surfaced as HTTP 500) or a transient HTTP 400 — burning
+	// through the project-creation retry budget below before AWX is
+	// actually ready.
+	_, _ = fmt.Fprintf(writer, "   Waiting for an AWX task instance to register...\n")
+	if err := waitForAWXTaskInstance(ctx, awxBaseURL, 90*time.Second, 5*time.Second, writer); err != nil {
+		return nil, fmt.Errorf("AWX task instance not ready: %w", err)
+	}
+	_, _ = fmt.Fprintf(writer, "   ✅ AWX task instance is ready\n")
 
 	// 1. Get default organization (always exists as ID 1)
 	// Retry on 401: the AWX operator may not have finished creating the admin
