@@ -204,6 +204,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"kubernaut.ai_workflowexecutions.yaml",
 		"kubernaut.ai_notificationrequests.yaml",
 		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EM
+		// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+		// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+		// already be registered with the apiserver or DS's informer cache
+		// setup fails hard ("no matches for kind"), crash-looping the pod.
+		"kubernaut.ai_remediationworkflows.yaml",
+		"kubernaut.ai_actiontypes.yaml",
 	}
 	crdArgs := []string{"--kubeconfig", kubeconfigPath, "apply"}
 	for _, crdFile := range crdFiles {

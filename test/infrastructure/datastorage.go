@@ -721,6 +721,20 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// 1.5. Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow/action-type
+	// catalog is now a controller-runtime informer cache directly over the
+	// RemediationWorkflow/ActionType CRDs -- DS's startup indexes
+	// RemediationWorkflow by .spec.actionType, which requires the
+	// kubernaut.ai/v1alpha1 API group to already be registered with the
+	// apiserver. Callers of this shared helper (notification, apifrontend,
+	// effectivenessmonitor, gateway, aianalysis E2E) don't necessarily run a
+	// live AuthWebhook that would otherwise apply these CRDs, so apply them
+	// directly -- mirrors SetupDataStorageInfrastructureParallel's step.
+	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+
 	// 2. Deploy PostgreSQL
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying PostgreSQL...\n")
 	if err := deployPostgreSQLInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -791,6 +805,20 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
 	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
+	}
+
+	// 1.5. Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow/action-type
+	// catalog is now a controller-runtime informer cache directly over the
+	// RemediationWorkflow/ActionType CRDs -- DS's startup indexes
+	// RemediationWorkflow by .spec.actionType, which requires the
+	// kubernaut.ai/v1alpha1 API group to already be registered with the
+	// apiserver. Callers of this shared helper (notification, apifrontend,
+	// effectivenessmonitor, gateway, aianalysis E2E) don't necessarily run a
+	// live AuthWebhook that would otherwise apply these CRDs, so apply them
+	// directly -- mirrors SetupDataStorageInfrastructureParallel's step.
+	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
 	}
 
 	// 2. Deploy PostgreSQL

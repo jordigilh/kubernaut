@@ -134,6 +134,17 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+	// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+	// already be registered with the apiserver or DS's informer cache setup
+	// fails hard ("no matches for kind"), crash-looping the pod. Must run
+	// BEFORE DataStorage is deployed below (PHASE 5.5's installKAE2ECRDs
+	// runs too late -- after DS's own readiness wait already timed out).
+	_, _ = fmt.Fprintln(writer, "  📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+
 	// Issue #785: Generate inter-service TLS before deploying services
 	_, _ = fmt.Fprintln(writer, "  🔐 Generating inter-service TLS certificates (Issue #785)...")
 	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
