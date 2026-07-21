@@ -221,7 +221,7 @@ func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.
 	// ErrAlreadyResolved (not a real failure) once Status.ExecutionEngine is
 	// already set from a prior reconcile -- only a genuine resolution error
 	// (e.g. no engine defined in WorkflowRef) should fail the WFE here.
-	if _, catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil && !errors.Is(catalogErr, ErrAlreadyResolved) {
+	if catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil && !errors.Is(catalogErr, ErrAlreadyResolved) {
 		logger.Error(catalogErr, "Failed to resolve workflow execution engine from WorkflowRef")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
 			fmt.Sprintf("Workflow catalog resolution failed: %v", catalogErr))

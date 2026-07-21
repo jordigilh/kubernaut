@@ -97,6 +97,10 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
+// goosLinux identifies the Linux GOOS value, used to gate host-network mode
+// (only supported on Linux runners/CI).
+const goosLinux = "linux"
+
 // DD-TEST-010: Per-process variables (no shared state between processes)
 var (
 	ctx        context.Context
@@ -284,7 +288,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// KA is an HTTP server (like DataStorage) that validates incoming Bearer tokens
 	// Platform-specific: Linux uses host network, macOS uses bridge network
 	By("Creating ServiceAccount for Kubernaut Agent service with TokenReview/SAR permissions")
-	useHostNetworkForKA := runtime.GOOS == "linux"
+	useHostNetworkForKA := runtime.GOOS == goosLinux
 	kaServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
 		sharedCfg,
 		"kubernaut-agent-service",
@@ -492,7 +496,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	mockLLMConfig.ImageTag = mockLLMImageName        // Use the built image tag
 	mockLLMConfig.ConfigFilePath = mockLLMConfigPath // DD-TEST-011 v2.0: Mount config file
 	// DD-AUTH-014: Platform-specific network (must match KA's network mode)
-	if runtime.GOOS == "linux" {
+	if runtime.GOOS == goosLinux {
 		mockLLMConfig.Network = "host" // Linux CI: Host network (KA will reach via 127.0.0.1)
 	} else {
 		mockLLMConfig.Network = "aianalysis_test_network" // macOS: Bridge network with container-to-container DNS
@@ -520,7 +524,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	err = os.MkdirAll(kaConfigDir, 0755)
 	Expect(err).ToNot(HaveOccurred())
 
-	useHostNetwork := runtime.GOOS == "linux"
+	useHostNetwork := runtime.GOOS == goosLinux
 	var llmEndpoint, dsURL string
 	if useHostNetwork {
 		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMConfig.Port)

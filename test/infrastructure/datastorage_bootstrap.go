@@ -165,24 +165,23 @@ type DSBootstrapInfra struct {
 //   - IMAGE_TAG: Image tag (e.g., "pr-123", "main-abc1234")
 //
 // Returns:
-//   - imageName: The local image name after tagging (same as input localImageName)
-//   - pulled: true if successfully pulled from registry, false otherwise
-//   - error: Only returns error if pull succeeded but tagging failed
+//   - imageName: The registry image name (empty if not pulled)
+//   - pulled: true if successfully pulled from registry, false otherwise (caller should build locally)
 //
 // Usage:
 //
-//	if imageName, pulled, _ := tryPullFromRegistry(ctx, "datastorage", localImageName, writer); pulled {
+//	if imageName, pulled := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
 //	    return imageName, nil // Use registry image
 //	}
 //	// Otherwise, fall through to local build
 //
 // Authority: CI/CD pipeline optimization for integration tests
-func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writer) (string, bool, error) {
+func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writer) (string, bool) {
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
 
 	if registry == "" || tag == "" {
-		return "", false, nil // Not configured, caller should build locally
+		return "", false // Not configured, caller should build locally
 	}
 
 	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
@@ -192,7 +191,7 @@ func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writ
 	if err != nil || !exists {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", err)
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
-		return "", false, nil
+		return "", false
 	}
 
 	_, _ = fmt.Fprintf(writer, "   📥 Pulling image from registry: %s\n", registryImage)
@@ -201,11 +200,11 @@ func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writ
 	pullCmd.Stderr = writer
 	if pullErr := pullCmd.Run(); pullErr != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Pull failed: %v, falling back to local build...\n", pullErr)
-		return "", false, nil
+		return "", false
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Image pulled from registry (skipping local build)\n")
 
-	return registryImage, true, nil
+	return registryImage, true
 }
 
 // BuildDataStorageImage builds the DataStorage Docker image for integration tests.
@@ -249,10 +248,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
 	// CI/CD Optimization: Try to pull from registry if configured
-	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
-		if err != nil {
-			return "", err // Tag failed after successful pull
-		}
+	if pulledImageName, pulled := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
 		return pulledImageName, nil // Use registry image
 	}
 
@@ -338,7 +334,7 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 
 	// Step 0: Build DataStorage image (can be parallelized in test suites)
 	_, _ = fmt.Fprintf(writer, "🔨 Building DataStorage image...\n")
-	imageName, err := BuildDataStorageImage(context.Background(), cfg.ServiceName, writer)
+	imageName, err := BuildDataStorageImage(ctx, cfg.ServiceName, writer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
@@ -463,10 +459,10 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	}
 
 	for _, container := range containers {
-		stopCmd := exec.Command("podman", "stop", container)
+		stopCmd := exec.CommandContext(context.Background(), "podman", "stop", container)
 		_ = stopCmd.Run() // Ignore errors
 
-		rmCmd := exec.Command("podman", "rm", container)
+		rmCmd := exec.CommandContext(context.Background(), "podman", "rm", container)
 		_ = rmCmd.Run() // Ignore errors
 	}
 
@@ -474,7 +470,7 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	// Base images (postgres, redis) are NOT removed - they're shared and cached
 	if infra.DataStorageImageName != "" {
 		_, _ = fmt.Fprintf(writer, "🗑️  Removing kubernaut-built DataStorage image: %s\n", infra.DataStorageImageName)
-		rmiCmd := exec.Command("podman", "rmi", infra.DataStorageImageName)
+		rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", infra.DataStorageImageName)
 		if err := rmiCmd.Run(); err != nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove image (may not exist): %v\n", err)
 		} else {
@@ -483,7 +479,7 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	}
 
 	// Remove network
-	networkCmd := exec.Command("podman", "network", "rm", infra.Network)
+	networkCmd := exec.CommandContext(context.Background(), "podman", "network", "rm", infra.Network)
 	_ = networkCmd.Run() // Ignore errors
 
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage Infrastructure stopped and cleaned up\n")
@@ -764,7 +760,11 @@ func waitForDSBootstrapHTTPHealth(ctx context.Context, infra *DSBootstrapInfra, 
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(infra.HealthURL + "/readyz")
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, infra.HealthURL+"/readyz", nil)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build health check request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			return nil

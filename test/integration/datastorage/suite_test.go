@@ -393,7 +393,7 @@ var _ = SynchronizedBeforeSuite(
 		// once the table itself was dropped, since etcd/CRDs are the sole
 		// source of truth for workflow/action-type data (DD-WORKFLOW-018).
 		GinkgoWriter.Println("🏷️  Seeding action types via direct CRD creation...")
-		Expect(infrastructure.SeedActionTypesViaCRD(kubeconfigPath, "kubernaut-workflows", GinkgoWriter)).
+		Expect(infrastructure.SeedActionTypesViaCRD(context.Background(), kubeconfigPath, "kubernaut-workflows", GinkgoWriter)).
 			To(Succeed(), "action type CRD seeding should succeed")
 		GinkgoWriter.Println("✅ Action types seeded (CRD)")
 
@@ -435,9 +435,9 @@ var _ = SynchronizedBeforeSuite(
 		// Each parallel process needs these vars for tests that create their own
 		// connections (e.g., graceful shutdown tests)
 		if os.Getenv("POSTGRES_HOST") == "" {
-			_ = os.Setenv("POSTGRES_HOST", "localhost")
+			_ = os.Setenv("POSTGRES_HOST", localhost)
 			_ = os.Setenv("POSTGRES_PORT", "15433") // Mapped port from container (DD-TEST-001)
-			_ = os.Setenv("REDIS_HOST", "localhost")
+			_ = os.Setenv("REDIS_HOST", localhost)
 			_ = os.Setenv("REDIS_PORT", "16379") // DD-TEST-001
 			GinkgoWriter.Printf("📌 [Process %d] Exported environment variables for test infrastructure\n", processNum)
 		}
@@ -760,10 +760,13 @@ func startRedis() {
 	GinkgoWriter.Println("⏳ Waiting for Redis to be ready...")
 
 	Eventually(func() error {
-		testCmd := exec.Command("podman", "exec", redisContainer, "redis-cli", "ping")
+		testCmd := exec.CommandContext(context.Background(), "podman", "exec", redisContainer, "redis-cli", "ping")
 		output, err := testCmd.CombinedOutput()
-		if err != nil || string(output) != "PONG\n" {
-			return fmt.Errorf("Redis not ready: %v", err)
+		if err != nil {
+			return fmt.Errorf("redis not ready: %w", err)
+		}
+		if string(output) != "PONG\n" {
+			return fmt.Errorf("redis not ready: unexpected output %q", string(output))
 		}
 		return nil
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
@@ -777,7 +780,7 @@ func startRedis() {
 func mustConnectPostgreSQL() *sqlx.DB {
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
-		host = "localhost"
+		host = localhost
 	}
 	port := os.Getenv("POSTGRES_PORT")
 	if port == "" {
@@ -807,7 +810,7 @@ func connectPostgreSQL() {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
-		host = "localhost"
+		host = localhost
 	}
 	port := os.Getenv("POSTGRES_PORT")
 	if port == "" {
@@ -839,7 +842,7 @@ func connectRedis() {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("REDIS_HOST")
 	if host == "" {
-		host = "localhost"
+		host = localhost
 	}
 	port := os.Getenv("REDIS_PORT")
 	if port == "" {

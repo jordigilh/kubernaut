@@ -19,7 +19,6 @@ package workflow
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -59,14 +58,7 @@ var ErrNotFound = errors.New("workflow not found")
 // DD-WORKFLOW-002 v3.0: workflow_id is the sole UUID primary key.
 // Returns ErrNotFound (wrapped with the queried ID) if no workflow exists.
 func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error) {
-	wf, err := r.getByIDFromCache(ctx, workflowID)
-	if err != nil {
-		return nil, err
-	}
-	if wf == nil {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
-	}
-	return wf, nil
+	return r.getByIDFromCache(ctx, workflowID)
 }
 
 // List retrieves workflows with optional filtering and pagination from the

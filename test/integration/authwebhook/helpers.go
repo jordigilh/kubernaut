@@ -85,7 +85,7 @@ func createActiveActionTypeCRD(
 	// metadata.name must be a lowercase DNS-1123 label; callers often reuse
 	// the same (PascalCase) string for both, so normalize the object name here
 	// rather than pushing this K8s-naming detail onto every call site.
-	at.ObjectMeta.Name = strings.ToLower(at.ObjectMeta.Name)
+	at.Name = strings.ToLower(at.Name)
 
 	Expect(k8sClient.Create(ctx, at)).To(Succeed(), "ActionType CRD creation should succeed")
 

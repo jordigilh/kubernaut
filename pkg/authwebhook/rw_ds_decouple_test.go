@@ -74,7 +74,7 @@ var _ = Describe("UT-AW-360: AW removes the DS round-trip entirely for Remediati
 
 		Eventually(func() string {
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			if err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "ds-decouple-create"), updated); err != nil {
+			if err := fakeK8s.Get(ctx, fakeK8sKey("ds-decouple-create"), updated); err != nil {
 				return ""
 			}
 			return updated.Status.WorkflowID
@@ -82,7 +82,7 @@ var _ = Describe("UT-AW-360: AW removes the DS round-trip entirely for Remediati
 			"BUSINESS VALUE: .status.workflowId must be patched from AW's own local computation, never from a DS response")
 
 		updated := &rwv1alpha1.RemediationWorkflow{}
-		Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "ds-decouple-create"), updated)).To(Succeed())
+		Expect(fakeK8s.Get(ctx, fakeK8sKey("ds-decouple-create"), updated)).To(Succeed())
 		Expect(updated.Status.ContentHash).To(Equal(expectedHash),
 			"BUSINESS VALUE: .status.contentHash must be patched locally so AW never needs a DS round-trip to know its own content hash")
 		Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive),
@@ -101,7 +101,7 @@ var _ = Describe("UT-AW-360: AW removes the DS round-trip entirely for Remediati
 		expectedID := expectedLocalWorkflowID(mockAudit)
 		Eventually(func() string {
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			if err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "ds-decouple-update"), updated); err != nil {
+			if err := fakeK8s.Get(ctx, fakeK8sKey("ds-decouple-update"), updated); err != nil {
 				return ""
 			}
 			return updated.Status.WorkflowID
@@ -109,7 +109,7 @@ var _ = Describe("UT-AW-360: AW removes the DS round-trip entirely for Remediati
 	})
 
 	It("DELETE emits the audit event and allows deletion with zero DS calls", func() {
-		rw := buildRemediationWorkflowWithStatus("ds-decouple-delete", "kubernaut-system", "existing-workflow-id")
+		rw := buildRemediationWorkflowWithStatus("ds-decouple-delete", "existing-workflow-id")
 		handler := authwebhook.NewRemediationWorkflowHandler(failingMockDS, mockAudit, nil)
 
 		admReq := buildDeleteAdmissionRequest(rw)

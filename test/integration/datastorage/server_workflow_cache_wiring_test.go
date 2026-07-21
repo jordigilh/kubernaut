@@ -49,7 +49,7 @@ var _ = Describe("IT-DS-1661-P29 Server wiring: workflow cache", Label("integrat
 	buildServerDeps := func(extra server.ServerDeps) server.ServerDeps {
 		pgHost := os.Getenv("POSTGRES_HOST")
 		if pgHost == "" {
-			pgHost = "localhost"
+			pgHost = localhost
 		}
 		pgPort := os.Getenv("POSTGRES_PORT")
 		if pgPort == "" {
@@ -62,7 +62,7 @@ var _ = Describe("IT-DS-1661-P29 Server wiring: workflow cache", Label("integrat
 
 		redisHost := os.Getenv("REDIS_HOST")
 		if redisHost == "" {
-			redisHost = "localhost"
+			redisHost = localhost
 		}
 		redisPort := os.Getenv("REDIS_PORT")
 		if redisPort == "" {

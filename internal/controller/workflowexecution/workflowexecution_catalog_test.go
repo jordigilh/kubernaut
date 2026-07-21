@@ -75,7 +75,7 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 	})
 
 	It("UT-WE-1661-001: sets Status.ExecutionEngine/ServiceAccountName/Resources from WorkflowRef", func() {
-		_, err := r.resolveWorkflowCatalog(ctx, wfe)
+		err := r.resolveWorkflowCatalog(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(wfe.Status.ExecutionEngine).To(Equal("job"),
@@ -89,7 +89,7 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 		originalDigest := wfe.Spec.WorkflowRef.ExecutionBundleDigest
 		originalEngineConfig := wfe.Spec.WorkflowRef.EngineConfig
 
-		_, err := r.resolveWorkflowCatalog(ctx, wfe)
+		err := r.resolveWorkflowCatalog(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
 
 		// #1661 Change 11e: the WorkflowRef is RO's already-validated,
@@ -109,7 +109,7 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 		// captured in the Postgres audit_events ledger (IT-AW-1111-001), which is
 		// sufficient for SOC2 CC8.1 reconstruction. A fast-follow issue tracks
 		// wiring these end-to-end for audit readability if ever prioritized.
-		_, err := r.resolveWorkflowCatalog(ctx, wfe)
+		err := r.resolveWorkflowCatalog(ctx, wfe)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(wfe.Status.WorkflowName).To(BeEmpty())
@@ -119,7 +119,7 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 	It("UT-WE-1661-004: is idempotent -- returns ErrAlreadyResolved (Issue #1674 sentinel) without touching Status.ExecutionEngine", func() {
 		wfe.Status.ExecutionEngine = "already-resolved"
 
-		_, err := r.resolveWorkflowCatalog(ctx, wfe)
+		err := r.resolveWorkflowCatalog(ctx, wfe)
 		Expect(errors.Is(err, ErrAlreadyResolved)).To(BeTrue())
 
 		Expect(wfe.Status.ExecutionEngine).To(Equal("already-resolved"))

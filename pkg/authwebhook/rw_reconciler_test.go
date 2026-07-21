@@ -44,11 +44,11 @@ func newTestScheme() *runtime.Scheme {
 	return s
 }
 
-func buildRWForReconciler(name, namespace, workflowID, actionType string) *rwv1alpha1.RemediationWorkflow {
+func buildRWForReconciler(name, workflowID string) *rwv1alpha1.RemediationWorkflow {
 	rw := &rwv1alpha1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: "default",
 		},
 		Spec: rwv1alpha1.RemediationWorkflowSpec{
 			Version: "1.0.0",
@@ -56,7 +56,7 @@ func buildRWForReconciler(name, namespace, workflowID, actionType string) *rwv1a
 				What:      "Unit test workflow",
 				WhenToUse: "During unit tests",
 			},
-			ActionType: actionType,
+			ActionType: testActionTypeRestartPod,
 			Labels: rwv1alpha1.RemediationWorkflowLabels{
 				Severity:    []string{"critical"},
 				Environment: []string{"production"},
@@ -116,7 +116,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	// ========================================
 	Describe("UT-AW-418-001: Finalizer added to new RW", func() {
 		It("should add the catalog-cleanup finalizer so RW cannot be silently deleted", func() {
-			rw := buildRWForReconciler("rw-001", "default", "uuid-001", "RestartPod")
+			rw := buildRWForReconciler("rw-001", "uuid-001")
 			scheme := newTestScheme()
 
 			fakeClient := fake.NewClientBuilder().
@@ -157,7 +157,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 			// remaining job (verified by UT-AW-418-005/006 below) is the
 			// ActionType activeWorkflowCount refresh.
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-002", "default", "uuid-002", "RestartPod")
+			rw := buildRWForReconciler("rw-002", "uuid-002")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 			scheme := newTestScheme()
@@ -209,14 +209,14 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-005: AT activeWorkflowCount refreshed from live K8s state after deletion", func() {
 		It("should update the parent AT's activeWorkflowCount to the number of remaining live RemediationWorkflow CRDs, with zero DS calls", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-005", "default", "uuid-005", "RestartPod")
+			rw := buildRWForReconciler("rw-005", "uuid-005")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 
 			// A second, unrelated live RW referencing the same ActionType
 			// proves the count reflects "what remains in K8s", not a stale
 			// DS-side number.
-			otherRW := buildRWForReconciler("rw-005-other", "default", "uuid-005-other", "RestartPod")
+			otherRW := buildRWForReconciler("rw-005-other", "uuid-005-other")
 
 			at := buildATForReconciler("restart-pod", "default", "RestartPod", 2)
 			scheme := newTestScheme()
@@ -254,7 +254,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-006: AT count refresh failure does not block finalizer removal", func() {
 		It("should remove finalizer even when the K8s-native AT count refresh fails", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-006", "default", "uuid-006", "RestartPod")
+			rw := buildRWForReconciler("rw-006", "uuid-006")
 			rw.DeletionTimestamp = &now
 			rw.Finalizers = []string{authwebhook.RWFinalizerName}
 			scheme := newTestScheme()
@@ -326,7 +326,7 @@ var _ = Describe("RemediationWorkflow Finalizer Reconciler (#418)", func() {
 	Describe("UT-AW-418-NOFINALIZER: Deletion without catalog-cleanup finalizer is no-op", func() {
 		It("should return empty result without DS call when our finalizer is absent", func() {
 			now := metav1.Now()
-			rw := buildRWForReconciler("rw-nofin", "default", "uuid-nofin", "RestartPod")
+			rw := buildRWForReconciler("rw-nofin", "uuid-nofin")
 			rw.DeletionTimestamp = &now
 			// Different finalizer (not ours) — required for fake client to accept DeletionTimestamp
 			rw.Finalizers = []string{"some.other.io/finalizer"}

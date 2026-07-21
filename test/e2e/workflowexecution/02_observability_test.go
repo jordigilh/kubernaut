@@ -296,7 +296,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
 
 			// Extract initial count (parse Prometheus format)
-			initialCompletedCount := extractMetricValue(initialMetricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted)
+			initialCompletedCount := extractMetricValue(initialMetricsBody, wemetrics.LabelOutcomeCompleted)
 			GinkgoWriter.Printf("Initial %s{outcome=%s}: %.0f\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted, initialCompletedCount)
 
 			// Run a workflow that will complete successfully
@@ -332,7 +332,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				body, _ := io.ReadAll(resp.Body)
 				metricsBody := string(body)
 
-				currentCount := extractMetricValue(metricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted)
+				currentCount := extractMetricValue(metricsBody, wemetrics.LabelOutcomeCompleted)
 				GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted, currentCount, initialCompletedCount)
 
 				return currentCount > initialCompletedCount
@@ -366,7 +366,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
 
 			// Extract initial count
-			initialFailedCount := extractMetricValue(initialMetricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
+			initialFailedCount := extractMetricValue(initialMetricsBody, wemetrics.LabelOutcomeFailed)
 			GinkgoWriter.Printf("Initial %s{outcome=%s}: %.0f\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, initialFailedCount)
 
 			// Run a workflow that intentionally fails (tekton-bundles/failing exits non-zero)
@@ -430,7 +430,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 				body, _ := io.ReadAll(resp.Body)
 				metricsBody := string(body)
 
-				currentCount := extractMetricValue(metricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
+				currentCount := extractMetricValue(metricsBody, wemetrics.LabelOutcomeFailed)
 				GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, currentCount, initialFailedCount)
 
 				return currentCount > initialFailedCount
@@ -962,9 +962,10 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 	})
 })
 
-// extractMetricValue parses Prometheus metrics format and extracts the value for a specific metric and label
+// extractMetricValue parses Prometheus metrics format and extracts the value for a specific label
+// of the workflowexecution execution-total metric.
 // Example: workflowexecution_total{outcome="Completed"} 5.0
-func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
+func extractMetricValue(metricsBody, outcomeLabel string) float64 {
 	// Parse Prometheus text format
 	// Look for lines like: workflowexecution_total{outcome="Completed"} 5.0
 	lines := strings.Split(metricsBody, "\n")
@@ -976,7 +977,7 @@ func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
 		}
 
 		// Check if this line is for our metric
-		if !strings.HasPrefix(line, metricName) {
+		if !strings.HasPrefix(line, wemetrics.MetricNameExecutionTotal) {
 			continue
 		}
 

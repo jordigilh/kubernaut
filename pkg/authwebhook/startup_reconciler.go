@@ -80,19 +80,13 @@ func (r *StartupReconciler) NeedLeaderElection() bool {
 func (r *StartupReconciler) Start(ctx context.Context) error {
 	logger := r.Logger.WithName("startup-reconciler")
 
-	if r.InitialBackoff == 0 {
-		r.InitialBackoff = 500 * time.Millisecond
-	}
-
-	deadline := time.Now().Add(r.Timeout)
-
 	// Phase 1: Sync ActionType CRDs (must complete before workflows)
-	if err := r.syncActionTypes(ctx, logger, deadline); err != nil {
+	if err := r.syncActionTypes(ctx, logger); err != nil {
 		return fmt.Errorf("startup reconciliation failed (ActionTypes): %w", err)
 	}
 
 	// Phase 2: Sync RemediationWorkflow CRDs
-	if err := r.syncWorkflows(ctx, logger, deadline); err != nil {
+	if err := r.syncWorkflows(ctx, logger); err != nil {
 		return fmt.Errorf("startup reconciliation failed (Workflows): %w", err)
 	}
 
@@ -100,7 +94,7 @@ func (r *StartupReconciler) Start(ctx context.Context) error {
 	return nil
 }
 
-func (r *StartupReconciler) syncActionTypes(ctx context.Context, logger logr.Logger, deadline time.Time) error {
+func (r *StartupReconciler) syncActionTypes(ctx context.Context, logger logr.Logger) error {
 	var atList atv1alpha1.ActionTypeList
 	if err := r.K8sClient.List(ctx, &atList); err != nil {
 		return fmt.Errorf("failed to list ActionType CRDs: %w", err)
@@ -165,7 +159,7 @@ func (r *StartupReconciler) syncActionTypeCRD(ctx context.Context, logger logr.L
 	return nil
 }
 
-func (r *StartupReconciler) syncWorkflows(ctx context.Context, logger logr.Logger, deadline time.Time) error {
+func (r *StartupReconciler) syncWorkflows(ctx context.Context, logger logr.Logger) error {
 	var rwList rwv1alpha1.RemediationWorkflowList
 	if err := r.K8sClient.List(ctx, &rwList); err != nil {
 		return fmt.Errorf("failed to list RemediationWorkflow CRDs: %w", err)

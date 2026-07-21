@@ -74,7 +74,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			ImageName:        "kubernautagent",
 			DockerfilePath:   "docker/kubernautagent.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
 		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
@@ -207,7 +207,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// removed (DD-WORKFLOW-018); action types are now seeded exclusively as CRDs for
 	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
 	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
-	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types (CRD): %w", err)
 	}
 
@@ -237,7 +237,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// CR creation with "no matches for kubernaut.ai/v1alpha1".
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📋 PHASE 5.5: Installing CRDs for interactive tests (#703)...")
-	if err := installKAE2ECRDs(kubeconfigPath, writer); err != nil {
+	if err := installKAE2ECRDs(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to install CRDs: %w", err)
 	}
 
@@ -314,7 +314,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 // installKAE2ECRDs installs the Kubernaut CRDs required by interactive E2E tests.
 // The RemediationRequest CRD is mandatory for createTestRemediationRequest() which
 // provisions RR fixtures so the RRExistenceChecker (HARM-004) allows sessions to start.
-func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
+func installKAE2ECRDs(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	crdFiles := []string{
 		"kubernaut.ai_remediationrequests.yaml",
@@ -322,7 +322,7 @@ func installKAE2ECRDs(kubeconfigPath string, writer io.Writer) error {
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
 		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
-		crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 		crdCmd.Stdout = writer
 		crdCmd.Stderr = writer
 		if err := crdCmd.Run(); err != nil {
@@ -1059,7 +1059,7 @@ spec:
     app: kubernaut-agent
 `, namespace, namespace, namespace, jwtConfigSection, namespace, namespace, imageTag, imagePullPolicy, covEnv, covMount, covVol, namespace)
 
-	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -1071,7 +1071,7 @@ spec:
 
 	// Wait for pod readiness
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Kubernaut Agent pod to be ready...")
-	waitCmd := exec.Command("kubectl", "rollout", "status", "deployment/kubernaut-agent",
+	waitCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status", "deployment/kubernaut-agent",
 		"-n", namespace, "--kubeconfig", kubeconfigPath, "--timeout=120s")
 	waitCmd.Stdout = writer
 	waitCmd.Stderr = writer

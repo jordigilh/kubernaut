@@ -162,7 +162,7 @@ func TeardownIsolatedDataStorageInstance(ctx context.Context, namespace, kubecon
 		_, _ = fmt.Fprintf(writer, "   ⚠️  failed to delete ClusterRole %s: %v\n", resilienceClusterRoleName, err)
 	}
 
-	if err := CleanupDataStorageTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := CleanupDataStorageTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to delete isolated namespace: %w", err)
 	}
 

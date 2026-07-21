@@ -174,7 +174,7 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	// failure path. The marshaled content itself is only an intermediate input
 	// to the hash below -- Change 8c removed the DS call that used to consume
 	// it directly.
-	_, contentHash, err := computeRWContentHash(rw)
+	contentHash, err := computeRWContentHash(rw)
 	if err != nil {
 		logger.Error(err, "Failed to marshal CRD content for DS")
 		h.emitDeniedAudit(ctx, req, "marshal failed", &rw.Spec, "")
@@ -295,15 +295,15 @@ func validateContentIntegrity(operation string, oldObjectRaw []byte, newVersion,
 	if err := json.Unmarshal(oldObjectRaw, oldRW); err != nil {
 		// Best-effort: an unparsable OldObject shouldn't block the update --
 		// the ActionType/DS checks around this one already guard correctness.
-		return nil
+		return nil //nolint:nilerr // intentional fail-open, see comment above
 	}
 	if oldRW.Spec.Version != newVersion {
 		return nil
 	}
 
-	_, oldHash, err := computeRWContentHash(oldRW)
+	oldHash, err := computeRWContentHash(oldRW)
 	if err != nil {
-		return nil
+		return nil //nolint:nilerr // best-effort check: an unmarshalable OldObject shouldn't block the update (see comment above)
 	}
 	if oldHash == newContentHash {
 		return nil
@@ -529,10 +529,10 @@ func (h *RemediationWorkflowHandler) updateATWorkflowCountWithRetry(ctx context.
 // step. Shared by registerWorkflow (new object) and validateContentIntegrity
 // (old object, #1661 Change 8b REFACTOR) so both compute the hash the exact
 // same way with no duplicated marshal+hash call sites.
-func computeRWContentHash(rw *rwv1alpha1.RemediationWorkflow) ([]byte, string, error) {
+func computeRWContentHash(rw *rwv1alpha1.RemediationWorkflow) (string, error) {
 	content, err := contenthash.MarshalCleanCRDContent(rw)
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
-	return content, contenthash.ComputeContentHash(string(content)), nil
+	return contenthash.ComputeContentHash(string(content)), nil
 }

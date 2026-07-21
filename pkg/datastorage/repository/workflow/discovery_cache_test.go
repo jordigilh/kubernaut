@@ -47,7 +47,7 @@ func rawDetectedLabelsJSON(raw string) *apiextensionsv1.JSON {
 // RED: none of these symbols exist yet -- this file must fail to compile.
 // ========================================
 
-func rwFixture(name, contentHash string, severity []string) rwv1alpha1.RemediationWorkflow {
+func rwFixture(name string, severity []string) rwv1alpha1.RemediationWorkflow {
 	return rwv1alpha1.RemediationWorkflow{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: rwv1alpha1.RemediationWorkflowSpec{
@@ -63,8 +63,8 @@ func rwFixture(name, contentHash string, severity []string) rwv1alpha1.Remediati
 var _ = Describe("filterAndScoreCachedWorkflows (Issue #1661 Change 6)", func() {
 	It("UT-DS-1661-614-001: keeps only workflows matching the mandatory-label filters", func() {
 		workflows := []rwv1alpha1.RemediationWorkflow{
-			rwFixture("wf-critical", "hash1", []string{"critical"}),
-			rwFixture("wf-low", "hash2", []string{"low"}),
+			rwFixture("wf-critical", []string{"critical"}),
+			rwFixture("wf-low", []string{"low"}),
 		}
 		filters := &models.WorkflowDiscoveryFilters{Severity: "critical"}
 
@@ -76,8 +76,8 @@ var _ = Describe("filterAndScoreCachedWorkflows (Issue #1661 Change 6)", func() 
 
 	It("UT-DS-1661-614-002: nil filters matches every workflow (unconstrained discovery)", func() {
 		workflows := []rwv1alpha1.RemediationWorkflow{
-			rwFixture("wf-a", "hash1", nil),
-			rwFixture("wf-b", "hash2", nil),
+			rwFixture("wf-a", nil),
+			rwFixture("wf-b", nil),
 		}
 		got, err := filterAndScoreCachedWorkflows(workflows, nil)
 		Expect(err).ToNot(HaveOccurred())
@@ -86,9 +86,9 @@ var _ = Describe("filterAndScoreCachedWorkflows (Issue #1661 Change 6)", func() 
 
 	It("UT-DS-1661-614-003: sorts by final_score DESC, workflow_id ASC tiebreaker (mirrors selectScoredWorkflows ORDER BY)", func() {
 		gitOpsDetected := &models.DetectedLabels{GitOpsManaged: true}
-		wfNoBoost := rwFixture("wf-no-boost", "hash1", nil)
+		wfNoBoost := rwFixture("wf-no-boost", nil)
 		wfNoBoost.Status.WorkflowID = "zzz-no-boost"
-		wfBoosted := rwFixture("wf-boosted", "hash2", nil)
+		wfBoosted := rwFixture("wf-boosted", nil)
 		wfBoosted.Status.WorkflowID = "aaa-boosted"
 		wfBoosted.Spec.DetectedLabels = rawDetectedLabelsJSON(`{"gitOpsManaged":true}`)
 
@@ -100,7 +100,7 @@ var _ = Describe("filterAndScoreCachedWorkflows (Issue #1661 Change 6)", func() 
 	})
 
 	It("UT-DS-1661-614-004: propagates a converter error (e.g. malformed detectedLabels JSON) instead of silently dropping the workflow", func() {
-		malformed := rwFixture("wf-malformed", "hash1", nil)
+		malformed := rwFixture("wf-malformed", nil)
 		malformed.Spec.DetectedLabels = rawDetectedLabelsJSON(`{not-json`)
 
 		_, err := filterAndScoreCachedWorkflows([]rwv1alpha1.RemediationWorkflow{malformed}, nil)

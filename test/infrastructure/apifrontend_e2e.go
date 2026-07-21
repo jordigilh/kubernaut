@@ -47,7 +47,7 @@ const (
 	// AFDefaultClusterName is the Kind cluster name for apifrontend E2E tests.
 	AFDefaultClusterName = "apifrontend-e2e"
 	// AFDefaultNamespace is the Kubernetes namespace for AF E2E workloads.
-	AFDefaultNamespace = "kubernaut-system"
+	AFDefaultNamespace = kubernautSystem
 )
 
 // SetupAPIFrontendE2EInfrastructure is the top-level orchestrator for AF E2E tests.
@@ -116,7 +116,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 
 	// DD-TEST-007: AF is always built locally with GOFLAGS=-cover
 	go func() {
-		img, err := BuildAFImage(writer)
+		img, err := BuildAFImage(ctx, writer)
 		results <- buildResult{"apifrontend", img, err}
 	}()
 
@@ -195,7 +195,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Deploying mock-LLM...")
-	if err := afDeployMockLLM(ctx, kubeconfigPath, namespace, images["mock-llm"], writer); err != nil {
+	if err := afDeployMockLLM(ctx, kubeconfigPath, images["mock-llm"], writer); err != nil {
 		return fmt.Errorf("mock-LLM deploy failed: %w", err)
 	}
 
@@ -209,7 +209,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	}
 
 	certDir := filepath.Join(os.TempDir(), "apifrontend-e2e-certs")
-	if err := AFGenerateCerts(certDir, writer); err != nil {
+	if err := AFGenerateCerts(ctx, certDir, writer); err != nil {
 		return fmt.Errorf("failed to generate AF certs: %w", err)
 	}
 	if err := AFCreateTLSSecrets(ctx, kubeconfigPath, namespace, certDir, writer); err != nil {
@@ -243,7 +243,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
 	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
 	var seedErr error
-	if seedErr = SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); seedErr != nil {
+	if seedErr = SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); seedErr != nil {
 		return fmt.Errorf("seed action types (CRD): %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
@@ -291,21 +291,21 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 
 // BuildAFImage builds the apifrontend container image locally with coverage
 // instrumentation (GOFLAGS=-cover).
-func BuildAFImage(writer io.Writer) (string, error) {
+func BuildAFImage(ctx context.Context, writer io.Writer) (string, error) {
 	cfg := E2EImageConfig{
 		ServiceName:    "apifrontend",
 		ImageName:      "apifrontend",
 		DockerfilePath: "docker/apifrontend.Dockerfile",
 		EnableCoverage: true,
 	}
-	return BuildImageForKind(context.Background(), cfg, writer)
+	return BuildImageForKind(ctx, cfg, writer)
 }
 
 // AFGenerateCerts runs the AF cert generation script.
-func AFGenerateCerts(certDir string, writer io.Writer) error {
+func AFGenerateCerts(ctx context.Context, certDir string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	script := projectRoot + "/deploy/apifrontend/overlays/e2e/generate-certs.sh"
-	cmd := exec.Command("bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
+	cmd := exec.CommandContext(ctx, "bash", script, certDir) //nolint:gosec // G204: test infra, script path from project root
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -384,7 +384,7 @@ func CollectAFE2EBinaryCoverage(clusterName string, writer io.Writer) error {
 		ServiceName:    "apifrontend",
 		ClusterName:    clusterName,
 		DeploymentName: "apifrontend",
-		Namespace:      "kubernaut-system",
+		Namespace:      kubernautSystem,
 		KubeconfigPath: kcPath,
 	}, writer)
 }
@@ -675,7 +675,7 @@ subjects:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
-func afDeployMockLLM(ctx context.Context, kubeconfigPath, namespace, mockLLMImage string, writer io.Writer) error {
+func afDeployMockLLM(ctx context.Context, kubeconfigPath, mockLLMImage string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	mockLLMManifest := filepath.Join(projectRoot, "deploy", "apifrontend", "overlays", "e2e", "mock-llm.yaml")
 

@@ -40,6 +40,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+const testActionTypeRestartPod = "RestartPod"
+
 // ========================================
 // ActionType Test Helpers
 // ========================================
@@ -159,7 +161,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-001: CREATE registers new ActionType locally", func() {
 		It("should return Allowed and audit the spec fields with zero DS calls", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 
 			resp := handler.Handle(ctx, buildATCreateAdmissionRequest(at))
 
@@ -169,7 +171,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 			Expect(mockAudit.StoredEvents).To(HaveLen(1))
 			payload, ok := mockAudit.StoredEvents[0].EventData.GetActionTypeWebhookAuditPayload()
 			Expect(ok).To(BeTrue())
-			Expect(payload.ActionTypeName).To(Equal("RestartPod"),
+			Expect(payload.ActionTypeName).To(Equal(testActionTypeRestartPod),
 				"audit should capture the spec.name")
 		})
 	})
@@ -180,7 +182,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-003: CREATE always reports previouslyExisted=false", func() {
 		It("should return Allowed and reset status.previouslyExisted to false even for a CRD previously marked Disabled", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			// Simulate a CRD that carries stale status from a prior local-only
 			// disable/re-create cycle -- there is no DS-side "re-enable" signal
 			// left to distinguish this from a brand-new registration
@@ -222,8 +224,8 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-004: UPDATE description change generates audit", func() {
 		It("should return Allowed and audit the updated description with zero DS calls", func() {
-			oldAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
-			newAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			oldAT := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
+			newAT := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			newAT.Spec.Description.What = "Gracefully restart one or more pods with rolling strategy."
 
 			resp := handler.Handle(ctx, buildATUpdateAdmissionRequest(oldAT, newAT))
@@ -239,7 +241,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 
 			payload, ok := event.EventData.GetActionTypeWebhookAuditPayload()
 			Expect(ok).To(BeTrue())
-			Expect(payload.ActionTypeName).To(Equal("RestartPod"))
+			Expect(payload.ActionTypeName).To(Equal(testActionTypeRestartPod))
 		})
 	})
 
@@ -249,7 +251,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-005: UPDATE spec.name change is denied by webhook", func() {
 		It("should return Denied when spec.name is changed", func() {
-			oldAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			oldAT := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			newAT := buildActionType("restart-pod", "GracefulRestart", "kubernaut-system")
 
 			resp := handler.Handle(ctx, buildATUpdateAdmissionRequest(oldAT, newAT))
@@ -258,7 +260,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 				"UPDATE should be Denied when spec.name changes")
 			Expect(resp.Result.Message).To(ContainSubstring("immutable"),
 				"Denial message should explain that spec.name is immutable")
-			Expect(resp.Result.Message).To(ContainSubstring("RestartPod"))
+			Expect(resp.Result.Message).To(ContainSubstring(testActionTypeRestartPod))
 			Expect(resp.Result.Message).To(ContainSubstring("GracefulRestart"))
 
 			Expect(mockAudit.StoredEvents).To(HaveLen(1),
@@ -275,7 +277,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-006: DELETE with no dependent workflows soft-disables", func() {
 		It("should return Allowed when the K8s-native dependents list is empty, with zero DS calls", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 
 			resp := handler.Handle(ctx, buildATDeleteAdmissionRequest(at))
 
@@ -296,13 +298,13 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-007: DELETE denied with N dependent workflows", func() {
 		It("should return Denied with count and workflow names when live RemediationWorkflow CRDs depend on it", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			wf1 := buildRemediationWorkflow("restart-pod-graceful", "kubernaut-system")
-			wf1.Spec.ActionType = "RestartPod"
+			wf1.Spec.ActionType = testActionTypeRestartPod
 			wf2 := buildRemediationWorkflow("restart-pod-force", "kubernaut-system")
-			wf2.Spec.ActionType = "RestartPod"
+			wf2.Spec.ActionType = testActionTypeRestartPod
 			wf3 := buildRemediationWorkflow("restart-pod-canary", "kubernaut-system")
-			wf3.Spec.ActionType = "RestartPod"
+			wf3.Spec.ActionType = testActionTypeRestartPod
 
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().
@@ -351,7 +353,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-008: CREATE audit event payload contains all required fields", func() {
 		It("should emit actiontype.admitted.create with correct payload structure", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 
 			resp := handler.Handle(ctx, buildATCreateAdmissionRequest(at))
 			Expect(resp.Allowed).To(BeTrue())
@@ -368,7 +370,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 
 			payload, ok := event.EventData.GetActionTypeWebhookAuditPayload()
 			Expect(ok).To(BeTrue(), "EventData should contain ActionTypeWebhookAuditPayload")
-			Expect(payload.ActionTypeName).To(Equal("RestartPod"))
+			Expect(payload.ActionTypeName).To(Equal(testActionTypeRestartPod))
 			Expect(payload.CrdName).To(Equal("restart-pod"))
 			Expect(payload.CrdNamespace).To(Equal("kubernaut-system"))
 			Expect(payload.Action).To(Equal(ogenclient.ActionTypeWebhookAuditPayloadActionCreate))
@@ -381,8 +383,8 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-009: UPDATE audit event contains correct payload", func() {
 		It("should emit actiontype.admitted.update with action=update", func() {
-			oldAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
-			newAT := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			oldAT := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
+			newAT := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			newAT.Spec.Description.What = "Updated description."
 
 			resp := handler.Handle(ctx, buildATUpdateAdmissionRequest(oldAT, newAT))
@@ -395,7 +397,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 
 			payload, ok := event.EventData.GetActionTypeWebhookAuditPayload()
 			Expect(ok).To(BeTrue())
-			Expect(payload.ActionTypeName).To(Equal("RestartPod"))
+			Expect(payload.ActionTypeName).To(Equal(testActionTypeRestartPod))
 			Expect(payload.Action).To(Equal(ogenclient.ActionTypeWebhookAuditPayloadActionUpdate))
 		})
 	})
@@ -406,11 +408,11 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-300-010: Disable denied audit event contains denial details", func() {
 		It("should emit actiontype.denied.delete with denial reason and operation", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			wfAlpha := buildRemediationWorkflow("wf-alpha", "kubernaut-system")
-			wfAlpha.Spec.ActionType = "RestartPod"
+			wfAlpha.Spec.ActionType = testActionTypeRestartPod
 			wfBeta := buildRemediationWorkflow("wf-beta", "kubernaut-system")
-			wfBeta.Spec.ActionType = "RestartPod"
+			wfBeta.Spec.ActionType = testActionTypeRestartPod
 
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().
@@ -441,7 +443,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UPDATE with no description change is allowed without DS call", func() {
 		It("should allow UPDATE without calling DS when descriptions are identical", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 
 			resp := handler.Handle(ctx, buildATUpdateAdmissionRequest(at, at))
 
@@ -459,7 +461,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("DELETE denied when the K8s dependents list fails", func() {
 		It("should return Denied when listing RemediationWorkflow CRDs errors (fail-closed)", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			scheme := newATScheme()
 			erroringK8s := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -490,7 +492,7 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("CREATE updates CRD status asynchronously", func() {
 		It("should populate .status from the local registration computation via k8sClient.Status().Update()", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -530,9 +532,9 @@ var _ = Describe("ActionType Admission Handler (#300)", func() {
 	// ========================================
 	Describe("UT-AT-512-002: DELETE denied when live RWs exist in K8s", func() {
 		It("should return Denied when a live RemediationWorkflow CRD depends on the ActionType, with zero DS calls", func() {
-			at := buildActionType("restart-pod", "RestartPod", "kubernaut-system")
+			at := buildActionType("restart-pod", testActionTypeRestartPod, "kubernaut-system")
 			rw := buildRemediationWorkflow("live-wf", "kubernaut-system")
-			rw.Spec.ActionType = "RestartPod"
+			rw.Spec.ActionType = testActionTypeRestartPod
 
 			scheme := newATScheme()
 			fakeK8s := fake.NewClientBuilder().

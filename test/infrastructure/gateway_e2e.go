@@ -86,7 +86,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	_, _ = fmt.Fprintln(writer, "  Authority: E2E_PATTERN_PERFORMANCE_ANALYSIS_JAN07.md")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// DD-TEST-007: Create coverdata directory BEFORE cluster creation if coverage enabled
 	if enableCoverage {
@@ -180,14 +180,14 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Create Kind cluster
 	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster...")
-	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createGatewayKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// Install RemediationRequest CRD
 	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml"
-	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
 	crdCmd.Stderr = writer
 	if err := crdCmd.Run(); err != nil {
@@ -221,7 +221,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Goroutine 1: Load Gateway image (FIXED: Now uses split API!)
 	go func() {
-		err := loadGatewayImageToKind(gatewayImageName, clusterName, writer)
+		err := loadGatewayImageToKind(ctx, gatewayImageName, clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("gateway image load failed: %w", err)
 		}
@@ -349,7 +349,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
 	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
 	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
-	if err := SeedActionTypesViaCRD(kubeconfigPath, namespace, writer); err != nil {
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -364,7 +364,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		// Pass the actual image name from BuildImageForKind (registry or local)
 		// to avoid image name mismatch when CI uses registry images
 		_, _ = fmt.Fprintf(writer, "   Using coverage-enabled Gateway deployment (image: %s)...\n", gatewayImageName)
-		if err := DeployGatewayCoverageManifest(kubeconfigPath, gatewayImageName, writer); err != nil {
+		if err := DeployGatewayCoverageManifest(ctx, kubeconfigPath, gatewayImageName, writer); err != nil {
 			return fmt.Errorf("failed to deploy Gateway with coverage: %w", err)
 		}
 	} else {
@@ -406,7 +406,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 // 3. Uses hostPath volume for coverage data collection
 //
 // Usage: Set E2E_COVERAGE=true environment variable
-func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+func CreateGatewayCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "Gateway E2E Cluster Setup")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -419,14 +419,14 @@ func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 
 	// 1. Create Kind cluster
 	_, _ = fmt.Fprintln(writer, "📦 Creating Kind cluster...")
-	if err := createGatewayKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createGatewayKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
 	// 2. Install RemediationRequest CRD (reuse from signalprocessing.go)
 	_, _ = fmt.Fprintln(writer, "📋 Installing RemediationRequest CRD...")
 	crdPath := getProjectRoot() + "/config/crd/bases/kubernaut.ai_remediationrequests.yaml" // Updated to new API group
-	crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+	crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 	crdCmd.Stdout = writer
 	crdCmd.Stderr = writer
 	if err := crdCmd.Run(); err != nil {
@@ -435,7 +435,7 @@ func CreateGatewayCluster(clusterName, kubeconfigPath string, writer io.Writer) 
 
 	// 3. Build and load Gateway Docker image
 	_, _ = fmt.Fprintln(writer, "🐳 Building Gateway Docker image...")
-	if err := buildAndLoadGatewayImage(clusterName, writer); err != nil {
+	if err := buildAndLoadGatewayImage(ctx, clusterName, writer); err != nil {
 		return fmt.Errorf("failed to build Gateway image: %w", err)
 	}
 
@@ -489,7 +489,7 @@ func DeleteGatewayCluster(clusterName, kubeconfigPath string, testsFailed bool, 
 
 // createGatewayKindCluster creates a Kind cluster for Gateway E2E tests
 // REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
-func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+func createGatewayKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:             clusterName,
 		KubeconfigPath:          kubeconfigPath,
@@ -500,16 +500,16 @@ func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writ
 		UsePodman:               true,
 		ProjectRootAsWorkingDir: true, // DD-TEST-007: For ./coverdata resolution
 	}
-	return CreateKindClusterWithConfig(context.Background(), opts, writer)
+	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
 // loadGatewayImageToKind loads a pre-built Gateway image to Kind cluster.
 // This is Phase 3 of the hybrid E2E pattern (load after cluster creation).
 //
 // Pattern: Load pre-built image using LoadImageToKind() helper
-func loadGatewayImageToKind(imageName, clusterName string, writer io.Writer) error {
+func loadGatewayImageToKind(ctx context.Context, imageName, clusterName string, writer io.Writer) error {
 	// Use the consolidated LoadImageToKind() helper
-	return LoadImageToKind(context.Background(), imageName, "gateway", clusterName, writer)
+	return LoadImageToKind(ctx, imageName, "gateway", clusterName, writer)
 }
 
 // buildAndLoadGatewayImage builds Gateway Docker image using shared build utilities and loads it into Kind
@@ -517,7 +517,7 @@ func loadGatewayImageToKind(imageName, clusterName string, writer io.Writer) err
 //
 // DEPRECATED for hybrid pattern: Use buildGatewayImageOnly() + loadGatewayImageToKind() instead
 // Still used by: standard pattern E2E tests (if any)
-func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
+func buildAndLoadGatewayImage(ctx context.Context, clusterName string, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 
 	// Use shared build utilities (DD-TEST-001 compliant)
@@ -529,7 +529,7 @@ func buildAndLoadGatewayImage(clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "   Building Gateway image via shared build utilities (DD-TEST-001)...")
 
 	buildScript := filepath.Join(projectRoot, "scripts", "build-service-image.sh")
-	buildCmd := exec.Command(buildScript,
+	buildCmd := exec.CommandContext(ctx, buildScript,
 		"gateway",
 		"--kind",
 		"--cluster", clusterName,
@@ -819,7 +819,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := gatewayRBACManifest()
-	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = strings.NewReader(rbacManifest)
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -832,7 +832,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := gatewayWorkloadManifest(gatewayImageName, false)
-	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = strings.NewReader(workloadManifest)
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer
@@ -841,7 +841,7 @@ func deployGatewayService(ctx context.Context, namespace, kubeconfigPath, gatewa
 	}
 
 	_, _ = fmt.Fprintln(writer, "   Waiting for Gateway pod (may take up to 5 minutes for RBAC + initial startup)...")
-	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=gateway",
 		"-n", namespace,
@@ -871,14 +871,14 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 	}
 
 	// Use unique image tag with coverage suffix
-	imageTag := "e2e-test-coverage"
+	imageTag := e2eTestCoverageTag
 	imageName := fmt.Sprintf("localhost/kubernaut-gateway:%s", imageTag)
 	_, _ = fmt.Fprintf(writer, "  📦 Building Gateway with coverage: %s\n", imageName)
 
 	// Build with GOFLAGS=-cover for E2E coverage
 	// Using go-toolset:1.26 (no dnf update) reduces build time from 10min to 2-3min
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
-	cmd := exec.Command(containerCmd, "build",
+	cmd := exec.CommandContext(context.Background(), containerCmd, "build",
 		"--no-cache", // Force fresh build to include latest code changes
 		"-t", imageName,
 		"-f", dockerfilePath,
@@ -893,7 +893,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 }
 
 func GetGatewayCoverageImageTag() string {
-	return "e2e-test-coverage"
+	return e2eTestCoverageTag
 }
 
 func GetGatewayCoverageFullImageName() string {
@@ -906,7 +906,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	imageName := GetGatewayCoverageFullImageName()
 
 	_, _ = fmt.Fprintf(writer, "  Saving coverage image to tar file: %s...\n", tmpFile)
-	saveCmd := exec.Command("podman", "save",
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save",
 		"-o", tmpFile,
 		imageName,
 	)
@@ -917,7 +917,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Loading coverage image into Kind...")
-	loadCmd := exec.Command("kind", "load", "image-archive",
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive",
 		tmpFile,
 		"--name", clusterName,
 	)
@@ -933,7 +933,7 @@ func LoadGatewayCoverageImage(clusterName string, writer io.Writer) error {
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintf(writer, "  🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -955,10 +955,10 @@ func GatewayCoverageManifest(imageName string) string {
 // DeployGatewayCoverageManifest deploys Gateway with coverage instrumentation.
 // Applies RBAC first, then workload after 2s propagation delay to avoid API race.
 // Uses the unified inline YAML template with coverage=true.
-func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName string, writer io.Writer) error {
+func DeployGatewayCoverageManifest(ctx context.Context, kubeconfigPath string, gatewayImageName string, writer io.Writer) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := gatewayRBACManifest()
-	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = strings.NewReader(rbacManifest)
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -971,7 +971,7 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName strin
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := gatewayWorkloadManifest(gatewayImageName, true)
-	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = strings.NewReader(workloadManifest)
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer
@@ -980,14 +980,14 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName strin
 	}
 
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for Gateway to be ready...")
-	return waitForGatewayHealth(kubeconfigPath, writer, 90*time.Second)
+	return waitForGatewayHealth(ctx, writer, 90*time.Second)
 }
 
 // waitForGatewayHealth waits for the Gateway service to become healthy.
 // Issue #753: Uses dedicated health port (8081) instead of the API port (8080).
-func waitForGatewayHealth(kubeconfigPath string, writer io.Writer, timeout time.Duration) error {
+func waitForGatewayHealth(ctx context.Context, writer io.Writer, timeout time.Duration) error {
 	healthURL := fmt.Sprintf("http://localhost:%d/readyz", GatewayE2EHealthPort)
-	return WaitForHTTPHealth(context.Background(), healthURL, timeout, writer)
+	return WaitForHTTPHealth(ctx, healthURL, timeout, writer)
 }
 
 // ScaleDownGatewayForCoverage is deprecated.

@@ -62,7 +62,7 @@ var _ = Describe("IT-DS-1661-PA5 ActionType workflow-count (cache-backed)", Labe
 	buildWorkflowCountServerDeps := func() server.ServerDeps {
 		pgHost := os.Getenv("POSTGRES_HOST")
 		if pgHost == "" {
-			pgHost = "localhost"
+			pgHost = localhost
 		}
 		pgPort := os.Getenv("POSTGRES_PORT")
 		if pgPort == "" {
@@ -75,7 +75,7 @@ var _ = Describe("IT-DS-1661-PA5 ActionType workflow-count (cache-backed)", Labe
 
 		redisHost := os.Getenv("REDIS_HOST")
 		if redisHost == "" {
-			redisHost = "localhost"
+			redisHost = localhost
 		}
 		redisPort := os.Getenv("REDIS_PORT")
 		if redisPort == "" {

@@ -60,7 +60,7 @@ var _ = Describe("IT-DS-1661-P52 ActionType CRD seeding (AuthWebhook-independent
 	buildActionTypeSeedServerDeps := func() server.ServerDeps {
 		pgHost := os.Getenv("POSTGRES_HOST")
 		if pgHost == "" {
-			pgHost = "localhost"
+			pgHost = localhost
 		}
 		pgPort := os.Getenv("POSTGRES_PORT")
 		if pgPort == "" {
@@ -73,7 +73,7 @@ var _ = Describe("IT-DS-1661-P52 ActionType CRD seeding (AuthWebhook-independent
 
 		redisHost := os.Getenv("REDIS_HOST")
 		if redisHost == "" {
-			redisHost = "localhost"
+			redisHost = localhost
 		}
 		redisPort := os.Getenv("REDIS_PORT")
 		if redisPort == "" {
@@ -129,7 +129,7 @@ var _ = Describe("IT-DS-1661-P52 ActionType CRD seeding (AuthWebhook-independent
 
 		// No AuthWebhook deployed anywhere in this suite -- proves the helper
 		// does not depend on AW admission to make action types discoverable.
-		Expect(infrastructure.SeedActionTypesViaCRD(kubeconfigPath, namespace, GinkgoWriter)).To(Succeed())
+		Expect(infrastructure.SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, GinkgoWriter)).To(Succeed())
 
 		Eventually(func() bool {
 			got, getErr := srv.WorkflowCache().GetActionType(ctx, "RestartPod")

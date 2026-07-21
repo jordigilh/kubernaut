@@ -130,8 +130,8 @@ func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWor
 	}
 }
 
-func buildRemediationWorkflowWithStatus(name, namespace, workflowID string) *rwv1alpha1.RemediationWorkflow {
-	rw := buildRemediationWorkflow(name, namespace)
+func buildRemediationWorkflowWithStatus(name, workflowID string) *rwv1alpha1.RemediationWorkflow {
+	rw := buildRemediationWorkflow(name, "kubernaut-system")
 	rw.Status = rwv1alpha1.RemediationWorkflowStatus{
 		WorkflowID:    workflowID,
 		CatalogStatus: sharedtypes.CatalogStatusActive,
@@ -209,8 +209,8 @@ func buildUpdateAdmissionRequest(rw *rwv1alpha1.RemediationWorkflow) admission.R
 	}
 }
 
-func fakeK8sKey(namespace, name string) types.NamespacedName {
-	return types.NamespacedName{Namespace: namespace, Name: name}
+func fakeK8sKey(name string) types.NamespacedName {
+	return types.NamespacedName{Namespace: "kubernaut-system", Name: name}
 }
 
 // expectedLocalWorkflowID derives the workflow_id AW is expected to compute
@@ -304,7 +304,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-002: DELETE succeeds locally with zero DS calls (#1661 Change 8c)", func() {
 		It("should return Allowed without calling DS", func() {
 			// Arrange
-			rw := buildRemediationWorkflowWithStatus("scale-memory", "kubernaut-system", "550e8400-e29b-41d4-a716-446655440000")
+			rw := buildRemediationWorkflowWithStatus("scale-memory", "550e8400-e29b-41d4-a716-446655440000")
 			dsCalled := false
 			mockDS.disableFn = func(_ context.Context, _, _, _ string) error {
 				dsCalled = true
@@ -379,7 +379,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	Describe("UT-AW-299-006: DELETE audit event with actor attribution", func() {
 		It("should emit remediationworkflow.admitted.delete audit event", func() {
 			// Arrange
-			rw := buildRemediationWorkflowWithStatus("scale-memory", "kubernaut-system", "550e8400-e29b-41d4-a716-446655440000")
+			rw := buildRemediationWorkflowWithStatus("scale-memory", "550e8400-e29b-41d4-a716-446655440000")
 			admReq := buildDeleteAdmissionRequest(rw)
 
 			// Act
@@ -649,7 +649,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				return fmt.Errorf("connection refused: data storage unavailable")
 			}
 
-			rw := buildRemediationWorkflowWithStatus("scale-memory", "kubernaut-system", "550e8400-e29b-41d4-a716-446655440000")
+			rw := buildRemediationWorkflowWithStatus("scale-memory", "550e8400-e29b-41d4-a716-446655440000")
 			admReq := buildDeleteAdmissionRequest(rw)
 
 			// Act
@@ -691,7 +691,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				if err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-src"), updated); err != nil {
+				if err := fakeK8s.Get(ctx, fakeK8sKey("scale-memory-src"), updated); err != nil {
 					return ""
 				}
 				return updated.Status.RegisteredBy
@@ -728,7 +728,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			expectedID := expectedLocalWorkflowID(mockAudit)
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-supersede"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("integrity-supersede"), updated)
 				if err != nil {
 					return ""
 				}
@@ -765,7 +765,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			expectedID := expectedLocalWorkflowID(mockAudit)
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("integrity-reenable"), updated)
 				if err != nil {
 					return ""
 				}
@@ -774,7 +774,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 				"CRD status should contain AW's own locally-computed UUID (#1661 Change 8a)")
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "integrity-reenable"), updated)).To(Succeed())
+			Expect(fakeK8s.Get(ctx, fakeK8sKey("integrity-reenable"), updated)).To(Succeed())
 			Expect(updated.Status.PreviouslyExisted).To(BeFalse(),
 				"#1661 Change 8c: PreviouslyExisted is always false -- with no DS-side 'disabled' intermediate "+
 					"state, there is no local way (or need) to distinguish 'brand new' from 'recreated after "+
@@ -835,7 +835,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 			// Wait for async goroutine to complete
 			Eventually(func() string {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				err := fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-status"), updated)
+				err := fakeK8s.Get(ctx, fakeK8sKey("scale-memory-status"), updated)
 				if err != nil {
 					return ""
 				}
@@ -844,7 +844,7 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 
 			// Verify all status fields
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(fakeK8s.Get(ctx, fakeK8sKey("kubernaut-system", "scale-memory-status"), updated)).To(Succeed())
+			Expect(fakeK8s.Get(ctx, fakeK8sKey("scale-memory-status"), updated)).To(Succeed())
 			Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
 			Expect(updated.Status.RegisteredBy).To(Equal(testUserEmail))
 			Expect(updated.Status.RegisteredAt).NotTo(BeNil())

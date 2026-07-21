@@ -18,7 +18,6 @@ package workflow
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -74,12 +73,5 @@ func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflow
 		return r.GetByID(ctx, workflowID)
 	}
 
-	wf, err := r.getWorkflowWithContextFiltersFromCache(ctx, workflowID, filters)
-	if err != nil {
-		return nil, err
-	}
-	if wf == nil {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
-	}
-	return wf, nil
+	return r.getWorkflowWithContextFiltersFromCache(ctx, workflowID, filters)
 }

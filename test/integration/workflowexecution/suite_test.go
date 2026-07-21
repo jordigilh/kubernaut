@@ -498,7 +498,7 @@ func waitForWFEPhase(name, namespace string, expectedPhase string, timeout time.
 		var err error
 		wfe, err = getWFE(name, namespace)
 		if err != nil {
-			return false, nil // Keep waiting on error
+			return false, nil //nolint:nilerr // transient Get error (e.g. not-yet-created): keep polling, not a poll failure
 		}
 		return wfe.Status.Phase == expectedPhase, nil
 	})
@@ -520,7 +520,7 @@ func waitForPipelineRunCreation(wfeName string, timeout time.Duration) (*tektonv
 			"kubernaut.ai/workflow-execution": wfeName,
 		})
 		if err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // transient List error: keep polling, not a poll failure
 		}
 		if len(prList.Items) > 0 {
 			pr = &prList.Items[0]
@@ -569,8 +569,7 @@ func deleteWFEAndWait(wfe *workflowexecutionv1alpha1.WorkflowExecution, timeout 
 		}, &workflowexecutionv1alpha1.WorkflowExecution{})
 
 		if err != nil {
-			// Object not found = deletion complete
-			return true, nil
+			return true, nil //nolint:nilerr // Get error (NotFound) means deletion complete, not a poll failure
 		}
 
 		// Still exists, keep waiting
@@ -626,7 +625,7 @@ func waitForJobCreation(wfeName string, timeout time.Duration) (*batchv1.Job, er
 			"kubernaut.ai/workflow-execution": wfeName,
 		})
 		if err != nil {
-			return false, nil
+			return false, nil //nolint:nilerr // transient List error: keep polling, not a poll failure
 		}
 		if len(jobList.Items) > 0 {
 			job = &jobList.Items[0]

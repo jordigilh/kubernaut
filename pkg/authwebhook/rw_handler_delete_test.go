@@ -48,16 +48,16 @@ var _ = Describe("RemediationWorkflow Handler DELETE — Fix A (#418)", func() {
 	// ========================================
 	Describe("UT-AW-418-007: DELETE triggers AT count refresh goroutine", func() {
 		It("should update ActionType status.activeWorkflowCount to the live K8s count excluding the deleted RW", func() {
-			rw := buildRemediationWorkflowWithStatus("fix-a-success", "kubernaut-system", "uuid-fix-a-007")
-			rw.Spec.ActionType = "ScaleMemory"
+			rw := buildRemediationWorkflowWithStatus("fix-a-success", "uuid-fix-a-007")
+			rw.Spec.ActionType = testActionTypeScaleMemory
 			// A second, unrelated live RW referencing the same ActionType proves
 			// the refreshed count reflects "what remains after this deletion",
 			// not zero and not the pre-deletion total.
-			otherRW := buildRemediationWorkflowWithStatus("fix-a-other", "kubernaut-system", "uuid-fix-a-007-other")
-			otherRW.Spec.ActionType = "ScaleMemory"
+			otherRW := buildRemediationWorkflowWithStatus("fix-a-other", "uuid-fix-a-007-other")
+			otherRW.Spec.ActionType = testActionTypeScaleMemory
 
 			scheme := newTestScheme()
-			at := buildATForReconciler("scale-memory-at", "kubernaut-system", "ScaleMemory", 2)
+			at := buildATForReconciler("scale-memory-at", "kubernaut-system", testActionTypeScaleMemory, 2)
 
 			fakeK8s := fake.NewClientBuilder().
 				WithScheme(scheme).

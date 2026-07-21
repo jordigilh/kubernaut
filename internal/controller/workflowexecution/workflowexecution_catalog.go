@@ -26,7 +26,6 @@ import (
 	"fmt"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
 // ========================================
@@ -56,14 +55,14 @@ var ErrAlreadyResolved = errors.New("workflow catalog already resolved")
 // against the immutable workflow_content already captured in the Postgres
 // audit_events ledger (IT-AW-1111-001).
 // Idempotent: returns ErrAlreadyResolved if the engine is already resolved.
-func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
+func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	if wfe.Status.ExecutionEngine != "" {
-		return nil, ErrAlreadyResolved
+		return ErrAlreadyResolved
 	}
 
 	ref := wfe.Spec.WorkflowRef
 	if ref.ExecutionEngine == "" {
-		return nil, fmt.Errorf("no engine defined in remediation workflow %s", ref.WorkflowID)
+		return fmt.Errorf("no engine defined in remediation workflow %s", ref.WorkflowID)
 	}
 
 	wfe.Status.ExecutionEngine = ref.ExecutionEngine
@@ -74,7 +73,7 @@ func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(_ context.Context, 
 	// snapshot declares none (BestEffort QoS, unchanged behavior).
 	wfe.Status.Resources = ref.Resources
 
-	return nil, nil
+	return nil
 }
 
 // validateExecutionEngineResolved checks that the WFE status already carries

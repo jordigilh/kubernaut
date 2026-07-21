@@ -109,7 +109,7 @@ var _ = Describe("StartupReconciler (#548)", func() {
 
 			for _, name := range []string{"at-1", "at-2"} {
 				updated := &atv1alpha1.ActionType{}
-				Expect(k8sClient.Get(ctx, nsName("default", name), updated)).To(Succeed())
+				Expect(k8sClient.Get(ctx, nsName(name), updated)).To(Succeed())
 				Expect(updated.Status.Registered).To(BeTrue(),
 					"should register locally with .status.registered = true")
 				Expect(string(updated.Status.CatalogStatus)).To(Equal("Active"))
@@ -151,7 +151,7 @@ var _ = Describe("StartupReconciler (#548)", func() {
 
 			for _, name := range []string{"wf-1", "wf-2", "wf-3"} {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				Expect(k8sClient.Get(ctx, nsName("default", name), updated)).To(Succeed())
+				Expect(k8sClient.Get(ctx, nsName(name), updated)).To(Succeed())
 				Expect(updated.Status.WorkflowID).NotTo(BeEmpty(),
 					"should register 3 RemediationWorkflow CRDs locally")
 			}
@@ -192,13 +192,13 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			updatedAT := &atv1alpha1.ActionType{}
-			Expect(k8sClient.Get(ctx, nsName("default", "at-1"), updatedAT)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("at-1"), updatedAT)).To(Succeed())
 			Expect(updatedAT.Status.Registered).To(BeTrue(),
 				"ActionType status should be populated locally once Phase 1 runs")
 
 			for _, name := range []string{"wf-1", "wf-2"} {
 				updated := &rwv1alpha1.RemediationWorkflow{}
-				Expect(k8sClient.Get(ctx, nsName("default", name), updated)).To(Succeed())
+				Expect(k8sClient.Get(ctx, nsName(name), updated)).To(Succeed())
 				Expect(updated.Status.WorkflowID).NotTo(BeEmpty(),
 					"workflow status should be populated locally once Phase 2 runs")
 			}
@@ -237,7 +237,7 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-status"), updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-status"), updated)).To(Succeed())
 
 			Expect(updated.Status.ContentHash).NotTo(BeEmpty(),
 				"contentHash should be populated from the local computation")
@@ -323,7 +323,7 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
-			Expect(k8sClient.Get(ctx, nsName("default", "wf-idem"), updated)).To(Succeed())
+			Expect(k8sClient.Get(ctx, nsName("wf-idem"), updated)).To(Succeed())
 			Expect(updated.Status.WorkflowID).To(Equal(sharedcontenthash.DeterministicUUID(updated.Status.ContentHash)),
 				"re-running Start() should overwrite the stale ID with the same deterministic computation")
 			Expect(string(updated.Status.CatalogStatus)).To(Equal("Active"))
@@ -333,6 +333,6 @@ var _ = Describe("StartupReconciler (#548)", func() {
 	})
 })
 
-func nsName(namespace, name string) types.NamespacedName {
-	return types.NamespacedName{Namespace: namespace, Name: name}
+func nsName(name string) types.NamespacedName {
+	return types.NamespacedName{Namespace: "default", Name: name}
 }

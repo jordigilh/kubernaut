@@ -65,7 +65,7 @@ func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, o
 	for _, at := range e2eActionTypes {
 		yaml := buildActionTypeYAML(at, namespace)
 
-		cmd := exec.Command("kubectl", "apply",
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-f", "-")
 		cmd.Stdin = strings.NewReader(yaml)
@@ -80,7 +80,7 @@ func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, o
 
 	_, _ = fmt.Fprintf(output, "\n⏳ Waiting for ActionTypes to register in DataStorage...\n")
 	for _, at := range e2eActionTypes {
-		cmd := exec.Command("kubectl", "wait",
+		cmd := exec.CommandContext(ctx, "kubectl", "wait",
 			"--kubeconfig", kubeconfigPath,
 			"--for=jsonpath={.status.registered}=true",
 			fmt.Sprintf("actiontype/%s", at.MetadataName),
@@ -112,7 +112,7 @@ func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, o
 // replacement for SeedActionTypesViaAPI/SeedActionTypesViaAPIWithTLS, which
 // call DataStorage's Postgres-backed POST /api/v1/action-types endpoint
 // (removed in Phase 55).
-func SeedActionTypesViaCRD(kubeconfigPath, namespace string, output io.Writer) error {
+func SeedActionTypesViaCRD(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d action types via direct CRD creation (no AuthWebhook)\n", len(e2eActionTypes))
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -120,7 +120,7 @@ func SeedActionTypesViaCRD(kubeconfigPath, namespace string, output io.Writer) e
 	for _, at := range e2eActionTypes {
 		yaml := buildActionTypeYAML(at, namespace)
 
-		cmd := exec.Command("kubectl", "apply",
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-f", "-")
 		cmd.Stdin = strings.NewReader(yaml)

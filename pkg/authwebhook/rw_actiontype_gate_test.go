@@ -29,6 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+const testActionTypeScaleMemory = "ScaleMemory"
+
 // #1661: AW is now the sole control gate for the RW-to-ActionType relationship,
 // validating spec.actionType against etcd directly (via the .spec.name field
 // indexer already registered in cmd/authwebhook/main.go) instead of delegating
@@ -138,7 +140,7 @@ var _ = Describe("RemediationWorkflow ActionType Existence Gate (#1661)", func()
 	// ========================================
 	Describe("UT-AW-310-003: CREATE succeeds locally when ActionType exists and is Active", func() {
 		It("should return Allowed with zero DS calls (#1661 Change 8c)", func() {
-			at := buildActionType("scale-memory-at", "ScaleMemory", "kubernaut-system")
+			at := buildActionType("scale-memory-at", testActionTypeScaleMemory, "kubernaut-system")
 			at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
 			fakeK8s := fakeK8sWithActionTypes(at)
 
@@ -150,7 +152,7 @@ var _ = Describe("RemediationWorkflow ActionType Existence Gate (#1661)", func()
 
 			handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
-			rw.Spec.ActionType = "ScaleMemory"
+			rw.Spec.ActionType = testActionTypeScaleMemory
 			admReq := buildCreateAdmissionRequest(rw)
 
 			resp := handler.Handle(ctx, admReq)

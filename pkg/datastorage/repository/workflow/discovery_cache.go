@@ -107,7 +107,7 @@ func (r *Repository) getByIDFromCache(ctx context.Context, workflowID string) (*
 		return nil, fmt.Errorf("failed to get workflow by ID from cache: %w", err)
 	}
 	if rw == nil {
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
 	}
 	wf, err := crdWorkflowToModel(rw)
 	if err != nil {
@@ -130,11 +130,11 @@ func (r *Repository) getWorkflowWithContextFiltersFromCache(ctx context.Context,
 		return nil, fmt.Errorf("failed to get workflow by ID from cache: %w", err)
 	}
 	if rw == nil {
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
 	}
 
 	if !matchesMandatoryLabels(crdLabelsToMandatoryLabels(rw.Spec.Labels), filters) {
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
 	}
 
 	var dl *models.DetectedLabels
@@ -146,7 +146,7 @@ func (r *Repository) getWorkflowWithContextFiltersFromCache(ctx context.Context,
 		return nil, fmt.Errorf("workflow %s: %w", rw.Name, err)
 	}
 	if !matchesDetectedLabelsFilter(detectedLabels, dl) {
-		return nil, nil
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
 	}
 
 	wf, err := crdWorkflowToModel(rw)

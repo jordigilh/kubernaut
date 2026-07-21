@@ -196,7 +196,7 @@ func (c *Cache) GetWorkflow(ctx context.Context, name string) (*rwv1alpha1.Remed
 		return nil, fmt.Errorf("failed to get RemediationWorkflow %s: %w", name, err)
 	}
 	if len(list.Items) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // intentional "not found, no error" cache-layer contract, see doc comment above
 	}
 	return &list.Items[0], nil
 }
@@ -212,7 +212,7 @@ func (c *Cache) GetWorkflowByID(ctx context.Context, workflowID string) (*rwv1al
 		return nil, fmt.Errorf("failed to get RemediationWorkflow by workflow_id %s: %w", workflowID, err)
 	}
 	if len(list.Items) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // intentional "not found, no error" cache-layer contract, see doc comment above
 	}
 	return &list.Items[0], nil
 }
@@ -253,7 +253,7 @@ func (c *Cache) GetActionType(ctx context.Context, name string) (*atv1alpha1.Act
 		return nil, fmt.Errorf("failed to get ActionType %s: %w", name, err)
 	}
 	if len(list.Items) == 0 {
-		return nil, nil
+		return nil, nil //nolint:nilnil // intentional "not found, no error" cache-layer contract, see doc comment above
 	}
 	return &list.Items[0], nil
 }
