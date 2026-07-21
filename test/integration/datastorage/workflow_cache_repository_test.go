@@ -135,8 +135,8 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 		otherSeverityRW := validRW(otherSeverityName, actionType, []string{"low"})
 		Expect(k8sClient.Create(ctx, matchRW)).To(Succeed())
 		Expect(k8sClient.Create(ctx, otherSeverityRW)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, matchRW) })
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, otherSeverityRW) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(matchRW) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(otherSeverityRW) })
 
 		filters := &models.WorkflowDiscoveryFilters{Severity: "critical"}
 
@@ -172,8 +172,8 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 		disabledRW := validRW(uniqueName("it-1661-p32-wf-disabled"), disabledActionType, []string{"critical"})
 		Expect(k8sClient.Create(ctx, activeRW)).To(Succeed())
 		Expect(k8sClient.Create(ctx, disabledRW)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, activeRW) })
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, disabledRW) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(activeRW) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(disabledRW) })
 
 		filters := &models.WorkflowDiscoveryFilters{Severity: "critical"}
 
@@ -204,7 +204,7 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 			{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 		}
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(rw) })
 
 		rw.Status.WorkflowID = uniqueName("wfid")
 		Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())
@@ -226,7 +226,7 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 		name := uniqueName("it-1661-p32-gate")
 		rw := validRW(name, actionType, []string{"critical"})
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(rw) })
 
 		rw.Status.WorkflowID = uniqueName("wfid-gate")
 		Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())
@@ -266,8 +266,8 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 		disabledRW := validRW(nameDisabled, actionType, []string{"critical"})
 		Expect(k8sClient.Create(ctx, activeRW)).To(Succeed())
 		Expect(k8sClient.Create(ctx, disabledRW)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, activeRW) })
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, disabledRW) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(activeRW) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(disabledRW) })
 
 		activeRW.Status.WorkflowID = uniqueName("wfid-list-active")
 		activeRW.Status.CatalogStatus = sharedtypes.CatalogStatusActive

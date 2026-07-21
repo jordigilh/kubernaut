@@ -147,7 +147,11 @@ var _ = Describe("IT-DS-1661-P29 Server wiring: workflow cache", Label("integrat
 			},
 		}
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+		// Cleanup waits for sharedWorkflowCache (not just this spec's own
+		// srv.WorkflowCache()) to observe the deletion -- see
+		// deleteWorkflowAndWaitForSharedCache's doc comment for the #1661
+		// cross-spec over-count a bare k8sClient.Delete would risk here.
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(rw) })
 
 		Eventually(func() bool {
 			got, getErr := srv.WorkflowCache().GetWorkflow(ctx, name)

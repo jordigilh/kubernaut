@@ -241,3 +241,31 @@ func seedWorkflowCRD(spec workflowCRDSpec) string {
 
 	return workflowID
 }
+
+// deleteWorkflowAndWaitForSharedCache deletes a RemediationWorkflow CRD
+// created directly via k8sClient (rather than through seedWorkflowCRD above)
+// and blocks until sharedWorkflowCache -- the suite-wide cache every other
+// spec's workflowRepo/wfCache reads through -- has observed the deletion.
+//
+// A bare `DeferCleanup(func(){ _ = k8sClient.Delete(ctx, rw) })` returns as
+// soon as the apiserver acks the delete, well before the informer watch
+// event reaches sharedWorkflowCache. Ginkgo then considers the spec
+// "finished" and may immediately start the next one -- including a Serial
+// discovery spec in another file (e.g.
+// workflow_discovery_repository_test.go's IT-DS-017-001-001) querying with
+// an empty/wildcard filter that matches *any* Active workflow regardless of
+// action type or labels. That spec can transiently still observe this "already
+// deleted" workflow in the cache and over-count it. Root-caused for the
+// #1661 intermittent off-by-one/two failures in IT-DS-017-001-*, IT-DS-464-*,
+// IT-DS-522-*, IT-DS-595-*, IT-DS-1511-* -- traced to workflow_cache_test.go,
+// workflow_cache_repository_test.go, server_workflow_cache_wiring_test.go and
+// actiontype_workflow_count_test.go's raw (non-cache-waiting) cleanups of
+// RemediationWorkflow CRDs sharing this package's envtest apiserver.
+func deleteWorkflowAndWaitForSharedCache(rw *rwv1alpha1.RemediationWorkflow) {
+	Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, rw))).To(Succeed(),
+		"deleteWorkflowAndWaitForSharedCache: delete %s", rw.Name)
+	Eventually(func() (*rwv1alpha1.RemediationWorkflow, error) {
+		return sharedWorkflowCache.GetWorkflow(ctx, rw.Name)
+	}, 5*time.Second, 100*time.Millisecond).Should(BeNil(),
+		"sharedWorkflowCache must observe %s's deletion before the next spec runs", rw.Name)
+}

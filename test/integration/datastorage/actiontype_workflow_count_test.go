@@ -146,10 +146,14 @@ var _ = Describe("IT-DS-1661-PA5 ActionType workflow-count (cache-backed)", Labe
 	// patches .status.catalogStatus directly (mimicking AuthWebhook's
 	// admission-time status patch, since AuthWebhook is not deployed in this
 	// suite) so the cache-backed handler sees the desired lifecycle state.
+	// Cleanup uses deleteWorkflowAndWaitForSharedCache (not a bare
+	// k8sClient.Delete) so sharedWorkflowCache has observed the deletion
+	// before the next spec runs -- see that function's doc comment for the
+	// #1661 cross-spec over-count this prevents.
 	createWorkflowWithCatalogStatus := func(name, actionType string, catalogStatus sharedtypes.CatalogStatus) {
 		rw := newWorkflowFixture(name, actionType)
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(rw) })
 
 		rw.Status.CatalogStatus = catalogStatus
 		Expect(k8sClient.Status().Update(ctx, rw)).To(Succeed())

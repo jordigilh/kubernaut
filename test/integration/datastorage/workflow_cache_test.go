@@ -114,7 +114,7 @@ var _ = Describe("IT-DS-1661 Workflow Cache (informer-backed)", Label("integrati
 		name := uniqueName("it-1661-get")
 		rw := validRW(name, "ScaleReplicas")
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(rw) })
 
 		var got *rwv1alpha1.RemediationWorkflow
 		Eventually(func() bool {
@@ -140,8 +140,8 @@ var _ = Describe("IT-DS-1661 Workflow Cache (informer-backed)", Label("integrati
 		otherRW := validRW(otherName, "ScaleReplicas")
 		Expect(k8sClient.Create(ctx, matchRW)).To(Succeed())
 		Expect(k8sClient.Create(ctx, otherRW)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, matchRW) })
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, otherRW) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(matchRW) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(otherRW) })
 
 		var results []rwv1alpha1.RemediationWorkflow
 		Eventually(func() []string {
@@ -204,7 +204,7 @@ var _ = Describe("IT-DS-1661 Workflow Cache (informer-backed)", Label("integrati
 
 		rw := validRW(name, "ScaleReplicas")
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+		DeferCleanup(func() { deleteWorkflowAndWaitForSharedCache(rw) })
 
 		Eventually(func() (*rwv1alpha1.RemediationWorkflow, error) {
 			return wfCache.GetWorkflow(ctx, name)
