@@ -482,6 +482,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				Version:         "v1.0.0",
 				Confidence:      0.72,
 				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale:       "Pod restart recommended based on OOM patterns",
 			}
 			ai.Status.RootCause = "Memory leak causing OOM kills"
@@ -543,6 +544,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				Version:         "v1.0.0",
 				Confidence:      0.70,
 				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale:       "Restart recommended",
 			}
 			now := metav1.Now()
@@ -614,6 +616,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				Version:         "v1.0.0",
 				Confidence:      0.70,
 				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale:       "Restart recommended",
 			}
 			now := metav1.Now()

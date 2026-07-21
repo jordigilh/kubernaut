@@ -256,6 +256,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				WorkflowID:      "test-workflow",
 				Version:         "1.0.0",
 				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence:      0.95,
 			}
 			ai.Status.ApprovalRequired = false
@@ -526,6 +527,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				WorkflowID:      "test-workflow",
 				Version:         "1.0.0",
 				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence:      0.65, // Low confidence
 			}
 			ai.Status.ApprovalRequired = true

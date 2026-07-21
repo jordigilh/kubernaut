@@ -90,6 +90,7 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 			WorkflowID:      "wf-restart-pods",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      0.95,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

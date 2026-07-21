@@ -130,6 +130,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				ActionType:      "restart",
 				Version:         "v1",
 				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence:      0.95,
 				Rationale:       "Test rationale",
 			}
@@ -367,6 +368,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 							ActionType:      "restart",
 							Version:         "v1",
 							ExecutionBundle: "test-image:latest",
+							ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 							Confidence:      0.65,
 							Rationale:       "Test rationale - approval required",
 						}

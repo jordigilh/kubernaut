@@ -80,6 +80,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 			WorkflowID:      "wf-restart-pods",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      0.95,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -252,6 +253,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 			WorkflowID:      "wf-proactive-fix",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      0.90,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

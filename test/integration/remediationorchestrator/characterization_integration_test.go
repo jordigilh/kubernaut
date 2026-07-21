@@ -251,6 +251,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			Version:         "v1.0.0",
 			Confidence:      0.95,
 			ExecutionBundle: "kubernaut/workflows:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Rationale:       "High confidence auto-approve (characterization test)",
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -344,6 +345,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			Version:         "v1.0.0",
 			Confidence:      0.95,
 			ExecutionBundle: "kubernaut/workflows:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Rationale:       "High confidence auto-approve",
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

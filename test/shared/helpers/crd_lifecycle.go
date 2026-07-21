@@ -163,6 +163,7 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 			WorkflowID:      "restart-pod-v1",
 			Version:         "1.0.0",
 			ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      confidence,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

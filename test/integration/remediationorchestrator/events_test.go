@@ -129,6 +129,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				Version:         "v1.0.0",
 				Confidence:      0.95,
 				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale:       "High confidence auto-approve",
 			}
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
@@ -242,6 +243,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				Version:         "v1.0.0",
 				Confidence:      0.70,
 				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale:       "Restart recommended",
 			}
 			now := metav1.Now()

@@ -150,6 +150,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			WorkflowID:      "restart-deployment-v1",
 			Version:         "1.0.0",
 			ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      0.92,
 			Rationale:       "High confidence match for CPU remediation",
 		}
@@ -390,6 +391,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				WorkflowID:      "restart-deployment-v1",
 				Version:         "1.0.0",
 				ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence:      0.92,
 				Rationale:       "High confidence match for CPU remediation",
 			}

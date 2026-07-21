@@ -86,6 +86,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			WorkflowID:      "wf-restart-pods",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      0.95,
 		}
 		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
@@ -272,6 +273,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowID: "wf-restart-pods", Version: "v1.0.0",
 			ExecutionBundle: "test-image:latest", Confidence: 0.95,
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 		}
 		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -452,6 +454,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 			WorkflowID:      "wf-restart-pods",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      0.95,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -549,6 +552,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			WorkflowID:      "wf-scale-hpa",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      0.90,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -651,6 +655,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 			WorkflowID:      "wf-restart-pods",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
+			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence:      0.85,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

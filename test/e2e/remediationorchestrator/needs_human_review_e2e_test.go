@@ -307,6 +307,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				WorkflowID:      "restart-pod-v1",
 				Version:         "1.0.0",
 				ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Confidence:      0.95,
 				Rationale:       "High confidence workflow match for pod restart scenario",
 			}
