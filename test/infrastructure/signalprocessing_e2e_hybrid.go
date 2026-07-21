@@ -154,6 +154,18 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+	// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+	// already be registered with the apiserver or DS's informer cache setup
+	// fails hard ("no matches for kind"), crash-looping the pod.
+	// installSignalProcessingCRDsBatched above only applies the two CRDs
+	// this suite's own tests need (SignalProcessing + RemediationRequest);
+	// DataStorage is deployed later in PHASE 4 below and needs the full set.
+	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+
 	// Deploy Rego policy ConfigMaps
 	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
 	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {

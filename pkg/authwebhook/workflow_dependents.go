@@ -18,10 +18,22 @@ package authwebhook
 
 import (
 	"context"
+	"time"
 
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// dependentsCacheRetryBackoffs are the delays between re-checks when
+// listDependentWorkflowNames's initial List() finds zero matches. mgr.GetClient()
+// is informer-cache-backed: a RemediationWorkflow Create() that lands
+// milliseconds before this List() runs may not yet be reflected in the local
+// watch cache, producing a false "no dependents" (IT-AW-1111-009). Bounded to
+// ~550ms worst case -- negligible against typical webhook admission timeouts
+// (10s+) for a rare, deliberate administrative DELETE, and mirrors the same
+// cache-propagation-lag remediation already applied to CRD status updates via
+// RetryGetCRD (actiontype_handler.go, remediationworkflow_handler.go).
+var dependentsCacheRetryBackoffs = []time.Duration{150 * time.Millisecond, 400 * time.Millisecond}
 
 // listDependentWorkflowNames returns the names of all live RemediationWorkflow
 // CRDs (cluster-wide, mirroring the namespace-agnostic scope DS's retired
@@ -45,28 +57,62 @@ import (
 // 8c removed AW's CreateWorkflowInline call, so any DS-backed dependents
 // check is permanently blind to workflows created after that point -- the
 // safety gap this change closes (IT-AW-1111-009). The live etcd list (via
-// the cache-backed k8sClient) is always current, so there is no longer any
-// "orphan recovery" reconciliation to perform: what K8s reports IS the
-// dependents set.
+// the cache-backed k8sClient) reflects every write once the informer's watch
+// catches up, so there is no "orphan recovery" reconciliation to perform:
+// what K8s reports IS the dependents set. The watch itself lags a live
+// Create() by a short, bounded window, though -- see the retry in
+// listDependentWorkflowNamesWithRetry, which this delegates to.
 func listDependentWorkflowNames(ctx context.Context, k8sClient client.Client, actionType, excludeName string) ([]string, error) {
+	return listDependentWorkflowNamesWithRetry(ctx, k8sClient, actionType, excludeName, dependentsCacheRetryBackoffs)
+}
+
+// listDependentWorkflowNamesWithRetry is listDependentWorkflowNames's
+// implementation, parameterized on the retry backoff schedule for
+// determinism in unit tests (production always uses
+// dependentsCacheRetryBackoffs via listDependentWorkflowNames).
+//
+// A zero-length result is retried against the possibility that it's a false
+// negative from informer-cache propagation lag rather than a genuine "no
+// dependents" -- the two are indistinguishable from inside this function, so
+// every zero-result call pays up to len(backoffs) retries before returning.
+// A non-empty result is always trusted immediately: cache lag can only ever
+// cause a dependent to be temporarily invisible (false negative), never
+// phantom-visible (false positive), so there is nothing to retry once at
+// least one match is found.
+func listDependentWorkflowNamesWithRetry(ctx context.Context, k8sClient client.Client, actionType, excludeName string, backoffs []time.Duration) ([]string, error) {
 	if k8sClient == nil || actionType == "" {
 		return nil, nil
 	}
 
-	rwList := &rwv1alpha1.RemediationWorkflowList{}
-	if err := k8sClient.List(ctx, rwList); err != nil {
-		return nil, err
+	list := func() ([]string, error) {
+		rwList := &rwv1alpha1.RemediationWorkflowList{}
+		if err := k8sClient.List(ctx, rwList); err != nil {
+			return nil, err
+		}
+		var names []string
+		for i := range rwList.Items {
+			if rwList.Items[i].Spec.ActionType != actionType {
+				continue
+			}
+			if excludeName != "" && rwList.Items[i].Name == excludeName {
+				continue
+			}
+			names = append(names, rwList.Items[i].Name)
+		}
+		return names, nil
 	}
 
-	var names []string
-	for i := range rwList.Items {
-		if rwList.Items[i].Spec.ActionType != actionType {
-			continue
+	names, err := list()
+	for _, backoff := range backoffs {
+		if err != nil || len(names) > 0 {
+			break
 		}
-		if excludeName != "" && rwList.Items[i].Name == excludeName {
-			continue
+		select {
+		case <-ctx.Done():
+			return names, err
+		case <-time.After(backoff):
 		}
-		names = append(names, rwList.Items[i].Name)
+		names, err = list()
 	}
-	return names, nil
+	return names, err
 }

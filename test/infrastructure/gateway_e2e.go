@@ -200,6 +200,19 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow/action-type catalog
+	// is now a controller-runtime informer cache directly over the
+	// RemediationWorkflow/ActionType CRDs -- DS's startup indexes
+	// RemediationWorkflow by .spec.actionType, which requires the
+	// kubernaut.ai/v1alpha1 API group to already be registered with the
+	// apiserver. This suite runs no live AuthWebhook to apply these CRDs as a
+	// side effect, so apply them directly, BEFORE DataStorage is deployed
+	// below (mirrors SetupDataStorageInfrastructureParallel's step).
+	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "✅ Kind cluster ready!")
 
 	// ═══════════════════════════════════════════════════════════════════════
