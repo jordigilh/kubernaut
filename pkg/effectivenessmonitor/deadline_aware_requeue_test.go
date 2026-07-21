@@ -111,24 +111,25 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	}
 
 	// seedAssessingEA creates an EA already in Assessing phase with a specific
-	// ValidityDeadline and all components done except metrics.
-	seedAssessingEA := func(ns, name string, deadline time.Time) *eav1.EffectivenessAssessment {
+	// ValidityDeadline and all components done except metrics. Always uses
+	// testNs (unparam: namespace never varies across call sites).
+	seedAssessingEA := func(name string, deadline time.Time) *eav1.EffectivenessAssessment {
 		dl := metav1.NewTime(deadline)
 		healthScore := 0.0
 		return &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              name,
-				Namespace:         ns,
+				Namespace:         testNs,
 				CreationTimestamp: metav1.NewTime(time.Now().Add(-2 * time.Minute)),
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID:           "corr-" + name,
 				RemediationRequestPhase: "Completed",
 				SignalTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: testNs,
 				},
 				RemediationTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: testNs,
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 0},
@@ -159,7 +160,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		name := "ea-dar-001"
 
 		deadline := time.Now().Add(10 * time.Second)
-		ea := seedAssessingEA(ns, name, deadline)
+		ea := seedAssessingEA(name, deadline)
 		r := makeReconciler(s, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
@@ -185,7 +186,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		name := "ea-dar-002"
 
 		deadline := time.Now().Add(5 * time.Minute)
-		ea := seedAssessingEA(ns, name, deadline)
+		ea := seedAssessingEA(name, deadline)
 		r := makeReconciler(s, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
@@ -195,5 +196,68 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 
 		Expect(result.RequeueAfter).To(Equal(requeueInterval),
 			"Correctness: requeue should remain at default interval when deadline is far away")
+	})
+
+	// ========================================
+	// UT-EM-DAR-003: Capped requeue leaves a safety margin before the deadline
+	// Issue #1701: a requeue capped to land exactly ON the validity deadline
+	// can race a pending component re-probe (e.g. alert-decay health
+	// re-probe) against handleExpired's early-return, causing the EA to
+	// complete with incomplete component state. The capped requeue must
+	// fire strictly before the deadline so the last pass has a chance to
+	// run and persist first.
+	// ========================================
+	It("UT-EM-DAR-003: should leave a safety margin so the capped requeue fires strictly before the deadline", func() {
+		s := buildScheme()
+		ns := testNs
+		name := "ea-dar-003"
+
+		remaining := 10 * time.Second
+		deadline := time.Now().Add(remaining)
+		ea := seedAssessingEA(name, deadline)
+		r := makeReconciler(s, ea)
+
+		result, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+			"Behavior: reconciler must requeue when metrics are pending")
+		// A safety margin of at least ~1s (threshold set below the intended
+		// 2s margin to tolerate test-clock jitter) must separate the
+		// requeue from the raw remaining time. Without a margin, the
+		// capped requeue is ~= remaining (minus only test-execution
+		// jitter of a few ms), which would fail this assertion.
+		Expect(result.RequeueAfter).To(BeNumerically("<=", remaining-1*time.Second),
+			"Correctness: capped requeue must fire with a safety margin strictly before the deadline, leaving room "+
+				"for a final pass to complete and persist before handleExpired short-circuits (Issue #1701)")
+	})
+
+	// ========================================
+	// UT-EM-DAR-004: Safety margin degrades gracefully when almost no time remains
+	// When remaining time is already at or below the safety margin, the
+	// requeue must not be pushed past the deadline (no negative/zero-clamped
+	// surprises) — it falls back to firing at the remaining time exactly.
+	// ========================================
+	It("UT-EM-DAR-004: should fall back to the remaining time when it is already below the safety margin", func() {
+		s := buildScheme()
+		ns := testNs
+		name := "ea-dar-004"
+
+		remaining := 500 * time.Millisecond
+		deadline := time.Now().Add(remaining)
+		ea := seedAssessingEA(name, deadline)
+		r := makeReconciler(s, ea)
+
+		result, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+			"Behavior: requeue must stay positive even when almost no validity time remains")
+		Expect(result.RequeueAfter).To(BeNumerically("<=", remaining+time.Second),
+			"Correctness: requeue must not overshoot the deadline by more than test scheduling jitter")
 	})
 })
