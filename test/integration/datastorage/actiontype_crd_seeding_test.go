@@ -27,7 +27,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -122,7 +124,51 @@ var _ = Describe("IT-DS-1661-P52 ActionType CRD seeding (AuthWebhook-independent
 		namespace := fmt.Sprintf("it-1661-p52-%d", time.Now().UnixNano())
 		nsObj := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		Expect(k8sClient.Create(ctx, nsObj)).To(Succeed())
-		DeferCleanup(func() { _ = k8sClient.Delete(ctx, nsObj) })
+		// #1661: deleting the Namespace object alone does NOT clean up the
+		// ActionType CRDs seeded into it below. envtest runs only
+		// etcd+kube-apiserver -- there is no namespace-lifecycle/GC
+		// controller to cascade-delete a namespace's contents once it's
+		// marked Terminating, so those 11 canonical-named ActionType CRDs
+		// (spec.name: ScaleReplicas, RestartPod, ...) would otherwise leak
+		// into this package's shared dsK8sRestConfig cluster for the rest of
+		// the suite run. workflowcache.Cache.ListActionTypes lists
+		// cluster-wide with no namespace filter, so every one of these
+		// leaked-but-Active duplicates makes listActionsFromCache
+		// (discovery_cache.go) emit a second ActionTypeEntry for the same
+		// spec.Name, silently doubling every Serial spec's totalCount in
+		// workflow_discovery_repository_test.go, _cluster_test.go and
+		// _case_insensitive_test.go (root-caused for the #1661 "exactly 2x"
+		// totalCount failures -- e.g. expected 1 got 2, expected 5 got 10).
+		// Delete the ActionType CRDs directly (individual object deletes work
+		// fine on envtest, unlike namespace cascade-deletion) and wait for
+		// sharedWorkflowCache -- the suite-wide cache the Serial specs read
+		// through -- to observe their removal before this spec is considered
+		// finished.
+		DeferCleanup(func() {
+			var list atv1alpha1.ActionTypeList
+			Expect(k8sClient.List(ctx, &list, client.InNamespace(namespace))).To(Succeed(),
+				"list ActionTypes in %s for cleanup", namespace)
+			for i := range list.Items {
+				Expect(client.IgnoreNotFound(k8sClient.Delete(ctx, &list.Items[i]))).To(Succeed(),
+					"delete ActionType %s/%s", namespace, list.Items[i].Name)
+			}
+			Eventually(func() (int, error) {
+				cached, cacheErr := sharedWorkflowCache.ListActionTypes(ctx)
+				if cacheErr != nil {
+					return -1, cacheErr
+				}
+				leaked := 0
+				for _, at := range cached {
+					if at.Namespace == namespace {
+						leaked++
+					}
+				}
+				return leaked, nil
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(0),
+				"sharedWorkflowCache must observe all ActionTypes in %s deleted before the next spec runs", namespace)
+
+			_ = k8sClient.Delete(ctx, nsObj)
+		})
 
 		kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(dsK8sRestConfig, "it-1661-p52")
 		Expect(err).ToNot(HaveOccurred(), "writing envtest kubeconfig for SeedActionTypesViaCRD")
