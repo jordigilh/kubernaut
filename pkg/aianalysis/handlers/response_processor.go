@@ -235,6 +235,14 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.
 		Confidence:            GetFloat64FromMap(swMap, "confidence"),
 		Rationale:             GetStringFromMap(swMap, "rationale"),
 		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+		// #1661 DD-WE-005 v2.0 / RCA follow-up: the WFE Job executor now reads
+		// the execution ServiceAccount exclusively from this CRD-embedded
+		// snapshot (wfe.Status.ServiceAccountName, no executor-config
+		// fallback) -- omitting it here silently downgraded every job-engine
+		// Pod to the namespace's "default" SA, which lacks the workflow's
+		// cross-namespace get/patch RBAC and fails the Job fast
+		// (BackoffLimitExceeded) despite the image pulling and starting fine.
+		ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
 	}
 	// Map parameters if present (map[string]string)
 	if paramsRaw, ok := swMap["parameters"]; ok {
@@ -505,11 +513,12 @@ func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *ag
 		return
 	}
 	sw := &aianalysisv1.SelectedWorkflow{
-		WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
-		ExecutionBundle: GetStringFromMap(swMap, "execution_bundle"),
-		Confidence:      GetFloat64FromMap(swMap, "confidence"),
-		Rationale:       GetStringFromMap(swMap, "rationale"),
-		ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
+		WorkflowID:         GetStringFromMap(swMap, "workflow_id"),
+		ExecutionBundle:    GetStringFromMap(swMap, "execution_bundle"),
+		Confidence:         GetFloat64FromMap(swMap, "confidence"),
+		Rationale:          GetStringFromMap(swMap, "rationale"),
+		ExecutionEngine:    GetStringFromMap(swMap, "execution_engine"),
+		ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
 	}
 	stampWorkflowSnapshot(sw, swMap)
 	analysis.Status.SelectedWorkflow = sw
@@ -817,6 +826,7 @@ func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agen
 		Confidence:            GetFloat64FromMap(swMap, "confidence"),
 		Rationale:             GetStringFromMap(swMap, "rationale"),
 		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+		ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
 	}
 	// Map parameters if present
 	if paramsRaw, ok := swMap["parameters"]; ok {
