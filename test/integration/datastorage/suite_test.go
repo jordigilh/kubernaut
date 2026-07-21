@@ -519,8 +519,14 @@ var _ = SynchronizedAfterSuite(func() {
 
 	// DD-WE-006: Stop shared envtest (GW pattern). Only one Stop() in Phase 2 avoids CI hang/exit 2.
 	if sharedDSEnvTest != nil {
+		// Capture into a local before launching the goroutine: the goroutine's
+		// closure would otherwise read the package-level sharedDSEnvTest variable
+		// concurrently with the `sharedDSEnvTest = nil` write below on timeout,
+		// a genuine data race flagged by `-race` (goroutine reads while this
+		// frame writes -- both closing over the same variable).
+		envTest := sharedDSEnvTest
 		stopDone := make(chan error, 1)
-		go func() { stopDone <- sharedDSEnvTest.Stop() }()
+		go func() { stopDone <- envTest.Stop() }()
 		select {
 		case err := <-stopDone:
 			if err != nil {
