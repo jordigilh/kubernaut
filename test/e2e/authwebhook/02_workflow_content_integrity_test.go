@@ -17,9 +17,7 @@ limitations under the License.
 package authwebhook
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -90,30 +88,26 @@ func waitForCRDStatus(crdName string) *rwv1alpha1.RemediationWorkflow {
 	return rw
 }
 
-// queryDSWorkflowStatus calls the DS API to check the status of a workflow by ID.
-// Uses authenticated HTTP client (DD-AUTH-014) since DS endpoints require Bearer token.
-func queryDSWorkflowStatus(workflowID string) string {
+// queryDSWorkflowHTTPStatus calls the DS GET-by-ID API and returns the raw
+// HTTP status code (0 on request/transport failure). #1661 DD-WORKFLOW-018:
+// DataStorage's workflow read path is a direct informer cache over the
+// RemediationWorkflow CRD (no Postgres soft-delete/audit fallback), so a
+// deleted CRD is simply absent from the cache -- the catalog surfaces this
+// as 404 Not Found, not a queryable "Disabled" status string. Returns the
+// status code (rather than collapsing all non-200s to "") so tests can
+// assert the specific code rather than risk a transient network error being
+// mistaken for "not found".
+func queryDSWorkflowHTTPStatus(workflowID string) int {
 	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/workflows/%s", dataStorageURL, workflowID), nil)
 	if err != nil {
-		return ""
+		return 0
 	}
 	resp, err := authHTTPClient.Do(req)
 	if err != nil {
-		return ""
+		return 0
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return ""
-	}
-	body, _ := io.ReadAll(resp.Body)
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return ""
-	}
-	if status, ok := result["status"].(string); ok {
-		return status
-	}
-	return ""
+	return resp.StatusCode
 }
 
 // deleteCRDAndWait deletes a RemediationWorkflow CRD and waits for it to be gone.
@@ -171,25 +165,44 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 	})
 
 	// ========================================
-	// E2E-INTEGRITY-002: CRD delete triggers DS disable
+	// E2E-INTEGRITY-002: CRD delete removes the workflow from DS's live catalog
 	// ========================================
-	Describe("E2E-INTEGRITY-002: CRD delete triggers DS disable", func() {
-		It("should disable the workflow in DS when the CRD is deleted", func() {
+	// #1661 DD-WORKFLOW-018: previously this test expected DS to retain a
+	// queryable "Disabled" status for a deleted workflow, mirroring the old
+	// Postgres soft-delete design. DataStorage's read path is now a direct
+	// informer cache over the RemediationWorkflow CRD with no soft-delete
+	// fallback (Change 8c/8d) -- a true etcd deletion makes the workflow
+	// genuinely absent from the cache, so DS's catalog now reports 404 Not
+	// Found rather than a "Disabled" status string. The deletion is still
+	// captured for SOC2/audit reconstruction via the
+	// remediationworkflow.admitted.delete audit event (BR-AUDIT-005),
+	// verified separately by the audit-trail E2E suite -- this test's scope
+	// is the live catalog's read-your-writes consistency, not the audit
+	// trail.
+	Describe("E2E-INTEGRITY-002: CRD delete removes the workflow from DS's live catalog", func() {
+		It("should return 404 Not Found from DS when the CRD is deleted", func() {
 			suffix := uuid.New().String()[:8]
 			crdName := fmt.Sprintf("e2e-integrity-002-%s", suffix)
 
-			rw := buildRemediationWorkflowCRD(crdName, "Delete triggers disable E2E")
+			rw := buildRemediationWorkflowCRD(crdName, "Delete removes from catalog E2E")
 			Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 			updatedRW := waitForCRDStatus(crdName)
 			dsWorkflowID := updatedRW.Status.WorkflowID
 
+			By("Confirming DS's catalog can see the workflow before deletion")
+			Eventually(func() int {
+				return queryDSWorkflowHTTPStatus(dsWorkflowID)
+			}, 30*time.Second, 2*time.Second).Should(Equal(http.StatusOK),
+				"DS should serve the workflow while its CRD still exists")
+
 			deleteCRDAndWait(crdName)
 
-			Eventually(func() string {
-				return queryDSWorkflowStatus(dsWorkflowID)
-			}, 30*time.Second, 2*time.Second).Should(Equal("Disabled"),
-				"DS workflow status should be 'Disabled' after CRD deletion")
+			By("Confirming DS's catalog no longer sees the workflow after deletion")
+			Eventually(func() int {
+				return queryDSWorkflowHTTPStatus(dsWorkflowID)
+			}, 30*time.Second, 2*time.Second).Should(Equal(http.StatusNotFound),
+				"DS should return 404 for a workflow whose CRD has been deleted (no soft-delete fallback, DD-WORKFLOW-018)")
 		})
 	})
 
