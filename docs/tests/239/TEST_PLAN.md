@@ -27,7 +27,7 @@ This test plan defines how Issue #239 will be validated: replacing duplicated in
 ### 1.2 Objectives
 
 1. **Chart fidelity**: `helm template` (or equivalent) with `values-e2e.yaml` renders without error and produces the FullPipeline product workload set (PostgreSQL, Valkey, DataStorage, AuthWebhook, Gateway, all controllers, Kubernaut Agent, RBAC, hooks) consistent with today’s E2E expectations.
-2. **Regression safety**: All five existing FullPipeline Ginkgo E2E specs continue to pass **without source changes** to those test files (`01_full_remediation_lifecycle`, `02_approval_lifecycle`, `02_async_hash_deferral`, `03_ka_target_resource` — plus suite/bootstrap as applicable).
+2. **Regression safety**: All existing FullPipeline Ginkgo E2E specs continue to pass **without source changes** to those test files (`01_full_remediation_lifecycle`, `02_approval_lifecycle`, `03_ka_target_resource` — plus suite/bootstrap as applicable). Note: `02_async_hash_deferral_test.go` was removed 2026-07-21 as redundant with UT+IT coverage (see [ISSUE-253 Tier Skip Rationale](../../testing/ISSUE-253/TEST_PLAN.md#tier-skip-rationale)); this list reflects the suite at the time this plan was authored.
 3. **Operational parity**: Install ordering remains correct (PostgreSQL → migrations → DataStorage → seeding → controllers → test infra), with Helm hooks and/or post-install scripting aligned to that sequence.
 4. **Traceability**: Every scenario maps to **BR-E2E-001** and the **E2E-FP-*** scenario identifiers exercised by the FullPipeline suite.
 
@@ -344,7 +344,7 @@ This plan uses **TP-239-NNN** for plan-level scenario IDs (aligned with Issue #2
 **BR**: BR-E2E-001 / **E2E-FP-***  
 **Priority**: P0  
 **Type**: E2E  
-**File**: `test/e2e/fullpipeline/01_full_remediation_lifecycle_test.go`, `02_approval_lifecycle_test.go`, `02_async_hash_deferral_test.go`, `03_ka_target_resource_test.go` (**unchanged**), plus suite wiring
+**File**: `test/e2e/fullpipeline/01_full_remediation_lifecycle_test.go`, `02_approval_lifecycle_test.go`, `03_ka_target_resource_test.go` (**unchanged**), plus suite wiring. (`02_async_hash_deferral_test.go` removed 2026-07-21 — see note above.)
 
 **Preconditions**:
 
