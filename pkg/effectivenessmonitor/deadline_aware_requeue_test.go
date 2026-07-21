@@ -240,18 +240,18 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	// requeue must not be pushed past the deadline (no negative/zero-clamped
 	// surprises) — it falls back to firing at the remaining time exactly.
 	//
-	// Budget note: this must stay comfortably below requeueDeadlineSafetyMargin
-	// (2s) to exercise the intended "below margin" branch, but comfortably
-	// above 0 too — reconcileActive re-checks time.Now() against the deadline
-	// independently in handleExpired (Step 4) before this codepath is ever
-	// reached, so a too-tight budget (previously 500ms) let ordinary
-	// Ginkgo/GC/scheduler overhead alone push the window into WindowExpired
-	// before Reconcile got here, short-circuiting straight to
-	// completeAssessment() with a terminal (zero-RequeueAfter) result and
-	// failing the ">0" assertion below — not a product bug, confirmed by
-	// tracing that capRequeueAtDeadline was never even called on failing
-	// runs. 1.5s leaves a much wider cushion against that race while still
-	// resolving below the margin.
+	// CI flake fix: `remaining` must stay comfortably below
+	// requeueDeadlineSafetyMargin (2s in production) to exercise the
+	// fallback branch, but comfortably above the wall-clock time the
+	// reconciler's full pass (hash/health/alert/metrics checks + fake
+	// client round-trips) actually takes. Previously 500ms — too tight
+	// under a loaded CI runner: `time.Now()` is captured here at seed
+	// time, but the deadline is re-evaluated deep inside Reconcile() via
+	// TimeUntilExpired, which clamps any elapsed-past-deadline duration to
+	// exactly 0 and short-circuits into completion (RequeueAfter=0),
+	// failing the ">0" assertion below even though the requeue-capping
+	// logic itself is correct. 1.5s leaves 3x the original margin while
+	// still exercising the same fallback branch (1.5s < 2s margin).
 	// ========================================
 	It("UT-EM-DAR-004: should fall back to the remaining time when it is already below the safety margin", func() {
 		s := buildScheme()
