@@ -27,6 +27,7 @@ import (
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -166,6 +167,18 @@ var _ = Describe("crdWorkflowToModel (Issue #1661 Change 6)", func() {
 		Expect(got.ContentHash).To(Equal("deadbeef"))
 		Expect(got.Description.What).To(Equal("Recovers a Pod from an OOM condition"))
 		Expect(got.Status).To(Equal("Active"))
+	})
+
+	It("UT-DS-1661-612-004: Content is populated with the same clean-CRD marshaling AuthWebhook hashed into ContentHash (models.RemediationWorkflow.Content is a required OpenAPI field; empty Content previously broke GET /workflows/{id} for every CRD-native workflow)", func() {
+		rw := buildRW()
+		got, err := crdWorkflowToModel(rw)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got.Content).ToNot(BeEmpty())
+
+		cleanContent, marshalErr := contenthash.MarshalCleanCRDContent(rw)
+		Expect(marshalErr).ToNot(HaveOccurred())
+		Expect(got.Content).To(Equal(string(cleanContent)),
+			"Content must be exactly the clean-CRD marshaling ContentHash was computed from, so sha256(Content) == ContentHash is independently verifiable")
 	})
 
 	It("UT-DS-1661-612-003: maps spec.parameters[] into the {\"schema\":{\"parameters\":[...]}} envelope models.RemediationWorkflow.Parameters has always used (#1661 Phase 55 prerequisite -- HandleGetWorkflowByID's documented contract requires it for LLM parameter validation; the envelope matches buildWrappedWorkflowParameters/the OpenAPI object schema, not a bare array -- a bare array breaks the ogen client's map[string]jx.Raw decoder)", func() {

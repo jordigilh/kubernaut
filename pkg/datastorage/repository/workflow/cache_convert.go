@@ -25,6 +25,7 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -123,6 +124,17 @@ func crdWorkflowToModel(rw *rwv1alpha1.RemediationWorkflow) (models.RemediationW
 		return models.RemediationWorkflow{}, fmt.Errorf("workflow %s: %w", rw.Name, err)
 	}
 
+	// models.RemediationWorkflow.Content is a required field (OpenAPI:
+	// "YAML workflow definition") -- reuse the exact same clean-CRD
+	// marshaling AuthWebhook used to compute rw.Status.ContentHash
+	// (contenthash.ComputeContentHash(string(clean))), so callers can verify
+	// sha256(wf.Content) == wf.ContentHash rather than trusting two
+	// independently-derived representations to agree.
+	cleanContent, err := contenthash.MarshalCleanCRDContent(rw)
+	if err != nil {
+		return models.RemediationWorkflow{}, fmt.Errorf("workflow %s: failed to marshal content: %w", rw.Name, err)
+	}
+
 	wf := models.RemediationWorkflow{
 		WorkflowID:      rw.Status.WorkflowID,
 		WorkflowName:    rw.Name,
@@ -131,6 +143,7 @@ func crdWorkflowToModel(rw *rwv1alpha1.RemediationWorkflow) (models.RemediationW
 		Description:     models.FromSharedDescription(crdDescriptionToShared(rw.Spec.Description)),
 		ActionType:      rw.Spec.ActionType,
 		ExecutionEngine: models.ExecutionEngine(rw.Spec.Execution.Engine),
+		Content:         string(cleanContent),
 		Labels:          crdLabelsToMandatoryLabels(rw.Spec.Labels),
 		CustomLabels:    crdCustomLabelsToModel(rw.Spec.CustomLabels),
 		DetectedLabels:  detectedLabels,
