@@ -269,3 +269,51 @@ func deleteWorkflowAndWaitForSharedCache(rw *rwv1alpha1.RemediationWorkflow) {
 	}, 5*time.Second, 100*time.Millisecond).Should(BeNil(),
 		"sharedWorkflowCache must observe %s's deletion before the next spec runs", rw.Name)
 }
+
+// waitForWorkflowCacheConverged blocks until sharedWorkflowCache's view of
+// RemediationWorkflow CRDs in workflowCRDNamespace exactly matches a direct
+// (uncached) apiserver read.
+//
+// Root cause this closes: several Serial specs in this package assert exact
+// *global* workflow/action-type counts with no per-spec prefix-scoping (see
+// e.g. workflow_discovery_repository_test.go's file header). Ginkgo's Serial
+// guarantee only serializes spec *execution* -- it guarantees no other spec
+// is running anywhere while a Serial spec runs, and that every previously
+// dispatched spec (including its DeferCleanup) has returned. It does NOT
+// guarantee that *this* process's sharedWorkflowCache (one independent
+// informer/watch connection per Ginkgo parallel process --
+// SynchronizedBeforeSuite Phase 2 in suite_test.go, started separately in
+// every process) has processed a delete/create watch event that a
+// *different* process's cache already observed and used to satisfy its own
+// DeferCleanup wait (deleteWorkflowAndWaitForSharedCache / seedWorkflowCRD's
+// cleanup, above). With TEST_PROCS>1 (Makefile: TEST_PROCS ?= nproc), a
+// non-serial spec's workflow can therefore still be visible in a Serial
+// spec's own process cache for a short window after Ginkgo permits the
+// Serial spec to start, inflating unscoped counts by exactly the
+// still-converging leftover(s). Call this at the top of every Serial spec
+// that asserts an unscoped/global workflow or action-type count, before
+// creating this spec's own fixtures, to close that race.
+func waitForWorkflowCacheConverged() {
+	var live rwv1alpha1.RemediationWorkflowList
+	Expect(k8sClient.List(ctx, &live, client.InNamespace(workflowCRDNamespace))).To(Succeed(),
+		"waitForWorkflowCacheConverged: direct apiserver list")
+	wantNames := make(map[string]struct{}, len(live.Items))
+	for _, rw := range live.Items {
+		wantNames[rw.Name] = struct{}{}
+	}
+
+	Eventually(func() bool {
+		cached, err := sharedWorkflowCache.ListWorkflows(ctx)
+		if err != nil || len(cached) != len(wantNames) {
+			return false
+		}
+		for _, rw := range cached {
+			if _, ok := wantNames[rw.Name]; !ok {
+				return false
+			}
+		}
+		return true
+	}, 15*time.Second, 100*time.Millisecond).Should(BeTrue(),
+		"sharedWorkflowCache must converge to the apiserver's live RemediationWorkflow set "+
+			"before a Serial spec asserting global counts runs (cross-process cache lag, see doc comment above)")
+}

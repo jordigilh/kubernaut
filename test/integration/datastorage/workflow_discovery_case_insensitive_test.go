@@ -62,6 +62,10 @@ var _ = Describe("Workflow Discovery: Case-Insensitive Label Matching (#595)", S
 	BeforeEach(func() {
 		workflowRepo = newCachedWorkflowRepo()
 		testID = generateTestID()
+		// #1661: this Describe asserts unscoped/global counts -- close the
+		// cross-process cache lag race, see waitForWorkflowCacheConverged's
+		// doc comment (workflow_crd_seeding_helper_test.go).
+		waitForWorkflowCacheConverged()
 	})
 
 	createWorkflow := func(name, actionType string, severity []string, component string, environment []string, priority string) string {

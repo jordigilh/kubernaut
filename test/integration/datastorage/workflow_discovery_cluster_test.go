@@ -52,6 +52,10 @@ var _ = Describe("Workflow Discovery: Cluster Classification Filter (BR-FLEET-00
 	BeforeEach(func() {
 		workflowRepo = newCachedWorkflowRepo()
 		testID = generateTestID()
+		// #1661: this Describe asserts unscoped/global counts -- close the
+		// cross-process cache lag race, see waitForWorkflowCacheConverged's
+		// doc comment (workflow_crd_seeding_helper_test.go).
+		waitForWorkflowCacheConverged()
 	})
 
 	createWorkflow := func(name, actionType string, cluster []string) string {
