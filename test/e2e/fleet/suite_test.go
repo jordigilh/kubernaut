@@ -589,6 +589,11 @@ var _ = SynchronizedAfterSuite(
 			}
 			if remoteKubeconfigPath != "" {
 				infrastructure.MustGatherPodLogs(remoteClusterName, remoteKubeconfigPath, "kubernaut-system", "fleet", GinkgoWriter)
+				// Issue #1690 RCA follow-up: the job execution engine can route
+				// the K8s Job to the remote cluster (BR-FLEET-054), so its Job/
+				// Pod/Event diagnostics can live in the remote cluster's
+				// "kubernaut-workflows" namespace, not just the primary's.
+				infrastructure.MustGatherPodLogs(remoteClusterName, remoteKubeconfigPath, "kubernaut-workflows", "fleet", GinkgoWriter)
 			}
 		}
 
