@@ -379,6 +379,15 @@ func (r *WorkflowExecutionReconciler) applyFailedStatusTransition(wfe *workflowe
 	wfe.Status.CompletionTime = t.completionTime
 	wfe.Status.Duration = t.durationVal
 	wfe.Status.FailureDetails = t.failureDetails
+	// Issue #1690 RCA follow-up: mirror onto the flat top-level field too --
+	// RO's executing_handler.go and E2E scenario assertions read
+	// Status.FailureReason directly rather than Status.FailureDetails.Reason,
+	// and it was never populated on this path, silently blanking out
+	// user-facing failure messaging for every in-execution (job/tekton)
+	// failure.
+	if t.failureDetails != nil {
+		wfe.Status.FailureReason = t.failureDetails.Reason
+	}
 
 	// Issue #118 Gap 4: persist ExecutionStatus inside callback (survives refetch)
 	if len(t.summary) > 0 && t.summary[0] != nil {
@@ -495,6 +504,11 @@ func (r *WorkflowExecutionReconciler) markFailedInternal(
 
 		wfe.Status.CompletionTime = now
 		wfe.Status.FailureDetails = failureDetails
+		// Issue #1690 RCA follow-up: see applyFailedStatusTransition's comment --
+		// mirror onto the flat top-level field for the pre-execution path too.
+		if failureDetails != nil {
+			wfe.Status.FailureReason = failureDetails.Reason
+		}
 
 		if extraUpdates != nil {
 			extraUpdates()
