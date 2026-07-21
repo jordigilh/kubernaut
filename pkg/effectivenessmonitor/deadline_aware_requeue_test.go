@@ -239,13 +239,26 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	// When remaining time is already at or below the safety margin, the
 	// requeue must not be pushed past the deadline (no negative/zero-clamped
 	// surprises) — it falls back to firing at the remaining time exactly.
+	//
+	// Budget note: this must stay comfortably below requeueDeadlineSafetyMargin
+	// (2s) to exercise the intended "below margin" branch, but comfortably
+	// above 0 too — reconcileActive re-checks time.Now() against the deadline
+	// independently in handleExpired (Step 4) before this codepath is ever
+	// reached, so a too-tight budget (previously 500ms) let ordinary
+	// Ginkgo/GC/scheduler overhead alone push the window into WindowExpired
+	// before Reconcile got here, short-circuiting straight to
+	// completeAssessment() with a terminal (zero-RequeueAfter) result and
+	// failing the ">0" assertion below — not a product bug, confirmed by
+	// tracing that capRequeueAtDeadline was never even called on failing
+	// runs. 1.5s leaves a much wider cushion against that race while still
+	// resolving below the margin.
 	// ========================================
 	It("UT-EM-DAR-004: should fall back to the remaining time when it is already below the safety margin", func() {
 		s := buildScheme()
 		ns := testNs
 		name := "ea-dar-004"
 
-		remaining := 500 * time.Millisecond
+		remaining := 1500 * time.Millisecond
 		deadline := time.Now().Add(remaining)
 		ea := seedAssessingEA(name, deadline)
 		r := makeReconciler(s, ea)
