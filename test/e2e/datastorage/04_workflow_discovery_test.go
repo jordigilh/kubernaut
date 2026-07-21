@@ -71,27 +71,36 @@ var _ = Describe("E2E-DS-017-001: Three-Step Workflow Discovery (DD-HAPI-017)", 
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 			// STEP 1: List available action types
-			step1Resp, err := DSClient.ListAvailableActions(testCtx, dsgen.ListAvailableActionsParams{
-				Severity:    dsgen.ListAvailableActionsSeverityCritical,
-				Component:   "v1/Pod",
-				Environment: "production",
-				Priority:    dsgen.ListAvailableActionsPriorityP0,
-				Limit:       dsgen.NewOptInt(100),
-			})
-			Expect(err).ToNot(HaveOccurred())
-
-			actionTypes, ok := step1Resp.(*dsgen.ActionTypeListResponse)
-			Expect(ok).To(BeTrue(), "Expected *ActionTypeListResponse")
-			Expect(actionTypes.ActionTypes).ToNot(BeEmpty(), "Should return at least 1 action type")
-
-			// Find ScaleReplicas in the results
+			// Use Eventually to tolerate the same transient cache-visibility window
+			// as STEP 2 below (#707) -- DataStorage's ActionType read path is now an
+			// informer cache (DD-WORKFLOW-018) that can briefly lag a concurrent
+			// parallel spec's ActionType create/re-seed until the watch delivers it.
+			var actionTypes *dsgen.ActionTypeListResponse
 			var foundActionType string
-			for _, at := range actionTypes.ActionTypes {
-				if at.ActionType == "ScaleReplicas" {
-					foundActionType = at.ActionType
-					break
+			Eventually(func() bool {
+				step1Resp, listErr := DSClient.ListAvailableActions(testCtx, dsgen.ListAvailableActionsParams{
+					Severity:    dsgen.ListAvailableActionsSeverityCritical,
+					Component:   "v1/Pod",
+					Environment: "production",
+					Priority:    dsgen.ListAvailableActionsPriorityP0,
+					Limit:       dsgen.NewOptInt(100),
+				})
+				if listErr != nil {
+					return false
 				}
-			}
+				resp, ok := step1Resp.(*dsgen.ActionTypeListResponse)
+				if !ok {
+					return false
+				}
+				for _, at := range resp.ActionTypes {
+					if at.ActionType == "ScaleReplicas" {
+						actionTypes = resp
+						foundActionType = at.ActionType
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(), "ScaleReplicas should be in action types")
 			Expect(foundActionType).To(Equal("ScaleReplicas"), "ScaleReplicas should be in action types")
 			logger.Info("✅ Step 1: Action types listed", "count", len(actionTypes.ActionTypes))
 
