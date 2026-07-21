@@ -377,13 +377,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"v1/Pod"}, Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 	}
 
-	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)
-	// instead of DS's retired Postgres-backed inline endpoint.
-	workflowUUIDs, err := SeedWorkflowsViaKubectlApply(context.Background(), kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
+	// #1661 Phase 56 (discovered gap): this suite runs with no live AuthWebhook
+	// (unlike fullpipeline/fleet), so SeedWorkflowsViaKubectlApply's wait on
+	// .status.workflowId can never resolve -- use the direct-CRD-creation path
+	// instead, which computes the same deterministic UUID and stamps status
+	// itself (pkg/shared/contenthash).
+	workflowUUIDs, err := SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows via kubectl apply\n", len(workflowUUIDs))
+	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows via direct CRD creation\n", len(workflowUUIDs))
 
 	// NOTE: ConfigMap creation moved to deployMockLLMInNamespace() (Phase 7c)
 	// This avoids duplication and ensures workflows are passed correctly

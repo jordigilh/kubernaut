@@ -247,9 +247,12 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("seed action types (CRD): %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
-	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)
-	// instead of DS's retired Postgres-backed inline endpoint.
-	if _, seedErr = SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
+	// #1661 Phase 56 (discovered gap): this suite runs with no live AuthWebhook
+	// (unlike fullpipeline/fleet), so SeedWorkflowsViaKubectlApply's wait on
+	// .status.workflowId can never resolve -- use the direct-CRD-creation path
+	// instead, which computes the same deterministic UUID and stamps status
+	// itself (pkg/shared/contenthash).
+	if _, seedErr = SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
 		return fmt.Errorf("seed workflows: %w", seedErr)
 	}
 

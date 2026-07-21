@@ -151,6 +151,26 @@ func SeedWorkflowContentViaDirectCRDCreation(ctx context.Context, k8sClient clie
 	return workflowID, nil
 }
 
+// SeedWorkflowsViaDirectCRDCreationFromKubeconfig is a drop-in,
+// kubeconfig-path-signature-compatible replacement for
+// SeedWorkflowsViaKubectlApply, for E2E suites that intentionally run
+// without a live AuthWebhook (kubernautagent, aianalysis, apifrontend --
+// #1661 Phase 55 discovered gap: SeedWorkflowsViaKubectlApply's wait on
+// .status.workflowId can never resolve for these suites, since nothing but
+// AuthWebhook's admission handler ever populates it). Builds a throwaway
+// client.Client from kubeconfigPath and delegates to
+// SeedWorkflowsViaDirectCRDCreation. Suites that already deploy a real
+// AuthWebhook (fullpipeline, fleet, authwebhook's own E2E) should keep using
+// SeedWorkflowsViaKubectlApply -- it exercises the real admission pipeline
+// and is the higher-fidelity choice when available.
+func SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx context.Context, kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
+	k8sClient, err := NewKubeconfigWorkflowClient(kubeconfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("build workflow client from kubeconfig: %w", err)
+	}
+	return SeedWorkflowsViaDirectCRDCreation(ctx, k8sClient, namespace, workflows, output)
+}
+
 // NewKubeconfigWorkflowClient builds a minimal controller-runtime client.Client
 // (RemediationWorkflow scheme only) from a kubeconfig path, for E2E suites that
 // only carry a kubeconfig string (e.g. test/e2e/datastorage, which talks to a
