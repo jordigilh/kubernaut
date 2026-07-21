@@ -104,11 +104,13 @@ The health/alert/metrics checks must not begin until the system has had the full
 See [Issue #251 Test Plan](../../testing/ISSUE-251/TEST_PLAN.md) — EM hash deferral domain:
 - UT-EM-251-001 through UT-EM-251-005 (EM reconciler gating)
 - IT-EM-251-001 through IT-EM-251-003 (envtest integration)
-- E2E-FP-251-001 (cert-manager operator scenario)
+- E2E-FP-251-001 (cert-manager operator scenario) — removed 2026-07-21, see below
 
 See [Issue #253 Test Plan](../../testing/ISSUE-253/TEST_PLAN.md) — Timing model correction:
 - UT/IT for `WaitingForPropagation` phase, adjusted `checkAfter`, validity extension
-- E2E-FP-253-001 updated with corrected timing assertions
+- UT-RO-253-009..013 — `computeEADelays` composition (GVK resolution + `IsBuiltInGroup` + delay) against a CRD Kind outside the static GVK table
+
+`E2E-FP-253-001` (real cert-manager operator, `Serial`) was removed 2026-07-21: it never exercised the dynamic REST-mapper fallback either (`Certificate` resolves statically, same as the IT tier's `EffectivenessAssessment` stand-in), and `CapturePreRemediationHash`'s hashing is Kind-generic, so a real `Certificate` proved nothing an `EffectivenessAssessment` IT run didn't already prove. See [ISSUE-253 Tier Skip Rationale](../../testing/ISSUE-253/TEST_PLAN.md#tier-skip-rationale).
 
 ## References
 
