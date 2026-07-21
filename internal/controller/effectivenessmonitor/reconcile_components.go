@@ -130,9 +130,19 @@ func (r *Reconciler) runHashCheck(ctx context.Context, rctx *reconcileContext) (
 }
 
 // runHealthCheck executes the health component check.
+//
+// While alert-decay monitoring is active (AlertDecayRetries > 0 and the
+// alert component isn't assessed yet), health is re-probed live on every
+// pass even though HealthAssessed is already true, so a resource that
+// regresses mid-decay-monitoring is still caught (BR-EM-012, Issue #369).
+// HealthAssessed itself is never destructively reset to force this
+// re-probe — see handleAlertDecaySuspected — so a terminal EA can never
+// report an incomplete health assessment that was, in fact, already
+// confirmed (Issue #1701).
 func (r *Reconciler) runHealthCheck(ctx context.Context, rctx *reconcileContext) {
 	ea := rctx.ea
-	if ea.Status.Components.HealthAssessed {
+	decayMonitoringActive := ea.Status.Components.AlertDecayRetries > 0 && !ea.Status.Components.AlertAssessed
+	if ea.Status.Components.HealthAssessed && !decayMonitoringActive {
 		return
 	}
 
@@ -218,15 +228,24 @@ func (r *Reconciler) evaluateAlertCheckResult(ctx context.Context, rctx *reconci
 }
 
 // handleAlertDecaySuspected records the alert-decay condition/event and
-// forces a health re-probe. Extracted from runAlertCheck (Wave 6 6a GREEN:
+// marks decay monitoring active so subsequent passes re-probe health live
+// (see runHealthCheck). Extracted from runAlertCheck (Wave 6 6a GREEN:
 // nestif remediation) — pure code motion, no behavior change.
+//
+// Issue #1701: HealthAssessed is intentionally NOT reset to false here.
+// AlertDecayRetries > 0 (combined with AlertAssessed == false) already
+// signals "actively monitoring decay" to runHealthCheck, which re-probes
+// live regardless of the current HealthAssessed value. Destructively
+// resetting HealthAssessed=false left a window where, if the validity
+// deadline expired before the next reconcile could re-probe and restore
+// it, the EA completed with a false "health assessment did not complete"
+// status despite already having a confirmed assessment.
 func (r *Reconciler) handleAlertDecaySuspected(ctx context.Context, ea *eav1.EffectivenessAssessment, alertResult *alertAssessResult, logger logr.Logger) {
 	if ea.Status.Components.AlertDecayRetries == 0 {
 		r.emitAlertDecayEvent(ctx, ea, *alertResult)
 	}
 	ea.Status.Components.AlertDecayRetries++
 	alertResult.Component.Assessed = false
-	ea.Status.Components.HealthAssessed = false
 
 	conditions.SetCondition(ea, conditions.ConditionAlertDecayDetected,
 		metav1.ConditionTrue, conditions.ReasonDecayActive,

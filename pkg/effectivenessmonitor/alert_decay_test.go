@@ -555,11 +555,19 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 
 	// ========================================
 	// UT-EM-DECAY-010: Health re-probed live on each decay pass
-	// BR-EM-012: After decay detection, HealthAssessed is reset so the next
-	// reconcile re-probes health from K8s API. This prevents stale data from
-	// masking a genuine failure.
+	// BR-EM-012: While decay monitoring is active (AlertDecayRetries > 0,
+	// alert not yet assessed), health is re-probed live from the K8s API on
+	// every pass. This prevents stale data from masking a genuine failure.
+	//
+	// Issue #1701: HealthAssessed is NOT destructively cleared between
+	// probes — it stays true (reflecting the last confirmed assessment)
+	// throughout decay monitoring, so a terminal EA never falsely reports
+	// "health assessment did not complete" if validity expires before the
+	// next probe runs. Live re-probing (freshness) is proven separately by
+	// UT-EM-DECAY-011, which shows a degraded re-probe result overriding
+	// the earlier healthy score.
 	// ========================================
-	It("UT-EM-DECAY-010: should reset HealthAssessed and re-probe health on each decay pass", func() {
+	It("UT-EM-DECAY-010: should keep HealthAssessed=true while re-probing health on each decay pass", func() {
 		s := buildScheme()
 		ns := testNs
 		name := "ea-decay-010"
@@ -568,7 +576,9 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
 
-		// Pass 1: decay detected, HealthAssessed should be reset to false
+		// Pass 1: decay detected. HealthAssessed remains true (already
+		// confirmed); it is not destructively reset just to force a
+		// future re-probe.
 		_, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
 		})
@@ -577,12 +587,14 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
 
-		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeFalse(),
-			"HealthAssessed should be false after pass 1 (reset for re-probe)")
+		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue(),
+			"HealthAssessed should remain true after pass 1 (last confirmed assessment, not reset — Issue #1701)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
 			"AlertDecayRetries should be 1 after pass 1")
 
-		// Pass 2: health re-probed (pod still healthy), decay detected again, HealthAssessed reset again
+		// Pass 2: health re-probed live again (pod still healthy) because
+		// decay monitoring is still active, even though HealthAssessed
+		// never dropped to false in between.
 		_, err = r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
 		})
@@ -590,8 +602,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 
 		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
 
-		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeFalse(),
-			"HealthAssessed should be false after pass 2 (re-probed then reset again)")
+		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue(),
+			"HealthAssessed should remain true after pass 2 (re-probed live, still confirmed)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(2)),
 			"AlertDecayRetries should be 2 after pass 2")
 		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseAssessing),
@@ -646,5 +658,70 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			"AlertDecayRetries should be 1 (only pass 1 was decay)")
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull),
 			"AssessmentReason should be 'full' (normal completion, not alert_decay_timeout)")
+	})
+
+	// ========================================
+	// UT-EM-DECAY-012: Validity expiry mid-decay-monitoring preserves last
+	// confirmed health assessment (Issue #1701)
+	//
+	// BR-EM-012 / BR-EM-001: A terminal EA must never report
+	// Components.HealthAssessed=false when a health assessment was in fact
+	// already confirmed. Previously, handleAlertDecaySuspected reset
+	// HealthAssessed=false on every decay pass to force a live re-probe on
+	// the *next* pass; if the validity deadline was reached before that
+	// next pass ran, handleExpired short-circuited and completed the EA
+	// with the stale false flag despite a valid last-known HealthScore.
+	//
+	// This regression test reproduces the exact two-pass race:
+	//   Pass 1: decay detected -> HealthAssessed destructively reset to
+	//           false (pre-fix behavior), AlertDecayRetries incremented.
+	//   (time passes, ValidityDeadline is reached before the next
+	//    reconcile can run and re-probe health)
+	//   Pass 2: handleExpired short-circuits on the expired deadline and
+	//           completes the EA using the stale HealthAssessed=false.
+	// ========================================
+	It("UT-EM-DECAY-012: should preserve HealthAssessed=true when validity expires mid-decay-monitoring", func() {
+		s := buildScheme()
+		ns := testNs
+		name := "ea-decay-012"
+
+		ea := seedDecayEA(name)
+		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
+
+		// Pass 1: decay detected on a healthy, still-firing-alert EA.
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
+			"sanity: decay should be detected on pass 1")
+
+		// Simulate the deadline being reached before the next reconcile
+		// (e.g. controller-runtime workqueue delay, node pressure, etc.)
+		// by moving ValidityDeadline into the past on the persisted object.
+		pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Second))
+		fetchedEA.Status.ValidityDeadline = &pastDeadline
+		Expect(fc.Status().Update(context.Background(), fetchedEA)).To(Succeed())
+
+		// Pass 2: validity has expired; the EA must complete now.
+		_, err = r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+
+		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted),
+			"EA should be Completed (validity expired)")
+		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonAlertDecayTimeout),
+			"Reason should be 'alert_decay_timeout' (decay was actively monitored)")
+		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue(),
+			"HealthAssessed must remain true — a valid health assessment was already confirmed on pass 1 and "+
+				"must not be reported as incomplete just because validity expired before the next re-probe (Issue #1701)")
+		Expect(fetchedEA.Status.Components.HealthScore).ToNot(BeNil(),
+			"HealthScore must be populated for downstream consumers")
 	})
 })
