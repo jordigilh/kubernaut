@@ -82,8 +82,8 @@ linters:
                      # #1546 Tier 2). Verified 0 findings repo-wide.
     - unconvert      # Flags unnecessary type conversions (Issue #1546 Tier
                      # 2). 117 findings auto-remediated via `unconvert -apply`;
-                     # generated ogen-client code is excluded implicitly (same
-                     # as golangci-lint's default generated-file skip).
+                     # generated ogen-client code is excluded (see
+                     # `exclusions.generated`/`exclusions.paths` below).
     - predeclared    # Flags parameters/variables shadowing Go builtins (max,
                      # min, new, close, copy, real, etc.) (Issue #1546 Tier 3).
                      # 24 findings remediated via mechanical rename (or, for
@@ -247,6 +247,22 @@ linters:
           msg: "time.Sleep() ABSOLUTELY FORBIDDEN per TESTING_GUIDELINES.md v2.0.0. Use Eventually/Consistently for async validation."
 
   exclusions:
+    # `generated: strict` is golangci-lint's own default (relied on implicitly
+    # until now -- see the `unconvert` comment above); declared explicitly
+    # here so it's visible rather than relying on an unstated default.
+    generated: strict
+    # Defense-in-depth on top of `generated: strict`'s "Code generated ...
+    # DO NOT EDIT" header sniffing: scoped by filename pattern (not the whole
+    # directory) so the hand-written wrapper files living alongside the ogen
+    # output -- pkg/agentclient/client.go (DD-HAPI-003 business-friendly
+    # wrapper) and pkg/datastorage/ogen-client/gen.go (go:generate directive)
+    # -- stay fully linted. Verified: with this config removed, `dupl`+
+    # `unused` alone raise ~140 findings across the two ogen output dirs'
+    # generated boilerplate (identical per-operation encode/decode/validate
+    # shapes) that no one can act on without hand-editing generated code.
+    paths:
+      - pkg/datastorage/ogen-client/oas_.*\.go
+      - pkg/agentclient/oas_.*\.go
     rules:
       # Exclude test setup/teardown and infrastructure code from Close() checks
       - path: (_test\.go|test/)
