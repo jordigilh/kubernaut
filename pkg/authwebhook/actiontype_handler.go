@@ -187,9 +187,17 @@ func (h *ActionTypeHandler) handleDelete(ctx context.Context, req admission.Requ
 // updateCRDStatusCreate writes the locally-computed registration outcome
 // into the CRD's .status subresource. #1661 Change 8d: catalogStatus is
 // always Active and previouslyExisted is always false -- there is no DS
-// response left to carry (see handleCreate for why). Uses RetryOnConflict
-// to handle the race between this goroutine and the API server committing
-// the newly-created object.
+// response left to carry (see handleCreate for why). This goroutine is
+// launched immediately after the admission response is returned (see
+// handleCreate), so its first Get() races both the API server's commit of
+// the just-admitted object AND h.k8sClient's informer cache observing it
+// (admission runs strictly before the object is persisted, and Get() reads
+// through the manager's cache, not directly from etcd) -- RetryGetCRD's
+// generous exponential backoff (500ms/1s/2s/4s/8s) absorbs that race, unlike
+// retry.RetryOnConflict's ~300ms budget which only ever retries
+// apierrors.IsConflict and would treat the expected NotFound as terminal.
+// retry.RetryOnConflict still wraps the whole body to also cover the rarer
+// resourceVersion conflict from a concurrent status writer.
 func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy string) {
 	logger := ctrl.Log.WithName("at-webhook").WithValues("operation", "status-update", "name", name, "namespace", namespace)
 
@@ -198,14 +206,14 @@ func (h *ActionTypeHandler) updateCRDStatusCreate(namespace, name, registeredBy 
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	key := types.NamespacedName{Namespace: namespace, Name: name}
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		at := &atv1alpha1.ActionType{}
-		if err := h.k8sClient.Get(ctx, key, at); err != nil {
+		if err := RetryGetCRD(ctx, h.k8sClient, key, at, 5); err != nil {
 			return err
 		}
 

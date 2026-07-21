@@ -396,6 +396,14 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 // (CRD already exists) but returns a stale resourceVersion; the subsequent Status().Update
 // gets a 409 Conflict once the API server commits the new resourceVersion. The retry
 // loop re-GETs the CRD (fresh resourceVersion) and retries the status write.
+//
+// On the CREATE path, this goroutine is launched immediately after the
+// admission response is returned, so its first Get() races both the API
+// server's commit of the just-admitted object AND h.k8sClient's informer
+// cache observing it (Get() reads through the manager's cache, not directly
+// from etcd). RetryGetCRD's generous exponential backoff (500ms/1s/2s/4s/8s)
+// absorbs that race -- retry.RetryOnConflict alone only ever retries
+// apierrors.IsConflict and would treat the expected NotFound as terminal.
 func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registeredBy, contentHash, workflowID string) {
 	logger := ctrl.Log.WithName("rw-webhook").WithValues("operation", "status-update", "name", name, "namespace", namespace)
 
@@ -404,14 +412,14 @@ func (h *RemediationWorkflowHandler) updateCRDStatus(namespace, name, registered
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	key := types.NamespacedName{Namespace: namespace, Name: name}
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		rw := &rwv1alpha1.RemediationWorkflow{}
-		if err := h.k8sClient.Get(ctx, key, rw); err != nil {
+		if err := RetryGetCRD(ctx, h.k8sClient, key, rw, 5); err != nil {
 			return err
 		}
 
