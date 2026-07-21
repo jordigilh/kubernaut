@@ -22,6 +22,14 @@ metadata:
   name: data-storage-auth-middleware
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    # DD-PLATFORM-003: Issue #1661 Phase 29 (DD-WORKFLOW-018) added the
+    # remediationworkflows/actiontypes list/watch rule below, which DataStorage's
+    # informer cache now needs at startup (no fallback, fails hard) -- must render
+    # in the same "-1" sync-wave as the DataStorage Deployment, not the default
+    # wave "0", or ArgoCD applies it after the pod already crash-looped on
+    # Forbidden. Mirrors datastorage/{certificate,datastorage}.yaml.
+    "argocd.argoproj.io/sync-wave": "-1"
 rules:
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]
@@ -43,6 +51,10 @@ metadata:
   name: data-storage-auth-middleware
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
+  annotations:
+    # DD-PLATFORM-003: must render in the same "-1" wave as its ClusterRole
+    # above -- see that resource's annotation for the full rationale.
+    "argocd.argoproj.io/sync-wave": "-1"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
