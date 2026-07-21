@@ -1104,6 +1104,26 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(updated.Status.FailureDetails).To(And(Not(BeNil()), HaveField("Message", Not(BeEmpty()))))
 		})
 
+		// Issue #1690 RCA follow-up: Status.FailureReason (the flat, top-level
+		// field read directly by RO's executing_handler.go and by E2E scenario
+		// assertions) was never populated by the in-execution MarkFailed path --
+		// only Status.FailureDetails.Reason (the nested struct) was set. This
+		// silently blanked out RO's user-facing failure messaging and made E2E
+		// failure diagnostics ("reached Failed phase (reason: )") useless for
+		// every job/tekton execution failure, not just pre-execution ones.
+		It("should populate the top-level FailureReason field to match FailureDetails.Reason", func() {
+			_, err := reconciler.MarkFailed(ctx, wfe, pr)
+			Expect(err).ToNot(HaveOccurred())
+
+			var updated workflowexecutionv1alpha1.WorkflowExecution
+			err = reconciler.Get(ctx, client.ObjectKeyFromObject(wfe), &updated)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(updated.Status.FailureReason).ToNot(BeEmpty(),
+				"top-level FailureReason must be populated so RO and E2E consumers reading it directly see the real reason")
+			Expect(updated.Status.FailureReason).To(Equal(updated.Status.FailureDetails.Reason),
+				"top-level FailureReason must mirror FailureDetails.Reason")
+		})
+
 		It("should set CompletionTime", func() {
 			_, err := reconciler.MarkFailed(ctx, wfe, pr)
 			Expect(err).ToNot(HaveOccurred())
@@ -4887,6 +4907,12 @@ var _ = Describe("WorkflowExecution Controller", func() {
 				Expect(wfe.Status.FailureDetails).To(And(Not(BeNil()), HaveField("Reason", Equal(
 					workflowexecutionv1alpha1.FailureReasonOOMKilled))))
 				Expect(wfe.Status.FailureDetails.WasExecutionFailure).To(BeFalse())
+
+				// Issue #1690 RCA follow-up: the pre-execution path
+				// (markFailedInternal) must also mirror the reason onto the
+				// flat top-level field, same as the in-execution MarkFailed path.
+				Expect(wfe.Status.FailureReason).To(Equal(workflowexecutionv1alpha1.FailureReasonOOMKilled),
+					"top-level FailureReason must be populated on the pre-execution failure path too")
 
 				// And: Audit event should be emitted
 				Eventually(func() bool {
