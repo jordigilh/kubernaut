@@ -239,13 +239,26 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	// When remaining time is already at or below the safety margin, the
 	// requeue must not be pushed past the deadline (no negative/zero-clamped
 	// surprises) — it falls back to firing at the remaining time exactly.
+	//
+	// CI flake fix: `remaining` must stay comfortably below
+	// requeueDeadlineSafetyMargin (2s in production) to exercise the
+	// fallback branch, but comfortably above the wall-clock time the
+	// reconciler's full pass (hash/health/alert/metrics checks + fake
+	// client round-trips) actually takes. Previously 500ms — too tight
+	// under a loaded CI runner: `time.Now()` is captured here at seed
+	// time, but the deadline is re-evaluated deep inside Reconcile() via
+	// TimeUntilExpired, which clamps any elapsed-past-deadline duration to
+	// exactly 0 and short-circuits into completion (RequeueAfter=0),
+	// failing the ">0" assertion below even though the requeue-capping
+	// logic itself is correct. 1.5s leaves 3x the original margin while
+	// still exercising the same fallback branch (1.5s < 2s margin).
 	// ========================================
 	It("UT-EM-DAR-004: should fall back to the remaining time when it is already below the safety margin", func() {
 		s := buildScheme()
 		ns := testNs
 		name := "ea-dar-004"
 
-		remaining := 500 * time.Millisecond
+		remaining := 1500 * time.Millisecond
 		deadline := time.Now().Add(remaining)
 		ea := seedAssessingEA(name, deadline)
 		r := makeReconciler(s, ea)
