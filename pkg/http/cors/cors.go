@@ -235,11 +235,7 @@ func FromEnvironment() *Options {
 	}
 
 	if maxAge := os.Getenv("CORS_MAX_AGE"); maxAge != "" {
-		// Parse max age, default to 300 if invalid
-		var age int
-		if _, err := parseMaxAge(maxAge, &age); err == nil {
-			opts.MaxAge = age
-		}
+		opts.MaxAge = parseMaxAge(maxAge)
 	}
 
 	return opts
@@ -289,10 +285,7 @@ func FromConfig(cfg *Options) *Options {
 	if cfg.MaxAge > 0 {
 		opts.MaxAge = cfg.MaxAge
 	} else if maxAgeStr := os.Getenv("CORS_MAX_AGE"); maxAgeStr != "" {
-		var age int
-		if _, err := parseMaxAge(maxAgeStr, &age); err == nil {
-			opts.MaxAge = age
-		}
+		opts.MaxAge = parseMaxAge(maxAgeStr)
 	}
 
 	return opts
@@ -363,15 +356,17 @@ func splitAndTrim(s string) []string {
 	return result
 }
 
-// parseMaxAge parses a string to an integer for max age.
-func parseMaxAge(s string, result *int) (int, error) {
+// parseMaxAge parses a string to an integer for max age. Per BR-HTTP-015,
+// a non-digit input is not an error -- it deliberately returns 0 (verified
+// by coverage_668_test.go's "sets MaxAge to zero when CORS_MAX_AGE contains
+// non-digits" case), so callers only need the returned value.
+func parseMaxAge(s string) int {
 	var age int
 	for _, c := range s {
 		if c < '0' || c > '9' {
-			return 0, nil // Invalid, return 0
+			return 0 // Invalid, return 0
 		}
 		age = age*10 + int(c-'0')
 	}
-	*result = age
-	return age, nil
+	return age
 }

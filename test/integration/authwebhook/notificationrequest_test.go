@@ -53,7 +53,7 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "default"
+		namespace = defaultFixture
 	})
 
 	Context("IT-AW-276-001: when operator cancels notification with delivery attempts via DELETE", func() {
@@ -137,11 +137,11 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			By("Validating event_data contains delivery_channels (IT-AW-276-001)")
 			validateEventData(event, map[string]interface{}{
-				"notification_name":  nrName,
-				"notification_type":  "Escalation",
-				"priority":           "High",
-				"final_status":       "Sending",
-				"delivery_channels":  []interface{}{"console", "slack"},
+				"notification_name": nrName,
+				"notification_type": "Escalation",
+				"priority":          "High",
+				"final_status":      "Sending",
+				"delivery_channels": []interface{}{"console", "slack"},
 			})
 
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -294,11 +294,11 @@ var _ = Describe("BR-AUTH-001: NotificationRequest Cancellation Attribution", fu
 
 			By("Validating event_data contains empty delivery_channels (IT-AW-276-002)")
 			validateEventData(event, map[string]interface{}{
-				"notification_name":  nrName,
-				"notification_type":  "StatusUpdate",
-				"priority":           "Low",
-				"final_status":       "Sending",
-				"delivery_channels":  []interface{}{},
+				"notification_name": nrName,
+				"notification_type": "StatusUpdate",
+				"priority":          "Low",
+				"final_status":      "Sending",
+				"delivery_channels": []interface{}{},
 			})
 
 			GinkgoWriter.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")

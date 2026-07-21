@@ -41,14 +41,13 @@ import (
 // RemediationRequests from invalid data.
 var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects malformed payloads (BR-GATEWAY-003)", Label("fleet"), func() {
 
-	gatewayURL := "http://localhost:30080"
+	gatewayURL := urlLocalhost30080
 
 	It("should return 400 for syntactically invalid JSON [SI-10]", func() {
 		malformed := `{"alerts": [{"status": "firing", INVALID}]}`
 
 		resp, err := postWithFleetAuth(
 			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
 			strings.NewReader(malformed))
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
@@ -62,7 +61,6 @@ var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects mal
 
 		resp, err := postWithFleetAuth(
 			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
 			strings.NewReader(emptyAlerts))
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
@@ -85,7 +83,6 @@ var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects mal
 
 		resp, err := postWithFleetAuth(
 			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
 			strings.NewReader(missingLabels))
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
@@ -97,7 +94,6 @@ var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects mal
 	It("should return 400 for empty request body [SI-10]", func() {
 		resp, err := postWithFleetAuth(
 			gatewayURL+"/api/v1/signals/prometheus",
-			"application/json",
 			strings.NewReader(""))
 		Expect(err).ToNot(HaveOccurred())
 		defer resp.Body.Close()
@@ -142,8 +138,8 @@ var _ = Describe("E2E-FLEET-SI10-001 [SI-10]: Fleet input validation rejects mal
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetSI10Valid", namespace, "warning",
-			"Deployment", targetName, "prod-west")
+		payload := buildPrometheusAlertWithCluster("FleetSI10Valid", "warning",
+			targetName, "prod-west")
 
 		postFleetAlertUntilAccepted(gatewayURL, payload, http.StatusCreated, http.StatusAccepted)
 	})

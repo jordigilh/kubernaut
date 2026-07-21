@@ -121,7 +121,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback HTTP 202 (Integration)", func() {
 	It("IT-DLQ-FALLBACK-001: should return HTTP 202 when PostgreSQL becomes unavailable mid-flight", func() {
 		pgHost := os.Getenv("POSTGRES_HOST")
 		if pgHost == "" {
-			pgHost = "localhost"
+			pgHost = localhost
 		}
 		pgPort := os.Getenv("POSTGRES_PORT")
 		if pgPort == "" {
@@ -129,7 +129,7 @@ var _ = Describe("BR-DS-004: DLQ Fallback HTTP 202 (Integration)", func() {
 		}
 		redisHost := os.Getenv("REDIS_HOST")
 		if redisHost == "" {
-			redisHost = "localhost"
+			redisHost = localhost
 		}
 		redisPort := os.Getenv("REDIS_PORT")
 		if redisPort == "" {
@@ -240,13 +240,13 @@ var _ = Describe("BR-DS-004: DLQ Fallback HTTP 202 (Integration)", func() {
 
 func buildAuditEventJSON(correlationID, eventType, action string) []byte {
 	event := map[string]interface{}{
-		"version":        "1.0",
-		"event_category": "gateway",
-		"event_type":     eventType,
+		"version":         "1.0",
+		"event_category":  "gateway",
+		"event_type":      eventType,
 		"event_timestamp": time.Now().UTC().Format(time.RFC3339Nano),
-		"correlation_id": correlationID,
-		"event_outcome":  "success",
-		"event_action":   action,
+		"correlation_id":  correlationID,
+		"event_outcome":   "success",
+		"event_action":    action,
 		"event_data": map[string]interface{}{
 			"event_type":  "gateway.signal.received",
 			"signal_type": "alert",

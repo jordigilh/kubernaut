@@ -206,7 +206,7 @@ var _ = Describe("Owner Chain Deduplication (#270, BR-GATEWAY-004)", Ordered, Co
 
 			By("3. Parsing alert for Pod A (triggers owner chain resolution)")
 
-			payloadA := createPrometheusAlertForPod(testNamespace, "ContainerMemoryExhaustionPredicted", "warning", "", "", "leaky-app-587f69c664-abc12")
+			payloadA := createPrometheusAlertForPod(testNamespace, "ContainerMemoryExhaustionPredicted", "warning", "", "leaky-app-587f69c664-abc12")
 			signalA, err := adapter.Parse(ctx, payloadA)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signalA.Fingerprint).ToNot(BeEmpty(), "Signal A should have a computed fingerprint")
@@ -218,7 +218,7 @@ var _ = Describe("Owner Chain Deduplication (#270, BR-GATEWAY-004)", Ordered, Co
 
 			By("4. Parsing alert for Pod B (same Deployment, different pod)")
 
-			payloadB := createPrometheusAlertForPod(testNamespace, "ContainerMemoryExhaustionPredicted", "warning", "", "", "leaky-app-587f69c664-xyz98")
+			payloadB := createPrometheusAlertForPod(testNamespace, "ContainerMemoryExhaustionPredicted", "warning", "", "leaky-app-587f69c664-xyz98")
 			signalB, err := adapter.Parse(ctx, payloadB)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signalB.Fingerprint).ToNot(BeEmpty(), "Signal B should have a computed fingerprint")
@@ -302,7 +302,7 @@ var _ = Describe("Owner Chain Deduplication (#270, BR-GATEWAY-004)", Ordered, Co
 			ownerResolver := adapters.NewK8sOwnerResolver(k8sClient, testLogger)
 			adapter := adapters.NewPrometheusAdapter(ownerResolver, adapters.NewTestAPIResourceRegistry())
 
-			payload := createPrometheusAlertForPod(testNamespace, "HighCPU", "warning", "", "", "standalone-worker")
+			payload := createPrometheusAlertForPod(testNamespace, "HighCPU", "warning", "", "standalone-worker")
 			signal, err := adapter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 

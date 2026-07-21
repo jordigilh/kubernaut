@@ -21,10 +21,10 @@ func partConverterBridgeCtx() (*fakeQueue, context.Context) {
 	return queue, ctx
 }
 
-func statusEventTextAt(queue *fakeQueue, idx int) string {
-	Expect(queue.events).To(HaveLen(idx + 1))
-	evt, ok := queue.events[idx].(*a2a.TaskStatusUpdateEvent)
-	Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent at index %d", idx)
+func statusEventTextAt(queue *fakeQueue) string {
+	Expect(queue.events).To(HaveLen(1))
+	evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+	Expect(ok).To(BeTrue(), "expected TaskStatusUpdateEvent at index 0")
 	Expect(evt.Metadata).NotTo(BeNil())
 	tp, ok := evt.Status.Message.Parts[0].(a2a.TextPart)
 	Expect(ok).To(BeTrue())
@@ -54,7 +54,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil(), "bridge path must not return artifact parts")
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("Investigating"))
 			Expect(text).To(ContainSubstring("prod"))
 			Expect(text).To(ContainSubstring("api-server"))
@@ -71,7 +71,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigating"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1189-102: kubernaut_discover_workflows -> discovering status", func() {
@@ -85,7 +85,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Discovering available remediation workflows"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Discovering available remediation workflows"))
 		})
 
 		It("UT-AF-1189-103: kubernaut_select_workflow -> selecting status with workflow_id", func() {
@@ -99,7 +99,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("Selecting remediation workflow"))
 			Expect(text).To(ContainSubstring("wf-increase-memory"))
 		})
@@ -115,7 +115,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Watching remediation progress"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Watching remediation progress"))
 		})
 
 		It("UT-AF-1189-106: unknown tool -> generic fallback", func() {
@@ -129,7 +129,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("...\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("...\n\n"))
 		})
 
 		It("UT-AF-1189-107: FunctionCall with nil Args -> no panic, status without context", func() {
@@ -143,7 +143,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("Watching remediation progress"))
 			Expect(text).NotTo(ContainSubstring("<nil>"))
 		})
@@ -161,7 +161,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigating"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1189-109: kubectl_list -> listing cluster resources", func() {
@@ -175,7 +175,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Listing cluster resources"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Listing cluster resources"))
 		})
 
 		It("UT-AF-1189-110: kubectl_list_events -> fetching cluster events", func() {
@@ -189,7 +189,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Fetching cluster events"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Fetching cluster events"))
 		})
 
 		It("UT-AF-1189-116: kubernaut_check_existing_remediation -> checking for existing remediation", func() {
@@ -203,7 +203,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Checking for existing remediation"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Checking for existing remediation"))
 		})
 	})
 
@@ -222,7 +222,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("Root cause: PostgreSQL uses emptyDir"))
 			Expect(text).NotTo(ContainSubstring(`"summary"`))
 		})
@@ -238,7 +238,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigation completed"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Investigation completed"))
 		})
 
 		It("UT-AF-1189-113: kubernaut_discover_workflows response with workflows array -> listing", func() {
@@ -257,7 +257,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("increase-memory"))
 			Expect(text).To(ContainSubstring("restart-pod"))
 		})
@@ -290,7 +290,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("selected"))
 			Expect(text).To(ContainSubstring("Workflow increase-memory-limit selected for execution"))
 		})
@@ -311,7 +311,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Executing"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Executing"))
 		})
 
 		It("UT-AF-1189-119: FunctionResponse with nil Response map -> fallback text, no panic", func() {
@@ -325,7 +325,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigation completed"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Investigation completed"))
 		})
 
 		It("UT-AF-1189-120: kubernaut_investigate response with session_id -> started summary", func() {
@@ -342,7 +342,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("Investigation started"))
 			Expect(text).To(ContainSubstring("sess-abc-123"))
 		})
@@ -414,7 +414,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("Investigating"))
 			Expect(len(text)).To(BeNumerically("<", 1024), "status text should be bounded")
 		})
@@ -433,7 +433,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(len(statusEventTextAt(queue, 0))).To(BeNumerically("<", 2048), "summary should be bounded")
+			Expect(len(statusEventTextAt(queue))).To(BeNumerically("<", 2048), "summary should be bounded")
 		})
 
 		It("UT-AF-1189-152: FunctionCall with special chars in tool name -> generic fallback", func() {
@@ -447,7 +447,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("...\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("...\n\n"))
 		})
 	})
 
@@ -469,7 +469,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Investigation completed.\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("Investigation completed.\n\n"))
 		})
 
 		It("UT-AF-1189-155: kubernaut_select_workflow response with message only -> message text", func() {
@@ -483,7 +483,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Workflow selected for execution\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("Workflow selected for execution\n\n"))
 		})
 
 		It("UT-AF-1189-156: kubernaut_select_workflow response with status only -> formatted status", func() {
@@ -497,7 +497,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Workflow queued.\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("Workflow queued.\n\n"))
 		})
 
 		It("UT-AF-1189-157: kubernaut_select_workflow response with empty fields -> generic fallback", func() {
@@ -511,7 +511,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Workflow selection completed.\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("Workflow selection completed.\n\n"))
 		})
 
 		It("UT-AF-1189-158: kubernaut_watch response with phase only -> phase text", func() {
@@ -530,7 +530,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Remediation completed (final phase: Executing)\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("Remediation completed (final phase: Executing)\n\n"))
 		})
 
 		It("UT-AF-1189-159: kubernaut_watch response with status only -> status text", func() {
@@ -544,7 +544,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Remediation completed.\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("Remediation completed.\n\n"))
 		})
 
 		It("UT-AF-1189-160: kubernaut_watch response with empty fields -> generic fallback", func() {
@@ -558,7 +558,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("Watching remediation...\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("Watching remediation...\n\n"))
 		})
 
 		It("UT-AF-1189-161: kubernaut_remediate response without rr_id -> human-friendly fallback", func() {
@@ -572,7 +572,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("already exists"))
 			Expect(text).NotTo(ContainSubstring(`"`), "should not contain JSON syntax")
 		})
@@ -593,7 +593,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("Remediation request created"))
 			Expect(text).NotTo(ContainSubstring(`"rr_id"`))
 			Expect(text).NotTo(ContainSubstring(`"message"`))
@@ -613,7 +613,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("already exists"))
 			Expect(text).To(ContainSubstring("rr-existing"))
 			Expect(text).NotTo(ContainSubstring(`{`))
@@ -651,7 +651,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal(multiByteStr+"\n\n"),
+			Expect(statusEventTextAt(queue)).To(Equal(multiByteStr+"\n\n"),
 				"rune-safe truncation should preserve string when rune count is within limit")
 		})
 
@@ -669,7 +669,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("..."),
 				"converter truncation produces ellipsis for text exceeding maxSummaryLen")
 			Expect(len([]rune(text))).To(BeNumerically("<=", 1030),
@@ -695,7 +695,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("valid-workflow"))
 			Expect(text).NotTo(ContainSubstring("not-a-map"))
 		})
@@ -716,7 +716,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("restart-pod"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("restart-pod"))
 		})
 
 		It("UT-AF-1189-169: workflows key is not an array -> no workflows discovered", func() {
@@ -732,7 +732,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(Equal("No workflows discovered.\n\n"))
+			Expect(statusEventTextAt(queue)).To(Equal("No workflows discovered.\n\n"))
 		})
 
 		It("UT-AF-1189-166: workflow entry with zero confidence -> name without percentage", func() {
@@ -750,7 +750,7 @@ var _ = Describe("GenAIPartConverter (AC 5/AC 10)", func() {
 			result, err := convert(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			text := statusEventTextAt(queue, 0)
+			text := statusEventTextAt(queue)
 			Expect(text).To(ContainSubstring("- scale-up"))
 			Expect(text).NotTo(ContainSubstring("confidence"))
 		})
@@ -853,7 +853,7 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil())
-		Expect(statusEventTextAt(queue, 0)).To(HaveSuffix("\n\n"),
+		Expect(statusEventTextAt(queue)).To(HaveSuffix("\n\n"),
 			"status messages must end with \\n\\n so concatenated SSE frames are readable (#1301)")
 	})
 
@@ -863,7 +863,7 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil())
-		Expect(statusEventTextAt(queue, 0)).To(HaveSuffix("\n\n"),
+		Expect(statusEventTextAt(queue)).To(HaveSuffix("\n\n"),
 			"thought indicator must end with \\n\\n for readability (#1301)")
 	})
 
@@ -878,7 +878,7 @@ var _ = Describe("Status message line breaks (#1301)", func() {
 		result, err := convert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil())
-		Expect(statusEventTextAt(queue, 0)).To(HaveSuffix("\n\n"),
+		Expect(statusEventTextAt(queue)).To(HaveSuffix("\n\n"),
 			"tool response summaries must end with \\n\\n for readability (#1301)")
 	})
 
@@ -965,7 +965,7 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil(),
 			"bridge path must not return artifact parts; errors go via status channel (#1302)")
-		Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("cannot resolve GVK"))
+		Expect(statusEventTextAt(queue)).To(ContainSubstring("cannot resolve GVK"))
 	})
 
 	It("UT-AF-1302-002: non-key tool success response still nil (unchanged)", func() {
@@ -998,7 +998,7 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil(),
 			"MCP tool errors with status=error must be surfaced via bridge (#1302)")
-		Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("not_driving"),
+		Expect(statusEventTextAt(queue)).To(ContainSubstring("not_driving"),
 			"error message from MCP tool must be visible to the user")
 	})
 
@@ -1014,7 +1014,7 @@ var _ = Describe("Tool error surfacing (#1302)", func() {
 		result, err := nonStreamConvert(ctx, nil, part)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil(), "tool errors must always be surfaced via bridge (#1302)")
-		Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("connection refused"),
+		Expect(statusEventTextAt(queue)).To(ContainSubstring("connection refused"),
 			"even key tool errors must be surfaced so the user knows what failed (#1302)")
 	})
 })
@@ -1060,7 +1060,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("workflow"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("workflow"))
 		})
 
 		It("UT-AF-1258-032: select_workflow FunctionResponse -> brief status", func() {
@@ -1077,7 +1077,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).NotTo(BeEmpty())
+			Expect(statusEventTextAt(queue)).NotTo(BeEmpty())
 		})
 
 		It("UT-AF-1258-033: kubernaut_remediate FunctionResponse -> brief status", func() {
@@ -1095,7 +1095,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).NotTo(BeEmpty())
+			Expect(statusEventTextAt(queue)).NotTo(BeEmpty())
 		})
 
 		It("UT-AF-1258-034: kubectl_* FunctionResponse -> nil (unchanged behavior)", func() {
@@ -1123,7 +1123,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Investigating"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Investigating"))
 		})
 
 		It("UT-AF-1258-036: Thought parts emit reasoning in streaming mode", func() {
@@ -1162,7 +1162,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Creating remediation request"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Creating remediation request"))
 		})
 
 		It("UT-AF-1332-031: kubernaut_remediate response with new RR -> summary", func() {
@@ -1179,7 +1179,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("Remediation request created"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("Remediation request created"))
 		})
 
 		It("UT-AF-1332-032: kubernaut_remediate response with already_exists -> summary", func() {
@@ -1196,7 +1196,7 @@ var _ = Describe("GenAIPartConverter — Streaming Mode (TP-1258)", func() {
 			result, err := convertStreaming(ctx, nil, part)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(BeNil())
-			Expect(statusEventTextAt(queue, 0)).To(ContainSubstring("already exists"))
+			Expect(statusEventTextAt(queue)).To(ContainSubstring("already exists"))
 		})
 	})
 })
@@ -1570,15 +1570,15 @@ var _ = Describe("Structured Decision Payload Integration — TP-1395-1396", fun
 					"options": []any{
 						map[string]any{
 							"workflow_id": "wf-fix",
-							"name":       "Apply Fix",
+							"name":        "Apply Fix",
 							"description": "Apply configuration fix",
-							"parameters": map[string]any{"image": "v2.1.0", "replicas": "3"},
+							"parameters":  map[string]any{"image": "v2.1.0", "replicas": "3"},
 							"recommended": true,
 						},
 						map[string]any{
 							"workflow_id":      "wf-migrate",
-							"name":            "Migrate Database",
-							"description":     "Run database migration",
+							"name":             "Migrate Database",
+							"description":      "Run database migration",
 							"ruled_out_reason": "No pending migrations detected in schema diff",
 						},
 					},
@@ -1825,8 +1825,8 @@ var _ = Describe("Contract Compliance #1408 — Structured investigation_summary
 						"session_id": "sess-1408-001",
 						"summary":    "OOM detected",
 						"rca": map[string]any{
-							"severity":   "critical",
-							"confidence": 0.92,
+							"severity":    "critical",
+							"confidence":  0.92,
 							"explanation": "Memory limit exceeded",
 						},
 						"options": []any{

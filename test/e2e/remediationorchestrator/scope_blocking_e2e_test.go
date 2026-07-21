@@ -27,6 +27,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
@@ -73,7 +74,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: "e2e010001a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2aaa",
 				SignalName:        "HighCPUUsage",
-				Severity:          "critical",
+				Severity:          signalprocessingv1.SeverityCritical,
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
@@ -119,7 +120,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 	// ─────────────────────────────────────────────
 	It("E2E-RO-010-002: should allow RR to proceed for target in managed namespace", func() {
 		By("Creating a managed namespace (with kubernaut.ai/managed=true)")
-		managedNS := createTestNamespace("scope-e2e-mgd")
+		managedNS := createTestNamespace(ctx, "scope-e2e-mgd")
 		defer deleteTestNamespace(managedNS)
 
 		By("Creating a RemediationRequest targeting a resource in the managed namespace")
@@ -132,7 +133,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: "e2e010002b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3bbb",
 				SignalName:        "HighCPUUsage",
-				Severity:          "critical",
+				Severity:          signalprocessingv1.SeverityCritical,
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
@@ -197,7 +198,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			Spec: remediationv1.RemediationRequestSpec{
 				SignalFingerprint: "e2e010003c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4ccc",
 				SignalName:        "HighCPUUsage",
-				Severity:          "critical",
+				Severity:          signalprocessingv1.SeverityCritical,
 				SignalType:        "alert",
 				TargetType:        "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{

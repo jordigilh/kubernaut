@@ -128,10 +128,14 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 		})
 	})
 
-	Describe("UT-KA-703-I05: GetDriver returns nil when no active session", func() {
-		It("should return nil session when no driver is active", func() {
+	Describe("UT-KA-703-I05: GetDriver returns ErrSessionNotFound when no active session", func() {
+		It("should return ErrSessionNotFound and a nil session when no driver is active", func() {
+			// Issue #1674: GetDriver previously returned (nil, nil), ambiguous
+			// with a caller forgetting to check the error. Every production
+			// caller already guards on `err != nil || sess == nil` (or discards
+			// err entirely), so this sentinel is a pure signature clarification.
 			session, err := mgr.GetDriver("rr-005")
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(MatchError(mcpinternal.ErrSessionNotFound))
 			Expect(session).To(BeNil())
 		})
 	})

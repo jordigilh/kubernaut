@@ -81,7 +81,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 
 			By("2. Process Prometheus alert with 'critical' severity")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -114,7 +114,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 
 			By("2. Process Prometheus alert with 'warning' severity")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-			prometheusAlert := createPrometheusAlert(testNamespace, "ModerateMemory", "warning", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "ModerateMemory", "warning", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -146,7 +146,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 
 			By("2. Process Prometheus alert with 'info' severity")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-			prometheusAlert := createPrometheusAlert(testNamespace, "LowDiskSpace", "info", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "LowDiskSpace", "info", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -192,7 +192,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 
 			By("2. Process Prometheus alert with 'Sev1' severity")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-			prometheusAlert := createPrometheusAlert(testNamespace, "EnterpriseCritical", "Sev1", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "EnterpriseCritical", "Sev1", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -225,7 +225,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 
 			By("2. Process Prometheus alert with 'P0' severity")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-			prometheusAlert := createPrometheusAlert(testNamespace, "PagerDutyCritical", "P0", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "PagerDutyCritical", "P0", "")
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -255,7 +255,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-007] should preserve 'Warning' event type as-is", func() {
 			By("1. Process K8s Warning event")
 			k8sAdapter := adapters.NewKubernetesEventAdapter()
-			k8sEvent := createK8sEvent("Warning", "BackOff", testNamespace, "Pod", "api-server")
+			k8sEvent := createK8sEvent("Warning", "BackOff", testNamespace, "api-server")
 			signal, err := k8sAdapter.Parse(ctx, k8sEvent)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -269,7 +269,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-008] should preserve 'Error' event type as-is", func() {
 			By("1. Process K8s Error event")
 			k8sAdapter := adapters.NewKubernetesEventAdapter()
-			k8sEvent := createK8sEvent("Error", "FailedScheduling", testNamespace, "Pod", "unschedulable-pod")
+			k8sEvent := createK8sEvent("Error", "FailedScheduling", testNamespace, "unschedulable-pod")
 			signal, err := k8sAdapter.Parse(ctx, k8sEvent)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -283,7 +283,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 		It("[GW-INT-SEV-009] should NOT map 'OOMKilled' to 'critical' automatically", func() {
 			By("1. Process K8s Warning event with OOMKilled reason")
 			k8sAdapter := adapters.NewKubernetesEventAdapter()
-			k8sEvent := createK8sEvent("Warning", "OOMKilled", testNamespace, "Pod", "memory-hog")
+			k8sEvent := createK8sEvent("Warning", "OOMKilled", testNamespace, "memory-hog")
 			signal, err := k8sAdapter.Parse(ctx, k8sEvent)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -316,7 +316,7 @@ var _ = Describe("BR-GATEWAY-181: Custom Severity Pass-Through", Label("integrat
 			}
 
 			for _, tc := range testCases {
-				prometheusAlert := createPrometheusAlert(testNamespace, "TestAlert", tc.severity, "", "")
+				prometheusAlert := createPrometheusAlert(testNamespace, "TestAlert", tc.severity, "")
 				signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 				Expect(err).ToNot(HaveOccurred())
 

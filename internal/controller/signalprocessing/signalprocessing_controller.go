@@ -169,7 +169,7 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	// BR-SP-111: On success, reset consecutive failures
 	// E1 fix: Success paths use RequeueAfter (not Requeue), so check both.
 	if err == nil && (result.Requeue || result.RequeueAfter > 0) {
-		if resetErr := r.resetConsecutiveFailures(ctx, sp, logger); resetErr != nil {
+		if resetErr := r.resetConsecutiveFailures(ctx, sp); resetErr != nil {
 			logger.V(1).Info("Failed to reset consecutive failures (non-fatal)", "error", resetErr)
 		}
 	}
@@ -377,13 +377,13 @@ func (r *SignalProcessingReconciler) handleTransientError(
 }
 
 // resetConsecutiveFailures resets the failure counter on successful operation.
-// Call this after successful phase transitions.
+// Call this after successful phase transitions. Its error is logged by the
+// sole caller, so it needs no logger of its own.
 // DD-SHARED-001: Shared Exponential Backoff Library
 // DD-PERF-001: Atomic status updates
 func (r *SignalProcessingReconciler) resetConsecutiveFailures(
 	ctx context.Context,
 	sp *signalprocessingv1alpha1.SignalProcessing,
-	logger logr.Logger,
 ) error {
 	if sp.Status.ConsecutiveFailures == 0 {
 		return nil // Already reset, skip update

@@ -42,6 +42,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// Fixture message strings reused across self-resolved / no-matching-workflows
+// test cases below (free-text AIAnalysis.Status.Message, not a CRD enum).
+const (
+	msgIssueSelfResolved        = "Issue self-resolved"
+	msgProblemSelfResolved      = "Problem self-resolved"
+	msgNoMatchingWorkflowsFound = "No matching workflows found"
+)
+
 var _ = Describe("AIAnalysisHandler", func() {
 	var (
 		scheme *runtime.Scheme
@@ -64,11 +72,11 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 					Expect(handler.IsWorkflowResolutionFailed(ai)).To(Equal(expected))
 				},
-				Entry("returns true when Phase=Failed and Reason=WorkflowResolutionFailed", "Failed", "WorkflowResolutionFailed", true),
-				Entry("returns false when Phase=Failed but Reason is different", "Failed", "APIError", false),
-				Entry("returns false when Phase=Completed", "Completed", "WorkflowResolutionFailed", false),
-				Entry("returns false when Phase=Analyzing", "Analyzing", "WorkflowResolutionFailed", false),
-				Entry("returns false when Phase=Failed with empty Reason", "Failed", "", false),
+				Entry("returns true when Phase=Failed and Reason=WorkflowResolutionFailed", aianalysisv1.PhaseFailed, string(aianalysisv1.ReasonWorkflowResolutionFailed), true),
+				Entry("returns false when Phase=Failed but Reason is different", aianalysisv1.PhaseFailed, string(aianalysisv1.ReasonAPIError), false),
+				Entry("returns false when Phase=Completed", aianalysisv1.PhaseCompleted, string(aianalysisv1.ReasonWorkflowResolutionFailed), false),
+				Entry("returns false when Phase=Analyzing", aianalysisv1.PhaseAnalyzing, string(aianalysisv1.ReasonWorkflowResolutionFailed), false),
+				Entry("returns false when Phase=Failed with empty Reason", aianalysisv1.PhaseFailed, "", false),
 			)
 		})
 
@@ -76,8 +84,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #5: Returns true for WorkflowNotNeeded
 			It("should return true when Phase=Completed and Reason=WorkflowNotNeeded", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 
 				Expect(handler.IsWorkflowNotNeeded(ai)).To(BeTrue())
 			})
@@ -85,7 +93,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #6: Returns false for normal completion
 			It("should return false when Phase=Completed but Reason is different", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
 				ai.Status.Reason = ""
 
 				Expect(handler.IsWorkflowNotNeeded(ai)).To(BeFalse())
@@ -94,8 +102,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #7: Returns false for Failed phase
 			It("should return false when Phase=Failed", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 
 				Expect(handler.IsWorkflowNotNeeded(ai)).To(BeFalse())
 			})
@@ -105,8 +113,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #8: Returns true for WorkflowResolutionFailed
 			It("should return true for WorkflowResolutionFailed", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "WorkflowResolutionFailed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 
 				Expect(handler.RequiresManualReview(ai)).To(BeTrue())
 			})
@@ -114,7 +122,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 			// Test #9: Returns false for normal completion
 			It("should return false for normal completion", func() {
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
 
 				Expect(handler.RequiresManualReview(ai)).To(BeFalse())
 			})
@@ -135,7 +143,12 @@ var _ = Describe("AIAnalysisHandler", func() {
 			fakeClientBuilder = fake.NewClientBuilder().WithScheme(scheme)
 			ctx = context.Background()
 			transitionFailedCalls = 0
-			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.FailurePhase, reason error) (ctrl.Result, error) {
+			// ctx is unused here by design: this is the lightweight default mock for
+			// tests that only assert call count, not persisted state. Its signature
+			// must match handler.NewAIAnalysisHandler's ttf parameter type; tests that
+			// need real persistence swap in createMockTransitionFailed below, which
+			// does use ctx to call client.Status().Update.
+			mockTransitionFailed = func(ctx context.Context, rr *remediationv1.RemediationRequest, phase remediationv1.FailurePhase, reason error) (ctrl.Result, error) { //nolint:unparam // ctx required to match TransitionFailedFunc signature (see handler.NewAIAnalysisHandler)
 				transitionFailedCalls++
 				return ctrl.Result{}, nil
 			}
@@ -168,7 +181,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Pending"
+				ai.Status.Phase = aianalysisv1.PhasePending
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -183,7 +196,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Investigating"
+				ai.Status.Phase = aianalysisv1.PhaseInvestigating
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -198,7 +211,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Analyzing"
+				ai.Status.Phase = aianalysisv1.PhaseAnalyzing
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -215,10 +228,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
-				ai.Status.SubReason = "ProblemResolved"
-				ai.Status.Message = "Issue self-resolved"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
+				ai.Status.SubReason = aianalysisv1.SubReasonProblemResolved
+				ai.Status.Message = msgIssueSelfResolved
 
 				beforeCall := time.Now()
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -245,10 +258,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 0)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
-				ai.Status.SubReason = "ProblemResolved"
-				ai.Status.Message = "Issue self-resolved"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
+				ai.Status.SubReason = aianalysisv1.SubReasonProblemResolved
+				ai.Status.Message = msgIssueSelfResolved
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -271,9 +284,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h.SetNotifySelfResolved(true)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
-				ai.Status.Message = "Problem self-resolved"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
+				ai.Status.Message = msgProblemSelfResolved
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -307,9 +320,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h.SetNotifySelfResolved(true)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
-				ai.Status.Message = "Problem self-resolved"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
+				ai.Status.Message = msgProblemSelfResolved
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred(),
@@ -336,9 +349,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				// SetNotifySelfResolved NOT called — defaults to false
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
-				ai.Status.Message = "Problem self-resolved"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
+				ai.Status.Message = msgProblemSelfResolved
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -366,10 +379,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h.SetNotifySelfResolved(true)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
-				ai.Status.SubReason = "ProblemResolved"
-				ai.Status.Message = "Issue self-resolved"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
+				ai.Status.SubReason = aianalysisv1.SubReasonProblemResolved
+				ai.Status.Message = msgIssueSelfResolved
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -385,7 +398,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 					"Correctness: RR outcome must be NoActionRequired")
 				Expect(updatedRR.Status.CompletedAt).ToNot(BeNil(),
 					"Correctness: CompletedAt must be set")
-				Expect(updatedRR.Status.Message).To(Equal("Issue self-resolved"),
+				Expect(updatedRR.Status.Message).To(Equal(msgIssueSelfResolved),
 					"Accuracy: RR message must match AI message")
 
 				metric := testutil.ToFloat64(m.NoActionNeededTotal.WithLabelValues("ProblemResolved", "default"))
@@ -403,9 +416,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
 				ai.Status.ApprovalRequired = true
-				ai.Status.ApprovalReason = "low_confidence"
+				ai.Status.ApprovalReason = aianalysisv1.HumanReviewReasonLowConfidence
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -429,8 +442,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "WorkflowResolutionFailed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				ai.Status.SubReason = "WorkflowNotFound"
 				ai.Status.Message = "No matching workflow found"
 
@@ -456,8 +469,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "WorkflowResolutionFailed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				ai.Status.SubReason = "NoMatchingWorkflows"
 				ai.Status.Message = "No workflows matched"
 
@@ -483,9 +496,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "WorkflowResolutionFailed"
-				ai.Status.SubReason = "LowConfidence"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
+				ai.Status.SubReason = aianalysisv1.SubReasonLowConfidence
 				ai.Status.RootCause = "Pod crash loop detected"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -508,9 +521,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "WorkflowResolutionFailed"
-				ai.Status.SubReason = "LowConfidence"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
+				ai.Status.SubReason = aianalysisv1.SubReasonLowConfidence
 				ai.Status.RootCause = "legacy"
 				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "RCA Summary: OOM kill - scale deployment",
@@ -536,9 +549,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "WorkflowResolutionFailed"
-				ai.Status.SubReason = "LowConfidence"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
+				ai.Status.SubReason = aianalysisv1.SubReasonLowConfidence
 				ai.Status.Message = "Confidence below threshold"
 				ai.Status.Warnings = []string{"Warning A: Missing probes", "Warning B: Resource limits low"}
 
@@ -569,9 +582,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "APIError"
-				ai.Status.SubReason = "MaxRetriesExceeded"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonAPIError
+				ai.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
 				ai.Status.Message = "Transient error exceeded max retries (5 attempts): KA request timeout"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -595,9 +608,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "APIError"
-				ai.Status.SubReason = "MaxRetriesExceeded"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonAPIError
+				ai.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
 				ai.Status.Message = "KA timeout after 5 retries"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -619,8 +632,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "APIError"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonAPIError
 				ai.Status.SubReason = "TransientError"
 				ai.Status.Message = "Network timeout calling KA"
 
@@ -646,8 +659,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "APIError"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonAPIError
 				ai.Status.SubReason = "TransientError"
 				ai.Status.Message = "KA returned 503 Service Unavailable"
 
@@ -670,8 +683,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "APIError"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonAPIError
 				ai.Status.SubReason = "PermanentError"
 				ai.Status.Message = "KA returned 401 Unauthorized"
 
@@ -694,9 +707,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "APIError"
-				ai.Status.SubReason = "MaxRetriesExceeded"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonAPIError
+				ai.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
 				ai.Status.Message = "KA timeout after 5 retries"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -707,7 +720,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(nrList.Items).To(HaveLen(1))
 				Expect(nrList.Items[0].Spec.ReviewSource).To(Equal(notificationv1.ReviewSourceAIAnalysis))
-				Expect(nrList.Items[0].Spec.Context.Review.Reason).To(Equal("APIError"))
+				Expect(nrList.Items[0].Spec.Context.Review.Reason).To(Equal(string(aianalysisv1.ReasonAPIError)))
 				Expect(nrList.Items[0].Spec.Context.Review.SubReason).To(Equal("MaxRetriesExceeded"))
 			})
 		})
@@ -722,9 +735,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "rca_incomplete"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
 				ai.Status.Message = "RCA is missing remediationTarget - cannot determine target"
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -748,7 +761,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
 				ai.Status.NeedsHumanReview = false
 				ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 					WorkflowID: "restart-pod-v1",
@@ -776,10 +789,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 
 				// Both flags set (edge case)
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
 				ai.Status.HumanReviewReason = "workflow_not_found"
-				ai.Status.Reason = "WorkflowResolutionFailed"
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				ai.Status.SubReason = "WorkflowNotFound"
 				ai.Status.Message = "Workflow not found"
 
@@ -805,9 +818,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "low_confidence"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
 				ai.Status.Message = "AI confidence below threshold"
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -836,16 +849,16 @@ var _ = Describe("AIAnalysisHandler", func() {
 					"workflow_not_found",
 					"image_mismatch",
 					"parameter_validation_failed",
-					"no_matching_workflows",
-					"low_confidence",
+					aianalysisv1.HumanReviewReasonNoMatchingWorkflows,
+					aianalysisv1.HumanReviewReasonLowConfidence,
 					"llm_parsing_error",
 					"investigation_inconclusive",
-					"rca_incomplete",
+					aianalysisv1.HumanReviewReasonRCAIncomplete,
 				}
 
 				for _, reason := range reasons {
 					ai := helpers.NewCompletedAIAnalysis("test-ai-"+reason, "default")
-					ai.Status.Phase = "Failed"
+					ai.Status.Phase = aianalysisv1.PhaseFailed
 					ai.Status.NeedsHumanReview = true
 					ai.Status.HumanReviewReason = reason
 					ai.Status.Message = "Human review required: " + reason
@@ -874,9 +887,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "rca_incomplete"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
 				ai.Status.Message = "RCA missing remediationTarget"
 				ai.Status.RootCause = "Pod crash loop detected"
 
@@ -909,9 +922,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.Message = "No matching workflows found for this alert type"
 				ai.Status.SelectedWorkflow = nil
 
@@ -935,10 +948,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
-				ai.Status.Message = "No matching workflows found"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.Message = msgNoMatchingWorkflowsFound
 				ai.Status.SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -960,9 +973,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.SelectedWorkflow = nil
 
 				beforeCall := time.Now()
@@ -983,9 +996,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 0)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1006,9 +1019,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "rca_incomplete"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonRCAIncomplete
 				ai.Status.Message = "Orphaned PVCs detected — cannot determine remediation target"
 				ai.Status.SelectedWorkflow = nil
 
@@ -1031,9 +1044,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1056,9 +1069,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1075,8 +1088,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "APIError"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonAPIError
 				ai.Status.NeedsHumanReview = false
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1093,9 +1106,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "low_confidence"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
 				// SelectedWorkflow is already non-nil from NewCompletedAIAnalysis
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1112,8 +1125,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
-				ai.Status.Reason = "WorkflowResolutionFailed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 				ai.Status.NeedsHumanReview = false
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1129,9 +1142,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.RootCause = "Orphaned PVCs in namespace production"
 				ai.Status.SelectedWorkflow = nil
 
@@ -1142,8 +1155,8 @@ var _ = Describe("AIAnalysisHandler", func() {
 				err = client.List(ctx, nrList)
 				Expect(err).ToNot(HaveOccurred())
 				Expect(nrList.Items).To(HaveLen(1))
-			Expect(nrList.Items[0].Spec.Context.Review.HumanReviewReason).To(Equal("no_matching_workflows"))
-			Expect(nrList.Items[0].Spec.Context.Review.RootCauseAnalysis).To(Equal("Orphaned PVCs in namespace production"))
+				Expect(nrList.Items[0].Spec.Context.Review.HumanReviewReason).To(Equal("no_matching_workflows"))
+				Expect(nrList.Items[0].Spec.Context.Review.RootCauseAnalysis).To(Equal("Orphaned PVCs in namespace production"))
 			})
 
 			// UT-RO-550-011: NotificationRequestRefs tracking
@@ -1154,9 +1167,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1180,9 +1193,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, m, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Failed"
+				ai.Status.Phase = aianalysisv1.PhaseFailed
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1206,11 +1219,11 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "AnalysisCompleted"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
-				ai.Status.Message = "No matching workflows found"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.Message = msgNoMatchingWorkflowsFound
 				ai.Status.SelectedWorkflow = nil
 
 				result, err := h.HandleAIAnalysisStatus(ctx, rr, ai)
@@ -1234,11 +1247,11 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "AnalysisCompleted"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
-				ai.Status.Message = "No matching workflows found"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+				ai.Status.Message = msgNoMatchingWorkflowsFound
 				ai.Status.SelectedWorkflow = nil
 				ai.Status.RootCause = "ResourceQuota exhausted"
 
@@ -1259,10 +1272,10 @@ var _ = Describe("AIAnalysisHandler", func() {
 				h = handler.NewAIAnalysisHandler(client, scheme, nc, nil, mockTransitionFailed, 24*time.Hour)
 
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "AnalysisCompleted"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 				ai.Status.NeedsHumanReview = true
-				ai.Status.HumanReviewReason = "no_matching_workflows"
+				ai.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 				ai.Status.SelectedWorkflow = nil
 
 				_, err := h.HandleAIAnalysisStatus(ctx, rr, ai)

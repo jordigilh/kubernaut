@@ -70,17 +70,17 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 	Describe("EmitCompletionAudit outcome argument (P0)", func() {
 
 		It("UT-RO-1033-001: EA terminal completion passes rr.Status.Outcome to EmitCompletionAudit", func() {
-			rr := newRemediationRequest("ver-outcome-ea", "default", remediationv1.PhaseVerifying)
-			rr.Status.Outcome = "Remediated"
+			rr := newRemediationRequest("ver-outcome-ea", defaultFixture, remediationv1.PhaseVerifying)
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 			rr.Status.StartTime = &startTime
 			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
-				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-ea", Namespace: "default",
+				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-ea", Namespace: defaultFixture,
 			}
 			dl := metav1.NewTime(time.Now().Add(10 * time.Minute))
 			rr.Status.VerificationDeadline = &dl
 			ea := &eav1.EffectivenessAssessment{
-				ObjectMeta: metav1.ObjectMeta{Name: "ea-ver-outcome-ea", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-ver-outcome-ea", Namespace: defaultFixture},
 				Status:     eav1.EffectivenessAssessmentStatus{Phase: eav1.PhasePending},
 			}
 
@@ -93,7 +93,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			cbs := noopCallbacks()
 			cbs.TrackEffectivenessStatus = func(_ context.Context, rr *remediationv1.RemediationRequest) error {
 				rr.Status.OverallPhase = phase.Completed
-				rr.Status.Outcome = "Remediated"
+				rr.Status.Outcome = remediationv1.OutcomeRemediated
 				return nil
 			}
 			cbs.EmitCompletionAudit = func(_ context.Context, _ *remediationv1.RemediationRequest, outcome string, _ int64) {
@@ -103,22 +103,22 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			h := newHandler(c, cbs)
 			_, err := h.Handle(ctx, rr)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(capturedOutcome).To(Equal("Remediated"),
+			Expect(capturedOutcome).To(Equal(remediationv1.OutcomeRemediated),
 				"EmitCompletionAudit should receive rr.Status.Outcome, not 'success'")
 		})
 
 		It("UT-RO-1033-002: Safety-net timeout passes VerificationTimedOut to EmitCompletionAudit", func() {
-			rr := newRemediationRequest("ver-outcome-safety", "default", remediationv1.PhaseVerifying)
+			rr := newRemediationRequest("ver-outcome-safety", defaultFixture, remediationv1.PhaseVerifying)
 			rr.CreationTimestamp = metav1.NewTime(time.Now().Add(-15 * time.Minute))
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-15 * time.Minute))
 			rr.Status.StartTime = &startTime
 			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
-				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-safety", Namespace: "default",
+				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-safety", Namespace: defaultFixture,
 			}
 
 			ea := &eav1.EffectivenessAssessment{
-				ObjectMeta: metav1.ObjectMeta{Name: "ea-ver-outcome-safety", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-ver-outcome-safety", Namespace: defaultFixture},
 				Status:     eav1.EffectivenessAssessmentStatus{Phase: eav1.PhasePending},
 			}
 
@@ -141,18 +141,18 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 		})
 
 		It("UT-RO-1033-003: Verification deadline expired passes VerificationTimedOut to EmitCompletionAudit", func() {
-			rr := newRemediationRequest("ver-outcome-dl", "default", remediationv1.PhaseVerifying)
-			rr.Status.Outcome = "Remediated"
+			rr := newRemediationRequest("ver-outcome-dl", defaultFixture, remediationv1.PhaseVerifying)
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			startTime := metav1.NewTime(time.Now().Add(-10 * time.Minute))
 			rr.Status.StartTime = &startTime
 			rr.Status.EffectivenessAssessmentRef = &corev1.ObjectReference{
-				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-dl", Namespace: "default",
+				Kind: "EffectivenessAssessment", Name: "ea-ver-outcome-dl", Namespace: defaultFixture,
 			}
 			dl := metav1.NewTime(time.Now().Add(-1 * time.Minute))
 			rr.Status.VerificationDeadline = &dl
 
 			ea := &eav1.EffectivenessAssessment{
-				ObjectMeta: metav1.ObjectMeta{Name: "ea-ver-outcome-dl", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "ea-ver-outcome-dl", Namespace: defaultFixture},
 				Status:     eav1.EffectivenessAssessmentStatus{Phase: eav1.PhasePending},
 			}
 
@@ -184,7 +184,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			mgr := prodaudit.NewManager("test-orchestrator")
 
 			outcomes := []string{
-				"Remediated",
+				remediationv1.OutcomeRemediated,
 				"Inconclusive",
 				"VerificationTimedOut",
 				"DryRun",
@@ -194,7 +194,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			for _, outcome := range outcomes {
 				event, err := mgr.BuildCompletionEvent(
 					"corr-"+outcome,
-					"default",
+					defaultFixture,
 					"rr-"+outcome,
 					"",
 					outcome,
@@ -221,7 +221,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 
 			event, err := mgr.BuildCompletionEvent(
 				"corr-compat",
-				"default",
+				defaultFixture,
 				"rr-compat",
 				"",
 				"VerificationTimedOut",
@@ -250,7 +250,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 
 			event, err := mgr.BuildCompletionEvent(
 				"corr-empty",
-				"default",
+				defaultFixture,
 				"rr-empty",
 				"",
 				"",
@@ -275,9 +275,9 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 
 			var wg sync.WaitGroup
 			outcomes := []string{
-				"Remediated", "Inconclusive", "VerificationTimedOut",
+				remediationv1.OutcomeRemediated, "Inconclusive", "VerificationTimedOut",
 				"DryRun", "ManualReviewRequired",
-				"Remediated", "Inconclusive", "VerificationTimedOut",
+				remediationv1.OutcomeRemediated, "Inconclusive", "VerificationTimedOut",
 				"DryRun", "ManualReviewRequired",
 			}
 
@@ -288,7 +288,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 					defer wg.Done()
 					event, err := mgr.BuildCompletionEvent(
 						"corr-concurrent",
-						"default",
+						defaultFixture,
 						"rr-concurrent",
 						"",
 						o,
@@ -326,7 +326,7 @@ var _ = Describe("Issue #1033 Gap 1: VerifyingHandler completion audit outcome (
 			for _, tc := range cases {
 				event, err := mgr.BuildCompletionEvent(
 					"corr-adversarial",
-					"default",
+					defaultFixture,
 					"rr-adversarial",
 					"",
 					tc.outcome,

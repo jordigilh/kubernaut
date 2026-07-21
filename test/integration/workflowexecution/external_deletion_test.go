@@ -202,7 +202,7 @@ var _ = Describe("BR-WE-007: Handle Externally Deleted PipelineRun", Label("inte
 			Expect(err).ToNot(HaveOccurred(), "WFE should reach Running phase")
 
 			By("Fetching the PipelineRun for deletion")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should exist in Running phase")
 
 			By("Deleting PipelineRun immediately after Running")

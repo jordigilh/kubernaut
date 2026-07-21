@@ -18,6 +18,7 @@ package datastorage_test
 
 import (
 	"encoding/json"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -68,25 +69,27 @@ var _ = Describe("ParseEngineConfig Discriminator [BR-WE-016]", func() {
 	})
 
 	Context("tekton and job engines", func() {
-		It("UT-WE-016-002: should return nil config for engine=tekton", func() {
+		It("UT-WE-016-002: should return ErrNoEngineConfig for engine=tekton", func() {
+			// Issue #1674: tekton/job have no typed engineConfig struct, so this
+			// is now a checkable sentinel instead of an ambiguous (nil, nil).
 			raw := json.RawMessage(`{"someField": "value"}`)
 
 			result, err := models.ParseEngineConfig("tekton", raw)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, models.ErrNoEngineConfig)).To(BeTrue())
 			Expect(result).To(BeNil())
 		})
 
-		It("UT-WE-016-002b: should return nil config for engine=job", func() {
+		It("UT-WE-016-002b: should return ErrNoEngineConfig for engine=job", func() {
 			raw := json.RawMessage(`{"someField": "value"}`)
 
 			result, err := models.ParseEngineConfig("job", raw)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, models.ErrNoEngineConfig)).To(BeTrue())
 			Expect(result).To(BeNil())
 		})
 
-		It("UT-WE-016-002c: should return nil for tekton with empty engineConfig", func() {
+		It("UT-WE-016-002c: should return ErrNoEngineConfig for tekton with empty engineConfig", func() {
 			result, err := models.ParseEngineConfig("tekton", nil)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, models.ErrNoEngineConfig)).To(BeTrue())
 			Expect(result).To(BeNil())
 		})
 	})
@@ -119,9 +122,9 @@ var _ = Describe("ParseEngineConfig Discriminator [BR-WE-016]", func() {
 			Expect(err.Error()).To(ContainSubstring("ansible"))
 		})
 
-		It("UT-WE-016-004c: should return nil for ansible with empty engineConfig", func() {
+		It("UT-WE-016-004c: should return ErrNoEngineConfig for ansible with empty engineConfig", func() {
 			result, err := models.ParseEngineConfig("ansible", nil)
-			Expect(err).ToNot(HaveOccurred())
+			Expect(errors.Is(err, models.ErrNoEngineConfig)).To(BeTrue())
 			Expect(result).To(BeNil())
 		})
 	})

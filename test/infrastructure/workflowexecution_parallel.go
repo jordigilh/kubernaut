@@ -64,7 +64,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// DD-TEST-007: Create coverdata directory before Kind cluster creation
 	// Kind config references ./coverdata as extraMount, must exist before mount
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		_, _ = fmt.Fprintf(output, "\n📊 DD-TEST-007: Creating coverdata directory for E2E coverage...\n")
 		projectRoot, err := findProjectRoot()
 		if err != nil {
@@ -82,7 +82,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(output, "\n📦 PHASE 1: Creating Kind cluster...\n")
 
-	createCmd := exec.Command("kind", "create", "cluster",
+	createCmd := exec.CommandContext(context.Background(), "kind", "create", "cluster",
 		"--name", clusterName,
 		"--config", configPath,
 		"--kubeconfig", kubeconfigPath,
@@ -96,7 +96,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// Create kubernaut-system namespace (required by PostgreSQL deployment in Phase 2)
 	_, _ = fmt.Fprintf(output, "\n📁 Creating controller namespace %s...\n", WorkflowExecutionNamespace)
-	nsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	nsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"create", "namespace", WorkflowExecutionNamespace)
 	if err := nsCmd.Run(); err != nil {
 		// Ignore if already exists
@@ -125,7 +125,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	// Goroutine 1: Install Tekton Pipelines
 	go func() {
 		_, _ = fmt.Fprintf(output, "\n🔧 [Goroutine 1] Installing Tekton Pipelines %s...\n", TektonPipelinesVersion)
-		err := installTektonPipelines(kubeconfigPath, output)
+		err := installTektonPipelines(ctx, kubeconfigPath, output)
 		if err != nil {
 			err = fmt.Errorf("tekton installation failed: %w", err)
 		} else {
@@ -157,14 +157,14 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 		// Wait for both to be ready
 		_, _ = fmt.Fprintf(output, "  ⏳ [Goroutine 2] Waiting for PostgreSQL to be ready...\n")
-		if waitErr := waitForDeploymentReady(kubeconfigPath, "postgresql", output); waitErr != nil {
+		if waitErr := waitForDeploymentReady(ctx, kubeconfigPath, "postgresql", output); waitErr != nil {
 			err = fmt.Errorf("postgresql not ready: %w", waitErr)
 			results <- result{name: "PostgreSQL+Redis", err: err}
 			return
 		}
 
 		_, _ = fmt.Fprintf(output, "  ⏳ [Goroutine 2] Waiting for Redis to be ready...\n")
-		if waitErr := waitForDeploymentReady(kubeconfigPath, "redis", output); waitErr != nil {
+		if waitErr := waitForDeploymentReady(ctx, kubeconfigPath, "redis", output); waitErr != nil {
 			err = fmt.Errorf("redis not ready: %w", waitErr)
 			results <- result{name: "PostgreSQL+Redis", err: err}
 			return
@@ -177,7 +177,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	// Goroutine 3: Pre-build Data Storage image (can happen while other infrastructure deploys)
 	go func() {
 		_, _ = fmt.Fprintf(output, "\n💾 [Goroutine 3] Building Data Storage image...\n")
-		err := buildDataStorageImage(output)
+		err := buildDataStorageImage(ctx, output)
 		if err != nil {
 			err = fmt.Errorf("data storage image build failed: %w", err)
 		} else {
@@ -223,13 +223,13 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// Deploy Data Storage (PostgreSQL/Redis already ready from Phase 2)
 	_, _ = fmt.Fprintf(output, "  💾 Deploying Data Storage service...\n")
-	if err := deployDataStorageWithConfig(clusterName, kubeconfigPath, output); err != nil {
+	if err := deployDataStorageWithConfig(ctx, clusterName, kubeconfigPath, output); err != nil {
 		return fmt.Errorf("failed to deploy Data Storage: %w", err)
 	}
 
 	// Wait for DS to be ready
 	_, _ = fmt.Fprintf(output, "  ⏳ Waiting for Data Storage to be ready...\n")
-	if err := waitForWEDataStorageReady(kubeconfigPath, output); err != nil {
+	if err := waitForWEDataStorageReady(ctx, kubeconfigPath, output); err != nil {
 		return fmt.Errorf("data storage did not become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(output, "✅ Data Storage deployed and ready\n")
@@ -276,7 +276,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// DD-WE-006: Create dependency Secret in execution namespace BEFORE workflow registration.
 	_, _ = fmt.Fprintf(output, "🔑 Creating DD-WE-006 dependency Secret in %s...\n", ExecutionNamespace)
-	depSecretCmd := exec.Command("kubectl", "create", "secret", "generic", "e2e-dep-secret",
+	depSecretCmd := exec.CommandContext(context.Background(), "kubectl", "create", "secret", "generic", "e2e-dep-secret",
 		"--from-literal=token=e2e-test-value",
 		"--namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
@@ -288,7 +288,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	}
 
 	dataStorageURL := "https://localhost:8092" // DD-TEST-001: WE → DataStorage dependency port
-	if _, err = BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, output); err != nil {
+	if _, err = BuildAndRegisterTestWorkflows(ctx, clusterName, kubeconfigPath, dataStorageURL, saToken, output); err != nil {
 		return fmt.Errorf("failed to build and register test workflows: %w", err)
 	}
 	_, _ = fmt.Fprintf(output, "✅ Test workflows ready\n")
@@ -300,7 +300,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 
 	// Create execution namespace
 	_, _ = fmt.Fprintf(output, "  📁 Creating execution namespace %s...\n", ExecutionNamespace)
-	execNsCmd := exec.Command("kubectl", "create", "namespace", ExecutionNamespace,
+	execNsCmd := exec.CommandContext(context.Background(), "kubectl", "create", "namespace", ExecutionNamespace,
 		"--kubeconfig", kubeconfigPath)
 	execNsCmd.Stdout = output
 	execNsCmd.Stderr = output
@@ -310,7 +310,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	}
 
 	// Create image pull secret
-	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, output); err != nil {
+	if err := createQuayPullSecret(ctx, kubeconfigPath, ExecutionNamespace, output); err != nil {
 		_, _ = fmt.Fprintf(output, "  Warning: Could not create quay.io pull secret: %v\n", err)
 		// Non-fatal - repos may be public
 	}
@@ -320,12 +320,12 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	return nil
 }
-func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.Writer) error {
+func deployDataStorageWithConfig(ctx context.Context, clusterName, kubeconfigPath string, output io.Writer) error {
 	projectRoot := getProjectRoot()
 
 	// Build Data Storage image
 	_, _ = fmt.Fprintln(output, "    Building Data Storage image...")
-	buildCmd := exec.Command("podman", "build",
+	buildCmd := exec.CommandContext(ctx, "podman", "build",
 		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"-t", "kubernaut-datastorage:latest",
 		"-f", "docker/data-storage.Dockerfile", ".")
@@ -334,7 +334,7 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 	buildCmd.Stderr = output
 	if err := buildCmd.Run(); err != nil {
 		// Try docker as fallback
-		buildCmd = exec.Command("docker", "build",
+		buildCmd = exec.CommandContext(ctx, "docker", "build",
 			"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 			"-t", "kubernaut-datastorage:latest",
 			"-f", "docker/data-storage.Dockerfile", ".")
@@ -354,7 +354,7 @@ func deployDataStorageWithConfig(clusterName, kubeconfigPath string, output io.W
 		_, _ = fmt.Fprintf(output, "    📦 Image will be pulled directly by Kubernetes: kubernaut-datastorage:latest\n")
 	} else {
 		_, _ = fmt.Fprintln(output, "    Loading Data Storage image into Kind...")
-		if err := loadImageToKind(clusterName, "kubernaut-datastorage:latest", output); err != nil {
+		if err := loadImageToKind(ctx, clusterName, "kubernaut-datastorage:latest", output); err != nil {
 			return fmt.Errorf("failed to load image: %w", err)
 		}
 	}
@@ -403,7 +403,7 @@ data:
       level: info
       format: json
 `
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(configMapManifest)
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -432,7 +432,7 @@ stringData:
   redis-secrets.yaml: |
     password: ""
 `
-	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(secretManifest)
 	cmd.Stdout = output
 	cmd.Stderr = output
@@ -546,15 +546,15 @@ spec:
     targetPort: 8080
     name: http
 `, GetImagePullPolicy())
-	cmd = exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd = exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(deploymentManifest)
 	cmd.Stdout = output
 	cmd.Stderr = output
 	return cmd.Run()
 }
 
-func waitForWEDataStorageReady(kubeconfigPath string, output io.Writer) error {
-	if err := waitForDeploymentReady(kubeconfigPath, "datastorage", output); err != nil {
+func waitForWEDataStorageReady(ctx context.Context, kubeconfigPath string, output io.Writer) error {
+	if err := waitForDeploymentReady(ctx, kubeconfigPath, "datastorage", output); err != nil {
 		return err
 	}
 	// Brief wait for DS to initialize connections to PostgreSQL/Redis

@@ -67,16 +67,16 @@ func SetupRemoteClusterForFMC(ctx context.Context, primaryClusterName, primaryKu
 		UsePodman:               true,
 		ProjectRootAsWorkingDir: true,
 	}
-	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
+	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return nil, fmt.Errorf("remote cluster creation failed: %w", err)
 	}
 
-	if err := createTestNamespace(namespace, remoteKubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, remoteKubeconfigPath, writer); err != nil {
 		return nil, fmt.Errorf("remote namespace creation failed: %w", err)
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Discovering primary cluster's node bridge IP...")
-	primaryIP, err := KindNodeBridgeIP(primaryClusterName + "-control-plane")
+	primaryIP, err := KindNodeBridgeIP(ctx, primaryClusterName + "-control-plane")
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover primary node bridge IP: %w", err)
 	}
@@ -145,7 +145,7 @@ spec:
 	}
 
 	_, _ = fmt.Fprintln(writer, "  Discovering remote cluster's node bridge IP...")
-	remoteIP, err := KindNodeBridgeIP(remoteClusterName + "-control-plane")
+	remoteIP, err := KindNodeBridgeIP(ctx, remoteClusterName + "-control-plane")
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover remote node bridge IP: %w", err)
 	}

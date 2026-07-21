@@ -64,14 +64,14 @@ func IsRunningInCICD() bool {
 // code agree on ahead of time.
 //
 // Authority: CI/CD artifact-based image handoff (no ghcr.io push in ci-pipeline.yml)
-func resolvePrebuiltCIArtifact(serviceName string, writer io.Writer) (string, bool) {
+func resolvePrebuiltCIArtifact(ctx context.Context, serviceName string, writer io.Writer) (string, bool) {
 	artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG")
 	if artifactTag == "" {
 		return "", false
 	}
 
 	localImageName := fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
-	checkCmd := exec.Command("podman", "image", "exists", localImageName)
+	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", localImageName)
 	if checkCmd.Run() != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  KUBERNAUT_CI_ARTIFACT_TAG set but no pre-loaded image found for %s (falling back)\n", serviceName)
 		return "", false
@@ -140,7 +140,7 @@ func PullImageFromRegistry(serviceName string, writer io.Writer) (string, error)
 	_, _ = fmt.Fprintf(writer, "📥 Pulling image from registry: %s\n", fullImageName)
 
 	// Pull image using podman (GitHub Actions uses podman for Kind)
-	pullCmd := exec.Command("podman", "pull", fullImageName)
+	pullCmd := exec.CommandContext(context.Background(), "podman", "pull", fullImageName)
 	pullCmd.Stdout = writer
 	pullCmd.Stderr = writer
 	pullStartTime := time.Now()
@@ -183,11 +183,11 @@ func PullImageFromRegistry(serviceName string, writer io.Writer) (string, error)
 //	// No IMAGE_REGISTRY/IMAGE_TAG set
 //	imageName, err := BuildImageForKind(cfg, writer)
 //	// Builds locally as before
-func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
+func BuildImageForKind(ctx context.Context, cfg E2EImageConfig, writer io.Writer) (string, error) {
 	// CI/CD Optimization: Use a CI-loaded artifact if one was already
 	// podman-loaded for this service under the agreed-upon fixed tag.
 	// Skip build entirely - the image is already local.
-	if prebuilt, ok := resolvePrebuiltCIArtifact(cfg.ServiceName, writer); ok {
+	if prebuilt, ok := resolvePrebuiltCIArtifact(ctx, cfg.ServiceName, writer); ok {
 		return prebuilt, nil
 	}
 
@@ -222,7 +222,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	// Generate DD-TEST-001 v1.3 compliant tag
 	// Use ServiceName for infrastructure field (not full ImageName with repo prefix)
 	// to avoid "/" in tags which Docker/Podman rejects
-	imageTag := generateInfrastructureImageTag(cfg.ServiceName, cfg.ServiceName)
+	imageTag := generateInfrastructureImageTag(cfg.ServiceName)
 	fullImageName := fmt.Sprintf("%s:%s", cfg.ImageName, imageTag)
 
 	// Podman automatically prefixes images with "localhost/" if no registry is specified
@@ -230,7 +230,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	localImageName := fmt.Sprintf("localhost/%s", fullImageName)
 
 	// Check if image already exists (cache hit) - DD-TEST-002 optimization
-	checkCmd := exec.Command("podman", "image", "exists", localImageName)
+	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", localImageName)
 	if checkCmd.Run() == nil {
 		_, _ = fmt.Fprintf(writer, "   ✅ Image already exists (using cache): %s\n", fullImageName)
 		return localImageName, nil
@@ -251,7 +251,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 
 	// DD-TEST-007: E2E Coverage Collection
 	// Support coverage instrumentation when E2E_COVERAGE=true or EnableCoverage flag is set
-	if cfg.EnableCoverage || os.Getenv("E2E_COVERAGE") == "true" {
+	if cfg.EnableCoverage || os.Getenv("E2E_COVERAGE") == trueFixture {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
 		_, _ = fmt.Fprintf(writer, "   📊 Building with coverage instrumentation (GOFLAGS=-cover)\n")
 	}
@@ -262,7 +262,7 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 	// DD-TEST-009: Add 15-minute timeout to prevent infinite hangs
 	// Context: E2E tests were hanging indefinitely when Podman build processes stalled
 	// during dependency downloads (especially Python packages in legacy HolmesGPT stacks)
-	buildCtx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	buildCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 
 	buildCmd := exec.CommandContext(buildCtx, "podman", buildArgs...)
@@ -306,14 +306,14 @@ func BuildImageForKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
 //
 //	imageName, _ := BuildImageForKind(cfg, writer)
 //	err := LoadImageToKind(imageName, "datastorage", "gateway-e2e", writer)
-func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Writer) error {
+func LoadImageToKind(ctx context.Context, imageName, serviceName, clusterName string, writer io.Writer) error {
 	// In CI mode (IMAGE_REGISTRY set), pull the image onto the runner first
 	// then load it into Kind. Kind nodes lack GHCR credentials so on-demand
 	// pulling fails with ErrImagePull for private packages.
 	registry := os.Getenv("IMAGE_REGISTRY")
 	if registry != "" && strings.Contains(imageName, registry) {
 		_, _ = fmt.Fprintf(writer, "📦 CI mode: Pulling registry image for Kind load: %s\n", imageName)
-		pullCmd := exec.Command("podman", "pull", imageName)
+		pullCmd := exec.CommandContext(ctx, "podman", "pull", imageName)
 		pullCmd.Stdout = writer
 		pullCmd.Stderr = writer
 		if err := pullCmd.Run(); err != nil {
@@ -335,7 +335,7 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 	// Create temporary tar file
 	tmpFile := fmt.Sprintf("/tmp/%s-%s.tar", serviceName, imageTag)
 	_, _ = fmt.Fprintf(writer, "   📦 Exporting image to: %s\n", tmpFile)
-	saveCmd := exec.Command("podman", "save", "-o", tmpFile, imageName)
+	saveCmd := exec.CommandContext(ctx, "podman", "save", "-o", tmpFile, imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 	if err := saveCmd.Run(); err != nil {
@@ -344,7 +344,7 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 
 	// Load tar file into Kind
 	_, _ = fmt.Fprintf(writer, "   📦 Importing archive into Kind cluster...\n")
-	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", clusterName)
+	loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tmpFile, "--name", clusterName)
 	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
@@ -365,7 +365,7 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 	// Problem: Image exists in both Podman storage AND Kind = 2x disk usage
 	// Solution: Once in Kind, we don't need the Podman copy anymore
 	_, _ = fmt.Fprintf(writer, "   🗑️  Removing Podman image to free disk space...\n")
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(ctx, "podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -382,10 +382,10 @@ func LoadImageToKind(imageName, serviceName, clusterName string, writer io.Write
 // PreloadExternalImage pulls a third-party image (e.g., postgres:16-alpine) and loads it into
 // Kind so the in-cluster pull resolves from the pre-loaded cache. This prevents Docker Hub
 // rate-limit or slow-pull failures during E2E setup in CI.
-func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error {
+func PreloadExternalImage(ctx context.Context, imageName, clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "   📥 Pre-loading external image: %s\n", imageName)
 
-	pullCmd := exec.Command("podman", "pull", "--quiet", imageName)
+	pullCmd := exec.CommandContext(ctx, "podman", "pull", "--quiet", imageName)
 	pullCmd.Stdout = writer
 	pullCmd.Stderr = writer
 	if err := pullCmd.Run(); err != nil {
@@ -395,7 +395,7 @@ func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error
 	sanitized := strings.NewReplacer("/", "_", ":", "_").Replace(imageName)
 	tmpFile := fmt.Sprintf("/tmp/preload-%s.tar", sanitized)
 
-	saveCmd := exec.Command("podman", "save", "-o", tmpFile, imageName)
+	saveCmd := exec.CommandContext(ctx, "podman", "save", "-o", tmpFile, imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 	if err := saveCmd.Run(); err != nil {
@@ -404,14 +404,14 @@ func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error
 
 	// Remove Podman copy immediately after save — the tar has the bits and
 	// keeping both wastes disk during the Kind load that follows.
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(ctx, "podman", "rmi", "-f", imageName)
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove Podman image (non-fatal): %v\n", err)
 	}
 
-	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile, "--name", clusterName)
+	loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tmpFile, "--name", clusterName)
 	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
@@ -441,15 +441,15 @@ func PreloadExternalImage(imageName, clusterName string, writer io.Writer) error
 // Example (Hybrid Pattern - RECOMMENDED):
 //
 //	imageName, err := BuildImageForKind(cfg, writer)
-//	createKindCluster(...)
+//	createKindCluster(ctx, ...)
 //	err = LoadImageToKind(imageName, cfg.ServiceName, cfg.KindClusterName, writer)
-func BuildAndLoadImageToKind(cfg E2EImageConfig, writer io.Writer) (string, error) {
-	imageName, err := BuildImageForKind(cfg, writer)
+func BuildAndLoadImageToKind(ctx context.Context, cfg E2EImageConfig, writer io.Writer) (string, error) {
+	imageName, err := BuildImageForKind(ctx, cfg, writer)
 	if err != nil {
 		return "", err
 	}
 
-	if err := LoadImageToKind(imageName, cfg.ServiceName, cfg.KindClusterName, writer); err != nil {
+	if err := LoadImageToKind(ctx, imageName, cfg.ServiceName, cfg.KindClusterName, writer); err != nil {
 		return "", err
 	}
 
@@ -474,7 +474,7 @@ func CleanupE2EImage(imageName string, writer io.Writer) error {
 	}
 
 	_, _ = fmt.Fprintf(writer, "🗑️  Removing E2E image: %s\n", imageName)
-	rmiCmd := exec.Command("podman", "rmi", "-f", imageName)
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", imageName)
 	if err := rmiCmd.Run(); err != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove image (may not exist): %v\n", err)
 		return err
@@ -533,7 +533,7 @@ func CleanupE2EImages(imageNames []string, writer io.Writer) error {
 // Returns:
 // - bool: true if image exists and is accessible
 // - error: Any errors during verification (authentication, network, etc.)
-func VerifyImageExistsInRegistry(registryImage string, writer io.Writer) (bool, error) {
+func VerifyImageExistsInRegistry(ctx context.Context, registryImage string, writer io.Writer) (bool, error) {
 	_, _ = fmt.Fprintf(writer, "   🔍 Verifying image exists in registry: %s\n", registryImage)
 
 	// Use skopeo inspect --raw to verify image existence. The --raw flag
@@ -545,7 +545,7 @@ func VerifyImageExistsInRegistry(registryImage string, writer io.Writer) (bool, 
 		inspectURL = "docker://" + registryImage
 	}
 
-	cmd := exec.Command("skopeo", "inspect", "--raw", inspectURL)
+	cmd := exec.CommandContext(ctx, "skopeo", "inspect", "--raw", inspectURL)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {

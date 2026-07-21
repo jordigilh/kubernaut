@@ -19,6 +19,7 @@ package workflowexecution_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -29,6 +30,11 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	"github.com/jordigilh/kubernaut/test/testutil"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	ghcrIoTestBundleLatest = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
 )
 
 // mockWorkflowCatalogClient implements weclient.WorkflowCatalogClient for testing.
@@ -367,6 +373,20 @@ var _ = Describe("OgenWorkflowQuerier (DD-WE-006)", func() {
 			))
 		})
 
+		It("UT-WE-1674-001: GetWorkflowDependencies returns ErrNoDependencies when the catalog entry declares no content", func() {
+			// Issue #1674: replaces the previous ambiguous (nil, nil) — the
+			// WorkflowQuerier interface now makes "no dependencies declared" an
+			// explicit, checkable sentinel rather than an implicit nil.
+			mock := &mockWorkflowCatalogClient{
+				response: &ogenclient.RemediationWorkflow{Content: ""},
+			}
+			querier := weclient.NewOgenWorkflowQuerier(mock)
+
+			deps, err := querier.GetWorkflowDependencies(ctx, uuid.New().String())
+			Expect(errors.Is(err, weclient.ErrNoDependencies)).To(BeTrue())
+			Expect(deps).To(BeNil())
+		})
+
 		It("UT-WE-658-006: GetWorkflowEngineConfig should classify DS 500 as server error", func() {
 			mock := &mockWorkflowCatalogClient{
 				response: &ogenclient.GetWorkflowByIDInternalServerError{},
@@ -542,7 +562,7 @@ func buildTestSchema(deps *models.WorkflowDependencies) string {
 func buildTestSchemaWithParams(deps *models.WorkflowDependencies, params []models.WorkflowParameter) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
-	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.Bundle = ghcrIoTestBundleLatest
 	crd.Spec.Parameters = params
 	crd.Spec.Dependencies = deps
 	return testutil.MarshalWorkflowCRD(crd)
@@ -553,7 +573,7 @@ func buildTestSchemaWithParams(deps *models.WorkflowDependencies, params []model
 func buildTestSchemaWithEngineConfig(engine string, engineConfig map[string]interface{}) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", engine)
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
-	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.Bundle = ghcrIoTestBundleLatest
 	crd.Spec.Execution.EngineConfig = engineConfig
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target ns"},
@@ -567,7 +587,7 @@ func buildTestSchemaWithEngineConfig(engine string, engineConfig map[string]inte
 func buildTestSchemaWithResources(resources *models.ResourcesSchema) string {
 	crd := testutil.NewTestWorkflowCRD("test-workflow", "CertificateRenewal", "job")
 	crd.Spec.Labels.Component = []string{"apps/v1/Deployment"}
-	crd.Spec.Execution.Bundle = "ghcr.io/test/bundle:latest@sha256:abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+	crd.Spec.Execution.Bundle = ghcrIoTestBundleLatest
 	crd.Spec.Execution.Resources = resources
 	crd.Spec.Parameters = []models.WorkflowParameter{
 		{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target ns"},

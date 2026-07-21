@@ -18,6 +18,7 @@ package adapters
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -30,6 +31,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// errNoControllerOwner is returned by verifyOwnerViaFallback when the direct
+// API confirms a resource genuinely has no controller owner (as opposed to
+// (nil, nil), which is ambiguous with "an error occurred but was swallowed").
+// Issue #1674. Unexported: consumed only by resolveMissingControllerRef in
+// this file.
+var errNoControllerOwner = errors.New("no controller owner reference found via direct API")
 
 // MaxOwnerChainDepth limits traversal to prevent infinite loops (circular refs).
 // Same constant as pkg/signalprocessing/ownerchain/builder.go:MaxOwnerChainDepth.
@@ -329,7 +337,7 @@ func (r *K8sOwnerResolver) resolveMissingControllerRef(
 	// #284: Trust-but-verify with direct API when the informer cache returns
 	// stale metadata without ownerReferences (race during rollout restarts).
 	verifiedRef, verifyErr := r.verifyOwnerViaFallback(ctx, gvk, key, currentKind, currentName, level)
-	if verifyErr != nil {
+	if verifyErr != nil && !errors.Is(verifyErr, errNoControllerOwner) {
 		return ownerStepResult{err: verifyErr}
 	}
 	if verifiedRef != nil {
@@ -379,10 +387,12 @@ func findControllerOwnerRef(refs []metav1.OwnerReference) *metav1.OwnerReference
 // its ownerReferences before eviction.
 //
 // Returns (ref, nil) when a controller owner was found via the direct API
-// (caller should continue traversal from ref), (nil, nil) when the direct API
-// confirms no controller owner (caller should stop, resource is standalone),
-// or (nil, err) when the resource could not be found via the direct API at
-// all (likely deleted — caller should propagate the error).
+// (caller should continue traversal from ref), (nil, errNoControllerOwner)
+// when the direct API confirms no controller owner (caller should stop,
+// resource is standalone), or (nil, err) for any other err when the resource
+// could not be found via the direct API at all (likely deleted — caller
+// should propagate the error). Callers distinguish the two error cases with
+// errors.Is(err, errNoControllerOwner).
 func (r *K8sOwnerResolver) verifyOwnerViaFallback(
 	ctx context.Context,
 	gvk schema.GroupVersionKind,
@@ -420,7 +430,9 @@ func (r *K8sOwnerResolver) verifyOwnerViaFallback(
 
 	logger.V(1).Info("Verified standalone resource via direct API (no controller owner)",
 		"kind", currentKind, "name", currentName, "level", level)
-	return nil, nil
+	// Issue #1674: errNoControllerOwner sentinel replaces the ambiguous
+	// (nil, nil) "confirmed standalone" return.
+	return nil, errNoControllerOwner
 }
 
 // resolveServiceToWorkload traverses Service → spec.selector → Pods to find a

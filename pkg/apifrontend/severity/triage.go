@@ -262,11 +262,12 @@ func (t *Triager) bestAlertMatch(alerts []prom.Alert, targetLabels map[string]st
 		}
 		sev := alert.Labels["severity"]
 
-		if labelsOverlap(alert.Labels, targetLabels, podNameSet, targetNamespace) {
+		switch {
+		case labelsOverlap(alert.Labels, targetLabels, podNameSet, targetNamespace):
 			resourceBest.update(sev, alert.Labels["alertname"])
-		} else if targetNamespace != "" && alert.Labels["namespace"] == targetNamespace {
+		case targetNamespace != "" && alert.Labels["namespace"] == targetNamespace:
 			nsBest.update(sev, alert.Labels["alertname"])
-		} else if alert.Labels["namespace"] == "" {
+		case alert.Labels["namespace"] == "":
 			clusterBest.update(sev, alert.Labels["alertname"])
 		}
 	}
@@ -386,7 +387,7 @@ func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules
 	if result.Confidence > 0 && result.Confidence < t.config.LLMConfidence {
 		t.logger.Info("LLM confidence below threshold, defaulting to warning",
 			"tier", "2.5", "confidence", result.Confidence, "threshold", t.config.LLMConfidence)
-		result.Severity = "warning"
+		result.Severity = SeverityWarning
 	}
 	return result, true
 }
@@ -400,7 +401,7 @@ func (t *Triager) runTier3(ctx context.Context, input TriageInput) (TriageResult
 	if result.Confidence > 0 && result.Confidence < t.config.LLMConfidence {
 		t.logger.Info("LLM confidence below threshold, defaulting to warning",
 			"tier", "3", "confidence", result.Confidence, "threshold", t.config.LLMConfidence)
-		result.Severity = "warning"
+		result.Severity = SeverityWarning
 	}
 	return result, nil
 }

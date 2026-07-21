@@ -42,6 +42,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	testNs = "test-ns"
+)
+
 // ============================================================================
 // AUDIT COVERAGE GAP TESTS (BR-AUDIT-005, SOC2 CC8.1, FedRAMP AU-2/AU-3)
 //
@@ -69,7 +74,7 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 		It("AE-COV-001: emits orchestrator.ea.created with isGitopsManaged=false, isCrd=false for a plain Deployment target", func() {
 			scheme := setupScheme()
 			rrName := "rr-cov-ea-001"
-			namespace := "test-ns"
+			namespace := testNs
 			weName := "we-" + rrName
 
 			rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseExecuting, "", "", weName)
@@ -120,7 +125,7 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 		It("AE-COV-002: emits orchestrator.ea.created with isGitopsManaged=true and GitOpsSyncDelay populated when RCA detected GitOps management", func() {
 			scheme := setupScheme()
 			rrName := "rr-cov-ea-002"
-			namespace := "test-ns"
+			namespace := testNs
 			aiName := "ai-" + rrName
 			weName := "we-" + rrName
 
@@ -182,7 +187,7 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 		It("AE-COV-003: emits verification_completed with EA name and duration when Verifying -> Completed", func() {
 			scheme := setupScheme()
 			rrName := "rr-cov-verify-001"
-			namespace := "test-ns"
+			namespace := testNs
 
 			startTime := metav1.NewTime(time.Now().Add(-2 * time.Minute))
 			deadline := metav1.NewTime(time.Now().Add(10 * time.Minute))
@@ -256,7 +261,7 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 		It("AE-COV-004: emits verification_timed_out AND lifecycle.completed(VerificationTimedOut) when VerificationDeadline expires", func() {
 			scheme := setupScheme()
 			rrName := "rr-cov-verify-timeout-001"
-			namespace := "test-ns"
+			namespace := testNs
 
 			startTime := metav1.NewTime(time.Now().Add(-20 * time.Minute))
 			expiredDeadline := metav1.NewTime(time.Now().Add(-1 * time.Minute))
@@ -335,7 +340,7 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 		It("AE-COV-005: emits lifecycle.completed with crd_outcome=InheritedCompleted on inherited completion", func() {
 			scheme := setupScheme()
 			rrName := "rr-cov-inherit-001"
-			namespace := "test-ns"
+			namespace := testNs
 			startTime := metav1.NewTime(time.Now().Add(-90 * time.Second))
 			rr := newRemediationRequest(rrName, namespace, remediationv1.PhasePending)
 			rr.Status.StartTime = &startTime
@@ -370,7 +375,7 @@ var _ = Describe("BR-AUDIT-005: Audit Coverage Gap Closure (SOC2 CC8.1, FedRAMP 
 		It("AE-COV-006: emits lifecycle.completed with crd_outcome=DryRun on dry-run completion", func() {
 			scheme := setupScheme()
 			rrName := "rr-cov-dryrun-001"
-			namespace := "test-ns"
+			namespace := testNs
 			startTime := metav1.NewTime(time.Now().Add(-45 * time.Second))
 			rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseAnalyzing)
 			rr.Status.StartTime = &startTime

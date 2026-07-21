@@ -112,7 +112,7 @@ func newTestWFE(name, targetResource, clusterID string) *workflowexecutionv1alph
 // BR-WE-019 AC10's RetryCount computation without job.Status.Failed, which a
 // real-cluster spike (DD-WE-008 Section 8) confirmed is never incremented
 // for Ignore-action failures.
-func newSuccessfulCreateEvent(name, namespace, jobName, podName string, count int32) *corev1.Event {
+func newSuccessfulCreateEvent(name, namespace, jobName, podName string) *corev1.Event {
 	return &corev1.Event{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
 		InvolvedObject: corev1.ObjectReference{
@@ -122,7 +122,7 @@ func newSuccessfulCreateEvent(name, namespace, jobName, podName string, count in
 		},
 		Reason:  "SuccessfulCreate",
 		Message: fmt.Sprintf("Created pod: %s", podName),
-		Count:   count,
+		Count:   1,
 		Type:    corev1.EventTypeNormal,
 	}
 }
@@ -832,9 +832,9 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			// 3 "SuccessfulCreate" events on the Job (1 initial + 2
 			// Ignore-tolerated replacements) => RetryCount = 3 - 1 = 2.
 			events := []client.Object{
-				newSuccessfulCreateEvent("retried-create-1", namespace, jobName, "pod-a", 1),
-				newSuccessfulCreateEvent("retried-create-2", namespace, jobName, "pod-b", 1),
-				newSuccessfulCreateEvent("retried-create-3", namespace, jobName, "pod-c", 1),
+				newSuccessfulCreateEvent("retried-create-1", namespace, jobName, "pod-a"),
+				newSuccessfulCreateEvent("retried-create-2", namespace, jobName, "pod-b"),
+				newSuccessfulCreateEvent("retried-create-3", namespace, jobName, "pod-c"),
 			}
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).WithObjects(events...).Build()
 			factory := &mockClientFactory{client: fakeClient}
@@ -869,7 +869,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			// Exactly 1 "SuccessfulCreate" event (the initial, only attempt) =>
 			// RetryCount = 1 - 1 = 0.
 			events := []client.Object{
-				newSuccessfulCreateEvent("clean-success-create-1", namespace, jobName, "pod-a", 1),
+				newSuccessfulCreateEvent("clean-success-create-1", namespace, jobName, "pod-a"),
 			}
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(job).WithObjects(events...).Build()
 			factory := &mockClientFactory{client: fakeClient}

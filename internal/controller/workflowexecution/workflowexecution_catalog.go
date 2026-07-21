@@ -22,6 +22,7 @@ package workflowexecution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -31,6 +32,13 @@ import (
 // ========================================
 // Issue #1661 Change 11e (DD-WORKFLOW-018): CRD-Embedded Execution Snapshot
 // ========================================
+
+// ErrAlreadyResolved indicates the WFE's execution engine is already set, so
+// resolveWorkflowCatalog is a no-op (idempotency guard). Issue #1674: typed
+// sentinel replacing the previous ambiguous (nil, nil) return -- callers use
+// errors.Is(err, ErrAlreadyResolved) to distinguish this no-op from a real
+// resolution failure (see resolvePendingSchemaAndEngine).
+var ErrAlreadyResolved = errors.New("workflow catalog already resolved")
 
 // resolveWorkflowCatalog copies the execution-engine snapshot from
 // wfe.Spec.WorkflowRef onto Status. Prior to #1661 this resolved
@@ -47,10 +55,10 @@ import (
 // are not required for SOC2 CC8.1 reconstruction, which joins on workflow_id
 // against the immutable workflow_content already captured in the Postgres
 // audit_events ledger (IT-AW-1111-001).
-// Idempotent: returns nil immediately if the engine is already resolved.
+// Idempotent: returns ErrAlreadyResolved if the engine is already resolved.
 func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
 	if wfe.Status.ExecutionEngine != "" {
-		return nil, nil
+		return nil, ErrAlreadyResolved
 	}
 
 	ref := wfe.Spec.WorkflowRef
@@ -69,13 +77,14 @@ func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(_ context.Context, 
 	return nil, nil
 }
 
-// resolveExecutionEngine returns the cached execution engine from the WFE status.
-// In non-Pending phases the engine was already resolved during Pending and persisted
-// to wfe.Status.ExecutionEngine. Returns an error only if the engine is missing,
-// which indicates a programming error (Pending handler should have set it).
-func (r *WorkflowExecutionReconciler) resolveExecutionEngine(_ context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (string, error) {
+// validateExecutionEngineResolved checks that the WFE status already carries
+// a resolved execution engine. In non-Pending phases the engine was already
+// resolved during Pending and persisted to wfe.Status.ExecutionEngine, which
+// all callers read directly after this check passes; there is a programming
+// error (Pending handler should have set it) only if it is still missing.
+func (r *WorkflowExecutionReconciler) validateExecutionEngineResolved(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
 	if wfe.Status.ExecutionEngine != "" {
-		return wfe.Status.ExecutionEngine, nil
+		return nil
 	}
-	return "", fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
+	return fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
 }

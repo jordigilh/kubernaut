@@ -55,7 +55,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 	)
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-ea-e2e")
+		testNS = createTestNamespace(ctx, "ro-ea-e2e")
 	})
 
 	AfterEach(func() {
@@ -77,7 +77,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 					return hex.EncodeToString(h[:])
 				}(),
 				SignalName: "HighCPU",
-				Severity:   "critical",
+				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
@@ -99,7 +99,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 			for i := range spList.Items {
 				if len(spList.Items[i].OwnerReferences) > 0 &&
-					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					spList.Items[i].OwnerReferences[0].Name == rrName {
 					sp = &spList.Items[i]
 					return true
@@ -110,8 +110,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 
 		By("3. Manually updating SP status to Completed")
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = "critical"
-		sp.Status.SignalMode = "reactive"
+		sp.Status.Severity = signalprocessingv1.SeverityCritical
+		sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
 		sp.Status.SignalName = sp.Spec.Signal.Name // Issue #166: Use signal name, not type ("alert")
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  signalprocessingv1.EnvironmentProduction,
@@ -132,7 +132,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 			for i := range analysisList.Items {
 				if len(analysisList.Items[i].OwnerReferences) > 0 &&
-					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					analysisList.Items[i].OwnerReferences[0].Name == rrName {
 					analysis = &analysisList.Items[i]
 					return true
@@ -156,7 +156,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "CPU throttling due to resource limits",
-			Severity:   "critical",
+			Severity:   signalprocessingv1.SeverityCritical,
 			SignalType: "alert",
 			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      "Deployment",
@@ -173,7 +173,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 			for i := range weList.Items {
 				if len(weList.Items[i].OwnerReferences) > 0 &&
-					weList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					weList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					weList.Items[i].OwnerReferences[0].Name == rrName {
 					we = &weList.Items[i]
 					return true
@@ -293,7 +293,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		By("12. Validating owner reference for cascade deletion (BR-ORCH-031)")
 		Expect(ea.OwnerReferences).To(HaveLen(1))
 		Expect(ea.OwnerReferences[0].Name).To(Equal(rrName))
-		Expect(ea.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+		Expect(ea.OwnerReferences[0].Kind).To(Equal(kindRemediationRequestFixture))
 
 		GinkgoWriter.Printf("E2E-RO-EA-001: EffectivenessAssessment '%s' validated in Kind cluster\n", eaName)
 	})
@@ -317,7 +317,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 						return hex.EncodeToString(h[:])
 					}(),
 					SignalName: "HighCPU",
-					Severity:   "critical",
+					Severity:   signalprocessingv1.SeverityCritical,
 					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -339,7 +339,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 				for i := range spList.Items {
 					if len(spList.Items[i].OwnerReferences) > 0 &&
-						spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						spList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						spList.Items[i].OwnerReferences[0].Name == rrName {
 						sp = &spList.Items[i]
 						return true
@@ -350,8 +350,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 
 			By("3. Manually updating SP status to Completed")
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "critical"
-			sp.Status.SignalMode = "reactive"
+			sp.Status.Severity = signalprocessingv1.SeverityCritical
+			sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
 			sp.Status.SignalName = sp.Spec.Signal.Name // Issue #166: Use signal name, not type ("alert")
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  signalprocessingv1.EnvironmentProduction,
@@ -372,7 +372,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 				for i := range analysisList.Items {
 					if len(analysisList.Items[i].OwnerReferences) > 0 &&
-						analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						analysisList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						analysisList.Items[i].OwnerReferences[0].Name == rrName {
 						analysis = &analysisList.Items[i]
 						return true
@@ -396,7 +396,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "CPU throttling due to resource limits",
-				Severity:   "critical",
+				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Deployment",
@@ -413,7 +413,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 				for i := range weList.Items {
 					if len(weList.Items[i].OwnerReferences) > 0 &&
-						weList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						weList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						weList.Items[i].OwnerReferences[0].Name == rrName {
 						we = &weList.Items[i]
 						return true

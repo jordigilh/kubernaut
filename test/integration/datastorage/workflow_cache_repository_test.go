@@ -17,6 +17,7 @@ limitations under the License.
 package datastorage
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -220,7 +221,7 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 		Expect(got.Parameters).ToNot(BeNil(), "spec.parameters[] must be populated -- HandleGetWorkflowByID's documented contract for LLM parameter validation")
 	})
 
-	It("IT-DS-1661-P32-004: GetWorkflowWithContextFilters applies the security gate -- matching context returns the workflow, non-matching returns nil without distinguishing not-found", func() {
+	It("IT-DS-1661-P32-004: GetWorkflowWithContextFilters applies the security gate -- matching context returns the workflow, non-matching returns ErrNotFound without distinguishing not-found from filtered-out", func() {
 		actionType := uniquePascalName("CacheContextGateAction")
 		name := uniqueName("it-1661-p32-gate")
 		rw := validRW(name, actionType, []string{"critical"})
@@ -235,14 +236,17 @@ var _ = Describe("IT-DS-1661-P32 Repository discovery reads from cache", Label("
 			return repo.GetWorkflowWithContextFilters(ctx, rw.Status.WorkflowID, matchingFilters)
 		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(), "matching context filters must return the workflow once the informer observes it")
 
+		// Issue #1674: GetWorkflowWithContextFilters returns the workflow.ErrNotFound
+		// sentinel (not a bare (nil, nil)) for both the filtered-out and the
+		// genuinely-nonexistent case below -- callers use errors.Is, not a nil check.
 		nonMatchingFilters := &models.WorkflowDiscoveryFilters{Severity: "low"}
 		got, err := repo.GetWorkflowWithContextFilters(ctx, rw.Status.WorkflowID, nonMatchingFilters)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(got).To(BeNil(), "a workflow that exists but fails the context-filter security gate must return nil, nil -- same as not-found (DD-WORKFLOW-016: prevent info leakage)")
+		Expect(errors.Is(err, workflow.ErrNotFound)).To(BeTrue(), "a workflow that exists but fails the context-filter security gate must return workflow.ErrNotFound -- same as not-found (DD-WORKFLOW-016: prevent info leakage)")
+		Expect(got).To(BeNil())
 
 		got, err = repo.GetWorkflowWithContextFilters(ctx, "nonexistent-"+uniqueName("wfid"), nonMatchingFilters)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(got).To(BeNil(), "a genuinely nonexistent workflow_id must also return nil, nil -- indistinguishable from the filtered-out case above")
+		Expect(errors.Is(err, workflow.ErrNotFound)).To(BeTrue(), "a genuinely nonexistent workflow_id must also return workflow.ErrNotFound -- indistinguishable from the filtered-out case above")
+		Expect(got).To(BeNil())
 	})
 
 	// #1661 Phase 55 prerequisite: List (the generic GET /api/v1/workflows

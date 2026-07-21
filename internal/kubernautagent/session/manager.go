@@ -199,7 +199,7 @@ func (m *Manager) launchInvestigation(ctx context.Context, p investigationLaunch
 	}, nil, startExtra...)
 	m.metrics.RecordSessionStarted(signalName, severity)
 
-	go m.runInvestigation(bgCtx, id, correlationID, fn)
+	go m.runInvestigation(bgCtx, id, correlationID, fn) //nolint:contextcheck // runInvestigation is launched as a detached goroutine that must outlive the triggering request
 
 	return id, nil
 }
@@ -242,7 +242,7 @@ func (m *Manager) attachInvestigationContext(id, correlationID, clusterName stri
 func (m *Manager) runInvestigation(bgCtx context.Context, id, correlationID string, fn InvestigateFunc) {
 	start := time.Now()
 	defer m.recordSessionMetrics(id, start)
-	defer m.recoverPanic(id, correlationID)
+	defer m.recoverPanic(id, correlationID) //nolint:contextcheck // recoverPanic emits a best-effort failure audit event; must survive whatever context state caused the panic
 
 	result, fnErr := fn(bgCtx)
 	m.emitCompleteEvent(id)
@@ -270,7 +270,7 @@ func (m *Manager) handleInvestigationFailure(bgCtx context.Context, id, correlat
 		return
 	}
 	m.closeEventChan(id)
-	m.emitSessionEvent(context.Background(), sessionEventParams{
+	m.emitSessionEvent(context.Background(), sessionEventParams{ //nolint:contextcheck // emitSessionEvent forwards to audit.StoreBestEffort by design, decoupled from the triggering goroutine's context
 		EventType: audit.EventTypeSessionFailed, Action: audit.ActionSessionFailed,
 		Outcome: audit.OutcomeFailure, SessionID: id, CorrelationID: correlationID,
 	}, fnErr)
@@ -302,7 +302,7 @@ func (m *Manager) handleInvestigationSuccess(bgCtx context.Context, id, correlat
 	if targetStatus != StatusUserDriving {
 		m.closeEventChan(id)
 	}
-	m.emitSessionEvent(context.Background(), sessionEventParams{
+	m.emitSessionEvent(context.Background(), sessionEventParams{ //nolint:contextcheck // emitSessionEvent forwards to audit.StoreBestEffort by design, decoupled from the triggering goroutine's context
 		EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
 		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
 	}, nil)

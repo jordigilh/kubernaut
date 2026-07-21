@@ -18,6 +18,7 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -63,7 +64,9 @@ func (r *Repository) ListWorkflowsByActionType(ctx context.Context, actionType s
 
 // GetWorkflowWithContextFilters retrieves a workflow by ID with an additional
 // security gate that verifies the workflow matches the provided context filters.
-// Returns nil if the workflow exists but doesn't match the context (security gate).
+// Returns ErrNotFound if the workflow doesn't exist OR exists but doesn't match
+// the context (security gate) — DD-WORKFLOW-016: the two cases are
+// deliberately not distinguished to prevent information leakage.
 // This is Step 3 of the discovery protocol.
 func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
 	// If no context filters, fall back to simple GetByID
@@ -71,5 +74,12 @@ func (r *Repository) GetWorkflowWithContextFilters(ctx context.Context, workflow
 		return r.GetByID(ctx, workflowID)
 	}
 
-	return r.getWorkflowWithContextFiltersFromCache(ctx, workflowID, filters)
+	wf, err := r.getWorkflowWithContextFiltersFromCache(ctx, workflowID, filters)
+	if err != nil {
+		return nil, err
+	}
+	if wf == nil {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
+	}
+	return wf, nil
 }

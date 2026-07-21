@@ -384,7 +384,7 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 60*time.Second, 1*time.Second).Should(Equal("completed"))
@@ -439,7 +439,7 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 60*time.Second, 1*time.Second).Should(Equal("completed"),
@@ -508,7 +508,7 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 15*time.Second, 500*time.Millisecond).Should(
@@ -532,7 +532,7 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				finalStatus = status.Status
 				return status.Status
@@ -738,4 +738,3 @@ var _ = Describe("CP-5 INT Coverage: Interactive gap-closure tests", Label("e2e"
 		})
 	})
 })
-

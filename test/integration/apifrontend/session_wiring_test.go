@@ -90,7 +90,7 @@ var _ = Describe("Session Controller Wiring (#1272, #1273)", func() {
 		const sessionName = "sess-it-1272-002"
 
 		sess := makeSession(sessionName, v1alpha1.SessionPhaseDisconnected, nil, pastTime(20*time.Minute))
-		sess.Namespace = "default"
+		sess.Namespace = defaultFixture
 		Expect(k8sClient.Create(ctx, sess)).To(Succeed())
 
 		sess.Status.Phase = v1alpha1.SessionPhaseDisconnected
@@ -99,13 +99,13 @@ var _ = Describe("Session Controller Wiring (#1272, #1273)", func() {
 
 		defer func() {
 			_ = k8sClient.Delete(ctx, &v1alpha1.InvestigationSession{
-				ObjectMeta: metav1.ObjectMeta{Name: sessionName, Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: sessionName, Namespace: defaultFixture},
 			})
 		}()
 
 		Eventually(func(g Gomega) {
 			var fetched v1alpha1.InvestigationSession
-			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sessionName, Namespace: "default"}, &fetched)).To(Succeed())
+			g.Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sessionName, Namespace: defaultFixture}, &fetched)).To(Succeed())
 			g.Expect(fetched.Status.Phase).To(Equal(v1alpha1.SessionPhaseDisconnected))
 			g.Expect(fetched.Status.DisconnectedAt).NotTo(BeNil(), "status update must propagate")
 		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
@@ -118,7 +118,7 @@ var _ = Describe("Session Controller Wiring (#1272, #1273)", func() {
 			k8sClient, 15*time.Minute, controller.MinRetentionTTL, logr.Discard(), nil, ttlActions, nil,
 		)
 		_, err := r.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: sessionName, Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: sessionName, Namespace: defaultFixture},
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(counterValue(ttlActions, "cancel")).To(Equal(1.0))
@@ -151,7 +151,7 @@ var _ = Describe("Session Controller Wiring (#1272, #1273)", func() {
 		ssar := &authorizationv1.SelfSubjectAccessReview{
 			Spec: authorizationv1.SelfSubjectAccessReviewSpec{
 				ResourceAttributes: &authorizationv1.ResourceAttributes{
-					Namespace: "default",
+					Namespace: defaultFixture,
 					Verb:      "watch",
 					Group:     "kubernaut.ai",
 					Resource:  "investigationsessions",

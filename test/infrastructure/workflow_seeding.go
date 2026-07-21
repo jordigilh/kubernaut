@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -131,7 +132,7 @@ func testWorkflowsToSeedSpecs(workflows []TestWorkflow) []WorkflowSeedSpec {
 //  4. Returns map["<crd-name>:<environment>"] = "<uuid>"
 //
 // Prerequisites: AuthWebhook deployed, DataStorage healthy, ActionTypes seeded.
-func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
+func SeedWorkflowsViaKubectlApply(ctx context.Context, kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🌱 Seeding %d workflows via kubectl apply (declarative)\n", len(workflows))
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")

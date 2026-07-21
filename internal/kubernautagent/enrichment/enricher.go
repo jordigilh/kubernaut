@@ -337,7 +337,7 @@ func (e *Enricher) resolveSpecHash(ctx context.Context, kind, name, namespace, a
 	computed, err := e.k8s.GetSpecHash(ctx, kind, name, namespace, apiVersion)
 	if err != nil {
 		if isForbiddenError(err) {
-			return "", fmt.Errorf("%w: GetSpecHash %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, err)
+			return "", fmt.Errorf("%w: GetSpecHash %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, err)
 		}
 		e.logger.Error(err, "enrichment: specHash auto-computation failed, proceeding with empty",
 			"resource", namespace+"/"+kind+"/"+name,
@@ -359,7 +359,7 @@ func (e *Enricher) populateOwnerChain(ctx context.Context, kind, name, namespace
 		return nil, nil
 	}
 	if isForbiddenError(ownerErr) {
-		return ownerErr, fmt.Errorf("%w: GetOwnerChain %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, ownerErr)
+		return ownerErr, fmt.Errorf("%w: GetOwnerChain %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, ownerErr)
 	}
 	result.OwnerChainError = ownerErr
 	if IsNotFoundError(ownerErr) {
@@ -384,7 +384,7 @@ func (e *Enricher) populateDetectedLabels(ctx context.Context, kind, name, names
 	labels, quotaDetails, labelErr := e.labelDetector.DetectLabels(ctx, kind, name, namespace, result.OwnerChain)
 	if labelErr != nil {
 		if isForbiddenError(labelErr) {
-			return fmt.Errorf("%w: DetectLabels %s/%s in %s: %v", ErrRBACForbidden, kind, name, namespace, labelErr)
+			return fmt.Errorf("%w: DetectLabels %s/%s in %s: %w", ErrRBACForbidden, kind, name, namespace, labelErr)
 		}
 		e.logger.Error(labelErr, "enrichment: label detection failed",
 			"resource", namespace+"/"+kind+"/"+name,

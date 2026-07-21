@@ -133,7 +133,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			BuildContextPath: "",
 			EnableCoverage:   enableCoverage,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "WorkflowExecution (coverage)", imageName: imageName, err: err}
 	}()
 
@@ -146,7 +146,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
@@ -159,7 +159,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
 	}()
 
@@ -271,21 +271,21 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Load WorkflowExecution controller image
 	go func() {
 		wfeImage := builtImages["WorkflowExecution (coverage)"]
-		err := LoadImageToKind(wfeImage, "workflowexecution-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, wfeImage, "workflowexecution-controller", clusterName, writer)
 		loadResults <- loadResult{name: "WorkflowExecution coverage", err: err}
 	}()
 
 	// Load DataStorage image
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
@@ -302,7 +302,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 			"quay.io/centos/centos:stream9",
 		}
 		for _, img := range thirdPartyImages {
-			if preloadErr := PreloadExternalImage(img, clusterName, writer); preloadErr != nil {
+			if preloadErr := PreloadExternalImage(ctx, img, clusterName, writer); preloadErr != nil {
 				loadResults <- loadResult{name: "AWX third-party images", err: fmt.Errorf("preload %s: %w", img, preloadErr)}
 				return
 			}
@@ -387,7 +387,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 
 	// Launch ALL kubectl apply commands concurrently (including AWX — BR-WE-015)
 	go func() {
-		err := installTektonPipelines(kubeconfigPath, writer)
+		err := installTektonPipelines(ctx, kubeconfigPath, writer)
 		deployResults <- deployResult{"Tekton Pipelines", err}
 	}()
 	go func() {
@@ -579,7 +579,7 @@ subjects:
 
 	// Goroutine 1: Seed workflows in DataStorage (includes ansible workflows — BR-WE-015)
 	go func() {
-		if _, seedErr := BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken, writer); seedErr != nil {
+		if _, seedErr := BuildAndRegisterTestWorkflows(ctx, clusterName, kubeconfigPath, dataStorageURL, saToken, writer); seedErr != nil {
 			postDeployCh <- postDeployResult{"workflow seeding", seedErr}
 			return
 		}
@@ -613,7 +613,7 @@ subjects:
 	}
 
 	_, _ = fmt.Fprintln(writer, "\n🔑 Creating image pull secret...")
-	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, writer); err != nil {
+	if err := createQuayPullSecret(ctx, kubeconfigPath, ExecutionNamespace, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "⚠️  Warning: Could not create quay.io pull secret: %v\n", err)
 	}
 
@@ -813,7 +813,7 @@ func findKindConfig(filename string) (string, error) {
 
 	return "", fmt.Errorf("kind config file %s not found in any expected location (tried from %s)", filename, projectRoot)
 }
-func installTektonPipelines(kubeconfigPath string, output io.Writer) error {
+func installTektonPipelines(ctx context.Context, kubeconfigPath string, output io.Writer) error {
 	// Install Tekton Pipelines from GitHub releases (v1.0+ use GitHub releases)
 	// NOTE: storage.googleapis.com/tekton-releases requires auth since 2025
 	releaseURL := fmt.Sprintf("https://github.com/tektoncd/pipeline/releases/download/%s/release.yaml", TektonPipelinesVersion)
@@ -924,7 +924,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 
 	// Create quay.io pull secret in execution namespace so Job pods can pull
 	// the placeholder-execution image used by workflow schemas.
-	if err := createQuayPullSecret(kubeconfigPath, ExecutionNamespace, output); err != nil {
+	if err := createQuayPullSecret(ctx, kubeconfigPath, ExecutionNamespace, output); err != nil {
 		_, _ = fmt.Fprintf(output, "⚠️  Warning: Could not create quay.io pull secret in %s: %v\n", ExecutionNamespace, err)
 	}
 
@@ -933,7 +933,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 	// DD-WE-005 v2.0: Operators pre-create SAs; workflows reference them via
 	// execution.serviceAccountName. The mock LLM returns service_account_name
 	// in selected_workflow so the AA→RO→WFE chain propagates it to the Job pod.
-	if err := createWorkflowJobExecutorRBAC(kubeconfigPath, ExecutionNamespace, output); err != nil {
+	if err := createWorkflowJobExecutorRBAC(ctx, kubeconfigPath, ExecutionNamespace, output); err != nil {
 		return fmt.Errorf("failed to create workflow-job-executor RBAC: %w", err)
 	}
 
@@ -945,7 +945,7 @@ func DeployWorkflowExecutionController(ctx context.Context, namespace, kubeconfi
 // ClusterRoleBinding so Job pods spawned by the WE controller can get/patch
 // workload resources (Deployments, StatefulSets, DaemonSets, Pods) in any
 // namespace. Used by oomkill-increase-memory-job's remediate.sh.
-func createWorkflowJobExecutorRBAC(kubeconfigPath, namespace string, output io.Writer) error {
+func createWorkflowJobExecutorRBAC(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "  🔐 Creating workflow-job-executor SA + RBAC in %s...\n", namespace)
 
 	rbacYAML := fmt.Sprintf(`---
@@ -1110,7 +1110,7 @@ spec:
 	return nil
 }
 
-func createQuayPullSecret(kubeconfigPath, namespace string, output io.Writer) error {
+func createQuayPullSecret(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "🔐 Creating quay.io pull secret...\n")
 
 	// Get the auth config from podman
@@ -1437,7 +1437,7 @@ spec:
 	return nil
 }
 
-func waitForDeploymentReady(kubeconfigPath, deploymentName string, output io.Writer) error {
+func waitForDeploymentReady(ctx context.Context, kubeconfigPath, deploymentName string, output io.Writer) error {
 	waitCmd := exec.Command("kubectl", "wait",
 		"-n", WorkflowExecutionNamespace,
 		"--for=condition=available",

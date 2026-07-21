@@ -478,7 +478,7 @@ func (c *NotificationCreator) buildCompletionNotificationRequest(
 				},
 				Analysis: &notificationv1.AnalysisContext{
 					RootCause: content.RootCause,
-					Outcome:   string(rr.Status.Outcome),
+					Outcome:   rr.Status.Outcome,
 				},
 				Verification: content.VerificationCtx,
 			},
@@ -513,7 +513,7 @@ func (c *NotificationCreator) buildCompletionBody(rr *remediationv1.RemediationR
 
 	// Deprecated: **Outcome** retained for one release (Issue #628). Use **Status** for canonical status.
 	body := "Remediation Completed Successfully\n\n" +
-		FormatStatusLine(string(rr.Status.Outcome)) +
+		FormatStatusLine(rr.Status.Outcome) +
 		fmt.Sprintf(`**Outcome**: %s
 
 **Signal**: %s

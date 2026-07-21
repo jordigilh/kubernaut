@@ -34,7 +34,7 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 	// IT-EM-RC-001: Create EA -> reconciler triggered -> phase transitions
 	// ========================================
 	It("IT-EM-RC-001: should reconcile a new EA and transition through phases", func() {
-		ns := createTestNamespace("em-rc-001")
+		ns := createTestNamespace(ctx, "em-rc-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EffectivenessAssessment CRD")
@@ -71,7 +71,7 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 	// IT-EM-RC-002: Multiple EAs created concurrently -> all processed independently
 	// ========================================
 	It("IT-EM-RC-002: should process multiple EAs independently", func() {
-		ns := createTestNamespace("em-rc-002")
+		ns := createTestNamespace(ctx, "em-rc-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating multiple EAs concurrently")
@@ -104,7 +104,7 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 	// IT-EM-RC-003: EA with past validity deadline -> marked expired on first reconcile
 	// ========================================
 	It("IT-EM-RC-003: should complete expired EA on first reconcile", func() {
-		ns := createTestNamespace("em-rc-003")
+		ns := createTestNamespace(ctx, "em-rc-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with an already-expired validity deadline")
@@ -139,7 +139,7 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 	// IT-EM-RC-005: EA already Completed -> reconcile is idempotent no-op
 	// ========================================
 	It("IT-EM-RC-005: should be idempotent for already completed EAs", func() {
-		ns := createTestNamespace("em-rc-005")
+		ns := createTestNamespace(ctx, "em-rc-005")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
@@ -178,7 +178,7 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 	// IT-EM-RC-006: EA phase transitions Pending -> Assessing -> Completed
 	// ========================================
 	It("IT-EM-RC-006: should transition through expected phases", func() {
-		ns := createTestNamespace("em-rc-006")
+		ns := createTestNamespace(ctx, "em-rc-006")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
@@ -203,7 +203,7 @@ var _ = Describe("Reconciler Lifecycle (BR-EM-005)", func() {
 	// IT-EM-RC-007: EA with spec fields -> correlation tracking works
 	// ========================================
 	It("IT-EM-RC-007: should support correlation via labels", func() {
-		ns := createTestNamespace("em-rc-007")
+		ns := createTestNamespace(ctx, "em-rc-007")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with correlation spec fields")

@@ -215,7 +215,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		"test/integration/remediationorchestrator/config",
 		authConfig,
 	)
-	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err := infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All external services started and healthy")
 
@@ -644,7 +644,7 @@ var _ = SynchronizedAfterSuite(func() {
 // createTestNamespace creates a managed test namespace for test isolation.
 // Delegates to shared helpers.CreateTestNamespace with kubernaut.ai/managed=true.
 // MANDATORY per 03-testing-strategy.mdc: Each test must use unique identifiers.
-func createTestNamespace(prefix string) string {
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespace(ctx, k8sClient, prefix)
 }
 
@@ -691,44 +691,44 @@ func createRemediationRequest(targetNamespace, name string) *remediationv1.Remed
 }
 
 // updateSPStatus updates the SignalProcessing status to simulate completion.
-func updateSPStatus(namespace, name string, phase signalprocessingv1.SignalProcessingPhase, severity ...string) error {
+// Phase is always set to Completed; tests needing other phases should update
+// sp.Status.Phase directly (no caller currently needs a non-Completed phase).
+func updateSPStatus(name string, severity ...string) error {
 	sp := &signalprocessingv1.SignalProcessing{}
-	if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, sp); err != nil {
+	if err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: name, Namespace: ROControllerNamespace}, sp); err != nil {
 		return err
 	}
 
-	sp.Status.Phase = phase
-	if phase == signalprocessingv1.PhaseCompleted {
-		now := metav1.Now()
-		sp.Status.CompletionTime = &now
-		// DD-SEVERITY-001: Set normalized severity for downstream services (AIAnalysis, RO)
-		// This simulates what SignalProcessing Rego policy would do in real environment
-		// Default to "critical" if not specified, or use provided severity
-		severityValue := "critical" // Default normalized severity
-		if len(severity) > 0 && severity[0] != "" {
-			severityValue = severity[0] // Use test-specific severity (e.g., "high", "medium", "low")
-		}
-		sp.Status.Severity = severityValue // Normalized severity (required for AIAnalysis creation)
-		// BR-SP-106: Set signal mode defaults for downstream services (RO → AA)
-		// Default to "reactive" with type pass-through (backwards compatible)
-		// Tests that need proactive mode should use updateSPStatusProactive()
-		sp.Status.SignalMode = "reactive"
-		sp.Status.SignalName = sp.Spec.Signal.Name // Pass-through for reactive signals
-		// Set environment classification for downstream use
-		// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
-		// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
-		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
-			Environment:  signalprocessingv1.EnvironmentProduction,
-			Source:       "test",
-			ClassifiedAt: now, // REQUIRED per SP CRD schema
-		}
-		// Per SP Team Response (2025-12-10): AssignedAt is REQUIRED when struct is set
-		// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
-		sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
-			Priority:   signalprocessingv1.PriorityP1,
-			Source:     "test",
-			AssignedAt: now, // REQUIRED per SP CRD schema
-		}
+	sp.Status.Phase = signalprocessingv1.PhaseCompleted
+	now := metav1.Now()
+	sp.Status.CompletionTime = &now
+	// DD-SEVERITY-001: Set normalized severity for downstream services (AIAnalysis, RO)
+	// This simulates what SignalProcessing Rego policy would do in real environment
+	// Default to "critical" if not specified, or use provided severity
+	severityValue := "critical" // Default normalized severity
+	if len(severity) > 0 && severity[0] != "" {
+		severityValue = severity[0] // Use test-specific severity (e.g., "high", "medium", "low")
+	}
+	sp.Status.Severity = severityValue // Normalized severity (required for AIAnalysis creation)
+	// BR-SP-106: Set signal mode defaults for downstream services (RO → AA)
+	// Default to "reactive" with type pass-through (backwards compatible)
+	// Tests that need proactive mode should use updateSPStatusProactive()
+	sp.Status.SignalMode = "reactive"
+	sp.Status.SignalName = sp.Spec.Signal.Name // Pass-through for reactive signals
+	// Set environment classification for downstream use
+	// Per SP Team Response (2025-12-10): ClassifiedAt is REQUIRED when struct is set
+	// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
+	sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
+		Environment:  signalprocessingv1.EnvironmentProduction,
+		Source:       "test",
+		ClassifiedAt: now, // REQUIRED per SP CRD schema
+	}
+	// Per SP Team Response (2025-12-10): AssignedAt is REQUIRED when struct is set
+	// V1.1 Note: Confidence field removed per DD-SP-001 V1.1 (redundant with source)
+	sp.Status.PriorityAssignment = &signalprocessingv1.PriorityAssignment{
+		Priority:   signalprocessingv1.PriorityP1,
+		Source:     "test",
+		AssignedAt: now, // REQUIRED per SP CRD schema
 	}
 
 	return k8sClient.Status().Update(ctx, sp)

@@ -31,6 +31,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	pathQueryRange = "/api/v1/query_range"
+)
+
 var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 
 	// Restore mock Prometheus to default state after each test
@@ -50,7 +55,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 			map[string]string{"__name__": "container_cpu_usage_seconds_total", "namespace": "default"},
 			[][]interface{}{
 				{preRemediationTime, "0.500000"}, // pre-remediation: 50% CPU
-				{now, "0.250000"},                 // post-remediation: 25% CPU (improvement)
+				{now, "0.250000"},                // post-remediation: 25% CPU (improvement)
 			},
 		))
 	})
@@ -59,7 +64,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// IT-EM-MC-001: Mock Prom returns improvement data -> metrics score > 0
 	// ========================================
 	It("IT-EM-MC-001: should score > 0 when Prometheus returns metric data", func() {
-		ns := createTestNamespace("em-mc-001")
+		ns := createTestNamespace(ctx, "em-mc-001")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock Prometheus with metric data indicating improvement")
@@ -95,7 +100,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// IT-EM-MC-002: Mock Prom returns no-change data -> metrics score
 	// ========================================
 	It("IT-EM-MC-002: should produce metrics score when data exists", func() {
-		ns := createTestNamespace("em-mc-002")
+		ns := createTestNamespace(ctx, "em-mc-002")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock Prometheus with same baseline data (no change)")
@@ -128,7 +133,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// IT-EM-MC-003: Mock Prom returns degraded data -> metrics score
 	// ========================================
 	It("IT-EM-MC-003: should handle degraded metric data", func() {
-		ns := createTestNamespace("em-mc-003")
+		ns := createTestNamespace(ctx, "em-mc-003")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock Prometheus with degraded metric data (higher CPU)")
@@ -161,7 +166,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// IT-EM-MC-004: Mock Prom returns empty result -> metrics not assessed, requeues
 	// ========================================
 	It("IT-EM-MC-004: should handle empty Prometheus result and eventually complete via expiry", func() {
-		ns := createTestNamespace("em-mc-004")
+		ns := createTestNamespace(ctx, "em-mc-004")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock Prometheus to return empty vector (no data)")
@@ -211,7 +216,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// IT-EM-MC-005: Mock Prom returns error (503) -> metrics not assessed, requeues
 	// ========================================
 	It("IT-EM-MC-005: should handle Prometheus error and eventually complete", func() {
-		ns := createTestNamespace("em-mc-005")
+		ns := createTestNamespace(ctx, "em-mc-005")
 		defer deleteTestNamespace(ns)
 
 		queryRangeCount := 0
@@ -262,7 +267,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// timeout (120s), so we verify the intermediate Assessing state rather than
 	// waiting for expiry-based completion.
 	It("IT-EM-MC-006: should keep metrics un-assessed when Prometheus returns no data", func() {
-		ns := createTestNamespace("em-mc-006")
+		ns := createTestNamespace(ctx, "em-mc-006")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock Prometheus range endpoint to return no data")
@@ -320,7 +325,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// IT-EM-MC-007: Mock Prom returns partial data (CPU only) -> uses available metrics
 	// ========================================
 	It("IT-EM-MC-007: should handle partial metric data (single metric series)", func() {
-		ns := createTestNamespace("em-mc-007")
+		ns := createTestNamespace(ctx, "em-mc-007")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock Prometheus with only CPU metric (no memory)")
@@ -354,7 +359,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 	// IT-EM-MC-008: Metrics event payload verified
 	// ========================================
 	It("IT-EM-MC-008: should preserve correlation data and metrics component structure", func() {
-		ns := createTestNamespace("em-mc-008")
+		ns := createTestNamespace(ctx, "em-mc-008")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock Prometheus with valid response")
@@ -391,7 +396,7 @@ var _ = Describe("Metrics Comparison Integration (BR-EM-003)", func() {
 		requests := mockProm.GetRequestLog()
 		queryRequests := 0
 		for _, req := range requests {
-			if req.Path == "/api/v1/query_range" {
+			if req.Path == pathQueryRange {
 				queryRequests++
 			}
 		}

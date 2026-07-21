@@ -74,7 +74,7 @@ var _ = Describe("E2E: AW ActionType Gate & CRD Format Hardening (#1661)", Seria
 		nonExistentActionType := fmt.Sprintf("NonExistentActionType%s", uuid.New().String()[:8])
 
 		By("Attempting to create a RW referencing a non-existent ActionType")
-		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "E2E-AT-3XX-DENY: references a non-existent ActionType")
+		rw := buildRemediationWorkflowCRD(crdName, "E2E-AT-3XX-DENY: references a non-existent ActionType")
 		rw.Spec.ActionType = nonExistentActionType
 
 		err := k8sClient.Create(ctx, rw)

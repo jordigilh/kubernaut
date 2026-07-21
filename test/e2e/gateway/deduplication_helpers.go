@@ -175,7 +175,7 @@ type ResourceIdentifier struct {
 // sendWebhook is a compatibility shim for E2E tests
 // TODO (GW Team): Replace calls with direct HTTP requests to gatewayURL
 func sendWebhook(baseURL, path string, payload []byte) *WebhookResponse {
-	req, err := http.NewRequest("POST", baseURL+path, bytes.NewBuffer(payload))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+path, bytes.NewBuffer(payload))
 	if err != nil {
 		return &WebhookResponse{StatusCode: 500, Body: []byte(err.Error())}
 	}
@@ -236,7 +236,7 @@ func sendWebhookExpectAccepted(baseURL, path string, payload []byte) *WebhookRes
 // sendWebhookRequest sends an HTTP POST request to Gateway webhook endpoint
 // with mandatory X-Timestamp header for replay attack prevention
 func sendWebhookRequest(gatewayURL, path string, body []byte) *WebhookResponse { //nolint:unused
-	req, err := http.NewRequest("POST", gatewayURL+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, gatewayURL+path, bytes.NewReader(body))
 	Expect(err).ToNot(HaveOccurred(), "HTTP request creation should succeed")
 
 	req.Header.Set("Content-Type", "application/json")

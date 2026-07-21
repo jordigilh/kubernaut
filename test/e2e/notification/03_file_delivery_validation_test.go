@@ -19,6 +19,7 @@ package notification
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"os"
 	"time"
 
@@ -266,7 +267,8 @@ var _ = Describe("File-Based Notification Delivery E2E Tests", func() {
 				GinkgoWriter.Printf("\n❌ k8sClient.Create() ERROR DETAILS:\n")
 				GinkgoWriter.Printf("   Error: %v\n", err)
 				GinkgoWriter.Printf("   Error Type: %T\n", err)
-				if statusErr, ok := err.(*errors.StatusError); ok {
+				var statusErr *errors.StatusError
+				if stderrors.As(err, &statusErr) {
 					GinkgoWriter.Printf("   Status Code: %d\n", statusErr.Status().Code)
 					GinkgoWriter.Printf("   Reason: %s\n", statusErr.ErrStatus.Reason)
 					GinkgoWriter.Printf("   Message: %s\n", statusErr.ErrStatus.Message)

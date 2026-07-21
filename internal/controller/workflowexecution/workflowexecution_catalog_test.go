@@ -18,6 +18,7 @@ package workflowexecution
 
 import (
 	"context"
+	"errors"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -115,11 +116,11 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 		Expect(wfe.Status.ActionType).To(BeEmpty())
 	})
 
-	It("UT-WE-1661-004: is idempotent -- a no-op when Status.ExecutionEngine is already resolved", func() {
+	It("UT-WE-1661-004: is idempotent -- returns ErrAlreadyResolved (Issue #1674 sentinel) without touching Status.ExecutionEngine", func() {
 		wfe.Status.ExecutionEngine = "already-resolved"
 
 		_, err := r.resolveWorkflowCatalog(ctx, wfe)
-		Expect(err).ToNot(HaveOccurred())
+		Expect(errors.Is(err, ErrAlreadyResolved)).To(BeTrue())
 
 		Expect(wfe.Status.ExecutionEngine).To(Equal("already-resolved"))
 	})

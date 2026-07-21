@@ -94,7 +94,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 	Context("Phase 4: Helper Function Tests", func() {
 		It("HF-8.1: UpdateRemediationRequestStatus should handle successful update", func() {
 			// Create RemediationRequest
-			rr := newRemediationRequest("test-rr", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-rr", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
@@ -110,14 +110,14 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 
 			// Fetch and verify RR was updated
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}, updated)).To(Succeed())
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseProcessing))
 			Expect(updated.Status.Message).To(Equal("Transitioning to Processing"))
 		})
 
 		It("HF-8.2: UpdateRemediationRequestStatus should handle update function errors", func() {
 			// Create RemediationRequest
-			rr := newRemediationRequest("test-rr", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-rr", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
@@ -133,13 +133,13 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 
 			// Verify RR was NOT updated
 			unchanged := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, unchanged)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}, unchanged)).To(Succeed())
 			Expect(unchanged.Status.OverallPhase).To(Equal(remediationv1.PhasePending)) // Still Pending
 		})
 
 		It("HF-8.3: UpdateRemediationRequestStatus should handle not found errors gracefully", func() {
 			// Create RemediationRequest but don't persist it
-			rr := newRemediationRequest("nonexistent-rr", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("nonexistent-rr", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 			// Try to update status (should fail with NotFound)
@@ -159,14 +159,14 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			// without conflicts (using the retry helper)
 
 			// Create RemediationRequest
-			rr := newRemediationRequest("test-rr", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-rr", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
 			// Perform multiple reconciles rapidly (simulating concurrent updates)
 			for i := 0; i < 3; i++ {
 				result, err := reconciler.Reconcile(ctx, ctrl.Request{
-					NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+					NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 				})
 				Expect(err).ToNot(HaveOccurred())
 				// First reconcile transitions to Processing, subsequent ones stay there
@@ -177,7 +177,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 
 			// Verify final state is consistent
 			final := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, final)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}, final)).To(Succeed())
 			Expect(final.Status.OverallPhase).To(Equal(remediationv1.PhaseProcessing))
 		})
 
@@ -185,7 +185,7 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			// This test validates BR-ORCH-038: Preserve Gateway deduplication data
 
 			// Create RemediationRequest with Gateway-owned deduplication data
-			rr := newRemediationRequest("test-rr", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("test-rr", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			now := metav1.Now()
 			rr.Status.Deduplication = &remediationv1.DeduplicationStatus{
@@ -197,14 +197,14 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 
 			// Reconcile (RO updates its own fields)
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
 
 			// Verify Gateway-owned deduplication data is preserved
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}, updated)).To(Succeed())
 			Expect(updated.Status.Deduplication).To(HaveField("OccurrenceCount", Equal(int32(1))))
 		})
 
@@ -212,22 +212,22 @@ var _ = Describe("BR-ORCH-HELPERS: Helper Function Tests", func() {
 			// This test validates that status updates correctly aggregate child CRD states
 
 			// Create RR with completed SP
-			rr := newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseProcessing, "sp-test-rr", "", "")
+			rr := newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseProcessing, "sp-test-rr", "", "")
 			Expect(fakeClient.Create(ctx, rr)).To(Succeed())
 
-			sp := newSignalProcessingCompleted("sp-test-rr", "default", "test-rr")
+			sp := newSignalProcessingCompleted("sp-test-rr", "test-rr")
 			Expect(fakeClient.Create(ctx, sp)).To(Succeed())
 
 			// Reconcile to transition to Analyzing
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RequeueAfter).To(Equal(5 * time.Second))
 
 			// Verify phase transition and status aggregation
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}, updated)).To(Succeed())
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseAnalyzing))
 			// Status aggregation should have set AllChildrenHealthy based on SP completion
 		})

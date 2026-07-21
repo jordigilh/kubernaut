@@ -122,7 +122,11 @@ func TestBuildResilientTransport_DependencyNameInMetrics(t *testing.T) {
 	client := &http.Client{Transport: cbt}
 
 	for i := 0; i < 5; i++ {
-		resp, err := client.Get(backend.URL)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, backend.URL, http.NoBody)
+		if err != nil {
+			t.Fatalf("failed to build request: %v", err)
+		}
+		resp, err := client.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 		}
@@ -670,8 +674,8 @@ func TestBuildA2AHandler_WithLLMEndpoint_ReturnsHandler(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 	})
 
 	h, err := buildA2AHandler(context.Background(), d)
@@ -695,8 +699,8 @@ func TestBuildA2AHandler_WithSessionInfra_UsesDecorator(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 	})
 
 	infra, infraErr := buildSessionInfra(d.Cfg, d.MetricsReg, nil, d.Logger)
@@ -728,8 +732,8 @@ func TestBuildA2AHandler_ThreadsK8sClient(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 	})
 
 	h, err := buildA2AHandler(context.Background(), d)
@@ -759,8 +763,8 @@ func TestBuildA2AHandler_ThreadsKAClient(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 		d.Backends.KAClient = ka.NewClient(ka.Config{BaseURL: kaBackend.URL}, nil)
 	})
 
@@ -796,8 +800,8 @@ func TestBuildA2AHandler_ThreadsDSClient(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 		d.Backends.DSClient = dsClient
 	})
 
@@ -832,8 +836,8 @@ func TestBuildA2AHandler_ThreadsUserLimiter(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 		d.UserLimiter = limiter
 	})
 
@@ -1249,8 +1253,8 @@ func TestBuildA2AHandler_ThreadsLoggerIntoLauncher(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 	})
 
 	h, err := buildA2AHandler(context.Background(), d)
@@ -1559,7 +1563,7 @@ func TestPreflightSessionChecks_ListsDeniedVerbs(t *testing.T) {
 			ct := r.Header.Get("Content-Type")
 			// K8s client may send protobuf or JSON. For JSON bodies,
 			// deny verbs containing "delete" or "create".
-			denied := false
+			var denied bool
 			if strings.Contains(ct, "json") || strings.Contains(ct, "application/json") {
 				denied = strings.Contains(bodyStr, `"delete"`) || strings.Contains(bodyStr, `"create"`)
 			} else {

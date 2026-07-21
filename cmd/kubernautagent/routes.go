@@ -158,7 +158,7 @@ func registerAPIRoutes(r chi.Router, ctx context.Context, p apiRoutesParams) (*m
 		r.Use(kaserver.HTTPMetricsMiddleware(p.agentMetrics))
 		r.Use(p.apiRateLimiter.Middleware)
 
-		authMw, authCleanup := newAuthMiddleware(p.infra, p.cfg.Interactive, p.logger)
+		authMw, authCleanup := newAuthMiddleware(p.infra, p.cfg.Interactive, p.logger) //nolint:contextcheck // newAuthMiddleware wires JWT authenticator construction once at startup; no parent request context exists yet
 		if authCleanup != nil {
 			// authCleanupRef is returned to the caller and deferred in main()'s
 			// scope (not here — this is a chi route-setup closure that returns
@@ -319,10 +319,10 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	// emitDisconnectAudit emits interactive.completed for non-tool session endings
 	// (disconnect, inactivity timeout, TTL expiry). M1: ensures all session-ending
 	// paths produce an audit trail, not just action=complete/cancel through InvestigateTool.
-	emitDisconnectAudit := newDisconnectAuditEmitter(auditStore, logger)
+	emitDisconnectAudit := newDisconnectAuditEmitter(auditStore, logger) //nolint:contextcheck // disconnect audit emitter fires asynchronously on session disconnect events, not tied to any single request
 
 	// Session management via K8s Leases (single-driver guarantee).
-	leaseMgr := buildMCPLeaseManager(ctrlCli, namespace, cfg, autoMgr, agentMetrics, logger, emitDisconnectAudit)
+	leaseMgr := buildMCPLeaseManager(ctrlCli, namespace, cfg, autoMgr, agentMetrics, logger, emitDisconnectAudit) //nolint:contextcheck // buildMCPLeaseManager wires session lease management once at startup; no parent request context exists yet
 
 	// Context reconstruction from DS audit events (best-effort).
 	recon := resolveContextReconstructor(ds, logger)
@@ -332,7 +332,7 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	eventStore := mcpkg.NewDelegatingEventStore()
 
 	// TimeoutManager: fires onExpire when a session goes inactive (SEC-04, HARM-03/04).
-	timeoutMgr := buildMCPTimeoutManager(cfg, autoMgr, leaseMgr, agentMetrics, logger, emitDisconnectAudit)
+	timeoutMgr := buildMCPTimeoutManager(cfg, autoMgr, leaseMgr, agentMetrics, logger, emitDisconnectAudit) //nolint:contextcheck // session Release must succeed on its own bounded context regardless of the caller's (drain/timeout/disconnect) context state
 
 	// ReconstructionSpawner: rebuilds context and spawns autonomous investigation
 	// after an interactive session ends (INT-06, BR-INTERACTIVE-008).
@@ -347,7 +347,7 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	if disconnectGracePeriod <= 0 {
 		disconnectGracePeriod = 60 * time.Second
 	}
-	disconnectHandler := buildMCPDisconnectHandler(mcpDisconnectHandlerDeps{
+	disconnectHandler := buildMCPDisconnectHandler(mcpDisconnectHandlerDeps{ //nolint:contextcheck // session Release must succeed on its own bounded context regardless of the caller's (drain/timeout/disconnect) context state
 		eventStore:          eventStore,
 		timeoutMgr:          timeoutMgr,
 		leaseMgr:            leaseMgr,

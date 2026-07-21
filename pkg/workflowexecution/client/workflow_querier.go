@@ -20,6 +20,7 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -29,6 +30,12 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 )
+
+// ErrNoDependencies indicates the workflow catalog entry declares no schema
+// content, and therefore no dependencies to extract. Issue #1674: typed
+// sentinel replacing the previous ambiguous (nil, nil) return from
+// GetWorkflowDependencies.
+var ErrNoDependencies = errors.New("workflow has no dependencies declared")
 
 // WorkflowCatalogMetadata holds all workflow metadata resolved from the DS
 // catalog in a single GetWorkflowByID call (Issue #650). Consolidates what was
@@ -134,7 +141,7 @@ func classifyGetWorkflowResponse(res ogenclient.GetWorkflowByIDRes, workflowID s
 
 // GetWorkflowDependencies fetches the workflow from DS by ID and extracts
 // schema-declared dependencies from the Content field (raw YAML).
-// Returns nil if the workflow has no dependencies declared.
+// Returns ErrNoDependencies if the workflow has no dependencies declared.
 func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workflowID string) (*models.WorkflowDependencies, error) {
 	uid, err := uuid.Parse(workflowID)
 	if err != nil {
@@ -154,7 +161,7 @@ func (q *OgenWorkflowQuerier) GetWorkflowDependencies(ctx context.Context, workf
 	}
 
 	if wf.Content == "" {
-		return nil, nil
+		return nil, ErrNoDependencies
 	}
 
 	parser := schema.NewParser()

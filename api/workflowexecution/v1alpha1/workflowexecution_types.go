@@ -325,7 +325,8 @@ type WorkflowExecutionStatus struct {
 	ExecutionStatus *ExecutionStatusSummary `json:"executionStatus,omitempty"`
 
 	// FailureReason explains why execution failed (if applicable)
-	// DEPRECATED: Use FailureDetails for structured failure information
+	//
+	// Deprecated: Use FailureDetails for structured failure information.
 	// +optional
 	FailureReason string `json:"failureReason,omitempty"`
 
@@ -415,6 +416,11 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
+
+// ExecutionEngineTekton is the Status.ExecutionEngine value for Tekton
+// Pipelines-backed workflows. See the ExecutionEngine field doc above for
+// the full value set ("tekton", "job", "ansible").
+const ExecutionEngineTekton = "tekton"
 
 // ========================================
 // V1.0: SKIP DETAILS REMOVED

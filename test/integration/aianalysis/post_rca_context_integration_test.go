@@ -32,6 +32,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	production = "production"
+)
+
 // ADR-056 SoC: Integration tests for PostRCAContext and DetectedLabels
 // in the AIAnalysis controller reconciliation loop.
 //
@@ -94,7 +99,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 	waitForTerminalPhase := func(analysis *aianalysisv1.AIAnalysis) {
 		Eventually(func() string {
 			_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-			return string(analysis.Status.Phase)
+			return analysis.Status.Phase
 		}, timeout, interval).Should(
 			SatisfyAny(Equal("Completed"), Equal("Failed")),
 			"CR should reach a terminal phase (Completed or Failed)")
@@ -132,7 +137,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 		It("IT-AA-056-003: should reach Analyzing phase with detected_labels in Rego input", func() {
 			analysis := newIncidentAnalysis("003")
 			// Use production to trigger approval-required path (Rego evaluation).
-			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
+			analysis.Spec.AnalysisRequest.SignalContext.Environment = production
 			// Use a signal returning confidence < 0.8 (Rego default threshold) so the
 			// production catch-all rule fires. Unrecognized signals hit mock default (0.75).
 			analysis.Spec.AnalysisRequest.SignalContext.SignalName = "MOCK_APPROVAL_TEST"
@@ -150,7 +155,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			// BR-AI-013: If reconciliation reaches Completed, Rego evaluation ran.
 			// The Rego evaluator receives detected_labels (from PostRCAContext or empty map).
 			// Production + confidence < 0.8 triggers approval via Rego policy.
-			if analysis.Status.Phase == "Completed" {
+			if analysis.Status.Phase == aianalysisv1.PhaseCompleted {
 				Expect(analysis.Status.ApprovalRequired).To(BeTrue(),
 					"Production environment should require approval (Rego evaluation with detected_labels)")
 			}
@@ -158,7 +163,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 
 		It("IT-AA-056-004: should handle failedDetections gracefully in Rego evaluation", func() {
 			analysis := newIncidentAnalysis("004")
-			analysis.Spec.AnalysisRequest.SignalContext.Environment = "production"
+			analysis.Spec.AnalysisRequest.SignalContext.Environment = production
 			defer func() { _ = k8sClient.Delete(ctx, analysis) }()
 
 			By("Creating AIAnalysis CR")
@@ -221,7 +226,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			By("Waiting for reconciliation to start processing")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(
 				SatisfyAny(Equal("Investigating"), Equal("Analyzing"), Equal("Completed"), Equal("Failed")),
 				"CR should progress past Pending phase")

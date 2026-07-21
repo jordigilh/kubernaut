@@ -350,7 +350,7 @@ func (inv *Investigator) apiVersionGateExhaustion(
 ) *katypes.InvestigationResult {
 	gateEvent.Data["retry_outcome"] = "exhausted"
 	result.HumanReviewNeeded = true
-	result.HumanReviewReason = "rca_incomplete"
+	result.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
 
 	// Clear workflow fields: the workflow was selected based on an ambiguous
 	// kind without api_version, so it may target the wrong API group and lead

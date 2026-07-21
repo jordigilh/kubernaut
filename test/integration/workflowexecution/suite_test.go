@@ -196,7 +196,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 		"test/integration/workflowexecution/config",
 		authConfig,
 	)
-	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err := infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ All services started and healthy (PostgreSQL, Redis, DataStorage - shared across all processes)")
 
@@ -507,7 +507,7 @@ func waitForWFEPhase(name, namespace string, expectedPhase string, timeout time.
 }
 
 // waitForPipelineRunCreation waits for a PipelineRun to be created for a WFE
-func waitForPipelineRunCreation(wfeName, wfeNamespace string, timeout time.Duration) (*tektonv1.PipelineRun, error) {
+func waitForPipelineRunCreation(wfeName string, timeout time.Duration) (*tektonv1.PipelineRun, error) {
 	var pr *tektonv1.PipelineRun
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, timeout)

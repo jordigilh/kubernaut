@@ -65,6 +65,12 @@ const (
 	ActionFailed    = "failed"
 )
 
+// errCodePipelineFailed is the default/generic error code used in audit
+// ErrorDetails for pipeline failures whose FailureDetails.Reason maps to a
+// retryable, non-specific failure (OOMKilled, ResourceExhausted,
+// DeadlineExceeded, TaskFailed, or unknown).
+const errCodePipelineFailed = "ERR_PIPELINE_FAILED"
+
 // Event types for WorkflowExecution audit events (per ADR-034 v1.5 + OpenAPI spec)
 // Per ADR-034 v1.5: ALL event types from WorkflowExecution controller use "workflowexecution" prefix
 // These match the event_type enum values in data-storage-v1.yaml
@@ -145,7 +151,6 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	}
 
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSelectionCompleted)
 	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	audit.SetEventAction(event, "completed") // "workflowexecution.selection.completed" → "completed"
@@ -229,7 +234,6 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	}
 
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeExecutionStarted)
 	audit.SetEventCategory(event, CategoryWorkflowExecution) // Per ADR-034 v1.5: workflowexecution category
 	audit.SetEventAction(event, "started")                   // "workflowexecution.execution.started" → "started"
@@ -344,7 +348,6 @@ func (m *Manager) recordAuditEvent(
 
 	// Build audit event per ADR-034 schema (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	// Event type = action (e.g., "workflowexecution.workflow.started")
 	// Service context is provided by event_category and actor fields
 	audit.SetEventType(event, action)
@@ -489,7 +492,7 @@ func buildFailureErrorDetails(wfe *workflowexecutionv1alpha1.WorkflowExecution) 
 	if wfe.Status.FailureDetails == nil {
 		return sharedaudit.NewErrorDetails(
 			"workflowexecution",
-			"ERR_PIPELINE_FAILED",
+			errCodePipelineFailed,
 			"Workflow execution failed with unknown error",
 			true,
 		)
@@ -506,7 +509,7 @@ func buildFailureErrorDetails(wfe *workflowexecutionv1alpha1.WorkflowExecution) 
 
 	// Determine error code based on FailureDetails.Reason (structured enum)
 	// Uses Kubernetes-style reason code instead of string matching on error message
-	errorCode := "ERR_PIPELINE_FAILED"
+	errorCode := errCodePipelineFailed
 	retryPossible := true // Pipeline failures may be transient
 
 	switch wfe.Status.FailureDetails.Reason {
@@ -514,13 +517,13 @@ func buildFailureErrorDetails(wfe *workflowexecutionv1alpha1.WorkflowExecution) 
 		errorCode = "ERR_WORKFLOW_NOT_FOUND"
 		retryPossible = false
 	case "OOMKilled", "ResourceExhausted", "DeadlineExceeded":
-		errorCode = "ERR_PIPELINE_FAILED"
+		errorCode = errCodePipelineFailed
 		retryPossible = true
 	case "ImagePullBackOff":
 		errorCode = "ERR_IMAGE_PULL"
 		retryPossible = true
 	case "TaskFailed":
-		errorCode = "ERR_PIPELINE_FAILED"
+		errorCode = errCodePipelineFailed
 		retryPossible = !wfe.Status.FailureDetails.WasExecutionFailure
 	}
 
@@ -554,7 +557,6 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 
 	// Build audit event
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeFailed)
 	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	audit.SetEventAction(event, ActionFailed)

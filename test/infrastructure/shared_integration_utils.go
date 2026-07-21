@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -131,12 +132,12 @@ type PostgreSQLConfig struct {
 //	    DBUser: "slm_user",
 //	    DBPassword: "test_password",
 //	}
-//	if err := StartPostgreSQL(cfg, writer); err != nil {
+//	if err := StartPostgreSQL(ctx, cfg, writer); err != nil {
 //	    return err
 //	}
-func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
+func StartPostgreSQL(ctx context.Context, cfg PostgreSQLConfig, writer io.Writer) error {
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, postgresImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
 	}
 
@@ -161,7 +162,7 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 		args = append(args, "-c", fmt.Sprintf("max_connections=%d", cfg.MaxConnections))
 	}
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(ctx, "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
@@ -185,16 +186,16 @@ func StartPostgreSQL(cfg PostgreSQLConfig, writer io.Writer) error {
 //
 // Usage:
 //
-//	if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
+//	if err := WaitForPostgreSQLReady(ctx, "myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
 //	    return fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 //	}
-func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writer) error {
+func WaitForPostgreSQLReady(ctx context.Context, containerName, dbUser, dbName string, writer io.Writer) error {
 	// ============================================================================
 	// PHASE 1: Wait for PostgreSQL to accept connections (pg_isready)
 	// ============================================================================
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
-		cmd := exec.Command("podman", "exec", containerName,
+		cmd := exec.CommandContext(ctx, "podman", "exec", containerName,
 			"pg_isready", "-U", dbUser, "-d", dbName)
 		if cmd.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL accepting connections (attempt %d/%d)\n", i, maxAttempts)
@@ -222,7 +223,7 @@ func WaitForPostgreSQLReady(containerName, dbUser, dbName string, writer io.Writ
 	_, _ = fmt.Fprintf(writer, "   ⏳ Verifying database is queryable...\n")
 	maxQueryAttempts := 10
 	for i := 1; i <= maxQueryAttempts; i++ {
-		testQueryCmd := exec.Command("podman", "exec", containerName,
+		testQueryCmd := exec.CommandContext(ctx, "podman", "exec", containerName,
 			"psql", "-U", dbUser, "-d", dbName, "-c", "SELECT 1;")
 		testQueryCmd.Stdout = writer
 		testQueryCmd.Stderr = writer
@@ -263,12 +264,12 @@ type RedisConfig struct {
 //	    ContainerName: "myservice_redis_1",
 //	    Port: 16383,
 //	}
-//	if err := StartRedis(cfg, writer); err != nil {
+//	if err := StartRedis(ctx, cfg, writer); err != nil {
 //	    return err
 //	}
-func StartRedis(cfg RedisConfig, writer io.Writer) error {
+func StartRedis(ctx context.Context, cfg RedisConfig, writer io.Writer) error {
 	const redisImage = "redis:7-alpine"
-	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, redisImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull Redis image: %w", err)
 	}
 
@@ -284,7 +285,7 @@ func StartRedis(cfg RedisConfig, writer io.Writer) error {
 
 	args = append(args, redisImage)
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(ctx, "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
@@ -300,13 +301,13 @@ func StartRedis(cfg RedisConfig, writer io.Writer) error {
 //
 // Usage:
 //
-//	if err := WaitForRedisReady("myservice_redis_1", writer); err != nil {
+//	if err := WaitForRedisReady(ctx, "myservice_redis_1", writer); err != nil {
 //	    return fmt.Errorf("Redis failed to become ready: %w", err)
 //	}
-func WaitForRedisReady(containerName string, writer io.Writer) error {
+func WaitForRedisReady(ctx context.Context, containerName string, writer io.Writer) error {
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
-		cmd := exec.Command("podman", "exec", containerName, "redis-cli", "ping")
+		cmd := exec.CommandContext(ctx, "podman", "exec", containerName, "redis-cli", "ping")
 		output, err := cmd.CombinedOutput()
 		if err == nil && string(output) == "PONG\n" {
 			_, _ = fmt.Fprintf(writer, "   ✅ Redis ready (attempt %d/%d)\n", i, maxAttempts)
@@ -330,17 +331,24 @@ func WaitForRedisReady(containerName string, writer io.Writer) error {
 //
 // Usage:
 //
-//	if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
+//	if err := WaitForHTTPHealth(ctx, "http://127.0.0.1:18096/health", 30*time.Second, writer); err != nil {
 //	    return fmt.Errorf("DataStorage failed to become healthy: %w", err)
 //	}
-func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer) error {
+func WaitForHTTPHealth(ctx context.Context, healthURL string, timeout time.Duration, writer io.Writer) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
 	attempt := 0
 
 	for time.Now().Before(deadline) {
 		attempt++
-		resp, err := client.Get(healthURL)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build health check request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -351,11 +359,9 @@ func WaitForHTTPHealth(healthURL string, timeout time.Duration, writer io.Writer
 			if attempt%5 == 0 {
 				_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Status %d (waiting for 200 OK)...\n", attempt, resp.StatusCode)
 			}
-		} else {
+		} else if attempt%5 == 0 {
 			// Log every 5th connection error for debugging
-			if attempt%5 == 0 {
-				_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Connection failed (%v), retrying...\n", attempt, err)
-			}
+			_, _ = fmt.Fprintf(writer, "   ⏳ Attempt %d: Connection failed (%v), retrying...\n", attempt, err)
 		}
 		time.Sleep(1 * time.Second)
 	}
@@ -417,7 +423,7 @@ func MustGatherContainerLogs(serviceName string, containerNames []string, writer
 
 	for _, container := range containerNames {
 		// Check if container exists
-		checkCmd := exec.Command("podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
+		checkCmd := exec.CommandContext(context.Background(), "podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
 		output, err := checkCmd.Output()
 		if err != nil || len(output) == 0 || string(output) == "\n" {
 			_, _ = fmt.Fprintf(writer, "   ⏭️  Skipping %s (container not found)\n", container)
@@ -426,7 +432,7 @@ func MustGatherContainerLogs(serviceName string, containerNames []string, writer
 
 		// Extract container logs
 		logFile := filepath.Join(mustGatherDir, fmt.Sprintf("%s_%s.log", serviceName, container))
-		logCmd := exec.Command("podman", "logs", container)
+		logCmd := exec.CommandContext(context.Background(), "podman", "logs", container)
 		logOutput, err := logCmd.CombinedOutput()
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to get logs for %s: %v\n", container, err)
@@ -440,7 +446,7 @@ func MustGatherContainerLogs(serviceName string, containerNames []string, writer
 
 		// Extract container inspect JSON (configuration and state)
 		inspectFile := filepath.Join(mustGatherDir, fmt.Sprintf("%s_%s_inspect.json", serviceName, container))
-		inspectCmd := exec.Command("podman", "inspect", container)
+		inspectCmd := exec.CommandContext(context.Background(), "podman", "inspect", container)
 		inspectOutput, err := inspectCmd.Output()
 		if err != nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to inspect %s: %v\n", container, err)
@@ -466,29 +472,29 @@ func MustGatherContainerLogs(serviceName string, containerNames []string, writer
 //
 // Usage:
 //
-//	CleanupContainers([]string{
+//	CleanupContainers(ctx, []string{
 //	    "myservice_postgres_1",
 //	    "myservice_redis_1",
 //	    "myservice_datastorage_1",
 //	}, writer)
-func CleanupContainers(containerNames []string, writer io.Writer) {
+func CleanupContainers(ctx context.Context, containerNames []string, writer io.Writer) {
 	for _, container := range containerNames {
 		// Stop container (immediate stop for faster cleanup)
 		// Use --time=0 to force immediate stop without waiting for graceful shutdown
-		stopCmd := exec.Command("podman", "stop", "--time=0", container)
+		stopCmd := exec.CommandContext(ctx, "podman", "stop", "--time=0", container)
 		stopCmd.Stdout = writer
 		stopCmd.Stderr = writer
 		_ = stopCmd.Run() // Ignore errors (container might not exist)
 
 		// Remove container (force) - this should handle containers in any state
-		rmCmd := exec.Command("podman", "rm", "-f", container)
+		rmCmd := exec.CommandContext(ctx, "podman", "rm", "-f", container)
 		rmCmd.Stdout = writer
 		rmCmd.Stderr = writer
 		_ = rmCmd.Run() // Ignore errors (container might not exist)
 
 		// Verify container is gone (retry up to 3 times for race conditions)
 		for attempt := 0; attempt < 3; attempt++ {
-			checkCmd := exec.Command("podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
+			checkCmd := exec.CommandContext(ctx, "podman", "ps", "-a", "--filter", "name=^"+container+"$", "--format", "{{.Names}}")
 			output, _ := checkCmd.Output()
 			if len(output) == 0 || string(output) == "\n" {
 				break // Container successfully removed
@@ -496,7 +502,7 @@ func CleanupContainers(containerNames []string, writer io.Writer) {
 			// Container still exists, try removing again
 			if attempt < 2 {
 				time.Sleep(100 * time.Millisecond)
-				rmRetry := exec.Command("podman", "rm", "-f", container)
+				rmRetry := exec.CommandContext(ctx, "podman", "rm", "-f", container)
 				rmRetry.Stdout = writer
 				rmRetry.Stderr = writer
 				_ = rmRetry.Run()
@@ -563,7 +569,7 @@ func RunMigrations(cfg MigrationsConfig, writer io.Writer) error {
 	// Add image
 	args = append(args, cfg.MigrationsImage)
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(context.Background(), "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
@@ -610,15 +616,15 @@ type IntegrationDataStorageConfig struct {
 //	    RedisHost: "aianalysis_redis_1",
 //	    RedisPort: 6379,
 //	}
-//	if err := StartDataStorage(cfg, writer); err != nil {
+//	if err := StartDataStorage(ctx, cfg, writer); err != nil {
 //	    return err
 //	}
 //
 //	// Wait for health check
-//	if err := WaitForHTTPHealth("http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
+//	if err := WaitForHTTPHealth(ctx, "http://127.0.0.1:18091/health", 60*time.Second, writer); err != nil {
 //	    return err
 //	}
-func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error {
+func StartDataStorage(ctx context.Context, cfg IntegrationDataStorageConfig, writer io.Writer) error {
 	projectRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find project root: %w", err)
@@ -648,7 +654,7 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	// Per DD-INTEGRATION-001: Use docker/data-storage.Dockerfile (authoritative location)
 	// CI/CD Optimization: If IMAGE_REGISTRY + IMAGE_TAG are set, uses registry image (podman auto-pulls)
 	_, _ = fmt.Fprintf(writer, "   Resolving DataStorage image (%s)...\n", cfg.ImageTag)
-	actualImage, err := buildDataStorageImageWithTag(cfg.ImageTag, writer)
+	actualImage, err := buildDataStorageImageWithTag(ctx, cfg.ImageTag, writer)
 	if err != nil {
 		return fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
@@ -686,7 +692,7 @@ func StartDataStorage(cfg IntegrationDataStorageConfig, writer io.Writer) error 
 	// Add image (may be registry image if IMAGE_REGISTRY/IMAGE_TAG are set)
 	runArgs = append(runArgs, actualImage)
 
-	cmd := exec.Command("podman", runArgs...)
+	cmd := exec.CommandContext(ctx, "podman", runArgs...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -788,14 +794,14 @@ func findProjectRoot() (string, error) {
 //
 //   func StartMyServiceIntegrationInfrastructure(writer io.Writer) error {
 //       // Step 1: Cleanup existing containers
-//       CleanupContainers([]string{
+//       CleanupContainers(ctx, []string{
 //           "myservice_postgres_1",
 //           "myservice_redis_1",
 //           "myservice_datastorage_1",
 //       }, writer)
 //
 //       // Step 2: Start PostgreSQL
-//       if err := StartPostgreSQL(PostgreSQLConfig{
+//       if err := StartPostgreSQL(ctx, PostgreSQLConfig{
 //           ContainerName: "myservice_postgres_1",
 //           Port: 15437,
 //           DBName: "action_history",
@@ -806,7 +812,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 3: Wait for PostgreSQL ready
-//       if err := WaitForPostgreSQLReady("myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
+//       if err := WaitForPostgreSQLReady(ctx, "myservice_postgres_1", "slm_user", "action_history", writer); err != nil {
 //           return err
 //       }
 //
@@ -824,7 +830,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 5: Start Redis
-//       if err := StartRedis(RedisConfig{
+//       if err := StartRedis(ctx, RedisConfig{
 //           ContainerName: "myservice_redis_1",
 //           Port: 16383,
 //       }, writer); err != nil {
@@ -832,12 +838,12 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 6: Wait for Redis ready
-//       if err := WaitForRedisReady("myservice_redis_1", writer); err != nil {
+//       if err := WaitForRedisReady(ctx, "myservice_redis_1", writer); err != nil {
 //           return err
 //       }
 //
 //       // Step 7: Start DataStorage (using shared utility)
-//       if err := StartDataStorage(IntegrationDataStorageConfig{
+//       if err := StartDataStorage(ctx, IntegrationDataStorageConfig{
 //           ContainerName: "myservice_datastorage_1",
 //           Port: 18096,
 //           Network: "myservice_test-network",
@@ -853,7 +859,7 @@ func findProjectRoot() (string, error) {
 //       }
 //
 //       // Step 8: Wait for DataStorage HTTP health
-//       if err := WaitForHTTPHealth("http://127.0.0.1:18096/health", 60*time.Second, writer); err != nil {
+//       if err := WaitForHTTPHealth(ctx, "http://127.0.0.1:18096/health", 60*time.Second, writer); err != nil {
 //           return err
 //       }
 //
@@ -863,7 +869,7 @@ func findProjectRoot() (string, error) {
 // Example 2: Cleanup Infrastructure
 //
 //   func StopMyServiceIntegrationInfrastructure(writer io.Writer) error {
-//       CleanupContainers([]string{
+//       CleanupContainers(ctx, []string{
 //           "myservice_datastorage_1",
 //           "myservice_redis_1",
 //           "myservice_postgres_1",
@@ -910,7 +916,7 @@ func getProjectRoot() string {
 // loadImageToKind loads a pre-built podman image into a Kind cluster using tar archive
 // This is the AUTHORITATIVE pattern per DD-TEST-001 for podman-to-Kind image transfer
 // Per DataStorage E2E (working implementation): podman save → tar → kind load image-archive
-func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
+func loadImageToKind(ctx context.Context, clusterName, imageName string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  📦 Loading image into Kind cluster: %s\n", imageName)
 
 	// Add localhost prefix if not present (podman/Kind convention)
@@ -924,7 +930,7 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	tarFile := fmt.Sprintf("/tmp/%s-%d.tar", safeImageName, time.Now().UnixNano())
 
 	// Step 1: Save podman image to tar archive
-	saveCmd := exec.Command("podman", "save", imageName, "-o", tarFile)
+	saveCmd := exec.CommandContext(ctx, "podman", "save", imageName, "-o", tarFile)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 
@@ -933,7 +939,7 @@ func loadImageToKind(clusterName, imageName string, writer io.Writer) error {
 	}
 
 	// Step 2: Load tar archive into Kind cluster
-	loadCmd := exec.Command("kind", "load", "image-archive", tarFile, "--name", clusterName)
+	loadCmd := exec.CommandContext(ctx, "kind", "load", "image-archive", tarFile, "--name", clusterName)
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 

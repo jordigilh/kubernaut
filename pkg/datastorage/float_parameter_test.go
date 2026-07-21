@@ -49,9 +49,9 @@ var _ = Describe("Float Parameter Type [BR-WORKFLOW-005]", func() {
 	Context("schema validation", func() {
 		It("UT-WF-005-001: should accept float parameter type in schema", func() {
 			crd := floatParamBaseCRD()
-			min, max := 0.0, 1.0
+			minVal, maxVal := 0.0, 1.0
 			crd.Spec.Parameters = []models.WorkflowParameter{
-				{Name: "THRESHOLD", Type: "float", Description: "Memory threshold percentage", Required: true, Minimum: &min, Maximum: &max},
+				{Name: "THRESHOLD", Type: "float", Description: "Memory threshold percentage", Required: true, Minimum: &minVal, Maximum: &maxVal},
 			}
 			yamlContent := testutil.MarshalWorkflowCRD(crd)
 
@@ -62,9 +62,9 @@ var _ = Describe("Float Parameter Type [BR-WORKFLOW-005]", func() {
 
 		It("UT-WF-005-002: should parse float minimum/maximum bounds", func() {
 			crd := floatParamBaseCRD()
-			min, max := 0.25, 8.0
+			minVal, maxVal := 0.25, 8.0
 			crd.Spec.Parameters = []models.WorkflowParameter{
-				{Name: "CPU_LIMIT", Type: "float", Description: "CPU limit in cores", Required: true, Minimum: &min, Maximum: &max},
+				{Name: "CPU_LIMIT", Type: "float", Description: "CPU limit in cores", Required: true, Minimum: &minVal, Maximum: &maxVal},
 			}
 			yamlContent := testutil.MarshalWorkflowCRD(crd)
 
@@ -76,9 +76,9 @@ var _ = Describe("Float Parameter Type [BR-WORKFLOW-005]", func() {
 
 		It("UT-WF-005-004: should maintain integer min/max backward compatibility", func() {
 			crd := floatParamBaseCRD()
-			min, max := 1.0, 10.0
+			minVal, maxVal := 1.0, 10.0
 			crd.Spec.Parameters = []models.WorkflowParameter{
-				{Name: "REPLICAS", Type: "integer", Description: "Number of replicas", Required: true, Minimum: &min, Maximum: &max},
+				{Name: "REPLICAS", Type: "integer", Description: "Number of replicas", Required: true, Minimum: &minVal, Maximum: &maxVal},
 			}
 			yamlContent := testutil.MarshalWorkflowCRD(crd)
 

@@ -109,9 +109,13 @@ func workflowCRDClient() client.Client {
 // same way AuthWebhook would, since this suite runs DataStorage without a live
 // AuthWebhook instance. #1661 Phase 55b: replaces the retired
 // POST /api/v1/workflows-based registration.
-func ensureWorkflowRegistered(ctx context.Context, _ *dsgen.Client, content, workflowName string) (string, uuid.UUID) {
+func ensureWorkflowRegistered(ctx context.Context, _ *dsgen.Client, content string, workflowName ...string) (string, uuid.UUID) {
+	name := "workflow"
+	if len(workflowName) > 0 {
+		name = workflowName[0]
+	}
 	workflowIDStr, err := infrastructure.SeedWorkflowContentViaDirectCRDCreation(ctx, workflowCRDClient(), sharedNamespace, content, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "failed to seed workflow %s via direct CRD creation", workflowName)
+	Expect(err).ToNot(HaveOccurred(), "failed to seed workflow %s via direct CRD creation", name)
 
 	workflowID, err := uuid.Parse(workflowIDStr)
 	Expect(err).ToNot(HaveOccurred(), "workflow_id %q should be a valid UUID", workflowIDStr)
@@ -144,12 +148,12 @@ func postAuditEventBatch(
 // Minimal Payload Constructors for E2E API Testing
 // These create minimal valid payloads to test DataStorage API functionality
 
-func newMinimalGatewayPayload(signalType, alertName string) dsgen.AuditEventRequestEventData {
+func newMinimalGatewayPayload(alertName string) dsgen.AuditEventRequestEventData {
 	return dsgen.AuditEventRequestEventData{
 		Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 		GatewayAuditPayload: dsgen.GatewayAuditPayload{
 			EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-			SignalType:  dsgen.GatewayAuditPayloadSignalType(signalType),
+			SignalType:  dsgen.GatewayAuditPayloadSignalType("alert"),
 			SignalName:   alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",

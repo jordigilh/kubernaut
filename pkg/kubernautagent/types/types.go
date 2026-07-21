@@ -184,6 +184,18 @@ type InvestigationResult struct {
 	Reasoning *ReasoningSummary `json:"reasoning,omitempty"`
 }
 
+// HumanReviewReasonRCAIncomplete is the HumanReviewReason value set when RCA
+// gates (e.g., API-version ambiguity retry) are exhausted without resolution.
+// Mirrors agentclient.HumanReviewReasonRcaIncomplete's string value without
+// coupling this package to the generated OpenAPI client type.
+const HumanReviewReasonRCAIncomplete = "rca_incomplete"
+
+// InvestigationOutcomeProblemResolved is the InvestigationOutcome value
+// indicating the LLM determined the underlying problem self-resolved before
+// remediation was needed. See the InvestigationOutcome field doc above for
+// the full enum (mirrors parser/schema.go's JSON schema enum).
+const InvestigationOutcomeProblemResolved = "problem_resolved"
+
 // TokenUsageSummary holds cumulative token counts. Mirrors
 // investigator.TokenUsageSummary for cross-package use.
 type TokenUsageSummary struct {

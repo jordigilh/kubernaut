@@ -43,6 +43,13 @@ const (
 	ExecutionEngineAnsible ExecutionEngine = "ansible"
 )
 
+// RemediationWorkflow.Status values (see the `validate:"oneof=..."` tag below
+// for the full enum: Active, Disabled, Deprecated, Archived).
+const (
+	WorkflowStatusActive   = "Active"
+	WorkflowStatusDisabled = "Disabled"
+)
+
 // RemediationWorkflow represents a workflow in the catalog
 // Maps to remediation_workflow_catalog table (migration 015)
 //

@@ -51,7 +51,7 @@ var _ = Describe("E2E JWT/OIDC — DEX Integration (#1009)", Label("e2e", "ka", 
 	BeforeEach(func() {
 		mcpEndpoint = infrastructure.MCPEndpointForKAE2E()
 		tlsTransport = testauth.NewRetryOn429Transport(http.DefaultTransport)
-		dexConfig = infrastructure.DefaultDexE2EConfig()
+		dexConfig = infrastructure.DefaultDexE2EConfig(kubeconfigPath)
 	})
 
 	// ---------------------------------------------------------------

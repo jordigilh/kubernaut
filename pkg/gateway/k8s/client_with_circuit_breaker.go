@@ -122,6 +122,11 @@ func (c *ClientWithCircuitBreaker) CreateRemediationRequest(ctx context.Context,
 		// Treat "AlreadyExists" as idempotent success for circuit breaker state.
 		// This prevents circuit breaker from opening during parallel test execution.
 		if k8serrors.IsAlreadyExists(err) {
+			// nolint:nilnil // intentional "treat as success" sentinel for
+			// gobreaker's failure counter, not an ambiguous not-found value —
+			// already documented on the line above; the caller discards the
+			// interface{} result entirely (`_, err := c.cb.Execute(...)`) and
+			// only returns err (Issue #1546 Tier 2).
 			return nil, nil // Circuit breaker: success (don't increment failure count)
 		}
 

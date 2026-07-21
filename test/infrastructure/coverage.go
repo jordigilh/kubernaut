@@ -17,6 +17,7 @@ License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -114,7 +115,7 @@ func CollectE2EBinaryCoverage(opts E2ECoverageOptions, writer io.Writer) error {
 func scaleDownDeploymentForCoverage(opts E2ECoverageOptions, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔽 Scaling down %s/%s to 0 replicas...\n", opts.Namespace, opts.DeploymentName)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+	cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"scale", "deployment", opts.DeploymentName,
 		"-n", opts.Namespace, "--replicas=0")
 	cmd.Stdout = writer
@@ -125,7 +126,7 @@ func scaleDownDeploymentForCoverage(opts E2ECoverageOptions, writer io.Writer) e
 
 	// Wait for pod deletion (blocks until pod is fully terminated)
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for %s pod to terminate...\n", opts.DeploymentName)
-	waitCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+	waitCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"wait", "--for=delete", "pod",
 		"-l", fmt.Sprintf("app=%s", opts.DeploymentName),
 		"-n", opts.Namespace,
@@ -163,13 +164,13 @@ func extractCoverageFromKindNode(clusterName, coverDir string, writer io.Writer)
 		// Try podman first (CI uses podman), then docker
 		for _, runtime := range []string{"podman", "docker"} {
 			// DD-TEST-007: List /coverdata contents before copy for diagnostics
-			listCmd := exec.Command(runtime, "exec", nodeName,
+			listCmd := exec.CommandContext(context.Background(), runtime, "exec", nodeName,
 				"sh", "-c", "echo '=== /coverdata contents ===' && ls -la /coverdata/ 2>&1 && echo '=== /coverdata permissions ===' && stat /coverdata/ 2>&1 || true")
 			if listOutput, listErr := listCmd.CombinedOutput(); listErr == nil {
 				_, _ = fmt.Fprintf(writer, "📋 Kind node %s (%s):\n%s\n", nodeName, runtime, listOutput)
 			}
 
-			cmd := exec.Command(runtime, "cp",
+			cmd := exec.CommandContext(context.Background(), runtime, "cp",
 				nodeName+":/coverdata/.",
 				coverDir)
 			output, err := cmd.CombinedOutput()
@@ -213,7 +214,7 @@ func validateExtractedFiles(coverDir string, writer io.Writer) error {
 func convertCoverageToProfile(coverDir, outputFile string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔄 Converting coverage data to profile format...\n")
 
-	cmd := exec.Command("go", "tool", "covdata", "textfmt",
+	cmd := exec.CommandContext(context.Background(), "go", "tool", "covdata", "textfmt",
 		"-i="+coverDir,
 		"-o="+outputFile)
 	output, err := cmd.CombinedOutput()
@@ -259,7 +260,7 @@ func remapCoveragePaths(profileFile, projectRoot string, writer io.Writer) error
 
 // logCoveragePercent logs the coverage percentage summary (best-effort).
 func logCoveragePercent(coverDir string, writer io.Writer) {
-	cmd := exec.Command("go", "tool", "covdata", "percent", "-i="+coverDir)
+	cmd := exec.CommandContext(context.Background(), "go", "tool", "covdata", "percent", "-i="+coverDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		_, _ = fmt.Fprintf(writer, "⚠️  Could not compute coverage percent: %v\n", err)
@@ -271,7 +272,7 @@ func logCoveragePercent(coverDir string, writer io.Writer) {
 // generateHTMLReport produces an HTML coverage report for local debugging (best-effort).
 func generateHTMLReport(coverDir, profileFile string, writer io.Writer) {
 	htmlFile := filepath.Join(coverDir, "e2e-coverage.html")
-	cmd := exec.Command("go", "tool", "cover",
+	cmd := exec.CommandContext(context.Background(), "go", "tool", "cover",
 		"-html="+profileFile,
 		"-o="+htmlFile)
 	if err := cmd.Run(); err != nil {
@@ -347,7 +348,7 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 
 	// Step 1: Find the running pod name
 	_, _ = fmt.Fprintln(writer, "🔍 Finding running pod...")
-	getPodCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+	getPodCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"get", "pods", "-n", opts.Namespace,
 		"-l", fmt.Sprintf("app=%s", opts.DeploymentName),
 		"-o", "jsonpath={.items[0].metadata.name}",
@@ -362,7 +363,7 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 
 	// Step 2: Check if .coverage file exists before SIGTERM (diagnostic)
 	_, _ = fmt.Fprintln(writer, "📋 Checking /coverdata/ inside pod before SIGTERM...")
-	lsCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+	lsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"exec", "-n", opts.Namespace, podName, "--",
 		"sh", "-c", "ls -la /coverdata/ 2>&1; echo '---'; id; echo '---'; cat /tmp/.coveragerc 2>/dev/null || echo 'no .coveragerc'")
 	if lsOutput, lsErr := lsCmd.CombinedOutput(); lsErr == nil {
@@ -375,7 +376,7 @@ func CollectE2EPythonCoverage(opts E2EPythonCoverageOptions, writer io.Writer) e
 	// SIGUSR1 is used because uvicorn only intercepts SIGTERM and SIGINT —
 	// our handler survives uvicorn.run() startup.
 	_, _ = fmt.Fprintln(writer, "📤 Sending SIGUSR1 to Python process inside pod...")
-	killCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+	killCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"exec", "-n", opts.Namespace, podName, "--",
 		"sh", "-c", `
 PYTHON_PID=$(ps -eo pid,comm,args | grep '[p]ython3.*run_with_coverage' | awk '{print $1}' | head -1)
@@ -409,7 +410,7 @@ fi
 	const maxPollIterations = 20
 	for i := 0; i < maxPollIterations; i++ {
 		time.Sleep(1 * time.Second)
-		checkCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+		checkCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 			"exec", "-n", opts.Namespace, podName, "--",
 			"sh", "-c", fmt.Sprintf("test -f %s && stat -c '%%s' %s 2>/dev/null || echo 'not_found'", covPath, covPath))
 		checkOutput, checkErr := checkCmd.CombinedOutput()
@@ -428,7 +429,7 @@ fi
 		if i == maxPollIterations-1 {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  .coverage not detected after %ds\n", maxPollIterations)
 			// Final diagnostic: check if Python process is still running
-			psCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+			psCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 				"exec", "-n", opts.Namespace, podName, "--",
 				"sh", "-c", "ps aux 2>/dev/null || echo 'ps not available'")
 			if psOutput, psErr := psCmd.CombinedOutput(); psErr == nil {
@@ -439,7 +440,7 @@ fi
 
 	// Step 5: kubectl cp the .coverage file from the pod
 	_, _ = fmt.Fprintln(writer, "📦 Extracting .coverage via kubectl cp...")
-	cpCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+	cpCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"cp", fmt.Sprintf("%s/%s:%s", opts.Namespace, podName, covPath), covFile)
 	cpOutput, cpErr := cpCmd.CombinedOutput()
 	if cpErr != nil {
@@ -451,7 +452,7 @@ fi
 
 	// Step 6: Scale down deployment (cleanup)
 	_, _ = fmt.Fprintln(writer, "🔽 Scaling down deployment...")
-	scaleCmd := exec.Command("kubectl", "--kubeconfig", opts.KubeconfigPath,
+	scaleCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", opts.KubeconfigPath,
 		"scale", "deployment", opts.DeploymentName,
 		"-n", opts.Namespace, "--replicas=0")
 	_ = scaleCmd.Run()
@@ -557,7 +558,7 @@ skip_covered = false
 	defer func() { _ = os.Remove(tempCovFile) }()
 
 	// Run `coverage combine` to remap paths (reads .coveragerc [paths] section)
-	combineCmd := exec.Command("python3", "-m", "coverage", "combine",
+	combineCmd := exec.CommandContext(context.Background(), "python3", "-m", "coverage", "combine",
 		"--rcfile="+rcFile)
 	combineCmd.Dir = projectRoot
 	combineOutput, err := combineCmd.CombinedOutput()
@@ -569,7 +570,7 @@ skip_covered = false
 	}
 
 	// Run `coverage report` to generate text output
-	reportCmd := exec.Command("python3", "-m", "coverage", "report",
+	reportCmd := exec.CommandContext(context.Background(), "python3", "-m", "coverage", "report",
 		"--rcfile="+rcFile,
 		"--include="+filepath.Join(projectRoot, opts.SourceDir, "*"))
 	reportCmd.Dir = projectRoot
@@ -600,8 +601,8 @@ skip_covered = false
 // coverageEnvYAML returns the YAML snippet for the GOCOVERDIR env var
 // when E2E_COVERAGE=true, or an empty string otherwise.
 // The indentation assumes container env section (8 spaces).
-func coverageEnvYAML(serviceName string) string {
-	if os.Getenv("E2E_COVERAGE") != "true" {
+func coverageEnvYAML() string {
+	if os.Getenv("E2E_COVERAGE") != trueFixture {
 		return ""
 	}
 	return `- name: GOCOVERDIR
@@ -611,7 +612,7 @@ func coverageEnvYAML(serviceName string) string {
 // coverageVolumeMountYAML returns the YAML snippet for the /coverdata
 // volume mount when E2E_COVERAGE=true, or an empty string otherwise.
 func coverageVolumeMountYAML() string {
-	if os.Getenv("E2E_COVERAGE") != "true" {
+	if os.Getenv("E2E_COVERAGE") != trueFixture {
 		return ""
 	}
 	return `- name: coverdata
@@ -621,7 +622,7 @@ func coverageVolumeMountYAML() string {
 // coverageVolumeYAML returns the YAML snippet for the coverdata hostPath
 // volume when E2E_COVERAGE=true, or an empty string otherwise.
 func coverageVolumeYAML() string {
-	if os.Getenv("E2E_COVERAGE") != "true" {
+	if os.Getenv("E2E_COVERAGE") != trueFixture {
 		return ""
 	}
 	return `- name: coverdata

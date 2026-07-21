@@ -467,7 +467,7 @@ func wireLLMRuntimeWatcher(
 	bootRuntime *kaconfig.LLMRuntimeConfig,
 	logger logr.Logger,
 ) func() {
-	rtCallback := llmRuntimeReloadCallback(cfg, swappable, logger, phaseResolver, bootRuntime)
+	rtCallback := llmRuntimeReloadCallback(cfg, swappable, logger, phaseResolver, bootRuntime) //nolint:contextcheck // LLM runtime reload callback fires asynchronously on config-change events, independent of any request
 	rtWatcher, rtWatchErr := hotreload.NewFileWatcher(
 		llmRuntimePath,
 		rtCallback,

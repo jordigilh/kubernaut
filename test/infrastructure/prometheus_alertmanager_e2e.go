@@ -387,22 +387,26 @@ spec:
 }
 
 // WaitForPrometheusReady polls the Prometheus readiness endpoint until it responds 200 OK.
-func WaitForPrometheusReady(promURL string, timeout time.Duration, writer io.Writer) error {
-	return waitForHTTPReady(promURL+"/-/ready", "Prometheus", timeout, writer)
+func WaitForPrometheusReady(ctx context.Context, promURL string, timeout time.Duration, writer io.Writer) error {
+	return waitForHTTPReady(ctx, promURL+"/-/ready", "Prometheus", timeout, writer)
 }
 
 // WaitForAlertManagerReady polls the AlertManager readiness endpoint until it responds 200 OK.
-func WaitForAlertManagerReady(amURL string, timeout time.Duration, writer io.Writer) error {
-	return waitForHTTPReady(amURL+"/-/ready", "AlertManager", timeout, writer)
+func WaitForAlertManagerReady(ctx context.Context, amURL string, timeout time.Duration, writer io.Writer) error {
+	return waitForHTTPReady(ctx, amURL+"/-/ready", "AlertManager", timeout, writer)
 }
 
-func waitForHTTPReady(url, serviceName string, timeout time.Duration, writer io.Writer) error {
+func waitForHTTPReady(ctx context.Context, url, serviceName string, timeout time.Duration, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s to be ready (%s)...\n", serviceName, url)
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(url)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build readiness request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintf(writer, "  ✅ %s is ready\n", serviceName)
@@ -421,7 +425,7 @@ func waitForHTTPReady(url, serviceName string, timeout time.Duration, writer io.
 // kubelet-cadvisor scrape job has at least one target in "up" state.
 // This detects cadvisor scraping failures early (within seconds of setup)
 // rather than surfacing as a mysterious metrics timeout minutes later in the EM.
-func WaitForPrometheusCadvisorTarget(promURL string, timeout time.Duration, writer io.Writer) error {
+func WaitForPrometheusCadvisorTarget(ctx context.Context, promURL string, timeout time.Duration, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for Prometheus cadvisor scrape target to be UP...\n")
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -441,7 +445,12 @@ func WaitForPrometheusCadvisorTarget(promURL string, timeout time.Duration, writ
 
 	var lastErr string
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(promURL + "/api/v1/targets")
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, promURL+"/api/v1/targets", http.NoBody)
+		if reqErr != nil {
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			time.Sleep(2 * time.Second)
 			continue
@@ -548,7 +557,12 @@ func InjectAlerts(amURL string, alerts []TestAlert) error {
 		return fmt.Errorf("failed to marshal alerts: %w", err)
 	}
 
-	resp, err := http.Post(amURL+"/api/v2/alerts", "application/json", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, amURL+"/api/v2/alerts", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build POST alerts request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to POST alerts to AlertManager: %w", err)
 	}
@@ -566,7 +580,11 @@ func InjectAlerts(amURL string, alerts []TestAlert) error {
 // stale alerts from being batched with newly injected alerts (the Gateway only
 // processes Alerts[0] in each AlertManager webhook batch).
 func ResolveActiveAlerts(amURL string) error {
-	resp, err := http.Get(amURL + "/api/v2/alerts?active=true&silenced=false&inhibited=false")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, amURL+"/api/v2/alerts?active=true&silenced=false&inhibited=false", http.NoBody)
+	if err != nil {
+		return fmt.Errorf("failed to build active alerts request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to query active alerts: %w", err)
 	}
@@ -601,7 +619,12 @@ func ResolveActiveAlerts(amURL string) error {
 		return fmt.Errorf("failed to marshal resolved alerts: %w", err)
 	}
 
-	postResp, err := http.Post(amURL+"/api/v2/alerts", "application/json", bytes.NewReader(body))
+	postReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, amURL+"/api/v2/alerts", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build POST resolved alerts request: %w", err)
+	}
+	postReq.Header.Set("Content-Type", "application/json")
+	postResp, err := http.DefaultClient.Do(postReq)
 	if err != nil {
 		return fmt.Errorf("failed to POST resolved alerts: %w", err)
 	}
@@ -616,7 +639,11 @@ func ResolveActiveAlerts(amURL string) error {
 // HasActiveAlerts returns true if AlertManager has any active (non-silenced,
 // non-inhibited) alerts. Useful for polling until stale alerts are fully resolved.
 func HasActiveAlerts(amURL string) bool {
-	resp, err := http.Get(amURL + "/api/v2/alerts?active=true&silenced=false&inhibited=false")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, amURL+"/api/v2/alerts?active=true&silenced=false&inhibited=false", http.NoBody)
+	if err != nil {
+		return true
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return true
 	}
@@ -644,7 +671,7 @@ func HasActiveAlerts(amURL string) bool {
 // Parameters:
 //   - promURL: Prometheus base URL (e.g., "http://127.0.0.1:9190")
 //   - metrics: Slice of test metrics to inject
-func InjectMetrics(promURL string, metrics []TestMetric) error {
+func InjectMetrics(ctx context.Context, promURL string, metrics []TestMetric) error {
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -709,11 +736,12 @@ func InjectMetrics(promURL string, metrics []TestMetric) error {
 		return fmt.Errorf("failed to marshal OTLP metrics: %w", err)
 	}
 
-	resp, err := http.Post(
-		promURL+"/api/v1/otlp/v1/metrics",
-		"application/json",
-		bytes.NewReader(body),
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, promURL+"/api/v1/otlp/v1/metrics", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to build OTLP metrics request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to POST OTLP metrics to Prometheus: %w", err)
 	}
@@ -762,7 +790,7 @@ type otlpScope struct {
 }
 
 type otlpMetric struct {
-	Name  string   `json:"name"`
+	Name  string     `json:"name"`
 	Gauge *otlpGauge `json:"gauge,omitempty"`
 	Sum   *otlpSum   `json:"sum,omitempty"`
 }

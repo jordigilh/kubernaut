@@ -25,8 +25,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
@@ -670,7 +671,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 						hasRequest = true
 					case "aiagent.llm.response":
 						hasResponse = true
-					case "aiagent.response.complete":
+					case kaaudit.EventTypeResponseComplete:
 						hasComplete = true
 					}
 				}
@@ -687,7 +688,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 					hasRequest = true
 				case "aiagent.llm.response":
 					hasResponse = true
-				case "aiagent.response.complete":
+				case kaaudit.EventTypeResponseComplete:
 					hasComplete = true
 				}
 			}
@@ -730,7 +731,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 				}
 				events = resp.Data
 				for _, event := range events {
-					if event.EventType == "aiagent.response.complete" {
+					if event.EventType == kaaudit.EventTypeResponseComplete {
 						return true
 					}
 				}
@@ -739,7 +740,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 				"response.complete event should be persisted")
 
 			for _, event := range events {
-				if event.EventType == "aiagent.response.complete" {
+				if event.EventType == kaaudit.EventTypeResponseComplete {
 					Expect(event.CorrelationID).To(Equal(remediationID))
 					Expect(event.EventAction).NotTo(BeEmpty(), "EventAction must be set on response.complete")
 					break

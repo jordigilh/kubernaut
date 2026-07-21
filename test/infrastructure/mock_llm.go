@@ -125,7 +125,7 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 
 	// CI/CD Optimization: Try to pull from registry if configured
 	// Note: We try to pull with the unique image name, then tag as base for consistency
-	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "mock-llm", uniqueImageName, writer); pulled {
+	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "mock-llm", writer); pulled {
 		if err != nil {
 			return "", err // Tag failed after successful pull
 		}
@@ -329,7 +329,11 @@ func WaitForMockLLMHealthy(ctx context.Context, port int, writer io.Writer) erro
 		default:
 		}
 
-		resp, err := http.Get(healthURL)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build Mock LLM health request: %w", reqErr)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintf(writer, "✅ Mock LLM health check passed (attempt %d/%d)\n", i+1, maxRetries)
@@ -369,6 +373,10 @@ func StopMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.W
 	output, err := checkCmd.Output()
 	if err != nil || len(output) == 0 || string(output) == "\n" {
 		_, _ = fmt.Fprintf(writer, "ℹ️  Mock LLM container does not exist, nothing to stop\n")
+		// nolint:nilerr // intentional: idempotent cleanup per the DD-TEST-002
+		// doc comment above -- a podman-ps failure (or empty output) means
+		// "already stopped", not a teardown error; already surfaced to the
+		// writer above (Issue #1546 Tier 3).
 		return nil
 	}
 

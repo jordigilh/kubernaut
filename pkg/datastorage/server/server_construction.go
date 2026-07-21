@@ -81,7 +81,9 @@ func connectAndPreparePostgres(deps ServerDeps, appCfg *config.Config, logger lo
 	}
 	cleanups.add(func() { _ = db.Close() })
 
-	if err := db.Ping(); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := db.PingContext(pingCtx); err != nil {
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 

@@ -155,14 +155,14 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-		// Verify aiagent.response.complete event exists (KA returned needs_human_review=true)
-		Eventually(func() bool {
-			// NT Pattern: Flush audit buffer on each retry
-			_ = auditStore.Flush(testCtx)
-			
-			// Query audit events via OpenAPI client (DD-API-001)
-			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: KA events use "aiagent" category
-			eventType := ogenclient.NewOptString(string(ogenclient.AIAgentResponsePayloadAuditEventEventData))
+			// Verify aiagent.response.complete event exists (KA returned needs_human_review=true)
+			Eventually(func() bool {
+				// NT Pattern: Flush audit buffer on each retry
+				_ = auditStore.Flush(testCtx)
+
+				// Query audit events via OpenAPI client (DD-API-001)
+				eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: KA events use "aiagent" category
+				eventType := ogenclient.NewOptString(string(ogenclient.AIAgentResponsePayloadAuditEventEventData))
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -354,13 +354,13 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			correlationID := analysis.Spec.RemediationRequestRef.Name
 			GinkgoWriter.Printf("🔍 Querying audit events for correlation_id=%s\n", correlationID)
 
-		// Verify aiagent.response.complete event exists with success outcome
-		Eventually(func() bool {
-			// NT Pattern: Flush audit buffer on each retry
-			_ = auditStore.Flush(testCtx)
-			
-			eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: KA events use "aiagent" category
-			eventType := ogenclient.NewOptString(string(ogenclient.AIAgentResponsePayloadAuditEventEventData))
+			// Verify aiagent.response.complete event exists with success outcome
+			Eventually(func() bool {
+				// NT Pattern: Flush audit buffer on each retry
+				_ = auditStore.Flush(testCtx)
+
+				eventCategory := ogenclient.NewOptString("aiagent") // ADR-034 v1.6: KA events use "aiagent" category
+				eventType := ogenclient.NewOptString(string(ogenclient.AIAgentResponsePayloadAuditEventEventData))
 
 				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 					CorrelationID: ogenclient.NewOptString(correlationID),
@@ -561,7 +561,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 				}
 				GinkgoWriter.Printf("  Current phase: %s, Reason: %s\n",
 					updated.Status.Phase, updated.Status.Reason)
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 90*time.Second, 2*time.Second).Should(Equal("Failed"),
 				"AIAnalysis should reach Failed phase on MOCK_RCA_PERMANENT_ERROR")
 

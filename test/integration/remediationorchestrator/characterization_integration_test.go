@@ -54,7 +54,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 	)
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-char")
+		namespace = createTestNamespace(ctx, "ro-char")
 		rrName = fmt.Sprintf("char-%s", uuid.New().String()[:13])
 	})
 
@@ -81,7 +81,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		}, timeout, interval).Should(Succeed())
 
 		By("Completing SP to drive to Analyzing")
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		By("Waiting for AI to be created (Processing → Analyzing)")
 		aiName := fmt.Sprintf("ai-%s", rrName)
@@ -183,7 +183,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			"ProcessingStartTime should be set after Pending → Processing transition")
 
 		By("Completing SP to drive to Analyzing")
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		By("Waiting for AI to be created (confirms Analyzing phase reached)")
 		aiName := fmt.Sprintf("ai-%s", rrName)
@@ -229,7 +229,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 				Name: spName, Namespace: ROControllerNamespace,
 			}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		Eventually(func() error {
@@ -322,7 +322,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 				Name: spName, Namespace: ROControllerNamespace,
 			}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		Eventually(func() error {

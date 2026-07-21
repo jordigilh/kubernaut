@@ -50,17 +50,18 @@ const keycloakTokenEndpointFMC = "https://localhost:30557/realms/kubernaut-fleet
 // E2E-FMC-EAIGW-054-014 (EAIGW).
 //
 // Authority: Issue #54, ADR-068, Spike S17/S18, BR-INTEGRATION-065.
-func TokenExchange(_ *Harness, v Variant) bool {
+func TokenExchange(h *Harness, v Variant) bool {
 	return Describe(fmt.Sprintf("%s-014: kube-mcp-server's RFC 8693 token exchange is wired to real Keycloak (AC-6)", v.ScenarioPrefix()), func() {
 		var subjectToken string
 
 		BeforeEach(func() {
 			By("acquiring FMC's own client_credentials token from Keycloak (the subject token)")
 			var err error
-			subjectToken, err = infrastructure.GetKeycloakClientCredentialsToken(infrastructure.KeycloakFleetTokenConfig{
-				TokenEndpoint: keycloakTokenEndpointFMC,
-				ClientID:      "kubernaut-fleet-read",
-				ClientSecret:  "e2e-fleet-secret",
+			subjectToken, err = infrastructure.GetKeycloakClientCredentialsToken(h.Ctx, infrastructure.KeycloakFleetTokenConfig{
+				TokenEndpoint:  keycloakTokenEndpointFMC,
+				ClientID:       "kubernaut-fleet-read",
+				ClientSecret:   "e2e-fleet-secret",
+				KubeconfigPath: h.KubeconfigPath,
 			})
 			Expect(err).ToNot(HaveOccurred(), "failed to acquire subject token from Keycloak")
 			Expect(subjectToken).ToNot(BeEmpty())
@@ -69,7 +70,7 @@ func TokenExchange(_ *Harness, v Variant) bool {
 		It("exchanges the subject token for a k8s-api-audience token that the real API server honors", func() {
 			By("performing the RFC 8693 exchange exactly as kube-mcp-server does (client_id=kube-mcp-server, audience=k8s-api)")
 			exchangedToken, err := infrastructure.ExchangeKeycloakToken(
-				keycloakTokenEndpointFMC, "kube-mcp-server", "e2e-kube-mcp-server-secret",
+				h.KubeconfigPath, keycloakTokenEndpointFMC, "kube-mcp-server", "e2e-kube-mcp-server-secret",
 				subjectToken, "k8s-api")
 			Expect(err).ToNot(HaveOccurred(), "RFC 8693 token exchange against Keycloak failed")
 			Expect(exchangedToken).ToNot(BeEmpty())

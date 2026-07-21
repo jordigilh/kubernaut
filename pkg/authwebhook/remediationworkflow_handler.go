@@ -236,10 +236,10 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	// ADR-058: Update CRD .status asynchronously after admission to avoid blocking
 	// the API server. The status subresource is used so this doesn't conflict with
 	// the spec stored by the API server.
-	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, contentHash, workflowID)
+	go h.updateCRDStatus(req.Namespace, req.Name, authCtx.Username, contentHash, workflowID) //nolint:contextcheck // updateCRDStatus runs async after admission response (ADR-058); uses its own bounded context since the admission context is cancelled after response
 
 	// Phase 3c: best-effort cross-update of ActionType CRD status.activeWorkflowCount
-	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace, "")
+	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace, "") //nolint:contextcheck // refreshActionTypeWorkflowCount runs async after admission response (Phase 3c best-effort cross-update); see doc comment
 
 	return admission.Allowed("workflow registered in catalog")
 }
@@ -372,7 +372,12 @@ func (h *RemediationWorkflowHandler) handleDelete(ctx context.Context, req admis
 	// known content for this workflow_id).
 	h.emitAdmitAudit(ctx, req, EventTypeRWAdmittedDelete, workflowID, rw.Name, nil, "")
 
-	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace, rw.Name)
+	// #1661 Change 8c: unlike the pre-#1661 DS-disable-based flow (Issue #418
+	// Fix A guarded this on disableOK to avoid reinforcing stale data after a
+	// failed DS disable call), there is no DS disable step left to fail --
+	// the etcd removal itself is the terminal state, so the cross-update
+	// always runs.
+	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace, rw.Name) //nolint:contextcheck // refreshActionTypeWorkflowCount runs async after admission response (Phase 3c best-effort cross-update); see doc comment
 
 	return admission.Allowed("workflow deleted")
 }

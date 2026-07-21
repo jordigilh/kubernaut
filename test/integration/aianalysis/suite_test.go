@@ -458,7 +458,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		"test/integration/aianalysis/config",
 		authConfig,
 	)
-	dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+	dsInfra, err = infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred(), "Infrastructure must start successfully")
 	GinkgoWriter.Println("✅ DataStorage infrastructure started (PostgreSQL, Redis, DataStorage)")
 

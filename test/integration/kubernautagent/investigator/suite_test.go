@@ -79,8 +79,8 @@ type capturingAuditStore struct {
 	events []*audit.AuditEvent
 }
 
-func newCapturingAuditStore(real audit.AuditStore) *capturingAuditStore {
-	return &capturingAuditStore{real: real}
+func newCapturingAuditStore(delegate audit.AuditStore) *capturingAuditStore {
+	return &capturingAuditStore{real: delegate}
 }
 
 func (c *capturingAuditStore) StoreAudit(ctx context.Context, event *audit.AuditEvent) error {
@@ -123,6 +123,8 @@ func seedAuditEvent(
 
 var _ = SynchronizedBeforeSuite(
 	func() []byte {
+		ctx := context.Background()
+
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("KA Investigator IT - PHASE 1: Infrastructure Setup")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -152,7 +154,7 @@ var _ = SynchronizedBeforeSuite(
 			"test/integration/kubernautagent/investigator/config",
 			authConfig,
 		)
-		dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+		dsInfra, err = infrastructure.StartDSBootstrap(ctx, cfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		dsInfra.SharedTestEnv = sharedTestEnv
 

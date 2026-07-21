@@ -37,19 +37,25 @@ func newWatchClientWithInterceptor(funcs interceptor.Funcs, objects ...crclient.
 		Build()
 }
 
-func updateRRPhase(ctx context.Context, c crclient.WithWatch, ns, name, phase string) {
+// updateRRPhase updates a RemediationRequest's phase in the fixed "payments"
+// namespace (the only namespace used across all kubernaut_watch tests).
+func updateRRPhase(ctx context.Context, c crclient.WithWatch, name, phase string) {
 	var rr remediationv1.RemediationRequest
-	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr)).To(Succeed())
+	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: "payments", Name: name}, &rr)).To(Succeed())
 	rr.Status.OverallPhase = remediationv1.RemediationPhase(phase)
 	ExpectWithOffset(1, c.Status().Update(ctx, &rr)).To(Succeed())
 }
 
-func updateRRTerminal(ctx context.Context, c crclient.WithWatch, ns, name, phase, outcome, msg string) {
+// updateRRTerminal updates a RemediationRequest to the "Completed" terminal
+// phase with message "done" (the only terminal phase/message combination used
+// across all callers), in the fixed "payments" namespace (the only namespace
+// used across all kubernaut_watch tests).
+func updateRRTerminal(ctx context.Context, c crclient.WithWatch, name, outcome string) {
 	var rr remediationv1.RemediationRequest
-	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr)).To(Succeed())
-	rr.Status.OverallPhase = remediationv1.RemediationPhase(phase)
+	ExpectWithOffset(1, c.Get(ctx, crclient.ObjectKey{Namespace: "payments", Name: name}, &rr)).To(Succeed())
+	rr.Status.OverallPhase = remediationv1.PhaseCompleted
 	rr.Status.Outcome = outcome
-	rr.Status.Message = msg
+	rr.Status.Message = "done"
 	ExpectWithOffset(1, c.Status().Update(ctx, &rr)).To(Succeed())
 }
 
@@ -66,9 +72,9 @@ var _ = Describe("kubernaut_watch", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-1", "Executing")
+			updateRRPhase(ctx, wc, "rr-1", "Executing")
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+			updateRRTerminal(ctx, wc, "rr-1", "success")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -82,7 +88,7 @@ var _ = Describe("kubernaut_watch", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+			updateRRTerminal(ctx, wc, "rr-1", "success")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -96,9 +102,9 @@ var _ = Describe("kubernaut_watch", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-1", "Executing")
+			updateRRPhase(ctx, wc, "rr-1", "Executing")
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+			updateRRTerminal(ctx, wc, "rr-1", "success")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -114,7 +120,7 @@ var _ = Describe("kubernaut_watch", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+			updateRRTerminal(ctx, wc, "rr-1", "success")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -182,7 +188,7 @@ var _ = Describe("kubernaut_watch", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-1", "AwaitingApproval")
+			updateRRPhase(ctx, wc, "rr-1", "AwaitingApproval")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -199,7 +205,7 @@ var _ = Describe("kubernaut_watch", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-1", "AwaitingApproval")
+			updateRRPhase(ctx, wc, "rr-1", "AwaitingApproval")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -209,7 +215,7 @@ var _ = Describe("kubernaut_watch", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+			updateRRTerminal(ctx, wc, "rr-1", "success")
 		}()
 
 		result2, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -236,7 +242,7 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-1", "AwaitingApproval")
+			updateRRPhase(ctx, wc, "rr-1", "AwaitingApproval")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -290,7 +296,7 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 			_ = wc.(crclient.Client).Status().Update(ctx, &existing)
 
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "success", "done")
+			updateRRTerminal(ctx, wc, "rr-1", "success")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -353,7 +359,7 @@ var _ = Describe("Structured Approval Events in HandleWatch — TP-1398 (#1398)"
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-1", "AwaitingApproval")
+			updateRRPhase(ctx, wc, "rr-1", "AwaitingApproval")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -433,16 +439,16 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-1", "Verifying")
+			updateRRPhase(ctx, wc, "rr-1", "Verifying")
 			time.Sleep(100 * time.Millisecond)
 			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-1"), func(ea *eav1alpha1.EffectivenessAssessment) {
-				ea.Status.Phase = "Assessing"
+				ea.Status.Phase = eav1alpha1.PhaseAssessing
 				ea.Status.Components.HealthAssessed = true
 				score := 1.0
 				ea.Status.Components.HealthScore = &score
 			})
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-1", "Completed", "Remediated", "done")
+			updateRRTerminal(ctx, wc, "rr-1", "Remediated")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-1"})
@@ -500,13 +506,13 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-2", "Verifying")
+			updateRRPhase(ctx, wc, "rr-2", "Verifying")
 			time.Sleep(100 * time.Millisecond)
 			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-2"), func(ea *eav1alpha1.EffectivenessAssessment) {
-				ea.Status.Phase = "Assessing"
+				ea.Status.Phase = eav1alpha1.PhaseAssessing
 			})
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-2", "Completed", "Remediated", "done")
+			updateRRTerminal(ctx, wc, "rr-2", "Remediated")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-2"})
@@ -557,13 +563,13 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-3", "Verifying")
+			updateRRPhase(ctx, wc, "rr-3", "Verifying")
 			time.Sleep(100 * time.Millisecond)
 			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-3"), func(ea *eav1alpha1.EffectivenessAssessment) {
-				ea.Status.Phase = "Assessing"
+				ea.Status.Phase = eav1alpha1.PhaseAssessing
 			})
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-3", "Completed", "Remediated", "done")
+			updateRRTerminal(ctx, wc, "rr-3", "Remediated")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-3"})
@@ -625,9 +631,9 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-ref", "Verifying")
+			updateRRPhase(ctx, wc, "rr-ref", "Verifying")
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-ref", "Completed", "Remediated", "done")
+			updateRRTerminal(ctx, wc, "rr-ref", "Remediated")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-ref"})
@@ -654,7 +660,7 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 				},
 			},
 			Status: eav1alpha1.EffectivenessAssessmentStatus{
-				Phase: "Assessing",
+				Phase: eav1alpha1.PhaseAssessing,
 			},
 		}
 		wc := newWatchClient(rr, ea)
@@ -664,13 +670,13 @@ var _ = Describe("verification_step events in HandleWatch — #1427", func() {
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-4", "Verifying")
+			updateRRPhase(ctx, wc, "rr-4", "Verifying")
 			time.Sleep(100 * time.Millisecond)
 			updateEAStatus(ctx, wc, "payments", tools.EANameForRR("rr-4"), func(ea *eav1alpha1.EffectivenessAssessment) {
 				ea.Status.Components.AlertDecayRetries = 1
 			})
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-4", "Completed", "Remediated", "done")
+			updateRRTerminal(ctx, wc, "rr-4", "Remediated")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-4"})
@@ -717,9 +723,9 @@ var _ = Describe("Fleet cluster_id in execution_progress — IT-AF-1409-007 (#14
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRPhase(ctx, wc, "payments", "rr-fleet-1", "Executing")
+			updateRRPhase(ctx, wc, "rr-fleet-1", "Executing")
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-fleet-1", "Completed", "success", "done")
+			updateRRTerminal(ctx, wc, "rr-fleet-1", "success")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-fleet-1"})
@@ -756,7 +762,7 @@ var _ = Describe("Fleet cluster_id in execution_progress — IT-AF-1409-007 (#14
 
 		go func() {
 			time.Sleep(50 * time.Millisecond)
-			updateRRTerminal(ctx, wc, "payments", "rr-local-1", "Completed", "success", "done")
+			updateRRTerminal(ctx, wc, "rr-local-1", "success")
 		}()
 
 		result, err := tools.HandleWatch(ctx, wc, tools.WatchArgs{Namespace: "payments", Name: "rr-local-1"})

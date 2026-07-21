@@ -72,6 +72,11 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 const (
 	timeout  = 10 * time.Minute       // Longer timeout for full pipeline E2E (real LLM needs more time)
 	interval = 500 * time.Millisecond // Tighter polling for faster state-transition detection
@@ -244,7 +249,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(aianalysisv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(workflowexecutionv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(notificationv1.AddToScheme(scheme.Scheme)).To(Succeed())
-		Expect(eav1.AddToScheme(scheme.Scheme)).To(Succeed())          // ADR-EM-001: EA types
+		Expect(eav1.AddToScheme(scheme.Scheme)).To(Succeed())       // ADR-EM-001: EA types
 		Expect(isv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed()) // BR-INTERACTIVE-010: IS CRD
 
 		By("Creating Kubernetes client")
@@ -330,7 +335,7 @@ var _ = SynchronizedAfterSuite(
 		setupFailed := k8sClient == nil
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == trueFixture || os.Getenv("KEEP_CLUSTER") == trueFixture
 
 		if preserveCluster {
 			GinkgoWriter.Println("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
@@ -355,7 +360,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// DD-TEST-007: Collect coverage before cluster deletion
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			// Collect coverage for each Go controller service
 			for _, svc := range []struct{ service, deployment string }{
 				{"signalprocessing", "signalprocessing-controller"},

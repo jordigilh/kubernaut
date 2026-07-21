@@ -82,7 +82,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(context.Background(), cfg, writer)
 		buildResults <- imageBuildResult{"datastorage", imageName, err}
 	}()
 
@@ -94,7 +94,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(context.Background(), cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
 	}()
 
@@ -106,7 +106,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(context.Background(), cfg, writer)
 		buildResults <- imageBuildResult{"aianalysis", imageName, err}
 	}()
 
@@ -119,7 +119,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(context.Background(), cfg, writer)
 		buildResults <- imageBuildResult{"mock-llm", imageName, err}
 	}()
 
@@ -170,7 +170,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Creating Kind cluster...")
-	if err := createAIAnalysisKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createAIAnalysisKindCluster(context.Background(), clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -375,7 +375,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)
 	// instead of DS's retired Postgres-backed inline endpoint.
-	workflowUUIDs, err := SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
+	workflowUUIDs, err := SeedWorkflowsViaKubectlApply(context.Background(), kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
@@ -416,12 +416,12 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			deployResults <- deployResult{"Kubernaut Agent", rbacErr}
 			return
 		}
-		err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
+		err := DeployKubernautAgentOnly(context.Background(), clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		deployResults <- deployResult{"Kubernaut Agent", err}
 	}()
 
 	go func() {
-		err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, builtImages["aianalysis"], writer)
+		err := deployAIAnalysisControllerManifestOnly(context.Background(), kubeconfigPath, builtImages["aianalysis"], writer)
 		deployResults <- deployResult{"AIAnalysis", err}
 	}()
 
@@ -475,7 +475,7 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, testsFailed boo
 	return nil
 }
 
-func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
+func createAIAnalysisKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
@@ -487,7 +487,7 @@ func createAIAnalysisKindCluster(clusterName, kubeconfigPath string, writer io.W
 		CleanupOrphanedContainers: true, // Original behavior: cleanup Podman containers on macOS
 		ProjectRootAsWorkingDir:   true, // DD-TEST-007: For ./coverdata resolution in Kind config
 	}
-	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
+	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return err
 	}
 
@@ -557,7 +557,7 @@ func installInvestigationSessionCRD(kubeconfigPath string, writer io.Writer) err
 // - Deterministic ordering, no timing issues
 // Removed: createMockLLMConfigMap (unused) - Mock LLM now uses direct deployment with seeded workflows
 
-func deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName string, writer io.Writer) error {
+func deployAIAnalysisControllerManifestOnly(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Use dynamic image name parameter (built by BuildImageForKind)
 	_, _ = fmt.Fprintln(writer, "  Applying AIAnalysis controller manifest (image already in Kind)...")
@@ -768,7 +768,7 @@ spec:
     targetPort: 8081
     nodePort: 30284
 `, imageName, GetImagePullPolicy(),
-		coverageEnvYAML("aianalysis"),
+		coverageEnvYAML(),
 		coverageVolumeMountYAML(),
 		coverageVolumeYAML())
 	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
@@ -780,7 +780,7 @@ spec:
 	}
 
 	// Deploy Rego policy ConfigMap (inline fixture, self-contained)
-	return createInlineRegoPolicyConfigMap(kubeconfigPath, writer)
+	return createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer)
 }
 
 func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
@@ -913,7 +913,7 @@ func containsReady(s string) bool {
 	return len(s) > 0 && s != "" && (s == "True" || s == "True True")
 }
 
-func createInlineRegoPolicyConfigMap(kubeconfigPath string, writer io.Writer) error {
+func createInlineRegoPolicyConfigMap(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// Simplified E2E test policy - requires approval for all production
 	// This is intentionally simpler than production policy for E2E test predictability
 	manifest := `

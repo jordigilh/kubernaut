@@ -67,7 +67,7 @@ func normalizeCreateEvent(event *AuditEvent) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to marshal event_data: %w", err)
 	}
-	if len(eventDataJSON) > 0 && string(eventDataJSON) != "null" {
+	if len(eventDataJSON) > 0 && string(eventDataJSON) != jsonNull {
 		var normalizedEventData map[string]interface{}
 		if err := json.Unmarshal(eventDataJSON, &normalizedEventData); err != nil {
 			return nil, "", fmt.Errorf("failed to normalize event_data: %w", err)

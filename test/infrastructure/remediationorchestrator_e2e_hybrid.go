@@ -84,7 +84,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			BuildContextPath: "",                                                     // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
 		}
-		roImage, err := BuildImageForKind(cfg, writer)
+		roImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "RemediationOrchestrator (coverage)", image: roImage, err: err}
 	}()
 
@@ -97,7 +97,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			BuildContextPath: "", // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		dsImage, err := BuildImageForKind(cfg, writer)
+		dsImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "DataStorage", image: dsImage, err: err}
 	}()
 
@@ -110,7 +110,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			BuildContextPath: "", // Will use project root
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		awImage, err := BuildImageForKind(cfg, writer)
+		awImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "AuthWebhook", image: awImage, err: err}
 	}()
 
@@ -154,6 +154,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 
 	kindConfigPath := "test/infrastructure/kind-remediationorchestrator-config.yaml"
 	if err := CreateKindClusterWithExtraMounts(
+		ctx,
 		clusterName,
 		kubeconfigPath,
 		kindConfigPath,
@@ -188,7 +189,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 
 	// Create kubernaut-system namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -214,21 +215,21 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Load RemediationOrchestrator coverage image using consolidated API
 	go func() {
 		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := LoadImageToKind(roImage, "remediationorchestrator-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, roImage, "remediationorchestrator-controller", clusterName, writer)
 		loadResults <- loadResult{name: "RemediationOrchestrator coverage", err: err}
 	}()
 
 	// Load DataStorage image using consolidated API
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
@@ -347,7 +348,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	}()
 	go func() {
 		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := DeployROCoverageManifest(kubeconfigPath, roImage, writer, "5s")
+		err := DeployROCoverageManifest(ctx, kubeconfigPath, roImage, writer, "5s")
 		deployResults <- deployResult{"RemediationOrchestrator", err}
 	}()
 
@@ -716,7 +717,7 @@ spec:
 // Per consolidated API migration: Accepts dynamic image name as parameter
 // Applies RBAC first, then workload after 2s propagation delay to avoid API race.
 // verifyingTimeout optionally sets the Verifying phase safety-net (#280). Pass "5s" for tiers without EM.
-func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
+func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := roRBACManifest()
 	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")

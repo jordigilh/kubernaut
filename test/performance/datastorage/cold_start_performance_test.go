@@ -76,20 +76,12 @@ var _ = Describe("GAP 5.3: Cold Start Performance", Label("integration", "datast
 
 			// Use OpenAPI client with proper types (matches all other working tests)
 			// ADR-034: event_category must be one of the service categories (gateway, notification, etc.)
-			eventData := map[string]interface{}{
-				"service":       "test-service",
-				"resource_type": "Pod",
-				"resource_id":   fmt.Sprintf("cold-start-pod-%s", testID),
-				"cold_start":    true,
-			}
-
 			event := createAuditEventRequest(
 				"gateway.signal.received", // Valid event type from OpenAPI spec discriminator mapping
 				"gateway",                 // Valid ADR-034 service category
 				"created",
 				"success",
 				correlationID,
-				eventData,
 			)
 
 			firstRequestStart := time.Now()
@@ -107,20 +99,12 @@ var _ = Describe("GAP 5.3: Cold Start Performance", Label("integration", "datast
 
 			// ACT: Send second request (should use existing connection)
 			correlationID2 := fmt.Sprintf("cold-start-test-2-%s", testID)
-			eventData2 := map[string]interface{}{
-				"service":       "test-service",
-				"resource_type": "Pod",
-				"resource_id":   fmt.Sprintf("cold-start-pod-2-%s", testID),
-				"cold_start":    true,
-			}
-
 			event2 := createAuditEventRequest(
 				"pod.created",
 				"gateway", // Valid ADR-034 service category
 				"created",
 				"success",
 				correlationID2,
-				eventData2,
 			)
 
 			secondRequestStart := time.Now()

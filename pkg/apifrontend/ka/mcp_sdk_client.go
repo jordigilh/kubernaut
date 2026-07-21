@@ -253,7 +253,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 	// minutes; the caller controls cleanup via Closer(). We still use ctx
 	// for the initial Connect and SetLoggingLevel calls (which must complete
 	// within the request deadline), but the session itself lives beyond ctx.
-	session, err := connectInvestigationSession(streamClient, c.endpoint, c.streamHTTPClient)
+	session, err := connectInvestigationSession(streamClient, c.endpoint, c.streamHTTPClient) //nolint:contextcheck // connectInvestigationSession intentionally connects over a detached background context (see its doc comment / StartInvestigation)
 	if err != nil {
 		close(doneCh)
 		close(eventCh)

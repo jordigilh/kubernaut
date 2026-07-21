@@ -80,7 +80,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("2. Process Prometheus signal")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-			alert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "", "")
+			alert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -120,7 +120,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			})
 
 			By("2. Process Prometheus signal")
-			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "HighCPU", "critical", "")
 			prometheusSignal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -162,14 +162,14 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("2. Process signals with different severities")
 			// Process critical alert
-			criticalAlert := createPrometheusAlert(testNamespace, "CriticalAlert", "critical", "", "")
+			criticalAlert := createPrometheusAlert(testNamespace, "CriticalAlert", "critical", "")
 			criticalSignal, err := prometheusAdapter.Parse(ctx, criticalAlert)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, criticalSignal)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Process warning alert
-			warningAlert := createPrometheusAlert(testNamespace, "WarningAlert", "warning", "", "")
+			warningAlert := createPrometheusAlert(testNamespace, "WarningAlert", "warning", "")
 			warningSignal, err := prometheusAdapter.Parse(ctx, warningAlert)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, warningSignal)
@@ -227,7 +227,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("2. Process signal to create CRD")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-			alert := createPrometheusAlert(testNamespace, "HighMemory", "critical", "", "")
+			alert := createPrometheusAlert(testNamespace, "HighMemory", "critical", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -277,14 +277,14 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("3. Process signals in different namespaces")
 			// Signal in namespace 1
-			alert1 := createPrometheusAlert(testNamespace, "Alert1", "critical", "", "")
+			alert1 := createPrometheusAlert(testNamespace, "Alert1", "critical", "")
 			signal1, err := prometheusAdapter.Parse(ctx, alert1)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal1)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Signal in namespace 2
-			alert2 := createPrometheusAlert(testNamespace2, "Alert2", "critical", "", "")
+			alert2 := createPrometheusAlert(testNamespace2, "Alert2", "critical", "")
 			signal2, err := prometheusAdapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal2)
@@ -334,17 +334,17 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			Expect(err).ToNot(HaveOccurred())
 
 			alertName := "RepeatedAlert"
-			alert1 := createPrometheusAlert(testNamespace, alertName, "critical", "", "")
+			alert1 := createPrometheusAlert(testNamespace, alertName, "critical", "")
 			signal1, err := prometheusAdapter.Parse(ctx, alert1)
 			Expect(err).ToNot(HaveOccurred())
 			response1, err := gwServer.ProcessSignal(ctx, signal1)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(response1.Status).To(Equal("created"))
 
-		Eventually(func() error {
-			var rr remediationv1alpha1.RemediationRequest
-			return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: response1.RemediationRequestName}, &rr)
-		}, "5s", "100ms").Should(Succeed())
+			Eventually(func() error {
+				var rr remediationv1alpha1.RemediationRequest
+				return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: response1.RemediationRequestName}, &rr)
+			}, "5s", "100ms").Should(Succeed())
 
 			By("2. Get initial deduplication metric value")
 			// Gateway metric uses signal_name as label (defined in metrics.go line 152)
@@ -353,14 +353,14 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			})
 
 			By("3. Process duplicate signal")
-			alert2 := createPrometheusAlert(testNamespace, alertName, "critical", "", "")
+			alert2 := createPrometheusAlert(testNamespace, alertName, "critical", "")
 			signal2, err := prometheusAdapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
-		response2, err := gwServer.ProcessSignal(ctx, signal2)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(response2.Status).To(Equal("duplicate"))
+			response2, err := gwServer.ProcessSignal(ctx, signal2)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response2.Status).To(Equal("duplicate"))
 
-		By("4. Verify deduplication metric incremented")
+			By("4. Verify deduplication metric incremented")
 			finalDedupValue := getCounterValue(metricsReg, "gateway_signals_deduplicated_total", map[string]string{
 				"signal_name": alertName,
 			})
@@ -405,7 +405,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			// Process 3 signals
 			for i := 1; i <= 3; i++ {
 				alertName := fmt.Sprintf("PerfAlert%d", i)
-				alert := createPrometheusAlert(testNamespace, alertName, "critical", "", "")
+				alert := createPrometheusAlert(testNamespace, alertName, "critical", "")
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
 				_, err = gwServer.ProcessSignal(ctx, signal)
@@ -450,7 +450,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("2. Process signal with specific source_type and severity")
 			// Process critical prometheus alert
-			alert := createPrometheusAlert(testNamespace, "LabelAccuracyTest", "critical", "", "")
+			alert := createPrometheusAlert(testNamespace, "LabelAccuracyTest", "critical", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal)
@@ -523,7 +523,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			By("2. Create 2 CRDs via ProcessSignal (different pods for different fingerprints, Issue #63)")
 			for i := 1; i <= 2; i++ {
 				alertName := fmt.Sprintf("PhaseAlert%d", i)
-				alert := createPrometheusAlertForPod(testNamespace, alertName, "critical", "", "", fmt.Sprintf("pod-phase-%d", i))
+				alert := createPrometheusAlertForPod(testNamespace, alertName, "critical", "", fmt.Sprintf("pod-phase-%d", i))
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
 				response, err := gwServer.ProcessSignal(ctx, signal)
@@ -553,7 +553,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create initial CRD
-			alert1 := createPrometheusAlert(testNamespace, "LifecycleAlert", "critical", "", "")
+			alert1 := createPrometheusAlert(testNamespace, "LifecycleAlert", "critical", "")
 			signal1, err := prometheusAdapter.Parse(ctx, alert1)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal1)
@@ -565,7 +565,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			})
 
 			// Send duplicate
-			alert2 := createPrometheusAlert(testNamespace, "LifecycleAlert", "critical", "", "")
+			alert2 := createPrometheusAlert(testNamespace, "LifecycleAlert", "critical", "")
 			signal2, err := prometheusAdapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal2)
@@ -624,28 +624,28 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("2. Process signals with different alert names (different pods for different fingerprints, Issue #63)")
 			// Create initial for Alert1
-			alert1 := createPrometheusAlertForPod(testNamespace, "Alert1", "critical", "", "", "pod-alert1")
+			alert1 := createPrometheusAlertForPod(testNamespace, "Alert1", "critical", "", "pod-alert1")
 			signal1, err := prometheusAdapter.Parse(ctx, alert1)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal1)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Duplicate Alert1 (same pod → same fingerprint → dedup)
-			alert1Dup := createPrometheusAlertForPod(testNamespace, "Alert1", "critical", "", "", "pod-alert1")
+			alert1Dup := createPrometheusAlertForPod(testNamespace, "Alert1", "critical", "", "pod-alert1")
 			signal1Dup, err := prometheusAdapter.Parse(ctx, alert1Dup)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal1Dup)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create initial for Alert2 (different pod → different fingerprint)
-			alert2 := createPrometheusAlertForPod(testNamespace, "Alert2", "warning", "", "", "pod-alert2")
+			alert2 := createPrometheusAlertForPod(testNamespace, "Alert2", "warning", "", "pod-alert2")
 			signal2, err := prometheusAdapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal2)
 			Expect(err).ToNot(HaveOccurred())
 
 			// Duplicate Alert2 (same pod → same fingerprint → dedup)
-			alert2Dup := createPrometheusAlertForPod(testNamespace, "Alert2", "warning", "", "", "pod-alert2")
+			alert2Dup := createPrometheusAlertForPod(testNamespace, "Alert2", "warning", "", "pod-alert2")
 			signal2Dup, err := prometheusAdapter.Parse(ctx, alert2Dup)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal2Dup)
@@ -687,7 +687,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			By("2. Process initial signal and 5 duplicates")
 			// Create initial CRD
-			alert := createPrometheusAlert(testNamespace, "SavingsAlert", "critical", "", "")
+			alert := createPrometheusAlert(testNamespace, "SavingsAlert", "critical", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
 			_, err = gwServer.ProcessSignal(ctx, signal)
@@ -695,7 +695,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 
 			// Send 5 duplicates
 			for i := 1; i <= 5; i++ {
-				dupAlert := createPrometheusAlert(testNamespace, "SavingsAlert", "critical", "", "")
+				dupAlert := createPrometheusAlert(testNamespace, "SavingsAlert", "critical", "")
 				dupSignal, err := prometheusAdapter.Parse(ctx, dupAlert)
 				Expect(err).ToNot(HaveOccurred())
 				_, err = gwServer.ProcessSignal(ctx, dupSignal)
@@ -739,7 +739,7 @@ var _ = Describe("Gateway Metrics Emission", Label("metrics", "integration"), fu
 			})
 
 			By("2. Process signal")
-			alert := createPrometheusAlert(testNamespace, "CorrelationAlert", "critical", "", "")
+			alert := createPrometheusAlert(testNamespace, "CorrelationAlert", "critical", "")
 			signal, err := prometheusAdapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
 			response, err := gwServer.ProcessSignal(ctx, signal)

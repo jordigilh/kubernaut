@@ -677,7 +677,7 @@ func startPostgreSQL() {
 	// Increase max_connections for parallel test execution (default is 100)
 	GinkgoWriter.Println("🔧 Starting fresh PostgreSQL container...")
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	Expect(infrastructure.PullImageWithRetry(postgresImage, 3, GinkgoWriter)).To(Succeed())
+	Expect(infrastructure.PullImageWithRetry(context.Background(), postgresImage, 3, GinkgoWriter)).To(Succeed())
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", postgresContainer,
 		"--network", "datastorage-test",
@@ -742,7 +742,7 @@ func startRedis() {
 	// Start Redis
 	// Use --network=datastorage-test for container-to-container communication
 	const redisImage = "quay.io/jordigilh/redis:7-alpine"
-	Expect(infrastructure.PullImageWithRetry(redisImage, 3, GinkgoWriter)).To(Succeed())
+	Expect(infrastructure.PullImageWithRetry(context.Background(), redisImage, 3, GinkgoWriter)).To(Succeed())
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", redisContainer,
 		"--network", "datastorage-test",

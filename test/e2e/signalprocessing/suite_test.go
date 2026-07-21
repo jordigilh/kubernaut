@@ -62,6 +62,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 // Global test variables
 var (
 	ctx            context.Context
@@ -96,7 +101,7 @@ var _ = SynchronizedBeforeSuite(
 		By("Setting up SignalProcessing E2E cluster (process 1 only)")
 
 		// Check for coverage mode (per E2E_COVERAGE_COLLECTION.md)
-		coverageMode = os.Getenv("E2E_COVERAGE") == "true"
+		coverageMode = os.Getenv("E2E_COVERAGE") == trueFixture
 		if coverageMode {
 			By("📊 E2E Coverage Mode ENABLED (per E2E_COVERAGE_COLLECTION.md)")
 		}
@@ -148,7 +153,7 @@ var _ = SynchronizedBeforeSuite(
 		parts := strings.Split(string(data), "|")
 		kubeconfigPath = parts[0]
 		if len(parts) > 1 {
-			coverageMode = parts[1] == "true"
+			coverageMode = parts[1] == trueFixture
 		}
 		if len(parts) > 2 {
 			e2eAuthToken = parts[2] // DD-AUTH-014: Store token for authenticated DataStorage access

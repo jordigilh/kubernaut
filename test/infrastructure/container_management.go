@@ -1,6 +1,7 @@
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -11,6 +12,11 @@ import (
 	"runtime"
 	"strings"
 	"time"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	host2 = "host"
 )
 
 // ============================================================================
@@ -123,7 +129,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	if artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG"); artifactTag != "" && cfg.BuildContext != "" {
 		serviceName := extractServiceNameFromImage(cfg.Image)
 		prebuiltImage := fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
-		if checkCmd := exec.Command("podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
+		if checkCmd := exec.CommandContext(context.Background(), "podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", prebuiltImage)
 			cfg.Image = prebuiltImage
 			cfg.BuildContext = ""
@@ -153,7 +159,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 			// - No network transfer of layers (90%+ bandwidth savings)
 			// - Faster execution (~1s vs 10-30s for full pull)
 			// - Podman will pull automatically during container deployment
-			exists, verifyErr := VerifyImageExistsInRegistry(registryImage, writer)
+			exists, verifyErr := VerifyImageExistsInRegistry(context.Background(), registryImage, writer)
 
 			if verifyErr == nil && exists {
 				// Image verified in registry - no need to pull!
@@ -172,7 +178,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 
 	// Step 1: Build image if needed (fallback if registry pull failed/disabled)
 	if cfg.BuildContext != "" && cfg.BuildDockerfile != "" {
-		checkCmd := exec.Command("podman", "image", "exists", cfg.Image)
+		checkCmd := exec.CommandContext(context.Background(), "podman", "image", "exists", cfg.Image)
 		if checkCmd.Run() != nil {
 			_, _ = fmt.Fprintf(writer, "   📦 Building image locally: %s\n", cfg.Image)
 			if err := buildContainerImage(cfg, writer); err != nil {
@@ -186,10 +192,10 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 
 	// Step 2: Cleanup existing container
 	_, _ = fmt.Fprintf(writer, "   🧹 Cleaning up existing container (if any)...\n")
-	stopCmd := exec.Command("podman", "stop", cfg.Name)
+	stopCmd := exec.CommandContext(context.Background(), "podman", "stop", cfg.Name)
 	_ = stopCmd.Run() // Ignore errors
 
-	rmCmd := exec.Command("podman", "rm", cfg.Name)
+	rmCmd := exec.CommandContext(context.Background(), "podman", "rm", cfg.Name)
 	_ = rmCmd.Run() // Ignore errors
 
 	// Step 3: Build podman run command
@@ -211,7 +217,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	// so cfg.Ports is just bookkeeping for ContainerInstance.Ports in that case.
 	// cfg.Ports format: map[containerPort]hostPort (e.g., 8080: 18120)
 	// Podman format: hostPort:containerPort (e.g., 18120:8080)
-	if cfg.Network != "host" {
+	if cfg.Network != host2 {
 		for containerPort, hostPort := range cfg.Ports {
 			args = append(args, "-p", fmt.Sprintf("%d:%d", hostPort, containerPort))
 		}
@@ -235,7 +241,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 
 	// Start container
 	_, _ = fmt.Fprintf(writer, "   🐳 Starting container with image: %s\n", cfg.Image)
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(context.Background(), "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -243,7 +249,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	}
 
 	// Get container ID
-	inspectCmd := exec.Command("podman", "inspect", "--format", "{{.Id}}", cfg.Name)
+	inspectCmd := exec.CommandContext(context.Background(), "podman", "inspect", "--format", "{{.Id}}", cfg.Name)
 	idBytes, err := inspectCmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get container ID: %w", err)
@@ -263,7 +269,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 		if err := waitForContainerHealth(cfg.HealthCheck, writer); err != nil {
 			// Print container logs for debugging
 			_, _ = fmt.Fprintf(writer, "\n⚠️  Container failed health check. Logs:\n")
-			logsCmd := exec.Command("podman", "logs", cfg.Name)
+			logsCmd := exec.CommandContext(context.Background(), "podman", "logs", cfg.Name)
 			logsCmd.Stdout = writer
 			logsCmd.Stderr = writer
 			_ = logsCmd.Run()
@@ -275,7 +281,7 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	// Step 5: Start streaming container logs in background (for runtime debugging)
 	// This is critical for debugging KA audit events, Python exceptions, etc.
 	go func() {
-		logsCmd := exec.Command("podman", "logs", "-f", cfg.Name)
+		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", "-f", cfg.Name)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run() // Will run until container stops
@@ -290,12 +296,12 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 func StopGenericContainer(instance *ContainerInstance, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🛑 Stopping container: %s\n", instance.Name)
 
-	stopCmd := exec.Command("podman", "stop", instance.Name)
+	stopCmd := exec.CommandContext(context.Background(), "podman", "stop", instance.Name)
 	stopCmd.Stdout = writer
 	stopCmd.Stderr = writer
 	_ = stopCmd.Run() // Ignore errors
 
-	rmCmd := exec.Command("podman", "rm", instance.Name)
+	rmCmd := exec.CommandContext(context.Background(), "podman", "rm", instance.Name)
 	rmCmd.Stdout = writer
 	rmCmd.Stderr = writer
 	_ = rmCmd.Run() // Ignore errors
@@ -373,12 +379,12 @@ func buildContainerImage(cfg GenericContainerConfig, writer io.Writer) error {
 	}
 	args = append(args, "-f", dockerfilePath, cfg.BuildContext)
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(context.Background(), "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
 		// Check if image was actually built despite error (podman cleanup issue)
-		checkCmd := exec.Command("podman", "image", "exists", cfg.Image)
+		checkCmd := exec.CommandContext(context.Background(), "podman", "image", "exists", cfg.Image)
 		if checkCmd.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", cfg.Image)
 			return nil // Image exists, treat as success
@@ -394,7 +400,11 @@ func waitForContainerHealth(check *HealthCheckConfig, writer io.Writer) error {
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(check.URL)
+		req, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, check.URL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build health check request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			return nil

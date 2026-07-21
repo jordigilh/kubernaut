@@ -58,7 +58,7 @@ any point.
 
 - BR-SESSION-003: Operator can observe autonomous investigation progress in real time (turn-level)
 - BR-SESSION-005: All session control actions are audited (cancel, observe)
-- BR-SESSION-007: Streaming event types are runtime-agnostic (Goose compatibility)
+- BR-SESSION-007: Streaming event types are runtime-agnostic (forward-compatible with AuthBridge-relayed opaque-OCI-agent events, [#1535](https://github.com/jordigilh/kubernaut/issues/1535))
 - ADR-038: Async buffered audit ingestion (fire-and-forget)
 - Issue #823: Session streaming and cancellation
 

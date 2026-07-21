@@ -1,15 +1,16 @@
 # PROPOSAL-EXT-006: LangChain Deep Agents as AgenticWorkflow Runtime
 
-**Status**: Draft  
+**Status**: ❌ SUPERSEDED — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536). Note: the Deep Agents *technique* validated by this spike remains usable inside an opaque agent image — what's dead is the CRD-level `runtime` enum and Kubernaut-side adapter this proposal describes.  
 **Date**: May 19, 2026  
+**Superseded**: July 5, 2026  
 **Author**: Kubernaut Architecture Team  
 **Confidence**: 96% (Follow-up Spike 3 validated: create_deep_agent with sub-agent delegation, real Vertex AI, tool scoping, budget tracking, and structured RCA)  
-**Related**: [PROPOSAL-EXT-004](PROPOSAL-EXT-004-goose-recipes.md) (Goose runtime), [PROPOSAL-EXT-005](PROPOSAL-EXT-005-oracle-agent-spec.md) (OAS runtime)  
+**Related**: [PROPOSAL-EXT-004](PROPOSAL-EXT-004-goose-recipes.md) (superseded), [PROPOSAL-EXT-005](PROPOSAL-EXT-005-oracle-agent-spec.md) (superseded)  
 **Motivation**: [RHPDS Agentic AIOps Workshop](https://rhpds.github.io/agentic-aiops-showroom/modules/index.html) (long-horizon, exploratory investigations)  
 **Spike Code**: [pyagentspec-langgraph/05_deepagents_validation.py](../spikes/pyagentspec-langgraph/05_deepagents_validation.py) (sub-agent delegation + budget tracking validated)  
 **Spike Summary**: [SPIKE-DEEP-AGENTS](../spikes/SPIKE-DEEP-AGENTS.md), [SPIKE-ACP-ENFORCEMENT](../spikes/SPIKE-ACP-ENFORCEMENT.md), [SPIKE-OCI-RUNTIME-CONTRACT](../spikes/SPIKE-OCI-RUNTIME-CONTRACT.md)  
-**Tracking**: [#1240](https://github.com/jordigilh/kubernaut/issues/1240) (umbrella)  
-**Target**: v1.6 milestone
+**Tracking**: [#1240](https://github.com/jordigilh/kubernaut/issues/1240) (umbrella, closed) → superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536)  
+**Target**: ~~v1.6 milestone~~ — successor work now tracked under v1.7
 
 ---
 

@@ -96,7 +96,7 @@ var _ = SynchronizedBeforeSuite(
 			"test/integration/kubernautagent/tools/custom/config",
 			authConfig,
 		)
-		dsInfra, err = infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
+		dsInfra, err = infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		dsInfra.SharedTestEnv = sharedTestEnv
 

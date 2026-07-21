@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -29,6 +30,7 @@ import (
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	api "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	workflowrepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/workflow"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
@@ -208,7 +210,7 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 	h.overlaySuccessMetrics(r.Context(), []*models.RemediationWorkflow{wf})
 
 	// BR-AUDIT-023: Emit discovery audit events when context filters are present.
-	h.emitWorkflowRetrievedAuditEvents(workflowID, filters, durationMs)
+	h.emitWorkflowRetrievedAuditEvents(workflowID, filters, durationMs) //nolint:contextcheck // emitWorkflowRetrievedAuditEvents forwards to emitAuditEventsAsync (BR-AUDIT-024), fire-and-forget by design
 
 	// Log success
 	h.logger.Info("Workflow retrieved",
@@ -234,6 +236,14 @@ func (h *Handler) HandleGetWorkflowByID(w http.ResponseWriter, r *http.Request) 
 // On any failure it writes the response itself and returns ok=false.
 // Extracted from HandleGetWorkflowByID (Wave 6 6f GREEN: funlen
 // remediation) — pure code motion, no behavior change.
+//
+// Issue #1674: previously checked err.Error() against a hand-built "workflow
+// not found: <id>" string that GetByID/GetWorkflowWithContextFilters never
+// actually produced (they returned (nil, nil) instead) — that branch was
+// dead code, and the real "not found" signal was the nil wf == nil check
+// below. Now that both repo methods return workflowrepo.ErrNotFound, we
+// check the sentinel directly via errors.Is, and the wf == nil check is no
+// longer reachable when err == nil.
 func (h *Handler) fetchWorkflowByIDWithGate(w http.ResponseWriter, r *http.Request, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, int64, bool) {
 	// DD-WORKFLOW-016: Use context-filtered query when filters are present (security gate)
 	// GAP-WF-6: Measure query duration for audit payload (DD-WORKFLOW-014 v3.0)
@@ -248,8 +258,14 @@ func (h *Handler) fetchWorkflowByIDWithGate(w http.ResponseWriter, r *http.Reque
 	durationMs := time.Since(startGet).Milliseconds()
 
 	if err != nil {
-		// Check if workflow not found
-		if err.Error() == fmt.Sprintf("workflow not found: %s", workflowID) {
+		// DD-WORKFLOW-016: Return the same 404 for "not found" and "filtered
+		// out by security gate" (prevent info leakage about which case
+		// occurred).
+		if errors.Is(err, workflowrepo.ErrNotFound) {
+			h.logger.Info("Workflow not found or filtered by security gate",
+				"workflow_id", workflowID,
+				"has_context_filters", filters.HasContextFilters(),
+			)
 			response.WriteRFC7807Error(w, http.StatusNotFound, "workflow-not-found", "Not Found",
 				fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
 			return nil, 0, false
@@ -260,18 +276,6 @@ func (h *Handler) fetchWorkflowByIDWithGate(w http.ResponseWriter, r *http.Reque
 		)
 		response.WriteRFC7807Error(w, http.StatusInternalServerError, "internal-error", "Internal Server Error",
 			"Failed to get workflow", h.logger)
-		return nil, 0, false
-	}
-
-	// Check for nil workflow (not found or security gate filtered out)
-	if wf == nil {
-		h.logger.Info("Workflow not found or filtered by security gate",
-			"workflow_id", workflowID,
-			"has_context_filters", filters.HasContextFilters(),
-		)
-		// DD-WORKFLOW-016: Return same 404 for "not found" and "filtered out" (prevent info leakage)
-		response.WriteRFC7807Error(w, http.StatusNotFound, "workflow-not-found", "Not Found",
-			fmt.Sprintf("Workflow not found: %s", workflowID), h.logger)
 		return nil, 0, false
 	}
 

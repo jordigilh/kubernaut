@@ -63,7 +63,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"datastorage", imageName, err}
 	}()
 
@@ -76,7 +76,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
 	}()
 
@@ -88,7 +88,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{"mock-llm", imageName, err}
 	}()
 
@@ -106,7 +106,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// PHASE 2: Create Kind cluster (reuse AIAnalysis E2E Kind config — same ports)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🏗️  PHASE 2: Creating Kind cluster...")
-	if err := createKAKindCluster(clusterName, kubeconfigPath, writer); err != nil {
+	if err := createKAKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -118,7 +118,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	} else {
 		_, _ = fmt.Fprintln(writer, "\n📤 PHASE 3: Loading images into Kind...")
 		for name, image := range images {
-			if err := loadImageToKind(clusterName, image, writer); err != nil {
+			if err := loadImageToKind(ctx, clusterName, image, writer); err != nil {
 				return fmt.Errorf("failed to load %s image: %w", name, err)
 			}
 			_, _ = fmt.Fprintf(writer, "  ✅ %s loaded\n", name)
@@ -130,7 +130,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// Reuses the same inline pattern as CreateAIAnalysisClusterHybrid.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 4: Deploying DataStorage stack...")
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -214,7 +214,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	testWorkflows := GetKAE2ETestWorkflows()
 	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)
 	// instead of DS's retired Postgres-backed inline endpoint.
-	workflowUUIDs, err := SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
+	workflowUUIDs, err := SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed workflows: %w", err)
 	}
@@ -272,13 +272,13 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// DD-AUTH-MCP-001 v2.0: Pattern B validation with real OIDC provider.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🔑 PHASE 5.8: Deploying DEX OIDC Provider (#1009)...")
-	if err := PreloadDexImage(clusterName, writer); err != nil {
+	if err := PreloadDexImage(ctx, clusterName, writer); err != nil {
 		_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to preload DEX image (non-fatal, Kind may pull): %v\n", err)
 	}
 	if err := deployDexInNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy DEX: %w", err)
 	}
-	if err := waitForDexReady(5556, writer); err != nil {
+	if err := waitForDexReady(ctx, kubeconfigPath, 5556, writer); err != nil {
 		return fmt.Errorf("DEX not ready: %w", err)
 	}
 	if err := createDexUserRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
@@ -292,7 +292,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	if err := DeployKubernautAgentServiceRBAC(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy KA RBAC: %w", err)
 	}
-	if err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
+	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, images["kubernautagent"], true, writer); err != nil {
 		return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
 	}
 
@@ -858,11 +858,11 @@ subjects:
 // DeployKubernautAgentOnly deploys the Go Kubernaut Agent as a Deployment + NodePort Service.
 // Port mapping: 30088 → 8443 (container), host 8088. KA defaults to 8443 since the H1 GA finding.
 // enableJWT controls whether jwtProviders are included in the config (requires DEX to be deployed).
-func DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
+func DeployKubernautAgentOnly(ctx context.Context, clusterName, kubeconfigPath, namespace, imageTag string, enableJWT bool, writer io.Writer) error {
 	imagePullPolicy := GetImagePullPolicy()
 
 	// DD-TEST-007: Build GOCOVERDIR YAML snippets for binary coverage instrumentation
-	covEnv := coverageEnvYAML("kubernautagent")
+	covEnv := coverageEnvYAML()
 	covMount := coverageVolumeMountYAML()
 	covVol := coverageVolumeYAML()
 

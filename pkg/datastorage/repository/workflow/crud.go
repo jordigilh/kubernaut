@@ -18,6 +18,8 @@ package workflow
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
@@ -40,11 +42,31 @@ import (
 // Repository without a cache; those tests were migrated to the cache-backed
 // suites in this package, see discovery_cache_test.go/list_cache_test.go).
 
+// ErrNotFound is returned by GetByID/GetWorkflowWithContextFilters when no
+// workflow matches. Issue #1674: replaces the ambiguous (nil, nil) return
+// that forced callers to distinguish "not found" from "real error" by
+// nil-checking the result instead of checking err. Callers should use
+// errors.Is(err, ErrNotFound).
+//
+// DD-WORKFLOW-016: GetWorkflowWithContextFilters (discovery.go) also returns
+// this sentinel for its security gate -- it deliberately does not distinguish
+// "workflow doesn't exist" from "workflow exists but doesn't match context
+// filters" to avoid leaking which case occurred to the caller.
+var ErrNotFound = errors.New("workflow not found")
+
 // GetByID retrieves a workflow by UUID (primary key) from the Issue #1661
 // Phase 28/29 informer-backed CRD cache (DD-WORKFLOW-018).
 // DD-WORKFLOW-002 v3.0: workflow_id is the sole UUID primary key.
+// Returns ErrNotFound (wrapped with the queried ID) if no workflow exists.
 func (r *Repository) GetByID(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error) {
-	return r.getByIDFromCache(ctx, workflowID)
+	wf, err := r.getByIDFromCache(ctx, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	if wf == nil {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, workflowID)
+	}
+	return wf, nil
 }
 
 // List retrieves workflows with optional filtering and pagination from the

@@ -87,7 +87,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create new RR with empty phase (first reconcile)
-		rr := newRemediationRequest("test-rr-created", "default", "")
+		rr := newRemediationRequest("test-rr-created", defaultFixture, "")
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
 			WithObjects(rr).
@@ -107,7 +107,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 
 		// When: First reconcile initializes the RR
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-created", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-created", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -126,13 +126,13 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR in Executing phase with completed WE child
-		rr := newRemediationRequestWithChildRefs("test-rr-completed", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-completed", defaultFixture,
 			remediationv1.PhaseExecuting, "sp-test-rr-completed", "ai-test-rr-completed", "we-test-rr-completed")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		we := newWorkflowExecutionCompleted("we-test-rr-completed", "default", "test-rr-completed")
-		ai := newAIAnalysisCompleted("ai-test-rr-completed", "default", "test-rr-completed", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-completed", "default", "test-rr-completed")
+		we := newWorkflowExecutionCompleted("we-test-rr-completed", defaultFixture, "test-rr-completed")
+		ai := newAIAnalysisCompleted("ai-test-rr-completed", defaultFixture, "test-rr-completed", 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-completed", "test-rr-completed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -152,7 +152,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-completed", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-completed", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -170,13 +170,13 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR in Executing phase with failed WE child
-		rr := newRemediationRequestWithChildRefs("test-rr-failed", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-failed", defaultFixture,
 			remediationv1.PhaseExecuting, "sp-test-rr-failed", "ai-test-rr-failed", "we-test-rr-failed")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		we := newWorkflowExecutionFailed("we-test-rr-failed", "default", "test-rr-failed", "Job failed")
-		ai := newAIAnalysisCompleted("ai-test-rr-failed", "default", "test-rr-failed", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-failed", "default", "test-rr-failed")
+		we := newWorkflowExecutionFailed("we-test-rr-failed", defaultFixture, "test-rr-failed", "Job failed")
+		ai := newAIAnalysisCompleted("ai-test-rr-failed", defaultFixture, "test-rr-failed", 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-failed", "test-rr-failed")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -196,7 +196,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-failed", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-failed", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -214,7 +214,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR that has exceeded global timeout (started 2 hours ago)
-		rr := newRemediationRequestWithTimeout("test-rr-timeout", "default",
+		rr := newRemediationRequestWithTimeout("test-rr-timeout", defaultFixture,
 			remediationv1.PhaseProcessing, -2*time.Hour)
 
 		fakeClient := fake.NewClientBuilder().
@@ -235,7 +235,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-timeout", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-timeout", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -253,13 +253,13 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR in Analyzing phase with completed AI that requires approval (low confidence)
-		rr := newRemediationRequestWithChildRefs("test-rr-approval", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-approval", defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-test-rr-approval", "ai-test-rr-approval", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		// Low confidence (0.4 < 0.8) triggers approval
-		ai := newAIAnalysisCompleted("ai-test-rr-approval", "default", "test-rr-approval", 0.4, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-approval", "default", "test-rr-approval")
+		ai := newAIAnalysisCompleted("ai-test-rr-approval", defaultFixture, "test-rr-approval", 0.4, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-approval", "test-rr-approval")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -282,7 +282,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-approval", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-approval", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -300,13 +300,13 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR in AwaitingApproval with approved RAR
-		rr := newRemediationRequestWithChildRefs("test-rr-granted", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-granted", defaultFixture,
 			remediationv1.PhaseAwaitingApproval, "sp-test-rr-granted", "ai-test-rr-granted", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-granted", "default", "test-rr-granted", 0.4, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-granted", "default", "test-rr-granted")
-		rar := newRemediationApprovalRequestApproved("rar-test-rr-granted", "default", "test-rr-granted", "admin@example.com")
+		ai := newAIAnalysisCompleted("ai-test-rr-granted", defaultFixture, "test-rr-granted", 0.4, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-granted", "test-rr-granted")
+		rar := newRemediationApprovalRequestApproved("rar-test-rr-granted", "test-rr-granted", "admin@example.com")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -329,7 +329,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-granted", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-granted", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -346,13 +346,13 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		scheme := setupScheme()
 		recorder := record.NewFakeRecorder(20)
 
-		rr := newRemediationRequestWithChildRefs("test-rr-rejected", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-rejected", defaultFixture,
 			remediationv1.PhaseAwaitingApproval, "sp-test-rr-rejected", "ai-test-rr-rejected", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-rejected", "default", "test-rr-rejected", 0.4, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-rejected", "default", "test-rr-rejected")
-		rar := newRemediationApprovalRequestRejected("rar-test-rr-rejected", "default", "test-rr-rejected", "admin@example.com", "Risk too high")
+		ai := newAIAnalysisCompleted("ai-test-rr-rejected", defaultFixture, "test-rr-rejected", 0.4, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-rejected", "test-rr-rejected")
+		rar := newRemediationApprovalRequestRejected("rar-test-rr-rejected", "test-rr-rejected", "admin@example.com", "Risk too high")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -375,7 +375,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-rejected", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-rejected", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -392,13 +392,13 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		scheme := setupScheme()
 		recorder := record.NewFakeRecorder(20)
 
-		rr := newRemediationRequestWithChildRefs("test-rr-expired", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-expired", defaultFixture,
 			remediationv1.PhaseAwaitingApproval, "sp-test-rr-expired", "ai-test-rr-expired", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-expired", "default", "test-rr-expired", 0.4, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-expired", "default", "test-rr-expired")
-		rar := newRemediationApprovalRequestExpired("rar-test-rr-expired", "default", "test-rr-expired")
+		ai := newAIAnalysisCompleted("ai-test-rr-expired", defaultFixture, "test-rr-expired", 0.4, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-expired", "test-rr-expired")
+		rar := newRemediationApprovalRequestExpired("rar-test-rr-expired", defaultFixture, "test-rr-expired")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -421,7 +421,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-expired", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-expired", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -439,14 +439,14 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR in Analyzing phase with failed AI that has NeedsHumanReview
-		rr := newRemediationRequestWithChildRefs("test-rr-escalated", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-escalated", defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-test-rr-escalated", "ai-test-rr-escalated", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		// Failed AI with NeedsHumanReview triggers manual review escalation
-		ai := newAIAnalysisFailed("ai-test-rr-escalated", "default", "test-rr-escalated", "Insufficient context for automated analysis")
+		ai := newAIAnalysisFailed("ai-test-rr-escalated", defaultFixture, "test-rr-escalated", "Insufficient context for automated analysis")
 		ai.Status.NeedsHumanReview = true
-		sp := newSignalProcessingCompleted("sp-test-rr-escalated", "default", "test-rr-escalated")
+		sp := newSignalProcessingCompleted("sp-test-rr-escalated", "test-rr-escalated")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -466,7 +466,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-escalated", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-escalated", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -484,7 +484,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR that has exceeded global timeout - this triggers notification creation
-		rr := newRemediationRequestWithTimeout("test-rr-notif", "default",
+		rr := newRemediationRequestWithTimeout("test-rr-notif", defaultFixture,
 			remediationv1.PhaseProcessing, -2*time.Hour)
 
 		fakeClient := fake.NewClientBuilder().
@@ -505,7 +505,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-notif", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-notif", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -523,12 +523,12 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR in Analyzing phase with completed AI (high confidence, auto-approve)
-		rr := newRemediationRequestWithChildRefs("test-rr-cooldown", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-cooldown", defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-test-rr-cooldown", "ai-test-rr-cooldown", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-cooldown", "default", "test-rr-cooldown", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-cooldown", "default", "test-rr-cooldown")
+		ai := newAIAnalysisCompleted("ai-test-rr-cooldown", defaultFixture, "test-rr-cooldown", 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-cooldown", "test-rr-cooldown")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -557,7 +557,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-cooldown", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-cooldown", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -574,12 +574,12 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		scheme := setupScheme()
 		recorder := record.NewFakeRecorder(20)
 
-		rr := newRemediationRequestWithChildRefs("test-rr-consec", "default",
+		rr := newRemediationRequestWithChildRefs("test-rr-consec", defaultFixture,
 			remediationv1.PhaseAnalyzing, "sp-test-rr-consec", "ai-test-rr-consec", "")
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-		ai := newAIAnalysisCompleted("ai-test-rr-consec", "default", "test-rr-consec", 0.95, "restart-pod")
-		sp := newSignalProcessingCompleted("sp-test-rr-consec", "default", "test-rr-consec")
+		ai := newAIAnalysisCompleted("ai-test-rr-consec", defaultFixture, "test-rr-consec", 0.95, "restart-pod")
+		sp := newSignalProcessingCompleted("sp-test-rr-consec", "test-rr-consec")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -607,7 +607,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-consec", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-consec", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 
@@ -625,7 +625,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 		recorder := record.NewFakeRecorder(20)
 
 		// Create RR in Pending phase with StartTime set (past initialization)
-		rr := newRemediationRequest("test-rr-transition", "default", remediationv1.PhasePending)
+		rr := newRemediationRequest("test-rr-transition", defaultFixture, remediationv1.PhasePending)
 		rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 
 		fakeClient := fake.NewClientBuilder().
@@ -647,7 +647,7 @@ var _ = Describe("DD-EVENT-001: RemediationOrchestrator K8s Event Emission", fun
 
 		// When: Reconcile transitions Pending -> Processing
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-transition", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-transition", Namespace: defaultFixture},
 		})
 		Expect(err).ToNot(HaveOccurred())
 

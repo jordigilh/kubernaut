@@ -572,7 +572,8 @@ spec:
               failureReason:
                 description: |-
                   FailureReason explains why execution failed (if applicable)
-                  DEPRECATED: Use FailureDetails for structured failure information
+
+                  Deprecated: Use FailureDetails for structured failure information.
                 type: string
               observedGeneration:
                 description: |-

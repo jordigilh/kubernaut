@@ -79,7 +79,7 @@ func (r *WorkflowExecutionReconciler) BuildPipelineRunStatusSummary(ctx context.
 	// Get Succeeded condition
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
 	if succeededCond != nil {
-		summary.Status = corev1.ConditionStatus(succeededCond.Status)
+		summary.Status = succeededCond.Status
 		summary.Reason = succeededCond.Reason
 		summary.Message = succeededCond.Message
 	}

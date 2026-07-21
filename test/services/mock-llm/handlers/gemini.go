@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -94,7 +94,7 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 			ScenarioName: "default", RootCause: "Unable to determine root cause", Severity: "warning",
 			InvestigationOutcome: "actionable", IsActionable: scenarios.BoolPtr(true), Confidence: 0.5,
 		}))
-		h.recordRequestMetric(r.URL.Path, http.StatusOK, "default", time.Since(start).Seconds())
+		h.recordRequestMetric(r.URL.Path, "default", time.Since(start).Seconds())
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *handler) handleGemini(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
+	h.recordRequestMetric(r.URL.Path, scenarioName, time.Since(start).Seconds())
 }
 
 // handleGeminiToolResponse handles the tool-calling path for Gemini requests.
@@ -289,4 +289,3 @@ func cloneAnyMap(m map[string]interface{}) map[string]interface{} {
 	}
 	return c
 }
-

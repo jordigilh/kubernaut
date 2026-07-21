@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -57,7 +58,7 @@ type DiskSpaceInfo struct {
 // GetDiskSpaceInfo returns disk space statistics for the root filesystem
 func GetDiskSpaceInfo() (*DiskSpaceInfo, error) {
 	// Use 'df -h /' to get root filesystem stats
-	cmd := exec.Command("df", "-h", "/")
+	cmd := exec.CommandContext(context.Background(), "df", "-h", "/")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute df command: %w", err)
@@ -142,7 +143,7 @@ func LogDiskSpaceWithComparison(stage string, previousInfo *DiskSpaceInfo, write
 func ExportImageToTar(imageName, tarPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  📦 Exporting %s to %s...\n", imageName, tarPath)
 
-	saveCmd := exec.Command("podman", "save", "-o", tarPath, imageName)
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "-o", tarPath, imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 
@@ -180,7 +181,7 @@ func ExportImageToTar(imageName, tarPath string, writer io.Writer) error {
 func LoadImageFromTar(clusterName, tarPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  📦 Loading image from %s into Kind cluster %s...\n", tarPath, clusterName)
 
-	loadCmd := exec.Command("kind", "load", "image-archive", tarPath, "--name", clusterName)
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", tarPath, "--name", clusterName)
 	loadCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
@@ -237,7 +238,7 @@ func AggressivePodmanCleanup(writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Run podman system prune with --all flag (removes everything)
-	pruneCmd := exec.Command("podman", "system", "prune", "-a", "-f", "--volumes")
+	pruneCmd := exec.CommandContext(context.Background(), "podman", "system", "prune", "-a", "-f", "--volumes")
 	pruneOutput, err := pruneCmd.CombinedOutput()
 
 	// Log the output regardless of error

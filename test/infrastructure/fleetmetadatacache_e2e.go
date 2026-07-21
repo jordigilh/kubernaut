@@ -106,7 +106,7 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	_, _ = fmt.Fprintln(writer, "  Skips: Gateway, RemediationOrchestrator, and other Kubernaut services")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// ── Phase 1: Build fleetmetadatacache image (before cluster creation) ──
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building fleetmetadatacache image (NO CLUSTER YET)...")
@@ -115,9 +115,9 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		ImageName:        "fleetmetadatacache",
 		DockerfilePath:   "docker/fleetmetadatacache.Dockerfile",
 		BuildContextPath: "",
-		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 	}
-	fmcImage, err = BuildImageForKind(buildCfg, writer)
+	fmcImage, err = BuildImageForKind(ctx, buildCfg, writer)
 	if err != nil {
 		return "", "", fmt.Errorf("fleetmetadatacache image build failed: %w", err)
 	}
@@ -135,17 +135,17 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		UsePodman:               true,
 		ProjectRootAsWorkingDir: true, // DD-TEST-007: For ./coverdata resolution
 	}
-	if clusterErr := CreateKindClusterWithConfig(opts, writer); clusterErr != nil {
+	if clusterErr := CreateKindClusterWithConfig(ctx, opts, writer); clusterErr != nil {
 		return "", "", fmt.Errorf("failed to create Kind cluster: %w", clusterErr)
 	}
 
-	if nsErr := createTestNamespace(namespace, kubeconfigPath, writer); nsErr != nil {
+	if nsErr := createTestNamespace(ctx, namespace, kubeconfigPath, writer); nsErr != nil {
 		return "", "", fmt.Errorf("failed to create namespace: %w", nsErr)
 	}
 
 	// ── Phase 3: Load image into Kind ────────────────────────────────────
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 3: Loading image into Kind...")
-	if loadErr := LoadImageToKind(fmcImage, "fleetmetadatacache", clusterName, writer); loadErr != nil {
+	if loadErr := LoadImageToKind(ctx, fmcImage, "fleetmetadatacache", clusterName, writer); loadErr != nil {
 		return "", "", fmt.Errorf("failed to load fleetmetadatacache image: %w", loadErr)
 	}
 
@@ -249,11 +249,12 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// separate broker component (MCPRoute.backendRefs aggregates natively),
 	// so there is no discovery connection needing its own credential.
 	if gatewayType != registry.GatewayEAIGW {
-		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
-			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
-			ClientID:      fmcOAuth2Config.ClientID,
-			ClientSecret:  fmcOAuth2Config.ClientSecret,
-			Scopes:        fmcOAuth2Config.Scopes,
+		brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+			ClientID:       fmcOAuth2Config.ClientID,
+			ClientSecret:   fmcOAuth2Config.ClientSecret,
+			Scopes:         fmcOAuth2Config.Scopes,
+			KubeconfigPath: kubeconfigPath,
 		})
 		if brokerCredErr != nil {
 			return "", "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
@@ -279,14 +280,15 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 	// Keycloak-based token func for the readiness probe's authenticated
 	// tools/call, matching FMC's own runtime OAuth2 config above.
 	keycloakFleetReadTokenFunc := func() (string, error) {
-		return GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
-			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
-			ClientID:      fmcOAuth2Config.ClientID,
-			ClientSecret:  fmcOAuth2Config.ClientSecret,
-			Scopes:        fmcOAuth2Config.Scopes,
+		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFMC),
+			ClientID:       fmcOAuth2Config.ClientID,
+			ClientSecret:   fmcOAuth2Config.ClientSecret,
+			Scopes:         fmcOAuth2Config.Scopes,
+			KubeconfigPath: kubeconfigPath,
 		})
 	}
-	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, writer); readyErr != nil {
+	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, mcpGatewayNodePort, loopbackToolPrefix, writer); readyErr != nil {
 		return "", "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 

@@ -18,6 +18,7 @@ package authwebhook
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -139,10 +140,9 @@ func (r *RemediationWorkflowReconciler) refreshActionTypeWorkflowCount(ctx conte
 
 	atKey, err := r.findActionTypeKey(ctx, actionType, namespace)
 	if err != nil {
-		logger.Error(err, "Failed to find ActionType CRD", "actionType", actionType)
-		return
-	}
-	if atKey == nil {
+		if !errors.Is(err, ErrActionTypeCRDNotFound) {
+			logger.Error(err, "Failed to find ActionType CRD", "actionType", actionType)
+		}
 		return
 	}
 
@@ -160,7 +160,8 @@ func (r *RemediationWorkflowReconciler) refreshActionTypeWorkflowCount(ctx conte
 	}
 }
 
-// findActionTypeKey locates the ActionType CRD whose spec.name matches actionType.
+// findActionTypeKey locates the ActionType CRD whose spec.name matches
+// actionType. Returns ErrActionTypeCRDNotFound if no match exists.
 func (r *RemediationWorkflowReconciler) findActionTypeKey(ctx context.Context, actionType, namespace string) (*client.ObjectKey, error) {
 	atList := &atv1alpha1.ActionTypeList{}
 	if err := r.List(ctx, atList, client.InNamespace(namespace)); err != nil {
@@ -172,7 +173,7 @@ func (r *RemediationWorkflowReconciler) findActionTypeKey(ctx context.Context, a
 			return &key, nil
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("%w: %s", ErrActionTypeCRDNotFound, actionType)
 }
 
 func (r *RemediationWorkflowReconciler) SetupWithManager(mgr ctrl.Manager) error {

@@ -1,10 +1,11 @@
 # PROPOSAL-EXT-002: Investigation Prompt Bundles
 
-**Status**: PROPOSAL (under review)
+**Status**: ❌ SUPERSEDED (July 3, 2026) — see [#883](https://github.com/jordigilh/kubernaut/issues/883) (closed). #883's closing comment is explicit: "KA no longer compiles/bridges customer prompts into any runtime-specific recipe format (**Goose Recipe, OAS spec, or PromptBundle**)... Agent runtimes are now packaged as generic OCI images, opaque to KA." That statement directly names and kills this proposal's core mechanism (the `PromptBundle` CRD/format and the "converge on Goose recipes, KA-as-compiler" plan). See [#1536](https://github.com/jordigilh/kubernaut/issues/1536) for the current opaque-OCI-agent direction. Retained for historical context only.
 **Date**: April 15, 2026
+**Superseded**: July 3, 2026
 **Author**: Kubernaut Architecture Team
 **Confidence**: 90% (architecture validated through adversarial review; A2A task contracts and execution trace enforcement finalized)
-**Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#883](https://github.com/jordigilh/kubernaut/issues/883) (Goose Recipe Format Convergence), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [DD-016](../decisions/DD-016-dynamic-toolset-v2-deferral.md) (Dynamic Toolset Deferral)
+**Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#883](https://github.com/jordigilh/kubernaut/issues/883) (❌ closed/superseded — Goose Recipe Format Convergence), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [DD-016](../decisions/DD-016-dynamic-toolset-v2-deferral.md) (Dynamic Toolset Deferral)
 
 ---
 

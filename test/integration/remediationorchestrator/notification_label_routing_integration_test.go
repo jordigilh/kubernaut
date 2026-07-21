@@ -48,7 +48,7 @@ var _ = Describe("Label-Based Notification Routing Integration (#416)", func() {
 	var testNamespace string
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("label-routing")
+		testNamespace = createTestNamespace(ctx, "label-routing")
 	})
 
 	AfterEach(func() {

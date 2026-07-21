@@ -62,6 +62,15 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 		})
 
 		By("Step 1b: Waiting for the real CrashLoopBackOff on the remote cluster...")
+		// Timeout widened from 2m to 4m (CI runs 29234664178, 29458356036): must-gather
+		// events on the shared single-node "fleet-e2e-remote" Kind cluster show a
+		// node-wide ~90-100s gap between image-pull-complete and the kubelet's first
+		// container Started event under concurrent parallel-spec load (this test races
+		// E2E-FLEET-015's OOMKill deployment and the suite-wide memory-eater fixture for
+		// the same node's CPU). Reaching CrashLoopBackOff needs a full start->crash->
+		// backoff cycle after that delay, which left near-zero margin in a fixed 2m
+		// budget. E2E-FLEET-015 tolerates the same delay because it also accepts an
+		// earlier OOMKilled termination-state signal, not just CrashLoopBackOff.
 		Eventually(func() bool {
 			pods := &corev1.PodList{}
 			if err := remoteK8sClient.List(ctx, pods, client.InNamespace(namespace),
@@ -78,14 +87,14 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 				}
 			}
 			return false
-		}, 2*time.Minute, 2*time.Second).Should(BeTrue(), "crashloop-app should reach CrashLoopBackOff on the remote cluster")
+		}, 4*time.Minute, 2*time.Second).Should(BeTrue(), "crashloop-app should reach CrashLoopBackOff on the remote cluster")
 
 		By("Step 2: Sending synthetic cluster-tagged alert to Gateway (AC-4, no real event-exporter bridge)")
-		payload := buildPrometheusAlertWithCluster("KubePodCrashLooping", namespace, "high",
-			"Deployment", infrastructure.CrashLoopAppName, "remote-cluster")
+		payload := buildPrometheusAlertWithCluster("KubePodCrashLooping", "high",
+			infrastructure.CrashLoopAppName, "remote-cluster")
 
-		gatewayURL := "http://localhost:30080"
-		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+		gatewayURL := urlLocalhost30080
+		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())

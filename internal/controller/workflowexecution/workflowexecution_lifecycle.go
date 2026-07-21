@@ -49,7 +49,7 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	logger := log.FromContext(ctx)
 
 	// Issue #518: Lazy resolution for pre-migration WFEs that lack status.executionEngine.
-	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+	if engineErr := r.validateExecutionEngineResolved(wfe); engineErr != nil {
 		logger.Error(engineErr, "Failed to resolve execution engine during Running phase")
 		return r.MarkFailed(ctx, wfe, nil)
 	}
@@ -130,7 +130,7 @@ func (r *WorkflowExecutionReconciler) handleRunningExecutionResult(ctx context.C
 // PipelineRun). Extracted from reconcileRunning (Wave 6 6e-ii GREEN: funlen
 // remediation) — pure code motion, no behavior change.
 func (r *WorkflowExecutionReconciler) fetchTektonPipelineRunForMark(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) *tektonv1.PipelineRun {
-	if wfe.Status.ExecutionEngine != "tekton" {
+	if wfe.Status.ExecutionEngine != workflowexecutionv1alpha1.ExecutionEngineTekton {
 		return nil
 	}
 	var pr tektonv1.PipelineRun
@@ -152,7 +152,7 @@ func (r *WorkflowExecutionReconciler) ReconcileTerminal(ctx context.Context, wfe
 	logger := log.FromContext(ctx)
 
 	// Issue #518: Lazy resolution for pre-migration WFEs (non-fatal for terminal phase).
-	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+	if engineErr := r.validateExecutionEngineResolved(wfe); engineErr != nil {
 		logger.V(1).Info("Could not resolve execution engine in terminal phase (non-fatal)", "error", engineErr)
 	}
 	logger.Info("Reconciling Terminal phase", "phase", wfe.Status.Phase)
@@ -353,7 +353,7 @@ func (r *WorkflowExecutionReconciler) ReconcileDelete(ctx context.Context, wfe *
 	logger := log.FromContext(ctx)
 
 	// Issue #518: Lazy resolution for pre-migration WFEs (non-fatal for delete).
-	if _, engineErr := r.resolveExecutionEngine(ctx, wfe); engineErr != nil {
+	if engineErr := r.validateExecutionEngineResolved(wfe); engineErr != nil {
 		logger.V(1).Info("Could not resolve execution engine during delete (non-fatal, will try fallback)", "error", engineErr)
 	}
 	logger.Info("Reconciling Delete")

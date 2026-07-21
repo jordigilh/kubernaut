@@ -35,6 +35,12 @@ import (
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	mockModel = "mock-model"
+	testKey   = "test-key"
+)
+
 // backendGVRListKinds mirrors the GVR the EAIGWRegistry watches (Envoy AI
 // Gateway Backend CRDs), needed for the fake dynamic client's list-kind map.
 var backendGVRListKinds = map[schema.GroupVersionResource]string{
@@ -199,8 +205,8 @@ func TestBuildA2AHandler_ThreadsFleetReaderFactory(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 		d.Backends.FleetReaderFactory = tools.ResourceReaderFactory(
 			func(_ context.Context, _ string) (tools.ResourceReader, error) {
 				return &tools.DynamicResourceReader{}, nil

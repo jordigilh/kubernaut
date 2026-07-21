@@ -40,7 +40,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 	// IT-EM-SH-001: Hash computed -> hash present in status
 	// ========================================
 	It("IT-EM-SH-001: should compute and store post-remediation spec hash", func() {
-		ns := createTestNamespace("em-sh-001")
+		ns := createTestNamespace(ctx, "em-sh-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA targeting a resource")
@@ -70,7 +70,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 	// IT-EM-SH-002: No pre-remediation hash -> hash event still emitted
 	// ========================================
 	It("IT-EM-SH-002: should compute hash even without pre-remediation baseline", func() {
-		ns := createTestNamespace("em-sh-002")
+		ns := createTestNamespace(ctx, "em-sh-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA (no pre-remediation hash stored anywhere)")
@@ -100,7 +100,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 	// baseline (PostRemediationSpecHash = CurrentSpecHash) for future drift detection.
 	// ========================================
 	It("IT-EM-SH-004: should complete full assessment with CRD-sourced pre-remediation baseline", func() {
-		ns := createTestNamespace("em-sh-004")
+		ns := createTestNamespace(ctx, "em-sh-004")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with PreRemediationSpecHash set in spec (CRD-first path)")
@@ -188,7 +188,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 	// is skipped (no baseline to compare against).
 	// ========================================
 	It("IT-EM-SH-005: should complete full assessment without pre-hash degradation (backward compat)", func() {
-		ns := createTestNamespace("em-sh-005")
+		ns := createTestNamespace(ctx, "em-sh-005")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA without PreRemediationSpecHash (backward compatibility)")
@@ -238,7 +238,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 	// IT-EM-SH-003: Hash event payload verified (correlation_id, hash)
 	// ========================================
 	It("IT-EM-SH-003: should produce deterministic hash for same target spec", func() {
-		ns := createTestNamespace("em-sh-003")
+		ns := createTestNamespace(ctx, "em-sh-003")
 		defer deleteTestNamespace(ns)
 
 		correlationID := fmt.Sprintf("rr-sh-003-%d", time.Now().UnixNano())
@@ -283,7 +283,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 	// that results from a 404 fallback.
 	// ========================================
 	It("IT-EM-183-001: should compute spec hash from real HPA spec, not empty map (Issue #183)", func() {
-		ns := createTestNamespace("em-183-001")
+		ns := createTestNamespace(ctx, "em-183-001")
 		defer deleteTestNamespace(ns)
 
 		emptyMapHash, err := canonicalhash.CanonicalResourceFingerprint(map[string]interface{}{})
@@ -395,7 +395,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 	// hashes must differ. This proves drift detection works for HPA targets.
 	// ========================================
 	It("IT-EM-183-002: should detect HPA spec change via different hash (drift detection)", func() {
-		ns := createTestNamespace("em-183-002")
+		ns := createTestNamespace(ctx, "em-183-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a Deployment as the HPA scale target")

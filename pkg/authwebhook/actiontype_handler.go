@@ -102,7 +102,7 @@ func (h *ActionTypeHandler) handleCreate(ctx context.Context, req admission.Requ
 	logger.Info("ActionType registered locally", "action_type", at.Spec.Name)
 	h.emitATAdmitAudit(ctx, req, EventTypeATAdmittedCreate, at.Spec.Name, false, "Active")
 
-	go h.updateCRDStatusCreate(req.Namespace, req.Name, authCtx.Username)
+	go h.updateCRDStatusCreate(req.Namespace, req.Name, authCtx.Username) //nolint:contextcheck // updateCRDStatusCreate runs async after admission response (ADR-058); uses its own bounded context since the admission context is cancelled after response
 
 	return admission.Allowed("action type registered")
 }

@@ -68,11 +68,11 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		crdCleanup = append(crdCleanup, crdName)
 
 		By("Creating initial RW CRD v1.0.0")
-		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Initial description for version bump test")
+		rw := buildRemediationWorkflowCRD(crdName, "Initial description for version bump test")
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
-		initial := waitForCRDStatus(crdName, 30*time.Second)
+		initial := waitForCRDStatus(crdName)
 		initialWorkflowID := initial.Status.WorkflowID
 		Expect(initialWorkflowID).ToNot(BeEmpty(), "Initial workflowId should be set")
 
@@ -176,11 +176,11 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		crdCleanup = append(crdCleanup, crdName)
 
 		By("Creating initial RW CRD v1.0.0")
-		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Original description")
+		rw := buildRemediationWorkflowCRD(crdName, "Original description")
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
-		initial := waitForCRDStatus(crdName, 30*time.Second)
+		initial := waitForCRDStatus(crdName)
 		Expect(initial.Status.WorkflowID).To(HaveLen(36),
 			"Initial workflowId should be a UUID (36 chars)")
 
@@ -215,11 +215,11 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		crdCleanup = append(crdCleanup, crdName)
 
 		By("Creating initial RW CRD v1.0.0")
-		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Idempotent test description")
+		rw := buildRemediationWorkflowCRD(crdName, "Idempotent test description")
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
-		initial := waitForCRDStatus(crdName, 30*time.Second)
+		initial := waitForCRDStatus(crdName)
 		originalWorkflowID := initial.Status.WorkflowID
 		Expect(originalWorkflowID).To(HaveLen(36),
 			"Initial workflowId should be a UUID (36 chars)")

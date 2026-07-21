@@ -49,10 +49,10 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 		scheme := setupScheme()
 
 		rr := newRemediationRequestWithChildRefs(
-			"test-rr-643", "default", remediationv1.PhaseAnalyzing,
+			"test-rr-643", defaultFixture, remediationv1.PhaseAnalyzing,
 			"sp-test-rr-643", "ai-test-rr-643", "")
-		ai := newAIAnalysisCompleted("ai-test-rr-643", "default", "test-rr-643", 0.95, workflowUUID)
-		sp := newSignalProcessingCompleted("sp-test-rr-643", "default", "test-rr-643")
+		ai := newAIAnalysisCompleted("ai-test-rr-643", defaultFixture, "test-rr-643", 0.95, workflowUUID)
+		sp := newSignalProcessingCompleted("sp-test-rr-643", "test-rr-643")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -82,12 +82,12 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-643", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-643", Namespace: defaultFixture},
 		})
 		Expect(err).NotTo(HaveOccurred())
 
 		var updatedRR remediationv1.RemediationRequest
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643", Namespace: "default"}, &updatedRR)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643", Namespace: defaultFixture}, &updatedRR)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(updatedRR.Status.WorkflowDisplayName).To(
@@ -103,10 +103,10 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 		scheme := setupScheme()
 
 		rr := newRemediationRequestWithChildRefs(
-			"test-rr-643b", "default", remediationv1.PhaseAnalyzing,
+			"test-rr-643b", defaultFixture, remediationv1.PhaseAnalyzing,
 			"sp-test-rr-643b", "ai-test-rr-643b", "")
-		ai := newAIAnalysisCompleted("ai-test-rr-643b", "default", "test-rr-643b", 0.95, workflowUUID)
-		sp := newSignalProcessingCompleted("sp-test-rr-643b", "default", "test-rr-643b")
+		ai := newAIAnalysisCompleted("ai-test-rr-643b", defaultFixture, "test-rr-643b", 0.95, workflowUUID)
+		sp := newSignalProcessingCompleted("sp-test-rr-643b", "test-rr-643b")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -131,12 +131,12 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 		})
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-643b", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-643b", Namespace: defaultFixture},
 		})
 		Expect(err).NotTo(HaveOccurred())
 
 		var updatedRR remediationv1.RemediationRequest
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643b", Namespace: "default"}, &updatedRR)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643b", Namespace: defaultFixture}, &updatedRR)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(updatedRR.Status.WorkflowDisplayName).To(
@@ -149,10 +149,10 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 		scheme := setupScheme()
 
 		rr := newRemediationRequestWithChildRefs(
-			"test-rr-643c", "default", remediationv1.PhaseAnalyzing,
+			"test-rr-643c", defaultFixture, remediationv1.PhaseAnalyzing,
 			"sp-test-rr-643c", "ai-test-rr-643c", "")
-		ai := newAIAnalysisCompleted("ai-test-rr-643c", "default", "test-rr-643c", 0.95, workflowUUID)
-		sp := newSignalProcessingCompleted("sp-test-rr-643c", "default", "test-rr-643c")
+		ai := newAIAnalysisCompleted("ai-test-rr-643c", defaultFixture, "test-rr-643c", 0.95, workflowUUID)
+		sp := newSignalProcessingCompleted("sp-test-rr-643c", "test-rr-643c")
 
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(scheme).
@@ -174,12 +174,12 @@ var _ = Describe("Issue #643 v2: Workflow Name Resolution via DataStorage", func
 		// Do NOT call SetWorkflowResolver — resolver stays nil
 
 		_, err := reconciler.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: "test-rr-643c", Namespace: "default"},
+			NamespacedName: types.NamespacedName{Name: "test-rr-643c", Namespace: defaultFixture},
 		})
 		Expect(err).NotTo(HaveOccurred())
 
 		var updatedRR remediationv1.RemediationRequest
-		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643c", Namespace: "default"}, &updatedRR)
+		err = fakeClient.Get(ctx, client.ObjectKey{Name: "test-rr-643c", Namespace: defaultFixture}, &updatedRR)
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(updatedRR.Status.WorkflowDisplayName).To(

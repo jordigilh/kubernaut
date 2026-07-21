@@ -156,7 +156,7 @@ var _ = SynchronizedBeforeSuite(
 			"test/integration/kubernautagent/mcp/config",
 			authConfig,
 		)
-		dsInfra, err := infrastructure.StartDSBootstrap(dsCfg, GinkgoWriter)
+		dsInfra, err := infrastructure.StartDSBootstrap(context.Background(), dsCfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		sharedDSInfra = dsInfra
 		sharedDSEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mcpDataStoragePort)

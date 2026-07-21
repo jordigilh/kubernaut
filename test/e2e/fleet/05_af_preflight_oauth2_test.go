@@ -41,9 +41,9 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 		By("Obtaining OAuth2 client_credentials token from Keycloak (IA-5)")
 		// 30557: this suite's Keycloak NodePort (DD-TEST-001, same dedicated
 		// port as the FMC E2E lane -- see keycloakHostPortFleet in fleet_e2e.go).
-		cfg := infrastructure.DefaultKeycloakFleetReadConfig(30557)
+		cfg := infrastructure.DefaultKeycloakFleetReadConfig(30557, kubeconfigPath)
 		cfg.Scopes = []string{"kube-mcp-server-audience"}
-		token, err := infrastructure.GetKeycloakClientCredentialsToken(cfg)
+		token, err := infrastructure.GetKeycloakClientCredentialsToken(ctx, cfg)
 		Expect(err).ToNot(HaveOccurred(), "Keycloak should issue client_credentials token")
 		Expect(token).ToNot(BeEmpty(), "IA-5: token must be non-empty")
 
@@ -61,7 +61,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 
 	It("should execute a preflight read via MCP gateway to validate cluster accessibility", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx)
 		Expect(err).ToNot(HaveOccurred(), "should connect to MCP gateway for preflight")
 		defer mcpClient.Close()
 
@@ -88,7 +88,7 @@ var _ = Describe("E2E-FLEET-006 [IA-5, SC-8]: AF performs preflight checks via M
 
 	It("should list pods in kubernaut-system via MCP gateway with label selector", func() {
 		mcpCtx := context.Background()
-		mcpClient, err := newFleetMCPClient(mcpCtx, "remote-cluster")
+		mcpClient, err := newFleetMCPClient(mcpCtx)
 		Expect(err).ToNot(HaveOccurred())
 		defer mcpClient.Close()
 

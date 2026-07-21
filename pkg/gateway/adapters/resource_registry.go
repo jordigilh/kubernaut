@@ -390,7 +390,8 @@ func (r *APIResourceRegistry) runRefreshTicker(ctx context.Context, panicTimesta
 					filtered = append(filtered, ts)
 				}
 			}
-			*panicTimestamps = append(filtered, now)
+			filtered = append(filtered, now)
+			*panicTimestamps = filtered
 
 			if len(*panicTimestamps) >= maxPanics {
 				r.logger.Error(fmt.Errorf("%d panics in %v", maxPanics, panicWindow),
@@ -453,11 +454,12 @@ func (r *APIResourceRegistry) CheckExistence(ctx context.Context, gvr schema.Gro
 		transient := false
 		if r.dynClient != nil {
 			_, err := r.dynClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-			if err == nil {
+			switch {
+			case err == nil:
 				exists = true
-			} else if apierrors.IsNotFound(err) {
+			case apierrors.IsNotFound(err):
 				exists = false
-			} else {
+			default:
 				r.logger.V(1).Info("CheckExistence transient error — not caching",
 					"gvr", gvr.String(), "namespace", namespace, "name", name, "error", err)
 				transient = true

@@ -34,13 +34,13 @@ func newTestKuadrantWatcher() *KuadrantRegistry {
 	}, nil, logger)
 }
 
-func newMCPServerRegistrationUnstructured(name, namespace, prefix string, labels map[string]interface{}) *unstructured.Unstructured {
+func newMCPServerRegistrationUnstructured(name, prefix string, labels map[string]interface{}) *unstructured.Unstructured {
 	obj := map[string]interface{}{
 		"apiVersion": "mcp.kuadrant.io/v1alpha1",
 		"kind":       "MCPServerRegistration",
 		"metadata": map[string]interface{}{
 			"name":      name,
-			"namespace": namespace,
+			"namespace": "kuadrant-system",
 			"labels":    labels,
 		},
 		"spec": map[string]interface{}{
@@ -66,7 +66,7 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 
 	Describe("extractKuadrantClusterInfo", func() {
 		It("UT-REG-KUA-001 [AC-3]: ExtractClusterInfo reads spec.prefix as ToolPrefix from MCPServerRegistration", func() {
-			u := newMCPServerRegistrationUnstructured("loopback-cluster", "kuadrant-system", "loopback_cluster_",
+			u := newMCPServerRegistrationUnstructured("loopback-cluster", "loopback_cluster_",
 				map[string]interface{}{ManagedLabel: "true"})
 
 			info, err := extractKuadrantClusterInfo(u)
@@ -79,7 +79,7 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 
 	Describe("onAdd", func() {
 		It("UT-REG-KUA-002 [SI-4]: Registry emits EventAdded when labeled MCPServerRegistration appears", func() {
-			u := newMCPServerRegistrationUnstructured("prod-east", "kuadrant-system", "prod_east_",
+			u := newMCPServerRegistrationUnstructured("prod-east", "prod_east_",
 				map[string]interface{}{ManagedLabel: "true"})
 
 			w.onAdd(u)
@@ -98,7 +98,7 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 
 	Describe("onDelete", func() {
 		It("UT-REG-KUA-003 [SI-4]: Registry emits EventDeleted when labeled MCPServerRegistration is removed", func() {
-			u := newMCPServerRegistrationUnstructured("dev-west", "kuadrant-system", "dev_west_",
+			u := newMCPServerRegistrationUnstructured("dev-west", "dev_west_",
 				map[string]interface{}{ManagedLabel: "true"})
 
 			w.onAdd(u)
@@ -119,7 +119,7 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 
 	Describe("label filtering", func() {
 		It("UT-REG-KUA-004 [AC-3]: Registry ignores MCPServerRegistrations without kubernaut.ai/managed=true label", func() {
-			u := newMCPServerRegistrationUnstructured("unlabeled", "kuadrant-system", "unlabeled_",
+			u := newMCPServerRegistrationUnstructured("unlabeled", "unlabeled_",
 				map[string]interface{}{"other-label": "value"})
 
 			w.onAdd(u)
@@ -130,7 +130,7 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 
 	Describe("spec.state filtering", func() {
 		It("UT-REG-KUA-005 [AC-3]: Registry excludes MCPServerRegistrations with spec.state: Disabled", func() {
-			u := newMCPServerRegistrationUnstructured("disabled-cluster", "kuadrant-system", "disabled_",
+			u := newMCPServerRegistrationUnstructured("disabled-cluster", "disabled_",
 				map[string]interface{}{ManagedLabel: "true"})
 			_ = unstructured.SetNestedField(u.Object, "Disabled", "spec", "state")
 
@@ -140,11 +140,11 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 		})
 
 		It("UT-REG-KUA-006 [AC-3]: Registry includes MCPServerRegistrations with spec.state: Enabled (or absent)", func() {
-			uEnabled := newMCPServerRegistrationUnstructured("enabled-cluster", "kuadrant-system", "enabled_",
+			uEnabled := newMCPServerRegistrationUnstructured("enabled-cluster", "enabled_",
 				map[string]interface{}{ManagedLabel: "true"})
 			_ = unstructured.SetNestedField(uEnabled.Object, "Enabled", "spec", "state")
 
-			uNoState := newMCPServerRegistrationUnstructured("default-cluster", "kuadrant-system", "default_",
+			uNoState := newMCPServerRegistrationUnstructured("default-cluster", "default_",
 				map[string]interface{}{ManagedLabel: "true"})
 
 			w.onAdd(uEnabled)
@@ -157,7 +157,7 @@ var _ = Describe("UT-REG-KUA: KuadrantRegistry lifecycle", func() {
 
 	Describe("tombstone handling", func() {
 		It("handles tombstone objects on delete", func() {
-			u := newMCPServerRegistrationUnstructured("tombstone-cluster", "kuadrant-system", "tombstone_",
+			u := newMCPServerRegistrationUnstructured("tombstone-cluster", "tombstone_",
 				map[string]interface{}{ManagedLabel: "true"})
 			w.onAdd(u)
 			Eventually(w.WatchClusters()).Should(Receive())

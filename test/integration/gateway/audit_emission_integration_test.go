@@ -17,8 +17,6 @@ limitations under the License.
 package gateway
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -112,8 +110,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("2. Parse signal through Prometheus adapter")
 				signal, err := prometheusAdapter.Parse(ctx, alertPayload)
-			Expect(err).ToNot(HaveOccurred(), "Prometheus adapter parse must succeed")
-			Expect(signal.Fingerprint).ToNot(BeEmpty(), "Signal must have fingerprint")
+				Expect(err).ToNot(HaveOccurred(), "Prometheus adapter parse must succeed")
+				Expect(signal.Fingerprint).ToNot(BeEmpty(), "Signal must have fingerprint")
 
 				By("3. Process signal through Gateway")
 				gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
@@ -121,8 +119,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 
 				response, err := gwServer.ProcessSignal(ctx, signal)
-			Expect(err).ToNot(HaveOccurred(), "Signal processing must succeed")
-			Expect(response.RemediationRequestName).ToNot(BeEmpty(), "CRD must be created")
+				Expect(err).ToNot(HaveOccurred(), "Signal processing must succeed")
+				Expect(response.RemediationRequestName).ToNot(BeEmpty(), "CRD must be created")
 
 				By("4. Verify RemediationRequest CRD was created in K8s")
 				var rr remediationv1alpha1.RemediationRequest
@@ -187,7 +185,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(response1.Status).To(Equal("created"), "First signal should create CRD")
 				Expect(response1.RemediationRequestName).ToNot(BeEmpty(),
-				"BR-AUDIT-001: First signal must create a named RR CRD for dedup comparison")
+					"BR-AUDIT-001: First signal must create a named RR CRD for dedup comparison")
 
 				firstCRDName := response1.RemediationRequestName
 
@@ -232,8 +230,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				By("1. Process multiple Prometheus signals targeting different pods")
 				// Issue #63: alertname excluded from fingerprint — use different pods for different fingerprints
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				signal1Payload := createPrometheusAlertForPod(testNamespace, "test-alert-1", "critical", "", "", "pod-alpha")
-				signal2Payload := createPrometheusAlertForPod(testNamespace, "test-alert-2", "warning", "", "", "pod-beta")
+				signal1Payload := createPrometheusAlertForPod(testNamespace, "test-alert-1", "critical", "", "pod-alpha")
+				signal2Payload := createPrometheusAlertForPod(testNamespace, "test-alert-2", "warning", "", "pod-beta")
 
 				// Parse signals
 				signal1, err := prometheusAdapter.Parse(ctx, signal1Payload)
@@ -326,7 +324,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 					}
 					receivedEvents = events
 					return true
-				}			, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
+				}, 30*time.Second, 500*time.Millisecond).Should(BeTrue(),
 					"gateway.signal.received audit event should exist")
 
 				By("4. Validate all custom labels are preserved")
@@ -380,7 +378,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-006] should emit gateway.crd.created audit event after RemediationRequest creation", func() {
 				By("1. Process Prometheus signal to create CRD")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				signalPayload := createPrometheusAlert(testNamespace, "test-crd-audit", "critical", "", "")
+				signalPayload := createPrometheusAlert(testNamespace, "test-crd-audit", "critical", "")
 
 				signal, err := prometheusAdapter.Parse(ctx, signalPayload)
 				Expect(err).ToNot(HaveOccurred())
@@ -522,7 +520,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-008] should include fingerprint in gateway.crd.created audit event for dedup tracking", func() {
 				By("1. Process Prometheus signal to create CRD")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				signalPayload := createPrometheusAlert(testNamespace, "high-cpu-usage", "warning", "", "")
+				signalPayload := createPrometheusAlert(testNamespace, "high-cpu-usage", "warning", "")
 
 				signal, err := prometheusAdapter.Parse(ctx, signalPayload)
 				Expect(err).ToNot(HaveOccurred())
@@ -573,8 +571,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				By("1. Process multiple Prometheus signals targeting different pods")
 				// Issue #63: alertname excluded from fingerprint — use different pods for different fingerprints
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				signal1Payload := createPrometheusAlertForPod(testNamespace, "alert-multi-1", "critical", "", "", "pod-multi-1")
-				signal2Payload := createPrometheusAlertForPod(testNamespace, "alert-multi-2", "warning", "", "", "pod-multi-2")
+				signal1Payload := createPrometheusAlertForPod(testNamespace, "alert-multi-1", "critical", "", "pod-multi-1")
+				signal2Payload := createPrometheusAlertForPod(testNamespace, "alert-multi-2", "warning", "", "pod-multi-2")
 
 				signal1, err := prometheusAdapter.Parse(ctx, signal1Payload)
 				Expect(err).ToNot(HaveOccurred())
@@ -644,7 +642,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				By("1. Create first RemediationRequest CRD")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 				// Use identical fingerprint to trigger deduplication
-				firstSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", "", "")
+				firstSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", "")
 
 				signal1, err := prometheusAdapter.Parse(ctx, firstSignalPayload)
 				Expect(err).ToNot(HaveOccurred())
@@ -658,13 +656,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				firstCRDName := response1.RemediationRequestName
 
-			Eventually(func() error {
-				var rr remediationv1alpha1.RemediationRequest
-				return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: firstCRDName}, &rr)
-			}, "5s", "100ms").Should(Succeed())
+				Eventually(func() error {
+					var rr remediationv1alpha1.RemediationRequest
+					return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: firstCRDName}, &rr)
+				}, "5s", "100ms").Should(Succeed())
 
-			By("2. Send duplicate signal with same fingerprint")
-			secondSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", firstFingerprint, "")
+				By("2. Send duplicate signal with same fingerprint")
+				secondSignalPayload := createPrometheusAlert(testNamespace, "repeated-error", "error", "")
 				signal2, err := prometheusAdapter.Parse(ctx, secondSignalPayload)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -712,7 +710,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-012] should include existing RR reference in deduplicated audit event", func() {
 				By("1. Create first RemediationRequest CRD")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				firstSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", "", "")
+				firstSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", "")
 
 				signal1, err := prometheusAdapter.Parse(ctx, firstSignalPayload)
 				Expect(err).ToNot(HaveOccurred())
@@ -726,13 +724,13 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				existingRRName := response1.RemediationRequestName
 
-			Eventually(func() error {
-				var rr remediationv1alpha1.RemediationRequest
-				return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: existingRRName}, &rr)
-			}, "5s", "100ms").Should(Succeed())
+				Eventually(func() error {
+					var rr remediationv1alpha1.RemediationRequest
+					return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: existingRRName}, &rr)
+				}, "5s", "100ms").Should(Succeed())
 
-			By("2. Send duplicate signal")
-			secondSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", firstFingerprint, "")
+				By("2. Send duplicate signal")
+				secondSignalPayload := createPrometheusAlert(testNamespace, "existing-rr-test", "critical", "")
 				signal2, err := prometheusAdapter.Parse(ctx, secondSignalPayload)
 				Expect(err).ToNot(HaveOccurred())
 				signal2.Fingerprint = firstFingerprint
@@ -782,9 +780,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-009] should include occurrence_count=1 in CRD created audit event for new signal", func() {
 				By("1. Create unique Prometheus alert")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				fingerprint := fmt.Sprintf("aaa%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
 				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alertPayload := createPrometheusAlert(testNamespace, "TestAlert", "critical", fingerprint, correlationID)
+				alertPayload := createPrometheusAlert(testNamespace, "TestAlert", "critical", correlationID)
 
 				By("2. Process signal through Gateway")
 				signal, err := prometheusAdapter.Parse(ctx, alertPayload)
@@ -837,9 +834,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-013] should include incremented occurrence_count in deduplication audit events", func() {
 				By("1. Create initial signal and process")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				fingerprint := fmt.Sprintf("bbb%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
 				correlationID1 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert1 := createPrometheusAlert(testNamespace, "HighCPU", "critical", fingerprint, correlationID1)
+				alert1 := createPrometheusAlert(testNamespace, "HighCPU", "critical", correlationID1)
 
 				signal1, err := prometheusAdapter.Parse(ctx, alert1)
 				Expect(err).ToNot(HaveOccurred())
@@ -852,14 +848,14 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				Expect(err).ToNot(HaveOccurred())
 				existingRRName := response1.RemediationRequestName
 
-			Eventually(func() error {
-				var rr remediationv1alpha1.RemediationRequest
-				return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: existingRRName}, &rr)
-			}, "5s", "100ms").Should(Succeed())
+				Eventually(func() error {
+					var rr remediationv1alpha1.RemediationRequest
+					return k8sClient.Get(ctx, client.ObjectKey{Namespace: "kubernaut-system", Name: existingRRName}, &rr)
+				}, "5s", "100ms").Should(Succeed())
 
-			By("2. Process duplicate signal (same fingerprint)")
-			correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert2 := createPrometheusAlert(testNamespace, "HighCPU", "critical", fingerprint, correlationID2)
+				By("2. Process duplicate signal (same fingerprint)")
+				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
+				alert2 := createPrometheusAlert(testNamespace, "HighCPU", "critical", correlationID2)
 
 				signal2, err := prometheusAdapter.Parse(ctx, alert2)
 				Expect(err).ToNot(HaveOccurred())
@@ -906,9 +902,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				By("1. Create first signal with fingerprint A (pod-memory)")
 				// Issue #63: alertname excluded from fingerprint — use different pods for different fingerprints
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				fingerprintA := fmt.Sprintf("ccc%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
 				correlationID1 := fmt.Sprintf("rr-%s-%08x", uuid.New().String()[:12], uuid.New().ID())
-				alert1 := createPrometheusAlertForPod(testNamespace, "HighMemory", "warning", fingerprintA, correlationID1, "pod-memory")
+				alert1 := createPrometheusAlertForPod(testNamespace, "HighMemory", "warning", correlationID1, "pod-memory")
 
 				signal1, err := prometheusAdapter.Parse(ctx, alert1)
 				Expect(err).ToNot(HaveOccurred())
@@ -923,9 +918,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				rrNameA := response1.RemediationRequestName
 
 				By("2. Create second signal with fingerprint B (pod-disk)")
-				fingerprintB := fmt.Sprintf("ddd%s000000000000000000000000000000000000000000000000000000000", uuid.New().String()[:8])
 				correlationID2 := fmt.Sprintf("rr-%s-%08x", uuid.New().String()[:12], uuid.New().ID())
-				alert2 := createPrometheusAlertForPod(testNamespace, "DiskFull", "critical", fingerprintB, correlationID2, "pod-disk")
+				alert2 := createPrometheusAlertForPod(testNamespace, "DiskFull", "critical", correlationID2, "pod-disk")
 
 				signal2, err := prometheusAdapter.Parse(ctx, alert2)
 				Expect(err).ToNot(HaveOccurred())
@@ -937,7 +931,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("3. Process duplicate of fingerprint A (same pod-memory)")
 				correlationID3 := fmt.Sprintf("rr-%s-%08x", uuid.New().String()[:12], uuid.New().ID())
-				alert3 := createPrometheusAlertForPod(testNamespace, "HighMemory", "warning", fingerprintA, correlationID3, "pod-memory")
+				alert3 := createPrometheusAlertForPod(testNamespace, "HighMemory", "warning", correlationID3, "pod-memory")
 
 				signal3, err := prometheusAdapter.Parse(ctx, alert3)
 				Expect(err).ToNot(HaveOccurred())
@@ -985,7 +979,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 				By("1. Create initial signal and process")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 				correlationID1 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert1 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", correlationID1)
+				alert1 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", correlationID1)
 
 				signal1, err := prometheusAdapter.Parse(ctx, alert1)
 				Expect(err).ToNot(HaveOccurred())
@@ -1014,7 +1008,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("3. Process duplicate signal (same fingerprint)")
 				correlationID2 := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert2 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", "", correlationID2)
+				alert2 := createPrometheusAlert(testNamespace, "ServiceDown", "critical", correlationID2)
 
 				signal2, err := prometheusAdapter.Parse(ctx, alert2)
 				Expect(err).ToNot(HaveOccurred())
@@ -1087,11 +1081,10 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 			var correlationIDs []string
 			for i := 0; i < 3; i++ {
-				fingerprint := fmt.Sprintf("%064x", uuid.New().ID()+uint32(i))
 				correlationID := fmt.Sprintf("rr-%s-%08x", uuid.New().String()[:12], uuid.New().ID())
 
 				// Issue #63: alertname excluded from fingerprint — use different pods for different fingerprints
-				alert := createPrometheusAlertForPod(testNamespace, fmt.Sprintf("TestAlert%d", i), "critical", fingerprint, correlationID, fmt.Sprintf("pod-audit-%d", i))
+				alert := createPrometheusAlertForPod(testNamespace, fmt.Sprintf("TestAlert%d", i), "critical", correlationID, fmt.Sprintf("pod-audit-%d", i))
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -1186,9 +1179,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-016] should emit gateway.crd.failed audit event when K8s API fails", func() {
 				By("1. Create signal and process with failing K8s client")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
 				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert := createPrometheusAlert(testNamespace, "TestK8sFailure", "critical", fingerprint, correlationID)
+				alert := createPrometheusAlert(testNamespace, "TestK8sFailure", "critical", correlationID)
 
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
@@ -1261,9 +1253,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-017] should include error_type (transient vs permanent) in audit event", func() {
 				By("1. Create signal and process with transient K8s error")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
 				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert := createPrometheusAlert(testNamespace, "TestErrorType", "critical", fingerprint, correlationID)
+				alert := createPrometheusAlert(testNamespace, "TestErrorType", "critical", correlationID)
 
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
@@ -1331,9 +1322,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 			It("[GW-INT-AUD-018] should emit separate audit events for each retry attempt", func() {
 				By("1. Create signal and process with retryable (503) K8s client error")
 				prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
-				fingerprint := fmt.Sprintf("%064x", uuid.New().ID())
 				correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				alert := createPrometheusAlert(testNamespace, "TestRetryAudit018", "critical", fingerprint, correlationID)
+				alert := createPrometheusAlert(testNamespace, "TestRetryAudit018", "critical", correlationID)
 
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
@@ -1432,12 +1422,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				// Make 10 failing requests to trip circuit breaker (50% failure rate threshold)
 				for i := 0; i < 10; i++ {
-					fingerprint := func() string {
-						h := sha256.Sum256([]byte(fmt.Sprintf("cb-trip-%d-%s", i, uuid.New().String())))
-						return hex.EncodeToString(h[:])
-					}()
 					correlationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-					alertPayload := createPrometheusAlert(testNamespace, "CircuitBreakerTripTest", "critical", fingerprint, correlationID)
+					alertPayload := createPrometheusAlert(testNamespace, "CircuitBreakerTripTest", "critical", correlationID)
 
 					signal, err := prometheusAdapter.Parse(ctx, alertPayload)
 					Expect(err).ToNot(HaveOccurred())
@@ -1448,9 +1434,8 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 				By("3. Process signal that should hit open circuit breaker")
 				// Circuit breaker should now be OPEN, causing immediate failure
-				testFingerprint := fmt.Sprintf("%064x", uuid.New().ID())
 				testCorrelationID := fmt.Sprintf("rr-%s-%d", uuid.New().String()[:12], time.Now().Unix())
-				testAlertPayload := createPrometheusAlert(testNamespace, "CircuitBreakerOpenTest", "critical", testFingerprint, testCorrelationID)
+				testAlertPayload := createPrometheusAlert(testNamespace, "CircuitBreakerOpenTest", "critical", testCorrelationID)
 
 				testSignal, err := prometheusAdapter.Parse(ctx, testAlertPayload)
 				Expect(err).ToNot(HaveOccurred())

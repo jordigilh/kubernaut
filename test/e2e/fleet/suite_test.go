@@ -91,6 +91,11 @@ import (
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 const (
 	timeout  = 10 * time.Minute
 	interval = 500 * time.Millisecond
@@ -135,14 +140,15 @@ var (
 	anyTestFailed bool
 )
 
-// postWithFleetAuth sends an authenticated POST request to the Gateway.
-// Uses fpAuthToken (BR-GATEWAY-036/037) provisioned in BeforeSuite.
-func postWithFleetAuth(url, contentType string, body io.Reader) (*http.Response, error) {
+// postWithFleetAuth sends an authenticated POST request to the Gateway with a
+// fixed "application/json" content type (the only content type used across
+// all e2e/fleet tests). Uses fpAuthToken (BR-GATEWAY-036/037) provisioned in BeforeSuite.
+func postWithFleetAuth(url string, body io.Reader) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
 	if fpAuthToken != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", fpAuthToken))
@@ -182,28 +188,24 @@ const fmcSyncTimeout = 45 * time.Second
 // retries while the response status is not one of acceptableStatus (defaults to
 // 201 Created). See fmcSyncTimeout for why the retry window must exceed FMC's
 // sync interval.
-
-func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableStatus ...int) (int, []byte) {
+func postFleetAlertUntilAccepted(gatewayURL string, payload []byte, acceptableStatus ...int) []byte {
 	if len(acceptableStatus) == 0 {
 		acceptableStatus = []int{http.StatusCreated}
 	}
-	var (
-		statusCode int
-		respBody   []byte
-	)
+	var respBody []byte
 	Eventually(func(g Gomega) {
 		resp, err := postWithFleetAuth(gatewayURL+"/api/v1/signals/prometheus",
-			"application/json", strings.NewReader(string(payload)))
+			strings.NewReader(string(payload)))
 		g.Expect(err).ToNot(HaveOccurred())
 		body, readErr := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		g.Expect(readErr).ToNot(HaveOccurred())
 
-		statusCode, respBody = resp.StatusCode, body
+		respBody = body
 		g.Expect(acceptableStatus).To(ContainElement(resp.StatusCode),
 			"Gateway should accept the alert (body: %s)", string(body))
 	}, fmcSyncTimeout, 1*time.Second).Should(Succeed())
-	return statusCode, respBody
+	return respBody
 }
 
 // fleetKeycloakNodePort is this suite's Keycloak NodePort (DD-TEST-001, same
@@ -238,27 +240,30 @@ const fleetKeycloakNodePort = 30557
 // test/infrastructure/fleet_e2e.go, which proved the same pattern during
 // SynchronizedBeforeSuite's readiness probe.
 func fleetAuthenticatedHTTPClient() (*http.Client, error) {
-	cfg := infrastructure.DefaultKeycloakFleetReadConfig(fleetKeycloakNodePort)
+	cfg := infrastructure.DefaultKeycloakFleetReadConfig(fleetKeycloakNodePort, kubeconfigPath)
 	cfg.Scopes = []string{"kube-mcp-server-audience"}
-	token, err := infrastructure.GetKeycloakClientCredentialsToken(cfg)
+	token, err := infrastructure.GetKeycloakClientCredentialsToken(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("acquire Keycloak client_credentials token: %w", err)
 	}
 	return &http.Client{Transport: testauth.NewStaticTokenTransport(token)}, nil
 }
 
-// newFleetMCPClient creates an MCP client with auto-discovered tool prefix.
-// Kuadrant uses "remote_cluster_" (from MCPServerRegistration spec.prefix),
-// not the EAIGW "{clusterID}__" convention. DiscoverToolPrefix queries
-// tools/list and extracts the correct prefix for the given cluster.
+// newFleetMCPClient creates an MCP client with auto-discovered tool prefix for
+// the "remote-cluster" registration (the only cluster targeted across all
+// e2e/fleet MCP tests). Kuadrant uses "remote_cluster_" (from
+// MCPServerRegistration spec.prefix), not the EAIGW "{clusterID}__" convention.
+// DiscoverToolPrefix queries tools/list and extracts the correct prefix for
+// the given cluster.
 //
 // Retries up to 90s to handle the broker sync delay where the MCP gateway
 // hasn't finished syncing tools from kube-mcp-server yet (~60s observed in
 // spike S15).
-func newFleetMCPClient(ctx context.Context, clusterID string) (*mcpclient.Client, error) {
+func newFleetMCPClient(ctx context.Context) (*mcpclient.Client, error) {
 	const (
 		maxRetries    = 18
 		retryInterval = 5 * time.Second
+		clusterID     = "remote-cluster"
 	)
 
 	authClient, err := fleetAuthenticatedHTTPClient()
@@ -346,7 +351,7 @@ func warmUpFleetMCPSession(ctx context.Context, c *mcpclient.Client) error {
 }
 
 func TestFleetE2E(t *testing.T) {
-	if os.Getenv("FLEET_E2E") != "true" {
+	if os.Getenv("FLEET_E2E") != trueFixture {
 		t.Skip("FLEET_E2E=true required for fleet E2E tests")
 	}
 	RegisterFailHandler(Fail)
@@ -363,7 +368,7 @@ var _ = SynchronizedBeforeSuite(
 		tempKubeconfigPath := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
 		GinkgoWriter.Printf("Using isolated kubeconfig: %s\n", tempKubeconfigPath)
 
-		if os.Getenv("FLEET_E2E_REUSE_CLUSTER") == "true" {
+		if os.Getenv("FLEET_E2E_REUSE_CLUSTER") == trueFixture {
 			GinkgoWriter.Println("⚡ FLEET_E2E_REUSE_CLUSTER=true — skipping infrastructure setup, reusing existing cluster")
 
 			By("Retrieving existing ServiceAccount tokens")
@@ -560,7 +565,7 @@ var _ = SynchronizedAfterSuite(
 		setupFailed := k8sClient == nil
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true" || os.Getenv("FLEET_E2E_REUSE_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == trueFixture || os.Getenv("KEEP_CLUSTER") == trueFixture || os.Getenv("FLEET_E2E_REUSE_CLUSTER") == trueFixture
 
 		remoteClusterName := clusterName + "-remote"
 
@@ -591,7 +596,7 @@ var _ = SynchronizedAfterSuite(
 			infrastructure.CleanupFullPipelineTestResources(kubeconfigPath, GinkgoWriter)
 		}
 
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			for _, svc := range []struct{ service, deployment string }{
 				{"signalprocessing", "signalprocessing-controller"},
 				{"remediationorchestrator", "remediationorchestrator-controller"},

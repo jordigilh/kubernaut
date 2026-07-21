@@ -109,7 +109,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 				DockerfilePath:   dockerfile,
 				BuildContextPath: buildCtx,
 			}
-			img, err := BuildImageForKind(cfg, writer)
+			img, err := BuildImageForKind(ctx, cfg, writer)
 			results <- buildResult{name, img, err}
 		}(svc.name, svc.image, svc.dockerfile, svc.buildCtx)
 	}
@@ -144,7 +144,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
 	}
-	if err := CreateKindClusterWithConfig(opts, writer); err != nil {
+	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -153,14 +153,14 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	if imageRegistry != "" {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading AF image into Kind (coverage build); others pull from GHCR...")
-		if err := LoadImageToKind(images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, images["apifrontend"], "apifrontend", clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load apifrontend image: %w", err)
 		}
 		_, _ = fmt.Fprintln(writer, "  apifrontend loaded")
 	} else {
 		_, _ = fmt.Fprintln(writer, "\nPHASE 3: Loading images into Kind...")
 		for name, img := range images {
-			if err := LoadImageToKind(img, name, clusterName, writer); err != nil {
+			if err := LoadImageToKind(ctx, img, name, clusterName, writer); err != nil {
 				return fmt.Errorf("failed to load %s image: %w", name, err)
 			}
 			_, _ = fmt.Fprintf(writer, "  %s loaded\n", name)
@@ -172,7 +172,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\nPHASE 4: Deploying kubernaut stack...")
 
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -204,7 +204,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("KA RBAC failed: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  Deploying Kubernaut Agent...")
-	if err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, images["kubernautagent"], false, writer); err != nil {
+	if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, images["kubernautagent"], false, writer); err != nil {
 		return fmt.Errorf("KA deploy failed: %w", err)
 	}
 
@@ -249,7 +249,7 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	testWorkflows := GetKAE2ETestWorkflows()
 	// #1661 Phase 55: seed via kubectl apply (real AuthWebhook admission pipeline)
 	// instead of DS's retired Postgres-backed inline endpoint.
-	if _, seedErr = SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
+	if _, seedErr = SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
 		return fmt.Errorf("seed workflows: %w", seedErr)
 	}
 
@@ -298,7 +298,7 @@ func BuildAFImage(writer io.Writer) (string, error) {
 		DockerfilePath: "docker/apifrontend.Dockerfile",
 		EnableCoverage: true,
 	}
-	return BuildImageForKind(cfg, writer)
+	return BuildImageForKind(context.Background(), cfg, writer)
 }
 
 // AFGenerateCerts runs the AF cert generation script.

@@ -22,7 +22,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 
 	It("IT-AF-1332-W01: HandleRemediate creates RR via envtest", func() {
 		ctx := context.Background()
-		ns := "default"
+		ns := defaultFixture
 
 		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
 			Namespace:   ns,
@@ -46,7 +46,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 
 	It("IT-AF-1332-W02: HandleRemediate does NOT create InvestigationSession", func() {
 		ctx := context.Background()
-		ns := "default"
+		ns := defaultFixture
 
 		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
 			Namespace:   ns,
@@ -75,7 +75,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 
 	It("IT-AF-1332-W03: HandleRemediate returns existing RR via RRID lookup", func() {
 		ctx := context.Background()
-		ns := "default"
+		ns := defaultFixture
 
 		rrName := fmt.Sprintf("rr-existing-1332-w03-%d", GinkgoRandomSeed())
 		now := time.Now().UTC().Format(time.RFC3339)
@@ -89,13 +89,13 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 					"namespace": ns,
 				},
 				"spec": map[string]interface{}{
-					"signalName":      "test-signal-w03",
-					"signalType":      "alert",
+					"signalName":        "test-signal-w03",
+					"signalType":        "alert",
 					"signalFingerprint": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-					"severity":        "warning",
-					"firingTime":      now,
-					"receivedTime":    now,
-					"targetType":      "kubernetes",
+					"severity":          "warning",
+					"firingTime":        now,
+					"receivedTime":      now,
+					"targetType":        "kubernetes",
 					"targetResource": map[string]interface{}{
 						"kind":      "Deployment",
 						"name":      "web-existing",
@@ -120,7 +120,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 
 	It("IT-AF-1332-W04: HandleRemediate with non-existent RRID returns graceful not-found", func() {
 		ctx := context.Background()
-		ns := "default"
+		ns := defaultFixture
 
 		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
 			RRID: "rr-nonexistent-1332",
@@ -133,8 +133,8 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 	It("IT-AF-1332-W05: HandleRemediate with nil client returns ErrK8sUnavailable", func() {
 		ctx := context.Background()
 
-		_, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: nil, ControllerNS: "default"}, &tools.RemediateArgs{
-			Namespace:   "default",
+		_, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: nil, ControllerNS: defaultFixture}, &tools.RemediateArgs{
+			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-nil",
 			Description: "nil client test",
@@ -145,7 +145,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 
 	It("IT-AF-1332-W06: HandleRemediate emits audit event via envtest", func() {
 		ctx := context.Background()
-		ns := "default"
+		ns := defaultFixture
 		auditRecorder.Reset()
 
 		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Auditor: auditRecorder}, &tools.RemediateArgs{

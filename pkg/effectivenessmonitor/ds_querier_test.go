@@ -117,7 +117,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				serveOgenCompliantResponse(w, []map[string]interface{}{
 					testAuditEvent("remediation.workflow_created", "test-correlation-001", map[string]interface{}{
 						"rr_name":                   "test-rr",
-						"namespace":                 "test-ns",
+						"namespace":                 testNs,
 						"pre_remediation_spec_hash": expectedHash,
 					}),
 				})
@@ -147,7 +147,7 @@ var _ = Describe("DataStorageQuerier (DD-EM-002)", func() {
 				serveOgenCompliantResponse(w, []map[string]interface{}{
 					testAuditEvent("remediation.workflow_created", "test-correlation-003", map[string]interface{}{
 						"rr_name":   "test-rr",
-						"namespace": "test-ns",
+						"namespace": testNs,
 					}),
 				})
 			}))

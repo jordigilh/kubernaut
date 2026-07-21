@@ -27,10 +27,10 @@ type RemediationRequestOpts struct {
 	SignalFingerprint string
 	SignalName        string
 	Severity          string
-	// DEPRECATED: Environment removed from RR spec per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
+	// Deprecated: Environment removed from RR spec per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
 	// Now in SignalProcessingStatus.EnvironmentClassification.Environment
 	Environment string
-	// DEPRECATED: Priority removed from RR spec per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
+	// Deprecated: Priority removed from RR spec per NOTICE_RO_REMEDIATIONREQUEST_SCHEMA_UPDATE.md
 	// Now in SignalProcessingStatus.PriorityAssignment.Priority
 	Priority        string
 	SignalType      string

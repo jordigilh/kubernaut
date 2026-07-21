@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -71,7 +72,7 @@ var RegisteredWorkflowUUIDs = make(map[string]string)
 //
 // Returns the registered workflow bundle references for use in WorkflowExecution specs.
 // Also populates RegisteredWorkflowUUIDs for tests that need DS UUIDs (DD-WE-006).
-func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
+func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
 	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
 	// #1661 Phase 53: direct CRD creation -- no DataStorage round-trip dependency for
 	// ActionType, unlike the removed SeedActionTypesViaAPIWithTLS.
@@ -88,7 +89,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 	// status.catalogStatus=Active via validateActionTypeExists). SeedE2EActionTypes
 	// is the AW-aware variant: same "kubectl apply", but blocks on
 	// `.status.registered=true` before returning, closing that race.
-	if err := SeedE2EActionTypes(kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
+	if err := SeedE2EActionTypes(ctx, kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
 		return nil, fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -142,7 +143,7 @@ func BuildAndRegisterTestWorkflows(clusterName, kubeconfigPath, dataStorageURL, 
 		specs = append(specs, WorkflowSeedSpec{FixtureDir: bw.fixtureDIR})
 	}
 
-	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(kubeconfigPath, WorkflowExecutionNamespace, specs, output)
+	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, WorkflowExecutionNamespace, specs, output)
 	if seedErr != nil {
 		return nil, fmt.Errorf("failed to register test workflow bundles: %w", seedErr)
 	}

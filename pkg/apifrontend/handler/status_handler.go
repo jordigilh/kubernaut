@@ -200,7 +200,7 @@ func (h *StatusHandler) initSubscribeState(ctx context.Context, rr *remediationv
 		rrResourceVersion: rr.ResourceVersion,
 		isFinal:           tools.IsTerminalPhase(phase),
 	}
-	if phase == "Verifying" {
+	if phase == string(remediationv1.PhaseVerifying) {
 		st.ea = h.fetchEA(ctx, rr)
 	}
 	return st
@@ -210,7 +210,7 @@ func (h *StatusHandler) initSubscribeState(ctx context.Context, rr *remediationv
 // continue past the initial (possibly terminal) status update, seeding the
 // diff baseline from the EA snapshot captured in initSubscribeState.
 func (h *StatusHandler) startInitialEAWatch(ctx context.Context, rr *remediationv1.RemediationRequest, st *subscribeStreamState, cleanup *subscribeCleanup) {
-	if string(rr.Status.OverallPhase) != "Verifying" || st.ea == nil {
+	if string(rr.Status.OverallPhase) != string(remediationv1.PhaseVerifying) || st.ea == nil {
 		return
 	}
 	st.prevEA = st.ea.DeepCopy()
@@ -318,7 +318,7 @@ func (h *StatusHandler) handleRRWatchEvent(
 	}
 	st.lastSeenPhase = newPhase
 
-	if newPhase == "Verifying" && st.eaCh == nil {
+	if newPhase == string(remediationv1.PhaseVerifying) && st.eaCh == nil {
 		h.bootstrapEAWatch(ctx, rrObj, st, lc.Cleanup)
 	}
 

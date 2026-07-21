@@ -114,7 +114,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				// THEN: Normalized severity is persisted in Status
 				g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
 					"Controller should write normalized severity to Status.Severity")
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 					"Status.Severity should be normalized value per operator policy (not external 'Sev1')")
 			}, "30s", "1s").Should(Succeed())
 
@@ -177,7 +177,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 					"CUSTOM_VALUE should be mapped to a normalized severity by policy")
 				// Note: Could capture initial severity and compare after reload in REFACTOR phase
 			}, "30s", "1s").Should(Succeed())
@@ -197,7 +197,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				}, &updated)).To(Succeed())
 
 				// Verify severity can be re-evaluated (policy hot-reload functional)
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 					"Severity determination should continue working after policy reload")
 			}, "60s", "2s").Should(Succeed())
 
@@ -257,14 +257,14 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 				// Query by unique correlation_id (avoids parallel test collisions)
 				count := countAuditEvents(spaudit.EventTypeClassificationDecision, correlationID)
 
-			// Enhanced logging to detect duplicate events (BR-SP-105)
-			// Per DD-SEVERITY-001: "One classification decision = one audit event"
-			GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
-				time.Now().Format("15:04:05.000"), count, correlationID)
+				// Enhanced logging to detect duplicate events (BR-SP-105)
+				// Per DD-SEVERITY-001: "One classification decision = one audit event"
+				GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
+					time.Now().Format("15:04:05.000"), count, correlationID)
 
-			g.Expect(count).To(Equal(1),
-				fmt.Sprintf("Should have exactly 1 classification.decision event for this correlation_id, but found %d events (correlation_id: %s)",
-					count, correlationID))
+				g.Expect(count).To(Equal(1),
+					fmt.Sprintf("Should have exactly 1 classification.decision event for this correlation_id, but found %d events (correlation_id: %s)",
+						count, correlationID))
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			// Get the event for detailed assertions
@@ -283,7 +283,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Validate normalized severity is captured
 			Expect(payload.NormalizedSeverity.IsSet()).To(BeTrue(), "Normalized severity should be set")
 			normalizedSev := string(payload.NormalizedSeverity.Value)
-			Expect(normalizedSev).To(BeElementOf([]string{"critical", "high", "warning", "info", "unknown"}),
+			Expect(normalizedSev).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo, signalprocessingv1alpha1.SeverityUnknown}),
 				"Normalized severity should be standard value")
 
 			// Validate determination source for audit trail
@@ -343,13 +343,13 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			Eventually(func(g Gomega) {
 				count := countAuditEvents(spaudit.EventTypeClassificationDecision, correlationID)
 
-			// Enhanced logging to detect duplicate events (BR-SP-105)
-			GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
-				time.Now().Format("15:04:05.000"), count, correlationID)
+				// Enhanced logging to detect duplicate events (BR-SP-105)
+				GinkgoWriter.Printf("[%s] classification.decision audit events found: %d (expected: 1, correlation_id: %s)\n",
+					time.Now().Format("15:04:05.000"), count, correlationID)
 
-			g.Expect(count).To(Equal(1),
-				fmt.Sprintf("Should have exactly 1 classification.decision event, but found %d events (correlation_id: %s)",
-					count, correlationID))
+				g.Expect(count).To(Equal(1),
+					fmt.Sprintf("Should have exactly 1 classification.decision event, but found %d events (correlation_id: %s)",
+						count, correlationID))
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
 			event, err := getLatestAuditEvent(spaudit.EventTypeClassificationDecision, correlationID)
@@ -365,7 +365,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 			// Fallback should be critical/warning/info per operator policy (NOT "unknown")
 			normalizedSeverity := string(payload.NormalizedSeverity.Value)
-			Expect(normalizedSeverity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
+			Expect(normalizedSeverity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 				"Normalized severity should be operator-defined (critical/warning/info), NOT system 'unknown'")
 
 			// Source should be rego-policy (operator-defined behavior)
@@ -396,7 +396,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 
 			// GIVEN: SignalProcessing is created
 			sp := createTestSignalProcessingCRD(namespace, "test-policy-hash")
-			sp.Spec.Signal.Severity = "critical"
+			sp.Spec.Signal.Severity = signalprocessingv1alpha1.SeverityCritical
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// Get unique correlation ID (per DD-AUDIT-CORRELATION-001)
@@ -560,7 +560,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					Name:      sp.Name,
 					Namespace: sp.Namespace,
 				}, &updated)).To(Succeed())
-				g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
+				g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 					"CustomSeverity should be mapped to normalized severity by policy")
 				initialSeverity = updated.Status.Severity
 			}, "30s", "1s").Should(Succeed())
@@ -570,7 +570,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 			// Hot-reload pattern verified by existing environment/priority classifiers (lines 205-239 in main.go)
 			// fsnotify detects ConfigMap file changes → reloads policy → new determinations use updated policy
 
-			Expect(initialSeverity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
+			Expect(initialSeverity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 				"Initial severity determination should work with loaded policy")
 
 			// Full ConfigMap update → policy reload → new determination tested in E2E tier
@@ -623,7 +623,7 @@ var _ = Describe("Severity Determination Integration Tests", Label("integration"
 					// THEN: All CRDs have severity determined correctly
 					g.Expect(updated.Status.Severity).ToNot(BeEmpty(),
 						"Concurrent CRD %s should have severity determined", spName)
-					g.Expect(updated.Status.Severity).To(BeElementOf([]string{"critical", "high", "warning", "info"}),
+					g.Expect(updated.Status.Severity).To(BeElementOf([]string{signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh, signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo}),
 						"Concurrent CRD %s should have valid normalized severity per operator policy", spName)
 				}
 			}, "60s", "2s").Should(Succeed())
@@ -659,7 +659,7 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 			Signal: signalprocessingv1alpha1.SignalData{
 				Fingerprint:  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", // Valid 64-char hex fingerprint
 				Name:         "TestAlert",
-				Severity:     "critical", // Default, overridden by tests
+				Severity:     signalprocessingv1alpha1.SeverityCritical, // Default, overridden by tests
 				Type:         "alert",
 				Source:       "test-source",
 				TargetType:   "kubernetes",
@@ -673,5 +673,6 @@ func createTestSignalProcessingCRD(namespace, name string) *signalprocessingv1al
 		},
 	}
 }
+
 // Note: flushAuditStoreAndWait() helper is defined in audit_integration_test.go
 // and shared across all integration tests in this package.

@@ -1,7 +1,7 @@
 # Spike: OCI Image Packaging Contract per Runtime Type
 
 **Date**: May 19, 2026
-**Status**: COMPLETED
+**Status**: COMPLETED — ⚠️ SUPERSEDED by [#1536](https://github.com/jordigilh/kubernaut/issues/1536); the runtime-aware CRD sketch below (`execution.runtime: goose|oas|deepagent`) has been replaced by an opaque-OCI-image model. Retained for historical context.
 **Duration**: 1 session
 **Relates to**: [PROPOSAL-EXT-004](../proposals/PROPOSAL-EXT-004-goose-recipes.md), [PROPOSAL-EXT-005](../proposals/PROPOSAL-EXT-005-oracle-agent-spec.md), [PROPOSAL-EXT-006](../proposals/PROPOSAL-EXT-006-deep-agents.md)
 **Code**: [oci-runtime-contract/](oci-runtime-contract/)

@@ -81,7 +81,7 @@ func DeployIsolatedDataStorageInstance(ctx context.Context, namespace, kubeconfi
 	_, _ = fmt.Fprintf(writer, "🏗️  Deploying ISOLATED DataStorage resilience instance in %s\n", namespace)
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create isolated namespace: %w", err)
 	}
 

@@ -149,7 +149,7 @@ func wireAuthWebhookAuditStore(ctx context.Context, cfg *awconfig.Config) audit.
 		MaxRetries:    cfg.DataStorage.Buffer.MaxRetries,
 	}
 
-	auditStore, err := audit.NewBufferedStore(
+	auditStore, err := audit.NewBufferedStore( //nolint:contextcheck // background audit writer goroutine is fire-and-forget by design; not tied to any single request
 		dsClient,
 		auditConfig,
 		"authwebhook",
@@ -166,7 +166,7 @@ func wireAuthWebhookAuditStore(ctx context.Context, cfg *awconfig.Config) audit.
 		setupLog.Info("Flushing audit store before shutdown...")
 		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := auditStore.Flush(flushCtx); err != nil {
+		if err := auditStore.Flush(flushCtx); err != nil { //nolint:contextcheck // flush uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
 			setupLog.Error(err, "failed to flush audit store during shutdown")
 		} else {
 			setupLog.Info("Audit store flushed successfully")
@@ -367,6 +367,12 @@ func configureAuthWebhookTLSAndHotReload(ctx context.Context, cfg *awconfig.Conf
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (cleanupHotReload) always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ADR-030: YAML-based configuration via -config flag
 	var configPath string
 	flag.StringVar(&configPath, "config", awconfig.DefaultConfigPath, "Path to YAML configuration file (ADR-030)")
@@ -391,6 +397,7 @@ func main() {
 	setupLog.Info("Starting webhook server", "port", cfg.Webhook.Port)
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

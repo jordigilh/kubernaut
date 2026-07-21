@@ -209,7 +209,7 @@ func buildRequestBody(model string, req Request, stream bool) map[string]any {
 	if len(req.ResponseSchema) > 0 {
 		body["response_format"] = map[string]any{
 			"type":        "json_schema",
-			"json_schema": json.RawMessage(req.ResponseSchema),
+			"json_schema": req.ResponseSchema,
 		}
 	}
 	applyEffort(body, req.Effort, req.EffortDialect)
@@ -308,7 +308,7 @@ func buildTools(defs []ToolDefinition) []map[string]any {
 			"description": td.Description,
 		}
 		if len(td.Parameters) > 0 {
-			fn["parameters"] = json.RawMessage(td.Parameters)
+			fn["parameters"] = td.Parameters
 		}
 		tools = append(tools, map[string]any{
 			"type":     "function",

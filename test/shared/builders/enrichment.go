@@ -81,6 +81,7 @@ func (b *EnrichmentBuilder) WithWorkload(kind, name string, labels map[string]st
 }
 
 // WithPodDetails sets pod details in Kubernetes context.
+//
 // Deprecated: Use WithWorkload for Issue #113 unified schema. Kept for backward compatibility in tests.
 func (b *EnrichmentBuilder) WithPodDetails(pod *sharedtypes.PodDetails) *EnrichmentBuilder {
 	b.ensureKubernetesContext()
@@ -93,6 +94,7 @@ func (b *EnrichmentBuilder) WithPodDetails(pod *sharedtypes.PodDetails) *Enrichm
 }
 
 // WithDeploymentDetails sets deployment details in Kubernetes context.
+//
 // Deprecated: Use WithWorkload for Issue #113 unified schema. Kept for backward compatibility in tests.
 func (b *EnrichmentBuilder) WithDeploymentDetails(deployment *sharedtypes.DeploymentDetails) *EnrichmentBuilder {
 	b.ensureKubernetesContext()
@@ -105,6 +107,7 @@ func (b *EnrichmentBuilder) WithDeploymentDetails(deployment *sharedtypes.Deploy
 }
 
 // WithNodeDetails sets node details in Kubernetes context.
+//
 // Deprecated: Use WithWorkload for Issue #113 unified schema. Kept for backward compatibility in tests.
 func (b *EnrichmentBuilder) WithNodeDetails(node *sharedtypes.NodeDetails) *EnrichmentBuilder {
 	b.ensureKubernetesContext()

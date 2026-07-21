@@ -59,9 +59,7 @@ var _ = Describe("IT-AF-1438-040 (SI-4): Pool Release closes done channel, watch
 
 		pool.Release("rr-it-1438-040", "alice")
 
-		Eventually(func() bool {
-			return watcherExited.Load()
-		}, 2*time.Second).Should(BeTrue(),
+		Eventually(watcherExited.Load, 2*time.Second).Should(BeTrue(),
 			"SI-4: watcher goroutine must exit deterministically when pool Release closes done channel")
 	})
 })

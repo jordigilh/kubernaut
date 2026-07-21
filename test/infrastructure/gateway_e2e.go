@@ -124,7 +124,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 			BuildContextPath: "", // Empty = project root
 			EnableCoverage:   enableCoverage,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("gateway image build failed: %w", err)
 		}
@@ -140,7 +140,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 			BuildContextPath: "",             // Empty = project root
 			EnableCoverage:   enableCoverage, // Use parameter instead of env var
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image build failed: %w", err)
 		}
@@ -196,7 +196,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -230,7 +230,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Goroutine 2: Load DataStorage image using new split API
 	go func() {
-		err := LoadImageToKind(dataStorageImageName, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dataStorageImageName, "datastorage", clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("ds image load failed: %w", err)
 		}
@@ -245,7 +245,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 			"quay.io/jordigilh/redis:7-alpine",
 		}
 		for _, img := range thirdPartyImages {
-			if err := PreloadExternalImage(img, clusterName, writer); err != nil {
+			if err := PreloadExternalImage(ctx, img, clusterName, writer); err != nil {
 				results <- result{name: "Third-party images", err: fmt.Errorf("preload %s: %w", img, err)}
 				return
 			}
@@ -500,7 +500,7 @@ func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writ
 		UsePodman:               true,
 		ProjectRootAsWorkingDir: true, // DD-TEST-007: For ./coverdata resolution
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(context.Background(), opts, writer)
 }
 
 // loadGatewayImageToKind loads a pre-built Gateway image to Kind cluster.
@@ -509,7 +509,7 @@ func createGatewayKindCluster(clusterName, kubeconfigPath string, writer io.Writ
 // Pattern: Load pre-built image using LoadImageToKind() helper
 func loadGatewayImageToKind(imageName, clusterName string, writer io.Writer) error {
 	// Use the consolidated LoadImageToKind() helper
-	return LoadImageToKind(imageName, "gateway", clusterName, writer)
+	return LoadImageToKind(context.Background(), imageName, "gateway", clusterName, writer)
 }
 
 // buildAndLoadGatewayImage builds Gateway Docker image using shared build utilities and loads it into Kind
@@ -987,7 +987,7 @@ func DeployGatewayCoverageManifest(kubeconfigPath string, gatewayImageName strin
 // Issue #753: Uses dedicated health port (8081) instead of the API port (8080).
 func waitForGatewayHealth(kubeconfigPath string, writer io.Writer, timeout time.Duration) error {
 	healthURL := fmt.Sprintf("http://localhost:%d/readyz", GatewayE2EHealthPort)
-	return WaitForHTTPHealth(healthURL, timeout, writer)
+	return WaitForHTTPHealth(context.Background(), healthURL, timeout, writer)
 }
 
 // ScaleDownGatewayForCoverage is deprecated.

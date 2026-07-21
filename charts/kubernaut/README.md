@@ -176,6 +176,23 @@ Defaults: `minReplicas: 1`, `maxReplicas: 5`, CPU target `75%`, memory target `8
 
 ## Production Configuration
 
+The chart bundles single-replica PostgreSQL and Valkey Deployments
+(`postgresql.enabled=true` / `valkey.enabled=true` by default) purely for
+convenience — quick installs, evaluation, and development. Neither has
+replication or automated failover, and neither is part of Kubernaut's own
+managed footprint — they're infrastructure Kubernaut depends on, not
+infrastructure it operates.
+
+**For production, we recommend running PostgreSQL and Valkey/Redis
+separately in HA mode** — via a dedicated operator (e.g. CloudNativePG,
+Valkey Operator) or a managed cloud service — and pointing Kubernaut at
+them as BYO infrastructure (`postgresql.enabled=false` / `valkey.enabled=false`
+plus `host`; see [BYO PostgreSQL / Valkey](#byo-postgresql--valkey) below).
+
+The example below still uses the bundled, single-replica databases (just
+with custom secret names) — it's a starting point for locking down secrets,
+not a substitute for the BYO+HA recommendation above.
+
 For production environments, use custom secret names and provide custom policies:
 
 ```bash
@@ -208,6 +225,10 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 ```
 
 ### BYO PostgreSQL / Valkey
+
+**Recommended for production** — run PostgreSQL and Valkey/Redis separately
+in HA mode and point Kubernaut at them, instead of the chart's bundled
+single-replica Deployments.
 
 When using external PostgreSQL, the secret referenced by `existingSecret` must
 contain **both** the `POSTGRES_*` env-var keys **and** the `db-secrets.yaml` key

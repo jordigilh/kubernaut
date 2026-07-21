@@ -18,6 +18,7 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -25,6 +26,12 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"gopkg.in/yaml.v3"
 )
+
+// ErrNoEngineConfig indicates ParseEngineConfig has no typed engineConfig to
+// return: either raw was empty, or the engine (tekton/job) has no typed
+// engineConfig struct at all. Issue #1674: typed sentinel replacing the
+// previous ambiguous (nil, nil) returns.
+var ErrNoEngineConfig = errors.New("no engineConfig to parse")
 
 // ========================================
 // WORKFLOW SCHEMA MODELS
@@ -291,11 +298,11 @@ type AnsibleEngineConfig struct {
 
 // ParseEngineConfig deserializes raw engineConfig JSON based on the engine discriminator.
 // BR-WE-016: Two-phase unmarshal — read engine first, then unmarshal config.
-// Returns (nil, nil) when raw is empty, regardless of engine.
+// Returns ErrNoEngineConfig when raw is empty, regardless of engine.
 // Returns error for unknown engines or invalid/incomplete ansible config.
 func ParseEngineConfig(engine string, raw json.RawMessage) (any, error) {
 	if len(raw) == 0 {
-		return nil, nil
+		return nil, ErrNoEngineConfig
 	}
 	switch engine {
 	case "ansible":
@@ -308,7 +315,8 @@ func ParseEngineConfig(engine string, raw json.RawMessage) (any, error) {
 		}
 		return &cfg, nil
 	case "tekton", "job":
-		return nil, nil
+		// tekton/job engines don't have a typed engineConfig struct at all.
+		return nil, ErrNoEngineConfig
 	default:
 		return nil, fmt.Errorf("unknown engine %q: cannot parse engineConfig", engine)
 	}

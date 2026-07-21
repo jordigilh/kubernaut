@@ -40,6 +40,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	noFailureDetailsAvailable = "no failure details available"
+)
+
 // Ansible Engine E2E Tests (BR-WE-015)
 //
 // Validates the ansible execution backend with a real AWX instance deployed
@@ -177,7 +182,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					return false, nil
 				}
 				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
-					details := "no failure details available"
+					details := noFailureDetailsAvailable
 					if updated.Status.FailureDetails != nil {
 						details = fmt.Sprintf("reason=%s, message=%s",
 							updated.Status.FailureDetails.Reason,
@@ -250,7 +255,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					return false, nil
 				}
 				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
-					details := "no failure details available"
+					details := noFailureDetailsAvailable
 					if updated.Status.FailureDetails != nil {
 						details = fmt.Sprintf("reason=%s, message=%s",
 							updated.Status.FailureDetails.Reason,
@@ -634,7 +639,7 @@ func phaseOrFailFast(name, namespace string) func() (string, error) {
 		}
 		phase := updated.Status.Phase
 		if phase == workflowexecutionv1alpha1.PhaseFailed {
-			details := "no failure details available"
+			details := noFailureDetailsAvailable
 			if updated.Status.FailureDetails != nil {
 				details = fmt.Sprintf("reason=%s, message=%s",
 					updated.Status.FailureDetails.Reason,

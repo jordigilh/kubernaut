@@ -84,7 +84,7 @@ func HandleWatch(ctx context.Context, client crclient.WithWatch, args WatchArgs)
 	_ = launcher.EmitStatusSafe(ctx, "Watching remediation progress...\n")
 
 	deps := watchDeps{Client: client, Args: args, Logger: logger, RARName: rarName}
-	return state.run(ctx, watchCtx, deps, rrWatcher.ResultChan(), rarCh)
+	return state.run(ctx, watchCtx, deps, rrWatcher.ResultChan(), rarCh), nil
 }
 
 // watchDeps bundles the request-scoped dependencies shared by the
@@ -99,23 +99,22 @@ type watchDeps struct {
 
 // run drives the watch-loop's event-dispatch select statement until the
 // caller's context is cancelled, the RR watch channel closes, or a
-// terminal/awaiting-approval RR event is observed.
-func (s *watchLoopState) run(ctx, watchCtx context.Context, deps watchDeps, rrCh <-chan watch.Event, rarCh <-chan watch.Event) (WatchResult, error) {
+// terminal/awaiting-approval RR event is observed. It never fails itself
+// (all fallible setup happens in HandleWatch before run is called); Issue
+// #1546 Tier 4 dropped the vestigial error return, which was always nil.
+func (s *watchLoopState) run(ctx, watchCtx context.Context, deps watchDeps, rrCh <-chan watch.Event, rarCh <-chan watch.Event) WatchResult {
 	for {
 		select {
 		case <-ctx.Done():
-			return WatchResult{Events: s.events, Status: "cancelled"}, nil
+			return WatchResult{Events: s.events, Status: "cancelled"}
 
 		case evt, ok := <-rrCh:
 			if !ok {
-				return WatchResult{Events: s.events, Status: "completed"}, nil
+				return WatchResult{Events: s.events, Status: "completed"}
 			}
-			done, result, herr := s.handleRREvent(ctx, watchCtx, deps, evt)
-			if herr != nil {
-				return WatchResult{}, herr
-			}
+			done, result := s.handleRREvent(ctx, watchCtx, deps, evt)
 			if done {
-				return result, nil
+				return result
 			}
 
 		case evt, ok := <-rarCh:
@@ -140,15 +139,15 @@ func (s *watchLoopState) run(ctx, watchCtx context.Context, deps watchDeps, rrCh
 func normalizeAndValidateWatchArgs(args *WatchArgs) error {
 	ns, name, err := ParseRRID(args.RRID, args.Namespace, args.Name)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	args.Namespace = ns
 	args.Name = name
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if err := validate.ResourceName(args.Name); err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	return nil
 }
@@ -196,17 +195,20 @@ func (s *watchLoopState) stopEAWatcher() {
 // handleRREvent processes one RemediationRequest watch event. It returns
 // done=true when the watch should terminate (terminal phase or
 // awaiting-approval), along with the WatchResult to return to the caller.
-func (s *watchLoopState) handleRREvent(ctx, watchCtx context.Context, deps watchDeps, evt watch.Event) (bool, WatchResult, error) {
+// Every side effect it triggers (launcher emits, EA timing fetch) already
+// fails safely/is best-effort internally, so it never fails itself (Issue
+// #1546 Tier 4: dropped the vestigial error return, which was always nil).
+func (s *watchLoopState) handleRREvent(ctx, watchCtx context.Context, deps watchDeps, evt watch.Event) (bool, WatchResult) {
 	if evt.Type != watch.Modified && evt.Type != watch.Added {
-		return false, WatchResult{}, nil
+		return false, WatchResult{}
 	}
 	rrObj, ok := evt.Object.(*remediationv1.RemediationRequest)
 	if !ok {
-		return false, WatchResult{}, nil
+		return false, WatchResult{}
 	}
 	phase := string(rrObj.Status.OverallPhase)
 	if phase == s.lastSeenPhase {
-		return false, WatchResult{}, nil
+		return false, WatchResult{}
 	}
 	s.lastSeenPhase = phase
 	launcher.UpdatePhaseSafe(ctx, phase)
@@ -239,13 +241,13 @@ func (s *watchLoopState) handleRREvent(ctx, watchCtx context.Context, deps watch
 	_ = launcher.EmitArtifactSafe(ctx, snapshot, fmt.Sprintf("Progress: %s", phase), progressMeta)
 
 	if IsTerminalPhase(phase) {
-		return true, WatchResult{Events: s.events, Status: "completed", Outcome: rrObj.Status.Outcome, Message: rrObj.Status.Message}, nil
+		return true, WatchResult{Events: s.events, Status: "completed", Outcome: rrObj.Status.Outcome, Message: rrObj.Status.Message}
 	}
 	if phase == "AwaitingApproval" {
 		emitApprovalRequestEvent(ctx, deps)
-		return true, WatchResult{Events: s.events, Status: "awaiting_approval"}, nil
+		return true, WatchResult{Events: s.events, Status: "awaiting_approval"}
 	}
-	return false, WatchResult{}, nil
+	return false, WatchResult{}
 }
 
 // enterVerifyingPhase emits the "Verifying" status update (with stabilization

@@ -31,6 +31,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	complete = "complete"
+)
+
 // v1.5 Feature E2E Tests
 //
 // Validates SSE streaming and session cancellation against the deployed
@@ -114,7 +119,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 					if strings.HasPrefix(line, "event: ") {
 						eventType := strings.TrimPrefix(line, "event: ")
 						events = append(events, eventType)
-						if eventType == "complete" {
+						if eventType == complete {
 							hasComplete = true
 							break readLoop
 						}
@@ -194,7 +199,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 					case line == "":
 						if current.Event != "" {
 							frames = append(frames, current)
-							if current.Event == "complete" {
+							if current.Event == complete {
 								current = sseFrame{}
 								break readLoop
 							}
@@ -239,7 +244,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 
 			hasComplete := false
 			for _, f := range frames {
-				if f.Event == "complete" {
+				if f.Event == complete {
 					hasComplete = true
 					break
 				}
@@ -280,7 +285,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 15*time.Second, 500*time.Millisecond).Should(
@@ -306,7 +311,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 				Eventually(func() string {
 					status, pollErr := sessionClient.PollSession(ctx, sessionID)
 					if pollErr != nil {
-						return "error"
+						return errorFixture
 					}
 					return status.Status
 				}, 10*time.Second, 500*time.Millisecond).Should(Equal("cancelled"),
@@ -339,7 +344,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 30*time.Second, 1*time.Second).Should(Equal("completed"))
@@ -390,7 +395,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 15*time.Second, 500*time.Millisecond).Should(

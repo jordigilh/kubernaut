@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"k8s.io/utils/ptr"
@@ -135,6 +136,12 @@ func (w *wrappedTool) Execute(ctx context.Context, args json.RawMessage) (string
 	}
 	summarized, sErr := w.summarizer.MaybeSummarize(ctx, w.inner.Name(), result)
 	if sErr != nil {
+		// Best-effort enhancement: summarization failure falls back to the
+		// unsummarized result rather than failing the tool call outright --
+		// the LLM still gets a usable (if larger) response.
+		logr.FromContextOrDiscard(ctx).Info("tool output summarization failed, returning unsummarized result",
+			"tool", w.inner.Name(), "error", sErr.Error())
+		//nolint:nilerr // intentional soft-fail, see comment above
 		return result, nil
 	}
 	return summarized, nil

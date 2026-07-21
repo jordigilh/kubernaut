@@ -210,7 +210,7 @@ var _ = SynchronizedBeforeSuite(
 		// Phase 52), so this single call satisfies both AW's etcd-native gate
 		// and DS's FK constraint for workflow registration.
 		logger.Info("🏷️  Seeding ActionType CRDs via AuthWebhook (DD-WORKFLOW-016, #1661 Change 0)...")
-		Expect(infrastructure.SeedE2EActionTypes(kubeconfigPath, sharedNamespace, GinkgoWriter)).
+		Expect(infrastructure.SeedE2EActionTypes(ctx, kubeconfigPath, sharedNamespace, GinkgoWriter)).
 			To(Succeed(), "Failed to seed ActionType CRDs")
 		logger.Info("✅ ActionType CRDs seeded")
 

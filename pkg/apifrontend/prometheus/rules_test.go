@@ -7,6 +7,11 @@ import (
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	job = "job"
+)
+
 var _ = Describe("PromQL Label Extraction and Matching", func() {
 
 	Describe("ExtractLabelMatchers", func() {
@@ -16,7 +21,7 @@ var _ = Describe("PromQL Label Extraction and Matching", func() {
 			Expect(matchers).NotTo(BeEmpty())
 			found := false
 			for _, m := range matchers {
-				if m.Name == "job" && m.Value == "foo" {
+				if m.Name == job && m.Value == "foo" {
 					found = true
 				}
 			}
@@ -40,7 +45,7 @@ var _ = Describe("PromQL Label Extraction and Matching", func() {
 			Expect(err).NotTo(HaveOccurred())
 			found := false
 			for _, m := range matchers {
-				if m.Name == "job" && m.Value == "myapp" {
+				if m.Name == job && m.Value == "myapp" {
 					found = true
 				}
 			}
@@ -64,7 +69,7 @@ var _ = Describe("PromQL Label Extraction and Matching", func() {
 			Expect(err).NotTo(HaveOccurred())
 			found := false
 			for _, m := range matchers {
-				if m.Name == "job" && m.Value == "api" {
+				if m.Name == job && m.Value == "api" {
 					found = true
 				}
 			}
@@ -92,7 +97,7 @@ var _ = Describe("PromQL Label Extraction and Matching", func() {
 
 			resourceLabels := map[string]string{
 				"namespace": "prod",
-				"job":       "web",
+				job:         "web",
 				"extra":     "ignored",
 			}
 			Expect(prom.MatchesResource(matchers, resourceLabels)).To(BeTrue())
@@ -104,7 +109,7 @@ var _ = Describe("PromQL Label Extraction and Matching", func() {
 
 			resourceLabels := map[string]string{
 				"namespace": "prod",
-				"job":       "different",
+				job:         "different",
 			}
 			Expect(prom.MatchesResource(matchers, resourceLabels)).To(BeFalse())
 		})

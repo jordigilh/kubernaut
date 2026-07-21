@@ -40,6 +40,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// kubernautSystem is the canonical "kubernaut-system" namespace literal,
+// deduplicated (goconst) across test/infrastructure -- multiple E2E suite
+// files reference this same constant.
+const kubernautSystem = "kubernaut-system"
+
 // CreateDataStorageCluster creates a Kind cluster for Data Storage E2E tests
 // This includes:
 // - Kind cluster (2 nodes: control-plane + worker)
@@ -57,7 +62,7 @@ func CreateDataStorageCluster(clusterName, kubeconfigPath string, writer io.Writ
 
 	// 2. Build Data Storage Docker image
 	_, _ = fmt.Fprintln(writer, "🔨 Building Data Storage Docker image...")
-	if err := buildDataStorageImage(writer); err != nil {
+	if err := buildDataStorageImage(context.Background(), writer); err != nil {
 		return fmt.Errorf("failed to build Data Storage image: %w", err)
 	}
 
@@ -511,7 +516,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 		BuildContextPath: "", // Empty = use project root (default)
 		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 	}
-	dsImageName, err := BuildImageForKind(cfg, writer)
+	dsImageName, err := BuildImageForKind(context.Background(), cfg, writer)
 	if err != nil {
 		return fmt.Errorf("DS image build failed: %w", err)
 	}
@@ -542,7 +547,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -603,7 +608,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 	// Goroutine 1: Load pre-built DataStorage image to Kind
 	go func() {
 		defer GinkgoRecover() // Required for Ginkgo assertions in goroutines
-		err := LoadImageToKind(dsImageName, "datastorage", clusterName, writer)
+		err := LoadImageToKind(context.Background(), dsImageName, "datastorage", clusterName, writer)
 		if err != nil {
 			err = fmt.Errorf("DS image load failed: %w", err)
 		}
@@ -692,7 +697,7 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 
 	// 1. Create test namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -764,7 +769,7 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 
 	// 1. Create test namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -827,7 +832,7 @@ func CleanupDataStorageTestNamespace(namespace, kubeconfigPath string, writer io
 	return nil
 }
 
-func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) error {
+func createTestNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)
@@ -846,7 +851,7 @@ func createTestNamespace(namespace, kubeconfigPath string, writer io.Writer) err
 		},
 	}
 
-	_, err = clientset.CoreV1().Namespaces().Create(context.Background(), ns, metav1.CreateOptions{})
+	_, err = clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 	if err != nil {
 		// Check for AlreadyExists error (case-insensitive for robustness)
 		errMsg := strings.ToLower(err.Error())
@@ -1530,10 +1535,10 @@ func createKindCluster(clusterName, kubeconfigPath string, writer io.Writer) err
 		DeleteExisting: true, // Original behavior: delete if exists
 		ReuseExisting:  false,
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(context.Background(), opts, writer)
 }
 
-func buildDataStorageImage(writer io.Writer) error {
+func buildDataStorageImage(ctx context.Context, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
@@ -1776,7 +1781,7 @@ func startPostgreSQL(infra *DataStorageInfrastructure, cfg *DataStorageConfig, w
 
 	// Pull image with retry to handle transient registry failures (#914)
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(context.Background(), postgresImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
 	}
 
@@ -1815,7 +1820,7 @@ func startRedis(infra *DataStorageInfrastructure, cfg *DataStorageConfig, writer
 
 	// Pull image with retry to handle transient registry failures (#914)
 	const redisImage = "quay.io/jordigilh/redis:7-alpine"
-	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(context.Background(), redisImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull Redis image: %w", err)
 	}
 
@@ -2156,7 +2161,7 @@ func getContainerIP(containerName string) string {
 //   - error: Any errors during image build
 //
 // Per DD-TEST-001: Dynamic tags for parallel E2E isolation
-func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, error) {
+func buildDataStorageImageWithTag(ctx context.Context, imageTag string, writer io.Writer) (string, error) {
 	// CI/CD Optimization: Check if we can use a pre-built image from registry
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
@@ -2165,7 +2170,7 @@ func buildDataStorageImageWithTag(imageTag string, writer io.Writer) (string, er
 		_, _ = fmt.Fprintf(writer, "  🔄 Registry mode: IMAGE_REGISTRY=%s IMAGE_TAG=%s\n", registry, tag)
 		_, _ = fmt.Fprintf(writer, "  🔍 Verifying DataStorage image in registry: %s\n", registryImage)
 
-		exists, err := VerifyImageExistsInRegistry(registryImage, writer)
+		exists, err := VerifyImageExistsInRegistry(context.Background(), registryImage, writer)
 		if err == nil && exists {
 			_, _ = fmt.Fprintf(writer, "  ✅ DataStorage image found in registry: %s\n", registryImage)
 			_, _ = fmt.Fprintf(writer, "  💡 Podman will auto-pull during container start (skipping local build)\n")
@@ -2457,7 +2462,7 @@ stringData:
   tls.crt: |
 %s
   tls.key: |
-%s`, indentPEM(string(pair.CertPEM), 4), indentPEM(string(pair.KeyPEM), 4))
+%s`, indentPEM(string(pair.CertPEM)), indentPEM(string(pair.KeyPEM)))
 
 	if err := kubectlApply(ctx, kubeconfigPath, namespace, manifest, writer); err != nil {
 		return fmt.Errorf("failed to create signing cert Secret: %w", err)

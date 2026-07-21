@@ -109,7 +109,7 @@ func (w *FileWatcher) Start(ctx context.Context) error {
 		return fmt.Errorf("file watcher already stopped — cannot restart")
 	default:
 	}
-	if err := w.loadInitial(); err != nil {
+	if err := w.loadInitial(); err != nil { //nolint:contextcheck // loadInitial performs the first synchronous load at startup before any watcher/request context exists
 		return fmt.Errorf("initial load: %w", err)
 	}
 

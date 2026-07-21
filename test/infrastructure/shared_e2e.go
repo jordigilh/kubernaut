@@ -32,10 +32,25 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// coverageEnvYAMLFixture is the GOCOVERDIR env var YAML snippet shared by the
+// E2E deployment manifests below when DD-TEST-007 coverage instrumentation is
+// enabled (goconst dedup: identical across datastorage/notification/workflowexecution).
+const coverageEnvYAMLFixture = `
+        - name: GOCOVERDIR
+          value: /coverdata`
+
+// coverageSecurityContextYAMLFixture is the root-user securityContext YAML
+// snippet required so the coverage sidecar can write to the hostPath mount
+// (goconst dedup: identical across datastorage/gateway/notification/workflowexecution).
+const coverageSecurityContextYAMLFixture = `
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0`
+
 // createKAKindCluster creates a Kind cluster using the KA Kind config.
 // Reused by both KA and AIAnalysis E2E suites (same port layout).
-func createKAKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	if os.Getenv("E2E_COVERAGE") == "true" {
+func createKAKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
 		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
@@ -59,7 +74,7 @@ func createKAKindCluster(clusterName, kubeconfigPath string, writer io.Writer) e
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
 // CreateKAE2EServiceAccount creates the E2E ServiceAccount with
@@ -671,7 +686,7 @@ spec:
 func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
 	projectRoot := getProjectRoot()
 
-	imageTag := generateInfrastructureImageTag("kubernautagent", serviceName)
+	imageTag := generateInfrastructureImageTag(serviceName)
 	localImageName := fmt.Sprintf("localhost/kubernautagent:%s", imageTag)
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
@@ -690,7 +705,7 @@ func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io
 	tag := os.Getenv("IMAGE_TAG")
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
-	registryImage, pulled, err := tryPullFromRegistry(ctx, "kubernautagent", localImageName, writer)
+	registryImage, pulled, err := tryPullFromRegistry(ctx, "kubernautagent", writer)
 	if err != nil {
 		return "", fmt.Errorf("failed during registry pull attempt: %w", err)
 	}
@@ -717,7 +732,7 @@ func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io
 	buildCmd.Stderr = writer
 
 	if err := buildCmd.Run(); err != nil {
-		checkAgain := exec.Command("podman", "image", "exists", localImageName)
+		checkAgain := exec.CommandContext(ctx, "podman", "image", "exists", localImageName)
 		if checkAgain.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", localImageName)
 			return localImageName, nil

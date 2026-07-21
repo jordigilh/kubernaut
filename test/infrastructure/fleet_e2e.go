@@ -37,6 +37,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	kubeMcpServerRoute       = "kube-mcp-server-route"
+	kubeMcpServerRemoteRoute = "kube-mcp-server-remote-route"
+)
+
 // KubeMCPServerImage is the Go-native K8s MCP server image.
 // v0.0.63: supports HTTP mode, in-cluster auth, core toolsets.
 const KubeMCPServerImage = "ghcr.io/containers/kubernetes-mcp-server:latest"
@@ -279,7 +285,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("fullpipeline base setup failed: %w", err)
 	}
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// ── Keycloak OIDC + RFC 8693 token-exchange provider (replaces Dex) ──
 	// Dex has no Standard Token Exchange (Spike S20); Keycloak is the same
@@ -332,7 +338,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// namespace only pre-existed on the hub cluster; without it, both the
 	// SA creation below and the Job itself would fail with "namespace not found".
 	_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #1542)...\n", ExecutionNamespace)
-	if err := createTestNamespace(ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to create %s namespace on remote cluster: %w", ExecutionNamespace, err)
 	}
 
@@ -340,7 +346,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// reference would fail to resolve on the remote cluster (SA only
 	// pre-existed on the hub).
 	_, _ = fmt.Fprintln(writer, "🔐 Creating workflow-job-executor SA + RBAC on the remote cluster (Issue #1542)...")
-	if err := createWorkflowJobExecutorRBAC(remoteKubeconfigPath, ExecutionNamespace, writer); err != nil {
+	if err := createWorkflowJobExecutorRBAC(ctx, remoteKubeconfigPath, ExecutionNamespace, writer); err != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to create workflow-job-executor RBAC on remote cluster: %w", err)
 	}
 
@@ -362,7 +368,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 
 	_, _ = fmt.Fprintln(writer, "  📦 Pre-loading fleet external images...")
 	for _, img := range []string{KubeMCPServerImage, kuadrantControllerImage, kuadrantBrokerImage, valkeyImage} {
-		if loadErr := PreloadExternalImage(img, clusterName, writer); loadErr != nil {
+		if loadErr := PreloadExternalImage(ctx, img, clusterName, writer); loadErr != nil {
 			_, _ = fmt.Fprintf(writer, "  ⚠️  Image preload failed (will pull on-demand): %s: %v\n", img, loadErr)
 		}
 	}
@@ -387,11 +393,12 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	// Kuadrant broker's own upstream discovery connection needs a static
 	// credential when RequireOAuth=true (see BrokerCredentialToken doc
 	// comment) -- mirrors the FMC E2E lane's Phase 7 broker credential.
-	brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
-		TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
-		ClientID:      fmcOAuth2Config.ClientID,
-		ClientSecret:  fmcOAuth2Config.ClientSecret,
-		Scopes:        fmcOAuth2Config.Scopes,
+	brokerCredToken, brokerCredErr := GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
+		TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
+		ClientID:       fmcOAuth2Config.ClientID,
+		ClientSecret:   fmcOAuth2Config.ClientSecret,
+		Scopes:         fmcOAuth2Config.Scopes,
+		KubeconfigPath: kubeconfigPath,
 	})
 	if brokerCredErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("failed to obtain Kuadrant broker's kube-mcp-server discovery credential: %w", brokerCredErr)
@@ -432,14 +439,15 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 	}
 
 	keycloakFleetReadTokenFunc := func() (string, error) {
-		return GetKeycloakClientCredentialsToken(KeycloakFleetTokenConfig{
-			TokenEndpoint: fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
-			ClientID:      fmcOAuth2Config.ClientID,
-			ClientSecret:  fmcOAuth2Config.ClientSecret,
-			Scopes:        fmcOAuth2Config.Scopes,
+		return GetKeycloakClientCredentialsToken(ctx, KeycloakFleetTokenConfig{
+			TokenEndpoint:  fmt.Sprintf("https://localhost:%d/realms/kubernaut-fleet/protocol/openid-connect/token", keycloakHostPortFleet),
+			ClientID:       fmcOAuth2Config.ClientID,
+			ClientSecret:   fmcOAuth2Config.ClientSecret,
+			Scopes:         fmcOAuth2Config.Scopes,
+			KubeconfigPath: kubeconfigPath,
 		})
 	}
-	if readyErr := WaitForFleetReady(keycloakFleetReadTokenFunc, 31975, "remote_cluster_", writer); readyErr != nil {
+	if readyErr := WaitForFleetReady(ctx, keycloakFleetReadTokenFunc, 31975, "remote_cluster_", writer); readyErr != nil {
 		return builtImages, seededUUIDs, afRemediateNS, "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
@@ -1706,7 +1714,7 @@ spec:
     targetPort: 8080
   selector:
     app: kube-mcp-server
-`, namespace, KubeMCPServerImage, indentPEM(kubeMCPTOMLConfig, 4), kubeMCPExtraVolumeMount, kubeMCPExtraVolume)
+`, namespace, KubeMCPServerImage, indentPEM(kubeMCPTOMLConfig), kubeMCPExtraVolumeMount, kubeMCPExtraVolume)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, kubeMCPManifest); err != nil {
 		return fmt.Errorf("kube-mcp-server deployment failed: %w", err)
@@ -1765,19 +1773,19 @@ stringData:
 	// every fleet test hardcodes "remote-cluster" as its target identity
 	// (not "prod-east"), so that name must be the one backed by the remote
 	// cluster for the suite to exercise genuinely remote reads end-to-end.
-	loopbackRouteName := "kube-mcp-server-route"
-	prodEastRouteName := "kube-mcp-server-route"
-	prodWestRouteName := "kube-mcp-server-route"
+	loopbackRouteName := kubeMcpServerRoute
+	prodEastRouteName := kubeMcpServerRoute
+	prodWestRouteName := kubeMcpServerRoute
 	var remoteRouteManifest string
 	if rb := authConfig.RemoteBridge; rb != nil {
 		_, _ = fmt.Fprintln(writer, "    Bridging prod-east to remote cluster's kube-mcp-server (DD-TEST-013)...")
 		if err := CreateServiceBridge(ctx, kubeconfigPath, namespace, rb.BridgeServiceName, rb.BridgeServicePort, rb.RemoteNodeIP, rb.RemoteNodePort, writer); err != nil {
 			return fmt.Errorf("prod-east remote bridge Service creation failed: %w", err)
 		}
-		prodEastRouteName = "kube-mcp-server-remote-route"
+		prodEastRouteName = kubeMcpServerRemoteRoute
 		if authConfig.AllRegistrationsRemote {
-			loopbackRouteName = "kube-mcp-server-remote-route"
-			prodWestRouteName = "kube-mcp-server-remote-route"
+			loopbackRouteName = kubeMcpServerRemoteRoute
+			prodWestRouteName = kubeMcpServerRemoteRoute
 		}
 		remoteRouteManifest = fmt.Sprintf(`---
 apiVersion: gateway.networking.k8s.io/v1
@@ -2238,7 +2246,7 @@ fleet:
 // EAIGW 31976 per DD-TEST-001) and loopback-cluster tool-name prefix
 // (Kuadrant's MCPServerRegistration "loopback_cluster_" vs EAIGW's
 // auto-generated "loopback-cluster__", Spike S18).
-func WaitForFleetReady(tokenFunc func() (string, error), nodePort int, toolPrefix string, writer io.Writer) error {
+func WaitForFleetReady(ctx context.Context, tokenFunc func() (string, error), nodePort int, toolPrefix string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying MCP Gateway reachability via NodePort...")
 
 	gatewayURL := fmt.Sprintf("http://localhost:%d/mcp", nodePort)
@@ -2261,7 +2269,7 @@ func WaitForFleetReady(tokenFunc func() (string, error), nodePort int, toolPrefi
 	body, _ := json.Marshal(initReq)
 
 	for time.Now().Before(deadline) {
-		req, _ := http.NewRequest("POST", gatewayURL, bytes.NewReader(body))
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, gatewayURL, bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Accept", "application/json, text/event-stream")
 
@@ -2276,7 +2284,7 @@ func WaitForFleetReady(tokenFunc func() (string, error), nodePort int, toolPrefi
 			if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized {
 				_ = resp.Body.Close()
 				_, _ = fmt.Fprintf(writer, "  ✅ MCP Gateway reachable (initialize → %d)\n", resp.StatusCode)
-				return waitForAuthenticatedMCPGateway(tokenFunc, gatewayURL, toolPrefix, writer)
+				return waitForAuthenticatedMCPGateway(ctx, tokenFunc, gatewayURL, toolPrefix, writer)
 			}
 			_ = resp.Body.Close()
 		}
@@ -2304,13 +2312,13 @@ func WaitForFleetReady(tokenFunc func() (string, error), nodePort int, toolPrefi
 // This probe mirrors the real call FMC's syncer makes (pkg/fleet/fmc/syncer.go):
 // an OAuth2 client_credentials token via tokenFunc, then a tools/call against
 // the "loopback-cluster" MCPServerRegistration created earlier in Phase 3.
-func waitForAuthenticatedMCPGateway(tokenFunc func() (string, error), gatewayURL, toolPrefix string, writer io.Writer) error {
+func waitForAuthenticatedMCPGateway(ctx context.Context, tokenFunc func() (string, error), gatewayURL, toolPrefix string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying authenticated tools/call succeeds (gateway AuthPolicy/SecurityPolicy convergence)...")
 
 	deadline := time.Now().Add(90 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		if err := probeAuthenticatedResourcesList(tokenFunc, gatewayURL, toolPrefix); err != nil {
+		if err := probeAuthenticatedResourcesList(ctx, tokenFunc, gatewayURL, toolPrefix); err != nil {
 			lastErr = err
 			time.Sleep(3 * time.Second)
 			continue
@@ -2337,7 +2345,7 @@ func waitForAuthenticatedMCPGateway(tokenFunc func() (string, error), gatewayURL
 // (the built-in "view" role does not grant list access to cluster-scoped Node
 // resources -- confirmed by a prior run of this probe against Node, which
 // failed with a clear RBAC "forbidden" error, not a convergence timeout).
-func probeAuthenticatedResourcesList(tokenFunc func() (string, error), gatewayURL, toolPrefix string) error {
+func probeAuthenticatedResourcesList(ctx context.Context, tokenFunc func() (string, error), gatewayURL, toolPrefix string) error {
 	token, err := tokenFunc()
 	if err != nil {
 		return fmt.Errorf("acquire IdP token: %w", err)
@@ -2348,7 +2356,7 @@ func probeAuthenticatedResourcesList(tokenFunc func() (string, error), gatewayUR
 		Transport: &bearerTokenTransport{token: token, base: http.DefaultTransport},
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
 	mcpConn, err := mcpclient.New(ctx, gatewayURL,
@@ -2550,7 +2558,7 @@ func patchAPIServerPodHostsForIssuer(ctx context.Context, nodeName, kubeconfigPa
 	var svcErr error
 	for time.Now().Before(svcDeadline) {
 		svcIPCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-			"get", "svc", host, "-n", "kubernaut-system", "-o", "jsonpath={.spec.clusterIP}")
+			"get", "svc", host, "-n", kubernautSystem, "-o", "jsonpath={.spec.clusterIP}")
 		svcIPOut, err := svcIPCmd.Output()
 		clusterIP = strings.TrimSpace(string(svcIPOut))
 		if err == nil && clusterIP != "" {

@@ -27,6 +27,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	e2eStub = "e2e-stub"
+)
+
 // ========================================
 // E2E-DS-043: DetectedLabels OCI -> Storage -> Retrieval (ADR-043 v1.3)
 // ========================================
@@ -62,7 +67,7 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 		testCtx, testCancel = context.WithTimeout(ctx, 5*time.Minute)
 		DeferCleanup(testCancel)
 
-		registeredWorkflowID, _ = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent, "e2e-stub")
+		registeredWorkflowID, _ = ensureWorkflowRegistered(testCtx, DSClient, e2eTestWorkflowStubContent)
 		logger.Info("✅ DetectedLabels test workflow ready", "uuid", registeredWorkflowID)
 	})
 
@@ -163,7 +168,7 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 				return false
 			}
 			for _, wf := range matchWorkflows.Workflows {
-				if wf.WorkflowName == "e2e-stub" {
+				if wf.WorkflowName == e2eStub {
 					return true
 				}
 			}
@@ -189,7 +194,7 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 
 		var foundInNonMatch bool
 		for _, wf := range nonMatchWorkflows.Workflows {
-			if wf.WorkflowName == "e2e-stub" {
+			if wf.WorkflowName == e2eStub {
 				foundInNonMatch = true
 				break
 			}
@@ -231,7 +236,7 @@ var _ = Describe("E2E-DS-043: DetectedLabels OCI Registration and Retrieval", Or
 			}
 
 			for _, wf := range workflows.Workflows {
-				if wf.WorkflowName == "e2e-stub" {
+				if wf.WorkflowName == e2eStub {
 					foundWorkflow = true
 					return true
 				}

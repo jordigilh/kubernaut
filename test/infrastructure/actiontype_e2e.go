@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os/exec"
@@ -56,7 +57,7 @@ var e2eActionTypes = []actionTypeDef{
 // variant when the E2E suite already deploys AuthWebhook and the test wants to
 // prove the real admission path works; otherwise use SeedActionTypesViaCRD,
 // which has no AuthWebhook dependency.
-func SeedE2EActionTypes(kubeconfigPath, namespace string, output io.Writer) error {
+func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d E2E ActionType CRDs in %s\n", len(e2eActionTypes), namespace)
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")

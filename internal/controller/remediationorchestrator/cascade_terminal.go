@@ -37,8 +37,10 @@ import (
 //
 // Children are accessed via status refs on the RR (O(1) per child, no List).
 // Already-terminal children are skipped (idempotent).
-// Errors are logged but do not fail the parent reconcile.
-func (r *Reconciler) cascadeTerminalToChildren(ctx context.Context, rr *remediationv1.RemediationRequest) error {
+// Errors are logged internally but never returned to the caller -- a
+// child-cascade failure must not fail (or be treated as failing) the
+// parent's terminal transition.
+func (r *Reconciler) cascadeTerminalToChildren(ctx context.Context, rr *remediationv1.RemediationRequest) {
 	logger := log.FromContext(ctx)
 	parentPhase := string(rr.Status.OverallPhase)
 	message := fmt.Sprintf("Parent RR entered terminal phase: %s", parentPhase)
@@ -63,8 +65,6 @@ func (r *Reconciler) cascadeTerminalToChildren(ctx context.Context, rr *remediat
 				"workflowexecution", rr.Status.WorkflowExecutionRef.Name)
 		}
 	}
-
-	return nil
 }
 
 func (r *Reconciler) cascadeToAIAnalysis(ctx context.Context, name, namespace, message string) error {
@@ -101,6 +101,7 @@ func (r *Reconciler) cascadeToSignalProcessing(ctx context.Context, name, namesp
 		}
 
 		sp.Status.Phase = signalprocessingv1.PhaseFailed
+		sp.Status.Error = message
 
 		return r.client.Status().Update(ctx, sp)
 	})

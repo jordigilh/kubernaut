@@ -133,7 +133,7 @@ var _ = Describe("Batch Size Limit [BR-STORAGE-043]", func() {
 func newBatchLimitTestServer(maxBatchSize int) *httptest.Server {
 	pgHost := os.Getenv("POSTGRES_HOST")
 	if pgHost == "" {
-		pgHost = "localhost"
+		pgHost = localhost
 	}
 	pgPort := os.Getenv("POSTGRES_PORT")
 	if pgPort == "" {
@@ -141,7 +141,7 @@ func newBatchLimitTestServer(maxBatchSize int) *httptest.Server {
 	}
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
-		redisHost = "localhost"
+		redisHost = localhost
 	}
 	redisPort := os.Getenv("REDIS_PORT")
 	if redisPort == "" {

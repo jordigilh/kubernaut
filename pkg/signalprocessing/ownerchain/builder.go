@@ -46,6 +46,7 @@ package ownerchain
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-logr/logr"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -58,6 +59,12 @@ import (
 
 // MaxOwnerChainDepth per BR-SP-100: Stop at max depth 5
 const MaxOwnerChainDepth = 5
+
+// ErrNoControllerOwner indicates the fetched resource has no owner reference
+// with controller: true. Issue #1674: typed sentinel replacing the previous
+// ambiguous (nil, nil) return from getControllerOwner — this is the expected
+// "chain complete" signal, not a K8s API error.
+var ErrNoControllerOwner = errors.New("no controller owner reference found")
 
 // Builder constructs the K8s ownership chain.
 // Used for K8s context enrichment in the SignalProcessing pipeline.
@@ -101,16 +108,16 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]si
 
 		ownerRef, err := b.getControllerOwner(ctx, currentNamespace, currentKind, currentName)
 		if err != nil {
+			if errors.Is(err, ErrNoControllerOwner) {
+				b.logger.V(1).Info("No controller owner found, chain complete",
+					"kind", currentKind, "name", currentName)
+				break // No more owners - chain complete
+			}
 			// Log error but return partial chain (graceful degradation)
 			// Per ERROR_HANDLING_PHILOSOPHY.md: Category E - Partial Data
 			b.logger.Info("Error fetching owner, returning partial chain",
 				"error", err, "currentKind", currentKind, "currentName", currentName)
 			break
-		}
-		if ownerRef == nil {
-			b.logger.V(1).Info("No controller owner found, chain complete",
-				"kind", currentKind, "name", currentName)
-			break // No more owners - chain complete
 		}
 		b.logger.V(1).Info("Found controller owner",
 			"ownerKind", ownerRef.Kind, "ownerName", ownerRef.Name)
@@ -141,8 +148,8 @@ func (b *Builder) Build(ctx context.Context, namespace, kind, name string) ([]si
 }
 
 // getControllerOwner fetches a resource and returns its controller owner reference.
-// Returns nil, nil if no controller owner found.
-// Returns nil, error for K8s API errors (RBAC, timeout, not found).
+// Returns ErrNoControllerOwner if no controller owner found.
+// Returns a different error for K8s API errors (RBAC, timeout, not found).
 func (b *Builder) getControllerOwner(ctx context.Context, namespace, kind, name string) (*metav1.OwnerReference, error) {
 	// Check context cancellation first
 	select {
@@ -169,7 +176,7 @@ func (b *Builder) getControllerOwner(ctx context.Context, namespace, kind, name 
 		}
 	}
 
-	return nil, nil // No controller owner
+	return nil, ErrNoControllerOwner
 }
 
 // getGVKForKind returns the GroupVersionKind for a given K8s resource kind.

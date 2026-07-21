@@ -41,6 +41,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	remoteCluster = "remote-cluster"
+)
+
 // registerFleetClusterWorkflow creates a RemediationWorkflow catalog entry with
 // wildcard severity/environment/component/priority labels (so those four
 // mandatory dimensions never gate the result) and the given cluster
@@ -137,11 +142,11 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 		}
 		DeferCleanup(func() { _ = remoteK8sClient.Delete(context.Background(), dep) })
 
-		payload := buildPrometheusAlertWithCluster("FleetClusterScoped", namespace, "critical",
-			"Deployment", targetName, "remote-cluster")
+		payload := buildPrometheusAlertWithCluster("FleetClusterScoped", "critical",
+			targetName, remoteCluster)
 
-		gatewayURL := "http://localhost:30080"
-		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+		gatewayURL := urlLocalhost30080
+		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())
@@ -156,7 +161,7 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 
 			for i := range spList.Items {
 				candidate := &spList.Items[i]
-				if candidate.Spec.Signal.ClusterID == "remote-cluster" &&
+				if candidate.Spec.Signal.ClusterID == remoteCluster &&
 					candidate.Spec.RemediationRequestRef.Name == rrName {
 					sp = candidate
 					break

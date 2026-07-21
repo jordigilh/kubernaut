@@ -90,7 +90,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 			BuildContextPath: "",
 			EnableCoverage:   true,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "SignalProcessing (coverage)", imageName: imageName, err: err}
 	}()
 
@@ -103,7 +103,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "DataStorage", imageName: imageName, err: err}
 	}()
 
@@ -156,7 +156,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 
 	// Deploy Rego policy ConfigMaps
 	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
-	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
+	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy policies: %w", err)
 	}
 
@@ -188,14 +188,14 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	// Load SignalProcessing coverage image
 	go func() {
 		spImage := builtImages["SignalProcessing (coverage)"]
-		err := LoadImageToKind(spImage, "signalprocessing-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, spImage, "signalprocessing-controller", clusterName, writer)
 		loadResults <- loadResult{name: "SignalProcessing coverage", err: err}
 	}()
 
 	// Load DataStorage image
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
@@ -295,7 +295,7 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		// Per Consolidated API Migration (January 2026):
 		// Use SignalProcessing image name from builtImages map (built in Phase 1)
 		spImage := builtImages["SignalProcessing (coverage)"]
-		err := DeploySignalProcessingControllerWithCoverage(kubeconfigPath, spImage, writer)
+		err := DeploySignalProcessingControllerWithCoverage(ctx, kubeconfigPath, spImage, writer)
 		deployResults <- deployResult{"SignalProcessing", err}
 	}()
 
@@ -472,7 +472,7 @@ func createSignalProcessingKindCluster(clusterName, kubeconfigPath string, write
 		DeleteExisting: false,
 		ReuseExisting:  true, // Original behavior: reuse if exists
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(context.Background(), opts, writer)
 }
 
 // ============================================================================
@@ -581,7 +581,7 @@ metadata:
 	return cmd.Run()
 }
 
-func deploySignalProcessingPolicies(kubeconfigPath string, writer io.Writer) error {
+func deploySignalProcessingPolicies(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	// ADR-060: Deploy unified Rego policy as a single ConfigMap (replaces 5 separate ConfigMaps).
 	// The SP controller expects a single policy.rego file under package signalprocessing.
 	unifiedPolicy := `---
@@ -1025,7 +1025,7 @@ spec:
 `, imageName, imagePullPolicy)
 }
 
-func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName string, writer io.Writer) error {
+func DeploySignalProcessingControllerWithCoverage(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Per Consolidated API Migration (January 2026):
 	// Accept dynamic image name as parameter (built by BuildImageForKind)
 
@@ -1044,7 +1044,6 @@ func DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName stri
 
 	// Wait for controller to be ready
 	_, _ = fmt.Fprintln(writer, "⏳ Waiting for coverage-enabled controller to be ready...")
-	ctx := context.Background()
 	return waitForSignalProcessingController(ctx, kubeconfigPath, writer)
 }
 

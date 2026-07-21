@@ -26,6 +26,12 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	inc001 = "inc-001"
+	test   = "test"
+)
+
 var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func() {
 
 	Describe("UT-KA-433W-008: DSAuditStore maps event fields to ogen request", func() {
@@ -72,7 +78,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 
 			event := audit.NewEvent(audit.EventTypeEnrichmentCompleted, "corr-enr")
 			event.Data["event_id"] = "evt-001"
-			event.Data["incident_id"] = "inc-001"
+			event.Data["incident_id"] = inc001
 			event.Data["root_owner_kind"] = "Deployment"
 			event.Data["root_owner_name"] = "api-server"
 			event.Data["root_owner_namespace"] = "production"
@@ -89,7 +95,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			payload, ok := req.EventData.GetAIAgentEnrichmentCompletedPayload()
 			Expect(ok).To(BeTrue(), "should extract AIAgentEnrichmentCompletedPayload")
 			Expect(payload.EventID).To(Equal("evt-001"))
-			Expect(payload.IncidentID).To(Equal("inc-001"))
+			Expect(payload.IncidentID).To(Equal(inc001))
 			Expect(payload.RootOwnerKind).To(Equal("Deployment"))
 			Expect(payload.RootOwnerName).To(Equal("api-server"))
 			Expect(payload.RootOwnerNamespace.Value).To(Equal("production"))
@@ -167,13 +173,13 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.EventAction = "test_action"
 				event.EventOutcome = audit.OutcomeSuccess
 				event.SessionID = "sess-001"
-				event.Data["incident_id"] = "inc-001"
+				event.Data["incident_id"] = inc001
 				event.Data["model"] = "gpt-4"
 				event.Data["prompt_length"] = 100
-				event.Data["prompt_preview"] = "test"
+				event.Data["prompt_preview"] = test
 				event.Data["has_analysis"] = true
 				event.Data["analysis_length"] = 50
-				event.Data["analysis_preview"] = "test"
+				event.Data["analysis_preview"] = test
 				event.Data["tool_call_index"] = 0
 				event.Data["tool_name"] = "test_tool"
 				event.Data["tool_result"] = "{}"
@@ -186,13 +192,13 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.Data["root_owner_name"] = "api"
 				event.Data["owner_chain_length"] = 1
 				event.Data["remediation_history_fetched"] = true
-				event.Data["reason"] = "test"
-				event.Data["detail"] = "test"
+				event.Data["reason"] = test
+				event.Data["detail"] = test
 				event.Data["affected_resource_kind"] = "Pod"
 				event.Data["affected_resource_name"] = "pod-1"
-				event.Data["error_message"] = "test"
-				event.Data["phase"] = "rca"
-				event.Data["cancelled_phase"] = "rca"
+				event.Data["error_message"] = test
+				event.Data["phase"] = rca
+				event.Data["cancelled_phase"] = rca
 				event.Data["cancelled_at_turn"] = 3
 				event.Data["endpoint"] = "/api/test"
 				event.Data["requesting_user"] = "attacker"
@@ -225,7 +231,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event.EventAction = audit.ActionSessionStarted
 			event.EventOutcome = audit.OutcomeSuccess
 			event.SessionID = "sess-001"
-			event.Data["incident_id"] = "inc-001"
+			event.Data["incident_id"] = inc001
 			event.Data["signal_name"] = "OOMKilled"
 			event.Data["severity"] = "critical"
 			event.Data["created_by"] = "system:serviceaccount:test:sa"
@@ -238,7 +244,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			payload, ok := req.EventData.GetAIAgentSessionStartedPayload()
 			Expect(ok).To(BeTrue())
 			Expect(payload.SessionID).To(Equal("sess-001"))
-			Expect(payload.IncidentID.Value).To(Equal("inc-001"))
+			Expect(payload.IncidentID.Value).To(Equal(inc001))
 			Expect(payload.SignalName.Value).To(Equal("OOMKilled"))
 			Expect(payload.Severity.Value).To(Equal("critical"))
 			Expect(payload.CreatedBy.Value).To(Equal("system:serviceaccount:test:sa"))
@@ -278,7 +284,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event := audit.NewEvent(audit.EventTypeInvestigationCancelled, "rem-003")
 			event.EventAction = audit.ActionInvestigationCancelled
 			event.EventOutcome = audit.OutcomeFailure
-			event.Data["cancelled_phase"] = "rca"
+			event.Data["cancelled_phase"] = rca
 			event.Data["cancelled_at_turn"] = 5
 			event.Data["total_prompt_tokens"] = 1000
 			event.Data["total_completion_tokens"] = 500
@@ -290,12 +296,12 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 
 			payload, ok := recorder.calls[0].EventData.GetAIAgentInvestigationCancelledPayload()
 			Expect(ok).To(BeTrue())
-			Expect(payload.CancelledPhase).To(Equal("rca"))
+			Expect(payload.CancelledPhase).To(Equal(rca))
 			Expect(payload.CancelledAtTurn).To(Equal(5))
 			Expect(payload.TotalPromptTokens.Value).To(Equal(1000))
 			Expect(payload.TotalCompletionTokens.Value).To(Equal(500))
 			Expect(payload.TotalTokens.Value).To(Equal(1500))
-			Expect(payload.AccumulatedMessages.Value).To(ContainSubstring("test"))
+			Expect(payload.AccumulatedMessages.Value).To(ContainSubstring(test))
 		})
 	})
 

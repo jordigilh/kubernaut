@@ -96,9 +96,7 @@ var _ = Describe("Config Hot-Reload Integration — TP-783-IT (#783)", func() {
 			// Write new content to trigger a reload
 			Expect(os.WriteFile(sdkFile, []byte("version: 2"), 0644)).To(Succeed())
 
-			Eventually(func() int64 {
-				return callbackInvoked.Load()
-			}, 5*time.Second, 50*time.Millisecond).Should(BeNumerically(">=", 2),
+			Eventually(callbackInvoked.Load, 5*time.Second, 50*time.Millisecond).Should(BeNumerically(">=", 2),
 				"FileWatcher should detect the file change and invoke the callback")
 
 			Expect(sc.ModelName()).To(Equal("model-v2"))
@@ -168,9 +166,7 @@ var _ = Describe("Config Hot-Reload Integration — TP-783-IT (#783)", func() {
 
 			Expect(os.WriteFile(sdkFile, []byte("version: REJECTED"), 0644)).To(Succeed())
 
-			Eventually(func() int64 {
-				return rejectCount.Load()
-			}, 5*time.Second, 50*time.Millisecond).Should(BeNumerically(">=", 1))
+			Eventually(rejectCount.Load, 5*time.Second, 50*time.Millisecond).Should(BeNumerically(">=", 1))
 
 			Expect(sc.ModelName()).To(Equal("stable-model"),
 				"model must not change after rejected reload")
@@ -241,9 +237,7 @@ var _ = Describe("Config Hot-Reload Integration — TP-783-IT (#783)", func() {
 
 			Expect(sc.Swap(replacement, "model-v2")).To(Succeed())
 
-			Eventually(func() bool {
-				return original.closed.Load()
-			}, 3*time.Second, 10*time.Millisecond).Should(BeTrue(),
+			Eventually(original.closed.Load, 3*time.Second, 10*time.Millisecond).Should(BeTrue(),
 				"old client must be closed after swap")
 			Expect(replacement.closed.Load()).To(BeFalse(),
 				"new client must not be closed")

@@ -49,6 +49,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	roaudit "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/audit"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
@@ -59,7 +60,7 @@ import (
 var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 	const (
 		dataStorageURL = "https://localhost:8090" // Issue #785: DataStorage API (HTTPS)
-		e2eTimeout     = 120 * time.Second       // Same as suite timeout
+		e2eTimeout     = 120 * time.Second        // Same as suite timeout
 		e2eInterval    = 500 * time.Millisecond
 	)
 
@@ -73,7 +74,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 
 		BeforeEach(func() {
 			// Create unique namespace for E2E test
-			testNamespace = createTestNamespace("audit-wiring-e2e")
+			testNamespace = createTestNamespace(ctx, "audit-wiring-e2e")
 
 			// ✅ DD-API-001 + DD-AUTH-014: Use authenticated OpenAPI client (MANDATORY)
 			// Per DD-API-001: Direct HTTP usage is FORBIDDEN - bypasses type safety
@@ -101,7 +102,7 @@ var _ = Describe("RemediationOrchestrator Audit Client Wiring E2E", func() {
 						return hex.EncodeToString(h[:])
 					}(),
 					SignalName: "E2EAuditWiringTest",
-					Severity:   "critical",
+					Severity:   signalprocessingv1.SeverityCritical,
 					SignalType: "alert",
 					TargetType: "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{

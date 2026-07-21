@@ -44,8 +44,8 @@ func Generate() (string, error) {
 // Format: <<<EVAL_{token}>>>\n{content}\n<<<END_EVAL_{token}>>>
 func Wrap(content, token string) string {
 	open := openPrefix + token + openSuffix
-	close := closePrefix + token + closeSuffix
-	return open + "\n" + content + "\n" + close
+	closeMarker := closePrefix + token + closeSuffix
+	return open + "\n" + content + "\n" + closeMarker
 }
 
 // ContainsEscape checks if content contains the closing boundary marker for the

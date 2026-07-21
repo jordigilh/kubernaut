@@ -29,6 +29,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	pathIncidentAnalyze = "/api/v1/incident/analyze"
+)
+
 // BR-AI-006: KA client integration
 var _ = Describe("AgentClient", func() {
 	var (
@@ -56,7 +61,7 @@ var _ = Describe("AgentClient", func() {
 					w.Header().Set("Content-Type", "application/json")
 
 					switch {
-					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
+					case r.URL.Path == pathIncidentAnalyze && r.Method == http.MethodPost:
 						w.WriteHeader(http.StatusAccepted)
 						_, _ = w.Write([]byte(`{"session_id": "11111111-1111-1111-1111-111111111111"}`))
 
@@ -197,7 +202,7 @@ var _ = Describe("AgentClient", func() {
 					w.Header().Set("Content-Type", "application/json")
 
 					switch {
-					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
+					case r.URL.Path == pathIncidentAnalyze && r.Method == http.MethodPost:
 						w.WriteHeader(http.StatusAccepted)
 						_, _ = w.Write([]byte(`{"session_id": "22222222-2222-2222-2222-222222222222"}`))
 
@@ -240,7 +245,7 @@ var _ = Describe("AgentClient", func() {
 					w.Header().Set("Content-Type", "application/json")
 
 					switch {
-					case r.URL.Path == "/api/v1/incident/analyze" && r.Method == http.MethodPost:
+					case r.URL.Path == pathIncidentAnalyze && r.Method == http.MethodPost:
 						w.WriteHeader(http.StatusAccepted)
 						_, _ = w.Write([]byte(`{"session_id": "33333333-3333-3333-3333-333333333333"}`))
 

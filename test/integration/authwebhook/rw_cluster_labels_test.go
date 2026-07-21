@@ -75,7 +75,7 @@ var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (
 			TypeMeta: metav1.TypeMeta{APIVersion: "kubernaut.ai/v1alpha1", Kind: "ActionType"},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
-				Namespace: "default",
+				Namespace: defaultFixture,
 			},
 			Spec: atv1alpha1.ActionTypeSpec{
 				Name: name,
@@ -95,7 +95,7 @@ var _ = Describe("IT-AW-1511-001: RemediationWorkflow cluster label round-trip (
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
-				Namespace: "default",
+				Namespace: defaultFixture,
 			},
 			Spec: rwv1alpha1.RemediationWorkflowSpec{
 				Version:    "1.0.0",
