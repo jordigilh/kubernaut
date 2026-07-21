@@ -202,7 +202,14 @@ var _ = Describe("IT-DS-1661-PA5 ActionType workflow-count (cache-backed)", Labe
 			"only the 2 Active workflows for actionType should be counted -- the Disabled workflow "+
 				"and the workflow registered under a different action type must both be excluded")
 
-		Expect(queryWorkflowCount(testServer.URL, otherActionType)).To(Equal(1),
+		// otherActionType's workflow was created in the same batch as actionType's
+		// above, but informer cache watch events for distinct objects have no
+		// ordering guarantee relative to each other -- actionType's Eventually
+		// passing above does not imply otherActionType's Create has also been
+		// delivered to the cache yet. Retry here too instead of a bare Expect.
+		Eventually(func() int {
+			return queryWorkflowCount(testServer.URL, otherActionType)
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(1),
 			"otherActionType has exactly one Active workflow")
 	})
 

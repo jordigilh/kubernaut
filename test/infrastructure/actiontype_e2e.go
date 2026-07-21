@@ -103,15 +103,22 @@ func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, o
 // AuthWebhook being deployed. Use this instead of SeedE2EActionTypes for
 // suites that don't run AuthWebhook (e.g. Gateway, AIAnalysis, APIFrontend, KA,
 // SignalProcessing, WorkflowExecution-bundles E2E/IT suites, which exercise
-// their own component rather than AW's admission path): DataStorage's
-// informer-backed cache (pkg/datastorage/workflowcache, #1661 Phase 28-30)
-// observes the raw CRD directly and needs no admission-controller status patch
-// to make it discoverable.
+// their own component rather than AW's admission path).
 //
 // #1661 Phase 52 (Change 9, discovered gap): the sole DS-catalog-facing
 // replacement for SeedActionTypesViaAPI/SeedActionTypesViaAPIWithTLS, which
 // call DataStorage's Postgres-backed POST /api/v1/action-types endpoint
 // (removed in Phase 55).
+//
+// #1661 discovered gap (this fix): listActionsFromCache (discovery_cache.go,
+// Step 1 of the discovery protocol) only counts ActionTypes whose
+// .status.catalogStatus == Active -- it is NOT enough for the raw CRD to
+// exist, contrary to this function's original doc comment. In production,
+// AuthWebhook's admission handler (actiontype_handler.go
+// updateCRDStatusCreate) sets catalogStatus=Active as part of admitting the
+// CRD; suites using this no-AuthWebhook seeding path must replicate that
+// status patch themselves or Step 1 discovery silently returns zero action
+// types for every filter, no matter how long callers poll.
 func SeedActionTypesViaCRD(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d action types via direct CRD creation (no AuthWebhook)\n", len(e2eActionTypes))
@@ -130,7 +137,24 @@ func SeedActionTypesViaCRD(ctx context.Context, kubeconfigPath, namespace string
 			_, _ = fmt.Fprintf(output, "  ❌ %s: %s\n", at.SpecName, cmdOutput)
 			return fmt.Errorf("failed to apply ActionType %s: %w", at.SpecName, err)
 		}
-		_, _ = fmt.Fprintf(output, "  ✅ %s\n", at.SpecName)
+
+		// Mirror AuthWebhook's updateCRDStatusCreate (actiontype_handler.go):
+		// listActionsFromCache requires catalogStatus == Active, which kubectl
+		// apply above never sets (no status: block in the YAML, and Active is
+		// not the Kubernetes zero-value for the CatalogStatus enum).
+		const statusPatch = `{"status":{"registered":true,"catalogStatus":"Active","registeredBy":"test-infrastructure-seeder"}}`
+		patchCmd := exec.CommandContext(ctx, "kubectl", "patch",
+			"--kubeconfig", kubeconfigPath,
+			"actiontype", at.MetadataName,
+			"-n", namespace,
+			"--type=merge",
+			"--subresource=status",
+			"-p", statusPatch)
+		if patchOutput, patchErr := patchCmd.CombinedOutput(); patchErr != nil {
+			_, _ = fmt.Fprintf(output, "  ❌ %s status patch: %s\n", at.SpecName, patchOutput)
+			return fmt.Errorf("failed to patch ActionType %s status to Active: %w", at.SpecName, patchErr)
+		}
+		_, _ = fmt.Fprintf(output, "  ✅ %s (status.catalogStatus=Active)\n", at.SpecName)
 	}
 
 	_, _ = fmt.Fprintf(output, "✅ All action types seeded as CRDs (%d types, no AuthWebhook dependency)\n\n", len(e2eActionTypes))
