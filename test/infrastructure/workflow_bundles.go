@@ -52,6 +52,25 @@ const (
 
 	// TestWorkflowBundleVersion is the version tag for E2E test bundles
 	TestWorkflowBundleVersion = "v1.0.0"
+
+	// TestJobFailingExecutionBundle / TestJobOomkillExecutionBundle mirror the
+	// exact spec.execution.bundle digest pinned in
+	// test/fixtures/workflows/job-failing|job-oomkill/workflow-schema.yaml.
+	//
+	// #1661 Change 11e (DD-WORKFLOW-018) removed the WFE controller's runtime
+	// override of WorkflowRef.ExecutionBundle from a DataStorage catalog
+	// round-trip (see internal/controller/workflowexecution/workflowexecution_catalog.go's
+	// resolveWorkflowCatalog doc comment) -- WorkflowRef is now expected to
+	// arrive already-resolved from AIAnalysis.Status.SelectedWorkflow, and the
+	// WFE controller no longer mutates the spec at runtime. E2E tests that
+	// construct a WorkflowExecution CRD directly (bypassing AIAnalysis, as
+	// 03_job_backend_test.go's failure/OOM-kill cases do) must therefore supply
+	// the real bundle reference themselves -- a placeholder image here would
+	// silently run instead of the failure-simulating exec image and never
+	// exit non-zero. Keep in sync with the fixtures' `execution.bundle` field
+	// (re-sync via `make build-test-workflows` if the exec image is rebuilt).
+	TestJobFailingExecutionBundle = "quay.io/kubernaut-cicd/test-workflows/job-failing:v1.0.0-exec@sha256:c0cde2d0ae5550d3dd95dc998825904766b8de91e5a305a4d17fc590942ee7e0"
+	TestJobOomkillExecutionBundle = "quay.io/kubernaut-cicd/test-workflows/job-oomkill:v1.0.0-exec@sha256:949be6f31e137b8644cab7af1017b22e7196189d602f99f46dd5f88dcb84ff45"
 )
 
 // RegisteredWorkflowUUIDs maps workflow names to their DS-assigned UUIDs.

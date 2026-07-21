@@ -159,9 +159,11 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: jobFailureUUID,
 						Version:    "v1.0.0",
-						// placeholder-execution image (job-failing:v1.0.0-exec, which exits non-zero)
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						// job-failing:v1.0.0-exec exits non-zero. #1661 Change 11e: WFE no
+						// longer resolves/overrides this from DS at runtime, so the real
+						// digest-pinned bundle must be supplied directly (see
+						// TestJobFailingExecutionBundle's doc comment).
+						ExecutionBundle: infrastructure.TestJobFailingExecutionBundle,
 						ExecutionEngine: "job",
 					},
 					TargetResource: targetResource,
@@ -245,9 +247,11 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: jobOomkillUUID,
 						Version:    "v1.0.0",
-						// placeholder-execution image (job-oomkill:v1.0.0-exec, which unconditionally exits 137)
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						// job-oomkill:v1.0.0-exec unconditionally exits 137. #1661 Change
+						// 11e: WFE no longer resolves/overrides this from DS at runtime, so
+						// the real digest-pinned bundle must be supplied directly (see
+						// TestJobOomkillExecutionBundle's doc comment).
+						ExecutionBundle: infrastructure.TestJobOomkillExecutionBundle,
 						ExecutionEngine: "job",
 					},
 					TargetResource: targetResource,
@@ -361,8 +365,11 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID: jobFailureUUID,
 						Version:    "v1.0.0",
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						// job-failing:v1.0.0-exec exits non-zero. #1661 Change 11e: WFE no
+						// longer resolves/overrides this from DS at runtime, so the real
+						// digest-pinned bundle must be supplied directly (see
+						// TestJobFailingExecutionBundle's doc comment).
+						ExecutionBundle: infrastructure.TestJobFailingExecutionBundle,
 						ExecutionEngine: "job",
 					},
 					TargetResource: targetResource,
