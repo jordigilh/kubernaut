@@ -351,8 +351,8 @@ var _ = Describe("Approval Lifecycle [BR-ORCH-026]", func() {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
-						we.Name, we.Status.Phase, we.Status.ExecutionEngine)
-					return we.Status.ExecutionEngine
+						we.Name, we.Status.Phase, we.Spec.WorkflowRef.ExecutionEngine)
+					return we.Spec.WorkflowRef.ExecutionEngine
 				}
 			}
 			return ""

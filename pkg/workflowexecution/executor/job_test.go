@@ -92,16 +92,14 @@ func newTestWFE(name, targetResource, clusterID string) *workflowexecutionv1alph
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:      "wf-001",
-				Version:         "v1.0.0",
-				ExecutionBundle: "registry.example.com/workflow:v1",
+				WorkflowID:         "wf-001",
+				Version:            "v1.0.0",
+				ExecutionBundle:    "registry.example.com/workflow:v1",
+				ServiceAccountName: "kubernaut-runner",
 			},
 			TargetResource: targetResource,
 			ClusterID:      clusterID,
 			Parameters:     map[string]string{"TIMEOUT": "30s"},
-		},
-		Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-			ServiceAccountName: "kubernaut-runner",
 		},
 	}
 }
@@ -252,14 +250,14 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 		})
 
 		// BR-WE-019 / DD-WE-008: the "workflow" container's resource requests
-		// and limits come from WFE.Status.Resources, resolved once during
-		// Pending from the DS catalog's execution.resources section.
-		It("UT-WE-054-JOB-021 [BR-WE-019]: should apply WFE.Status.Resources to the workflow container", func() {
+		// and limits come from WFE.Spec.WorkflowRef.Resources, the immutable
+		// CRD-embedded snapshot (Issue #1661 Change 11f).
+		It("UT-WE-054-JOB-021 [BR-WE-019]: should apply WFE.Spec.WorkflowRef.Resources to the workflow container", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
 			wfe := newTestWFE("wfe-resources", "default/deployment/nginx", "")
-			wfe.Status.Resources = &corev1.ResourceRequirements{
+			wfe.Spec.WorkflowRef.Resources = &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("100m"),
 					corev1.ResourceMemory: resource.MustParse("128Mi"),
@@ -283,12 +281,12 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(resources.Limits.Memory().String()).To(Equal("256Mi"))
 		})
 
-		It("UT-WE-054-JOB-024 [BR-WE-019]: should leave the workflow container BestEffort when WFE.Status.Resources is nil (backward compat)", func() {
+		It("UT-WE-054-JOB-024 [BR-WE-019]: should leave the workflow container BestEffort when WFE.Spec.WorkflowRef.Resources is nil (backward compat)", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
 			wfe := newTestWFE("wfe-no-resources", "default/deployment/nginx", "")
-			Expect(wfe.Status.Resources).To(BeNil())
+			Expect(wfe.Spec.WorkflowRef.Resources).To(BeNil())
 
 			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())

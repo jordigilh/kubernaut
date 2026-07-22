@@ -270,10 +270,8 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 						WorkflowID:      "ansible-test",
 						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
 						EngineConfig:    &apiextensionsv1.JSON{Raw: engineConfig},
+						ExecutionEngine: "ansible",
 					},
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "ansible",
 				},
 			}
 
@@ -293,10 +291,8 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowID:      "ansible-test",
 						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+						ExecutionEngine: "ansible",
 					},
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "ansible",
 				},
 			}
 

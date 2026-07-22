@@ -233,7 +233,7 @@ var _ = Describe("KA-Owned Target Resource [BR-496]", func() {
 			for _, we := range weList.Items {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
-					return we.Status.ExecutionEngine
+					return we.Spec.WorkflowRef.ExecutionEngine
 				}
 			}
 			return ""

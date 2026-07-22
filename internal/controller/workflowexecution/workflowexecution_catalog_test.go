@@ -17,9 +17,6 @@ limitations under the License.
 package workflowexecution
 
 import (
-	"context"
-	"errors"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -31,24 +28,25 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// Issue #1661 Change 11e (DD-WORKFLOW-018): resolveWorkflowCatalog copies the
-// execution-engine snapshot (ExecutionEngine/ServiceAccountName/Resources)
-// from wfe.Spec.WorkflowRef onto Status verbatim, with zero DataStorage
-// round-trips and zero spec mutation. Phase 51 REFACTOR: WorkflowQuerier no
-// longer exists as a field on WorkflowExecutionReconciler at all (removed
-// once Phase 50 confirmed zero remaining call sites in this package), so
-// "zero WorkflowQuerier calls" is now a structural guarantee rather than a
-// runtime assertion -- these tests instead assert the resulting behavior
-// directly against Status/Spec.
-var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
+// Issue #1661 Change 11f (DD-WORKFLOW-018): resolveWorkflowCatalog (the
+// former Spec->Status mirror for ExecutionEngine/ServiceAccountName/
+// Resources) is removed entirely. Every production consumer now reads
+// wfe.Spec.WorkflowRef.{ExecutionEngine,ServiceAccountName,Resources,
+// ActionType} directly -- there is nothing left to "resolve" at runtime
+// since WorkflowRef is RO's already-validated, immutable, CRD-embedded
+// snapshot (Change 11c/11d). validateExecutionEngineResolved is the sole
+// remaining function in this file: a defensive fail-closed guard (not a
+// resolution step) against a WorkflowRef that somehow lacks an execution
+// engine, which should be unreachable in practice since RO's
+// validateSelectedWorkflow already enforces this before the WFE is ever
+// created.
+var _ = Describe("validateExecutionEngineResolved (Issue #1661 Change 11f)", func() {
 	var (
-		ctx context.Context
 		r   *WorkflowExecutionReconciler
 		wfe *workflowexecutionv1alpha1.WorkflowExecution
 	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
 		r = &WorkflowExecutionReconciler{}
 
 		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
@@ -61,6 +59,7 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 					EngineConfig:          &apiextensionsv1.JSON{Raw: []byte(`{"playbookPath":"deploy.yml"}`)},
 					ExecutionEngine:       "job",
 					ServiceAccountName:    "workflow-runner-sa",
+					ActionType:            "ScaleReplicas",
 					Dependencies: &sharedtypes.WorkflowDependencies{
 						Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
 					},
@@ -74,54 +73,36 @@ var _ = Describe("resolveWorkflowCatalog (Issue #1661 Change 11e)", func() {
 		}
 	})
 
-	It("UT-WE-1661-001: sets Status.ExecutionEngine/ServiceAccountName/Resources from WorkflowRef", func() {
-		err := r.resolveWorkflowCatalog(ctx, wfe)
-		Expect(err).ToNot(HaveOccurred())
-
-		Expect(wfe.Status.ExecutionEngine).To(Equal("job"),
-			"ExecutionEngine must come from wfe.Spec.WorkflowRef, not the (forbidden) DS catalog")
-		Expect(wfe.Status.ServiceAccountName).To(Equal("workflow-runner-sa"))
-		Expect(wfe.Status.Resources).To(Equal(wfe.Spec.WorkflowRef.Resources))
+	It("UT-WE-1661-011-001: passes when WorkflowRef.ExecutionEngine is declared", func() {
+		Expect(r.validateExecutionEngineResolved(wfe)).ToNot(HaveOccurred())
 	})
 
-	It("UT-WE-1661-002: never mutates WorkflowRef.ExecutionBundle/ExecutionBundleDigest/EngineConfig at runtime", func() {
-		originalBundle := wfe.Spec.WorkflowRef.ExecutionBundle
-		originalDigest := wfe.Spec.WorkflowRef.ExecutionBundleDigest
-		originalEngineConfig := wfe.Spec.WorkflowRef.EngineConfig
-
-		err := r.resolveWorkflowCatalog(ctx, wfe)
-		Expect(err).ToNot(HaveOccurred())
-
-		// #1661 Change 11e: the WorkflowRef is RO's already-validated,
-		// CRD-embedded snapshot (Change 11d) -- WorkflowExecution must never
-		// overwrite it from a (forbidden) DS catalog entry at runtime, unlike
-		// the pre-#1661 resolveWorkflowCatalog which did exactly this.
-		Expect(wfe.Spec.WorkflowRef.ExecutionBundle).To(Equal(originalBundle))
-		Expect(wfe.Spec.WorkflowRef.ExecutionBundleDigest).To(Equal(originalDigest))
-		Expect(wfe.Spec.WorkflowRef.EngineConfig).To(Equal(originalEngineConfig))
+	It("UT-WE-1661-011-002: fails when WorkflowRef.ExecutionEngine is empty (defensive guard -- unreachable via RO's normal creation path)", func() {
+		wfe.Spec.WorkflowRef.ExecutionEngine = ""
+		Expect(r.validateExecutionEngineResolved(wfe)).To(HaveOccurred())
 	})
 
-	It("UT-WE-1661-003: leaves Status.WorkflowName/ActionType empty (deferred readability convenience, not a functional/SOC2 requirement)", func() {
-		// Design-gap resolution (escalated during Phase 49 preflight): WorkflowRef
-		// has no WorkflowName/ActionType fields (KA's autonomous path never emits
-		// them), so these Status fields are simply never populated post-#1661.
-		// workflow_id remains the join key into the immutable workflow_content
-		// captured in the Postgres audit_events ledger (IT-AW-1111-001), which is
-		// sufficient for SOC2 CC8.1 reconstruction. A fast-follow issue tracks
-		// wiring these end-to-end for audit readability if ever prioritized.
-		err := r.resolveWorkflowCatalog(ctx, wfe)
-		Expect(err).ToNot(HaveOccurred())
+	It("UT-WE-1661-011-003: ExecutionEngine/ServiceAccountName/Resources/ActionType are read straight off the immutable WorkflowRef snapshot -- there is no Status mirror to keep in sync", func() {
+		// #1661 Change 11f: these four all moved off wfe.Status entirely
+		// (WorkflowExecutionStatus has no ExecutionEngine/ServiceAccountName/
+		// Resources/ActionType fields anymore -- see api/workflowexecution/
+		// v1alpha1/workflowexecution_types.go). Every production consumer
+		// (pending.go, lifecycle.go, the three executors, the audit manager,
+		// RO's notification_creation.go) reads wfe.Spec.WorkflowRef.X
+		// directly, so this snapshot is authoritative from CRD-creation time
+		// with no additional per-reconcile resolution step required.
+		Expect(wfe.Spec.WorkflowRef.ExecutionEngine).To(Equal("job"))
+		Expect(wfe.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-runner-sa"))
+		Expect(wfe.Spec.WorkflowRef.Resources).ToNot(BeNil())
+		Expect(wfe.Spec.WorkflowRef.ActionType).To(Equal("ScaleReplicas"))
+	})
 
+	It("UT-WE-1661-011-004: WorkflowName has no source anywhere upstream and stays permanently unset on wfe.Status regardless of this change", func() {
+		// Unlike its five siblings, WorkflowRef carries no WorkflowName field
+		// at all (KA's autonomous selection path never emits a display name
+		// distinct from WorkflowID either), so there is nothing to read from
+		// Spec for this one. WorkflowID remains the functional/join key for
+		// SOC2 CC8.1 reconstruction regardless (IT-AW-1111-001).
 		Expect(wfe.Status.WorkflowName).To(BeEmpty())
-		Expect(wfe.Status.ActionType).To(BeEmpty())
-	})
-
-	It("UT-WE-1661-004: is idempotent -- returns ErrAlreadyResolved (Issue #1674 sentinel) without touching Status.ExecutionEngine", func() {
-		wfe.Status.ExecutionEngine = "already-resolved"
-
-		err := r.resolveWorkflowCatalog(ctx, wfe)
-		Expect(errors.Is(err, ErrAlreadyResolved)).To(BeTrue())
-
-		Expect(wfe.Status.ExecutionEngine).To(Equal("already-resolved"))
 	})
 })

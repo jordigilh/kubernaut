@@ -898,8 +898,9 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 // Transient-Failure Tolerance
 // ========================================
 //
-// Wiring Point A: catalog execution.resources -> WFE.Status.Resources -> Job
-// "workflow" container resources.
+// Wiring Point A: RO-embedded WFE.Spec.WorkflowRef.Resources (Issue #1661
+// Change 11d/11f, CRD-embedded snapshot from AIAnalysis.Status.
+// SelectedWorkflow.Resources) -> Job "workflow" container resources.
 var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 
 	It("should apply catalog-resolved resources to the Job's workflow container (IT-WE-019-001)", func() {
@@ -935,26 +936,10 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		Expect(container.Resources.Limits.Cpu().String()).To(Equal("500m"))
 		Expect(container.Resources.Limits.Memory().String()).To(Equal("256Mi"))
 
-		By("Verifying the resolved resources were persisted to WFE.Status.Resources")
-		// Job creation (waitForJobCreation above) and the WFE status update that
-		// persists Status.Resources are two sequential, non-atomic API calls within
-		// the same reconcile (finalizePendingToRunning): the Job becomes visible to
-		// this test as soon as it's created, which can race ahead of the subsequent
-		// Status().Update() -- especially when a concurrent reconcile (e.g. the
-		// Running-phase progress check triggered by the Job's own creation event)
-		// causes a resourceVersion conflict and forces a retry. Poll rather than a
-		// single-shot read to tolerate that expected eventual-consistency gap.
-		var updated *workflowexecutionv1alpha1.WorkflowExecution
-		Eventually(func() *corev1.ResourceRequirements {
-			var err error
-			updated, err = getWFE(wfe.Name, wfe.Namespace)
-			if err != nil {
-				return nil
-			}
-			return updated.Status.Resources
-		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
-		Expect(updated.Status.Resources.Requests.Cpu().String()).To(Equal("100m"))
-
+		// Issue #1661 Change 11f: Resources lives immutably on
+		// Spec.WorkflowRef from CRD-creation time -- there is no Status
+		// mirror/persist step to poll for anymore (unlike the pre-Change-11f
+		// resolveWorkflowCatalog design this test previously exercised).
 		GinkgoWriter.Printf("✅ IT-WE-019-001: Catalog-resolved resources applied to Job container\n")
 	})
 

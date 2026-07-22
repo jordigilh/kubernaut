@@ -153,15 +153,13 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						Version:         "v1.0.0",
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
 						ExecutionEngine: "tekton",
+						ActionType:      "RestartPod",
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
 					Parameters: map[string]string{
 						"pod_name":  "test-pod-123",
 						"namespace": namespace,
 					},
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -259,12 +257,16 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(execEventData.PipelinerunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
 			Expect(execEventData.PipelinerunName.Value).To(HavePrefix("wfe-"), "PipelineRun name should start with 'wfe-' prefix")
 
-			// IT-WE-1661-002 (Issue #1661 Change 11e): ActionType/WorkflowName are
-			// no longer resolved into wfe.Status (WorkflowRef carries neither
-			// field), so the execution.started event omits both. See the
-			// selection-event assertion above for the SOC2 CC8.1 rationale.
-			Expect(execEventData.ActionType.IsSet()).To(BeFalse(),
-				"action_type is not carried by WorkflowRef and should be omitted from the execution.started event")
+			// IT-WE-1661-002 (Issue #1661 Change 11f): ActionType is now sourced
+			// directly from the CRD-embedded WorkflowRef.ActionType snapshot (RO
+			// copies it verbatim from AIAnalysis.Status.SelectedWorkflow at WFE
+			// creation, before the WFE even exists), so it's populated on the
+			// execution.started event. WorkflowName still carries no such field
+			// (see the selection-event assertion above for the SOC2 CC8.1
+			// rationale) and remains omitted.
+			Expect(execEventData.ActionType.IsSet()).To(BeTrue(),
+				"action_type is carried by WorkflowRef.ActionType and should be populated on the execution.started event")
+			Expect(execEventData.ActionType.Value).To(Equal("RestartPod"))
 			Expect(execEventData.WorkflowName.IsSet()).To(BeFalse(),
 				"workflow_name is not carried by WorkflowRef and should be omitted from the execution.started event")
 		})

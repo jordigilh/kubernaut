@@ -528,9 +528,10 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			Expect(pr.Spec.Params[0].Value.StringVal).To(Equal(wfe.Spec.TargetResource))
 		})
 
-		// DD-WE-005 v2.0 / Issue #501: SA resolved into Status at runtime
-		It("should use SA from WFE Status.ServiceAccountName", func() {
-			wfe.Status.ServiceAccountName = "custom-sa"
+		// DD-WE-005 v2.0 / Issue #501/#1661 Change 11f: SA read from the
+		// CRD-embedded WorkflowRef spec snapshot
+		It("should use SA from WFE Spec.WorkflowRef.ServiceAccountName", func() {
+			wfe.Spec.WorkflowRef.ServiceAccountName = "custom-sa"
 
 			pr := (&weexecutor.TektonExecutor{}).BuildPipelineRun(context.Background(), wfe, reconciler.ExecutionNamespace, weexecutor.CreateOptions{})
 

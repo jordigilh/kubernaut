@@ -65,40 +65,41 @@ var _ = Describe("buildWorkflowExecutionAuditPayload retry-count (BR-WE-019 AC10
 	})
 })
 
-// #1661 Change 3: ActionType/WorkflowName are resolved once during Pending
-// (mirrors the existing ExecutionEngine/ServiceAccountName precedent in
-// wfe.Status, DD-WE-005/Issue #650) and stay immutable thereafter, so they're
-// available to buildExecutionStartedPayload/buildWorkflowExecutionAuditPayload
-// on every subsequent Running/Completed/Failed reconcile without a fresh DS
-// call. Business value: workflowexecution.execution.started/.workflow.
-// completed/.failed become human-readable without joining back to the
+// #1661 Change 11f: ActionType is read directly from the immutable,
+// CRD-embedded wfe.Spec.WorkflowRef.ActionType snapshot (no Status mirror
+// or resolve step -- known at WFE creation time, same as
+// ExecutionEngine/ServiceAccountName). WorkflowName has no equivalent
+// upstream source (WorkflowRef carries no display-name field) and stays on
+// wfe.Status where it will simply always be empty. Business value:
+// workflowexecution.execution.started/.workflow.completed/.failed become
+// human-readable without joining back to the
 // remediationworkflow.admitted.create audit event by workflow_id (SOC2 AU-3
 // content-of-audit-records completeness). workflow_id remains the functional
-// execution/join key regardless -- these two fields are additive readability
-// only, never required for WFE to execute.
-var _ = Describe("buildExecutionStartedPayload / buildWorkflowExecutionAuditPayload — ActionType/WorkflowName (#1661 Change 3)", func() {
+// execution/join key regardless -- ActionType/WorkflowName are additive
+// readability only, never required for WFE to execute.
+var _ = Describe("buildExecutionStartedPayload / buildWorkflowExecutionAuditPayload — ActionType/WorkflowName (#1661 Change 11f)", func() {
 	newTestWFE := func(actionType, workflowName string) *workflowexecutionv1alpha1.WorkflowExecution {
 		wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
 		wfe.Name = "wfe-actiontype-test"
 		wfe.Status.Phase = workflowexecutionv1alpha1.PhaseRunning
-		wfe.Status.ActionType = actionType
+		wfe.Spec.WorkflowRef.ActionType = actionType
 		wfe.Status.WorkflowName = workflowName
 		return wfe
 	}
 
-	It("UT-WFE-140-001a: buildExecutionStartedPayload populates ActionType and WorkflowName from wfe.Status", func() {
+	It("UT-WFE-140-001a: buildExecutionStartedPayload populates ActionType from wfe.Spec.WorkflowRef and WorkflowName from wfe.Status", func() {
 		wfe := newTestWFE("ScaleReplicas", "scale-memory-fix")
 
 		payload := buildExecutionStartedPayload(wfe, "test-pipelinerun")
 
 		Expect(payload.ActionType.IsSet()).To(BeTrue(),
-			"BUSINESS VALUE: execution.workflow.started should be human-readable without a DS/audit join (#1661 Change 3)")
+			"BUSINESS VALUE: execution.workflow.started should be human-readable without a DS/audit join (#1661 Change 11f)")
 		Expect(payload.ActionType.Value).To(Equal("ScaleReplicas"))
 		Expect(payload.WorkflowName.IsSet()).To(BeTrue())
 		Expect(payload.WorkflowName.Value).To(Equal("scale-memory-fix"))
 	})
 
-	It("UT-WFE-140-001b: buildWorkflowExecutionAuditPayload populates ActionType and WorkflowName from wfe.Status (completed/failed events)", func() {
+	It("UT-WFE-140-001b: buildWorkflowExecutionAuditPayload populates ActionType from wfe.Spec.WorkflowRef and WorkflowName from wfe.Status (completed/failed events)", func() {
 		wfe := newTestWFE("RestartPod", "restart-pod-fix")
 
 		payload := buildWorkflowExecutionAuditPayload(wfe)
@@ -109,7 +110,7 @@ var _ = Describe("buildExecutionStartedPayload / buildWorkflowExecutionAuditPayl
 		Expect(payload.WorkflowName.Value).To(Equal("restart-pod-fix"))
 	})
 
-	It("UT-WFE-140-001c: both omit ActionType/WorkflowName when wfe.Status never resolved them (e.g. querier unavailable)", func() {
+	It("UT-WFE-140-001c: both omit ActionType when WorkflowRef.ActionType is empty and WorkflowName since it's never resolved", func() {
 		wfe := newTestWFE("", "")
 
 		startedPayload := buildExecutionStartedPayload(wfe, "test-pipelinerun")

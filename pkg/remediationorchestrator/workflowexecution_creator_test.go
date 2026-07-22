@@ -161,19 +161,21 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		})
 	})
 
-	Describe("CRD-embedded execution snapshot pass-through (Issue #1661 Change 11d)", func() {
-		// Authority: DD-WORKFLOW-018. Now that WorkflowRef carries these five
-		// fields (Change 11c) and WorkflowExecution will stop re-fetching them
-		// from DataStorage (Change 11e), RO's buildWorkflowExecution must be the
-		// one production call site that copies them from the CRD-embedded
+	Describe("CRD-embedded execution snapshot pass-through (Issue #1661 Change 11d/11f)", func() {
+		// Authority: DD-WORKFLOW-018. Now that WorkflowRef carries these six
+		// fields (Change 11c, ActionType added by Change 11f) and
+		// WorkflowExecution will stop re-fetching them from DataStorage
+		// (Change 11e), RO's buildWorkflowExecution must be the one
+		// production call site that copies them from the CRD-embedded
 		// AIAnalysis.Status.SelectedWorkflow snapshot into WorkflowRef.
-		It("UT-RO-341-001: copies Dependencies/Resources/DeclaredParameterNames/ExecutionEngine/ServiceAccountName from SelectedWorkflow into WorkflowRef", func() {
+		It("UT-RO-341-001: copies Dependencies/Resources/DeclaredParameterNames/ExecutionEngine/ServiceAccountName/ActionType from SelectedWorkflow into WorkflowRef", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-snapshot-passthrough", "default")
 			ai := helpers.NewCompletedAIAnalysis("ai-test-snapshot-passthrough", "default")
 			ai.Status.SelectedWorkflow.ExecutionEngine = "job"
 			ai.Status.SelectedWorkflow.ServiceAccountName = "workflow-runner-sa"
+			ai.Status.SelectedWorkflow.ActionType = "ScaleReplicas"
 			ai.Status.SelectedWorkflow.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
 			}
@@ -193,31 +195,11 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			Expect(created.Spec.WorkflowRef.ExecutionEngine).To(Equal("job"),
 				"Issue #1661 Change 11d: ExecutionEngine must pass through to WorkflowRef")
 			Expect(created.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-runner-sa"))
+			Expect(created.Spec.WorkflowRef.ActionType).To(Equal("ScaleReplicas"),
+				"Issue #1661 Change 11f: ActionType must pass through to WorkflowRef like its siblings")
 			Expect(created.Spec.WorkflowRef.Dependencies).To(Equal(ai.Status.SelectedWorkflow.Dependencies))
 			Expect(created.Spec.WorkflowRef.Resources).To(Equal(ai.Status.SelectedWorkflow.Resources))
 			Expect(created.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_POD": true}))
-		})
-	})
-
-	Describe("ExecutionEngine (RO creator does not set on WFE)", func() {
-		// Issue #518: ExecutionEngine is on WorkflowExecution status and resolved at runtime
-		// by the WE controller (workflow catalog). The RO WorkflowExecution creator does not
-		// copy SelectedWorkflow.ExecutionEngine onto the WFE.
-		It("should leave ExecutionEngine unset on created WorkflowExecution regardless of AI SelectedWorkflow", func() {
-			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := helpers.NewRemediationRequest("test-engine-unset", "default")
-			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-unset", "default")
-			ai.Status.SelectedWorkflow.ExecutionEngine = "job"
-			ctx := context.Background()
-
-			name, err := weCreator.Create(ctx, rr, ai)
-			Expect(err).ToNot(HaveOccurred())
-			created := &workflowexecutionv1.WorkflowExecution{}
-			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Status.ExecutionEngine).To(BeEmpty(),
-				"RO must not populate ExecutionEngine; WE resolves it from the catalog at runtime")
 		})
 	})
 

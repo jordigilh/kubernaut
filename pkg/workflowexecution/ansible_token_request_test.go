@@ -68,19 +68,17 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 			},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:      "wf-123",
-					ExecutionBundle: "quay.io/test:v1@sha256:abc123",
-					EngineConfig:    defaultEngineConfig(),
+					WorkflowID:         "wf-123",
+					ExecutionBundle:    "quay.io/test:v1@sha256:abc123",
+					EngineConfig:       defaultEngineConfig(),
+					ExecutionEngine:    "ansible",
+					ServiceAccountName: saName,
 				},
 				TargetResource: "default/Deployment/nginx",
 				RemediationRequestRef: corev1.ObjectReference{
 					Name:      "rr-test",
 					Namespace: "kubernaut-workflows",
 				},
-			},
-			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-				ExecutionEngine:    "ansible",
-				ServiceAccountName: saName,
 			},
 		}
 		if timeout > 0 {

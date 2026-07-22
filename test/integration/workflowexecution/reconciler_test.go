@@ -263,9 +263,9 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 		})
 
 		// DD-WE-005 v2 / Issue #501: SA sourced from the CRD-embedded WorkflowRef
-		// snapshot (Issue #1661 Change 11e; previously resolved via a
+		// snapshot (Issue #1661 Change 11e/11f; previously resolved via a
 		// DataStorage/querier round-trip, Issue #650).
-		It("should use Status.ServiceAccountName on PipelineRun when set", func() {
+		It("should use Spec.WorkflowRef.ServiceAccountName on PipelineRun when set", func() {
 			By("Creating a WorkflowExecution with a custom ServiceAccountName in WorkflowRef")
 			wfe = createUniqueWFE("sa-custom", "default/deployment/sa-custom-test")
 			wfe.Spec.WorkflowRef.ServiceAccountName = "custom-workflow-sa"

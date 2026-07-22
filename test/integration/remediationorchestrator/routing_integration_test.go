@@ -377,6 +377,7 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 					WorkflowID:      "wf-restart-pods",
 					Version:         "v1.0.0",
 					ExecutionBundle: "test-image:latest",
+					ExecutionEngine: "job",
 				},
 				TargetResource: targetResource,
 			},
@@ -385,7 +386,6 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		recentCompletion := metav1.NewTime(time.Now().Add(-1 * time.Minute))
 		wfe.Status.Phase = workflowexecutionv1.PhaseCompleted
 		wfe.Status.CompletionTime = &recentCompletion
-		wfe.Status.ExecutionEngine = "job"
 		Expect(k8sClient.Status().Update(ctx, wfe)).To(Succeed())
 
 		By("Completing AIAnalysis with RemediationTarget.Kind = 'Deployment' (uppercase)")

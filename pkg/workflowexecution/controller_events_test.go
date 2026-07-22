@@ -511,7 +511,9 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			now := metav1.Now()
 			wfe.Status.Phase = workflowexecutionv1alpha1.PhaseRunning
 			wfe.Status.StartTime = &now
-			wfe.Status.ExecutionEngine = "" // force resolution attempt
+			// buildPendingWFE never sets WorkflowRef.ExecutionEngine, so it's
+			// already empty here -- validateExecutionEngineResolved (Issue
+			// #1661 Change 11f) will fail on this WFE as intended.
 
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(evtScheme).
