@@ -8,13 +8,29 @@
 **Affects**: Data Storage Service, AuthWebhook Service, HolmesGPT API, Remediation Orchestrator, Signal Processing, Workflow Execution
 **Related**: DD-WORKFLOW-016 (Action-Type Indexing), DD-WORKFLOW-012 (Immutability Constraints), DD-STORAGE-008 (Catalog Schema), DD-WORKFLOW-001 v2.6 (Label Schema), DD-AUDIT-003 (Audit Trace), ADR-058 (Webhook-Driven Registration), BR-WORKFLOW-006 (RemediationWorkflow CRD), DD-WEBHOOK-001 (Webhook Matrix), DD-004 (RFC 7807 Error Responses)
 **Supersedes**: DD-WORKFLOW-005 (Schema Extraction), DD-WORKFLOW-007 (Manual Registration)
-**Version**: 1.3
+**Version**: 1.4
 
 ---
 
 ## Changelog
 
-### Version 1.3 (2026-07-14) -- CURRENT
+### Version 1.4 (2026-07-22) -- CURRENT
+
+- **Phase 3 (Execution)**: Issue #1661 Change 11f completes the Change 8 migration below. Change 8 made
+  `WorkflowExecution.Spec.WorkflowRef` the copy destination for the CRD-embedded snapshot, but several downstream
+  consumers (the three executors, the audit manager, the RO completion-notification path, and a defensive
+  `resolveWorkflowCatalog` reconcile step) still read/mirrored the values through `wfe.Status.ExecutionEngine` /
+  `.ServiceAccountName` / `.Resources` for historical reasons. `ActionType` was never wired into either location and
+  was consequently omitted from the `workflowexecution.execution.started` audit event (a known gap flagged by the
+  `IT-WE-1661-002` test). Change 11f: (1) adds `ActionType` to `WorkflowRef` and has RO's `buildWorkflowRef` copy it
+  from `AIAnalysis.Status.SelectedWorkflow.ActionType` alongside the other five fields -- it is already known before
+  the WFE CRD exists, sourced from the AIAnalysis CRD's status, so no WE-side resolution is possible or necessary;
+  (2) removes `ExecutionEngine`/`ServiceAccountName`/`Resources`/`ActionType` from `WorkflowExecutionStatus` entirely,
+  along with the `resolveWorkflowCatalog` mirroring step; (3) repoints every remaining read site (executors, audit
+  manager, RO notification path) directly at `wfe.Spec.WorkflowRef.*`. `WorkflowName` remains intentionally absent
+  from `WorkflowRef` (see Change 8's SOC2 CC8.1 rationale) and continues to be omitted from audit events.
+
+### Version 1.3 (2026-07-14)
 
 - **Storage architecture revised by [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md)**: etcd
   (via the `RemediationWorkflow`/`ActionType` CRDs) is now the sole source of truth for catalog definitions. The
@@ -403,7 +419,7 @@ Discovery generates audit traces at the DS data layer for each step:
 
 ### Overview
 
-After HAPI validates the LLM's selection, the AIAnalysis CR status is updated with the selected workflow and parameters. The Remediation Orchestrator (RO) -- which owns the end-to-end remediation lifecycle -- detects this status change and creates a WorkflowExecution CRD. The Workflow Execution (WE) controller -- a pure executor with no routing logic -- reconciles the CRD, resolves the execution engine from the DS workflow catalog at runtime (Issue #518), persists it in `wfe.Status.ExecutionEngine`, and creates the appropriate execution primitive (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job).
+After HAPI validates the LLM's selection, the AIAnalysis CR status is updated with the selected workflow and parameters. The Remediation Orchestrator (RO) -- which owns the end-to-end remediation lifecycle -- detects this status change and creates a WorkflowExecution CRD, copying the full execution snapshot (`executionEngine`, `serviceAccountName`, `actionType`, `resources`, plus the identifying `workflowId`/`version`/`executionBundle`) verbatim from `AIAnalysis.Status.SelectedWorkflow` into `WorkflowExecution.Spec.WorkflowRef` (Issue #1661 Changes 8 and 11f -- superseding the Issue #518 design below the fold). The Workflow Execution (WE) controller -- a pure executor with no routing logic and zero live calls to DS -- reconciles the CRD purely from its own spec and creates the appropriate execution primitive (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job).
 
 ### Component Flow
 
@@ -414,25 +430,23 @@ sequenceDiagram
     participant WE as WorkflowExecution
     participant K8s as Kubernetes
 
-    HAPI->>RO: AIAnalysis CR status updated with workflow_id + parameters
-    Note right of HAPI: RO watches AIAnalysis status changes
+    HAPI->>RO: AIAnalysis CR status updated with SelectedWorkflow snapshot
+    Note right of HAPI: RO watches AIAnalysis status changes.<br/>Snapshot includes workflowId, version, executionBundle,<br/>executionEngine, serviceAccountName, actionType, resources.
 
     RO->>RO: Check cooldown period (no duplicate execution)
     RO->>RO: Routing decisions (blocking, resource busy, etc.)
+    RO->>RO: validateSelectedWorkflow (fail-closed if engine/etc. missing)
     RO->>K8s: Create WorkflowExecution CRD
-    Note right of RO: Includes workflow_id, parameters,<br/>targetResource (no executionEngine — Issue #518)
+    Note right of RO: Spec.WorkflowRef carries the full snapshot verbatim<br/>(Issue #1661 Changes 8/11f) — no WE-side resolution needed.
 
     WE->>K8s: Reconcile WorkflowExecution CRD
-    WE->>DS: Resolve executionEngine from catalog (WorkflowQuerier)
-    DS-->>WE: engine ("tekton", "job", or "ansible")
-    WE->>WE: Persist engine in wfe.Status.ExecutionEngine (immutable)
-    WE->>WE: Select executor via ExecutorRegistry (Strategy pattern)
+    WE->>WE: Select executor via ExecutorRegistry (Strategy pattern),<br/>keyed on Spec.WorkflowRef.ExecutionEngine
 
-    alt status.executionEngine = "tekton"
+    alt spec.workflowRef.executionEngine = "tekton"
         WE->>K8s: Create Tekton PipelineRun from OCI bundle
-    else status.executionEngine = "job"
+    else spec.workflowRef.executionEngine = "job"
         WE->>K8s: Create Kubernetes Job
-    else status.executionEngine = "ansible"
+    else spec.workflowRef.executionEngine = "ansible"
         WE->>K8s: Launch AWX Job Template via REST API
     end
 
@@ -445,22 +459,27 @@ sequenceDiagram
 
 ### Execution Context
 
-The WorkflowExecution CRD spec includes:
+The WorkflowExecution CRD's `Spec.WorkflowRef` carries the immutable, CRD-embedded execution snapshot -- copied verbatim by the RO creator from `AIAnalysis.Status.SelectedWorkflow` at WFE-creation time (Issue #1661 Changes 8/11f):
+
+| `WorkflowRef` Field | Source | Description |
+|-------|--------|-------------|
+| `workflowId` | LLM selection (validated by HAPI) | ID of the workflow to execute |
+| `version` | `AIAnalysis.Status.SelectedWorkflow` | Workflow catalog version |
+| `executionBundle` | `AIAnalysis.Status.SelectedWorkflow` | OCI bundle reference (digest-pinned) |
+| `executionEngine` | `AIAnalysis.Status.SelectedWorkflow` | `"tekton"`, `"job"`, or `"ansible"` |
+| `serviceAccountName` | `AIAnalysis.Status.SelectedWorkflow` | Execution ServiceAccount for the Job/PipelineRun/AWX credential |
+| `actionType` | `AIAnalysis.Status.SelectedWorkflow` | Action taxonomy label, surfaced on audit events |
+| `resources` | `AIAnalysis.Status.SelectedWorkflow` | Catalog-declared container resource requests/limits (DD-WE-008) |
+
+Other WFE spec fields outside `WorkflowRef`:
 
 | Field | Source | Description |
 |-------|--------|-------------|
-| `workflowId` | LLM selection (validated by HAPI) | UUID of the workflow to execute |
 | `parameters` | LLM-populated (validated by HAPI) | Workflow parameters as key-value pairs |
 | `targetResource` | Signal context | Kubernetes resource to remediate |
 | `signalFingerprint` | SP | Unique identifier for the triggering signal |
 
-The WE controller resolves execution context at runtime and persists it in status:
-
-| Status Field | Source | Description |
-|-------|--------|-------------|
-| `executionEngine` | Resolved from DS workflow catalog by WE controller | `"tekton"`, `"job"`, or `"ansible"` (Issue #518) |
-
-**Note**: `executionEngine` is **not** on the WFE spec. The WE controller resolves it from the DS workflow catalog at runtime using `WorkflowQuerier.GetWorkflowSchemaMetadata(workflowId)` (F6: all catalog artifacts in a single DS call) and persists it in `wfe.Status.ExecutionEngine` (immutable once set). If the catalog entry has no engine defined, the WFE fails explicitly with `ConfigurationError` -- there is no silent default. WE uses the `ExecutorRegistry` (Strategy pattern) to select the correct executor based on the resolved engine.
+**Note**: none of the seven `WorkflowRef` fields above are resolved or mirrored by the WE controller at runtime -- there is no DS catalog round-trip, no `WorkflowQuerier`, and no corresponding `WorkflowExecutionStatus` field. `AIAnalysis`/RO's `validateSelectedWorkflow` is the sole fail-closed gate (at CRD-creation time, before any WFE exists); if the catalog entry has no engine defined, RO never creates the WFE at all -- there is no silent default and no possibility of a WE-side resolution failure. WE uses the `ExecutorRegistry` (Strategy pattern) to select the correct executor directly from `Spec.WorkflowRef.ExecutionEngine`. `WorkflowName` is deliberately *not* part of `WorkflowRef` (see Change 8's SOC2 CC8.1 rationale in the changelog above) -- `workflowId` joined against the immutable `workflow_content` audit ledger entry satisfies reconstruction requirements without it.
 
 ### Audit Traces
 
