@@ -59,7 +59,7 @@ spec:
       serviceAccountName: postgresql
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       securityContext:
-        {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.podSecurityContext "defaults" (dict "seccompProfile" (dict "type" "RuntimeDefault"))) | nindent 8 }}
+        {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.podSecurityContext "defaults" (dict "runAsNonRoot" true "seccompProfile" (dict "type" "RuntimeDefault"))) | nindent 8 }}
       {{- include "kubernaut.affinity" (dict "component" .Values.postgresql "matchLabels" (dict "app" "postgresql")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.postgresql "global" .Values.global) | nindent 6 }}
       containers:
@@ -67,7 +67,7 @@ spec:
           image: {{ .Values.postgresql.image }}
           imagePullPolicy: {{ .Values.global.image.pullPolicy }}
           securityContext:
-            {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false)) | nindent 12 }}
+            {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" false "capabilities" (dict "drop" (list "ALL")))) | nindent 12 }}
           ports:
             - name: postgresql
               containerPort: 5432

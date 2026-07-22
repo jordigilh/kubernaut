@@ -1,0 +1,85 @@
+suite: postgresql/valkey restricted PSA defaults (issue #1685)
+templates:
+  - templates/infrastructure/postgresql.yaml
+  - templates/infrastructure/valkey.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+tests:
+  - it: "postgresql pod securityContext defaults to runAsNonRoot + RuntimeDefault seccomp"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+
+  - it: "postgresql container securityContext drops ALL and disallows privilege escalation"
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop[0]
+          value: ALL
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: false
+
+  - it: "valkey pod securityContext defaults to runAsNonRoot + RuntimeDefault seccomp"
+    template: templates/infrastructure/valkey.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+
+  - it: "valkey container securityContext drops ALL and disallows privilege escalation"
+    template: templates/infrastructure/valkey.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop[0]
+          value: ALL
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: false
+
+  - it: "user override can force runAsUser on postgresql pod"
+    set:
+      postgresql:
+        podSecurityContext:
+          runAsUser: 999
+    template: templates/infrastructure/postgresql.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 999
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true

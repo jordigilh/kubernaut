@@ -658,6 +658,10 @@ authwebhook:
 #   The secret must contain keys: POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB,
 #   and db-secrets.yaml (YAML with username + password for DataStorage).
 #   BYO (#256): Set postgresql.enabled=false and provide postgresql.host.
+#
+# PSA restricted (#1685): defaults set runAsNonRoot + drop ALL capabilities.
+# readOnlyRootFilesystem stays false so Postgres can write PGDATA. Override via
+# podSecurityContext / containerSecurityContext if your image needs different UIDs.
 postgresql:
   enabled: true  # set false to use an external PostgreSQL instance
   host: ""       # required when enabled=false (e.g., "db.example.com")
@@ -679,12 +683,18 @@ postgresql:
     limits:
       memory: 512Mi
       cpu: 500m
+  # Optional overrides (merged over restricted-PSA-oriented defaults).
+  podSecurityContext: {}
+  containerSecurityContext: {}
 
 # -- Valkey (DataStorage DLQ)
 # Valkey is a BSD-licensed Redis-compatible in-memory data store.
 # Credentials: MUST be pre-created before install (#557).
 #   The secret must contain key: valkey-secrets.yaml (YAML with password).
 #   BYO (#256): Set valkey.enabled=false and provide valkey.host.
+#
+# PSA restricted (#1685): same pattern as postgresql — runAsNonRoot + drop ALL,
+# writable data dir (readOnlyRootFilesystem: false).
 valkey:
   enabled: true  # set false to use an external Valkey/Redis instance
   host: ""       # required when enabled=false (e.g., "valkey.example.com")
@@ -702,6 +712,8 @@ valkey:
     limits:
       memory: 256Mi
       cpu: 200m
+  podSecurityContext: {}
+  containerSecurityContext: {}
 
 # -- FleetMetadataCache: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068).
 # Polls remote clusters via MCP Gateway and caches managed resource metadata in Valkey.
