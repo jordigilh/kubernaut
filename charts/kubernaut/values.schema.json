@@ -1094,7 +1094,9 @@
         },
         "resources": { "$ref": "#/definitions/resources" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" }
       }
     },
     "valkey": {
@@ -1137,7 +1139,9 @@
         },
         "resources": { "$ref": "#/definitions/resources" },
         "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
+        "containerSecurityContext": { "$ref": "#/definitions/securityContext" }
       }
     },
     "fleetmetadatacache": {

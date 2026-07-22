@@ -659,9 +659,9 @@ authwebhook:
 #   and db-secrets.yaml (YAML with username + password for DataStorage).
 #   BYO (#256): Set postgresql.enabled=false and provide postgresql.host.
 #
-# PSA restricted (#1685): defaults set runAsNonRoot + drop ALL capabilities.
-# readOnlyRootFilesystem stays false so Postgres can write PGDATA. Override via
-# podSecurityContext / containerSecurityContext if your image needs different UIDs.
+# PSA-oriented defaults (#1685): runAsNonRoot + explicit runAsUser/fsGroup.
+# Do NOT drop ALL capabilities (postgres entrypoint needs gosu/chown caps).
+# Override via podSecurityContext / containerSecurityContext if needed.
 postgresql:
   enabled: true  # set false to use an external PostgreSQL instance
   host: ""       # required when enabled=false (e.g., "db.example.com")
@@ -683,9 +683,20 @@ postgresql:
     limits:
       memory: 512Mi
       cpu: 500m
-  # Optional overrides (merged over restricted-PSA-oriented defaults).
-  podSecurityContext: {}
-  containerSecurityContext: {}
+  # Defaults keep postgres:16-alpine runnable under restricted-oriented settings.
+  # Image entrypoint needs CAP_CHOWN/SETUID/SETGID (gosu), so we do NOT drop ALL.
+  # UID 70 = postgres user in postgres:16-alpine; fsGroup fixes PVC ownership.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 70
+    fsGroup: 70
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    runAsUser: 70
 
 # -- Valkey (DataStorage DLQ)
 # Valkey is a BSD-licensed Redis-compatible in-memory data store.
@@ -693,8 +704,8 @@ postgresql:
 #   The secret must contain key: valkey-secrets.yaml (YAML with password).
 #   BYO (#256): Set valkey.enabled=false and provide valkey.host.
 #
-# PSA restricted (#1685): same pattern as postgresql — runAsNonRoot + drop ALL,
-# writable data dir (readOnlyRootFilesystem: false).
+# PSA-oriented defaults (#1685): same pattern as postgresql — runAsUser/fsGroup,
+# no capabilities.drop ALL (setpriv needs SETUID/SETGID).
 valkey:
   enabled: true  # set false to use an external Valkey/Redis instance
   host: ""       # required when enabled=false (e.g., "valkey.example.com")
@@ -712,8 +723,19 @@ valkey:
     limits:
       memory: 256Mi
       cpu: 200m
-  podSecurityContext: {}
-  containerSecurityContext: {}
+  # Defaults for valkey/valkey:8-alpine (UID 999). Do not drop ALL capabilities —
+  # setpriv needs SETUID/SETGID. fsGroup keeps PVC writable without root entrypoint chown.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    fsGroup: 999
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    runAsNonRoot: true
+    runAsUser: 999
 
 # -- FleetMetadataCache: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068).
 # Polls remote clusters via MCP Gateway and caches managed resource metadata in Valkey.
