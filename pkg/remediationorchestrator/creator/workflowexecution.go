@@ -111,13 +111,17 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 }
 
 // buildWorkflowRef maps the AIAnalysis-selected workflow snapshot onto WorkflowRef.
-// Issue #1661 Change 11d (DD-WORKFLOW-018): the five CRD-embedded execution-snapshot
-// fields (ExecutionEngine, ServiceAccountName, Dependencies, Resources,
+// Issue #1661 Change 11d (DD-WORKFLOW-018): the six CRD-embedded execution-snapshot
+// fields (ExecutionEngine, ServiceAccountName, ActionType, Dependencies, Resources,
 // DeclaredParameterNames) are a pass-through from the AIAnalysis snapshot that KA/AA
 // already validated (Change 11a/11b), so WorkflowExecution stops re-fetching this data
 // from DataStorage (Change 11e). Supersedes Issue #518 (ExecutionEngine) and Issue #650
 // (ServiceAccountName), which previously kept these off the WFE spec and resolved them
-// at runtime from the DS catalog.
+// at runtime from the DS catalog. ActionType was originally left off this list (Change
+// 3 instead resolved it into a now-defunct Status mirror -- see
+// internal/controller/workflowexecution/workflowexecution_catalog.go git history);
+// folding it in here lets every consumer (including the audit payload builder) read it
+// straight off this immutable snapshot like its five siblings, closing that gap for good.
 func buildWorkflowRef(sw *aianalysisv1.SelectedWorkflow) workflowexecutionv1.WorkflowRef {
 	return workflowexecutionv1.WorkflowRef{
 		WorkflowID:             sw.WorkflowID,
@@ -127,6 +131,7 @@ func buildWorkflowRef(sw *aianalysisv1.SelectedWorkflow) workflowexecutionv1.Wor
 		EngineConfig:           sw.EngineConfig,
 		ExecutionEngine:        sw.ExecutionEngine,
 		ServiceAccountName:     sw.ServiceAccountName,
+		ActionType:             sw.ActionType,
 		Dependencies:           sw.Dependencies,
 		Resources:              sw.Resources,
 		DeclaredParameterNames: sw.DeclaredParameterNames,

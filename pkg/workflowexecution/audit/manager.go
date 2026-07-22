@@ -277,19 +277,22 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	return nil
 }
 
-// setWorkflowIdentifiers sets payload.WorkflowName/ActionType from
-// wfe.Status.WorkflowName/ActionType when resolved. #1661 Change 3: both are
-// resolved once during Pending via resolveWorkflowCatalog (mirrors
-// ExecutionEngine/ServiceAccountName) and immutable thereafter, so every
-// execution event (started/completed/failed) can read them without a fresh
-// DS call. Audit-readability only -- WorkflowID remains the functional/join
-// key regardless of whether these are set (e.g. querier unavailable).
+// setWorkflowIdentifiers sets payload.WorkflowName/ActionType.
+// #1661 Change 11f: ActionType is read directly from the immutable,
+// CRD-embedded wfe.Spec.WorkflowRef.ActionType snapshot (no Status mirror
+// or resolve step involved -- it's known at WFE creation time, same as
+// WorkflowID/Version/ExecutionBundle read elsewhere in this file).
+// WorkflowName has no equivalent source anywhere upstream (WorkflowRef
+// carries no display-name field; KA's autonomous selection path never
+// emits one either) so it stays permanently unset on wfe.Status --
+// WorkflowID remains the functional/join key for SOC2 CC8.1 reconstruction
+// regardless (IT-AW-1111-001).
 func setWorkflowIdentifiers(payload *api.WorkflowExecutionAuditPayload, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
 	if wfe.Status.WorkflowName != "" {
 		payload.WorkflowName.SetTo(wfe.Status.WorkflowName)
 	}
-	if wfe.Status.ActionType != "" {
-		payload.ActionType.SetTo(wfe.Status.ActionType)
+	if wfe.Spec.WorkflowRef.ActionType != "" {
+		payload.ActionType.SetTo(wfe.Spec.WorkflowRef.ActionType)
 	}
 }
 

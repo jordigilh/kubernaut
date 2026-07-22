@@ -95,7 +95,7 @@ func (r *Reconciler) createCompletionNotification(ctx context.Context, rr *remed
 		if weErr := r.client.Get(ctx, weKey, we); weErr != nil {
 			logger.V(1).Info("Could not fetch WFE for executionEngine (best-effort)", "error", weErr)
 		} else {
-			executionEngine = we.Status.ExecutionEngine
+			executionEngine = we.Spec.WorkflowRef.ExecutionEngine
 		}
 	}
 

@@ -237,11 +237,12 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.
 		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
 		// #1661 DD-WE-005 v2.0 / RCA follow-up: the WFE Job executor now reads
 		// the execution ServiceAccount exclusively from this CRD-embedded
-		// snapshot (wfe.Status.ServiceAccountName, no executor-config
-		// fallback) -- omitting it here silently downgraded every job-engine
-		// Pod to the namespace's "default" SA, which lacks the workflow's
-		// cross-namespace get/patch RBAC and fails the Job fast
-		// (BackoffLimitExceeded) despite the image pulling and starting fine.
+		// snapshot (wfe.Spec.WorkflowRef.ServiceAccountName, no
+		// executor-config fallback) -- omitting it here silently downgraded
+		// every job-engine Pod to the namespace's "default" SA, which lacks
+		// the workflow's cross-namespace get/patch RBAC and fails the Job
+		// fast (BackoffLimitExceeded) despite the image pulling and starting
+		// fine.
 		ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
 	}
 	// Map parameters if present (map[string]string)

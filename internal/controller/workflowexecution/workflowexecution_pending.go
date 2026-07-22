@@ -21,7 +21,6 @@ package workflowexecution
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -120,7 +119,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return result, err
 	}
 
-	createOpts, engine, schemaResult, schemaErr, shouldReturn := r.resolvePendingSchemaAndEngine(ctx, wfe, logger)
+	createOpts, schemaResult, schemaErr, shouldReturn := r.resolvePendingSchemaAndEngine(ctx, wfe, logger)
 	if shouldReturn {
 		return schemaResult, schemaErr
 	}
@@ -139,7 +138,7 @@ func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe 
 		return createResourceResult, createResourceErr
 	}
 
-	return r.finalizePendingToRunning(ctx, wfe, createResult, engine, logger)
+	return r.finalizePendingToRunning(ctx, wfe, createResult, logger)
 }
 
 // refetchFreshPendingWFE re-reads wfe from the API server via APIReader to
@@ -196,14 +195,14 @@ func (r *WorkflowExecutionReconciler) validateAndAnnouncePendingSpec(ctx context
 	return ctrl.Result{}, nil, false
 }
 
-// resolvePendingSchemaAndEngine builds executor.CreateOptions and resolves
-// the execution engine, both directly from wfe.Spec.WorkflowRef (Issue #1661
-// Change 11e). shouldReturn is true when the caller must immediately return
-// (result, err) — no engine defined. Extracted from reconcilePending per
-// GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
+// resolvePendingSchemaAndEngine builds executor.CreateOptions from
+// wfe.Spec.WorkflowRef and validates the execution engine is declared there
+// (Issue #1661 Change 11e/11f). shouldReturn is true when the caller must
+// immediately return (result, err) — no engine defined. Extracted from
+// reconcilePending per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 //
 //nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared reconcilePending step-helper contract (see validateAndAnnouncePendingSpec) (Issue #1546 Tier 4)
-func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (weexecutor.CreateOptions, string, ctrl.Result, error, bool) {
+func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (weexecutor.CreateOptions, ctrl.Result, error, bool) {
 	// ========================================
 	// Step 1.2: Build CreateOptions (dependencies, declared parameter names)
 	// from the CRD-embedded WorkflowRef snapshot (#243, DD-WE-006).
@@ -213,28 +212,26 @@ func (r *WorkflowExecutionReconciler) resolvePendingSchemaAndEngine(ctx context.
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
 			fmt.Sprintf("Workflow dependency validation failed: %v", schemaErr))
 		markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", schemaErr.Error())
-		return weexecutor.CreateOptions{}, "", ctrl.Result{}, markErr, true
+		return weexecutor.CreateOptions{}, ctrl.Result{}, markErr, true
 	}
 
-	// Step 1.3: Resolve execution engine/SA/resources from WorkflowRef (Issue #650/#518).
-	// Issue #1674: resolveWorkflowCatalog is idempotent and returns
-	// ErrAlreadyResolved (not a real failure) once Status.ExecutionEngine is
-	// already set from a prior reconcile -- only a genuine resolution error
-	// (e.g. no engine defined in WorkflowRef) should fail the WFE here.
-	if catalogErr := r.resolveWorkflowCatalog(ctx, wfe); catalogErr != nil && !errors.Is(catalogErr, ErrAlreadyResolved) {
-		logger.Error(catalogErr, "Failed to resolve workflow execution engine from WorkflowRef")
+	// Step 1.3: Validate execution engine is declared on WorkflowRef (Issue
+	// #650/#518). Issue #1661 Change 11f: WorkflowRef is RO's immutable,
+	// CRD-embedded snapshot -- there is nothing to resolve at runtime, only
+	// a defensive check that it was populated (see validateExecutionEngineResolved).
+	if engineErr := r.validateExecutionEngineResolved(wfe); engineErr != nil {
+		logger.Error(engineErr, "Execution engine not declared on WorkflowRef")
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed,
-			fmt.Sprintf("Workflow catalog resolution failed: %v", catalogErr))
-		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", catalogErr.Error()); markErr != nil {
-			return createOpts, "", ctrl.Result{}, markErr, true
+			fmt.Sprintf("Workflow catalog resolution failed: %v", engineErr))
+		if markErr := r.MarkFailedWithReason(ctx, wfe, "ConfigurationError", engineErr.Error()); markErr != nil {
+			return createOpts, ctrl.Result{}, markErr, true
 		}
-		return createOpts, "", ctrl.Result{}, nil, true
+		return createOpts, ctrl.Result{}, nil, true
 	}
 
-	engine := wfe.Status.ExecutionEngine
-	logger.Info("Resolved execution engine from WorkflowRef", "engine", engine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
+	logger.Info("Resolved execution engine from WorkflowRef", "engine", wfe.Spec.WorkflowRef.ExecutionEngine, "workflowID", wfe.Spec.WorkflowRef.WorkflowID)
 
-	return createOpts, engine, ctrl.Result{}, nil, false
+	return createOpts, ctrl.Result{}, nil, false
 }
 
 // checkPendingCooldownOrBlock enforces the target-resource cooldown
@@ -283,7 +280,7 @@ func (r *WorkflowExecutionReconciler) checkPendingCooldownOrBlock(ctx context.Co
 func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) (string, ctrl.Result, error, bool) {
 	resourceName := weexecutor.ExecutionResourceName(wfe.Spec.TargetResource)
 	resourceExists := false
-	switch wfe.Status.ExecutionEngine {
+	switch wfe.Spec.WorkflowRef.ExecutionEngine {
 	case "job":
 		existingJob := &batchv1.Job{}
 		err := r.APIReader.Get(ctx, client.ObjectKey{Name: resourceName, Namespace: r.ExecutionNamespace}, existingJob)
@@ -291,7 +288,7 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 			resourceExists = true
 		} else if apierrors.IsNotFound(err) && wfe.Status.ExecutionRef != nil {
 			logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
-				"engine", wfe.Status.ExecutionEngine)
+				"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 			result, markErr := r.MarkFailed(ctx, wfe, nil)
 			return resourceName, result, markErr, true
 		}
@@ -302,7 +299,7 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 			resourceExists = true
 		} else if apierrors.IsNotFound(err) && wfe.Status.ExecutionRef != nil {
 			logger.Error(err, "Execution resource not found - deleted externally during Pending phase",
-				"engine", wfe.Status.ExecutionEngine)
+				"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 			result, markErr := r.MarkFailed(ctx, wfe, nil)
 			return resourceName, result, markErr, true
 		}
@@ -312,7 +309,7 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 		resourceExists = wfe.Status.ExecutionRef != nil
 	default:
 		logger.Info("Unknown engine for existence check, skipping audit guard",
-			"engine", wfe.Status.ExecutionEngine)
+			"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 	}
 
 	if !resourceExists {
@@ -326,7 +323,7 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 		}
 	} else {
 		logger.V(2).Info("Skipping workflow.selection.completed audit event - execution resource already exists",
-			"resource", resourceName, "engine", wfe.Status.ExecutionEngine)
+			"resource", resourceName, "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 	}
 
 	return resourceName, ctrl.Result{}, nil, false
@@ -338,25 +335,25 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 // HandleAlreadyExists; Job attempts terminal-state cleanup + retry via
 // handleJobAlreadyExists, Issue #374/#383/#190). shouldReturn is true when
 // the caller must immediately return (result, err) — unsupported engine,
-// unresolvable collision, or hard creation failure. Reads the engine from
-// wfe.Status.ExecutionEngine (set by resolvePendingSchemaAndEngine before
-// this is called, so it is always identical to the caller's local `engine`
-// variable). Extracted from reconcilePending per
+// unresolvable collision, or hard creation failure. Reads the engine
+// directly from the immutable wfe.Spec.WorkflowRef.ExecutionEngine, already
+// validated non-empty by resolvePendingSchemaAndEngine before this is
+// called. Extracted from reconcilePending per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, createOpts weexecutor.CreateOptions, logger logr.Logger) (*weexecutor.CreateResult, ctrl.Result, error, bool) {
-	exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
+	exec, err := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
 	if err != nil {
 		// Issue #868: Provide actionable guidance for unavailable engines
-		guidance := engineGuidance(wfe.Status.ExecutionEngine)
-		msg := fmt.Sprintf("execution engine %q is not available -- %s", wfe.Status.ExecutionEngine, guidance)
-		logger.Error(err, "Unsupported execution engine", "engine", wfe.Status.ExecutionEngine)
+		guidance := engineGuidance(wfe.Spec.WorkflowRef.ExecutionEngine)
+		msg := fmt.Sprintf("execution engine %q is not available -- %s", wfe.Spec.WorkflowRef.ExecutionEngine, guidance)
+		logger.Error(err, "Unsupported execution engine", "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 		r.Recorder.Event(wfe, corev1.EventTypeWarning, events.EventReasonWorkflowValidationFailed, msg)
 		markErr := r.MarkFailedWithReason(ctx, wfe, "UnsupportedEngine", msg)
 		return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
 	}
 
 	logger.Info("Creating execution resource",
-		"engine", wfe.Status.ExecutionEngine,
+		"engine", wfe.Spec.WorkflowRef.ExecutionEngine,
 		"resource", resourceName,
 		"namespace", r.ExecutionNamespace,
 	)
@@ -367,9 +364,9 @@ func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context
 	createResult, createErr := exec.Create(ctx, wfe, r.ExecutionNamespace, createOpts)
 	if createErr != nil {
 		if !apierrors.IsAlreadyExists(createErr) {
-			logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Status.ExecutionEngine)
+			logger.Error(createErr, "Failed to create execution resource", "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 			markErr := r.MarkFailedWithReason(ctx, wfe, "Unknown",
-				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Status.ExecutionEngine, createErr))
+				fmt.Sprintf("Failed to create %s execution resource: %v", wfe.Spec.WorkflowRef.ExecutionEngine, createErr))
 			return &weexecutor.CreateResult{}, ctrl.Result{}, markErr, true
 		}
 
@@ -395,7 +392,7 @@ func (r *WorkflowExecutionReconciler) createPendingExecutionResource(ctx context
 // Extracted from createPendingExecutionResource (Wave 6 6e-ii GREEN: nestif
 // remediation) — pure code motion, no behavior change.
 func (r *WorkflowExecutionReconciler) handleCreateAlreadyExists(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, resourceName string, createOpts weexecutor.CreateOptions, exec weexecutor.Executor, createErr error, logger logr.Logger) (*weexecutor.CreateResult, ctrl.Result, error, bool) {
-	if wfe.Status.ExecutionEngine == workflowexecutionv1alpha1.ExecutionEngineTekton {
+	if wfe.Spec.WorkflowRef.ExecutionEngine == workflowexecutionv1alpha1.ExecutionEngineTekton {
 		result, handleErr := r.HandleAlreadyExists(ctx, wfe, resourceName, createErr)
 		return &weexecutor.CreateResult{}, result, handleErr, true
 	}
@@ -403,7 +400,7 @@ func (r *WorkflowExecutionReconciler) handleCreateAlreadyExists(ctx context.Cont
 	// Issue #374 / DD-WE-003: Pre-execution cleanup of completed Jobs.
 	// If the existing Job is in a terminal state (Succeeded/Failed), clean it up
 	// and retry creation. If still running, the lock is valid -- fail the WFE.
-	if wfe.Status.ExecutionEngine == "job" {
+	if wfe.Spec.WorkflowRef.ExecutionEngine == "job" {
 		retryResult, handled, requeueForGC, originalWFE := r.handleJobAlreadyExists(ctx, exec, wfe, resourceName, createOpts)
 		switch {
 		case handled:
@@ -429,13 +426,8 @@ func (r *WorkflowExecutionReconciler) handleCreateAlreadyExists(ctx context.Cont
 // transitions the WFE to Running (P0: Phase State Machine), and requeues to
 // poll execution status. Extracted from reconcilePending per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
-func (r *WorkflowExecutionReconciler) finalizePendingToRunning(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, createResult *weexecutor.CreateResult, engine string, logger logr.Logger) (ctrl.Result, error) {
+func (r *WorkflowExecutionReconciler) finalizePendingToRunning(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, createResult *weexecutor.CreateResult, logger logr.Logger) (ctrl.Result, error) {
 	createdName := createResult.ResourceName
-
-	// Restore in-memory status fields that may have been lost if Create() performed
-	// an internal status update (e.g., storeCredentialIDs). These fields were set by
-	// resolveWorkflowCatalog but not yet persisted to the API server.
-	wfe.Status.ExecutionEngine = engine
 
 	// Issue #501: Process warnings from CreateResult (e.g., TokenTTL issues)
 	for _, w := range createResult.Warnings {
@@ -470,7 +462,7 @@ func (r *WorkflowExecutionReconciler) finalizePendingToRunning(ctx context.Conte
 	weconditions.SetExecutionCreated(wfe, true,
 		weconditions.ReasonExecutionCreated,
 		fmt.Sprintf("%s execution resource %s created in %s namespace",
-			wfe.Status.ExecutionEngine, createdName, r.ExecutionNamespace))
+			wfe.Spec.WorkflowRef.ExecutionEngine, createdName, r.ExecutionNamespace))
 
 	// ========================================
 	// Step 3: Prepare status update to Running (P0: Phase State Machine)
@@ -490,7 +482,7 @@ func (r *WorkflowExecutionReconciler) finalizePendingToRunning(ctx context.Conte
 	}
 
 	r.Recorder.Event(wfe, corev1.EventTypeNormal, events.EventReasonExecutionCreated,
-		fmt.Sprintf("Created %s execution resource %s/%s", wfe.Status.ExecutionEngine, r.ExecutionNamespace, createdName))
+		fmt.Sprintf("Created %s execution resource %s/%s", wfe.Spec.WorkflowRef.ExecutionEngine, r.ExecutionNamespace, createdName))
 
 	// DD-EVENT-001 v1.1: PhaseTransition breadcrumb for Pending → Running
 	r.emitPhaseTransition(wfe, "Pending", "Running")
