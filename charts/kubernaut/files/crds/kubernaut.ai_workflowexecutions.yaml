@@ -159,6 +159,16 @@ spec:
                   WorkflowRef contains the workflow catalog reference
                   Resolved from AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator
                 properties:
+                  actionType:
+                    description: |-
+                      ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g.,
+                      ScaleReplicas, RestartPod), resolved by KA/DataStorage at selection
+                      time and propagated from AIAnalysis.Status.SelectedWorkflow.ActionType
+                      (Issue #1661 Change 3, promoted to the CRD-embedded snapshot alongside
+                      its siblings above). Audit-readability only -- WorkflowID remains the
+                      functional/join key for SOC2 CC8.1 reconstruction regardless of
+                      whether this is populated (IT-AW-1111-001).
+                    type: string
                   declaredParameterNames:
                     additionalProperties:
                       type: boolean
@@ -313,15 +323,6 @@ spec:
               Enhanced per DD-CONTRACT-001 v1.3 - rich failure details for failure classification
               Enhanced per DD-CONTRACT-001 v1.4 - resource locking and Skipped phase
             properties:
-              actionType:
-                description: |-
-                  ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g., ScaleReplicas,
-                  RestartPod) resolved from the DS workflow catalog at runtime by the WE
-                  controller. Set once during Pending phase via ResolveWorkflowCatalogMetadata
-                  (mirrors ExecutionEngine); immutable thereafter. Audit-readability only
-                  (#1661 Change 3), so execution.workflow.started/.completed/.failed events
-                  are human-readable without joining back to the admission audit event.
-                type: string
               blockClearance:
                 description: |-
                   BlockClearance tracks the clearing of PreviousExecutionFailed blocks
@@ -440,13 +441,6 @@ spec:
                 items:
                   type: integer
                 type: array
-              executionEngine:
-                description: |-
-                  ExecutionEngine is the backend engine resolved from the DS workflow catalog
-                  at runtime by the WE controller. Set once during Pending phase via
-                  WorkflowQuerier.GetWorkflowSchemaMetadata; immutable thereafter.
-                  Values: "tekton", "job", "ansible".
-                type: string
               executionRef:
                 description: ExecutionRef references the created execution resource
                   (PipelineRun or Job)
@@ -592,89 +586,18 @@ spec:
                 - Completed
                 - Failed
                 type: string
-              resources:
-                description: |-
-                  Resources declares the resolved CPU/memory requests and limits for the
-                  Job engine's "workflow" container, from the DS workflow catalog
-                  (BR-WE-019 / DD-WE-008). Set once during Pending phase via
-                  ResolveWorkflowCatalogMetadata; immutable thereafter. nil when the
-                  catalog entry declares no resources (BestEffort QoS, current behavior).
-                properties:
-                  claims:
-                    description: |-
-                      Claims lists the names of resources, defined in spec.resourceClaims,
-                      that are used by this container.
-
-                      This field depends on the
-                      DynamicResourceAllocation feature gate.
-
-                      This field is immutable. It can only be set for containers.
-                    items:
-                      description: ResourceClaim references one entry in PodSpec.ResourceClaims.
-                      properties:
-                        name:
-                          description: |-
-                            Name must match the name of one entry in pod.spec.resourceClaims of
-                            the Pod where this field is used. It makes that resource available
-                            inside a container.
-                          type: string
-                        request:
-                          description: |-
-                            Request is the name chosen for a request in the referenced claim.
-                            If empty, everything from the claim is made available, otherwise
-                            only the result of this request.
-                          type: string
-                      required:
-                      - name
-                      type: object
-                    type: array
-                    x-kubernetes-list-map-keys:
-                    - name
-                    x-kubernetes-list-type: map
-                  limits:
-                    additionalProperties:
-                      anyOf:
-                      - type: integer
-                      - type: string
-                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                      x-kubernetes-int-or-string: true
-                    description: |-
-                      Limits describes the maximum amount of compute resources allowed.
-                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                    type: object
-                  requests:
-                    additionalProperties:
-                      anyOf:
-                      - type: integer
-                      - type: string
-                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                      x-kubernetes-int-or-string: true
-                    description: |-
-                      Requests describes the minimum amount of compute resources required.
-                      If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
-                      otherwise to an implementation-defined value. Requests cannot exceed Limits.
-                      More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
-                    type: object
-                type: object
-              serviceAccountName:
-                description: |-
-                  ServiceAccountName is the pre-existing ServiceAccount resolved from the
-                  DS workflow catalog at runtime by the WE controller (Issue #650).
-                  Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable
-                  thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)
-                  or the Ansible executor falls back to the controller's in-cluster credentials.
-                type: string
               startTime:
                 description: StartTime when execution started
                 format: date-time
                 type: string
               workflowName:
                 description: |-
-                  WorkflowName is the human-readable workflow name resolved from the DS
-                  workflow catalog at runtime by the WE controller. Set once during Pending
-                  phase via ResolveWorkflowCatalogMetadata (mirrors ExecutionEngine);
-                  immutable thereafter. Audit-readability only (#1661 Change 3) -- WorkflowID
-                  remains the functional/join key regardless of whether this is populated.
+                  WorkflowName is the human-readable workflow name. Deliberately never
+                  populated: WorkflowRef carries no such field (KA's autonomous
+                  selection path never emits a display name distinct from WorkflowID
+                  either), so there is no source to mirror it from. WorkflowID remains
+                  the functional/join key for SOC2 CC8.1 reconstruction regardless
+                  (IT-AW-1111-001). Kept for audit-payload schema compatibility only.
                 type: string
             type: object
         type: object

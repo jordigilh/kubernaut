@@ -209,11 +209,18 @@ type WorkflowRef struct {
 	// ========================================
 	// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11c, DD-WORKFLOW-018)
 	// ========================================
-	// The five fields below are copied verbatim from
-	// AIAnalysis.Status.SelectedWorkflow (Change 11b) by RemediationOrchestrator
-	// when building this WorkflowExecution (Change 11d), letting WorkflowExecution
-	// stop re-fetching this data from DataStorage (Change 11e). No new per-field
-	// CEL rule is needed: WorkflowExecutionSpec's existing
+	// The six fields below (ExecutionEngine, ServiceAccountName, ActionType,
+	// Dependencies, Resources, DeclaredParameterNames) are copied verbatim
+	// from AIAnalysis.Status.SelectedWorkflow (Change 11b) by
+	// RemediationOrchestrator when building this WorkflowExecution
+	// (Change 11d), letting WorkflowExecution stop re-fetching this data from
+	// DataStorage (Change 11e) -- and, as of the ActionType addition, letting
+	// every production consumer read directly from this immutable Spec
+	// snapshot instead of through a Status mirror that a resolve step has to
+	// remember to keep in sync (see git history: ActionType was originally
+	// left off this list and its Status-mirror equivalent was silently never
+	// wired, breaking workflowexecution.execution.started's audit payload).
+	// No new per-field CEL rule is needed: WorkflowExecutionSpec's existing
 	// "self == oldSelf" XValidation (ADR-001) already covers WorkflowRef as a
 	// whole, including these fields.
 
@@ -226,6 +233,16 @@ type WorkflowRef struct {
 	// workflow catalog at selection time (Issue #650). Used for pod execution.
 	// +optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
+	// ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g.,
+	// ScaleReplicas, RestartPod), resolved by KA/DataStorage at selection
+	// time and propagated from AIAnalysis.Status.SelectedWorkflow.ActionType
+	// (Issue #1661 Change 3, promoted to the CRD-embedded snapshot alongside
+	// its siblings above). Audit-readability only -- WorkflowID remains the
+	// functional/join key for SOC2 CC8.1 reconstruction regardless of
+	// whether this is populated (IT-AW-1111-001).
+	// +optional
+	ActionType string `json:"actionType,omitempty"`
 
 	// Dependencies declares the Secrets/ConfigMaps the workflow's execution
 	// requires in the target namespace (DD-WE-006).
@@ -250,7 +267,8 @@ type WorkflowRef struct {
 }
 
 // ExecutionConfig contains minimal execution settings.
-// Issue #650: ServiceAccountName resolved at runtime from DS into Status.
+// ServiceAccountName lives on WorkflowRef (CRD-embedded snapshot, Issue
+// #1661 Change 11c/11f), not here.
 type ExecutionConfig struct {
 	// Timeout for the entire workflow (Tekton PipelineRun timeout)
 	// Default: use global timeout from RemediationRequest or 30m
@@ -365,37 +383,14 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	EphemeralCredentialIDs []int `json:"ephemeralCredentialIDs,omitempty"`
 
-	// ExecutionEngine is the backend engine resolved from the DS workflow catalog
-	// at runtime by the WE controller. Set once during Pending phase via
-	// WorkflowQuerier.GetWorkflowSchemaMetadata; immutable thereafter.
-	// Values: "tekton", "job", "ansible".
-	// +optional
-	ExecutionEngine string `json:"executionEngine,omitempty"`
-
-	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
-	// DS workflow catalog at runtime by the WE controller (Issue #650).
-	// Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable
-	// thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)
-	// or the Ansible executor falls back to the controller's in-cluster credentials.
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-
-	// WorkflowName is the human-readable workflow name resolved from the DS
-	// workflow catalog at runtime by the WE controller. Set once during Pending
-	// phase via ResolveWorkflowCatalogMetadata (mirrors ExecutionEngine);
-	// immutable thereafter. Audit-readability only (#1661 Change 3) -- WorkflowID
-	// remains the functional/join key regardless of whether this is populated.
+	// WorkflowName is the human-readable workflow name. Deliberately never
+	// populated: WorkflowRef carries no such field (KA's autonomous
+	// selection path never emits a display name distinct from WorkflowID
+	// either), so there is no source to mirror it from. WorkflowID remains
+	// the functional/join key for SOC2 CC8.1 reconstruction regardless
+	// (IT-AW-1111-001). Kept for audit-payload schema compatibility only.
 	// +optional
 	WorkflowName string `json:"workflowName,omitempty"`
-
-	// ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g., ScaleReplicas,
-	// RestartPod) resolved from the DS workflow catalog at runtime by the WE
-	// controller. Set once during Pending phase via ResolveWorkflowCatalogMetadata
-	// (mirrors ExecutionEngine); immutable thereafter. Audit-readability only
-	// (#1661 Change 3), so execution.workflow.started/.completed/.failed events
-	// are human-readable without joining back to the admission audit event.
-	// +optional
-	ActionType string `json:"actionType,omitempty"`
 
 	// DeduplicatedBy stores the name of the original WorkflowExecution that owns
 	// the conflicting execution resource. Set atomically inside AtomicStatusUpdate
@@ -404,20 +399,12 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	DeduplicatedBy string `json:"deduplicatedBy,omitempty"`
 
-	// Resources declares the resolved CPU/memory requests and limits for the
-	// Job engine's "workflow" container, from the DS workflow catalog
-	// (BR-WE-019 / DD-WE-008). Set once during Pending phase via
-	// ResolveWorkflowCatalogMetadata; immutable thereafter. nil when the
-	// catalog entry declares no resources (BestEffort QoS, current behavior).
-	// +optional
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-
 	// Conditions provide detailed status information
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// ExecutionEngineTekton is the Status.ExecutionEngine value for Tekton
+// ExecutionEngineTekton is the WorkflowRef.ExecutionEngine value for Tekton
 // Pipelines-backed workflows. See the ExecutionEngine field doc above for
 // the full value set ("tekton", "job", "ansible").
 const ExecutionEngineTekton = "tekton"
