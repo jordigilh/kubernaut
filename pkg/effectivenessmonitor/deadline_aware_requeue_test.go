@@ -250,15 +250,24 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	// TimeUntilExpired, which clamps any elapsed-past-deadline duration to
 	// exactly 0 and short-circuits into completion (RequeueAfter=0),
 	// failing the ">0" assertion below even though the requeue-capping
-	// logic itself is correct. 1.5s leaves 3x the original margin while
-	// still exercising the same fallback branch (1.5s < 2s margin).
+	// logic itself is correct. Bumped 500ms -> 1.5s (2026-07-XX) and it
+	// still flaked in CI at a reported spec duration of 1.83s (Issue
+	// #1661 pipeline monitoring) -- a sufficiently loaded runner can erode
+	// more than 1.5s of the window even against an all-fake-client
+	// reconcile with no real I/O. 1.9s is the practical ceiling here (must
+	// stay < the 2s margin to hit the fallback branch at all); this only
+	// buys ~400ms more than the previous value. If this flakes again, the
+	// margin constant itself has been exhausted and the durable fix is
+	// injecting a fake/controllable clock into validity.Checker so this
+	// spec no longer depends on real wall-clock scheduling at all -- flag
+	// for a follow-up rather than continuing to inflate this constant.
 	// ========================================
 	It("UT-EM-DAR-004: should fall back to the remaining time when it is already below the safety margin", func() {
 		s := buildScheme()
 		ns := testNs
 		name := "ea-dar-004"
 
-		remaining := 1500 * time.Millisecond
+		remaining := 1900 * time.Millisecond
 		deadline := time.Now().Add(remaining)
 		ea := seedAssessingEA(name, deadline)
 		r := makeReconciler(s, ea)
