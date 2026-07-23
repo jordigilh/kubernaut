@@ -78,6 +78,7 @@ type coreServices struct {
 	alignCfg             kaconfig.AlignmentCheckConfig
 	wfCache              *workflowcatalog.Cache
 	wfCacheCancel        context.CancelFunc
+	wfCatalog            *workflowcatalog.Catalog
 }
 
 // buildCoreServices wires audit, K8s infra, DataStorage, tool registry,
@@ -101,6 +102,16 @@ func buildCoreServices(
 	// discovery directly via its own informer-backed cache, instead of
 	// proxying every lookup through DataStorage.
 	wfCache, wfCacheCancel := buildWorkflowCatalogCache(infra, logger)
+
+	// #1677 Phase 2b: the discovery/scoring Catalog is constructed alongside
+	// the cache it wraps. It has no production caller yet -- Phase 2d rewires
+	// the 3 custom MCP tools (list_available_actions/list_workflows/
+	// get_workflow) onto it, and Phase 2e rewires select_workflow/
+	// investigate_discovery's WorkflowCatalog adapter.
+	var wfCatalog *workflowcatalog.Catalog
+	if wfCache != nil {
+		wfCatalog = workflowcatalog.NewCatalog(wfCache, logger)
+	}
 
 	// #1288: SSAR impersonate gate removed — KA uses its own SA for all K8s
 	// API calls. Interactive readiness is no longer gated on impersonation RBAC.
@@ -149,7 +160,7 @@ func buildCoreServices(
 		sanitizer: sanitizer, anomalyDetector: anomalyDetector, summarizer: sum,
 		catalogFetcher: catalogFetcher, effectiveLLM: effectiveLLM, effectiveReg: effectiveReg,
 		alignEvaluator: alignEvaluator, alignCfg: alignCfg,
-		wfCache: wfCache, wfCacheCancel: wfCacheCancel,
+		wfCache: wfCache, wfCacheCancel: wfCacheCancel, wfCatalog: wfCatalog,
 	}
 }
 
