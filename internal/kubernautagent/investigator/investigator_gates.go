@@ -403,6 +403,14 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	result.Dependencies = meta.Dependencies
 	result.Resources = meta.Resources
 	result.DeclaredParameterNames = meta.DeclaredParameterNames
+
+	// Issue #1661 Change 12: ActionType/WorkflowName are likewise
+	// catalog-authoritative -- always overwrite, same pattern as
+	// Dependencies/Resources/DeclaredParameterNames above. This closes the
+	// gap where KA never populated either field, breaking
+	// workflowexecution.execution.started's audit payload (Change 11f).
+	result.ActionType = meta.ActionType
+	result.WorkflowName = meta.WorkflowName
 }
 
 // gvrToAPIVersion converts a GroupVersionResource to the apiVersion string

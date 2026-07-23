@@ -178,6 +178,17 @@ func buildSelectedWorkflow(r *katypes.InvestigationResult) agentclient.IncidentR
 		declRaw, _ := json.Marshal(r.DeclaredParameterNames)
 		sw["declared_parameter_names"] = jx.Raw(declRaw)
 	}
+	// Issue #1661 Change 12: ActionType/WorkflowName are likewise
+	// catalog-authoritative (enrichFromCatalog), forwarded so AA can embed
+	// them in AIAnalysis.Status.SelectedWorkflow.
+	if r.ActionType != "" {
+		atRaw, _ := json.Marshal(r.ActionType)
+		sw["action_type"] = jx.Raw(atRaw)
+	}
+	if r.WorkflowName != "" {
+		wnRaw, _ := json.Marshal(r.WorkflowName)
+		sw["workflow_name"] = jx.Raw(wnRaw)
+	}
 	return sw
 }
 

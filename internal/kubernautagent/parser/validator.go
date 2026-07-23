@@ -51,6 +51,14 @@ type WorkflowMeta struct {
 	Parameters            []models.WorkflowParameter
 	CompiledPatterns      map[string]*regexp.Regexp
 
+	// ActionType/WorkflowName are catalog-authoritative identifiers (Issue
+	// #1661 Change 12, DD-WORKFLOW-018) copied verbatim from the DS
+	// catalog response (both are required, non-optional fields there).
+	// enrichFromCatalog copies these onto InvestigationResult so KA's wire
+	// response carries them through to AIAnalysis.Status.SelectedWorkflow.
+	ActionType   string
+	WorkflowName string
+
 	// Dependencies declares the Secrets/ConfigMaps the workflow's schema
 	// requires in the execution namespace (DD-WE-006). Nil when the schema
 	// declares no dependencies section. Issue #1661 Change 11a

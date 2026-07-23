@@ -85,6 +85,16 @@ type InvestigationResult struct {
 	WorkflowVersion       string `json:"workflow_version,omitempty"`
 	WorkflowRationale     string `json:"workflow_rationale,omitempty"`
 
+	// ActionType/WorkflowName are catalog-authoritative identifiers (Issue
+	// #1661 Change 12) resolved from the DS catalog at selection time and
+	// copied by enrichFromCatalog, never LLM-suppliable. ActionType is the
+	// DD-WORKFLOW-016 taxonomy action type; WorkflowName is always equal to
+	// RemediationWorkflow.metadata.name. Both flow to
+	// AIAnalysis.Status.SelectedWorkflow (via sharedtypes.WorkflowSnapshot)
+	// and ultimately WorkflowExecution.Spec.WorkflowRef.
+	ActionType   string `json:"action_type,omitempty"`
+	WorkflowName string `json:"workflow_name,omitempty"`
+
 	// Dependencies/Resources/DeclaredParameterNames are catalog-authoritative
 	// schema data (Issue #1661 Change 11a, DD-WORKFLOW-018), copied from
 	// parser.WorkflowMeta by enrichFromCatalog after workflow selection. AA

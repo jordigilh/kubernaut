@@ -380,6 +380,11 @@ func buildWorkflowMeta(w ogenclient.RemediationWorkflow, schemaParser *dsschema.
 		ExecutionEngine: w.ExecutionEngine,
 		Version:         w.Version,
 		Component:       append([]string(nil), w.Labels.GetComponent()...),
+		// ActionType/WorkflowName (Issue #1661 Change 12): both required,
+		// non-optional fields on the DS catalog response (metadata.name /
+		// DD-WORKFLOW-016 taxonomy respectively), so always copied verbatim.
+		ActionType:   w.ActionType,
+		WorkflowName: w.WorkflowName,
 	}
 	if w.ExecutionBundle.Set {
 		meta.ExecutionBundle = w.ExecutionBundle.Value
