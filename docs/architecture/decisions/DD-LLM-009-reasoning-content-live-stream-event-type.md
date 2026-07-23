@@ -71,6 +71,18 @@ BR-AI-086's `ReasoningBlock.Redacted` marks reasoning whose visible text was wit
 - **Chosen**: KA always includes both `text` and `redacted` fields in the new event's payload, gated only by `resp.Message.Reasoning != nil`. AF's relay forwards `text` through the identical `EmitReasoningContent`/`emitWithLimit` no-op-on-empty-text pattern already used by `EmitReasoning`/`EmitOutput`. Since `ReasoningBlock.Text` is always empty when `Redacted` is true (per the type's own contract, confirmed by existing audit tests), a redacted turn simply produces no live event — identical to today's established behavior for any other empty reasoning/output text. The audit trail remains the complete, durable record of `redacted=true` regardless (AC6, unaffected). This avoids the backend inventing placeholder UX copy for a case where the actual rendering/UX treatment belongs to whichever client eventually consumes this event type.
 - **Deferred, not chosen now**: threading `redacted` through as SSE metadata on `EmitReasoningContent` (a `redacted bool` parameter, always emitting even on empty text so a client can render a distinct "reasoning hidden" placeholder). This is additive and can be introduced later without breaking the wire contract, once/if a consumer is ready to build redaction-aware rendering. Not implemented now because nothing consumes it yet — avoids speculative complexity ahead of a confirmed need.
 
+### Revisited (#1716)
+
+The deferral's own stated trigger — "once/if a consumer is ready to build redaction-aware
+rendering" — occurred: `kubernaut-console#32` confirmed it will render a "reasoning hidden by
+provider" placeholder if AF emits a live signal. Implemented exactly the previously-deferred
+shape, unchanged: `EmitReasoningContent`/`EmitReasoningContentSafe` gained a `redacted bool`
+parameter; a redacted turn now emits `TaskStatusUpdateEvent{metadata: {type: "reasoning_content",
+redacted: true}}` with empty message text, instead of the full no-op described above. No new
+event type, no new component — additive, boolean-only signal, matching Alternative C's existing
+shape. The audit trail (`ReasoningSummary.Redacted`) remains the durable record of truth (AC6);
+this is a live-stream-only, best-effort UX signal layered on top of it.
+
 ## Consequences
 
 ### Positive
@@ -81,7 +93,7 @@ BR-AI-086's `ReasoningBlock.Redacted` marks reasoning whose visible text was wit
 
 ### Negative
 - Slightly larger diff than Alternative A/B (new `EventBridge` methods, new constant, new relay case) — mitigated by following an existing, well-tested pattern exactly (`EmitReasoning`/`EmitOutput`).
-- Redacted reasoning produces no live signal at all (silently absent, not explicitly marked) until/unless the deferred sub-decision is revisited — mitigated by the audit trail remaining the authoritative record for redacted content (AC6), and by this being an explicit, documented trade-off rather than an oversight.
+- ~~Redacted reasoning produces no live signal at all (silently absent, not explicitly marked) until/unless the deferred sub-decision is revisited~~ — superseded by #1716 (see "Revisited" above): redacted reasoning now emits a content-free `metadata.redacted=true` signal instead of a silent no-op.
 
 ## Related Decisions
 - **Builds on**: DD-LLM-005 (reasoning/thinking data model, `ReasoningBlock` shape), BR-AI-086 (AC10)
