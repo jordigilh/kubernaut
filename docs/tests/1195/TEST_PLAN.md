@@ -154,7 +154,7 @@ Following AA IT suite architecture:
 
 | ID | Scenario | Acceptance Criterion | Input | Expected | Dependencies |
 |----|----------|---------------------|-------|----------|-------------|
-| IT-AF-1195-028 | ListWorkflows queries real DS | AC-19 | ds.Client.ListWorkflows() | Workflow list from real DS (seeded data) | real DS container |
+| IT-AF-1195-028 | GetAuditTrail queries real DS (renamed from ListWorkflows -- #1677 Phase 2g, DD-WORKFLOW-019 retired ds.Client.ListWorkflows) | AC-19 | ds.Client.GetAuditTrail() | Empty audit trail from real DS (no matching correlation ID) | real DS container |
 | IT-AF-1195-029 | GetRemediationHistory queries real DS | AC-19 | ds.Client.GetRemediationHistory() | History from real DS | real DS container |
 | IT-AF-1195-030 | Error response handled gracefully | AC-20 | Query with invalid parameters | Wrapped error, no panic | real DS container |
 
@@ -176,7 +176,7 @@ Following AA IT suite architecture:
 | IT-AF-1195-037 | get_workloads against real K8s | AC-24 | HandleGetWorkloads with envtest dynamic client | Deployment/StatefulSet list | envtest |
 | IT-AF-1195-038 | investigate dispatches to real KA | AC-25 | HandleStartInvestigation with real KA client | Investigation started (or error from KA) | real KA container |
 | IT-AF-1195-039 | discover_workflows dispatches to real KA | AC-25 | HandleDiscoverWorkflows with real MCP client | Workflow list from KA | real KA container |
-| IT-AF-1195-040 | list_workflows queries real DS | AC-26 | HandleListWorkflows with real DS client | Workflow list from DS | real DS container |
+| IT-AF-1195-040 | REMOVED -- #1677 Phase 2g (DD-WORKFLOW-019): DS's GET /api/v1/workflows retired; `kubernaut_list_workflows` now dispatches to KubernautAgent's workflow catalog (see AC-27/IT-AF-1677-001..003), not a real DS container | AC-26 | ~~HandleListWorkflows with real DS client~~ | ~~Workflow list from DS~~ | ~~real DS container~~ |
 | IT-AF-1195-041 | RBAC enforcement blocks unauthorized tool | AC-27 | Tool call with user lacking role | Error: "forbidden: role does not grant access" | real RBAC config |
 
 ### 4.7 session/ -- Session Lifecycle

@@ -34,36 +34,6 @@ type WorkflowSummary struct {
 // ErrDSUnavailable is returned when the Data Store client is nil.
 var ErrDSUnavailable = fmt.Errorf("datastorage service unavailable")
 
-// HandleListWorkflows implements the kubernaut_list_workflows logic.
-func HandleListWorkflows(ctx context.Context, client ds.Client, args ListWorkflowsArgs) (ListWorkflowsResult, error) {
-	if client == nil {
-		return ListWorkflowsResult{}, ErrDSUnavailable
-	}
-	workflows, err := client.ListWorkflows(ctx, ds.ListWorkflowsOpts{Kind: args.Kind})
-	if err != nil {
-		return ListWorkflowsResult{}, fmt.Errorf("querying workflow catalog: %w", err)
-	}
-
-	summaries := make([]WorkflowSummary, 0, len(workflows))
-	for _, w := range workflows {
-		summaries = append(summaries, WorkflowSummary{
-			ID: w.ID, Name: w.Name, Description: w.Description, Kind: w.Kind,
-		})
-	}
-
-	return ListWorkflowsResult{Workflows: summaries, Count: len(summaries)}, nil
-}
-
-// NewListWorkflowsTool creates the kubernaut_list_workflows tool.
-func NewListWorkflowsTool(client ds.Client) (tool.Tool, error) {
-	return functiontool.New(functiontool.Config{
-		Name:        "kubernaut_list_workflows",
-		Description: "List available remediation workflows from the catalog, optionally filtered by resource kind",
-	}, func(ctx tool.Context, args ListWorkflowsArgs) (ListWorkflowsResult, error) {
-		return HandleListWorkflows(ctx, client, args)
-	})
-}
-
 // GetRemediationHistoryArgs defines the input for kubernaut_get_remediation_history.
 type GetRemediationHistoryArgs struct {
 	Namespace string `json:"namespace,omitempty"`

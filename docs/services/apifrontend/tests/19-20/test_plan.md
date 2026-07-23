@@ -185,7 +185,7 @@ These SDK capabilities have been verified against `go-sdk v1.6.0` source and inf
 | UT-AF-B-010 | `af_resolve_owner` uses TriageFactory | BAC-BRIDGE-01 | P0 |
 | UT-AF-B-011 | `af_check_existing_rr` dispatches to HandleCheckExistingRR | BAC-BRIDGE-01 | P0 |
 | UT-AF-B-012 | `af_create_rr` dispatches with &args and username | BAC-BRIDGE-10 | P0 |
-| UT-AF-B-013 | `kubernaut_list_workflows` dispatches to HandleListWorkflows with DSClient | BAC-BRIDGE-01 | P0 |
+| UT-AF-B-013 | `kubernaut_list_workflows` dispatches to HandleListWorkflowsKA with KAMCPClient (#1677 Phase 2f/2g, DD-WORKFLOW-019 -- was HandleListWorkflows/DSClient) | BAC-BRIDGE-01 | P0 |
 | UT-AF-B-014 | `kubernaut_get_remediation_history` dispatches with DSClient | BAC-BRIDGE-01 | P0 |
 | UT-AF-B-015 | `kubernaut_get_effectiveness` dispatches with DSClient | BAC-BRIDGE-01 | P0 |
 | UT-AF-B-016 | `kubernaut_get_audit_trail` dispatches with DSClient | BAC-BRIDGE-01 | P0 |

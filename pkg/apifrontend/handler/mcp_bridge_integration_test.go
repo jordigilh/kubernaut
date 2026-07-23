@@ -155,13 +155,10 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 	Describe("DS Tool Dispatch", func() {
 
 		It("IT-BRIDGE-004: kubernaut_list_workflows dispatches to KA catalog and returns workflow list (#1677 Phase 2f)", func() {
+			// #1677 Phase 2g (DD-WORKFLOW-019): kubernaut_list_workflows is
+			// KA-backed now (see setupStackWithKAHandler's KAMCPClient.ListWorkflowsFn
+			// fixture above) -- mockDS no longer needs a ListWorkflowsFn.
 			mockDS := &ds.MockClient{
-				ListWorkflowsFn: func(_ context.Context, _ ds.ListWorkflowsOpts) ([]ds.Workflow, error) {
-					return []ds.Workflow{
-						{ID: "wf-restart", Name: "Restart Pod", Kind: "Deployment"},
-						{ID: "wf-scale", Name: "Scale Up", Kind: "Deployment"},
-					}, nil
-				},
 				GetRemediationHistoryFn: func(_ context.Context, _ ds.HistoryOpts) ([]ds.HistoricalRemediation, error) {
 					return nil, nil
 				},
@@ -187,9 +184,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 
 		It("IT-BRIDGE-005: kubernaut_get_remediation_history dispatches to DS", func() {
 			mockDS := &ds.MockClient{
-				ListWorkflowsFn: func(_ context.Context, _ ds.ListWorkflowsOpts) ([]ds.Workflow, error) {
-					return nil, nil
-				},
 				GetRemediationHistoryFn: func(_ context.Context, _ ds.HistoryOpts) ([]ds.HistoricalRemediation, error) {
 					return []ds.HistoricalRemediation{
 						{ID: "rem-001", Namespace: "prod", Phase: "Succeeded", Workflow: "restart"},
@@ -219,9 +213,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 
 		It("IT-BRIDGE-006: kubernaut_get_effectiveness dispatches to DS", func() {
 			mockDS := &ds.MockClient{
-				ListWorkflowsFn: func(_ context.Context, _ ds.ListWorkflowsOpts) ([]ds.Workflow, error) {
-					return nil, nil
-				},
 				GetRemediationHistoryFn: func(_ context.Context, _ ds.HistoryOpts) ([]ds.HistoricalRemediation, error) {
 					return nil, nil
 				},
@@ -248,9 +239,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 
 		It("IT-BRIDGE-007: kubernaut_get_audit_trail dispatches to DS and returns aggregated phases (AU-6)", func() {
 			mockDS := &ds.MockClient{
-				ListWorkflowsFn: func(_ context.Context, _ ds.ListWorkflowsOpts) ([]ds.Workflow, error) {
-					return nil, nil
-				},
 				GetRemediationHistoryFn: func(_ context.Context, _ ds.HistoryOpts) ([]ds.HistoricalRemediation, error) {
 					return nil, nil
 				},
@@ -346,9 +334,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			var kaHit atomic.Bool
 			var dsHit atomic.Bool
 			mockDS := &ds.MockClient{
-				ListWorkflowsFn: func(_ context.Context, _ ds.ListWorkflowsOpts) ([]ds.Workflow, error) {
-					return nil, nil
-				},
 				// #1677 Phase 2f (DD-WORKFLOW-019): kubernaut_list_workflows moved
 				// off DS onto KA's catalog, so get_remediation_history is now this
 				// test's DS-routed call.

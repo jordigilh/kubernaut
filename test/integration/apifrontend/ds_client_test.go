@@ -38,13 +38,18 @@ func newAuthenticatedDSClient() (ds.Client, error) {
 var _ = Describe("DS Client Integration (ds/)", func() {
 
 	Describe("AC-19: DS client queries real DataStorage", func() {
-		It("IT-AF-1195-028: ListWorkflows queries real DS", func() {
+		// #1677 Phase 2g (DD-WORKFLOW-019): ListWorkflows was removed from
+		// ds.Client -- DS's GET /api/v1/workflows was retired in favor of
+		// KubernautAgent's own workflow catalog (ka.MCPClient.ListWorkflows).
+		// GetAuditTrail replaces it here as the "real DS round trip" probe;
+		// it succeeds (empty result) for a correlation ID with no events.
+		It("IT-AF-1195-028: GetAuditTrail queries real DS", func() {
 			client, err := newAuthenticatedDSClient()
 			Expect(err).NotTo(HaveOccurred())
 
-			workflows, err := client.ListWorkflows(context.Background(), ds.ListWorkflowsOpts{})
+			events, err := client.GetAuditTrail(context.Background(), ds.AuditTrailOpts{RRID: "rr-nonexistent-1195-028"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(workflows).NotTo(BeNil())
+			Expect(events).NotTo(BeNil())
 		})
 
 		It("IT-AF-1195-029: GetRemediationHistory returns structured error for missing required param", func() {
@@ -76,7 +81,7 @@ var _ = Describe("DS Client Integration (ds/)", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			_, err = client.ListWorkflows(context.Background(), ds.ListWorkflowsOpts{})
+			_, err = client.GetAuditTrail(context.Background(), ds.AuditTrailOpts{RRID: "rr-error-1195-030"})
 			Expect(err).To(HaveOccurred(), "DS errors should be returned, not panicked")
 		})
 	})

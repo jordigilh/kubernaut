@@ -185,11 +185,15 @@ type RemediationWorkflow struct {
 	ExpectedSuccessRate     *float64 `json:"expectedSuccessRate,omitempty" db:"expected_success_rate" validate:"omitempty,min=0,max=1"`
 	ExpectedDurationSeconds *int     `json:"expectedDurationSeconds,omitempty" db:"expected_duration_seconds" validate:"omitempty,min=0"`
 
-	// ActualSuccessRate/TotalExecutions/SuccessfulExecutions are computed
-	// on demand from audit_events by Handler.overlaySuccessMetrics
-	// (pkg/datastorage/server/workflow_success_metrics.go), not scanned
-	// from remediation_workflow_catalog (Issue #1661 Change 7,
-	// DD-WORKFLOW-018 -- migration 015 dropped their backing columns).
+	// ActualSuccessRate/TotalExecutions/SuccessfulExecutions: dead/zero-valued
+	// fields. Originally computed on demand from audit_events by DS's
+	// Handler.overlaySuccessMetrics (Issue #1661 Change 7, DD-WORKFLOW-018 --
+	// migration 015 dropped their backing columns). #1677 Phase 2g
+	// (DD-WORKFLOW-019): overlaySuccessMetrics (workflow_success_metrics.go)
+	// was deleted as dead code once workflow discovery moved to
+	// KubernautAgent -- confirmed zero use in the actual scoring logic
+	// (cache_filter.go). These fields are kept only for wire-compat with any
+	// remaining consumers of this model; they always read as zero-value now.
 	// Deliberately no `db:` tag: there is no column to scan them from.
 	ActualSuccessRate    *float64 `json:"actualSuccessRate,omitempty" validate:"omitempty,min=0,max=1"`
 	TotalExecutions      int      `json:"totalExecutions" validate:"min=0"`

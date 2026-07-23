@@ -6,22 +6,6 @@ import (
 	"testing"
 )
 
-func TestMockClient_ListWorkflows(t *testing.T) {
-	expected := []Workflow{{ID: "wf-1", Name: "restart"}}
-	m := &MockClient{
-		ListWorkflowsFn: func(_ context.Context, _ ListWorkflowsOpts) ([]Workflow, error) {
-			return expected, nil
-		},
-	}
-	got, err := m.ListWorkflows(context.Background(), ListWorkflowsOpts{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(got) != 1 || got[0].ID != "wf-1" {
-		t.Errorf("expected %v, got %v", expected, got)
-	}
-}
-
 func TestMockClient_GetRemediationHistory(t *testing.T) {
 	expected := []HistoricalRemediation{{ID: "r-1", Phase: "Completed"}}
 	m := &MockClient{
@@ -74,11 +58,11 @@ func TestMockClient_ErrorPropagation(t *testing.T) {
 	// Business outcome: errors from the mock are properly propagated to callers
 	expectedErr := errors.New("connection refused")
 	m := &MockClient{
-		ListWorkflowsFn: func(_ context.Context, _ ListWorkflowsOpts) ([]Workflow, error) {
+		GetRemediationHistoryFn: func(_ context.Context, _ HistoryOpts) ([]HistoricalRemediation, error) {
 			return nil, expectedErr
 		},
 	}
-	_, err := m.ListWorkflows(context.Background(), ListWorkflowsOpts{})
+	_, err := m.GetRemediationHistory(context.Background(), HistoryOpts{})
 	if !errors.Is(err, expectedErr) {
 		t.Errorf("expected %v, got %v", expectedErr, err)
 	}

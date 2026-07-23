@@ -51,7 +51,6 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		writeAuthMiddleware, mutateAuthMiddleware := s.registerAPIV1AuthMiddleware(r)
 		s.registerAuditRoutes(r, writeAuthMiddleware, mutateAuthMiddleware)
-		s.registerWorkflowRoutes(r)
 	})
 
 	s.logger.V(1).Info("API v1 routes configured successfully")
@@ -226,34 +225,14 @@ func (s *Server) registerAuditRoutes(r chi.Router, writeAuthMiddleware, mutateAu
 	r.Get("/remediation-history/context", s.handler.HandleGetRemediationHistoryContext)
 }
 
-// registerWorkflowRoutes registers the workflow catalog and action-type
-// taxonomy read endpoints (three-step workflow discovery protocol).
-// Extracted from Handler (Wave 6 6f GREEN: funlen remediation) — pure code
-// motion, no behavior change.
+// registerWorkflowRoutes previously registered the workflow catalog and
+// action-type taxonomy read endpoints (three-step workflow discovery
+// protocol: /workflows, /workflows/actions*, /action-types/{name}/workflow-count).
 //
-// #1661 Phase B: the workflow mutation routes (POST /workflows, PATCH
-// .../{disable,enable,deprecate,update}) were removed -- AuthWebhook
-// admission now owns the RemediationWorkflow CRD lifecycle entirely locally
-// (DD-WORKFLOW-018), mirroring Phase A3's ActionType-side removal. Every
-// remaining route here is a read (GET), so this function no longer needs
-// writeAuthMiddleware/mutateAuthMiddleware.
-func (s *Server) registerWorkflowRoutes(r chi.Router) {
-	// BR-STORAGE-014: Workflow catalog management
-	// DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
-	s.logger.V(1).Info("Registering /api/v1/workflows handlers (BR-STORAGE-014)")
-	r.Get("/workflows", s.handler.HandleListWorkflows)
-	// DD-WORKFLOW-016, DD-HAPI-017: Three-step workflow discovery protocol
-	// Step 1: List available action types (with signal context filters)
-	r.Get("/workflows/actions", s.handler.HandleListAvailableActions)
-	// Step 2: List workflows for a specific action type
-	r.Get("/workflows/actions/{action_type}", s.handler.HandleListWorkflowsByActionType)
-	// Step 3 + existing: Get workflow by UUID (with optional security gate via context filters)
-	r.Get("/workflows/{workflowID}", s.handler.HandleGetWorkflowByID)
-
-	// BR-WORKFLOW-007: ActionType workflow-count query (ADR-059, DD-ACTIONTYPE-001).
-	// #1661 Phase A3: createActionType/updateActionType/disableActionType were
-	// removed -- AuthWebhook admission now owns the ActionType CRD lifecycle
-	// entirely locally (DD-WORKFLOW-018); there is no DS-side mutation path.
-	s.logger.V(1).Info("Registering /api/v1/action-types handlers (BR-WORKFLOW-007)")
-	r.Get("/action-types/{name}/workflow-count", s.handler.HandleGetActionTypeWorkflowCount)
-}
+// #1677 Phase 2g (DD-WORKFLOW-019): removed entirely. Workflow/action-type
+// discovery is now owned directly by KubernautAgent, backed by its own
+// informer cache (internal/kubernautagent/workflowcatalog), not proxied
+// through DataStorage's REST API. See DD-WORKFLOW-019 and Issue #1677 for
+// the full rationale; the retired handlers lived in
+// workflow_discovery_handlers.go, workflow_query_handlers.go, and
+// actiontype_handlers.go (all deleted alongside this route removal).

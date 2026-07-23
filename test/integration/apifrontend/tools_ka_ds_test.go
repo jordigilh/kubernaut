@@ -38,20 +38,14 @@ var _ = Describe("KA/DS Tools Integration (tools/ via real containers)", func() 
 		})
 	})
 
-	Describe("AC-26: DS tools query real DS container", func() {
-		It("IT-AF-1195-040: list_workflows queries real DS", func() {
-			dsClient, err := newAuthenticatedDSClient()
-			Expect(err).NotTo(HaveOccurred())
-
-			result, err := tools.HandleListWorkflows(
-				context.Background(),
-				dsClient,
-				tools.ListWorkflowsArgs{},
-			)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Workflows).NotTo(BeNil())
-		})
-	})
+	// AC-26 ("DS tools query real DS container", IT-AF-1195-040: list_workflows
+	// queries real DS) removed -- #1677 Phase 2g (DD-WORKFLOW-019): DS's GET
+	// /api/v1/workflows was retired along with tools.HandleListWorkflows.
+	// AC-27 below is the successor: kubernaut_list_workflows now dispatches to
+	// KubernautAgent's workflow catalog, not a real DS container, so its
+	// "real backend" coverage lives in KA's own IT/E2E suites (see
+	// test/integration/kubernautagent/workflowcatalog/ and
+	// test/e2e/kubernautagent/three_step_discovery_test.go) rather than here.
 
 	// #1677 Phase 2f (DD-WORKFLOW-019): kubernaut_list_workflows moved off DS
 	// onto KA's workflow catalog (cache-backed). This proves the AF-side
