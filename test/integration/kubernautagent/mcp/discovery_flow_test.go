@@ -229,6 +229,65 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 		})
 	})
 
+	Describe("IT-KA-1654-002: select_workflow stops the inactivity timer for the session it completes", func() {
+		It("should not expire the session's inactivity timer after select_workflow", func() {
+			shortNsName := uniqueNamespace("disc-1654b")
+			createNamespace(context.Background(), sharedK8sClient, shortNsName)
+			shortCompleter := &discoveryHTTPCompleter{}
+			shortOpts := defaultRealStackOpts()
+			shortOpts.inactivityTimeout = 2 * time.Second
+			shortOpts.warningIntervals = nil
+			shortStack := newRealMCPTestStackWithDiscovery(sharedK8sClient, shortNsName, shortOpts, shortCompleter)
+			defer shortStack.Close()
+
+			sess, err := connectMCP(shortStack.Server, "alice@acme.io")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
+
+			By("starting a session, messaging, and discovering workflows")
+			result, err := callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-1654-002",
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-1654-002",
+				"action":  "message",
+				"message": "Why is this pod restarting?",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-1654-002",
+				"action": "discover_workflows",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("selecting the recommended workflow")
+			result, err = callTool(sess, "kubernaut_select_workflow", map[string]any{
+				"rr_id":       "rr-1654-002",
+				"workflow_id": recommendedWfID(),
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+			output, err := decodeOutput(result)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output["status"]).To(Equal("workflow_selected"))
+
+			By("waiting past the inactivity timeout window")
+			time.Sleep(3 * time.Second)
+
+			Expect(shortStack.GetExpiredSessions()).To(BeEmpty(),
+				"IT-KA-1654-002: select_workflow must stop the session's inactivity timer via the "+
+					"production-wired timeoutTracker; if the timer fires here, SelectWorkflowTool has no "+
+					"way to cancel it (missing WithSelectWorkflowTimeoutTracker wiring, #1654)")
+		})
+	})
+
 	Describe("IT-KA-DISC-002: start -> message -> complete_no_action", func() {
 		It("should complete with no workflow and auto-complete the HTTP session", func() {
 			sess, err := connectMCP(stack.Server, "alice@acme.io")
@@ -265,6 +324,55 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 
 			By("verifying auto-complete wrote to HTTP session")
 			Expect(completer.completedID).To(Equal("http-sess-discovery"))
+		})
+	})
+
+	Describe("IT-KA-1654-001: complete_no_action stops the inactivity timer for the session it completes", func() {
+		It("should not expire the session's inactivity timer after complete_no_action", func() {
+			shortNsName := uniqueNamespace("disc-1654a")
+			createNamespace(context.Background(), sharedK8sClient, shortNsName)
+			shortCompleter := &discoveryHTTPCompleter{}
+			shortOpts := defaultRealStackOpts()
+			shortOpts.inactivityTimeout = 2 * time.Second
+			shortOpts.warningIntervals = nil
+			shortStack := newRealMCPTestStackWithDiscovery(sharedK8sClient, shortNsName, shortOpts, shortCompleter)
+			defer shortStack.Close()
+
+			sess, err := connectMCP(shortStack.Server, "alice@acme.io")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = sess.Close() }()
+
+			By("starting a session and sending a message")
+			result, err := callInvestigate(sess, map[string]any{
+				"rr_id":  "rr-1654-001",
+				"action": "start",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			result, err = callInvestigate(sess, map[string]any{
+				"rr_id":   "rr-1654-001",
+				"action":  "message",
+				"message": "Looks like a transient issue",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("completing with no action")
+			result, err = callTool(sess, "kubernaut_complete_no_action", map[string]any{
+				"rr_id":  "rr-1654-001",
+				"reason": "false alarm",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.IsError).To(BeFalse())
+
+			By("waiting past the inactivity timeout window")
+			time.Sleep(3 * time.Second)
+
+			Expect(shortStack.GetExpiredSessions()).To(BeEmpty(),
+				"IT-KA-1654-001: complete_no_action must stop the session's inactivity timer via the "+
+					"production-wired timeoutTracker; if the timer fires here, buildMCPTools is not wiring "+
+					"WithCompleteNoActionTimeoutTracker (#1654)")
 		})
 	})
 
@@ -781,11 +889,16 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 	selectTool := mcptools.NewSelectWorkflowTool(catalog, stack.SessionMgr,
 		mcptools.WithHTTPSessionCompleter(completer),
 		mcptools.WithMutexProvider(investigateTool),
+		// #1654: mirrors main.go's buildMCPTools wiring so this stack
+		// exercises the same production timer-cancellation path.
+		mcptools.WithSelectWorkflowTimeoutTracker(stack.TimeoutMgr),
 	)
 
 	completeNoActionTool := mcptools.NewCompleteNoActionTool(stack.SessionMgr,
 		mcptools.WithCompleteNoActionHTTPCompleter(completer),
 		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
+		// #1654: mirrors main.go's buildMCPTools wiring — see selectTool above.
+		mcptools.WithCompleteNoActionTimeoutTracker(stack.TimeoutMgr),
 	)
 
 	toolDeps := mcpinternal.ToolDeps{
@@ -882,11 +995,16 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 	selectTool := mcptools.NewSelectWorkflowTool(catalog, stack.SessionMgr,
 		mcptools.WithHTTPSessionCompleter(completer),
 		mcptools.WithMutexProvider(investigateTool),
+		// #1654: mirrors main.go's buildMCPTools wiring so this stack
+		// exercises the same production timer-cancellation path.
+		mcptools.WithSelectWorkflowTimeoutTracker(stack.TimeoutMgr),
 	)
 
 	completeNoActionTool := mcptools.NewCompleteNoActionTool(stack.SessionMgr,
 		mcptools.WithCompleteNoActionHTTPCompleter(completer),
 		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
+		// #1654: mirrors main.go's buildMCPTools wiring — see selectTool above.
+		mcptools.WithCompleteNoActionTimeoutTracker(stack.TimeoutMgr),
 	)
 
 	toolDeps := mcpinternal.ToolDeps{
