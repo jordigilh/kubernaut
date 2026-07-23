@@ -27,7 +27,6 @@ import (
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
@@ -327,40 +326,49 @@ func newSecretAccessObserver(auditStore audit.AuditStore, logger logr.Logger) fu
 	}
 }
 
-// dsCatalogFetcher implements investigator.CatalogFetcher by querying
-// DataStorage on every call. This removes the boot-time blocking fetch
-// that caused #665 (CrashLoopBackOff when the catalog was not yet seeded).
+// workflowCatalogFetcher implements investigator.CatalogFetcher by querying
+// KubernautAgent's own informer-backed workflow catalog on every call. This
+// removes the boot-time blocking fetch that caused #665 (CrashLoopBackOff
+// when the catalog was not yet seeded).
 //
 // Per DD-HAPI-002 (v1.1+), KA is the sole workflow validator. The catalog
 // is fetched per-request so KA always validates against the current catalog
 // without needing a restart when workflows are added/removed.
-type dsCatalogFetcher struct {
-	ds     *dsClients
-	logger logr.Logger
+//
+// #1677 Phase 2g follow-up (DD-WORKFLOW-019): previously queried DataStorage's
+// REST API (GET /api/v1/workflows) directly via the DS ogen client. That
+// route was retired as dead code once workflow discovery moved to KA -- this
+// was a real, missed production caller (not covered by the Phase 2g Wiring
+// Manifest), discovered when regenerating the DS ogen client after pruning
+// the OpenAPI spec broke this file's build. Fixed by reading from the same
+// cache-backed Catalog the 3-step discovery protocol already uses, which is
+// a strict improvement: zero network hop, zero dependency on DS's REST
+// surface, and no artificial page-size cap (List(ctx, nil, -1, 0) is
+// unfiltered/unbounded, unlike the old default-100/max-1000 REST endpoint).
+type workflowCatalogFetcher struct {
+	catalog *workflowcatalog.Catalog
+	logger  logr.Logger
 }
 
-func newDSCatalogFetcher(ds *dsClients, logger logr.Logger) *dsCatalogFetcher {
-	return &dsCatalogFetcher{ds: ds, logger: logger}
+func newWorkflowCatalogFetcher(catalog *workflowcatalog.Catalog, logger logr.Logger) *workflowCatalogFetcher {
+	return &workflowCatalogFetcher{catalog: catalog, logger: logger}
 }
 
-func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
+func (f *workflowCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
 	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	resp, err := f.ds.ogenClient.ListWorkflows(fetchCtx, ogenclient.ListWorkflowsParams{})
+	// limit=-1: unfiltered, unbounded -- KA validates LLM-selected workflows
+	// against the FULL current catalog (DD-HAPI-002), not a paginated subset.
+	workflows, _, err := f.catalog.List(fetchCtx, nil, -1, 0)
 	if err != nil {
-		return nil, fmt.Errorf("ListWorkflows call failed: %w", err)
+		return nil, fmt.Errorf("workflow catalog list failed: %w", err)
 	}
 
-	wlr, ok := resp.(*ogenclient.WorkflowListResponse)
-	if !ok {
-		return nil, fmt.Errorf("unexpected ListWorkflows response type %T", resp)
-	}
-
-	ids := make([]string, 0, len(wlr.Workflows))
-	for _, w := range wlr.Workflows {
-		if w.WorkflowId.Set {
-			ids = append(ids, w.WorkflowId.Value.String())
+	ids := make([]string, 0, len(workflows))
+	for i := range workflows {
+		if workflows[i].WorkflowID != "" {
+			ids = append(ids, workflows[i].WorkflowID)
 		}
 	}
 	if len(ids) == 0 {
@@ -369,12 +377,12 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 
 	validator := parser.NewValidator(ids)
 	schemaParser := dsschema.NewParser()
-	for _, w := range wlr.Workflows {
-		if !w.WorkflowId.Set {
+	for i := range workflows {
+		w := &workflows[i]
+		if w.WorkflowID == "" {
 			continue
 		}
-		wfID := w.WorkflowId.Value.String()
-		validator.SetWorkflowMeta(wfID, buildWorkflowMeta(w, schemaParser, f.logger))
+		validator.SetWorkflowMeta(w.WorkflowID, buildWorkflowMeta(w, schemaParser, f.logger))
 	}
 
 	f.logger.Info("workflow catalog fetched (DD-HAPI-002: per-request validation)",
@@ -387,25 +395,25 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 // parse failures are logged and fail-closed (no Parameters set, stripping
 // all LLM-supplied params for that workflow) rather than aborting the whole
 // catalog fetch.
-func buildWorkflowMeta(w ogenclient.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) parser.WorkflowMeta {
+func buildWorkflowMeta(w *models.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) parser.WorkflowMeta {
 	meta := parser.WorkflowMeta{
-		ExecutionEngine: w.ExecutionEngine,
+		ExecutionEngine: string(w.ExecutionEngine),
 		Version:         w.Version,
-		Component:       append([]string(nil), w.Labels.GetComponent()...),
+		Component:       append([]string(nil), w.Labels.Component...),
 		// ActionType/WorkflowName (Issue #1661 Change 12): both required,
-		// non-optional fields on the DS catalog response (metadata.name /
+		// non-optional fields on the catalog entry (metadata.name /
 		// DD-WORKFLOW-016 taxonomy respectively), so always copied verbatim.
 		ActionType:   w.ActionType,
 		WorkflowName: w.WorkflowName,
 	}
-	if w.ExecutionBundle.Set {
-		meta.ExecutionBundle = w.ExecutionBundle.Value
+	if w.ExecutionBundle != nil {
+		meta.ExecutionBundle = *w.ExecutionBundle
 	}
-	if w.ExecutionBundleDigest.Set {
-		meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
+	if w.ExecutionBundleDigest != nil {
+		meta.ExecutionBundleDigest = *w.ExecutionBundleDigest
 	}
-	if w.ServiceAccountName.Set {
-		meta.ServiceAccountName = w.ServiceAccountName.Value
+	if w.ServiceAccountName != nil {
+		meta.ServiceAccountName = *w.ServiceAccountName
 	}
 	if w.Content != "" {
 		applyParsedSchemaMeta(&meta, w, schemaParser, logger)
@@ -420,11 +428,8 @@ func buildWorkflowMeta(w ogenclient.RemediationWorkflow, schemaParser *dsschema.
 // the other fields, since a malformed execution.resources section is
 // independent of parameter/dependency validity). A Parse failure leaves all
 // of these fields at their zero value (fail-closed: no unvalidated data).
-func applyParsedSchemaMeta(meta *parser.WorkflowMeta, w ogenclient.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) {
-	wfID := ""
-	if w.WorkflowId.Set {
-		wfID = w.WorkflowId.Value.String()
-	}
+func applyParsedSchemaMeta(meta *parser.WorkflowMeta, w *models.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) {
+	wfID := w.WorkflowID
 
 	parsed, err := schemaParser.Parse(w.Content)
 	if err != nil {

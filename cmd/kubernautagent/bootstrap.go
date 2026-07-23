@@ -144,11 +144,11 @@ func buildCoreServices(
 	instrumentedLLM := llm.NewInstrumentedClient(swappable)
 
 	var catalogFetcher investigator.CatalogFetcher
-	if ds != nil {
-		catalogFetcher = newDSCatalogFetcher(ds, logger)
+	if wfCatalog != nil {
+		catalogFetcher = newWorkflowCatalogFetcher(wfCatalog, logger)
 		logger.Info("workflow catalog fetcher enabled (per-request, DD-HAPI-002)")
 	} else {
-		logger.Info("workflow catalog fetcher disabled (no DataStorage — dev mode)")
+		logger.Info("workflow catalog fetcher disabled (no workflow catalog cache — dev mode)")
 	}
 
 	effectiveLLM, effectiveReg, alignEvaluator, alignCfg := buildAlignmentStack(cfg, llmRuntime, instrumentedLLM, reg, auditStore, logger)

@@ -143,6 +143,15 @@ func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger lo
 	return &Cache{reader: k8sCache}, cancel, nil
 }
 
+// NewCacheFromReader builds a Cache backed by an arbitrary client.Reader --
+// for tests that need to exercise real Catalog/Cache logic (List/GetByID/
+// filtering/conversion) against a controller-runtime fake client, without
+// paying for a full informer sync or envtest. Production code must use
+// NewInformerCache; this constructor exists solely as a testing seam.
+func NewCacheFromReader(reader client.Reader) *Cache {
+	return &Cache{reader: reader}
+}
+
 // indexWorkflowCacheFields registers the field indexers NewInformerCache
 // needs (actionType/name lookups). Extracted for readability -- one place
 // to see every index this cache maintains.
