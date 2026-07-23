@@ -32645,12 +32645,15 @@ type WorkflowExecutionAuditPayload struct {
 	// Human-readable name of the selected workflow from the DataStorage catalog. Optional; present only
 	// when the catalog provides a name.
 	WorkflowName OptString `json:"workflow_name"`
-	// Action type from the DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod), resolved once
-	// during
-	// Pending from the DS catalog and stashed on WorkflowExecution.Status (mirrors ExecutionEngine/
-	// ServiceAccountName). Audit-readability only, so started/completed/failed events are human-readable
-	// without joining back to the remediationworkflow.admitted.create event by workflow_id (#1661 Change
-	// 3).
+	// Action type from the DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+	// Catalog-authoritative:
+	// resolved by KA at workflow-selection time, carried on AIAnalysis.Status.SelectedWorkflow, and
+	// copied
+	// verbatim by RemediationOrchestrator onto the immutable WorkflowExecution.Spec.WorkflowRef snapshot
+	// (mirrors ExecutionEngine/ServiceAccountName/WorkflowName; DD-WORKFLOW-018). Audit-readability only,
+	//  so
+	// started/completed/failed events are human-readable without joining back to the
+	// remediationworkflow.admitted.create event by workflow_id (#1661 Change 3).
 	ActionType OptString `json:"action_type"`
 	// Kubernetes resource being acted upon (format depends on scope).
 	TargetResource string `json:"target_resource"`

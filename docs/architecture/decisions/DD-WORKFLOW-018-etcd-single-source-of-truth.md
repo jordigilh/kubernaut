@@ -3,7 +3,7 @@
 **Date**: July 14, 2026
 **Status**: Approved — Phased Rollout In Progress (tracked in [Issue #1661](https://github.com/jordigilh/kubernaut/issues/1661))
 **Decision Maker**: Kubernaut Architecture Team
-**Version**: 1.0
+**Version**: 1.1
 **Authority**: AUTHORITATIVE — governs the storage architecture for `RemediationWorkflow`/`ActionType` catalog data
 **Affects**: Data Storage Service (DS), AuthWebhook (AW), Workflow Execution (WE), AIAnalysis (AA), Remediation Orchestrator (RO), HolmesGPT-API/KubernautAgent (KA)
 **Related**: [DD-WORKFLOW-012](./DD-WORKFLOW-012-workflow-immutability-constraints.md) (Immutability), [DD-WORKFLOW-016](./DD-WORKFLOW-016-action-type-workflow-indexing.md) (Indexing/three-step discovery), [DD-AUDIT-003](./DD-AUDIT-003-service-audit-trace-requirements.md), [DD-AUDIT-004](./DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md), [ADR-034](./ADR-034-unified-audit-table-design.md) (Unified Audit Table), [ADR-058](./ADR-058-webhook-driven-workflow-registration.md) (Webhook-Driven Registration), [DD-KA-001](./DD-KA-001-workflow-response-validation-architecture.md) (Workflow Response Validation)
@@ -14,6 +14,23 @@
 ---
 
 ## Changelog
+
+### Version 1.1 (2026-07-23)
+
+- **CRD-embedded execution snapshot deduplicated into a shared type.** `AIAnalysis.Status.SelectedWorkflow` and
+  `WorkflowExecution.Spec.WorkflowRef` (item 9 above) each independently hand-copied the same 11-12 field list, and
+  that duplication had already caused one drift bug in practice: `ActionType` was added to `SelectedWorkflow` but
+  initially left off `WorkflowRef`. Both types now inline-embed a single `sharedtypes.WorkflowSnapshot` (Go anonymous
+  struct embedding + JSON `,inline`), making a field added to one CRD's schema structurally impossible to omit from
+  the other.
+- **`WorkflowName` propagation gap closed.** Auditing this deduplication surfaced that KubernautAgent (KA) never
+  actually populated `action_type`/`workflow_name` in its `select_workflow` wire response — `enrichFromCatalog`
+  (autonomous path) and `applySelectedWorkflow`/`WorkflowCatalogAdapter.GetWorkflowByID` (interactive path) both
+  omitted them, so `ActionType` silently stayed empty end-to-end despite item 11's audit-enrichment intent above, and
+  `WorkflowName` was never wired at all. Both are now copied catalog-authoritatively (never LLM-suppliable) at every
+  KA/AA/RO call site that constructs a `SelectedWorkflow`/`WorkflowRef`.
+- No architectural change to the decision itself — this is a REFACTOR-phase consolidation and GREEN-phase bug fix
+  within the already-approved "CRD-embedded workflow snapshot chain" (item 9), not a new design decision.
 
 ### Version 1.0 (2026-07-14)
 

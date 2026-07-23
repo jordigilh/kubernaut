@@ -630,9 +630,17 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// AIAnalysis.Status.SelectedWorkflow.ActionType (propagated from KA's
 		// three-step discovery protocol) is available at the exact same
 		// CRD-creation time as its ExecutionEngine/ServiceAccountName
-		// siblings. Change 11f folds ActionType into WorkflowRef alongside
-		// them and reads it straight from that immutable Spec snapshot (no
-		// Status mirror), closing the gap: action_type is populated again.
+		// siblings. Change 11f folded ActionType into WorkflowRef alongside
+		// them, reading it straight from that immutable Spec snapshot (no
+		// Status mirror) -- but that only fixed the *read* site: KA itself
+		// never populated action_type/workflow_name in its selected_workflow
+		// wire response, so both stayed empty end-to-end regardless (this
+		// assertion was RED on CI until the fix landed). Change 12 closed
+		// the actual gap catalog-authoritatively in KA (enrichFromCatalog /
+		// applySelectedWorkflow), and deduplicated the two CRDs' snapshot
+		// field lists into one shared sharedtypes.WorkflowSnapshot type
+		// (DD-WORKFLOW-018) so this class of "field added to one CRD but not
+		// its sibling" drift can't recur.
 		for _, event := range allAuditEvents {
 			if event.EventType != "workflowexecution.execution.started" {
 				continue
@@ -640,7 +648,9 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 			payload, ok := event.EventData.GetWorkflowExecutionAuditPayload()
 			Expect(ok).To(BeTrue(), "workflowexecution.execution.started event_data should decode as WorkflowExecutionAuditPayload")
 			Expect(payload.ActionType.IsSet()).To(BeTrue(),
-				"action_type should be populated from WorkflowRef.ActionType (Issue #1661 Change 11f)")
+				"action_type should be populated from WorkflowRef.ActionType (Issue #1661 Change 11f/12)")
+			Expect(payload.WorkflowName.IsSet()).To(BeTrue(),
+				"workflow_name should be populated from WorkflowRef.WorkflowName (Issue #1661 Change 12)")
 			break
 		}
 
