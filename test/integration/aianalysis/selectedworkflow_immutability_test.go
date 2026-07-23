@@ -51,6 +51,8 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 		return &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "increase-memory-v1",
+				WorkflowName:    "increase-memory-v1",
+				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "ghcr.io/kubernaut/increase-memory:v1.0",
 				Dependencies: &sharedtypes.WorkflowDependencies{

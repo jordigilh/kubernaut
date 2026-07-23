@@ -64,6 +64,7 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 		aiWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:            "wf-ai-001",
+				WorkflowName:          "wf-ai-001",
 				ActionType:            "RestartPod",
 				Version:               "1.0.0",
 				ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",

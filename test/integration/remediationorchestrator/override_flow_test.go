@@ -145,6 +145,8 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 		return &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:            "wf-ai-original",
+				WorkflowName:          "wf-ai-original",
+				ActionType:            "RestartPod",
 				Version:               "1.0.0",
 				ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
 				ExecutionBundleDigest: "sha256:aaa",

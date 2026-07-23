@@ -331,8 +331,10 @@ func newWorkflowExecution(name, namespace, rrName string, phase string) *workflo
 			},
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID: "test-workflow",
-					Version:    "v1",
+					WorkflowID:   "test-workflow",
+					WorkflowName: "test-workflow",
+					ActionType:   "RestartPod",
+					Version:      "v1",
 				},
 			},
 			TargetResource: namespace + "/deployment/test-app",
