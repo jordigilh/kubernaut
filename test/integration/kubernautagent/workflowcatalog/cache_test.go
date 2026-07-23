@@ -191,4 +191,28 @@ var _ = Describe("IT-KA-1677-CACHE Workflow Catalog Cache (informer-backed)", La
 			return wfCache.GetWorkflow(ctx, name)
 		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(), "cache's Watch must observe post-sync creates")
 	})
+
+	// IT-KA-1677-CACHE-006 (#1677 follow-up, DD-WORKFLOW-018/019): proves the
+	// cache's read-your-writes consistency on DELETE, not just CREATE.
+	// Previously this property was only ever proven E2E against DS's now-
+	// retired REST catalog (test/e2e/authwebhook/02_workflow_content_
+	// integrity_test.go's E2E-INTEGRITY-002); since that catalog moved to
+	// KA, the same guarantee needs a home here against KA's own informer
+	// cache -- the property was at risk of being silently dropped entirely
+	// during the OpenAPI/E2E cleanup, not just relocated.
+	It("IT-KA-1677-CACHE-006: cache observes a workflow deletion (Watch, not just List)", func() {
+		name := uniqueName("it-1677-delete")
+		rw := validRW(name, "ScaleReplicas")
+		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
+
+		Eventually(func() (*rwv1alpha1.RemediationWorkflow, error) {
+			return wfCache.GetWorkflow(ctx, name)
+		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil(), "cache should observe the workflow before deletion")
+
+		Expect(k8sClient.Delete(ctx, rw)).To(Succeed())
+
+		Eventually(func() (*rwv1alpha1.RemediationWorkflow, error) {
+			return wfCache.GetWorkflow(ctx, name)
+		}, 5*time.Second, 100*time.Millisecond).Should(BeNil(), "cache's Watch must observe deletes -- no stale entry survives a real CRD delete")
+	})
 })
