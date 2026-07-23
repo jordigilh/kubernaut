@@ -44,6 +44,9 @@ const (
 	MetricNameInteractiveCommandDuration      = "aiagent_mcp_interactive_command_duration_seconds"
 	MetricNameInteractiveTakeoverTotal        = "aiagent_mcp_interactive_takeover_total"
 	MetricNameInteractiveLeaseContentionTotal = "aiagent_mcp_interactive_lease_contention_total"
+
+	// LLM retry telemetry (kubernaut#1612 gap remediation)
+	MetricNameLLMCallRetriesTotal = "aiagent_llm_call_retries_total"
 )
 
 // maxSignalNameLen bounds the signal_name label to prevent Prometheus TSDB
@@ -68,6 +71,9 @@ type Metrics struct {
 	InteractiveCommandDuration      *prometheus.HistogramVec
 	InteractiveTakeoverTotal        *prometheus.CounterVec
 	InteractiveLeaseContentionTotal prometheus.Counter
+
+	// LLM retry telemetry (#1612 gap remediation)
+	LLMCallRetriesTotal *prometheus.CounterVec
 }
 
 var (
@@ -181,6 +187,13 @@ func newMetrics(registry prometheus.Registerer) *Metrics {
 				Help: "Total Lease contention events (another driver holds the Lease)",
 			},
 		),
+		LLMCallRetriesTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: MetricNameLLMCallRetriesTotal,
+				Help: "Total LLM calls that required at least one retry, by phase and final outcome (succeeded, exhausted, non_retryable)",
+			},
+			[]string{"phase", "outcome"},
+		),
 	}
 
 	registry.MustRegister(
@@ -197,6 +210,7 @@ func newMetrics(registry prometheus.Registerer) *Metrics {
 		m.InteractiveCommandDuration,
 		m.InteractiveTakeoverTotal,
 		m.InteractiveLeaseContentionTotal,
+		m.LLMCallRetriesTotal,
 	)
 
 	return m
@@ -297,4 +311,14 @@ func (m *Metrics) RecordInteractiveLeaseContention() {
 		return
 	}
 	m.InteractiveLeaseContentionTotal.Inc()
+}
+
+// RecordLLMCallRetry increments the LLM retry counter for an LLM call that
+// needed at least one retry. outcome is the call's final classification
+// ("succeeded", "exhausted", or "non_retryable") — see llm.IsRetryable.
+func (m *Metrics) RecordLLMCallRetry(phase, outcome string) {
+	if m == nil {
+		return
+	}
+	m.LLMCallRetriesTotal.WithLabelValues(phase, outcome).Inc()
 }
