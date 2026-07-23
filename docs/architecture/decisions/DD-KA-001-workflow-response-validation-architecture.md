@@ -3,8 +3,8 @@
 **Date**: July 14, 2026
 **Status**: Approved
 **Deciders**: Architecture Team, KubernautAgent Team, Workflow Execution Team
-**Version**: 1.0
-**Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd Single Source of Truth, Change 9), DD-WE-006 (Schema Declared Dependencies), Issue #241, Issue #243, Issue #529, Issue #1661
+**Version**: 1.1
+**Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd Single Source of Truth, Change 9), DD-WE-006 (Schema Declared Dependencies), Issue #241, Issue #243, Issue #529, Issue #1661, Issue #1711
 **Supersedes**: [DD-HAPI-002](./DD-HAPI-002-workflow-parameter-validation.md) (Workflow Response Validation Architecture) — in full
 
 ---
@@ -100,6 +100,26 @@ against the same source-of-truth CRD KA already validated against would still no
 If any validation fails, errors are returned to the LLM for self-correction (max 3 attempts); after exhaustion,
 `needs_human_review: true` is set.
 
+### Step 1 (Workflow Existence) Is Unconditional -- It Applies Even When `needs_human_review` Is Already True
+
+Step 1 has no documented exception. If the LLM's response carries a `workflow_id`, that ID **must** resolve against
+the DS catalog before it is allowed to appear as structured data anywhere downstream (`AIAnalysis.Status.SelectedWorkflow`
+and beyond) -- including when `needs_human_review` was already set to `true` by an earlier signal in the same response
+(e.g. `investigation_outcome=inconclusive`, which the parser derives independently of workflow validation). A `workflow_id`
+that cannot be resolved is not "a tentative workflow to show the operator" -- it is unvalidated data indistinguishable from
+a hallucination, and per the Decision above (KA is the **sole** validator, WE performs no independent re-check), nothing
+downstream re-verifies it. Any remediation idea the LLM had belongs in the RCA text, never as a structured `workflow_id`
+that skipped Step 1.
+
+This clarifies scope only -- it does not change the Decision or the validation sequence above. It closes a documentation
+gap discovered during Issue #1661 triage: KA's `Validate()` short-circuits (skips the catalog-allowlist check) whenever
+`HumanReviewNeeded` is already `true`, which is correct for avoiding wasted self-correction retries on a result already
+headed to a human, but had left the door open for an unresolved `workflow_id` to survive un-cleared in exactly that
+short-circuited path. Tracked as a KA-side implementation gap in
+[Issue #1711](https://github.com/jordigilh/kubernaut/issues/1711); the fix mirrors the existing exhaustion-clearing
+pattern already used for the other two "invalid workflow must not propagate" paths (self-correction exhaustion in
+`validator.go`, and the API-version ambiguity gate exhaustion in `investigator_gates.go`).
+
 ### What's New (Issue #1661 / DD-WORKFLOW-018 Change 8)
 
 KA already independently fetches and parses the workflow's schema for the Step 3/3b validation above. As of this
@@ -192,4 +212,5 @@ the CRD-embedding design).
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.1 | 2026-07-23 | **CLARIFICATION**: Added explicit scope note that Step 1 (Workflow Existence) is unconditional, including when `needs_human_review` was already set true by an earlier signal (e.g. `investigation_outcome=inconclusive`). Closes a documentation gap discovered during Issue #1661 triage; the corresponding KA implementation gap (an unresolved `workflow_id` could survive un-cleared through that short-circuit) is tracked in Issue #1711. No change to the Decision or validation sequence. |
 | 1.0 | 2026-07-14 | Initial version. Supersedes DD-HAPI-002 in full (clean cut, Go-era terminology). Records the collapse from two parameter-validation layers to one (Issue #1661 / DD-WORKFLOW-018 Change 8-9) as a deliberate, documented trade-off. |
