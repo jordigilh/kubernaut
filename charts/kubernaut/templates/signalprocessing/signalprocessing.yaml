@@ -169,11 +169,17 @@ spec:
             - name: health
               containerPort: 8081
               protocol: TCP
+
+          # #1712: initialDelaySeconds raised 10-30s -> 120s. Confirmed via local
+          # Kind v0.32.0 repro that the single-node control-plane saturates CPU
+          # (~94%) during the concurrent startup burst of all controller-runtime
+          # services' K8s API discovery calls, delaying health-server bind past the
+          # old probe budget and causing CrashLoopBackOff unrelated to app health.
           livenessProbe:
             httpGet:
               path: /healthz
               port: 8081
-            initialDelaySeconds: 15
+            initialDelaySeconds: 120
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
