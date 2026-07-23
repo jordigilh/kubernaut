@@ -416,7 +416,7 @@ var _ = Describe("EventBridge", func() {
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-001", "ctx-rc-001", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			err := bridge.EmitReasoningContent(ctx, "considering memory limits and recent deploys")
+			err := bridge.EmitReasoningContent(ctx, "considering memory limits and recent deploys", false)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1))
 
@@ -439,7 +439,7 @@ var _ = Describe("EventBridge", func() {
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			longText := buildLongReasoningContentText(4000)
-			err := bridge.EmitReasoningContent(ctx, longText)
+			err := bridge.EmitReasoningContent(ctx, longText, false)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1))
 
@@ -449,7 +449,7 @@ var _ = Describe("EventBridge", func() {
 		})
 
 		It("UT-AF-1635-EB-003: EmitReasoningContentSafe is nil-safe when bridge absent", func() {
-			err := launcher.EmitReasoningContentSafe(context.Background(), "no bridge here")
+			err := launcher.EmitReasoningContentSafe(context.Background(), "no bridge here", false)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -458,10 +458,43 @@ var _ = Describe("EventBridge", func() {
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-004", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			err := bridge.EmitReasoningContent(ctx, "")
+			err := bridge.EmitReasoningContent(ctx, "", false)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(BeEmpty(),
-				"#1635: a redacted turn's empty text must produce zero events, matching EmitReasoning's existing behavior")
+				"#1635: a non-redacted turn's empty text must produce zero events, matching EmitReasoning's existing behavior")
+		})
+
+		// #1716 / DD-LLM-009 (redaction sub-decision, revisited): a redacted
+		// turn must now emit a content-free signal (metadata.redacted=true,
+		// no text) instead of the full no-op above, so Console can render a
+		// "reasoning hidden by provider" placeholder.
+		It("UT-AF-1716-EB-001: a redacted turn emits a content-free signal instead of a no-op", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-005", "ctx-rc-005", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitReasoningContent(ctx, "", true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1),
+				"#1716: a redacted turn must produce exactly one event, not a no-op")
+
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "EmitReasoningContent must produce TaskStatusUpdateEvent")
+			Expect(evt.Metadata).NotTo(BeNil())
+			Expect(evt.Metadata["type"]).To(Equal("reasoning_content"))
+			Expect(evt.Metadata["redacted"]).To(Equal(true),
+				"#1716: metadata.redacted must be true so Console can render a placeholder")
+		})
+
+		It("UT-AF-1716-EB-002: a non-redacted empty text still no-ops (regression guard)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-006", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitReasoningContent(ctx, "", false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(BeEmpty(),
+				"#1716: a genuinely empty, non-redacted turn must remain a no-op — only redacted=true changes behavior")
 		})
 	})
 
