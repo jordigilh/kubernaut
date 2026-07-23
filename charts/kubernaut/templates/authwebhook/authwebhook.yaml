@@ -149,6 +149,29 @@ spec:
 
               CA_BUNDLE=$(base64 < "$CA_FILE" | tr -d '\n')
 
+              # Wait for the API server to become reachable before patching.
+              # Kind clusters under heavy Service/Endpoint churn (repeated
+              # helm install/upgrade/uninstall cycles in CI smoke tests) can
+              # see transient iptables/conntrack sync delays that make the
+              # in-cluster kubernetes.default ClusterIP briefly unreachable
+              # ("dial tcp 10.96.0.1:443: i/o timeout"). Retrying here in
+              # seconds is far cheaper than relying on kubelet's
+              # container-restart backoff, which escalates into
+              # multi-minute waits for the same transient condition.
+              wait_for_api_server() {
+                ATTEMPTS=30
+                i=0
+                while [ "$i" -lt "$ATTEMPTS" ]; do
+                  if kubectl get --raw=/healthz >/dev/null 2>&1; then
+                    return 0
+                  fi
+                  i=$((i + 1))
+                  sleep 2
+                done
+                echo "ERROR: API server unreachable after ${ATTEMPTS} attempts (60s)"
+                return 1
+              }
+
               patch_webhooks() {
                 KIND="$1"
                 NAME="$2"
@@ -166,6 +189,7 @@ spec:
               }
 
               echo "==> Init-container: patching webhook caBundle (#377 self-healing)..."
+              wait_for_api_server
               patch_webhooks mutatingwebhookconfigurations authwebhook-mutating
               patch_webhooks validatingwebhookconfigurations authwebhook-validating
               echo "==> Webhook caBundle patching complete"
