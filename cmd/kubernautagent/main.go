@@ -287,7 +287,7 @@ func main() {
 		cfg: cfg, mgr: stack.mgr, sessionDrainer: sessionDrainer,
 		httpServer: httpServer, healthServer: healthServer, metricsServer: metricsServer,
 		eventEmitter: core.eventEmitter, fleetClient: core.fleetClient, fleetGate: core.fleetGate,
-		auditCleanup: core.auditCleanup, logger: logger,
+		auditCleanup: core.auditCleanup, wfCacheCancel: core.wfCacheCancel, logger: logger,
 	})
 }
 
@@ -305,6 +305,7 @@ type shutdownParams struct {
 	fleetClient    *fleetclient.ResilientClient
 	fleetGate      *readiness.Gate
 	auditCleanup   func()
+	wfCacheCancel  context.CancelFunc
 	logger         logr.Logger
 }
 
@@ -334,6 +335,10 @@ func runShutdownSequence(p shutdownParams) {
 	if p.fleetClient != nil {
 		_ = p.fleetClient.Close()
 		p.logger.Info("fleet MCP client closed")
+	}
+	if p.wfCacheCancel != nil {
+		p.wfCacheCancel()
+		p.logger.Info("workflow catalog cache stopped")
 	}
 	p.logger.Info("flushing audit store...")
 	p.auditCleanup()

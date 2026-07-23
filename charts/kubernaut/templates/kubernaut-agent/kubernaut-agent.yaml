@@ -98,6 +98,11 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list"]
+  # ── Workflow catalog (#1677, DD-WORKFLOW-019): KA owns discovery directly
+  # via its own informer-backed cache instead of proxying through DataStorage.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationworkflows", "actiontypes"]
+    verbs: ["get", "list", "watch"]
   # ── KubeVirt (BR-PLATFORM-005: VM-backed workload investigation) ──────────
   - apiGroups: ["kubevirt.io"]
     resources: ["virtualmachines", "virtualmachineinstances", "virtualmachineinstancemigrations"]

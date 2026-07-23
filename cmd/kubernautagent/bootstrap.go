@@ -45,6 +45,7 @@ import (
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
@@ -75,6 +76,8 @@ type coreServices struct {
 	effectiveReg         registry.ToolRegistry
 	alignEvaluator       *alignment.Evaluator
 	alignCfg             kaconfig.AlignmentCheckConfig
+	wfCache              *workflowcatalog.Cache
+	wfCacheCancel        context.CancelFunc
 }
 
 // buildCoreServices wires audit, K8s infra, DataStorage, tool registry,
@@ -93,6 +96,11 @@ func buildCoreServices(
 ) *coreServices {
 	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
 	infra := initK8sInfra(logger)
+
+	// #1677 Phase 2a (DD-WORKFLOW-019): KA owns workflow/action-type
+	// discovery directly via its own informer-backed cache, instead of
+	// proxying every lookup through DataStorage.
+	wfCache, wfCacheCancel := buildWorkflowCatalogCache(infra, logger)
 
 	// #1288: SSAR impersonate gate removed — KA uses its own SA for all K8s
 	// API calls. Interactive readiness is no longer gated on impersonation RBAC.
@@ -141,7 +149,36 @@ func buildCoreServices(
 		sanitizer: sanitizer, anomalyDetector: anomalyDetector, summarizer: sum,
 		catalogFetcher: catalogFetcher, effectiveLLM: effectiveLLM, effectiveReg: effectiveReg,
 		alignEvaluator: alignEvaluator, alignCfg: alignCfg,
+		wfCache: wfCache, wfCacheCancel: wfCacheCancel,
 	}
+}
+
+// buildWorkflowCatalogCache constructs KA's informer-backed workflow/
+// action-type cache (#1677 Phase 2a, DD-WORKFLOW-019). Returns (nil, nil)
+// when K8s infrastructure is unavailable (e.g. local dev mode without a
+// cluster), matching initDSClients's fail-open-to-disabled convention for
+// optional K8s-backed dependencies. A construction failure against a real
+// cluster (e.g. CRDs not installed, sync timeout) is fatal: KA cannot serve
+// its 5 discovery-dependent MCP tools without this cache.
+func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) (*workflowcatalog.Cache, context.CancelFunc) {
+	if infra == nil {
+		logger.Info("K8s infrastructure unavailable, workflow catalog cache disabled (dev mode)")
+		return nil, nil
+	}
+
+	scheme, err := workflowcatalog.NewScheme()
+	if err != nil {
+		logger.Error(err, "FATAL: failed to build workflow catalog scheme")
+		os.Exit(1)
+	}
+
+	wfCache, cancel, err := workflowcatalog.NewInformerCache(infra.kubeConfig, scheme, logger)
+	if err != nil {
+		logger.Error(err, "FATAL: failed to start workflow catalog cache — KA cannot serve discovery tools without it")
+		os.Exit(1)
+	}
+	logger.Info("workflow catalog cache started (informer-backed, #1677 Phase 2a)")
+	return wfCache, cancel
 }
 
 // buildLLMClients constructs the primary SwappableClient plus any per-phase
