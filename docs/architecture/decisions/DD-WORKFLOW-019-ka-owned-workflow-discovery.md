@@ -1,18 +1,38 @@
 # DD-WORKFLOW-019: Relocating Workflow Discovery/Selection Ownership from Data Storage to KubernautAgent
 
 **Date**: July 17, 2026
-**Status**: Proposed — not yet approved for implementation; gated on [Issue #1661](https://github.com/jordigilh/kubernaut/issues/1661) completing
-**Decision Maker**: Kubernaut Architecture Team (pending final approval)
-**Version**: 1.0
-**Authority**: PROPOSAL — captures a validated architectural direction for future planning; does not authorize implementation
-**Affects**: Data Storage Service (DS), KubernautAgent (KA), APIFrontend (AF)
-**Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd single source of truth — this decision's predecessor and prerequisite), [DD-WORKFLOW-016](./DD-WORKFLOW-016-action-type-workflow-indexing.md) (Three-step discovery protocol, Change 2 of DD-WORKFLOW-018 ports this into DS's in-memory cache — this decision proposes moving that cache/logic again, from DS to KA), [DD-HAPI-017](./DD-HAPI-017-three-step-workflow-discovery-integration.md) (Three-Step Workflow Discovery Integration), [DD-KA-001](./DD-KA-001-workflow-response-validation-architecture.md) (KA's existing schema-fetch/validation responsibility)
-**Supersedes**: nothing yet — this is a proposal, not an approved change
-**Business Requirement**: BR-WORKFLOW-007 (ActionType/workflow discovery), BR-AUDIT-023 (workflow discovery audit trail)
+**Status**: ✅ **APPROVED — Implemented** (Issue [#1677](https://github.com/jordigilh/kubernaut/issues/1677), Phases 1-2g)
+**Decision Maker**: Kubernaut Architecture Team
+**Version**: 2.0
+**Authority**: APPROVED — implementation complete
+**Affects**: Data Storage Service (DS), KubernautAgent (KA), APIFrontend (AF), Notification
+**Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd single source of truth — this decision's predecessor and prerequisite), [DD-WORKFLOW-016](./DD-WORKFLOW-016-action-type-workflow-indexing.md) (Three-step discovery protocol, Change 2 of DD-WORKFLOW-018 ports this into DS's in-memory cache — this decision moves that cache/logic again, from DS to KA), [DD-HAPI-017](./DD-HAPI-017-three-step-workflow-discovery-integration.md) (Three-Step Workflow Discovery Integration), [DD-KA-001](./DD-KA-001-workflow-response-validation-architecture.md) (KA's existing schema-fetch/validation responsibility)
+**Supersedes**: DS as the discovery/scoring/audit-emission owner established by DD-WORKFLOW-018 Change 1-2 (Issue #1661)
+**Business Requirement**: BR-WORKFLOW-007 (ActionType/workflow discovery), BR-AUDIT-023 v2.1 (workflow discovery audit trail — "who generates" amended to KA)
 
 ---
 
 ## Changelog
+
+### Version 2.0 (2026-07-23) — Implemented
+
+- Issue #1661 landed and stabilized; CHECKPOINT DD re-validated the evidence below against the then-current codebase
+  (sole-consumer status, cache mechanics, cutover behavior parity, audit-event schema/governance) with no material
+  changes to the original analysis. User approved the resulting Wiring Manifest and phased TDD plan.
+- Implemented across Phases 2a-2g (Issue #1677): KA's own informer-backed cache + RBAC (2a), ported
+  discovery/scoring logic (2b), KA audit infrastructure + BR-AUDIT-023/DD-WORKFLOW-014 "who generates" amendment
+  (2c), the 3 custom MCP tools cut over to `workflowcatalog.Catalog` (2d), `select_workflow`/`investigate_discovery`
+  rewired (2e), APIFrontend's `kubernaut_list_workflows` rewired to `cfg.KAMCPClient` (2f), and DS's
+  `/api/v1/workflows*` REST surface + success-metrics machinery retired as dead code (2g).
+- One deviation from the "Anticipated scope": `TotalExecutions`/`SuccessfulExecutions`/`ActualSuccessRate`
+  ("success-metrics overlay") were dropped entirely rather than migrated — confirmed (via code and grep) to be
+  dead, best-effort display telemetry from an abandoned success-rate-weighted-selection design, with zero use in
+  the actual scoring logic.
+- Known residual gap, intentionally deferred out of #1677's scope: `api/openapi/data-storage-v1.yaml` still
+  documents the retired endpoints (and the generated `pkg/datastorage/ogen-client` still exposes their generated
+  methods/types), even though DS no longer registers routes for them. Production behavior is correct and covered
+  by a permanent regression test (`test/e2e/datastorage/04_workflow_endpoints_retired_test.go`), but the OpenAPI
+  contract itself has not yet been pruned to match. Track as separate follow-up.
 
 ### Version 1.0 (2026-07-17)
 
@@ -80,36 +100,36 @@ objection to the direction.
 
 ---
 
-## Decision (Proposed)
+## Decision (Implemented)
 
-**After [Issue #1661](https://github.com/jordigilh/kubernaut/issues/1661)'s phased rollout completes and stabilizes**,
-relocate ownership of the workflow/action-type discovery, search, and scoring logic — and the informer-backed cache
-that backs it — from Data Storage into KubernautAgent. Data Storage's role in the workflow domain becomes strictly
-what DD-WORKFLOW-018 already establishes for PostgreSQL: an audit trail and on-demand aggregation source, with no
-remaining read/write responsibility for catalog *definitions* of any kind.
+Ownership of the workflow/action-type discovery, search, and scoring logic — and the informer-backed cache that
+backs it — has been relocated from Data Storage into KubernautAgent. Data Storage's role in the workflow domain is
+now strictly what DD-WORKFLOW-018 already established for PostgreSQL: an audit trail and on-demand aggregation
+source, with no remaining read/write responsibility for catalog *definitions* of any kind.
 
-This decision is **not yet approved for implementation**. It requires:
+This decision was approved and executed as Issue #1677:
 
-1. A dedicated CHECKPOINT DD review once Issue #1661 lands, re-validating the evidence above against the
-   then-current codebase (call sites, replica counts, RBAC posture may have shifted).
-2. A Wiring Manifest and phased TDD plan, following the same rigor as DD-WORKFLOW-018's own Issue #1661 execution —
-   this is not a small change; it relocates cache-management, K8s RBAC, discovery/scoring logic, and audit-emission
-   responsibility across two services simultaneously.
-3. Explicit user approval before any code changes, per this project's CHECKPOINT DD governance.
+1. CHECKPOINT DD was re-run after Issue #1661 landed, re-validating the evidence below against the then-current
+   codebase (call sites, replica counts, RBAC posture) — no material change to the original analysis.
+2. A Wiring Manifest and phased TDD plan (Phases 2a-2g) were produced and approved, following the same rigor as
+   DD-WORKFLOW-018's own Issue #1661 execution.
+3. Explicit user approval was obtained before implementation began, per this project's CHECKPOINT DD governance.
 
-### Anticipated scope (subject to revision at implementation time)
+### Implemented scope
 
-- Relocate the discovery/scoring logic (`pkg/datastorage/repository/workflow/{discovery,cache_filter,discovery_cache,cache_convert}.go`
-  and the relevant `pkg/datastorage/workflowcache` pieces, all built during Issue #1661 Phases 28-33) into KA,
-  adapting them to KA's own informer cache over `RemediationWorkflow`/`ActionType`.
-- Add the incremental RBAC for KA to `list`/`watch` those two CRDs.
-- Rewire APIFrontend's `kubernaut_list_workflows` to `cfg.KAMCPClient`, mirroring the existing
-  `kubernaut_discover_workflows` pattern; add an equivalent read-only "list" tool/handler in KA if one does not
-  already exist in a suitable form.
-- Add discovery/selection audit-event emission in KA via the existing `BufferedDSAuditStore` path, preserving
-  BR-AUDIT-023/DD-WORKFLOW-014 v3.0 coverage without DS's handler-side emission.
-- Determine and remove whatever remains of DS's `/api/v1/workflows`, `/api/v1/workflows/actions` REST surface once
-  both consumers (KA-internal, APIFrontend) no longer call it directly.
+- Relocated the discovery/scoring logic (`pkg/datastorage/repository/workflow/{discovery,cache_filter,discovery_cache,cache_convert}.go`
+  and the relevant `pkg/datastorage/workflowcache` pieces, originally built during Issue #1661 Phases 28-33) into
+  `internal/kubernautagent/workflowcatalog`, adapted to KA's own informer cache over
+  `RemediationWorkflow`/`ActionType` (Phases 2a-2b).
+- Added the incremental RBAC for KA to `list`/`watch` those two CRDs (Phase 2a).
+- Rewired APIFrontend's `kubernaut_list_workflows` to `cfg.KAMCPClient`, mirroring the existing
+  `kubernaut_discover_workflows` pattern, with a new `ka.MCPClient.ListWorkflows` + `HandleListWorkflowsKA` (Phase 2f).
+- Added discovery/selection audit-event emission in KA via the existing `BufferedDSAuditStore` path, preserving
+  BR-AUDIT-023/DD-WORKFLOW-014 coverage without DS's handler-side emission (Phase 2c-2d).
+- Removed DS's `/api/v1/workflows*`, `/api/v1/action-types/{name}/workflow-count` REST surface and all now-dead
+  repository/cache/handler code once both consumers (KA-internal, APIFrontend) no longer called it directly
+  (Phase 2g). The OpenAPI *contract* for these routes has not yet been pruned to match — see the v2.0 changelog
+  entry above.
 
 ### Alternatives considered
 
@@ -132,15 +152,15 @@ This decision is **not yet approved for implementation**. It requires:
 
 ## Confidence Assessment
 
-**Confidence: ~90% on direction, not yet spiked on mechanics.**
+**Confidence: ~95% — implemented and verified.**
 
-**Justification**: every claim in the Problem Statement was verified against actual source (call-site greps, reading
-`mcp_bridge.go`, `ds_buffered_store.go`, and `routes.go` directly) rather than assumed — this is a validated
-direction, not a speculative one. The two objections raised during initial review (second consumer, replica
-duplication) were both checked and found to not hold, or to be symmetric rather than DS-favoring. What remains
-unvalidated is implementation mechanics: exact RBAC scoping, whether KA's cache should be a shared component or
-per-replica, and the precise migration sequencing for AF's tool rewiring — appropriately left to the future
-CHECKPOINT DD review and spike this document defers to.
+**Justification**: every claim in the Problem Statement was verified against actual source before implementation
+began (call-site greps, reading `mcp_bridge.go`, `ds_buffered_store.go`, and `routes.go` directly), and the
+resulting Wiring Manifest was executed phase-by-phase with build/lint/test verification at each step. Post-
+implementation verification (Phase 2g) confirmed zero remaining production callers of every retired DS symbol via
+both a full-repo `go build`/`go vet`/`golangci-lint` pass and gopls-based (`go_symbol_references`) reference checks
+on the still-live replacement symbols (`ka.MCPClient.ListWorkflows`, `workflowcatalog.Catalog`). The residual 5% is
+the known OpenAPI-contract-drift gap noted in the v2.0 changelog entry, not a risk to the implemented behavior.
 
-**Next Review**: after Issue #1661's full phased rollout completes; do not begin implementation planning before
-then.
+**Next Review**: N/A — implementation complete. Re-open only if the deferred OpenAPI spec cleanup or a future
+architectural change (e.g. KA horizontal scaling requiring a shared cache) requires revisiting this decision.
