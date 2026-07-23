@@ -143,3 +143,47 @@ var _ = Describe("enrichFromCatalog — Issue #1661 Change 12", func() {
 		Expect(result.WorkflowName).To(BeEmpty())
 	})
 })
+
+// ========================================
+// UT-KA-1711 (Issue #1711, DD-KA-001 v1.1)
+// ========================================
+// DD-KA-001 Step 1 (Workflow Existence) is unconditional: a workflow_id that
+// does not resolve against the DS catalog must never survive as structured
+// data, even when HumanReviewNeeded was already set to true by an earlier
+// signal (e.g. investigation_outcome=inconclusive) that caused
+// Validator.Validate() to short-circuit its own allowlist check. Before this
+// fix, enrichFromCatalog's !ok branch was a silent no-op, leaving WorkflowID
+// (and, by extension, every downstream Required WorkflowSnapshot field it
+// gates -- see mapInvestigationResultToResponse's `r.WorkflowID != ""`
+// guard) to leak through with no catalog verification at all. Mirrors the
+// existing clearing pattern in SelfCorrect exhaustion (validator.go) and
+// apiVersionGateExhaustion (this file).
+// ========================================
+var _ = Describe("enrichFromCatalog — Issue #1711 (unresolvable workflow_id must not survive)", func() {
+	It("UT-KA-1711-001: clears WorkflowID when the catalog lookup fails, even though HumanReviewNeeded is already true", func() {
+		v := parser.NewValidator([]string{"wf-known"}) // "wf-hallucinated" deliberately absent from the allowlist
+		result := &katypes.InvestigationResult{
+			WorkflowID: "wf-hallucinated",
+			// Simulates the inconclusive-outcome short-circuit (parser.go):
+			// HumanReviewNeeded is already true before enrichFromCatalog runs,
+			// which is exactly the scenario Validate() skips its own check for.
+			HumanReviewNeeded: true,
+			HumanReviewReason: "investigation_inconclusive",
+		}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.WorkflowID).To(BeEmpty(),
+			"an unresolvable workflow_id must be cleared per DD-KA-001 Step 1, regardless of HumanReviewNeeded")
+	})
+
+	It("UT-KA-1711-002: does not clear WorkflowID when the catalog lookup succeeds (regression guard)", func() {
+		v := parser.NewValidator([]string{"wf-known"})
+		v.SetWorkflowMeta("wf-known", parser.WorkflowMeta{ExecutionEngine: "job"})
+		result := &katypes.InvestigationResult{WorkflowID: "wf-known", HumanReviewNeeded: true}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.WorkflowID).To(Equal("wf-known"))
+	})
+})

@@ -380,6 +380,16 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	}
 	meta, ok := v.GetWorkflowMeta(result.WorkflowID)
 	if !ok {
+		// DD-KA-001 Step 1 (Workflow Existence) is unconditional: a
+		// workflow_id that does not resolve against the DS catalog must
+		// never survive as structured data, even when HumanReviewNeeded was
+		// already set to true by an earlier signal (e.g.
+		// investigation_outcome=inconclusive), which caused
+		// Validator.Validate() to short-circuit its own allowlist check
+		// before ever reaching this function. Clearing WorkflowID here is
+		// sufficient: mapInvestigationResultToResponse only emits
+		// selected_workflow at all when WorkflowID != "" (Issue #1711).
+		result.WorkflowID = ""
 		return
 	}
 	if result.ExecutionEngine == "" {

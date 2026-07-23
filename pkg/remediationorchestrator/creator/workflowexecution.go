@@ -56,14 +56,36 @@ func NewWorkflowExecutionCreator(c client.Client, s *runtime.Scheme, m *metrics.
 
 // validateSelectedWorkflow enforces BR-ORCH-025's precondition: "Missing selectedWorkflow →
 // RR marked as Failed". Returns an error describing the first missing required field.
+//
+// Issue #1711 cascade (DD-KA-001 v1.1): this is RO's Go-level fail-closed gate for the
+// full set of Required (no-omitempty) fields on sharedtypes.WorkflowSnapshot --
+// WorkflowID/WorkflowName/ActionType/Version/ExecutionBundle, plus ExecutionEngine (Required
+// at this layer only, see its own +optional CRD-level rationale in workflow_snapshot.go). CRD
+// admission's "Required" only guarantees the JSON key is present, not that a string value is
+// non-empty, so an incompletely-enriched snapshot (e.g. a workflow_id that never resolved
+// against the DS catalog) would otherwise pass admission and silently create a
+// WorkflowExecution with missing identifying/audit fields. Whenever a workflowId is present,
+// every other Required field it implies must be present too -- WorkflowExecution.Spec.WorkflowRef
+// is the immutable execution snapshot every downstream consumer (Job/Tekton/Ansible executor,
+// audit trail, SOC2 CC8.1 reconstruction) trusts without re-validation.
 func validateSelectedWorkflow(ai *aianalysisv1.AIAnalysis) error {
 	if ai.Status.SelectedWorkflow == nil {
 		return fmt.Errorf("AIAnalysis has no selectedWorkflow")
 	}
-	if ai.Status.SelectedWorkflow.WorkflowID == "" {
+	sw := ai.Status.SelectedWorkflow
+	if sw.WorkflowID == "" {
 		return fmt.Errorf("selectedWorkflow.workflowId is required")
 	}
-	if ai.Status.SelectedWorkflow.ExecutionBundle == "" {
+	if sw.WorkflowName == "" {
+		return fmt.Errorf("selectedWorkflow.workflowName is required")
+	}
+	if sw.ActionType == "" {
+		return fmt.Errorf("selectedWorkflow.actionType is required")
+	}
+	if sw.Version == "" {
+		return fmt.Errorf("selectedWorkflow.version is required")
+	}
+	if sw.ExecutionBundle == "" {
 		return fmt.Errorf("selectedWorkflow.executionBundle is required")
 	}
 	// Issue #1661 Change 11d (DD-WORKFLOW-018): once WorkflowExecution stops
@@ -71,7 +93,7 @@ func validateSelectedWorkflow(ai *aianalysisv1.AIAnalysis) error {
 	// empty value here would silently fall back to the wrong engine instead of
 	// failing closed. Fail here, at CRD-creation time, while the cause is still
 	// attributable to a specific AIAnalysis/KA selection.
-	if ai.Status.SelectedWorkflow.ExecutionEngine == "" {
+	if sw.ExecutionEngine == "" {
 		return fmt.Errorf("selectedWorkflow.executionEngine is required")
 	}
 	return nil

@@ -397,6 +397,30 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				"ExecutionEngine is empty",
 				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ExecutionEngine = "" },
 				"executionEngine is required"),
+			Entry("empty WorkflowName",
+				// UT-RO-1711-001 (Issue #1711 cascade, DD-KA-001 v1.1): WorkflowName
+				// is a Required (no-omitempty) field on sharedtypes.WorkflowSnapshot
+				// -- its upstream source (RemediationWorkflow.metadata.name) is
+				// Kubernetes-guaranteed non-empty, so an empty value here means the
+				// snapshot never went through catalog enrichment and must not
+				// silently create a WorkflowExecution with a missing name.
+				"WorkflowName is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.WorkflowName = "" },
+				"workflowName is required"),
+			Entry("empty ActionType",
+				// UT-RO-1711-002 (Issue #1711 cascade, DD-KA-001 v1.1): ActionType is
+				// likewise Required on WorkflowSnapshot -- catalog-authoritative,
+				// never LLM-suppliable (Issue #1661 Change 12). Same rationale as
+				// WorkflowName above.
+				"ActionType is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ActionType = "" },
+				"actionType is required"),
+			Entry("empty Version",
+				// UT-RO-1711-003 (Issue #1711 cascade, DD-KA-001 v1.1): Version is
+				// likewise Required on WorkflowSnapshot.
+				"Version is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.Version = "" },
+				"version is required"),
 		)
 
 		It("should return error when client Create fails per BR-ORCH-025", func() {
