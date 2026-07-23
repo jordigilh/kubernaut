@@ -112,8 +112,17 @@ func (s *BufferedDSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent
 		req.ActorType.SetTo(bActorType)
 		req.ActorID.SetTo(bActorID)
 	}
+	if event.ParentEventID != nil {
+		req.ParentEventID.SetTo(*event.ParentEventID)
+	}
 	if event.ClusterID != "" {
 		req.ClusterID.SetTo(event.ClusterID)
+	}
+	if event.ResourceType != "" {
+		req.ResourceType.SetTo(event.ResourceType)
+	}
+	if event.ResourceID != "" {
+		req.ResourceID.SetTo(event.ResourceID)
 	}
 
 	if ed, ok := buildEventData(event); ok {

@@ -66,8 +66,8 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			Entry("aiagent.shadow.llm.response", audit.EventTypeShadowLLMResponse),
 		)
 
-		It("should define exactly 31 event types", func() {
-			Expect(audit.AllEventTypes).To(HaveLen(31))
+		It("should define exactly 35 event types", func() {
+			Expect(audit.AllEventTypes).To(HaveLen(35))
 		})
 
 		It("should include aiagent.rca.complete in AllEventTypes", func() {
@@ -364,6 +364,59 @@ var _ = Describe("Kubernaut Agent Audit Emitter — #433", func() {
 			ctx := audit.WithCorrelationID(context.Background(), "")
 			_, ok := audit.CorrelationIDFromContext(ctx)
 			Expect(ok).To(BeFalse(), "empty correlation ID should not be stored in context")
+		})
+	})
+
+	Describe("DD-WORKFLOW-019 #1677 Phase 2c: workflow catalog discovery event infra", func() {
+		It("UT-KA-1677-AUDIT-001: registers all 4 workflow.catalog.* event types in AllEventTypes", func() {
+			expected := []string{
+				audit.EventTypeActionsListed,
+				audit.EventTypeWorkflowsListed,
+				audit.EventTypeWorkflowRetrieved,
+				audit.EventTypeSelectionValidated,
+			}
+			for _, et := range expected {
+				Expect(audit.AllEventTypes).To(ContainElement(et), "AllEventTypes should contain %s", et)
+			}
+			Expect(audit.EventTypeActionsListed).To(Equal("workflow.catalog.actions_listed"))
+			Expect(audit.EventTypeWorkflowsListed).To(Equal("workflow.catalog.workflows_listed"))
+			Expect(audit.EventTypeWorkflowRetrieved).To(Equal("workflow.catalog.workflow_retrieved"))
+			Expect(audit.EventTypeSelectionValidated).To(Equal("workflow.catalog.selection_validated"))
+		})
+
+		It("UT-KA-1677-AUDIT-002: discovery action constants are non-empty and distinct", func() {
+			actions := []string{audit.ActionDiscovery, audit.ActionRetrieve, audit.ActionValidate}
+			seen := make(map[string]bool, len(actions))
+			for _, a := range actions {
+				Expect(a).NotTo(BeEmpty())
+				Expect(seen[a]).To(BeFalse(), "duplicate action constant: %s", a)
+				seen[a] = true
+			}
+		})
+
+		It("UT-KA-1677-AUDIT-003: WithEventCategory overrides the default aiagent category", func() {
+			event := audit.NewEvent(audit.EventTypeActionsListed, "corr-1677", audit.WithEventCategory(audit.WorkflowCatalogEventCategory))
+			Expect(event.EventCategory).To(Equal("workflow"))
+			Expect(audit.WorkflowCatalogEventCategory).To(Equal("workflow"))
+		})
+
+		It("UT-KA-1677-AUDIT-004: NewEvent without WithEventCategory keeps the aiagent default", func() {
+			event := audit.NewEvent(audit.EventTypeActionsListed, "corr-1677")
+			Expect(event.EventCategory).To(Equal(audit.EventCategory))
+		})
+
+		It("UT-KA-1677-AUDIT-005: WithResource sets ResourceType/ResourceID on the event", func() {
+			event := audit.NewEvent(audit.EventTypeWorkflowRetrieved, "corr-1677",
+				audit.WithEventCategory(audit.WorkflowCatalogEventCategory),
+				audit.WithResource("Workflow", "wf-123"))
+			Expect(event.ResourceType).To(Equal("Workflow"))
+			Expect(event.ResourceID).To(Equal("wf-123"))
+		})
+
+		It("UT-KA-1677-AUDIT-006: AuditEvent leaves ResourceType/ResourceID empty by default", func() {
+			event := audit.NewEvent(audit.EventTypeActionsListed, "corr-1677")
+			Expect(event.ResourceType).To(BeEmpty())
+			Expect(event.ResourceID).To(BeEmpty())
 		})
 	})
 })
