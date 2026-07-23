@@ -691,9 +691,9 @@ jobs:
       - name: Login to GitHub Container Registry (for image pulls)
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
-      - name: Install Kind v0.30.0
+      - name: Install Kind v0.32.0
         run: |
-          KIND_VERSION="v0.30.0"
+          KIND_VERSION="v0.32.0"
           curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
@@ -903,7 +903,7 @@ jobs:
 
       - name: Install Kind
         run: |
-          KIND_VERSION="v0.30.0"
+          KIND_VERSION="v0.32.0"
           curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
           chmod +x ./kind
           sudo mv ./kind /usr/local/bin/kind
