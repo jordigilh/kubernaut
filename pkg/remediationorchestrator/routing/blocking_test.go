@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -716,8 +718,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "default/pod/nginx-recent",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "restart-workflow",
-						Version:    "v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "restart-workflow",
+							Version:    "v1",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -763,8 +767,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "default/pod/nginx-old",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "restart-workflow",
-						Version:    "v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "restart-workflow",
+							Version:    "v1",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -808,8 +814,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "default/pod/nginx-expiry",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "restart-workflow",
-						Version:    "v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "restart-workflow",
+							Version:    "v1",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -867,8 +875,11 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "default/pod/nginx-multi-workflow",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "restart-workflow", // Workflow A
-						Version:    "v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "restart-workflow",
+							// Workflow A
+							Version: "v1",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -929,8 +940,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "demo-hpa/Deployment/api-frontend",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "patch-hpa-v1",
-						Version:    "v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "patch-hpa-v1",
+							Version:    "v1",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -978,8 +991,10 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "demo-hpa/Deployment/api-frontend",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "patch-hpa-v1",
-						Version:    "v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "patch-hpa-v1",
+							Version:    "v1",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -1319,7 +1334,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "node/worker-1", // No namespace (cluster-scoped)
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "reboot-node",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "reboot-node",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -1359,7 +1376,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "default/pod/test-pod",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "restart-pod",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "restart-pod",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -1402,7 +1421,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "default/pod/test-pod-old",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "restart-pod",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "restart-pod",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -1506,7 +1527,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "default/pod/multi-target",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "workflow-a",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "workflow-a",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{
@@ -1523,7 +1546,9 @@ var _ = Describe("Routing Engine - Blocking Logic", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: "default/pod/multi-target",
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID: "workflow-b",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "workflow-b",
+						},
 					},
 				},
 				Status: workflowexecutionv1.WorkflowExecutionStatus{

@@ -134,6 +134,17 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+	// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+	// already be registered with the apiserver or DS's informer cache setup
+	// fails hard ("no matches for kind"), crash-looping the pod. Must run
+	// BEFORE DataStorage is deployed below (PHASE 5.5's installKAE2ECRDs
+	// runs too late -- after DS's own readiness wait already timed out).
+	_, _ = fmt.Fprintln(writer, "  📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+
 	// Issue #785: Generate inter-service TLS before deploying services
 	_, _ = fmt.Fprintln(writer, "  🔐 Generating inter-service TLS certificates (Issue #785)...")
 	if _, err := GenerateInterServiceTLS(ctx, kubeconfigPath, namespace, writer); err != nil {
@@ -203,28 +214,25 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 		return fmt.Errorf("failed to create KA E2E client RBAC: %w", err)
 	}
 
-	e2eSAName := "kubernaut-agent-e2e-sa"
-	saToken, err := GetServiceAccountToken(ctx, namespace, e2eSAName, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get SA token: %w", err)
-	}
-
-	dsURL := "https://localhost:8089"
-	seedClient, err := CreateTLSAuthenticatedDataStorageClient(dsURL, saToken, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to create DS client: %w", err)
-	}
-
-	if err := SeedActionTypesViaAPI(ctx, seedClient, writer); err != nil {
-		return fmt.Errorf("failed to seed action types: %w", err)
+	// #1661 Phase 55: DS's Postgres-backed POST /api/v1/action-types endpoint was
+	// removed (DD-WORKFLOW-018); action types are now seeded exclusively as CRDs for
+	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
+	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to seed action types (CRD): %w", err)
 	}
 
 	testWorkflows := GetKAE2ETestWorkflows()
-	workflowUUIDs, err := SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "KA E2E (via infrastructure)", writer)
+	// #1661 Phase 56 (discovered gap): this suite runs with no live AuthWebhook
+	// (unlike fullpipeline/fleet), so SeedWorkflowsViaKubectlApply's wait on
+	// .status.workflowId can never resolve -- use the direct-CRD-creation path
+	// instead, which computes the same deterministic UUID and stamps status
+	// itself (pkg/shared/contenthash).
+	workflowUUIDs, err := SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed workflows: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows\n", len(workflowUUIDs))
+	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows via direct CRD creation\n", len(workflowUUIDs))
 
 	if err := DeployMockLLMInNamespace(ctx, namespace, kubeconfigPath, images["mock-llm"], workflowUUIDs, nil, writer); err != nil {
 		return fmt.Errorf("failed to deploy Mock LLM: %w", err)

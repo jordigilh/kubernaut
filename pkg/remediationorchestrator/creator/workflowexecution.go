@@ -21,6 +21,8 @@ import (
 	"context"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,15 +56,45 @@ func NewWorkflowExecutionCreator(c client.Client, s *runtime.Scheme, m *metrics.
 
 // validateSelectedWorkflow enforces BR-ORCH-025's precondition: "Missing selectedWorkflow →
 // RR marked as Failed". Returns an error describing the first missing required field.
+//
+// Issue #1711 cascade (DD-KA-001 v1.1): this is RO's Go-level fail-closed gate for the
+// full set of Required (no-omitempty) fields on sharedtypes.WorkflowSnapshot --
+// WorkflowID/WorkflowName/ActionType/Version/ExecutionBundle, plus ExecutionEngine (Required
+// at this layer only, see its own +optional CRD-level rationale in workflow_snapshot.go). CRD
+// admission's "Required" only guarantees the JSON key is present, not that a string value is
+// non-empty, so an incompletely-enriched snapshot (e.g. a workflow_id that never resolved
+// against the DS catalog) would otherwise pass admission and silently create a
+// WorkflowExecution with missing identifying/audit fields. Whenever a workflowId is present,
+// every other Required field it implies must be present too -- WorkflowExecution.Spec.WorkflowRef
+// is the immutable execution snapshot every downstream consumer (Job/Tekton/Ansible executor,
+// audit trail, SOC2 CC8.1 reconstruction) trusts without re-validation.
 func validateSelectedWorkflow(ai *aianalysisv1.AIAnalysis) error {
 	if ai.Status.SelectedWorkflow == nil {
 		return fmt.Errorf("AIAnalysis has no selectedWorkflow")
 	}
-	if ai.Status.SelectedWorkflow.WorkflowID == "" {
+	sw := ai.Status.SelectedWorkflow
+	if sw.WorkflowID == "" {
 		return fmt.Errorf("selectedWorkflow.workflowId is required")
 	}
-	if ai.Status.SelectedWorkflow.ExecutionBundle == "" {
+	if sw.WorkflowName == "" {
+		return fmt.Errorf("selectedWorkflow.workflowName is required")
+	}
+	if sw.ActionType == "" {
+		return fmt.Errorf("selectedWorkflow.actionType is required")
+	}
+	if sw.Version == "" {
+		return fmt.Errorf("selectedWorkflow.version is required")
+	}
+	if sw.ExecutionBundle == "" {
 		return fmt.Errorf("selectedWorkflow.executionBundle is required")
+	}
+	// Issue #1661 Change 11d (DD-WORKFLOW-018): once WorkflowExecution stops
+	// resolving ExecutionEngine from DataStorage at runtime (Change 11e), an
+	// empty value here would silently fall back to the wrong engine instead of
+	// failing closed. Fail here, at CRD-creation time, while the cause is still
+	// attributable to a specific AIAnalysis/KA selection.
+	if sw.ExecutionEngine == "" {
+		return fmt.Errorf("selectedWorkflow.executionEngine is required")
 	}
 	return nil
 }
@@ -86,13 +118,7 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 				UID:        rr.UID,
 			},
 			// WorkflowRef: Direct pass-through from AIAnalysis (BR-ORCH-025)
-			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
-				Version:               ai.Status.SelectedWorkflow.Version,
-				ExecutionBundle:       ai.Status.SelectedWorkflow.ExecutionBundle,
-				ExecutionBundleDigest: ai.Status.SelectedWorkflow.ExecutionBundleDigest,
-				EngineConfig:          ai.Status.SelectedWorkflow.EngineConfig,
-			},
+			WorkflowRef: buildWorkflowRef(ai.Status.SelectedWorkflow),
 			// TargetResource: String format "namespace/kind/name" (per API contract)
 			// BR-HAPI-191: Prefer LLM-identified RemediationTarget (e.g., Deployment)
 			// over the RR's TargetResource (e.g., Pod) when available.
@@ -101,12 +127,47 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 			ClusterID:      rr.Spec.ClusterID,
 			Parameters:     ai.Status.SelectedWorkflow.Parameters,
 			// Audit fields from AIAnalysis
-			Confidence: ai.Status.SelectedWorkflow.Confidence,
-			Rationale:  ai.Status.SelectedWorkflow.Rationale,
-			// Issue #518: ExecutionEngine removed from spec — resolved at runtime by
-			// the WE controller from the DS catalog via WorkflowQuerier.
-			// Issue #650: ServiceAccountName is not on WFE spec; resolved at runtime from DS.
+			Confidence:      ai.Status.SelectedWorkflow.Confidence,
+			Rationale:       ai.Status.SelectedWorkflow.Rationale,
 			ExecutionConfig: c.buildExecutionConfig(rr),
+		},
+	}
+}
+
+// buildWorkflowRef maps the AIAnalysis-selected workflow snapshot onto WorkflowRef.
+// Issue #1661 Change 11d (DD-WORKFLOW-018): the CRD-embedded execution-snapshot
+// fields are a pass-through from the AIAnalysis snapshot that KA/AA already
+// validated (Change 11a/11b), so WorkflowExecution stops re-fetching this data
+// from DataStorage (Change 11e). Supersedes Issue #518 (ExecutionEngine) and Issue #650
+// (ServiceAccountName), which previously kept these off the WFE spec and resolved them
+// at runtime from the DS catalog. ActionType was originally left off this list (Change
+// 3 instead resolved it into a now-defunct Status mirror -- see
+// internal/controller/workflowexecution/workflowexecution_catalog.go git history);
+// folding it in closed that gap for good.
+//
+// Since Change 12 (DD-WORKFLOW-018), both SelectedWorkflow and WorkflowRef
+// inline-embed the same sharedtypes.WorkflowSnapshot type, so this is a
+// straight field-for-field copy of that whole embedded struct -- a future
+// field added to WorkflowSnapshot only needs to be added here once, not
+// independently re-derived on both CRDs. WorkflowName is the newest example:
+// it was never wired at all until Change 12 (KA never emitted it), closing
+// the same class of "field left off one side" bug ActionType hit here once
+// already.
+func buildWorkflowRef(sw *aianalysisv1.SelectedWorkflow) workflowexecutionv1.WorkflowRef {
+	return workflowexecutionv1.WorkflowRef{
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:             sw.WorkflowID,
+			WorkflowName:           sw.WorkflowName,
+			Version:                sw.Version,
+			ExecutionBundle:        sw.ExecutionBundle,
+			ExecutionBundleDigest:  sw.ExecutionBundleDigest,
+			EngineConfig:           sw.EngineConfig,
+			ExecutionEngine:        sw.ExecutionEngine,
+			ServiceAccountName:     sw.ServiceAccountName,
+			ActionType:             sw.ActionType,
+			Dependencies:           sw.Dependencies,
+			Resources:              sw.Resources,
+			DeclaredParameterNames: sw.DeclaredParameterNames,
 		},
 	}
 }
@@ -216,7 +277,8 @@ func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv
 }
 
 // buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.
-// Issue #650: Service account is not part of ExecutionConfig or WFE spec.
+// Issue #650 / #1661 Change 11d: ServiceAccountName is carried on WorkflowRef
+// (see buildWorkflowRef), not on ExecutionConfig -- this only carries timeouts.
 func (c *WorkflowExecutionCreator) buildExecutionConfig(rr *remediationv1.RemediationRequest) *workflowexecutionv1.ExecutionConfig {
 	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration > 0 {
 		return &workflowexecutionv1.ExecutionConfig{

@@ -24,11 +24,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -180,43 +182,41 @@ func GetAIAnalysisTestWorkflows() []TestWorkflow {
 	return allWorkflows
 }
 
-// SeedTestWorkflowsInDataStorage registers test workflows in DataStorage
-// Called during SynchronizedBeforeSuite Phase 1 to prepare test data
+// REMOVED: SeedTestWorkflowsInDataStorage()/registerWorkflowInDataStorage() -
+// Postgres-backed inline registration, replaced by
+// SeedTestWorkflowsViaDirectCRDCreation below (#1661 Phase 55: this suite
+// runs no AuthWebhook). See test/infrastructure/workflow_seeding.go and
+// workflow_seeding_direct_crd.go for the shared implementations.
+
+// workflowVersionSuffix strips the "-vN" version suffix from a WorkflowID to
+// recover its fixture directory name (mirrors the unexported
+// infrastructure.workflowIDToImageName -- this package can't call it
+// directly, so the stripping logic is duplicated here).
+var workflowVersionSuffix = regexp.MustCompile(`-v\d+$`)
+
+// SeedTestWorkflowsViaDirectCRDCreation registers AIAnalysis test workflows
+// directly as RemediationWorkflow CRDs (#1661 Phase 55: this suite runs no
+// AuthWebhook -- see infrastructure.SeedWorkflowsViaDirectCRDCreation).
 //
-// Pattern: DD-TEST-010 Multi-Controller Pattern - Shared Infrastructure Setup
-// - Process 1 seeds workflows in DataStorage (shared resource)
-// - All processes can reference these workflows during tests
-// - Prevents "workflow not found" errors during KA validation
-//
-// Returns: map[workflow_name]workflow_id (UUID) for Mock LLM configuration
-// DD-WORKFLOW-002 v3.0: DataStorage generates UUIDs (cannot be specified by client)
-// DD-AUTH-014: Updated to accept authenticated client for real K8s authentication
-//
-// REFACTOR: Now uses shared infrastructure.SeedWorkflowsInDataStorage(ctx)
-func SeedTestWorkflowsInDataStorage(ctx context.Context, client *ogenclient.Client, output io.Writer) (map[string]string, error) {
-	// Convert AIAnalysis-specific TestWorkflow to shared infrastructure.TestWorkflow
+// GetAIAnalysisTestWorkflows returns one entry per (base workflow,
+// environment) triple, but each fixture's labels.environment already lists
+// every environment it's used with (e.g. [production, staging, test]) -- one
+// CRD instance is discoverable under all of them. Seeding is still driven by
+// the full triple list so the returned map preserves the exact
+// "name:environment" keys WriteMockLLMConfigFile and test assertions expect;
+// SeedWorkflowsViaDirectCRDCreation's create-or-get fallback makes the
+// repeated per-environment Create calls against the same underlying CRD safe.
+func SeedTestWorkflowsViaDirectCRDCreation(ctx context.Context, k8sClient client.Client, namespace string, output io.Writer) (map[string]string, error) {
 	workflows := GetAIAnalysisTestWorkflows()
-	sharedWorkflows := make([]infrastructure.TestWorkflow, len(workflows))
+	specs := make([]infrastructure.WorkflowSeedSpec, len(workflows))
 	for i, wf := range workflows {
-		sharedWorkflows[i] = infrastructure.TestWorkflow{
-			WorkflowID:       wf.WorkflowID,
-			Name:             wf.Name,
-			Description:      wf.Description,
-			Severity:         wf.Severity,
-			Component:        wf.Component,
-			Environment:      wf.Environment,
-			Priority:         wf.Priority,
-			SchemaImage:     "", // AIAnalysis uses default pattern (empty = auto-generate)
-			SchemaParameters: wf.SchemaParameters, // BR-HAPI-191: Pass through for KA validation
+		specs[i] = infrastructure.WorkflowSeedSpec{
+			FixtureDir:  workflowVersionSuffix.ReplaceAllString(wf.WorkflowID, ""),
+			Environment: wf.Environment,
 		}
 	}
-
-	// Delegate to shared infrastructure function
-	return infrastructure.SeedWorkflowsInDataStorage(ctx, client, sharedWorkflows, "AIAnalysis Integration", output)
+	return infrastructure.SeedWorkflowsViaDirectCRDCreation(ctx, k8sClient, namespace, specs, output)
 }
-
-// REMOVED: registerWorkflowInDataStorage() - Now uses infrastructure.RegisterWorkflowInDataStorage(ctx)
-// See: test/infrastructure/workflow_seeding.go for shared implementation
 
 // Deprecated: WriteMockLLMConfigFile is part of the legacy ConfigMap sync infrastructure.
 // The Go Mock LLM uses deterministic UUIDs (pkg/shared/uuid) and optional YAML overrides.
@@ -245,12 +245,12 @@ func WriteMockLLMConfigFile(configPath string, workflowUUIDs map[string]string, 
 	return nil
 }
 
-// UpdateMockLLMWithUUIDs sends the actual workflow UUIDs to Mock LLM
+// UpdateMockLLMWithUUIDs sends the actual workflow UUIDs to Mock LLM.
+// Pattern: DD-WORKFLOW-002 v3.0 UUID synchronization.
+// DataStorage auto-generates UUIDs, so Mock LLM must be updated with actual values.
+// This ensures LLM responses contain UUIDs that exist in DataStorage catalog.
 //
 // Deprecated: Use WriteMockLLMConfigFile for DD-TEST-011 v2.0 file-based pattern.
-// Pattern: DD-WORKFLOW-002 v3.0 UUID synchronization
-// DataStorage auto-generates UUIDs, so Mock LLM must be updated with actual values
-// This ensures LLM responses contain UUIDs that exist in DataStorage catalog
 func UpdateMockLLMWithUUIDs(mockLLMConfig infrastructure.MockLLMConfig, workflowUUIDs map[string]string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "\n⚠️  DEPRECATED: UpdateMockLLMWithUUIDs() - Use WriteMockLLMConfigFile() instead\n")
 	_, _ = fmt.Fprintf(output, "\n🔄 Updating Mock LLM scenarios with actual DataStorage UUIDs...\n")

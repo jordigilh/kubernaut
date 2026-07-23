@@ -34,16 +34,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// goconst dedup: test-fixture literals deduplicated below.
-const (
-	arm642 = "arm64"
-)
-
-// goconst dedup: test-fixture literals deduplicated below.
-const (
-	arm64 = arm642
-)
-
 const (
 	// WorkflowExecutionClusterName is the default Kind cluster name
 	WorkflowExecutionClusterName = "workflowexecution-e2e"
@@ -85,18 +75,27 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-007: Coverage instrumentation enabled")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	// DD-TEST-007: Create coverdata directory BEFORE everything
+	// DD-TEST-007: Create coverdata directory BEFORE everything.
+	//
+	// kind-workflowexecution-config.yaml's extraMounts binds this host path
+	// into the control-plane container UNCONDITIONALLY -- Kind's static YAML
+	// config has no way to read E2E_COVERAGE at cluster-creation time. Gating
+	// this mkdir behind that env var (as before) meant a fresh checkout with
+	// E2E_COVERAGE unset would only work by accident, if a stale directory
+	// happened to survive from a prior coverage-enabled run; on a genuinely
+	// clean checkout, podman's bind-mount rejects the missing source path
+	// outright ("statfs ...: no such file or directory") before Kind even
+	// starts the container. Always creating it (empty, if coverage is off)
+	// is harmless and removes that footgun.
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find project root: %w", err)
 	}
 
-	if os.Getenv("E2E_COVERAGE") == trueFixture {
-		coverdataPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/coverdata")
-		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
-		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
-			return fmt.Errorf("failed to create coverdata directory: %w", err)
-		}
+	coverdataPath := filepath.Join(projectRoot, "test/e2e/workflowexecution/coverdata")
+	_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
+	if err := os.MkdirAll(coverdataPath, 0777); err != nil {
+		return fmt.Errorf("failed to create coverdata directory: %w", err)
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -126,7 +125,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
 	go func() {
 		// Disable coverage on ARM64 (Go runtime crash workaround)
-		enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH != arm64
+		enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH != archARM64
 		cfg := E2EImageConfig{
 			ServiceName:      "workflowexecution", // Operator SDK convention: no -controller suffix in image name
 			ImageName:        "kubernaut/workflowexecution",
@@ -208,14 +207,18 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
-	// Deploy WorkflowExecution CRD
-	_, _ = fmt.Fprintln(writer, "📋 Installing WorkflowExecution CRD...")
-	crdPath := filepath.Join(projectRoot, "config/crd/bases/kubernaut.ai_workflowexecutions.yaml")
-	crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
-	crdCmd.Stdout = writer
-	crdCmd.Stderr = writer
-	if err := crdCmd.Run(); err != nil {
-		return fmt.Errorf("failed to install WorkflowExecution CRD: %w", err)
+	// Deploy ALL kubernaut.ai CRDs (WorkflowExecution, RemediationWorkflow,
+	// ActionType, etc.), not just WorkflowExecution. Issue #1661
+	// (DD-WORKFLOW-018): DataStorage's workflow cache is a controller-runtime
+	// informer directly over RemediationWorkflow/ActionType CRDs, so its
+	// startup fails outright ("failed to build workflow cache: ... no
+	// matches for kind \"RemediationWorkflow\"") if those definitions aren't
+	// registered yet -- this suite deploys a real DataStorage instance
+	// (helpers_test.go) but, unlike authwebhook_shared.go, never applied the
+	// full CRD set itself.
+	_, _ = fmt.Fprintln(writer, "📋 Installing kubernaut.ai CRDs (WorkflowExecution, RemediationWorkflow, ActionType, ...)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to install kubernaut.ai CRDs: %w", err)
 	}
 
 	// Create namespaces (idempotent - ignore AlreadyExists errors)
@@ -670,10 +673,10 @@ func BuildWorkflowExecutionImageWithCoverage(projectRoot string, writer io.Write
 	// TEMPORARY FIX (Jan 9, 2026): Disable coverage on ARM64 due to Go runtime crash
 	// Root cause: taggedPointerPack fatal error in Go 1.25.3 (Red Hat) on ARM64
 	// TODO: Re-enable after switching to upstream Go builder (Solution B)
-	if os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH != arm64 {
+	if os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH != archARM64 {
 		buildArgs = append(buildArgs, "--build-arg", "GOFLAGS=-cover")
 		_, _ = fmt.Fprintln(writer, "     📊 Building with coverage instrumentation (GOFLAGS=-cover)")
-	} else if os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH == arm64 {
+	} else if os.Getenv("E2E_COVERAGE") == trueFixture && runtime.GOARCH == archARM64 {
 		_, _ = fmt.Fprintln(writer, "     ⚠️  Coverage disabled on ARM64 (Go runtime crash workaround)")
 	}
 

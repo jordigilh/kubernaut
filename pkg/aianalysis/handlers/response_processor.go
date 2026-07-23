@@ -227,14 +227,26 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.
 		return
 	}
 	sw := &aianalysisv1.SelectedWorkflow{
-		WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
-		ActionType:            GetStringFromMap(swMap, "action_type"),
-		Version:               GetStringFromMap(swMap, "version"),
-		ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
-		ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-		Confidence:            GetFloat64FromMap(swMap, "confidence"),
-		Rationale:             GetStringFromMap(swMap, "rationale"),
-		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
+			WorkflowName:          GetStringFromMap(swMap, "workflow_name"),
+			ActionType:            GetStringFromMap(swMap, "action_type"),
+			Version:               GetStringFromMap(swMap, "version"),
+			ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
+			ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
+			ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+			// #1661 DD-WE-005 v2.0 / RCA follow-up: the WFE Job executor now reads
+			// the execution ServiceAccount exclusively from this CRD-embedded
+			// snapshot (wfe.Spec.WorkflowRef.ServiceAccountName, no
+			// executor-config fallback) -- omitting it here silently downgraded
+			// every job-engine Pod to the namespace's "default" SA, which lacks
+			// the workflow's cross-namespace get/patch RBAC and fails the Job
+			// fast (BackoffLimitExceeded) despite the image pulling and starting
+			// fine.
+			ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
+		},
+		Confidence: GetFloat64FromMap(swMap, "confidence"),
+		Rationale:  GetStringFromMap(swMap, "rationale"),
 	}
 	// Map parameters if present (map[string]string)
 	if paramsRaw, ok := swMap["parameters"]; ok {
@@ -248,7 +260,22 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.
 			sw.EngineConfig = &apiextensionsv1.JSON{Raw: ecBytes}
 		}
 	}
+	stampWorkflowSnapshot(sw, swMap)
 	analysis.Status.SelectedWorkflow = sw
+}
+
+// stampWorkflowSnapshot populates the CRD-embedded execution snapshot fields
+// (Issue #1661 Change 11b, DD-WORKFLOW-018) and stamps SelectedAt, arming the
+// SelectedWorkflow write-once CEL guard (mirrors PostRCAContext/ADR-056).
+// Shared by all three population call sites — storeSelectedWorkflow,
+// preservePartialSelectedWorkflow, preserveLowConfidenceWorkflow — so every
+// terminal path that persists a SelectedWorkflow locks it the same way.
+func stampWorkflowSnapshot(sw *aianalysisv1.SelectedWorkflow, swMap map[string]interface{}) {
+	sw.Dependencies = extractWorkflowDependencies(swMap)
+	sw.Resources = extractResourceRequirements(swMap)
+	sw.DeclaredParameterNames = extractDeclaredParameterNames(swMap)
+	now := metav1.Now()
+	sw.SelectedAt = &now
 }
 
 // storeAlternativeWorkflows populates analysis.Status.AlternativeWorkflows
@@ -489,13 +516,20 @@ func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *ag
 	if swMap == nil {
 		return
 	}
-	analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
-		ExecutionBundle: GetStringFromMap(swMap, "execution_bundle"),
-		Confidence:      GetFloat64FromMap(swMap, "confidence"),
-		Rationale:       GetStringFromMap(swMap, "rationale"),
-		ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
+	sw := &aianalysisv1.SelectedWorkflow{
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:         GetStringFromMap(swMap, "workflow_id"),
+			WorkflowName:       GetStringFromMap(swMap, "workflow_name"),
+			ActionType:         GetStringFromMap(swMap, "action_type"),
+			ExecutionBundle:    GetStringFromMap(swMap, "execution_bundle"),
+			ExecutionEngine:    GetStringFromMap(swMap, "execution_engine"),
+			ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
+		},
+		Confidence: GetFloat64FromMap(swMap, "confidence"),
+		Rationale:  GetStringFromMap(swMap, "rationale"),
 	}
+	stampWorkflowSnapshot(sw, swMap)
+	analysis.Status.SelectedWorkflow = sw
 }
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
@@ -792,21 +826,28 @@ func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agen
 	if swMap == nil {
 		return
 	}
-	analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
-		Version:               GetStringFromMap(swMap, "version"),
-		ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
-		ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-		Confidence:            GetFloat64FromMap(swMap, "confidence"),
-		Rationale:             GetStringFromMap(swMap, "rationale"),
-		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+	sw := &aianalysisv1.SelectedWorkflow{
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
+			WorkflowName:          GetStringFromMap(swMap, "workflow_name"),
+			ActionType:            GetStringFromMap(swMap, "action_type"),
+			Version:               GetStringFromMap(swMap, "version"),
+			ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
+			ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
+			ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+			ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
+		},
+		Confidence: GetFloat64FromMap(swMap, "confidence"),
+		Rationale:  GetStringFromMap(swMap, "rationale"),
 	}
 	// Map parameters if present
 	if paramsRaw, ok := swMap["parameters"]; ok {
 		if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
-			analysis.Status.SelectedWorkflow.Parameters = convertMapToStringMap(paramsMapIface)
+			sw.Parameters = convertMapToStringMap(paramsMapIface)
 		}
 	}
+	stampWorkflowSnapshot(sw, swMap)
+	analysis.Status.SelectedWorkflow = sw
 }
 
 // setTotalAnalysisTime calculates and sets TotalAnalysisTime from StartedAt.

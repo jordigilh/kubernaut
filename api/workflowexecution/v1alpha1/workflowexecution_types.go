@@ -18,8 +18,9 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -181,32 +182,34 @@ type WorkflowExecutionSpec struct {
 	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
 }
 
-// WorkflowRef contains catalog-resolved workflow reference
+// WorkflowRef contains the catalog-resolved workflow reference.
+//
+// ========================================
+// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11c/12, DD-WORKFLOW-018)
+// ========================================
+// WorkflowRef is now (Change 12) nothing but an inline embed of
+// sharedtypes.WorkflowSnapshot -- the same type embedded in
+// AIAnalysis.Status.SelectedWorkflow. All fields (WorkflowID, WorkflowName,
+// ActionType, Version, ExecutionBundle, ExecutionBundleDigest,
+// ExecutionEngine, EngineConfig, ServiceAccountName, Dependencies,
+// Resources, DeclaredParameterNames) are copied verbatim from
+// AIAnalysis.Status.SelectedWorkflow (Change 11b) by RemediationOrchestrator
+// when building this WorkflowExecution (Change 11d), letting
+// WorkflowExecution stop re-fetching this data from DataStorage
+// (Change 11e). Sharing one Go/CRD-schema type between the two CRDs (rather
+// than two independently hand-copied field lists) makes it structurally
+// impossible for the two to drift again -- see git history: ActionType was
+// originally left off this list once, and WorkflowName was never wired at
+// all until Change 12 closed that gap. No per-field CEL rule is needed:
+// WorkflowExecutionSpec's existing "self == oldSelf" XValidation (ADR-001)
+// already covers WorkflowRef as a whole, including these fields.
 type WorkflowRef struct {
-	// WorkflowID is the catalog lookup key
-	WorkflowID string `json:"workflowId"`
-
-	// Version of the workflow
-	Version string `json:"version"`
-
-	// ExecutionBundle resolved from workflow catalog (Data Storage API)
-	// OCI bundle reference for Tekton PipelineRun
-	ExecutionBundle string `json:"executionBundle"`
-
-	// ExecutionBundleDigest for audit trail and reproducibility
-	// +optional
-	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
-
-	// EngineConfig holds engine-specific configuration (BR-WE-016).
-	// For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}
-	// For tekton/job: nil.
-	// +kubebuilder:pruning:PreserveUnknownFields
-	// +optional
-	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
+	sharedtypes.WorkflowSnapshot `json:",inline"`
 }
 
 // ExecutionConfig contains minimal execution settings.
-// Issue #650: ServiceAccountName resolved at runtime from DS into Status.
+// ServiceAccountName lives on WorkflowRef (CRD-embedded snapshot, Issue
+// #1661 Change 11c/11f), not here.
 type ExecutionConfig struct {
 	// Timeout for the entire workflow (Tekton PipelineRun timeout)
 	// Default: use global timeout from RemediationRequest or 30m
@@ -321,20 +324,18 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	EphemeralCredentialIDs []int `json:"ephemeralCredentialIDs,omitempty"`
 
-	// ExecutionEngine is the backend engine resolved from the DS workflow catalog
-	// at runtime by the WE controller. Set once during Pending phase via
-	// WorkflowQuerier.GetWorkflowSchemaMetadata; immutable thereafter.
-	// Values: "tekton", "job", "ansible".
+	// WorkflowName is the human-readable workflow name. Superseded (Issue
+	// #1661 Change 12): the authoritative value now lives on
+	// Spec.WorkflowRef.WorkflowName (immutable, set at creation time from
+	// AIAnalysis.Status.SelectedWorkflow.WorkflowName) -- mirroring the
+	// ActionType precedent from Change 11f. This Status field is never
+	// populated by the controller and is kept only for audit-payload schema
+	// back-compat; read Spec.WorkflowRef.WorkflowName instead. WorkflowID
+	// remains the functional/join key for SOC2 CC8.1 reconstruction
+	// regardless of whether either name field is populated
+	// (IT-AW-1111-001).
 	// +optional
-	ExecutionEngine string `json:"executionEngine,omitempty"`
-
-	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
-	// DS workflow catalog at runtime by the WE controller (Issue #650).
-	// Set once during Pending phase via ResolveWorkflowCatalogMetadata; immutable
-	// thereafter. If empty, K8s assigns the namespace's default SA (Job/Tekton)
-	// or the Ansible executor falls back to the controller's in-cluster credentials.
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+	WorkflowName string `json:"workflowName,omitempty"`
 
 	// DeduplicatedBy stores the name of the original WorkflowExecution that owns
 	// the conflicting execution resource. Set atomically inside AtomicStatusUpdate
@@ -343,20 +344,12 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	DeduplicatedBy string `json:"deduplicatedBy,omitempty"`
 
-	// Resources declares the resolved CPU/memory requests and limits for the
-	// Job engine's "workflow" container, from the DS workflow catalog
-	// (BR-WE-019 / DD-WE-008). Set once during Pending phase via
-	// ResolveWorkflowCatalogMetadata; immutable thereafter. nil when the
-	// catalog entry declares no resources (BestEffort QoS, current behavior).
-	// +optional
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-
 	// Conditions provide detailed status information
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// ExecutionEngineTekton is the Status.ExecutionEngine value for Tekton
+// ExecutionEngineTekton is the WorkflowRef.ExecutionEngine value for Tekton
 // Pipelines-backed workflows. See the ExecutionEngine field doc above for
 // the full value set ("tekton", "job", "ansible").
 const ExecutionEngineTekton = "tekton"
@@ -556,7 +549,8 @@ const (
 //+kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 //+kubebuilder:resource:shortName=wfe
 //+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-//+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`
+//+kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.spec.workflowRef.workflowName`
+//+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`,priority=1
 //+kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource`
 //+kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.duration`
 //+kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1

@@ -149,11 +149,16 @@ func (a *WorkflowCatalogAdapter) GetWorkflowByID(ctx context.Context, workflowID
 	}
 
 	return &tools.CatalogWorkflow{
-		WorkflowID:         workflowID,
-		WorkflowName:       meta.WorkflowName,
-		ExecutionEngine:    meta.ExecutionEngine,
-		ExecutionBundle:    meta.ExecutionBundle,
-		ServiceAccountName: meta.ServiceAccountName,
+		WorkflowID: workflowID,
+		// WorkflowName was already wired here; ActionType (Issue #1661
+		// Change 12) closes the sibling gap -- both catalog-authoritative,
+		// mirroring the autonomous path's enrichFromCatalog.
+		WorkflowName:          meta.WorkflowName,
+		ActionType:            meta.ActionType,
+		ExecutionEngine:       meta.ExecutionEngine,
+		ExecutionBundle:       meta.ExecutionBundle,
+		ExecutionBundleDigest: meta.ExecutionBundleDigest,
+		ServiceAccountName:    meta.ServiceAccountName,
 	}, nil
 }
 

@@ -296,7 +296,7 @@ func fpWaitForWEComplete(rrName string, timeout time.Duration) {
 					Fail(fmt.Sprintf("WorkflowExecution %s failed (phase=Failed)", we.Name))
 				}
 				if shouldLog {
-					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n", we.Name, phase, we.Status.ExecutionEngine)
+					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n", we.Name, phase, we.Spec.WorkflowRef.ExecutionEngine)
 					lastLog = now
 				}
 				return phase == "Completed"

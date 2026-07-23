@@ -926,6 +926,16 @@ func CreateIntegrationServiceAccountWithDataStorageAccess(
 				Resources: []string{"subjectaccessreviews"},
 				Verbs:     []string{"create"},
 			},
+			// Issue #1661 Phase 29 (DD-WORKFLOW-018): informer-backed read-only
+			// cache of RemediationWorkflow/ActionType CRDs -- without this, the
+			// data-storage-sa's cache.WaitForCacheSync blocks 30s then fails
+			// startup with a 403-suppressed timeout (controller-runtime's
+			// default logger drops the underlying Forbidden error).
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"remediationworkflows", "actiontypes"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
 		},
 	}
 

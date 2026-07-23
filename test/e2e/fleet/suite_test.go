@@ -83,6 +83,7 @@ import (
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -504,6 +505,9 @@ var _ = SynchronizedBeforeSuite(
 		Expect(notificationv1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(eav1.AddToScheme(scheme.Scheme)).To(Succeed())
 		Expect(isv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+		// Issue #1511 / #1661 (DD-WORKFLOW-018): 13_cluster_scoped_workflow_targeting_test.go
+		// creates RemediationWorkflow objects directly via k8sClient.
+		Expect(rwv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 
 		By("Creating Kubernetes client")
 		cfg, err := config.GetConfig()

@@ -17,9 +17,6 @@ limitations under the License.
 package models
 
 import (
-	"encoding/json"
-	"time"
-
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -30,25 +27,6 @@ import (
 // Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
 // Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
 // ========================================
-
-// ActionTypeTaxonomy represents an entry in the action_type_taxonomy table.
-// Migration 001: action_type_taxonomy table.
-// Migration 004: Added status, disabled_at, disabled_by columns (BR-WORKFLOW-007).
-type ActionTypeTaxonomy struct {
-	ActionType  string          `json:"actionType" db:"action_type"`
-	Description json.RawMessage `json:"description" db:"description"`
-	Status      string          `json:"status" db:"status"`
-	DisabledAt  *time.Time      `json:"disabledAt,omitempty" db:"disabled_at"`
-	DisabledBy  *string         `json:"disabledBy,omitempty" db:"disabled_by"`
-	CreatedAt   time.Time       `json:"createdAt" db:"created_at"`
-	UpdatedAt   time.Time       `json:"updatedAt" db:"updated_at"`
-}
-
-// ActionTypeTaxonomy.Status values.
-const (
-	ActionTypeStatusActive   = "Active"
-	ActionTypeStatusDisabled = "Disabled"
-)
 
 // ActionTypeDescription is an alias for the shared StructuredDescription type.
 // BR-WORKFLOW-004: camelCase JSON keys (migration 026 updates existing data).

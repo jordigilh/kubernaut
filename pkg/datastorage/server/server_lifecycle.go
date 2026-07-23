@@ -302,6 +302,14 @@ func (s *Server) shutdownStep5CloseResources(shutdownID string) error {
 		s.ipLimiter.Stop()
 	}
 
+	// Issue #1661 Phase 29 / DD-WORKFLOW-018: stop the workflow cache's informers.
+	// Always set as of Phase 55 (K8sRestConfig is mandatory); the nil guard
+	// remains as defense-in-depth against a Server built by unusual test
+	// helpers that bypass NewServer's validation.
+	if s.cancelWorkflowCache != nil {
+		s.cancelWorkflowCache()
+	}
+
 	// Close PostgreSQL connection
 	if s.db == nil {
 		s.logger.Info("No PostgreSQL connection to close — verify initialization",

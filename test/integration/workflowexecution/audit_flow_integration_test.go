@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -84,12 +86,9 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			_ = resp.Body.Close()
 		}
 
-	// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-	// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
-	dsClient = dsClients.OpenAPIClient
-
-	// #518: Ensure engine mock is reset before each test to prevent leak from Job tests
-	testWorkflowQuerier.setEngine("tekton")
+		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
+		dsClient = dsClients.OpenAPIClient
 	})
 
 	Context("when workflow execution starts (BR-WE-005)", func() {
@@ -130,9 +129,14 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						Namespace:  testNs.Name,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 				},
@@ -245,9 +249,14 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						Namespace:  testNs.Name,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 				},

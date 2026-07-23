@@ -119,20 +119,53 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 
 		By("Verifying audit trail has remediationworkflow.admitted.update event")
 		authAuditClient := createAuthenticatedAuditClient()
-		if authAuditClient != nil {
-			Eventually(func() bool {
-				events, err := authAuditClient.QueryAuditEvents(ctx, auditclient.QueryAuditEventsParams{
-					EventType: auditclient.NewOptString("remediationworkflow.admitted.update"),
-				})
-				if err != nil {
-					return false
-				}
-				return len(events.Data) > 0
-			}, 10*time.Second, 1*time.Second).Should(BeTrue(),
-				"Audit trail should contain remediationworkflow.admitted.update event")
-		}
+		Expect(authAuditClient).ToNot(BeNil(), "DD-AUTH-014 authenticated audit client must be available in E2E")
+		// #1661: filter server-side by event_data.workflow_name (detail_key/
+		// detail_value, Issue #1199) rather than the bare event_type, since the
+		// unfiltered query's default page (50 events, cluster-wide) can miss this
+		// CRD's event once enough other admitted.update events accumulate across
+		// the suite's other Serial specs.
+		var updateEvents []auditclient.AuditEvent
+		Eventually(func() bool {
+			events, err := authAuditClient.QueryAuditEvents(ctx, auditclient.QueryAuditEventsParams{
+				EventType:   auditclient.NewOptString("remediationworkflow.admitted.update"),
+				DetailKey:   auditclient.NewOptString("workflow_name"),
+				DetailValue: auditclient.NewOptString(crdName),
+			})
+			if err != nil {
+				return false
+			}
+			updateEvents = events.Data
+			return len(events.Data) > 0
+		}, 10*time.Second, 1*time.Second).Should(BeTrue(),
+			"Audit trail should contain remediationworkflow.admitted.update event for this CRD")
 
-		GinkgoWriter.Printf("✅ Version bump UPDATE propagated: %s -> %s\n", initialWorkflowID, newWorkflowID)
+		// E2E-AW-773-004 (#1661 Change 2): the audit trail alone -- independent of
+		// etcd or DS's cache -- must be able to reconstruct the exact workflow
+		// definition that was admitted (SOC2 CC8.1 full reconstruction).
+		By("E2E-AW-773-004: verifying remediationworkflow.admitted.update event carries full workflow_content")
+		var contentPayload auditclient.RemediationWorkflowWebhookAuditPayload
+		found := false
+		for _, evt := range updateEvents {
+			payload, ok := evt.EventData.GetRemediationWorkflowWebhookAuditPayload()
+			if ok && payload.WorkflowName == crdName {
+				contentPayload = payload
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(), "Should find the admitted.update event for this CRD (%s)", crdName)
+
+		Expect(contentPayload.WorkflowContent.IsSet()).To(BeTrue(),
+			"event_data.workflow_content should be set on the admitted.update event (#1661)")
+		Expect(contentPayload.WorkflowContent.Value.Version).To(Equal("1.1.0"),
+			"event_data.workflow_content.version should reflect the version-bumped spec")
+		Expect(contentPayload.ContentHash.IsSet()).To(BeTrue(),
+			"event_data.content_hash should be set on the admitted.update event (#1661)")
+		Expect(contentPayload.ContentHash.Value).ToNot(BeEmpty())
+
+		GinkgoWriter.Printf("✅ Version bump UPDATE propagated: %s -> %s (content_hash=%s)\n",
+			initialWorkflowID, newWorkflowID, contentPayload.ContentHash.Value)
 	})
 
 	// ========================================

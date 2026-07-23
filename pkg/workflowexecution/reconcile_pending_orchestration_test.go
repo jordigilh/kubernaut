@@ -40,6 +40,8 @@ import (
 	"context"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -59,7 +61,6 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
@@ -97,15 +98,21 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				TargetResource: targetResource,
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:      "wf-" + name,
-					Version:         "v1",
-					ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "wf-" + name,
+						Version:         "v1",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+						// Issue #1661 Change 11e: engine is read directly from
+						// WorkflowRef, not resolved via a DataStorage round-trip
+						// at runtime.
+						ExecutionEngine: "tekton",
+					},
 				},
 			},
 		}
 	}
 
-	buildReconciler := func(fakeClient client.Client, querier weclient.WorkflowQuerier, registry *weexecutor.Registry, mockStore *mockAuditStore) *workflowexecution.WorkflowExecutionReconciler {
+	buildReconciler := func(fakeClient client.Client, registry *weexecutor.Registry, mockStore *mockAuditStore) *workflowexecution.WorkflowExecutionReconciler {
 		am := audit.NewManager(mockStore, logr.Discard())
 		sm := status.NewManager(fakeClient)
 		tm := metrics.NewMetricsWithRegistry(prometheus.NewRegistry())
@@ -123,7 +130,6 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			StatusManager:      sm,
 			AuditManager:       am,
 			PhaseManager:       pm,
-			WorkflowQuerier:    querier,
 			ExecutorRegistry:   registry,
 		}
 	}
@@ -151,19 +157,12 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 				WithIndex(&workflowexecutionv1alpha1.WorkflowExecution{}, "spec.targetResource", targetResourceIndexer).
 				Build()
 
-			querier := &mockCatalogQuerier{
-				meta: &weclient.WorkflowCatalogMetadata{
-					ExecutionEngine: "tekton",
-					WorkflowName:    "restart-deployment",
-					ExecutionBundle: "ghcr.io/test/exec:v1",
-				},
-			}
 			tektonExec := weexecutor.NewTektonExecutor(fakeClient)
 			registry := weexecutor.NewRegistry()
 			registry.Register(tektonExec.Engine(), tektonExec)
 			mockStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 
-			reconciler := buildReconciler(fakeClient, querier, registry, mockStore)
+			reconciler := buildReconciler(fakeClient, registry, mockStore)
 
 			for len(rpoRecorder.Events) > 0 {
 				<-rpoRecorder.Events
@@ -206,14 +205,6 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			targetResource := "default/deployment/idempotent-target"
 			wfe := buildPendingWFE("wfe-audit-idempotent", targetResource)
 
-			querier := &mockCatalogQuerier{
-				meta: &weclient.WorkflowCatalogMetadata{
-					ExecutionEngine: "tekton",
-					WorkflowName:    "restart-deployment",
-					ExecutionBundle: "ghcr.io/test/exec:v1",
-				},
-			}
-
 			// Pre-create the execution resource this WFE would create, at the
 			// exact deterministic name reconcilePending computes, simulating a
 			// reconcile that re-enters Pending after the resource was already
@@ -245,7 +236,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			registry.Register(tektonExec.Engine(), tektonExec)
 			mockStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 
-			reconciler := buildReconciler(fakeClient, querier, registry, mockStore)
+			reconciler := buildReconciler(fakeClient, registry, mockStore)
 
 			var sanityPR tektonv1.PipelineRun
 			Expect(fakeClient.Get(rpoCtx, types.NamespacedName{Name: resourceName, Namespace: "kubernaut-workflows"}, &sanityPR)).To(Succeed(),
@@ -264,14 +255,6 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			targetResource := "default/deployment/first-creation-target"
 			wfe := buildPendingWFE("wfe-audit-first", targetResource)
 
-			querier := &mockCatalogQuerier{
-				meta: &weclient.WorkflowCatalogMetadata{
-					ExecutionEngine: "tekton",
-					WorkflowName:    "restart-deployment",
-					ExecutionBundle: "ghcr.io/test/exec:v1",
-				},
-			}
-
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(rpoScheme).
 				WithObjects(wfe).
@@ -284,7 +267,7 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			registry.Register(tektonExec.Engine(), tektonExec)
 			mockStore := &mockAuditStore{events: make([]*ogenclient.AuditEventRequest, 0)}
 
-			reconciler := buildReconciler(fakeClient, querier, registry, mockStore)
+			reconciler := buildReconciler(fakeClient, registry, mockStore)
 
 			_, err := reconciler.Reconcile(rpoCtx, reconcile.Request{
 				NamespacedName: types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace},

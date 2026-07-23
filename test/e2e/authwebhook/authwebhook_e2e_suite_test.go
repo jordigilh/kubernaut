@@ -187,14 +187,6 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to create E2E ServiceAccount for DS access")
 		logger.Info("✅ E2E ServiceAccount created", "name", e2eSAName)
 
-		// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
-		logger.Info("🏷️  Seeding action types via DataStorage API (DD-WORKFLOW-016)...")
-		seedToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, e2eSAName, kubeconfigPath)
-		Expect(err).ToNot(HaveOccurred(), "Failed to get seed SA token")
-		Expect(infrastructure.SeedActionTypesViaAPIWithTLS(ctx, "https://localhost:28099", seedToken, kubeconfigPath, 30*time.Second, GinkgoWriter)).
-			To(Succeed(), "Failed to seed action types via DS API")
-		logger.Info("✅ Action types seeded")
-
 		// Wait for AuthWebhook HTTPS endpoint to be responsive via NodePort
 		logger.Info("⏳ Waiting for AuthWebhook NodePort to be responsive...")
 		Eventually(func() error {
@@ -206,6 +198,21 @@ var _ = SynchronizedBeforeSuite(
 			return nil
 		}, 120*time.Second, 2*time.Second).Should(Succeed(), "AuthWebhook NodePort did not become responsive")
 		logger.Info("✅ AuthWebhook is ready via NodePort (localhost:30099)")
+
+		// #1661 Change 0: AW's RemediationWorkflow admission gate now validates
+		// spec.actionType against real ActionType CRDs in etcd (client.List with
+		// a .spec.name field indexer) instead of DS's Postgres taxonomy, so E2E
+		// action types MUST exist as real CRDs -- not just DS API rows. Seeding
+		// via SeedE2EActionTypes (kubectl apply, through the real AuthWebhook,
+		// which is why this runs AFTER the AW NodePort readiness wait above)
+		// also registers each ActionType in DS's Postgres taxonomy as a side
+		// effect of the ActionType admission handler (still required until
+		// Phase 52), so this single call satisfies both AW's etcd-native gate
+		// and DS's FK constraint for workflow registration.
+		logger.Info("🏷️  Seeding ActionType CRDs via AuthWebhook (DD-WORKFLOW-016, #1661 Change 0)...")
+		Expect(infrastructure.SeedE2EActionTypes(ctx, kubeconfigPath, sharedNamespace, GinkgoWriter)).
+			To(Succeed(), "Failed to seed ActionType CRDs")
+		logger.Info("✅ ActionType CRDs seeded")
 
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		logger.Info("Cluster Setup Complete - Broadcasting to all processes")

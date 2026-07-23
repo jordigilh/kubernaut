@@ -275,6 +275,18 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 	_, _ = fmt.Fprintln(writer, "\n🚀 PHASE 5: Deploying services...")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
 
+	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+	// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+	// already be registered with the apiserver or DS's informer cache setup
+	// fails hard ("no matches for kind"), crash-looping the pod. Must run
+	// BEFORE DataStorage is deployed below -- deployAuthWebhookToKind's own
+	// "Apply CRDs" step (STEP 2) runs too late, after DataStorage's readiness
+	// wait already started.
+	_, _ = fmt.Fprintln(writer, "  📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return "", "", fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+
 	// Deploy DataStorage service (E2E ports per DD-TEST-001)
 	_, _ = fmt.Fprintln(writer, "  📦 Deploying DataStorage service...")
 	if err := deployDataStorageToKind(ctx, kubeconfigPath, namespace, dsImageName, "30081", writer); err != nil {
@@ -1085,6 +1097,11 @@ rules:
 - apiGroups: ["authorization.k8s.io"]
   resources: ["subjectaccessreviews"]
   verbs: ["create"]
+# Issue #1661 Phase 29 (DD-WORKFLOW-018): informer-backed read-only cache of
+# RemediationWorkflow/ActionType CRDs (etcd is the single source of truth).
+- apiGroups: ["kubernaut.ai"]
+  resources: ["remediationworkflows", "actiontypes"]
+  verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

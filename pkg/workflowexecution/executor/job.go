@@ -464,7 +464,7 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
-					ServiceAccountName: wfe.Status.ServiceAccountName,
+					ServiceAccountName: wfe.Spec.WorkflowRef.ServiceAccountName,
 					SecurityContext:    restrictedPodSecurityContext(),
 					Volumes:            volumes,
 					Containers: []corev1.Container{
@@ -512,15 +512,16 @@ func jobPodFailurePolicy() *batchv1.PodFailurePolicy {
 }
 
 // resourcesFor returns the "workflow" container's resource requirements
-// (BR-WE-019 / DD-WE-008), resolved once during Pending into
-// wfe.Status.Resources by resolveWorkflowCatalog. Returns the zero value
-// (no requests/limits, BestEffort QoS) when the catalog entry declared none
-// -- backward compatible with pre-DD-WE-008 Job specs.
+// (BR-WE-019 / DD-WE-008), read directly from the immutable
+// wfe.Spec.WorkflowRef.Resources CRD-embedded snapshot (Issue #1661 Change
+// 11f). Returns the zero value (no requests/limits, BestEffort QoS) when
+// the snapshot declares none -- backward compatible with pre-DD-WE-008 Job
+// specs.
 func resourcesFor(wfe *workflowexecutionv1alpha1.WorkflowExecution) corev1.ResourceRequirements {
-	if wfe.Status.Resources == nil {
+	if wfe.Spec.WorkflowRef.Resources == nil {
 		return corev1.ResourceRequirements{}
 	}
-	return *wfe.Status.Resources
+	return *wfe.Spec.WorkflowRef.Resources
 }
 
 // buildDependencyVolumes creates Volumes and VolumeMounts for schema-declared

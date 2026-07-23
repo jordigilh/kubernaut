@@ -19,9 +19,6 @@ package authwebhook_test
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -258,77 +255,12 @@ var _ = Describe("UT-AW-668-003: StartupReconciler and Validator lifecycle (BR-A
 	})
 })
 
-// UT-AW-668-004: ForceDisableActionType via HTTP mock (BR-WORKFLOW-006)
-var _ = Describe("UT-AW-668-004: ForceDisableActionType via HTTP mock (BR-WORKFLOW-006)", func() {
-	It("BR-WORKFLOW-006: returns success for HTTP 200", func() {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			Expect(r.Method).To(Equal(http.MethodPatch))
-			w.WriteHeader(http.StatusOK)
-		}))
-		defer ts.Close()
-
-		adapter, err := authwebhook.NewDSClientAdapterWithTransport(ts.URL, 0, http.DefaultTransport, logr.Discard())
-		Expect(err).NotTo(HaveOccurred())
-
-		result, err := adapter.ForceDisableActionType(context.Background(), "my-at", "system", []string{"wf-orphan"})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Disabled).To(BeTrue())
-	})
-
-	It("BR-WORKFLOW-006: returns conflict details for HTTP 409", func() {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusConflict)
-			_, _ = fmt.Fprintf(w, `{"dependentWorkflowCount":2,"dependentWorkflows":["wf-a","wf-b"]}`)
-		}))
-		defer ts.Close()
-
-		adapter, err := authwebhook.NewDSClientAdapterWithTransport(ts.URL, 0, http.DefaultTransport, logr.Discard())
-		Expect(err).NotTo(HaveOccurred())
-
-		result, err := adapter.ForceDisableActionType(context.Background(), "my-at", "system", nil)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Disabled).To(BeFalse())
-		Expect(result.DependentWorkflowCount).To(Equal(2))
-	})
-
-	It("BR-WORKFLOW-006: returns success for HTTP 404 (already gone)", func() {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-		}))
-		defer ts.Close()
-
-		adapter, err := authwebhook.NewDSClientAdapterWithTransport(ts.URL, 0, http.DefaultTransport, logr.Discard())
-		Expect(err).NotTo(HaveOccurred())
-
-		result, err := adapter.ForceDisableActionType(context.Background(), "my-at", "system", nil)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.Disabled).To(BeTrue())
-	})
-
-	It("BR-WORKFLOW-006: returns error for unexpected status codes", func() {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		defer ts.Close()
-
-		adapter, err := authwebhook.NewDSClientAdapterWithTransport(ts.URL, 0, http.DefaultTransport, logr.Discard())
-		Expect(err).NotTo(HaveOccurred())
-
-		_, err = adapter.ForceDisableActionType(context.Background(), "my-at", "system", nil)
-		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("unexpected status"))
-	})
-
-	It("BR-WORKFLOW-006: rejects call when adapter missing baseURL/httpClient", func() {
-		adapter, err := authwebhook.NewDSClientAdapterWithTransport("", 0, http.DefaultTransport, logr.Discard())
-		Expect(err).To(HaveOccurred())
-
-		if adapter != nil {
-			_, err = adapter.ForceDisableActionType(context.Background(), "x", "system", nil)
-			Expect(err).To(HaveOccurred())
-		}
-	})
-})
+// UT-AW-668-004 ("ForceDisableActionType via HTTP mock") is removed: #1661
+// Change 8d deleted DSClientAdapter.ForceDisableActionType entirely -- AW no
+// longer bridges ActionType CRD lifecycle to a DS action-type catalog (the
+// K8s-native RemediationWorkflow list is now the sole dependents gate on
+// DELETE; see actiontype_handler.go, ds_client.go). There is no adapter
+// method left to exercise.
 
 // UT-AW-668-005: ValidateApprovalDecision and forgery detection (BR-AUDIT-006)
 var _ = Describe("UT-AW-668-005: Validation and Forgery Detection (BR-AUDIT-006)", func() {

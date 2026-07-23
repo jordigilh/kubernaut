@@ -27,16 +27,6 @@ import (
 	"time"
 )
 
-// goconst dedup: test-fixture literals deduplicated below.
-const (
-	e2eTestCoverage2 = "e2e-test-coverage"
-)
-
-// goconst dedup: test-fixture literals deduplicated below.
-const (
-	e2eTestCoverage = e2eTestCoverage2
-)
-
 // ========================================
 // GATEWAY E2E INFRASTRUCTURE
 // ========================================
@@ -210,6 +200,19 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow/action-type catalog
+	// is now a controller-runtime informer cache directly over the
+	// RemediationWorkflow/ActionType CRDs -- DS's startup indexes
+	// RemediationWorkflow by .spec.actionType, which requires the
+	// kubernaut.ai/v1alpha1 API group to already be registered with the
+	// apiserver. This suite runs no live AuthWebhook to apply these CRDs as a
+	// side effect, so apply them directly, BEFORE DataStorage is deployed
+	// below (mirrors SetupDataStorageInfrastructureParallel's step).
+	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "✅ Kind cluster ready!")
 
 	// ═══════════════════════════════════════════════════════════════════════
@@ -356,19 +359,10 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage Service ready for internal cluster access\n")
 
-	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
-	// Use a temporary seed SA because the gateway SA is created later in Phase 5.
-	seedSA := "gw-e2e-seed-sa"
-	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, seedSA, writer); err != nil {
-		return fmt.Errorf("failed to create seed SA for action type seeding: %w", err)
-	}
-	seedToken, err := GetServiceAccountToken(ctx, namespace, seedSA, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get seed SA token for action type seeding: %w", err)
-	}
-	if err := SeedActionTypesViaAPIWithTLS(ctx,
-		fmt.Sprintf("https://localhost:%d", DataStorageE2EHostPort), seedToken, kubeconfigPath, 30*time.Second, writer,
-	); err != nil {
+	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
+	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
+	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -507,7 +501,7 @@ func DeleteGatewayCluster(clusterName, kubeconfigPath string, testsFailed bool, 
 // ========================================
 
 // createGatewayKindCluster creates a Kind cluster for Gateway E2E tests
-// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
+// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
 func createGatewayKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:             clusterName,
@@ -649,7 +643,10 @@ func gatewayWorkloadManifest(imageName string, enableCoverage bool) string {
           hostPath:
             path: /coverdata
             type: DirectoryOrCreate`
-		coverageSecurityContextYAML = coverageSecurityContextYAMLFixture
+		coverageSecurityContextYAML = `
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0`
 	}
 
 	return fmt.Sprintf(`---
@@ -887,7 +884,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 	}
 
 	// Use unique image tag with coverage suffix
-	imageTag := e2eTestCoverage
+	imageTag := e2eTestCoverageTag
 	imageName := fmt.Sprintf("localhost/kubernaut-gateway:%s", imageTag)
 	_, _ = fmt.Fprintf(writer, "  📦 Building Gateway with coverage: %s\n", imageName)
 
@@ -909,7 +906,7 @@ func BuildGatewayImageWithCoverage(writer io.Writer) error {
 }
 
 func GetGatewayCoverageImageTag() string {
-	return e2eTestCoverage
+	return e2eTestCoverageTag
 }
 
 func GetGatewayCoverageFullImageName() string {

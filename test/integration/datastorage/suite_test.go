@@ -21,7 +21,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +38,8 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
 
+	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/cert"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,13 +49,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	dsconfig "github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/workflowcache"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -104,6 +103,28 @@ var (
 	// DD-WE-006: K8s client for dependency validation (GW pattern: one shared envtest, all processes use it).
 	k8sClient client.Client
 
+	// Issue #1661 Phase 28: per-process *rest.Config for the shared envtest, valid in every
+	// parallel process (unlike sharedDSEnvConfig below, which is only populated in process 1).
+	// Consumers that need a *rest.Config directly (e.g. workflowcache.NewInformerCache, which
+	// builds its own controller-runtime cache rather than reusing k8sClient) must use this.
+	dsK8sRestConfig *rest.Config
+
+	// Issue #1661 Phase F: one shared per-process informer-backed cache, wired via
+	// workflow.Repository.SetCache onto specs that migrated off direct Postgres seeding
+	// (workflowRepo.Create) to CRD-native seeding (seedWorkflowCRD in
+	// workflow_crd_seeding_helper_test.go). A single shared instance avoids the cost of
+	// spinning up a separate informer cache (and its blocking initial sync) per spec --
+	// mirrors the k8sClient/dsK8sRestConfig sharing pattern above, not the
+	// per-It-block *workflowcache.Cache in workflow_cache_test.go (which deliberately
+	// exercises cache construction itself as part of its subject under test).
+	sharedWorkflowCache       *workflowcache.Cache
+	sharedWorkflowCacheCancel context.CancelFunc
+
+	// workflowCRDNamespace is the namespace CRD-native seeding creates
+	// RemediationWorkflow/ActionType objects in -- must match the namespace
+	// created in SynchronizedBeforeSuite Phase 1 below.
+	workflowCRDNamespace = "kubernaut-workflows"
+
 	// Shared envtest (process 1 only), stopped in AfterSuite Phase 2. Mimics Gateway integration.
 	sharedDSEnvTest   *envtest.Environment
 	sharedDSEnvConfig *rest.Config
@@ -135,7 +156,7 @@ func datastorageIntegrationSigningCertDirOrDie() string {
 		pair, err := cert.GenerateSelfSigned(cert.CertificateOptions{
 			CommonName:       "data-storage-integration",
 			Organization:     "Kubernaut",
-			DNSNames:         []string{localhost},
+			DNSNames:         []string{"localhost"},
 			ValidityDuration: 8760 * time.Hour,
 			KeySize:          2048,
 		})
@@ -309,11 +330,11 @@ var _ = SynchronizedBeforeSuite(
 
 		// 2. Start PostgreSQL
 		GinkgoWriter.Println("📦 Starting PostgreSQL container...")
-		startPostgreSQL(context.Background())
+		startPostgreSQL()
 
 		// 3. Start Redis for DLQ
 		GinkgoWriter.Println("📦 Starting Redis container...")
-		startRedis(context.Background())
+		startRedis()
 
 		// 4. Connect to PostgreSQL to apply migrations
 		GinkgoWriter.Println("🔌 Connecting to PostgreSQL...")
@@ -330,10 +351,13 @@ var _ = SynchronizedBeforeSuite(
 
 		// 6. Start shared envtest (GW pattern: one instance, all processes use it via kubeconfig).
 		// Avoids four per-process envtest.Stop() calls in Phase 1 that cause CI hang/exit 2.
+		// Issue #1661 Phase 28: CRDDirectoryPaths now installs RemediationWorkflow/ActionType
+		// CRDs so the workflow cache IT (workflow_cache_test.go) can create real CRs.
 		GinkgoWriter.Println("🔧 [Process 1] Starting shared envtest for DD-WE-006 dependency validation...")
 		_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
 		sharedDSEnvTest = &envtest.Environment{
-			ErrorIfCRDPathMissing: false,
+			CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
+			ErrorIfCRDPathMissing: true,
 			ControlPlane: envtest.ControlPlane{
 				APIServer: &envtest.APIServer{
 					SecureServing: envtest.SecureServing{
@@ -349,6 +373,8 @@ var _ = SynchronizedBeforeSuite(
 
 		// Create namespace and write kubeconfig so Phase 2 (all processes) can connect.
 		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(rwv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(atv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 		sharedK8sClient, err := client.New(sharedDSEnvConfig, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 		depNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-workflows"}}
@@ -357,6 +383,34 @@ var _ = SynchronizedBeforeSuite(
 		kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedDSEnvConfig, "datastorage-integration")
 		Expect(err).ToNot(HaveOccurred(), "writing shared envtest kubeconfig")
 		GinkgoWriter.Println("✅ [Process 1] Shared envtest ready (kubernaut-workflows namespace created)")
+
+		// Seed action types directly as CRDs (DD-WORKFLOW-016). #1661 Phase 53:
+		// makes them visible via DS's informer-backed cache (IT-DS-1661-P52-001)
+		// AuthWebhook-independently, for specs exercising the cache/CRD path
+		// (e.g. workflow_cache_test.go). #1661 Phase G: this is now the suite's
+		// *only* action-type seeding path -- the Postgres-backed
+		// action_type_taxonomy bridge (seedActionTypeTaxonomyRows) was removed
+		// once the table itself was dropped, since etcd/CRDs are the sole
+		// source of truth for workflow/action-type data (DD-WORKFLOW-018).
+		GinkgoWriter.Println("🏷️  Seeding action types via direct CRD creation...")
+		Expect(infrastructure.SeedActionTypesViaCRD(context.Background(), kubeconfigPath, "kubernaut-workflows", GinkgoWriter)).
+			To(Succeed(), "action type CRD seeding should succeed")
+		GinkgoWriter.Println("✅ Action types seeded (CRD)")
+
+		// #1661 Phase F: status-patch every seeded ActionType to CatalogStatus=Active,
+		// mirroring AuthWebhook's admission patch (pkg/authwebhook/actiontype_handler.go).
+		// SeedActionTypesViaCRD only kubectl-applies the spec -- no AuthWebhook runs in
+		// this suite to status-patch it -- yet ListActions' cache-backed path (Step 1,
+		// discovery_cache.go) counts an action type only when Active. ListWorkflowsByActionType
+		// (Step 2) needs no such patch, but the Phase F specs migrated to CRD-native seeding
+		// call ListActions directly against these shared, suite-wide action types, so patch
+		// them all here once rather than per-spec (established pattern:
+		// workflow_cache_repository_test.go's per-spec markActive, applied suite-wide here
+		// since these action types are shared rather than uniquely named per spec).
+		GinkgoWriter.Println("🏷️  Marking seeded ActionTypes Active (status subresource)...")
+		Expect(markSeededActionTypesActive(sharedK8sClient)).To(Succeed(), "marking ActionTypes Active should succeed")
+		GinkgoWriter.Println("✅ Action types marked Active")
+
 		GinkgoWriter.Println("✅ Infrastructure ready for integration tests")
 		return []byte(kubeconfigPath)
 	},
@@ -394,11 +448,11 @@ var _ = SynchronizedBeforeSuite(
 		// that caused IT-DS-016-005/006 failures (partitioned audit_events
 		// cannot be correctly copied with CREATE TABLE LIKE).
 		GinkgoWriter.Printf("🔌 [Process %d] Connecting to PostgreSQL...\n", processNum)
-		connectPostgreSQL(ctx)
+		connectPostgreSQL()
 
 		// Connect to Redis
 		GinkgoWriter.Printf("🔌 [Process %d] Connecting to Redis...\n", processNum)
-		connectRedis(ctx)
+		connectRedis()
 
 		// Create repository and DLQ client instances
 		GinkgoWriter.Printf("🏗️  [Process %d] Creating repository and DLQ client...\n", processNum)
@@ -409,16 +463,28 @@ var _ = SynchronizedBeforeSuite(
 		// DD-WE-006: K8s client from shared envtest (GW pattern). Process 1 uses sharedDSEnvConfig; others use kubeconfig from Phase 1.
 		GinkgoWriter.Printf("🔧 [Process %d] Connecting to shared envtest for K8s dependency validation...\n", processNum)
 		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
+		// Issue #1661 Phase 28: registered in every parallel process (each is a separate OS process).
+		Expect(rwv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+		Expect(atv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
 		if processNum == 1 {
-			k8sClient, err = client.New(sharedDSEnvConfig, client.Options{Scheme: scheme.Scheme})
+			dsK8sRestConfig = sharedDSEnvConfig
+			k8sClient, err = client.New(dsK8sRestConfig, client.Options{Scheme: scheme.Scheme})
 			Expect(err).ToNot(HaveOccurred(), "process 1: k8s client from shared envtest config")
 		} else {
 			cfg, err := clientcmd.BuildConfigFromFlags("", string(data))
 			Expect(err).ToNot(HaveOccurred(), "load kubeconfig from shared envtest")
-			k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
+			dsK8sRestConfig = cfg
+			k8sClient, err = client.New(dsK8sRestConfig, client.Options{Scheme: scheme.Scheme})
 			Expect(err).ToNot(HaveOccurred(), "k8s client from kubeconfig")
 		}
 		GinkgoWriter.Printf("✅ [Process %d] K8s client ready (shared envtest)\n", processNum)
+
+		// Issue #1661 Phase F: shared per-process workflow cache for specs migrated to
+		// CRD-native seeding. Blocks until the initial informer sync completes.
+		GinkgoWriter.Printf("🔧 [Process %d] Building shared workflow cache...\n", processNum)
+		sharedWorkflowCache, sharedWorkflowCacheCancel, err = workflowcache.NewInformerCache(dsK8sRestConfig, scheme.Scheme, logger)
+		Expect(err).ToNot(HaveOccurred(), "shared workflow cache should build and sync")
+		GinkgoWriter.Printf("✅ [Process %d] Shared workflow cache ready\n", processNum)
 
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests (shared public schema)\n", processNum)
 	},
@@ -437,6 +503,10 @@ var _ = SynchronizedAfterSuite(func() {
 	//
 	// These resources are closed in Phase 2 after ALL processes truly complete.
 
+	if sharedWorkflowCacheCancel != nil {
+		sharedWorkflowCacheCancel()
+	}
+
 	if cancel != nil {
 		cancel()
 	}
@@ -449,8 +519,14 @@ var _ = SynchronizedAfterSuite(func() {
 
 	// DD-WE-006: Stop shared envtest (GW pattern). Only one Stop() in Phase 2 avoids CI hang/exit 2.
 	if sharedDSEnvTest != nil {
+		// Capture into a local before launching the goroutine: the goroutine's
+		// closure would otherwise read the package-level sharedDSEnvTest variable
+		// concurrently with the `sharedDSEnvTest = nil` write below on timeout,
+		// a genuine data race flagged by `-race` (goroutine reads while this
+		// frame writes -- both closing over the same variable).
+		envTest := sharedDSEnvTest
 		stopDone := make(chan error, 1)
-		go func() { stopDone <- sharedDSEnvTest.Stop() }()
+		go func() { stopDone <- envTest.Stop() }()
 		select {
 		case err := <-stopDone:
 			if err != nil {
@@ -558,7 +634,7 @@ func createNetwork() {
 
 // startPostgreSQL starts PostgreSQL container
 // When POSTGRES_HOST is set (e.g., in Docker Compose), skip container creation
-func startPostgreSQL(ctx context.Context) {
+func startPostgreSQL() {
 	// Check if running in Docker Compose environment
 	if os.Getenv("POSTGRES_HOST") != "" {
 		GinkgoWriter.Println("🐳 Using external PostgreSQL (Docker Compose)")
@@ -607,7 +683,7 @@ func startPostgreSQL(ctx context.Context) {
 	// Increase max_connections for parallel test execution (default is 100)
 	GinkgoWriter.Println("🔧 Starting fresh PostgreSQL container...")
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	Expect(infrastructure.PullImageWithRetry(ctx, postgresImage, 3, GinkgoWriter)).To(Succeed())
+	Expect(infrastructure.PullImageWithRetry(context.Background(), postgresImage, 3, GinkgoWriter)).To(Succeed())
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", postgresContainer,
 		"--network", "datastorage-test",
@@ -638,7 +714,7 @@ func startPostgreSQL(ctx context.Context) {
 
 // startRedis starts Redis container for DLQ
 // When REDIS_HOST is set (e.g., in Docker Compose), skip container creation
-func startRedis(ctx context.Context) {
+func startRedis() {
 	// Check if running in Docker Compose environment
 	if os.Getenv("REDIS_HOST") != "" {
 		GinkgoWriter.Println("🐳 Using external Redis (Docker Compose)")
@@ -672,7 +748,7 @@ func startRedis(ctx context.Context) {
 	// Start Redis
 	// Use --network=datastorage-test for container-to-container communication
 	const redisImage = "quay.io/jordigilh/redis:7-alpine"
-	Expect(infrastructure.PullImageWithRetry(ctx, redisImage, 3, GinkgoWriter)).To(Succeed())
+	Expect(infrastructure.PullImageWithRetry(context.Background(), redisImage, 3, GinkgoWriter)).To(Succeed())
 	cmd := exec.Command("podman", "run", "-d",
 		"--name", redisContainer,
 		"--network", "datastorage-test",
@@ -690,13 +766,13 @@ func startRedis(ctx context.Context) {
 	GinkgoWriter.Println("⏳ Waiting for Redis to be ready...")
 
 	Eventually(func() error {
-		testCmd := exec.Command("podman", "exec", redisContainer, "redis-cli", "ping")
+		testCmd := exec.CommandContext(context.Background(), "podman", "exec", redisContainer, "redis-cli", "ping")
 		output, err := testCmd.CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("Redis not ready: %w", err)
+			return fmt.Errorf("redis not ready: %w", err)
 		}
 		if string(output) != "PONG\n" {
-			return fmt.Errorf("Redis not ready: unexpected response %q", string(output))
+			return fmt.Errorf("redis not ready: unexpected output %q", string(output))
 		}
 		return nil
 	}, 30*time.Second, 1*time.Second).Should(Succeed(), "Redis should be ready")
@@ -736,12 +812,7 @@ func mustConnectPostgreSQL() *sqlx.DB {
 	return tempDB
 }
 
-// FLAGGED for human review (unparam cleanup): sibling connectRedis threads ctx into
-// Ping(ctx), but this function still uses the no-context sqlx.Connect/db.Ping variants.
-// Kept as-is rather than silently rewired to sqlx.ConnectContext/db.PingContext.
-//
-//nolint:unparam // ctx unused pending decision above; not removed to avoid permanently losing the wiring point
-func connectPostgreSQL(ctx context.Context) {
+func connectPostgreSQL() {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("POSTGRES_HOST")
 	if host == "" {
@@ -773,7 +844,7 @@ func connectPostgreSQL(ctx context.Context) {
 }
 
 // connectRedis establishes Redis connection
-func connectRedis(ctx context.Context) {
+func connectRedis() {
 	// Use environment variables for Docker Compose compatibility
 	host := os.Getenv("REDIS_HOST")
 	if host == "" {
@@ -819,107 +890,39 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 	`)
 	Expect(err).ToNot(HaveOccurred(), "granting permissions should succeed")
 
-	// 4. Verify and create critical constraints in public schema
-	GinkgoWriter.Println("  🔍 Verifying critical constraints in public schema...")
-	verifyAndCreatePublicSchemaConstraints(ctx, targetDB)
-
-	// 5. Create dynamic partitions for current month (prevents time-based test failures)
+	// 4. Create dynamic partitions for current month (prevents time-based test failures)
 	GinkgoWriter.Println("  📅 Creating dynamic partitions for current month...")
 	createDynamicPartitions(ctx, targetDB)
 
-	// 6. Wait for schema propagation
+	// 5. Wait for schema propagation
 	GinkgoWriter.Println("  ⏳ Waiting for schema propagation...")
 	Eventually(func() error {
 		_, err := targetDB.ExecContext(ctx, "SELECT 1")
 		return err
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
-
-	// 7. Seed action types via temp in-process DataStorage server (DD-WORKFLOW-016)
-	GinkgoWriter.Println("  🏷️  Seeding action types via in-process DataStorage server...")
-	seedActionTypesViaInProcessServer(ctx)
-	GinkgoWriter.Println("  ✅ Action types seeded")
 }
 
-// seedActionTypesViaInProcessServer creates a temporary in-process DataStorage httptest
-// server, seeds all standard action types through its API, then tears it down. The rows
-// persist in the shared PostgreSQL instance so every per-test httptest server sees them.
-func seedActionTypesViaInProcessServer(ctx context.Context) {
-	host := os.Getenv("POSTGRES_HOST")
-	if host == "" {
-		host = localhost
+// markSeededActionTypesActive status-patches every ActionType CRD in the
+// kubernaut-workflows namespace to CatalogStatus=Active, mirroring
+// AuthWebhook's admission-time status patch (actiontype_handler.go). Called
+// once, in process 1's SynchronizedBeforeSuite, immediately after
+// infrastructure.SeedActionTypesViaCRD -- which creates the CRDs' specs but
+// leaves status untouched, since no AuthWebhook runs in this suite to patch
+// it itself.
+func markSeededActionTypesActive(c client.Client) error {
+	var list atv1alpha1.ActionTypeList
+	if err := c.List(context.Background(), &list, client.InNamespace("kubernaut-workflows")); err != nil {
+		return fmt.Errorf("failed to list seeded ActionTypes: %w", err)
 	}
-	pgPort := os.Getenv("POSTGRES_PORT")
-	if pgPort == "" {
-		pgPort = "15433"
+	for i := range list.Items {
+		at := &list.Items[i]
+		at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
+		if err := c.Status().Update(context.Background(), at); err != nil {
+			return fmt.Errorf("failed to mark ActionType %s Active: %w", at.Name, err)
+		}
 	}
-	dbConnStr := fmt.Sprintf(
-		"host=%s port=%s user=slm_user password=test_password dbname=action_history sslmode=disable options='-c search_path=public'",
-		host, pgPort,
-	)
-
-	redisHost := os.Getenv("REDIS_HOST")
-	if redisHost == "" {
-		redisHost = localhost
-	}
-	redisPort := os.Getenv("REDIS_PORT")
-	if redisPort == "" {
-		redisPort = "16379"
-	}
-	redisAddr := fmt.Sprintf("%s:%s", redisHost, redisPort)
-
-	appCfg := &dsconfig.Config{
-		Server: dsconfig.ServerConfig{
-			SignerCertDir: datastorageIntegrationSigningCertDirOrDie(),
-		},
-		Database: dsconfig.DatabaseConfig{
-			MaxOpenConns:    5,
-			MaxIdleConns:    2,
-			ConnMaxLifetime: "1m",
-			ConnMaxIdleTime: "1m",
-		},
-	}
-
-	const seedToken = "seed-token"
-	const seedUser = "system:serviceaccount:datastorage-test:action-type-seeder"
-
-	srv, err := server.NewServer(server.ServerDeps{
-		DBConnStr:     dbConnStr,
-		RedisAddr:     redisAddr,
-		RedisPassword: "",
-		Logger:        logr.Discard(),
-		AppConfig:     appCfg,
-		ServerConfig: &server.Config{
-			Port:         18090,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-		},
-		DLQMaxLen: 100,
-		Authenticator: &auth.MockAuthenticator{
-			ValidUsers: map[string]string{
-				seedToken: seedUser,
-			},
-		},
-		Authorizer: &auth.MockAuthorizer{
-			AllowedUsers: map[string]bool{
-				seedUser: true,
-			},
-		},
-		AuthNamespace: "datastorage-test",
-	})
-	Expect(err).ToNot(HaveOccurred(), "temp server creation for action type seeding should succeed")
-
-	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
-
-	httpClient := &http.Client{
-		Transport: &bearerTransport{token: seedToken},
-	}
-	client, err := ogenclient.NewClient(ts.URL, ogenclient.WithClient(httpClient))
-	Expect(err).ToNot(HaveOccurred(), "ogen client creation should succeed")
-
-	err = infrastructure.SeedActionTypesViaAPI(ctx, client, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "action type seeding via DS API should succeed")
+	return nil
 }
 
 // bearerTransport injects an Authorization header into every outgoing request.
@@ -931,74 +934,6 @@ func (t *bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
 	req.Header.Set("Authorization", "Bearer "+t.token)
 	return http.DefaultTransport.RoundTrip(req)
-}
-
-// verifyAndCreatePublicSchemaConstraints ensures critical constraints exist in public schema
-// verifyAndCreatePublicSchemaConstraints ensures critical constraints exist in public schema.
-// Migration 003 replaced the full UNIQUE constraint with a partial unique index
-// (uq_workflow_name_version_active) that only enforces uniqueness for active workflows,
-// allowing superseded/disabled records to coexist with the same name+version.
-// Authority: Migration 003 (BR-WORKFLOW-006 content integrity)
-// Business Requirement: BR-STORAGE-012, BR-WORKFLOW-006
-func verifyAndCreatePublicSchemaConstraints(ctx context.Context, targetDB *sql.DB) {
-	// Check for the partial unique index (migration 003) — preferred
-	var partialIndexExists bool
-	partialCheckQuery := `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_class c
-			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = 'public'
-			  AND c.relname = 'uq_workflow_name_version_active'
-			  AND c.relkind = 'i'
-		)
-	`
-	err := targetDB.QueryRowContext(ctx, partialCheckQuery).Scan(&partialIndexExists)
-	if err != nil {
-		GinkgoWriter.Printf("  ⚠️  Failed to check partial index existence: %v\n", err)
-		Fail(fmt.Sprintf("Failed to verify constraints: %v", err))
-	}
-
-	if partialIndexExists {
-		GinkgoWriter.Println("  ✅ Partial unique index uq_workflow_name_version_active exists (migration 003)")
-		return
-	}
-
-	// Fallback: check for the legacy full UNIQUE constraint (pre-migration 003)
-	var legacyConstraintExists bool
-	legacyCheckQuery := `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_constraint con
-			JOIN pg_class rel ON rel.oid = con.conrelid
-			JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-			WHERE nsp.nspname = 'public'
-			  AND rel.relname = 'remediation_workflow_catalog'
-			  AND con.conname = 'uq_workflow_name_version'
-		)
-	`
-	err = targetDB.QueryRowContext(ctx, legacyCheckQuery).Scan(&legacyConstraintExists)
-	if err != nil {
-		GinkgoWriter.Printf("  ⚠️  Failed to check legacy constraint existence: %v\n", err)
-		Fail(fmt.Sprintf("Failed to verify constraints: %v", err))
-	}
-
-	if legacyConstraintExists {
-		GinkgoWriter.Println("  ✅ Legacy constraint uq_workflow_name_version exists (pre-migration 003)")
-		return
-	}
-
-	// Neither exists — create the partial unique index (migration 003 intent)
-	GinkgoWriter.Println("  ⚠️  No workflow uniqueness constraint found — creating partial index...")
-	createIndexSQL := `
-		CREATE UNIQUE INDEX uq_workflow_name_version_active
-		ON public.remediation_workflow_catalog (workflow_name, version)
-		WHERE status = 'Active'
-	`
-	_, err = targetDB.ExecContext(ctx, createIndexSQL)
-	if err != nil {
-		GinkgoWriter.Printf("  ❌ Failed to create partial index: %v\n", err)
-		Fail(fmt.Sprintf("Failed to create uq_workflow_name_version_active index: %v", err))
-	}
-	GinkgoWriter.Println("  ✅ Created partial unique index uq_workflow_name_version_active")
 }
 
 // NOTE: Container-based service functions (buildDataStorageService, startDataStorageService, waitForServiceReady)

@@ -192,6 +192,15 @@ Engine dispatch uses a `Registry` (strategy pattern) populated at startup based 
 - **`tekton`**: Registered if Tekton CRDs are discovered via `RESTMapper` (auto-discovery), or explicitly disabled via `tekton.enabled: false` in config.
 - **`ansible`**: Registered if the `ansible` config block is present (config-gated, unchanged).
 
+> **Superseded by Issue #1661 Changes 8/11f (2026-07-22)**: the code sample and TR-6 below describe the
+> Issue #518 "WE resolves engine at runtime from DS" design. That design was reversed: RO's creator now
+> copies `AIAnalysis.Status.SelectedWorkflow.ExecutionEngine` (and four sibling fields, including `ActionType`
+> as of Change 11f) verbatim into `WorkflowExecution.Spec.WorkflowRef.ExecutionEngine` at WFE-creation time.
+> WE has zero live calls to DS and reads exclusively from `Spec.WorkflowRef`; there is no
+> `WorkflowExecutionStatus.ExecutionEngine` field anymore. See
+> [DD-WORKFLOW-017 Changelog v1.4](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md#changelog)
+> for the authoritative current design.
+
 ```go
 // At startup (cmd/workflowexecution/main.go):
 executorRegistry := weexecutor.NewRegistry()
@@ -201,26 +210,26 @@ if cfg.TektonEnabled() && tektonCRDsAvailable(mgr.GetRESTMapper()) {
 }
 // Ansible: config-gated registration (unchanged)
 
-// At reconcile time:
-exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
+// At reconcile time (current: reads the CRD-embedded spec snapshot, no DS call):
+exec, err := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
 // Returns actionable error if engine is not registered (e.g., "install Tekton CRDs")
 ```
 
 If a WFE targets an unregistered engine, the controller marks it as `Failed` with `UnsupportedEngine` and an actionable remediation message.
 
-### TR-6: RO Integration -- Pure Dispatcher (Issue #518)
+### TR-6: RO Integration -- Pure Dispatcher (Issue #518, superseded by Issue #1661 Changes 8/11f)
 
-RemediationOrchestrator does **not** set `executionEngine` on the WorkflowExecution CRD. The WE controller resolves the engine at runtime from the DS catalog.
+RemediationOrchestrator now **does** set `executionEngine` on the WorkflowExecution CRD (in `Spec.WorkflowRef`), copied verbatim from `AIAnalysis.Status.SelectedWorkflow` at CRD-creation time. The WE controller no longer resolves anything from the DS catalog at runtime.
 
 **Data flow**:
 
 ```
-Catalog (has execution_engine) → WE controller queries DS at runtime → wfe.Status.ExecutionEngine
+AIAnalysis.Status.SelectedWorkflow.ExecutionEngine → RO creator copies verbatim → WFE.Spec.WorkflowRef.ExecutionEngine
 ```
 
-**RO notification path**: For completion notifications, RO reads `wfe.Status.ExecutionEngine` (resolved by WE) and passes it as a parameter to `CreateCompletionNotification`. The engine is stored in `NR.Spec.Metadata["executionEngine"]` (informational, not a first-class NR field).
+**RO notification path**: For completion notifications, RO reads `wfe.Spec.WorkflowRef.ExecutionEngine` and passes it as a parameter to `CreateCompletionNotification`. The engine is stored in `NR.Spec.Metadata["executionEngine"]` (informational, not a first-class NR field).
 
-**No propagation chain through AIAnalysis**: The `AIAnalysis.Status.SelectedWorkflow.ExecutionEngine` field exists for informational purposes (HAPI populates it from the catalog), but RO does not use it to set the WFE engine. The WE controller is the sole authority for resolving the engine from the canonical DS catalog entry (Issue #518).
+**Propagation chain through AIAnalysis (current)**: `AIAnalysis.Status.SelectedWorkflow.ExecutionEngine` (populated by HAPI/KA from the catalog at selection time) is the sole source RO's creator reads from -- there is no separate WE-side catalog lookup to reconcile against, and no possibility of the two diverging.
 
 ### TR-7: OCI Compliance
 

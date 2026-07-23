@@ -19,15 +19,17 @@ package datastorage
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/ogenx"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/testutil"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo/Gomega convention
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const e2eBundleRef = "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:377de4244cfeffcbb898a7e7cd388dd1266dd680cef43b17147b876845df29cd"
@@ -83,70 +85,41 @@ func init() {
 	e2eTestAllDetectedLabelsContent = testutil.MarshalWorkflowCRD(allLabels)
 }
 
-// generateWorkflowContent returns valid inline YAML for CreateWorkflowInlineRequest
-// with the given workflowName and version. Useful for tests that need distinct
-// workflow versions or names to avoid idempotent 200 OK responses.
-// Issue #330: Uses builder pattern instead of brittle fmt.Sprintf.
-func generateWorkflowContent(workflowName, version string) string {
-	crd := testutil.NewTestWorkflowCRD(workflowName, "ScaleReplicas", "tekton")
-	crd.Spec.Labels.Component = []string{"v1/Pod"}
-	crd.Spec.Version = version
-	crd.Spec.Description.What = fmt.Sprintf("Generated workflow %s v%s for E2E testing", workflowName, version)
-	crd.Spec.Description.WhenToUse = "E2E tests that need distinct workflow versions"
-	crd.Spec.Labels.Priority = "P0"
-	crd.Spec.Execution.Bundle = e2eBundleRef
-	crd.Spec.Parameters = []models.WorkflowParameter{
-		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource for remediation"},
-	}
-	crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
-		HPAEnabled:      "true",
-		GitOpsTool:      "argocd",
-		PopulatedFields: []string{"hpaEnabled", "gitOpsTool"},
-	}
-	return testutil.MarshalWorkflowCRD(crd)
+var (
+	crdClientOnce sync.Once
+	crdClient     client.Client
+	crdClientErr  error
+)
+
+// workflowCRDClient lazily builds a controller-runtime client scoped to the
+// RemediationWorkflow CRD from the suite's kubeconfig. #1661 Phase 55b: DS's
+// createWorkflow/disableWorkflow/enableWorkflow REST endpoints were removed
+// (DD-WORKFLOW-018 — AuthWebhook is the sole write path); E2E seeding now goes
+// through direct CRD creation instead.
+func workflowCRDClient() client.Client {
+	crdClientOnce.Do(func() {
+		crdClient, crdClientErr = infrastructure.NewKubeconfigWorkflowClient(kubeconfigPath)
+	})
+	Expect(crdClientErr).ToNot(HaveOccurred(), "failed to build RemediationWorkflow client from kubeconfig")
+	return crdClient
 }
 
-// ensureWorkflowRegistered creates a workflow or retrieves the existing one.
-// Handles all CreateWorkflow response types including the parallel race 500
-// (deterministic UUID PK collision when multiple Ginkgo processes register the
-// same content concurrently). On 409 Conflict or 500, falls back to querying
-// the workflow by name ("e2e-stub", the only name used across all e2e/datastorage
-// tests) via ListWorkflows.
-func ensureWorkflowRegistered(ctx context.Context, client *dsgen.Client, content string) (string, uuid.UUID) {
-	const workflowName = "e2e-stub"
-	createReq := &dsgen.CreateWorkflowInlineRequest{Content: content}
-	createReq.Source.SetTo("e2e-test")
-
-	resp, err := client.CreateWorkflow(ctx, createReq)
-	Expect(err).ToNot(HaveOccurred(), "CreateWorkflow HTTP call should succeed")
-
-	switch r := resp.(type) {
-	case *dsgen.CreateWorkflowCreated:
-		wf := (*dsgen.RemediationWorkflow)(r)
-		return wf.WorkflowId.Value.String(), wf.WorkflowId.Value
-	case *dsgen.CreateWorkflowOK:
-		wf := (*dsgen.RemediationWorkflow)(r)
-		return wf.WorkflowId.Value.String(), wf.WorkflowId.Value
-	case *dsgen.CreateWorkflowConflict,
-		*dsgen.CreateWorkflowInternalServerError:
-		// 409: different content for same name+version (conflict)
-		// 500: parallel PK race — another process won the INSERT
-		// Both cases: the workflow exists in the DB, query it by name.
-		listResp, listErr := client.ListWorkflows(ctx, dsgen.ListWorkflowsParams{
-			WorkflowName: dsgen.NewOptString(workflowName),
-			Limit:        dsgen.NewOptInt(1),
-		})
-		listErr = ogenx.ToError(listResp, listErr)
-		Expect(listErr).ToNot(HaveOccurred(), "ListWorkflows should succeed for existing workflow")
-		listResult, ok := listResp.(*dsgen.WorkflowListResponse)
-		Expect(ok).To(BeTrue(), "Expected WorkflowListResponse, got %T", listResp)
-		Expect(listResult.Workflows).ToNot(BeEmpty(),
-			"Workflow '%s' returned %T but query found no results", workflowName, resp)
-		return listResult.Workflows[0].WorkflowId.Value.String(), listResult.Workflows[0].WorkflowId.Value
-	default:
-		Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
-		return "", uuid.Nil
+// ensureWorkflowRegistered creates a workflow directly via the Kubernetes API
+// (or reuses the existing CRD if already applied) and stamps its status the
+// same way AuthWebhook would, since this suite runs DataStorage without a live
+// AuthWebhook instance. #1661 Phase 55b: replaces the retired
+// POST /api/v1/workflows-based registration.
+func ensureWorkflowRegistered(ctx context.Context, _ *dsgen.Client, content string, workflowName ...string) (string, uuid.UUID) {
+	name := "workflow"
+	if len(workflowName) > 0 {
+		name = workflowName[0]
 	}
+	workflowIDStr, err := infrastructure.SeedWorkflowContentViaDirectCRDCreation(ctx, workflowCRDClient(), sharedNamespace, content, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "failed to seed workflow %s via direct CRD creation", name)
+
+	workflowID, err := uuid.Parse(workflowIDStr)
+	Expect(err).ToNot(HaveOccurred(), "workflow_id %q should be a valid UUID", workflowIDStr)
+	return workflowIDStr, workflowID
 }
 
 // postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs
@@ -175,15 +148,13 @@ func postAuditEventBatch(
 // Minimal Payload Constructors for E2E API Testing
 // These create minimal valid payloads to test DataStorage API functionality
 
-// newMinimalGatewayPayload builds a minimal gateway audit payload with a fixed
-// "alert" signal type (the only signal type used across all e2e/datastorage tests).
 func newMinimalGatewayPayload(alertName string) dsgen.AuditEventRequestEventData {
 	return dsgen.AuditEventRequestEventData{
 		Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 		GatewayAuditPayload: dsgen.GatewayAuditPayload{
 			EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 			SignalType:  dsgen.GatewayAuditPayloadSignalType("alert"),
-			SignalName:  alertName,
+			SignalName:   alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",
 		},

@@ -6,7 +6,7 @@
 **Target Version**: V1.0
 **Status**: Active
 **Date**: March 4, 2026
-**Version**: 1.1
+**Version**: 1.2
 
 **Authority**: This is the authoritative specification for the RemediationWorkflow CRD lifecycle, including CRD format, AuthWebhook behavior, DS integration, and status subresource semantics.
 
@@ -16,6 +16,7 @@
 - [DD-WEBHOOK-001](../architecture/decisions/DD-WEBHOOK-001-crd-webhook-requirements-matrix.md) -- CRD Webhook Requirements Matrix
 - [DD-WEBHOOK-003](../architecture/decisions/DD-WEBHOOK-003-webhook-complete-audit-pattern.md) -- Webhook audit pattern
 - [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) -- Workflow lifecycle interactions
+- [DD-WORKFLOW-018](../architecture/decisions/DD-WORKFLOW-018-etcd-single-source-of-truth.md) -- Storage architecture (etcd single source of truth, supersedes the dual-storage model)
 - [DD-WORKFLOW-012](../architecture/decisions/DD-WORKFLOW-012-workflow-immutability-constraints.md) -- Immutability constraints
 - [ADR-034](../architecture/decisions/ADR-034-unified-audit-table-design.md) -- Unified audit table
 
@@ -24,6 +25,14 @@
 ---
 
 ## Changelog
+
+### Version 1.2 (2026-07-14) — DD-WORKFLOW-018 / Issue #1661
+
+- Rewrote "Dual Storage Model" section as "Storage Model": etcd is now the sole source of truth; PostgreSQL is
+  audit-only. Removed the now-inaccurate "no reconciliation controller... manual intervention required" caveat --
+  a single source of truth has nothing to reconcile against.
+- Cross-references [DD-WORKFLOW-018](../architecture/decisions/DD-WORKFLOW-018-etcd-single-source-of-truth.md) as
+  authoritative for the storage architecture; this document remains authoritative for the CRD spec/lifecycle/RBAC.
 
 ### Version 1.1 (2026-04-21) — Issue #773
 
@@ -214,30 +223,41 @@ Operators creating/deleting `RemediationWorkflow` CRDs need standard Kubernetes 
 - `metadata.name`: Required, MaxLength=255 (workflow name)
 - `spec.version`: Required, MaxLength=50
 
-### DS-Level (Server-Side)
+### AuthWebhook-Level (Server-Side)
 
-DS performs additional validation when the AW forwards the content:
-- Schema parsing and structural validation (BR-WORKFLOW-004)
-- Action type FK validation against taxonomy
-- Unique constraint on `(workflow_name, version)` -- returns 409 on conflict (triggers re-enable)
-- Content hash computation for deduplication
+> **Revised by DD-WORKFLOW-018**: this validation now runs locally in AuthWebhook against etcd, not in DS against
+> PostgreSQL -- there is no DS round-trip on the admission path anymore. Renamed from "DS-Level" accordingly.
+
+AuthWebhook performs additional validation locally, against its own etcd-backed client:
+- Action type existence validation against `ActionType` CRDs (`.spec.name` field indexer, `CatalogStatus == Active`)
+- Content-hash/workflow-ID computation (deterministic, shared pure functions -- also used for deduplication)
+- Content-integrity/version-conflict check on `(workflow_name, version)` against existing CRDs -- returns 409 on
+  same-version-different-content conflict; version bump triggers cross-version supersession
 
 ---
 
-## Dual Storage Model
+## Storage Model
 
-Workflow data exists in two stores:
+> **Revised 2026-07-14 by [DD-WORKFLOW-018](../architecture/decisions/DD-WORKFLOW-018-etcd-single-source-of-truth.md)** (v1.2 changelog below). This section previously described a dual-storage model where PostgreSQL held an independently mutable catalog copy. That model is superseded.
+
+**etcd is the sole source of truth** for `RemediationWorkflow` CRD data. There is only one store:
 
 | Store | Contains | Source of Truth For |
 |-------|----------|---------------------|
-| **etcd** (Kubernetes) | CRD spec + status | Desired state, GitOps reconciliation |
-| **PostgreSQL** (Data Storage) | Catalog entry with embeddings, search index, content hash | Workflow discovery, execution, audit |
+| **etcd** (Kubernetes) | CRD spec + status | Everything: desired state, discovery, execution metadata, GitOps reconciliation |
 
-The AuthWebhook bridges these stores: CRD CREATE triggers DS catalog insert; CRD DELETE triggers DS catalog disable. There is no reconciliation controller in V1.0 -- if stores diverge, manual intervention is required.
+Data Storage (DS) maintains an **informer-backed, read-only in-memory cache** mirroring the `RemediationWorkflow`/`ActionType` CRDs in etcd, used for discovery/search/scoring. This cache is never written to by AuthWebhook or any other component -- it is rebuilt from a fresh `List` + continuous `Watch` against etcd on every DS startup, so it is always internally consistent with etcd by construction. PostgreSQL is used exclusively for the audit trail (`audit_events`, ADR-034) and on-demand aggregate queries (e.g., success-rate metrics) computed from that trail -- it holds no independently mutable copy of catalog state.
+
+The AuthWebhook no longer bridges to DS at all on the CRD admission path: content-hash/workflow-ID computation, ActionType-existence validation, and content-integrity/version-conflict checks all run locally in AW against its own etcd-backed client. `.status` is patched directly from that local decision. **There is no reconciliation controller because there is nothing to reconcile** -- a single source of truth cannot diverge from itself. See DD-WORKFLOW-018 for the full architecture and rationale (this is the resolution of the original "if stores diverge, manual intervention is required" risk called out in v1.0 of this document).
 
 ---
 
 ## Acceptance Criteria
+
+> **Note (2026-07-14)**: items 2, 7, 8 below describe the DS-bridge behavior being phased out by
+> [DD-WORKFLOW-018](../architecture/decisions/DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Issue #1661,
+> Changes 5/6). They remain accurate for the currently deployed behavior; they will be updated to reflect AW's
+> local etcd-native validation (no DS registration call) once that phase of the rollout ships.
 
 1. `RemediationWorkflow` CRD can be created via `kubectl apply` in `kubernaut-system` namespace
 2. CREATE triggers DS registration; CRD is rejected if DS registration fails
@@ -260,9 +280,10 @@ The AuthWebhook bridges these stores: CRD CREATE triggers DS catalog insert; CRD
 - [BR-WORKFLOW-004](./BR-WORKFLOW-004-workflow-schema-format.md) -- Schema format
 - [DD-WORKFLOW-012](../architecture/decisions/DD-WORKFLOW-012-workflow-immutability-constraints.md) -- Immutability
 - [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) -- Lifecycle
+- [DD-WORKFLOW-018](../architecture/decisions/DD-WORKFLOW-018-etcd-single-source-of-truth.md) -- Storage architecture (etcd single source of truth)
 - [Test Plan](../testing/299/TEST_PLAN.md) -- Phase 2 test plan
 
 ---
 
 **Document Status**: Active
-**Version**: 1.1
+**Version**: 1.2

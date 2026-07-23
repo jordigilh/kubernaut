@@ -18,8 +18,6 @@ package authwebhook_test
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -28,90 +26,27 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	sharedcontenthash "github.com/jordigilh/kubernaut/pkg/shared/contenthash"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// callRecord tracks the order and type of DS API calls.
-type callRecord struct {
-	Type string // "CreateActionType" or "CreateWorkflowInline"
-	Name string // action type name or workflow CRD name
-}
-
-// mockStartupDSClient records calls from the startup reconciler.
-type mockStartupDSClient struct {
-	mu           sync.Mutex
-	calls        []callRecord
-	failCount    int // number of times to fail before succeeding
-	currentFails int
-	atResult     *authwebhook.ActionTypeRegistrationResult
-	rwResult     *authwebhook.WorkflowRegistrationResult
-	alwaysFail   bool
-}
-
-func (m *mockStartupDSClient) CreateActionType(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.alwaysFail || m.currentFails < m.failCount {
-		m.currentFails++
-		return nil, fmt.Errorf("connection refused")
-	}
-	m.calls = append(m.calls, callRecord{Type: "CreateActionType", Name: name})
-	if m.atResult != nil {
-		return m.atResult, nil
-	}
-	return &authwebhook.ActionTypeRegistrationResult{ActionType: name, Status: "created"}, nil
-}
-
-func (m *mockStartupDSClient) UpdateActionType(_ context.Context, _ string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeUpdateResult, error) {
-	return &authwebhook.ActionTypeUpdateResult{}, nil
-}
-
-func (m *mockStartupDSClient) DisableActionType(_ context.Context, _ string, _ string) (*authwebhook.ActionTypeDisableResult, error) {
-	return &authwebhook.ActionTypeDisableResult{}, nil
-}
-
-func (m *mockStartupDSClient) ForceDisableActionType(_ context.Context, _ string, _ string, _ []string) (*authwebhook.ActionTypeDisableResult, error) {
-	return &authwebhook.ActionTypeDisableResult{}, nil
-}
-
-func (m *mockStartupDSClient) CreateWorkflowInline(_ context.Context, content, source, registeredBy string) (*authwebhook.WorkflowRegistrationResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.alwaysFail || m.currentFails < m.failCount {
-		m.currentFails++
-		return nil, fmt.Errorf("connection refused")
-	}
-	m.calls = append(m.calls, callRecord{Type: "CreateWorkflowInline", Name: source})
-	if m.rwResult != nil {
-		return m.rwResult, nil
-	}
-	return &authwebhook.WorkflowRegistrationResult{
-		WorkflowID:   "wf-uuid-001",
-		WorkflowName: "test-wf",
-		Version:      "1.0.0",
-		Status:       "Active",
-	}, nil
-}
-
-func (m *mockStartupDSClient) DisableWorkflow(_ context.Context, _, _, _ string) error {
-	return nil
-}
-
-func (m *mockStartupDSClient) GetActiveWorkflowCount(_ context.Context, _ string) (int, error) {
-	return 0, nil
-}
-
-func (m *mockStartupDSClient) getCalls() []callRecord {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make([]callRecord, len(m.calls))
-	copy(out, m.calls)
-	return out
-}
+// mockStartupDSClient is a placeholder passed to StartupReconciler.DSWorkflow.
+// #1661 Phase 55c: ActionType-side methods (CreateActionType, UpdateActionType,
+// DisableActionType, ForceDisableActionType) were removed once DS's ActionType
+// REST endpoints were deleted (DD-WORKFLOW-018) and StartupReconciler.DSActionType
+// was removed alongside them (Change 8d already made syncActionTypeCRD a pure
+// local computation with zero DS round-trips). CreateWorkflowInline/
+// DisableWorkflow/GetActiveWorkflowCount were removed earlier by #1661 Change
+// 8c/8d for the same reason on the Workflow side. WorkflowDSClient is still an
+// empty marker interface (interface{}), so this type needs zero methods to
+// satisfy it -- it exists only to give DSWorkflow a distinguishable non-nil
+// value in these tests, pending the equivalent DSWorkflow field removal in
+// Phase B.
+type mockStartupDSClient struct{}
 
 func makeActionTypeCRD(name, specName string) *atv1alpha1.ActionType {
 	return &atv1alpha1.ActionType{
@@ -143,10 +78,11 @@ func makeWorkflowCRD(name, actionType string) *rwv1alpha1.RemediationWorkflow {
 var _ = Describe("StartupReconciler (#548)", func() {
 
 	// ========================================
-	// UT-AW-548-001: Registers ActionType CRDs with DS
+	// UT-AW-548-001: Registers ActionType CRDs locally, zero DS calls
+	// (#1661 Change 8d)
 	// ========================================
-	Describe("UT-AW-548-001: Startup reconciler registers ActionType CRDs", func() {
-		It("should call CreateActionType for each ActionType CRD with registeredBy system:authwebhook-startup", func() {
+	Describe("UT-AW-548-001: Startup reconciler registers ActionType CRDs locally", func() {
+		It("should populate .status.registered/.status.catalogStatus for each ActionType CRD without calling DS", func() {
 			scheme := newTestScheme()
 			at1 := makeActionTypeCRD("at-1", "ScaleMemory")
 			at2 := makeActionTypeCRD("at-2", "RestartPod")
@@ -160,11 +96,10 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -172,20 +107,23 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			err := reconciler.Start(ctx)
 			Expect(err).NotTo(HaveOccurred())
 
-			calls := mockDS.getCalls()
-			atCalls := filterCalls(calls, "CreateActionType")
-			Expect(atCalls).To(HaveLen(2), "should register 2 ActionType CRDs")
-
-			names := []string{atCalls[0].Name, atCalls[1].Name}
-			Expect(names).To(ContainElements("ScaleMemory", "RestartPod"))
+			for _, name := range []string{"at-1", "at-2"} {
+				updated := &atv1alpha1.ActionType{}
+				Expect(k8sClient.Get(ctx, nsName(name), updated)).To(Succeed())
+				Expect(updated.Status.Registered).To(BeTrue(),
+					"should register locally with .status.registered = true")
+				Expect(string(updated.Status.CatalogStatus)).To(Equal("Active"))
+				Expect(updated.Status.RegisteredBy).To(Equal("system:authwebhook-startup"))
+			}
 		})
 	})
 
 	// ========================================
-	// UT-AW-548-002: Registers RemediationWorkflow CRDs with DS
+	// UT-AW-548-002: Syncs RemediationWorkflow CRD status locally, zero DS calls
+	// (#1661 Change 8c)
 	// ========================================
-	Describe("UT-AW-548-002: Startup reconciler registers RemediationWorkflow CRDs", func() {
-		It("should call CreateWorkflowInline for each RemediationWorkflow CRD", func() {
+	Describe("UT-AW-548-002: Startup reconciler syncs RemediationWorkflow CRDs locally", func() {
+		It("should populate .status.workflowId for each RemediationWorkflow CRD without calling DS", func() {
 			scheme := newTestScheme()
 			rw1 := makeWorkflowCRD("wf-1", "ScaleMemory")
 			rw2 := makeWorkflowCRD("wf-2", "RestartPod")
@@ -200,11 +138,10 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -212,17 +149,23 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			err := reconciler.Start(ctx)
 			Expect(err).NotTo(HaveOccurred())
 
-			calls := mockDS.getCalls()
-			rwCalls := filterCalls(calls, "CreateWorkflowInline")
-			Expect(rwCalls).To(HaveLen(3), "should register 3 RemediationWorkflow CRDs")
+			for _, name := range []string{"wf-1", "wf-2", "wf-3"} {
+				updated := &rwv1alpha1.RemediationWorkflow{}
+				Expect(k8sClient.Get(ctx, nsName(name), updated)).To(Succeed())
+				Expect(updated.Status.WorkflowID).NotTo(BeEmpty(),
+					"should register 3 RemediationWorkflow CRDs locally")
+			}
 		})
 	})
 
 	// ========================================
-	// UT-AW-548-003: ActionTypes registered before Workflows
+	// UT-AW-548-003: ActionTypes and Workflows both sync locally in sequence
+	// (#1661 Change 8c for Workflow, Change 8d for ActionType: neither phase
+	// calls DS anymore; what remains verifiable is that both of Start()'s
+	// sequential phases run to completion and stamp their respective CRDs.)
 	// ========================================
-	Describe("UT-AW-548-003: ActionTypes registered before Workflows (ordering)", func() {
-		It("should complete all CreateActionType calls before any CreateWorkflowInline call", func() {
+	Describe("UT-AW-548-003: ActionTypes and Workflows both sync locally in sequence", func() {
+		It("should complete Phase 1 (ActionType local sync) and Phase 2 (Workflow local sync) with zero DS calls", func() {
 			scheme := newTestScheme()
 			at1 := makeActionTypeCRD("at-1", "ScaleMemory")
 			rw1 := makeWorkflowCRD("wf-1", "ScaleMemory")
@@ -237,11 +180,10 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -249,29 +191,25 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			err := reconciler.Start(ctx)
 			Expect(err).NotTo(HaveOccurred())
 
-			calls := mockDS.getCalls()
-			Expect(calls).To(HaveLen(3))
+			updatedAT := &atv1alpha1.ActionType{}
+			Expect(k8sClient.Get(ctx, nsName("at-1"), updatedAT)).To(Succeed())
+			Expect(updatedAT.Status.Registered).To(BeTrue(),
+				"ActionType status should be populated locally once Phase 1 runs")
 
-			lastATIndex := -1
-			firstRWIndex := len(calls)
-			for i, c := range calls {
-				if c.Type == "CreateActionType" {
-					lastATIndex = i
-				}
-				if c.Type == "CreateWorkflowInline" && i < firstRWIndex {
-					firstRWIndex = i
-				}
+			for _, name := range []string{"wf-1", "wf-2"} {
+				updated := &rwv1alpha1.RemediationWorkflow{}
+				Expect(k8sClient.Get(ctx, nsName(name), updated)).To(Succeed())
+				Expect(updated.Status.WorkflowID).NotTo(BeEmpty(),
+					"workflow status should be populated locally once Phase 2 runs")
 			}
-			Expect(lastATIndex).To(BeNumerically("<", firstRWIndex),
-				"all ActionType calls must precede all Workflow calls, got calls: %v", calls)
 		})
 	})
 
 	// ========================================
-	// UT-AW-548-004: CRD status updated after registration
+	// UT-AW-548-004: CRD status updated after local registration (#1661 Change 8c)
 	// ========================================
-	Describe("UT-AW-548-004: CRD status updated after registration", func() {
-		It("should set catalogStatus=Active, workflowId, and registeredBy on RW CRD status", func() {
+	Describe("UT-AW-548-004: CRD status updated after local registration", func() {
+		It("should set catalogStatus=Active, a content-derived workflowId, and registeredBy on RW CRD status", func() {
 			scheme := newTestScheme()
 			rw := makeWorkflowCRD("wf-status", "ScaleMemory")
 
@@ -281,21 +219,16 @@ var _ = Describe("StartupReconciler (#548)", func() {
 				WithStatusSubresource(&atv1alpha1.ActionType{}, &rwv1alpha1.RemediationWorkflow{}).
 				Build()
 
-			mockDS := &mockStartupDSClient{
-				rwResult: &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:   "abc-123-det",
-					WorkflowName: "wf-status",
-					Version:      "1.0.0",
-					Status:       "Active",
-				},
-			}
+			// #1661 Change 8c: rwResult is no longer consulted -- workflowId
+			// is always AW's own local computation now, deliberately left
+			// unset here to prove that.
+			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -306,8 +239,10 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			updated := &rwv1alpha1.RemediationWorkflow{}
 			Expect(k8sClient.Get(ctx, nsName("wf-status"), updated)).To(Succeed())
 
-			Expect(updated.Status.WorkflowID).To(Equal("abc-123-det"),
-				"workflowId should be populated from DS response")
+			Expect(updated.Status.ContentHash).NotTo(BeEmpty(),
+				"contentHash should be populated from the local computation")
+			Expect(updated.Status.WorkflowID).To(Equal(sharedcontenthash.DeterministicUUID(updated.Status.ContentHash)),
+				"workflowId should be AW's own deterministic UUID derived from contentHash (#1661 Change 8a)")
 			Expect(string(updated.Status.CatalogStatus)).To(Equal("Active"),
 				"catalogStatus should be Active")
 			Expect(updated.Status.RegisteredBy).To(Equal("system:authwebhook-startup"),
@@ -317,75 +252,14 @@ var _ = Describe("StartupReconciler (#548)", func() {
 		})
 	})
 
-	// ========================================
-	// UT-AW-548-005: Retries with backoff when DS unavailable
-	// ========================================
-	Describe("UT-AW-548-005: Retries with backoff when DS unavailable", func() {
-		It("should retry until DS becomes available then complete successfully", func() {
-			scheme := newTestScheme()
-			at := makeActionTypeCRD("at-retry", "ScaleMemory")
-
-			k8sClient := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(at).
-				WithStatusSubresource(&atv1alpha1.ActionType{}, &rwv1alpha1.RemediationWorkflow{}).
-				Build()
-
-			mockDS := &mockStartupDSClient{failCount: 3}
-
-			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:      k8sClient,
-				DSWorkflow:     mockDS,
-				DSActionType:   mockDS,
-				Logger:         ctrl.Log.WithName("test"),
-				Timeout:        30 * time.Second,
-				InitialBackoff: 10 * time.Millisecond,
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			err := reconciler.Start(ctx)
-			Expect(err).NotTo(HaveOccurred())
-
-			calls := mockDS.getCalls()
-			atCalls := filterCalls(calls, "CreateActionType")
-			Expect(atCalls).To(HaveLen(1), "should eventually register the ActionType")
-		})
-	})
-
-	// ========================================
-	// UT-AW-548-006: Returns error when DS never responds
-	// ========================================
-	Describe("UT-AW-548-006: Returns error when DS never responds (blocks readiness)", func() {
-		It("should return an error after the timeout expires", func() {
-			scheme := newTestScheme()
-			at := makeActionTypeCRD("at-timeout", "ScaleMemory")
-
-			k8sClient := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(at).
-				WithStatusSubresource(&atv1alpha1.ActionType{}, &rwv1alpha1.RemediationWorkflow{}).
-				Build()
-
-			mockDS := &mockStartupDSClient{alwaysFail: true}
-
-			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:      k8sClient,
-				DSWorkflow:     mockDS,
-				DSActionType:   mockDS,
-				Logger:         ctrl.Log.WithName("test"),
-				Timeout:        500 * time.Millisecond,
-				InitialBackoff: 50 * time.Millisecond,
-			}
-
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			err := reconciler.Start(ctx)
-			Expect(err).To(HaveOccurred(), "should return error when DS is never available")
-			Expect(err.Error()).To(ContainSubstring("unavailable"),
-				"error should indicate DS unavailability")
-		})
-	})
+	// UT-AW-548-005 ("Retries with backoff when DS unavailable") and
+	// UT-AW-548-006 ("Returns error when DS never responds") are removed:
+	// #1661 Change 8d deleted syncActionTypeCRD's DS round-trip (and the
+	// deadline/backoff/retry machinery that only existed to survive DS being
+	// transiently unavailable) entirely, mirroring Change 8c's identical
+	// removal on the Workflow side (see startup_graceful_test.go, deleted).
+	// Start() no longer talks to DS at all, so there is nothing left for
+	// either scenario to exercise.
 
 	// ========================================
 	// UT-AW-548-007: Empty CRD lists handled gracefully
@@ -402,20 +276,16 @@ var _ = Describe("StartupReconciler (#548)", func() {
 			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			err := reconciler.Start(ctx)
 			Expect(err).NotTo(HaveOccurred())
-
-			calls := mockDS.getCalls()
-			Expect(calls).To(BeEmpty(), "no DS calls for empty CRD lists")
 		})
 	})
 
@@ -423,9 +293,14 @@ var _ = Describe("StartupReconciler (#548)", func() {
 	// UT-AW-548-008: Idempotent re-registration
 	// ========================================
 	Describe("UT-AW-548-008: Idempotent re-registration of already-synced CRDs", func() {
-		It("should update CRD status and complete without error for already-registered CRDs", func() {
+		It("should recompute the same local status and complete without error for already-registered CRDs", func() {
 			scheme := newTestScheme()
 			rw := makeWorkflowCRD("wf-idem", "ScaleMemory")
+			// Pre-populate status as if a previous startup run already
+			// synced this CRD -- re-running Start() must be idempotent.
+			rw.Status.WorkflowID = "stale-from-previous-run"
+			rw.Status.CatalogStatus = sharedtypes.CatalogStatusActive
+			rw.Status.PreviouslyExisted = true
 
 			k8sClient := fake.NewClientBuilder().
 				WithScheme(scheme).
@@ -433,22 +308,13 @@ var _ = Describe("StartupReconciler (#548)", func() {
 				WithStatusSubresource(&atv1alpha1.ActionType{}, &rwv1alpha1.RemediationWorkflow{}).
 				Build()
 
-			mockDS := &mockStartupDSClient{
-				rwResult: &authwebhook.WorkflowRegistrationResult{
-					WorkflowID:        "idem-uuid-001",
-					WorkflowName:      "wf-idem",
-					Version:           "1.0.0",
-					Status:            "Active",
-					PreviouslyExisted: true,
-				},
-			}
+			mockDS := &mockStartupDSClient{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("test"),
-				Timeout:      10 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("test"),
+				Timeout:    10 * time.Second,
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -458,21 +324,14 @@ var _ = Describe("StartupReconciler (#548)", func() {
 
 			updated := &rwv1alpha1.RemediationWorkflow{}
 			Expect(k8sClient.Get(ctx, nsName("wf-idem"), updated)).To(Succeed())
-			Expect(updated.Status.WorkflowID).To(Equal("idem-uuid-001"))
+			Expect(updated.Status.WorkflowID).To(Equal(sharedcontenthash.DeterministicUUID(updated.Status.ContentHash)),
+				"re-running Start() should overwrite the stale ID with the same deterministic computation")
 			Expect(string(updated.Status.CatalogStatus)).To(Equal("Active"))
+			Expect(updated.Status.PreviouslyExisted).To(BeFalse(),
+				"#1661 Change 8c: PreviouslyExisted is always false now -- there is no DS-side history to report")
 		})
 	})
 })
-
-func filterCalls(calls []callRecord, callType string) []callRecord {
-	var filtered []callRecord
-	for _, c := range calls {
-		if c.Type == callType {
-			filtered = append(filtered, c)
-		}
-	}
-	return filtered
-}
 
 func nsName(name string) types.NamespacedName {
 	return types.NamespacedName{Namespace: "default", Name: name}

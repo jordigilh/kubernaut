@@ -17,7 +17,6 @@ limitations under the License.
 package datastorage
 
 import (
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -35,8 +34,29 @@ import (
 // Authority: BR-WE-016 (EngineConfig Discriminator Pattern)
 // Authority: BR-WORKFLOW-005 (Float Parameter Type)
 // Test Plan: docs/testing/45/TEST_PLAN.md
-// Pattern: Real PostgreSQL database (no mocks)
+// Pattern: CRD-native seeding + shared informer cache (DD-WORKFLOW-018).
+//
+// #1661 Phase F: migrated off workflowRepo.Create (Postgres, zero production
+// callers post-Phase-B) to seedWorkflowCRD -- workflows are RemediationWorkflow
+// CRDs, read back via the cache-backed GetByID/List, not GetByNameAndVersion
+// (a dying Postgres-only method with no cache equivalent: DD-WORKFLOW-018
+// makes etcd metadata.name the sole identity, so "get by name+version" no
+// longer has a coexisting-versions concept to disambiguate).
 // ========================================
+
+// unwrapParameters extracts the flat parameter list from the
+// {"schema":{"parameters":[...]}} envelope that GetByID/List's cache-backed
+// path wraps parameters in (wrapCRDParameters, cache_convert.go) -- mirrors
+// the wire format ogen clients decode (DD-API-001).
+func unwrapParameters(raw *json.RawMessage) []models.WorkflowParameter {
+	var wrapper struct {
+		Schema struct {
+			Parameters []models.WorkflowParameter `json:"parameters"`
+		} `json:"schema"`
+	}
+	Expect(json.Unmarshal(*raw, &wrapper)).To(Succeed())
+	return wrapper.Schema.Parameters
+}
 
 var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func() {
 	var (
@@ -45,58 +65,28 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 	)
 
 	BeforeEach(func() {
-		workflowRepo = workflow.NewRepository(db, logger)
+		workflowRepo = newCachedWorkflowRepo()
 		testID = generateTestID()
 	})
 
 	Context("Create and retrieve with engineConfig", func() {
 		It("IT-WE-016-001: should store and retrieve engineConfig in catalog", func() {
 			workflowName := fmt.Sprintf("ansible-it-engineconfig-%s-%d", testID, time.Now().UnixNano())
-			content := "test-workflow-content"
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 			ansibleConfig := map[string]interface{}{
 				"playbookPath":    "playbooks/restart.yml",
 				"jobTemplateName": "restart-pod",
 				"inventoryName":   "production",
 			}
-			engineConfigJSON, err := json.Marshal(ansibleConfig)
-			Expect(err).ToNot(HaveOccurred())
-			rawEngineConfig := json.RawMessage(engineConfigJSON)
 
-			labels := models.MandatoryLabels{
-				Severity:    []string{"critical"},
-				Component:   []string{"v1/Pod"},
-				Environment: []string{"production"},
-				Priority:    "P0",
-			}
+			workflowID := seedWorkflowCRD(workflowCRDSpec{
+				Name:         workflowName,
+				ActionType:   "RestartPod",
+				Engine:       "ansible",
+				EngineConfig: ansibleConfig,
+			})
 
-			testWorkflow := &models.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				Version:         "v1.0.0",
-				SchemaVersion:   "1.0",
-				Name:            workflowName,
-				Description:     models.StructuredDescription{What: "Ansible workflow", WhenToUse: "Testing engineConfig"},
-				Content:         content,
-				ContentHash:     contentHash,
-				Labels:          labels,
-				CustomLabels:    models.CustomLabels{},
-				DetectedLabels:  models.DetectedLabels{},
-				Status:          "Active",
-				ExecutionEngine: models.ExecutionEngineAnsible,
-				EngineConfig:    &rawEngineConfig,
-				IsLatestVersion: true,
-				ActionType:      "RestartPod",
-			}
-
-			err = workflowRepo.Create(ctx, testWorkflow)
-			Expect(err).ToNot(HaveOccurred(), "Should persist workflow with engineConfig")
-
-			defer func() {
-				_, _ = db.ExecContext(ctx, `DELETE FROM remediation_workflow_catalog WHERE workflow_name = $1`, workflowName)
-			}()
-
-			retrieved, err := workflowRepo.GetByNameAndVersion(ctx, workflowName, "v1.0.0")
+			retrieved, err := workflowRepo.GetByID(ctx, workflowID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.ExecutionEngine).To(Equal(models.ExecutionEngineAnsible))
 			Expect(retrieved.EngineConfig).ToNot(BeNil(), "EngineConfig should be preserved after roundtrip")
@@ -113,41 +103,14 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 
 		It("IT-WE-016-001b: should store tekton workflow without engineConfig", func() {
 			workflowName := fmt.Sprintf("tekton-it-no-engineconfig-%s-%d", testID, time.Now().UnixNano())
-			content := "test-tekton-content"
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-			labels := models.MandatoryLabels{
-				Severity:    []string{"high"},
-				Component:   []string{"v1/Pod"},
-				Environment: []string{"production"},
-				Priority:    "P1",
-			}
+			workflowID := seedWorkflowCRD(workflowCRDSpec{
+				Name:       workflowName,
+				ActionType: "RestartPod",
+				Engine:     "tekton",
+			})
 
-			testWorkflow := &models.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				Version:         "v1.0.0",
-				SchemaVersion:   "1.0",
-				Name:            workflowName,
-				Description:     models.StructuredDescription{What: "Tekton workflow", WhenToUse: "Testing no engineConfig"},
-				Content:         content,
-				ContentHash:     contentHash,
-				Labels:          labels,
-				CustomLabels:    models.CustomLabels{},
-				DetectedLabels:  models.DetectedLabels{},
-				Status:          "Active",
-				ExecutionEngine: models.ExecutionEngineTekton,
-				IsLatestVersion: true,
-				ActionType:      "RestartPod",
-			}
-
-			err := workflowRepo.Create(ctx, testWorkflow)
-			Expect(err).ToNot(HaveOccurred())
-
-			defer func() {
-				_, _ = db.ExecContext(ctx, `DELETE FROM remediation_workflow_catalog WHERE workflow_name = $1`, workflowName)
-			}()
-
-			retrieved, err := workflowRepo.GetByNameAndVersion(ctx, workflowName, "v1.0.0")
+			retrieved, err := workflowRepo.GetByID(ctx, workflowID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.ExecutionEngine).To(Equal(models.ExecutionEngineTekton))
 			Expect(retrieved.EngineConfig).To(BeNil(), "Tekton workflows should have nil engineConfig")
@@ -159,41 +122,18 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 	Context("List and search with engineConfig", func() {
 		It("IT-WE-016-002: should return engineConfig in List results", func() {
 			workflowName := fmt.Sprintf("ansible-it-list-%s-%d", testID, time.Now().UnixNano())
-			content := "test-list-content"
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
 			ansibleConfig := map[string]interface{}{
 				"playbookPath":    "playbooks/scale-down.yml",
 				"jobTemplateName": "scale-down-svc",
 			}
-			engineConfigJSON, err := json.Marshal(ansibleConfig)
-			Expect(err).ToNot(HaveOccurred())
-			rawEngineConfig := json.RawMessage(engineConfigJSON)
 
-			testWorkflow := &models.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				Version:         "v1.0.0",
-				SchemaVersion:   "1.0",
-				Name:            workflowName,
-				Description:     models.StructuredDescription{What: "List test", WhenToUse: "IT-WE-016-002"},
-				Content:         content,
-				ContentHash:     contentHash,
-				Labels:          models.MandatoryLabels{Severity: []string{"critical"}, Component: []string{"v1/Pod"}, Environment: []string{"production"}, Priority: "P0"},
-				CustomLabels:    models.CustomLabels{},
-				DetectedLabels:  models.DetectedLabels{},
-				Status:          "Active",
-				ExecutionEngine: models.ExecutionEngineAnsible,
-				EngineConfig:    &rawEngineConfig,
-				IsLatestVersion: true,
-				ActionType:      "ScaleReplicas",
-			}
-
-			err = workflowRepo.Create(ctx, testWorkflow)
-			Expect(err).ToNot(HaveOccurred())
-
-			defer func() {
-				_, _ = db.ExecContext(ctx, `DELETE FROM remediation_workflow_catalog WHERE workflow_name = $1`, workflowName)
-			}()
+			seedWorkflowCRD(workflowCRDSpec{
+				Name:         workflowName,
+				ActionType:   "ScaleReplicas",
+				Engine:       "ansible",
+				EngineConfig: ansibleConfig,
+			})
 
 			filters := &models.WorkflowSearchFilters{WorkflowName: workflowName}
 			results, total, err := workflowRepo.List(ctx, filters, 50, 0)
@@ -214,19 +154,17 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 	Context("Float parameter persistence", func() {
 		It("IT-WF-005-001: should store and retrieve workflow with float parameters", func() {
 			workflowName := fmt.Sprintf("float-param-it-%s-%d", testID, time.Now().UnixNano())
-			content := "test-float-content"
-			contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
 
-			minThreshold := 0.1
-			maxThreshold := 99.9
+			minVal := 0.1
+			maxVal := 99.9
 			params := []models.WorkflowParameter{
 				{
 					Name:        "cpu_threshold",
 					Type:        "float",
 					Description: "CPU threshold percentage",
 					Required:    true,
-					Minimum:     &minThreshold,
-					Maximum:     &maxThreshold,
+					Minimum:     &minVal,
+					Maximum:     &maxVal,
 				},
 				{
 					Name:        "timeout",
@@ -236,40 +174,16 @@ var _ = Describe("EngineConfig Workflow Catalog Integration (BR-WE-016)", func()
 				},
 			}
 
-			paramsJSON, err := json.Marshal(params)
+			workflowID := seedWorkflowCRD(workflowCRDSpec{
+				Name:       workflowName,
+				ActionType: "IncreaseCPULimits",
+				Engine:     "tekton",
+				Parameters: params,
+			})
+
+			retrieved, err := workflowRepo.GetByID(ctx, workflowID)
 			Expect(err).ToNot(HaveOccurred())
-			rawParams := json.RawMessage(paramsJSON)
-
-			testWorkflow := &models.RemediationWorkflow{
-				WorkflowName:    workflowName,
-				Version:         "v1.0.0",
-				SchemaVersion:   "1.0",
-				Name:            workflowName,
-				Description:     models.StructuredDescription{What: "Float params test", WhenToUse: "IT-WF-005-001"},
-				Content:         content,
-				ContentHash:     contentHash,
-				Labels:          models.MandatoryLabels{Severity: []string{"high"}, Component: []string{"v1/Pod"}, Environment: []string{"production"}, Priority: "P1"},
-				CustomLabels:    models.CustomLabels{},
-				DetectedLabels:  models.DetectedLabels{},
-				Status:          "Active",
-				ExecutionEngine: models.ExecutionEngineTekton,
-				Parameters:      &rawParams,
-				IsLatestVersion: true,
-				ActionType:      "IncreaseCPULimits",
-			}
-
-			err = workflowRepo.Create(ctx, testWorkflow)
-			Expect(err).ToNot(HaveOccurred(), "Should persist workflow with float parameters")
-
-			defer func() {
-				_, _ = db.ExecContext(ctx, `DELETE FROM remediation_workflow_catalog WHERE workflow_name = $1`, workflowName)
-			}()
-
-			retrieved, err := workflowRepo.GetByNameAndVersion(ctx, workflowName, "v1.0.0")
-			Expect(err).ToNot(HaveOccurred())
-			var retrievedParams []models.WorkflowParameter
-			err = json.Unmarshal(*retrieved.Parameters, &retrievedParams)
-			Expect(err).ToNot(HaveOccurred())
+			retrievedParams := unwrapParameters(retrieved.Parameters)
 			Expect(retrievedParams).To(HaveLen(2))
 
 			cpuParam := retrievedParams[0]

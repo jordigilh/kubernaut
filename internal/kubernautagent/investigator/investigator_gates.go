@@ -378,6 +378,26 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 	if result == nil || v == nil || result.WorkflowID == "" {
 		return
 	}
+	if !v.IsAllowed(result.WorkflowID) {
+		// DD-KA-001 Step 1 (Workflow Existence) is unconditional: a
+		// workflow_id that does not resolve against the DS catalog allowlist
+		// must never survive as structured data, even when HumanReviewNeeded
+		// was already set to true by an earlier signal (e.g.
+		// investigation_outcome=inconclusive), which caused
+		// Validator.Validate() to short-circuit its own allowlist check
+		// before ever reaching this function. Clearing WorkflowID here is
+		// sufficient: mapInvestigationResultToResponse only emits
+		// selected_workflow at all when WorkflowID != "" (Issue #1711).
+		result.WorkflowID = ""
+		return
+	}
+
+	// meta may be legitimately absent even for an allowed ID: this happens
+	// only in test fixtures that populate the allowlist without a matching
+	// SetWorkflowMeta call. Production always sets both from the same
+	// catalog-fetch loop (dsCatalogFetcher.FetchValidator), so an allowed ID
+	// there always has metadata. Treat this as best-effort enrichment rather
+	// than a second existence check (Issue #1711 cascade fix-forward).
 	meta, ok := v.GetWorkflowMeta(result.WorkflowID)
 	if !ok {
 		return
@@ -395,6 +415,22 @@ func enrichFromCatalog(result *katypes.InvestigationResult, v *parser.Validator)
 		result.ServiceAccountName = meta.ServiceAccountName
 	}
 	result.WorkflowVersion = meta.Version
+
+	// Issue #1661 Change 11a (DD-WORKFLOW-018): catalog-authoritative, not
+	// LLM-suppliable -- always overwrite from meta rather than the
+	// if-empty guards above, mirroring WorkflowVersion's unconditional
+	// assignment.
+	result.Dependencies = meta.Dependencies
+	result.Resources = meta.Resources
+	result.DeclaredParameterNames = meta.DeclaredParameterNames
+
+	// Issue #1661 Change 12: ActionType/WorkflowName are likewise
+	// catalog-authoritative -- always overwrite, same pattern as
+	// Dependencies/Resources/DeclaredParameterNames above. This closes the
+	// gap where KA never populated either field, breaking
+	// workflowexecution.execution.started's audit payload (Change 11f).
+	result.ActionType = meta.ActionType
+	result.WorkflowName = meta.WorkflowName
 }
 
 // gvrToAPIVersion converts a GroupVersionResource to the apiVersion string

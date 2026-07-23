@@ -351,90 +351,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
   /api/v1/workflows:
-    post:
-      tags:
-        - Workflow Catalog API
-      summary: Register workflow from inline schema
-      description: |
-        Register a new workflow by providing the raw YAML content of a
-        RemediationWorkflow CRD. Data Storage parses and validates the schema,
-        then populates all catalog fields from it.
-
-        If the workflow was previously registered and disabled (via CRD deletion),
-        it is re-enabled and a 200 response is returned instead of 201.
-
-        **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
-        **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration)
-      operationId: createWorkflow
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateWorkflowInlineRequest'
-      responses:
-        '200':
-          description: |
-            Workflow re-enabled. The workflow was previously disabled and has been
-            re-activated with the provided schema content.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '201':
-          description: Workflow created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: |
-            Validation error - schema invalid, unknown action_type, missing mandatory labels,
-            or missing required fields.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '401':
-          description: |
-            Authentication failed - Invalid or missing Bearer token.
-            
-            **Authority**: DD-AUTH-014 (Middleware-based authentication)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '403':
-          description: |
-            Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.
-            
-            **Authority**: DD-AUTH-014 (Middleware-based authorization)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '409':
-          description: |
-            Conflict - Duplicate workflow.
-            Workflow with same workflow_name and version already exists in active state.
-            
-            **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '500':
-          description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
     get:
       tags:
         - Workflow Catalog API
@@ -601,355 +517,6 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/RFC7807Problem'
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Update workflow mutable fields
-      description: |
-        Update mutable workflow fields (status, metrics).
-        Immutable fields (description, content, labels) require creating a new version.
-
-        **Design Decision**: DD-WORKFLOW-012 (Mutable vs Immutable Fields)
-      operationId: updateWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowUpdateRequest'
-      responses:
-        '200':
-          description: Workflow updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Validation error (attempted to update immutable field)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows/{workflow_id}/disable:
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Disable workflow
-      description: |
-        Convenience endpoint to disable a workflow (soft delete).
-        Sets status to 'disabled' with timestamp and reason.
-
-        **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4
-      operationId: disableWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowLifecycleRequest'
-      responses:
-        '200':
-          description: Workflow disabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Missing required field (reason)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows/{workflow_id}/enable:
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Enable workflow
-      description: |
-        Re-enable a previously disabled or deprecated workflow.
-        Sets status to 'active' with timestamp and reason.
-
-        **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints)
-      operationId: enableWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowLifecycleRequest'
-      responses:
-        '200':
-          description: Workflow enabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Missing required field (reason)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows/{workflow_id}/deprecate:
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Deprecate workflow
-      description: |
-        Mark a workflow as deprecated. Deprecated workflows are excluded from
-        discovery results but remain in the catalog for audit history.
-
-        **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints)
-      operationId: deprecateWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowLifecycleRequest'
-      responses:
-        '200':
-          description: Workflow deprecated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Missing required field (reason)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/action-types:
-    post:
-      tags:
-        - ActionType Taxonomy API
-      summary: Create or re-enable an action type
-      description: |
-        Idempotent CREATE: creates a new action type, returns existing if active,
-        or re-enables if previously disabled.
-
-        **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
-        **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design)
-      operationId: createActionType
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActionTypeCreateRequest'
-      responses:
-        '201':
-          description: Action type created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeCreateResponse'
-        '200':
-          description: Action type already exists (NOOP) or re-enabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeCreateResponse'
-        '400':
-          description: Validation error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-  /api/v1/action-types/{name}:
-    patch:
-      tags:
-        - ActionType Taxonomy API
-      summary: Update action type description
-      description: |
-        Updates the description fields of an active action type.
-        Only spec.description is mutable; spec.name is immutable.
-
-        **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit)
-      operationId: updateActionType
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: "PascalCase action type name (e.g., RestartPod)"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActionTypeUpdateRequest'
-      responses:
-        '200':
-          description: Action type description updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeUpdateResponse'
-        '404':
-          description: Action type not found or disabled
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-  /api/v1/action-types/{name}/disable:
-    patch:
-      tags:
-        - ActionType Taxonomy API
-      summary: Soft-disable an action type
-      description: |
-        Soft-disables an action type. Denied with 409 if active workflows reference it.
-        The denial response includes the count and names of dependent workflows.
-
-        **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard)
-      operationId: disableActionType
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: "PascalCase action type name (e.g., RestartPod)"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActionTypeDisableRequest'
-      responses:
-        '200':
-          description: Action type disabled successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeDisableResponse'
-        '400':
-          description: Invalid request body
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Action type not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '409':
-          description: Cannot disable — active workflows depend on this action type, or action type already disabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeDisableDeniedResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
   /api/v1/action-types/{name}/workflow-count:
     get:
       tags:
@@ -3491,31 +3058,6 @@ components:
           additionalProperties: true
           description: "Workflow parameter schema (JSONB) - describes expected parameters"
 
-    CreateWorkflowInlineRequest:
-      type: object
-      required:
-        - content
-      properties:
-        content:
-          type: string
-          description: |
-            Raw YAML content of the RemediationWorkflow CRD. Data Storage
-            parses the CRD envelope (apiVersion/kind/metadata/spec), validates
-            the spec, and populates all catalog fields from it.
-          example: "apiVersion: kubernaut.ai/v1alpha1\nkind: RemediationWorkflow\nmetadata:\n  name: scale-memory\nspec:\n  ..."
-        source:
-          type: string
-          description: |
-            Registration source. Set to "crd" when the request originates from
-            the Auth Webhook on CRD creation, or "api" for direct API calls.
-          example: "crd"
-        registeredBy:
-          type: string
-          description: |
-            Identity of the user or service account that triggered the registration.
-            Populated from AdmissionReview.request.userInfo.username when source is "crd".
-          example: "admin@example.com"
-
     RemediationWorkflow:
       type: object
       required:
@@ -3697,46 +3239,6 @@ components:
           type: integer
         total:
           type: integer
-
-    WorkflowUpdateRequest:
-      type: object
-      description: "Update mutable workflow fields only (DD-WORKFLOW-012)"
-      properties:
-        status:
-          type: string
-          enum: [Active, Disabled, Deprecated, Archived]
-          description: "Workflow status (mutable)"
-        disabledBy:
-          type: string
-          description: "Who disabled the workflow"
-        disabledReason:
-          type: string
-          description: "Why the workflow was disabled"
-
-    WorkflowLifecycleRequest:
-      type: object
-      description: "Request for workflow lifecycle operations (enable, disable, deprecate). Reason is mandatory per DD-WORKFLOW-017 Phase 4.4."
-      required:
-        - reason
-      properties:
-        reason:
-          type: string
-          minLength: 1
-          description: "Why the lifecycle operation is being performed (mandatory)"
-        updatedBy:
-          type: string
-          description: "Who is performing the operation"
-
-    WorkflowDisableRequest:
-      type: object
-      description: "Convenience request to disable a workflow (deprecated: use WorkflowLifecycleRequest)"
-      properties:
-        reason:
-          type: string
-          description: "Why the workflow is being disabled"
-        updatedBy:
-          type: string
-          description: "Who is disabling the workflow"
 
     AuditExportResponse:
       type: object
@@ -4428,6 +3930,16 @@ components:
           type: string
           description: Human-readable name of the selected workflow from the DataStorage catalog. Optional; present only when the catalog provides a name.
           example: "fix-security-context-job"
+        action_type:
+          type: string
+          description: |
+            Action type from the DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Catalog-authoritative:
+            resolved by KA at workflow-selection time, carried on AIAnalysis.Status.SelectedWorkflow, and copied
+            verbatim by RemediationOrchestrator onto the immutable WorkflowExecution.Spec.WorkflowRef snapshot
+            (mirrors ExecutionEngine/ServiceAccountName/WorkflowName; DD-WORKFLOW-018). Audit-readability only, so
+            started/completed/failed events are human-readable without joining back to the
+            remediationworkflow.admitted.create event by workflow_id (#1661 Change 3).
+          example: "ScaleReplicas"
         target_resource:
           type: string
           description: Kubernetes resource being acted upon (format depends on scope)
@@ -4769,6 +4281,188 @@ components:
           type: string
           description: Reason for denial (only set when action=denied)
           example: "data storage registration failed"
+        workflow_content:
+          $ref: '#/components/schemas/RemediationWorkflowContentPayload'
+        content_hash:
+          type: string
+          description: |
+            SHA-256 hash of workflow_content, computed locally by AuthWebhook over
+            the same clean CRD content it sends to DataStorage (identical algorithm
+            to DataStorage's own content_hash / deterministic workflow_id
+            derivation, #1661 Change 8a). Set whenever workflow_content is set,
+            including on denied events (no DataStorage round-trip required).
+          example: "3f786850e387550fdab836ed7e6dc881de23001bd934f0c64dd25f4f169eb5f"
+
+    RemediationWorkflowContentPayload:
+      type: object
+      description: |
+        Full RemediationWorkflow spec snapshot, mirroring RemediationWorkflowSpec
+        (api/remediationworkflow/v1alpha1/remediationworkflow_types.go) field-for-field
+        so the audit trail can reconstruct the exact workflow definition independent of
+        etcd or DataStorage's cache (#1661). Deliberately more permissive than
+        DataStorage's own search/discovery schemas (e.g. MandatoryLabels' enums) —
+        audit capture must never fail just because content the CRD itself allows falls
+        outside an unrelated endpoint's stricter validation.
+      required: [version, description, actionType, labels, execution, parameters]
+      properties:
+        version:
+          type: string
+          description: "Semantic version (e.g., 1.0.0). spec.version."
+          example: "1.0.0"
+        description:
+          $ref: '#/components/schemas/StructuredDescription'
+        actionType:
+          type: string
+          description: "Action type from the taxonomy (PascalCase). spec.actionType."
+          example: "ScaleReplicas"
+        labels:
+          $ref: '#/components/schemas/RemediationWorkflowContentLabels'
+        customLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Operator-defined key-value labels for additional filtering. spec.customLabels."
+        detectedLabels:
+          description: |
+            Author-declared infrastructure requirements. spec.detectedLabels — the CRD
+            declares this `+kubebuilder:pruning:PreserveUnknownFields` (opaque JSON), so
+            it is captured verbatim rather than forced into a rigid shape.
+        execution:
+          $ref: '#/components/schemas/RemediationWorkflowContentExecution'
+        dependencies:
+          $ref: '#/components/schemas/RemediationWorkflowContentDependencies'
+        maintainers:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentMaintainer'
+          description: "spec.maintainers."
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentParameter'
+          description: "Workflow input parameters. spec.parameters."
+        rollbackParameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentParameter'
+          description: "Parameters needed for rollback. spec.rollbackParameters."
+
+    RemediationWorkflowContentLabels:
+      type: object
+      description: |
+        Mandatory matching/filtering criteria. spec.labels. Structurally mirrors
+        RemediationWorkflowLabels without DS's search-endpoint enum restrictions
+        (MandatoryLabels) — the CRD itself does not enum-constrain these values.
+      required: [severity, environment, component, priority]
+      properties:
+        severity:
+          type: array
+          items:
+            type: string
+          description: "Severity level(s) this workflow is designed for."
+        environment:
+          type: array
+          items:
+            type: string
+          description: "Target environment(s)."
+        component:
+          type: array
+          items:
+            type: string
+          description: "Kubernetes resource type(s)."
+        priority:
+          type: string
+          description: "Business priority level."
+        cluster:
+          type: array
+          items:
+            type: string
+          description: "BR-FLEET-003 (#1511): cluster classification(s) this workflow is eligible for."
+
+    RemediationWorkflowContentExecution:
+      type: object
+      description: "Execution engine configuration. spec.execution."
+      properties:
+        engine:
+          type: string
+          description: "Execution engine type (tekton, job, ansible)."
+        bundle:
+          type: string
+          description: "Execution bundle or container image reference."
+        bundleDigest:
+          type: string
+          description: "Digest of the execution bundle."
+        engineConfig:
+          description: |
+            Engine-specific configuration. spec.execution.engineConfig — opaque JSON
+            (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level), captured
+            verbatim.
+        serviceAccountName:
+          type: string
+          description: "Pre-existing ServiceAccount for the execution resource."
+
+    RemediationWorkflowContentDependencies:
+      type: object
+      description: "Infrastructure resources required by the workflow. spec.dependencies."
+      properties:
+        secrets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentResourceDependency'
+        configMaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentResourceDependency'
+
+    RemediationWorkflowContentResourceDependency:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    RemediationWorkflowContentMaintainer:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+
+    RemediationWorkflowContentParameter:
+      type: object
+      description: "Workflow input/rollback parameter definition. spec.parameters[] / spec.rollbackParameters[]."
+      required: [name, type, required, description]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          description: "Parameter type (string, integer, boolean, array, float)."
+        required:
+          type: boolean
+        description:
+          type: string
+        enum:
+          type: array
+          items:
+            type: string
+        pattern:
+          type: string
+        minimum:
+          type: number
+        maximum:
+          type: number
+        default:
+          description: |
+            Default value. spec.parameters[].default — opaque JSON
+            (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level; may be any
+            JSON type, not just an object), captured verbatim.
+        dependsOn:
+          type: array
+          items:
+            type: string
 
     AuthwebhookWorkflowRegistrationFailedPayload:
       type: object

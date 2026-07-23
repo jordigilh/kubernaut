@@ -17,9 +17,6 @@ limitations under the License.
 package datastorage
 
 import (
-	"crypto/sha256"
-	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -36,9 +33,14 @@ import (
 // Test IDs: IT-DS-1511-001 through IT-DS-1511-003
 //
 // These tests validate that the optional `cluster` filter dimension executes
-// correctly against real PostgreSQL: exact match, exclusion of unlabeled
-// workflows once the filter is active, and zero behavioral change when no
-// `cluster` param is supplied (non-fleet deployments, backward compatible).
+// correctly against the cache-backed discovery path: exact match, exclusion
+// of unlabeled workflows once the filter is active, and zero behavioral
+// change when no `cluster` param is supplied (non-fleet deployments,
+// backward compatible).
+//
+// #1661 Phase F: migrated off workflowRepo.Create (Postgres, zero production
+// callers post-Phase-B) to seedWorkflowCRD -- DD-WORKFLOW-018 (etcd sole
+// source of truth).
 // ========================================
 
 var _ = Describe("Workflow Discovery: Cluster Classification Filter (BR-FLEET-003, #1511)", Serial, func() {
@@ -48,57 +50,24 @@ var _ = Describe("Workflow Discovery: Cluster Classification Filter (BR-FLEET-00
 	)
 
 	BeforeEach(func() {
-		workflowRepo = workflow.NewRepository(db, logger)
+		workflowRepo = newCachedWorkflowRepo()
 		testID = generateTestID()
-
-		_, err := db.ExecContext(ctx, "TRUNCATE TABLE remediation_workflow_catalog")
-		Expect(err).ToNot(HaveOccurred(), "Workflow catalog truncation should succeed")
+		// #1661: this Describe asserts unscoped/global counts -- close the
+		// cross-process cache lag race, see waitForWorkflowCacheConverged's
+		// doc comment (workflow_crd_seeding_helper_test.go).
+		waitForWorkflowCacheConverged()
 	})
 
-	AfterEach(func() {
-		if db != nil {
-			_, _ = db.ExecContext(ctx,
-				"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1",
-				fmt.Sprintf("wf-1511-%s%%", testID))
-		}
-	})
-
-	createWorkflow := func(name, actionType string, cluster []string) *models.RemediationWorkflow {
-		content := fmt.Sprintf("apiVersion: v1\nkind: Workflow\nname: %s", name)
-		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-
-		wf := &models.RemediationWorkflow{
-			WorkflowName:  fmt.Sprintf("wf-1511-%s-%s", testID, name),
-			Version:       "v1.0.0",
-			SchemaVersion: "1.0",
-			Name:          name,
-			Description: models.StructuredDescription{
-				What:      fmt.Sprintf("Test workflow %s for cluster classification filtering", name),
-				WhenToUse: "Testing",
-			},
-			Content:     content,
-			ContentHash: hash,
-			Labels: models.MandatoryLabels{
-				Severity:    []string{"critical"},
-				Component:   []string{"v1/Pod"},
-				Environment: []string{"production"},
-				Priority:    "P0",
-				Cluster:     cluster,
-			},
-			ExecutionEngine: models.ExecutionEngineTekton,
-			Status:          "Active",
-			IsLatestVersion: true,
-			ActionType:      actionType,
-		}
-
-		err := workflowRepo.Create(ctx, wf)
-		Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed for %s", name)
-		Expect(wf.WorkflowID).ToNot(BeEmpty(), "Workflow ID should be generated")
-		return wf
+	createWorkflow := func(name, actionType string, cluster []string) string {
+		return seedWorkflowCRD(workflowCRDSpec{
+			Name:       testID + "-" + name,
+			ActionType: actionType,
+			Cluster:    cluster,
+		})
 	}
 
 	// ========================================
-	// IT-DS-1511-001: cluster filter executes against real PostgreSQL, exact match (AC-4)
+	// IT-DS-1511-001: cluster filter executes against the cache-backed discovery path, exact match (AC-4)
 	// ========================================
 	Describe("IT-DS-1511-001: cluster filter, exact match", func() {
 		It("returns only the workflow labeled for the requested cluster classification", func() {
@@ -109,7 +78,7 @@ var _ = Describe("Workflow Discovery: Cluster Classification Filter (BR-FLEET-00
 				Severity:    "critical",
 				Component:   "v1/Pod",
 				Environment: "production",
-				Priority:    "P0",
+				Priority:    "P1",
 				Cluster:     "production",
 			}
 			result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
@@ -138,7 +107,7 @@ var _ = Describe("Workflow Discovery: Cluster Classification Filter (BR-FLEET-00
 				Severity:    "critical",
 				Component:   "v1/Pod",
 				Environment: "production",
-				Priority:    "P0",
+				Priority:    "P1",
 				Cluster:     "production",
 			}
 			result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
@@ -156,7 +125,7 @@ var _ = Describe("Workflow Discovery: Cluster Classification Filter (BR-FLEET-00
 				Severity:    "critical",
 				Component:   "v1/Pod",
 				Environment: "production",
-				Priority:    "P0",
+				Priority:    "P1",
 				Cluster:     "staging-eu",
 			}
 			result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
@@ -180,7 +149,7 @@ var _ = Describe("Workflow Discovery: Cluster Classification Filter (BR-FLEET-00
 				Severity:    "critical",
 				Component:   "v1/Pod",
 				Environment: "production",
-				Priority:    "P0",
+				Priority:    "P1",
 				// Cluster intentionally omitted -- simulates a non-fleet deployment.
 			}
 			result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)

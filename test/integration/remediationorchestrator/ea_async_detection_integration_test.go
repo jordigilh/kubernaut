@@ -77,10 +77,16 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.95,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.95,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Config drift detected",
@@ -249,10 +255,16 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-proactive-fix",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.90,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-proactive-fix",
+				WorkflowName:    "wf-proactive-fix",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.90,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Predicted OOM kill based on memory trend",

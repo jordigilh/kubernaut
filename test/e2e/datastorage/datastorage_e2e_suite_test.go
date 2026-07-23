@@ -40,11 +40,6 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
-// goconst dedup: test-fixture literals deduplicated below.
-const (
-	datastorageE2e = "datastorage-e2e"
-)
-
 // Test suite for Data Storage E2E tests
 // This suite sets up a complete production-like environment:
 // - Kind cluster (2 nodes: 1 control-plane + 1 worker) with NodePort exposure
@@ -112,7 +107,7 @@ var (
 	testDB *sql.DB
 
 	// Shared namespace for all tests (services deployed ONCE)
-	sharedNamespace string = datastorageE2e
+	sharedNamespace string = "datastorage-e2e"
 
 	// Track if any test failed (for cluster cleanup decision)
 	anyTestFailed bool
@@ -167,7 +162,7 @@ var _ = SynchronizedBeforeSuite(
 		logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 		// Set cluster configuration
-		clusterName = datastorageE2e
+		clusterName = "datastorage-e2e"
 		homeDir, err := os.UserHomeDir()
 		Expect(err).ToNot(HaveOccurred())
 		// Use isolated kubeconfig path per TESTING_GUIDELINES.md section "Kubeconfig Isolation Policy"
@@ -218,7 +213,7 @@ var _ = SynchronizedBeforeSuite(
 		// DD-API-001 + DD-AUTH-014: Initialize OpenAPI client with ServiceAccount authentication
 		logger.Info("📋 DD-API-001 + DD-AUTH-014: Creating ServiceAccount for E2E tests...")
 		e2eSAName := "datastorage-e2e-client"
-		testNamespace := datastorageE2e
+		testNamespace := sharedNamespace
 		err = infrastructure.CreateE2EServiceAccountWithDataStorageAccess(
 			ctx,
 			testNamespace,
@@ -254,8 +249,14 @@ var _ = SynchronizedBeforeSuite(
 		)
 		Expect(err).ToNot(HaveOccurred(), "Failed to create DataStorage OpenAPI client")
 
-		// DD-WORKFLOW-016: Seed action types before any workflow operations (FK constraint)
-		Expect(infrastructure.SeedActionTypesViaAPI(ctx, DSClient, GinkgoWriter)).To(Succeed(), "Failed to seed action types")
+		// DD-WORKFLOW-016: Seed action types before any workflow operations.
+		// #1661 Phase 55c: Postgres-backed seeding removed alongside DS's
+		// createWorkflow/createActionType REST endpoints (DD-WORKFLOW-018 --
+		// AuthWebhook is the sole write path). Every spec in this suite now
+		// registers workflows via direct CRD creation (ensureWorkflowRegistered,
+		// helpers_test.go), so CRD-based action type seeding for DS's
+		// informer-backed cache is the only seeding this suite needs.
+		Expect(infrastructure.SeedActionTypesViaCRD(ctx, kubeconfigPath, testNamespace, GinkgoWriter)).To(Succeed(), "Failed to seed action types (CRD)")
 
 		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)
 		AuthHTTPClient = &http.Client{
@@ -307,7 +308,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "Failed to unmarshal setup data")
 		kubeconfigPath = setupData["kubeconfig"]
 		e2eToken := setupData["token"]
-		clusterName = datastorageE2e
+		clusterName = "datastorage-e2e"
 
 		// Set shared URLs - NodePort or port-forward depending on Kind provider
 		// Per DD-TEST-001: DataStorage E2E uses ports 25433-28139
@@ -354,7 +355,7 @@ var _ = SynchronizedBeforeSuite(
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
-					"-n", datastorageE2e,
+					"-n", sharedNamespace,
 					"svc/postgresql",
 					fmt.Sprintf("%d:5432", pgLocalPort))
 				if err := cmd.Run(); err != nil {
@@ -366,7 +367,7 @@ var _ = SynchronizedBeforeSuite(
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
-					"-n", datastorageE2e,
+					"-n", sharedNamespace,
 					"svc/data-storage-service",
 					fmt.Sprintf("%d:8080", dsLocalPort))
 				if err := cmd.Run(); err != nil {
@@ -378,7 +379,7 @@ var _ = SynchronizedBeforeSuite(
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
-					"-n", datastorageE2e,
+					"-n", sharedNamespace,
 					"svc/data-storage-service",
 					fmt.Sprintf("%d:9090", metricsLocalPort))
 				if err := cmd.Run(); err != nil {
@@ -390,7 +391,7 @@ var _ = SynchronizedBeforeSuite(
 			go func() {
 				cmd := exec.Command("kubectl", "port-forward",
 					"--kubeconfig", kubeconfigPath,
-					"-n", datastorageE2e,
+					"-n", sharedNamespace,
 					"svc/data-storage-service",
 					fmt.Sprintf("%d:8081", healthLocalPort))
 				if err := cmd.Run(); err != nil {

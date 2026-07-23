@@ -27,27 +27,21 @@ import (
 // #243 / F1 / F8: Parameter Filtering Integration Tests
 // ========================================
 // Authority: #243 (Defense-in-depth parameter filtering), F1/F8 (coverage gap)
-// Pattern: Real envtest K8s API + configurable testWorkflowQuerier
+// Pattern: Real envtest K8s API + CRD-embedded WorkflowRef.DeclaredParameterNames
 //          + real executor — verifies the full reconciler→resolveSchemaMetadata
 //          →CreateOptions→executor→filtered resource pipeline.
 // ========================================
 
 var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func() {
 
-	AfterEach(func() {
-		testWorkflowQuerier.Deps = nil
-		testWorkflowQuerier.ParamNames = nil
-	})
-
 	Context("Job executor with DeclaredParameterNames", func() {
 
 		It("IT-WE-243-001: should strip undeclared params from Job env vars", func() {
-			testWorkflowQuerier.ParamNames = map[string]bool{
+			wfe := createUniqueJobWFE("pf-job-strip", "default/deployment/pf-job-strip-app")
+			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{
 				"NAMESPACE": true,
 				"REPLICAS":  true,
 			}
-
-			wfe := createUniqueJobWFE("pf-job-strip", "default/deployment/pf-job-strip-app")
 			wfe.Spec.Parameters = map[string]string{
 				"NAMESPACE":    "default",
 				"REPLICAS":     "3",
@@ -73,8 +67,6 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 		})
 
 		It("IT-WE-243-002: should pass all params through when ParamNames is nil (no schema, backward compat)", func() {
-			testWorkflowQuerier.ParamNames = nil
-
 			wfe := createUniqueJobWFE("pf-job-nil", "default/deployment/pf-job-nil-app")
 			wfe.Spec.Parameters = map[string]string{
 				"NAMESPACE": "default",
@@ -96,9 +88,8 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 		})
 
 		It("IT-WE-243-003: should strip all user params when DeclaredParameterNames is empty map", func() {
-			testWorkflowQuerier.ParamNames = map[string]bool{}
-
 			wfe := createUniqueJobWFE("pf-job-empty", "default/deployment/pf-job-empty-app")
+			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{}
 			wfe.Spec.Parameters = map[string]string{
 				"NAMESPACE": "default",
 				"REPLICAS":  "3",
@@ -123,17 +114,16 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 	Context("Tekton executor with DeclaredParameterNames", func() {
 
 		It("IT-WE-243-010: should strip undeclared params from PipelineRun params", func() {
-			testWorkflowQuerier.ParamNames = map[string]bool{
-				"NAMESPACE": true,
-				"REPLICAS":  true,
-			}
-
 			wfe := createUniqueWFEWithParams("pf-tekton-strip", "default/deployment/pf-tekton-strip-app",
 				map[string]string{
 					"NAMESPACE":    "default",
 					"REPLICAS":     "3",
 					"HALLUCINATED": "should-be-stripped",
 				})
+			wfe.Spec.WorkflowRef.DeclaredParameterNames = map[string]bool{
+				"NAMESPACE": true,
+				"REPLICAS":  true,
+			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupWFE(wfe)
 
@@ -152,8 +142,6 @@ var _ = Describe("#243: Parameter Filtering", Label("integration", "243"), func(
 		})
 
 		It("IT-WE-243-011: should pass all params through when ParamNames is nil (backward compat)", func() {
-			testWorkflowQuerier.ParamNames = nil
-
 			wfe := createUniqueWFEWithParams("pf-tekton-nil", "default/deployment/pf-tekton-nil-app",
 				map[string]string{
 					"NAMESPACE": "default",

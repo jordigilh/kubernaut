@@ -69,7 +69,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
@@ -167,10 +166,6 @@ type WorkflowExecutionReconciler struct {
 	// Maps execution engine names ("tekton", "job") to Executor implementations.
 	// When nil, falls back to inline Tekton-only code path.
 	ExecutorRegistry *weexecutor.Registry
-
-	// DD-WE-006: WorkflowQuerier fetches workflow dependencies from DS on demand.
-	// Optional: nil disables dependency injection (workflows run without mounted deps).
-	WorkflowQuerier weclient.WorkflowQuerier
 }
 
 // ReconcilerOptions groups the business-specific dependencies for the
@@ -185,7 +180,6 @@ type ReconcilerOptions struct {
 	PhaseManager       *wephase.Manager
 	AuditManager       *weaudit.Manager
 	ExecutorRegistry   *weexecutor.Registry
-	WorkflowQuerier    weclient.WorkflowQuerier
 }
 
 // NewReconciler creates a WorkflowExecutionReconciler, extracting
@@ -206,7 +200,6 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 		PhaseManager:       opts.PhaseManager,
 		AuditManager:       opts.AuditManager,
 		ExecutorRegistry:   opts.ExecutorRegistry,
-		WorkflowQuerier:    opts.WorkflowQuerier,
 	}
 }
 

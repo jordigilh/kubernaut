@@ -149,6 +149,34 @@ tests:
           path: metadata.annotations["argocd.argoproj.io/sync-wave"]
           value: "-1"
 
+  - it: "data-storage-auth-middleware ClusterRole is pinned to sync-wave -1 (DataStorage's informer cache needs its remediationworkflows/actiontypes list/watch rule at startup, #1661)"
+    template: templates/rbac/datastorage-rbac.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: kind
+          value: ClusterRole
+      - equal:
+          path: metadata.name
+          value: data-storage-auth-middleware
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
+  - it: "data-storage-auth-middleware ClusterRoleBinding is pinned to sync-wave -1 (must match its ClusterRole's wave)"
+    template: templates/rbac/datastorage-rbac.yaml
+    documentIndex: 2
+    asserts:
+      - equal:
+          path: kind
+          value: ClusterRoleBinding
+      - equal:
+          path: metadata.name
+          value: data-storage-auth-middleware
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/sync-wave"]
+          value: "-1"
+
   - it: "data-storage-client ClusterRole is NOT pinned to a sync-wave (RBAC record, not a startup dependency)"
     template: templates/rbac/datastorage-rbac.yaml
     documentSelector:

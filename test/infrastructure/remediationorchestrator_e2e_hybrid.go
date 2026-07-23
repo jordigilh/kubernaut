@@ -64,7 +64,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (WITH DYNAMIC TAG)")
 	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook (FOR SOC2 CC8.1)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~2 minutes (parallel)")
-	_, _ = fmt.Fprintln(writer, "  Using consolidated API: BuildImageForKind(ctx, )")
+	_, _ = fmt.Fprintln(writer, "  Using consolidated API: BuildImageForKind()")
 	_, _ = fmt.Fprintln(writer, "  Note: Notification controller NOT needed - only CRD validation required")
 
 	type imageBuildResult struct {
@@ -153,7 +153,8 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	}
 
 	kindConfigPath := "test/infrastructure/kind-remediationorchestrator-config.yaml"
-	if err := CreateKindClusterWithExtraMounts(ctx,
+	if err := CreateKindClusterWithExtraMounts(
+		ctx,
 		clusterName,
 		kubeconfigPath,
 		kindConfigPath,
@@ -173,6 +174,12 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		"kubernaut.ai_signalprocessings.yaml",
 		"kubernaut.ai_notificationrequests.yaml",
 		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EA creation on terminal phases
+		// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+		// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+		// already be registered with the apiserver or DS's informer cache
+		// setup fails hard ("no matches for kind"), crash-looping the pod.
+		"kubernaut.ai_remediationworkflows.yaml",
+		"kubernaut.ai_actiontypes.yaml",
 	}
 
 	for _, crdFile := range crdFiles {
@@ -202,7 +209,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "  ├── DataStorage image (with dynamic tag)")
 	_, _ = fmt.Fprintln(writer, "  └── AuthWebhook image (SOC2 CC8.1 user attribution)")
 	_, _ = fmt.Fprintln(writer, "  ⏱️  Expected: ~30-45 seconds")
-	_, _ = fmt.Fprintln(writer, "  Using consolidated API: LoadImageToKind(ctx, )")
+	_, _ = fmt.Fprintln(writer, "  Using consolidated API: LoadImageToKind()")
 	_, _ = fmt.Fprintln(writer, "  Note: OAuth2-Proxy pulled automatically from quay.io during deployment")
 
 	type loadResult struct {
@@ -374,16 +381,10 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
-	seedSA := "ro-e2e-seed-sa"
-	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, seedSA, writer); err != nil {
-		return fmt.Errorf("failed to create seed SA: %w", err)
-	}
-	seedToken, err := GetServiceAccountToken(ctx, namespace, seedSA, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get seed SA token: %w", err)
-	}
-	if err := SeedActionTypesViaAPIWithTLS(ctx, "https://localhost:8090", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
+	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
+	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
+	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 

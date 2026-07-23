@@ -38,6 +38,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -253,10 +255,16 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			}, timeout, interval).Should(Succeed())
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "test-workflow",
-				Version:         "1.0.0",
-				ExecutionBundle: "test-image:latest",
-				Confidence:      0.95,
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "test-workflow",
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
+					Version:         "1.0.0",
+					ExecutionBundle: "test-image:latest",
+					ExecutionEngine: "job",
+				},
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Confidence: 0.95,
 			}
 			ai.Status.ApprovalRequired = false
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
@@ -523,10 +531,15 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			}, timeout, interval).Should(Succeed())
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "test-workflow",
-				Version:         "1.0.0",
-				ExecutionBundle: "test-image:latest",
-				Confidence:      0.65, // Low confidence
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "test-workflow",
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
+					Version:         "1.0.0",
+					ExecutionBundle: "test-image:latest",
+					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				},
+				Confidence: 0.65, // Low confidence
 			}
 			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = "Confidence below threshold (0.65 < 0.80)"

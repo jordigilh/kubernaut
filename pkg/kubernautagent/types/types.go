@@ -16,6 +16,12 @@ limitations under the License.
 
 package types
 
+import (
+	corev1 "k8s.io/api/core/v1"
+
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+)
+
 // Phase represents a stage in the investigation flow.
 // Per DD-HAPI-019-002: RCA uses K8s+Prom tools, Discovery uses workflow tools,
 // Validation uses no tools (I4 per-phase tool scoping).
@@ -78,6 +84,26 @@ type InvestigationResult struct {
 	ServiceAccountName    string `json:"service_account_name,omitempty"`
 	WorkflowVersion       string `json:"workflow_version,omitempty"`
 	WorkflowRationale     string `json:"workflow_rationale,omitempty"`
+
+	// ActionType/WorkflowName are catalog-authoritative identifiers (Issue
+	// #1661 Change 12) resolved from the DS catalog at selection time and
+	// copied by enrichFromCatalog, never LLM-suppliable. ActionType is the
+	// DD-WORKFLOW-016 taxonomy action type; WorkflowName is always equal to
+	// RemediationWorkflow.metadata.name. Both flow to
+	// AIAnalysis.Status.SelectedWorkflow (via sharedtypes.WorkflowSnapshot)
+	// and ultimately WorkflowExecution.Spec.WorkflowRef.
+	ActionType   string `json:"action_type,omitempty"`
+	WorkflowName string `json:"workflow_name,omitempty"`
+
+	// Dependencies/Resources/DeclaredParameterNames are catalog-authoritative
+	// schema data (Issue #1661 Change 11a, DD-WORKFLOW-018), copied from
+	// parser.WorkflowMeta by enrichFromCatalog after workflow selection. AA
+	// persists them onto AIAnalysis.Status.SelectedWorkflow (Change 11b) so
+	// RemediationOrchestrator/WorkflowExecution consume the CRD-embedded
+	// snapshot instead of WorkflowExecution querying DataStorage directly.
+	Dependencies           *models.WorkflowDependencies `json:"dependencies,omitempty"`
+	Resources              *corev1.ResourceRequirements `json:"resources,omitempty"`
+	DeclaredParameterNames map[string]bool              `json:"declared_parameter_names,omitempty"`
 
 	// Human review fields (GAP-013: HumanReviewReason for OpenAPI enum mapping)
 	HumanReviewNeeded bool   `json:"human_review_needed"`

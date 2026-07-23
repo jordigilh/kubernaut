@@ -249,7 +249,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	_, _ = fmt.Fprintf(output, "\n🔍 Verifying critical tables...\n")
 	verifyConfig := DefaultMigrationConfig(WorkflowExecutionNamespace, kubeconfigPath)
 	verifyConfig.PostgresService = "postgresql"
-	verifyConfig.Tables = []string{"audit_events", "remediation_workflow_catalog"}
+	verifyConfig.Tables = []string{"audit_events"}
 	if err := VerifyMigrations(context.Background(), verifyConfig, output); err != nil {
 		return fmt.Errorf("migration verification failed: %w", err)
 	}

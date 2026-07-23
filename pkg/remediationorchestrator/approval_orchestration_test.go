@@ -5,6 +5,8 @@ import (
 	"context"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -75,11 +77,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 					Status: aianalysisv1.AIAnalysisStatus{
 						Phase: "Completed",
 						SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-							WorkflowID:     "wf-restart-pods",
-							Version:        "v1.0.0",
-							Confidence:     0.75,
-							ExecutionBundle: "kubernaut/workflows:latest",
-							Rationale:      "Pod restart recommended based on OOM patterns",
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-restart-pods",
+								WorkflowName:    "wf-restart-pods",
+								ActionType:      "RestartPod",
+								Version:         "v1.0.0",
+								ExecutionBundle: "kubernaut/workflows:latest",
+							},
+							Confidence: 0.75,
+							Rationale:  "Pod restart recommended based on OOM patterns",
 						},
 						ApprovalReason: "Confidence between 60-79%",
 						RootCause:      "Memory leak causing OOM kills",
@@ -227,10 +233,10 @@ var _ = Describe("ApprovalOrchestration", func() {
 						InvestigationSummary: "Test investigation",
 						WhyApprovalRequired:  "Confidence too low",
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-							WorkflowID:     "wf-test",
-							Version:        "v1.0.0",
+							WorkflowID:      "wf-test",
+							Version:         "v1.0.0",
 							ExecutionBundle: "test:latest",
-							Rationale:      "Test rationale",
+							Rationale:       "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 							{Action: "approve", Rationale: "test"},
@@ -258,10 +264,10 @@ var _ = Describe("ApprovalOrchestration", func() {
 						InvestigationSummary: "Test investigation",
 						WhyApprovalRequired:  "Confidence too low",
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-							WorkflowID:     "wf-test",
-							Version:        "v1.0.0",
+							WorkflowID:      "wf-test",
+							Version:         "v1.0.0",
 							ExecutionBundle: "test:latest",
-							Rationale:      "Test rationale",
+							Rationale:       "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 							{Action: "approve", Rationale: "test"},
@@ -296,10 +302,10 @@ var _ = Describe("ApprovalOrchestration", func() {
 						InvestigationSummary: "Test investigation",
 						WhyApprovalRequired:  "Confidence too low",
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-							WorkflowID:     "wf-test",
-							Version:        "v1.0.0",
+							WorkflowID:      "wf-test",
+							Version:         "v1.0.0",
 							ExecutionBundle: "test:latest",
-							Rationale:      "Test rationale",
+							Rationale:       "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 							{Action: "approve", Rationale: "test"},
@@ -335,10 +341,10 @@ var _ = Describe("ApprovalOrchestration", func() {
 						InvestigationSummary: "Test investigation",
 						WhyApprovalRequired:  "Confidence too low",
 						RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-							WorkflowID:     "wf-test",
-							Version:        "v1.0.0",
+							WorkflowID:      "wf-test",
+							Version:         "v1.0.0",
 							ExecutionBundle: "test:latest",
-							Rationale:      "Test rationale",
+							Rationale:       "Test rationale",
 						},
 						RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 							{Action: "approve", Rationale: "test"},
@@ -397,11 +403,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowID:     "wf-restart-pods",
-						Version:        "v1.0.0",
-						Confidence:     0.85,
-						ExecutionBundle: "kubernaut/workflows:latest",
-						Rationale:      "Pod restart recommended",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-restart-pods",
+							WorkflowName:    "wf-restart-pods",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "kubernaut/workflows:latest",
+						},
+						Confidence: 0.85,
+						Rationale:  "Pod restart recommended",
 					},
 					ApprovalRequired: true,
 					ApprovalReason:   "Missing remediation target - cannot determine resource to remediate (BR-AI-085-005)",
@@ -428,11 +438,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowID:     "wf-restart-pods",
-						Version:        "v1.0.0",
-						Confidence:     0.90,
-						ExecutionBundle: "kubernaut/workflows:latest",
-						Rationale:      "Pod restart recommended",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-restart-pods",
+							WorkflowName:    "wf-restart-pods",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "kubernaut/workflows:latest",
+						},
+						Confidence: 0.90,
+						Rationale:  "Pod restart recommended",
 					},
 					ApprovalRequired: true,
 					ApprovalReason:   "Production environment with sensitive resource kind - requires manual approval",
@@ -460,11 +474,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowID:     "wf-scale-hpa",
-						Version:        "v1.0.0",
-						Confidence:     0.65,
-						ExecutionBundle: "kubernaut/workflows:latest",
-						Rationale:      "HPA max replicas reached",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-scale-hpa",
+							WorkflowName:    "wf-scale-hpa",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "kubernaut/workflows:latest",
+						},
+						Confidence: 0.65,
+						Rationale:  "HPA max replicas reached",
 					},
 					ApprovalRequired: true,
 					ApprovalReason:   "Production environment requires manual approval",
@@ -523,11 +541,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowID:     "wf-restart-pods",
-						Version:        "v1.0.0",
-						Confidence:     0.72,
-						ExecutionBundle: "kubernaut/workflows:latest",
-						Rationale:      "Pod restart recommended",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-restart-pods",
+							WorkflowName:    "wf-restart-pods",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "kubernaut/workflows:latest",
+						},
+						Confidence: 0.72,
+						Rationale:  "Pod restart recommended",
 					},
 					ApprovalReason: "Confidence below auto-approve threshold",
 					ApprovalContext: &aianalysisv1.ApprovalContext{
@@ -561,11 +583,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowID:     "wf-restart-pods",
-						Version:        "v1.0.0",
-						Confidence:     0.72,
-						ExecutionBundle: "kubernaut/workflows:latest",
-						Rationale:      "Pod restart recommended",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-restart-pods",
+							WorkflowName:    "wf-restart-pods",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "kubernaut/workflows:latest",
+						},
+						Confidence: 0.72,
+						Rationale:  "Pod restart recommended",
 					},
 					ApprovalReason: "Confidence below auto-approve threshold",
 					ApprovalContext: &aianalysisv1.ApprovalContext{
@@ -606,11 +632,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowID:     "wf-restart-pods",
-						Version:        "v1.0.0",
-						Confidence:     0.85,
-						ExecutionBundle: "kubernaut/workflows:latest",
-						Rationale:      "Pod restart recommended",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-restart-pods",
+							WorkflowName:    "wf-restart-pods",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "kubernaut/workflows:latest",
+						},
+						Confidence: 0.85,
+						Rationale:  "Pod restart recommended",
 					},
 					ApprovalReason: "Production environment requires manual approval",
 					ApprovalContext: &aianalysisv1.ApprovalContext{
@@ -646,11 +676,15 @@ var _ = Describe("ApprovalOrchestration", func() {
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: "Completed",
 					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-						WorkflowID:     "wf-restart-pods",
-						Version:        "v1.0.0",
-						Confidence:     0.72,
-						ExecutionBundle: "kubernaut/workflows:latest",
-						Rationale:      "Pod restart recommended",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-restart-pods",
+							WorkflowName:    "wf-restart-pods",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "kubernaut/workflows:latest",
+						},
+						Confidence: 0.72,
+						Rationale:  "Pod restart recommended",
 					},
 					ApprovalReason:  "Confidence below auto-approve threshold",
 					ApprovalContext: nil,

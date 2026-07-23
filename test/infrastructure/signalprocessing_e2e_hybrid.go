@@ -154,6 +154,18 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
+	// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+	// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+	// already be registered with the apiserver or DS's informer cache setup
+	// fails hard ("no matches for kind"), crash-looping the pod.
+	// installSignalProcessingCRDsBatched above only applies the two CRDs
+	// this suite's own tests need (SignalProcessing + RemediationRequest);
+	// DataStorage is deployed later in PHASE 4 below and needs the full set.
+	_, _ = fmt.Fprintln(writer, "📋 Applying RemediationWorkflow/ActionType CRDs (DD-WORKFLOW-018)...")
+	if err := applyRemediationWorkflowCRDs(ctx, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("failed to apply RemediationWorkflow/ActionType CRDs: %w", err)
+	}
+
 	// Deploy Rego policy ConfigMaps
 	_, _ = fmt.Fprintln(writer, "📜 Deploying Rego policy ConfigMaps...")
 	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
@@ -328,16 +340,10 @@ func SetupSignalProcessingInfrastructureHybridWithCoverage(ctx context.Context, 
 	_, _ = fmt.Fprintln(writer, "\n✅ All services ready!")
 	_, _ = fmt.Fprintf(writer, "  ⏱️  Phase 4 Duration: %.1f seconds\n", phase4Duration.Seconds())
 
-	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
-	seedSA := "sp-e2e-seed-sa"
-	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, seedSA, writer); err != nil {
-		return fmt.Errorf("failed to create seed SA: %w", err)
-	}
-	seedToken, err := GetServiceAccountToken(ctx, namespace, seedSA, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get seed SA token: %w", err)
-	}
-	if err := SeedActionTypesViaAPIWithTLS(ctx, "https://localhost:30081", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
+	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
+	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
+	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -446,7 +452,7 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 	}
 
 	// Use unique image tag with coverage suffix
-	imageTag := "e2e-test-coverage"
+	imageTag := e2eTestCoverageTag
 	imageName := fmt.Sprintf("localhost/kubernaut-signalprocessing:%s", imageTag)
 	_, _ = fmt.Fprintf(writer, "  📦 Building SignalProcessing with coverage: %s\n", imageName)
 
@@ -468,7 +474,7 @@ func BuildSignalProcessingImageWithCoverage(writer io.Writer) error {
 
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
 // createSignalProcessingKindCluster creates a Kind cluster for SignalProcessing E2E tests
-// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
+// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
 func createSignalProcessingKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
 	opts := KindClusterOptions{
 		ClusterName:    clusterName,
@@ -1094,8 +1100,8 @@ func getSignalProcessingGitHash() string {
 // GetProjectRoot returns the absolute path to the project root.
 //
 // Deprecated: Use the shared getProjectRoot() from shared_integration_utils.go
-// and CollectE2EBinaryCoverage from coverage.go instead.
-// Kept temporarily for backward compatibility.
+// and CollectE2EBinaryCoverage from coverage.go instead. Kept temporarily for
+// backward compatibility.
 func GetProjectRoot() (string, error) {
 	root := getProjectRoot()
 	if root == "" {

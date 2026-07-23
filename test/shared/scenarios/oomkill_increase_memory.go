@@ -185,7 +185,7 @@ func RunOOMKillIncreaseMemoryScenario(cfg OOMKillIncreaseMemoryScenarioConfig) {
 			we := &weList.Items[i]
 			if we.Spec.RemediationRequestRef.Name == cfg.RemediationRequestName {
 				weName = we.Name
-				return we.Status.ExecutionEngine
+				return we.Spec.WorkflowRef.ExecutionEngine
 			}
 		}
 		return ""

@@ -291,6 +291,24 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	Expect(err).ToNot(HaveOccurred())
 	GinkgoWriter.Printf("[Process %d] ✅ Manager created with webhook server (certwatcher disabled)\n", GinkgoParallelProcess())
 
+	By("Registering .spec.name field index on ActionType (matches cmd/authwebhook/main.go)")
+	// #1661: AW is the control gate for the RW-to-ActionType relationship,
+	// validating directly against etcd via this indexer instead of delegating
+	// to DS's Postgres-backed taxonomy check.
+	err = k8sManager.GetFieldIndexer().IndexField(
+		ctx,
+		&actiontypev1.ActionType{},
+		".spec.name",
+		func(obj client.Object) []string {
+			at, ok := obj.(*actiontypev1.ActionType)
+			if !ok || at.Spec.Name == "" {
+				return nil
+			}
+			return []string{at.Spec.Name}
+		},
+	)
+	Expect(err).ToNot(HaveOccurred(), "failed to create field index on .spec.name for ActionType")
+
 	By("Getting K8s client from Manager")
 	// Pattern: All other integration tests (RO, SP, AA, WE, NT)
 	// DD-TEST-009: Use Manager's client to ensure field indexes work correctly

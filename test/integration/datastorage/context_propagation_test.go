@@ -217,6 +217,7 @@ func newContextPropagationTestServer() *httptest.Server {
 			},
 		},
 		AuthNamespace: "test",
+		K8sRestConfig: dsK8sRestConfig,
 	})
 	Expect(err).ToNot(HaveOccurred())
 

@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -261,14 +262,13 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 		})
 
-		// DD-WE-005 v2 / Issue #501: SA resolved from DS via querier (Issue #650).
-		It("should use Status.ServiceAccountName on PipelineRun when set", func() {
-			By("Configuring mock querier to return custom SA from Data Storage")
-			testWorkflowQuerier.ServiceAccountName = "custom-workflow-sa"
-			DeferCleanup(func() { testWorkflowQuerier.ServiceAccountName = "" })
-
-			By("Creating a WorkflowExecution")
+		// DD-WE-005 v2 / Issue #501: SA sourced from the CRD-embedded WorkflowRef
+		// snapshot (Issue #1661 Change 11e/11f; previously resolved via a
+		// DataStorage/querier round-trip, Issue #650).
+		It("should use Spec.WorkflowRef.ServiceAccountName on PipelineRun when set", func() {
+			By("Creating a WorkflowExecution with a custom ServiceAccountName in WorkflowRef")
 			wfe = createUniqueWFE("sa-custom", "default/deployment/sa-custom-test")
+			wfe.Spec.WorkflowRef.ServiceAccountName = "custom-workflow-sa"
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
@@ -713,13 +713,24 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 				By("Simulating completion by marking WFE as Completed (integration test shortcut)")
 				// In real scenario, Tekton would complete. In integration, we simulate completion.
-				wfe1Status, err := getWFE(wfe1.Name, wfe1.Namespace)
-				Expect(err).ToNot(HaveOccurred())
-
-				now := metav1.Now()
-				wfe1Status.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
-				wfe1Status.Status.CompletionTime = &now
-				Expect(k8sClient.Status().Update(ctx, wfe1Status)).To(Succeed())
+				// RetryOnConflict: the live reconciler now actively progresses this
+				// WFE (finalizer/status updates) with ExecutionEngine correctly
+				// resolved from WorkflowRef, racing this Get+Update and bumping
+				// resourceVersion out from under it -- retry on a stale-resourceVersion
+				// conflict rather than treating it as an assertion failure (same
+				// pattern as workflowref_snapshot_immutability_test.go).
+				var wfe1Status *workflowexecutionv1alpha1.WorkflowExecution
+				Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+					var getErr error
+					wfe1Status, getErr = getWFE(wfe1.Name, wfe1.Namespace)
+					if getErr != nil {
+						return getErr
+					}
+					now := metav1.Now()
+					wfe1Status.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
+					wfe1Status.Status.CompletionTime = &now
+					return k8sClient.Status().Update(ctx, wfe1Status)
+				})).To(Succeed())
 
 				By("Waiting for cooldown period (default 5 minutes, but controller may use shorter for test)")
 				// Note: In production, cooldown is 5 minutes. In test, reconciler may be configured with shorter cooldown.
