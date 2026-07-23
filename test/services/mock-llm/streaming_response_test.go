@@ -39,12 +39,20 @@ import (
 // attached for live SSE relay) would parse that plain-JSON body as an SSE
 // stream, find no "data: " lines, and silently receive a zero-value
 // response -- no content, no reasoning, no tool calls -- even though the
-// correct scenario was detected server-side. This was masked because prior
-// tests only asserted reasoning-event *type* presence, never populated
-// content. See E2E-AF-1637-001 / #1637 investigation.
+// correct scenario was detected server-side. This is also the root cause
+// of the #1640 backport's E2E-KA-DISC-001 regression on release/v1.5: once
+// discover_workflows' HTTP-session enrichment correctly attaches a
+// LazySink for fallback sessions, chatOrStream switches to streaming, and
+// this mock previously returned a zero-value ChatResponse (no tool calls)
+// for every streamed request regardless of scenario.
+//
+// v1.5 does not carry main's reasoning_content simulation (#1578), so
+// unlike upstream's version of this test, these specs assert on the
+// scenario's root_cause_analysis text content rather than
+// reasoning_content. See E2E-AF-1637-001 / #1637 investigation upstream.
 var _ = Describe("Streaming Chat Completions (issue #1637)", func() {
 
-	Describe("UT-MOCK-1637-001: stream=true text response carries content and reasoning_content", func() {
+	Describe("UT-MOCK-1637-001: stream=true text response carries the full content delta", func() {
 		It("should emit an SSE chunk with the full delta plus a terminal [DONE] sentinel", func() {
 			registry := scenarios.DefaultRegistry()
 			router := handlers.NewRouter(registry, false, config.ModeInteractive)
@@ -55,7 +63,7 @@ var _ = Describe("Streaming Chat Completions (issue #1637)", func() {
 				Model:  "mock-model",
 				Stream: true,
 				Messages: []openai.Message{
-					{Role: "user", Content: strPtr("investigate mock_reasoning_capture")},
+					{Role: "user", Content: strPtr("investigate unmatched_streaming_probe")},
 				},
 			}
 			body, err := json.Marshal(reqBody)
@@ -75,7 +83,7 @@ var _ = Describe("Streaming Chat Completions (issue #1637)", func() {
 			Expect(text).To(ContainSubstring("data: "))
 			Expect(text).To(HaveSuffix("data: [DONE]\n\n"))
 
-			var sawReasoning bool
+			var sawContent bool
 			for _, line := range strings.Split(text, "\n") {
 				line = strings.TrimSpace(line)
 				if !strings.HasPrefix(line, "data: ") {
@@ -92,15 +100,13 @@ var _ = Describe("Streaming Chat Completions (issue #1637)", func() {
 				choice, _ := choices[0].(map[string]any)
 				delta, _ := choice["delta"].(map[string]any)
 				Expect(delta).NotTo(BeNil())
-				reasoningContent, _ := delta["reasoning_content"].(string)
-				if reasoningContent != "" {
-					sawReasoning = true
-					Expect(reasoningContent).To(ContainSubstring("memory"))
-				}
 				content, _ := delta["content"].(string)
-				Expect(content).To(ContainSubstring("root_cause_analysis"))
+				if content != "" {
+					sawContent = true
+					Expect(content).To(ContainSubstring("root_cause_analysis"))
+				}
 			}
-			Expect(sawReasoning).To(BeTrue(), "streamed delta must carry the scenario's reasoning_content")
+			Expect(sawContent).To(BeTrue(), "streamed delta must carry the scenario's analysis content")
 		})
 	})
 
@@ -114,7 +120,7 @@ var _ = Describe("Streaming Chat Completions (issue #1637)", func() {
 			reqBody := openai.ChatCompletionRequest{
 				Model: "mock-model",
 				Messages: []openai.Message{
-					{Role: "user", Content: strPtr("investigate mock_reasoning_capture")},
+					{Role: "user", Content: strPtr("investigate unmatched_streaming_probe")},
 				},
 			}
 			body, err := json.Marshal(reqBody)
@@ -130,7 +136,68 @@ var _ = Describe("Streaming Chat Completions (issue #1637)", func() {
 			var out openai.ChatCompletionResponse
 			Expect(json.NewDecoder(resp.Body).Decode(&out)).To(Succeed())
 			Expect(out.Choices).To(HaveLen(1))
-			Expect(out.Choices[0].Message.ReasoningContent).To(ContainSubstring("memory"))
+			Expect(*out.Choices[0].Message.Content).To(ContainSubstring("root_cause_analysis"))
+		})
+	})
+
+	Describe("UT-MOCK-1637-003: stream=true tool-call response carries the full tool_calls delta", func() {
+		It("should emit an SSE chunk whose delta.tool_calls matches the non-streaming response (#1640 E2E regression)", func() {
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewRouter(registry, false, config.ModeAutonomous)
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := openai.ChatCompletionRequest{
+				Model:  "mock-model",
+				Stream: true,
+				Messages: []openai.Message{
+					{Role: "user", Content: strPtr("investigate OOMKilled")},
+				},
+				Tools: []openai.Tool{
+					{Type: "function", Function: openai.ToolDefinition{Name: openai.ToolSubmitResult}},
+				},
+			}
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("text/event-stream"))
+
+			raw, err := io.ReadAll(resp.Body)
+			Expect(err).NotTo(HaveOccurred())
+			text := string(raw)
+
+			var sawToolCall bool
+			for _, line := range strings.Split(text, "\n") {
+				line = strings.TrimSpace(line)
+				if !strings.HasPrefix(line, "data: ") {
+					continue
+				}
+				data := strings.TrimPrefix(line, "data: ")
+				if data == "[DONE]" || data == "" {
+					continue
+				}
+				var chunk map[string]any
+				Expect(json.Unmarshal([]byte(data), &chunk)).To(Succeed())
+				choices, _ := chunk["choices"].([]any)
+				Expect(choices).NotTo(BeEmpty())
+				choice, _ := choices[0].(map[string]any)
+				delta, _ := choice["delta"].(map[string]any)
+				Expect(delta).NotTo(BeNil())
+				toolCalls, _ := delta["tool_calls"].([]any)
+				if len(toolCalls) > 0 {
+					sawToolCall = true
+					tc, _ := toolCalls[0].(map[string]any)
+					fn, _ := tc["function"].(map[string]any)
+					Expect(fn["name"]).To(Equal("submit_result"))
+					Expect(fn["arguments"]).NotTo(BeEmpty())
+				}
+			}
+			Expect(sawToolCall).To(BeTrue(), "streamed delta must carry the scenario's tool call — regression guard for #1640 E2E-KA-DISC failures caused by empty streamed tool_calls")
 		})
 	})
 })

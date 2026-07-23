@@ -102,9 +102,11 @@ func writeSSEChatCompletion(w http.ResponseWriter, resp openai.ChatCompletionRes
 // sseChunkFromChoice builds the single streamed chunk for a non-streaming
 // Choice, preserving every field the compat client's parser inspects.
 func sseChunkFromChoice(choice openai.Choice) sseChunk {
+	// v1.5 does not have reasoning-content simulation (#1578, main-only);
+	// the wire struct still carries the field for openaicompat parser
+	// compatibility, it is just never populated here.
 	delta := sseChunkDelta{
-		Role:             "assistant",
-		ReasoningContent: choice.Message.ReasoningContent,
+		Role: "assistant",
 	}
 	if choice.Message.Content != nil {
 		delta.Content = *choice.Message.Content
