@@ -313,12 +313,13 @@ func (r *WorkflowExecutionReconciler) recordPendingSelectionAudit(ctx context.Co
 	}
 
 	if !resourceExists {
-		// Issue #1661 Change 11e: WorkflowName is no longer resolved (WorkflowRef
-		// carries no such field; deferred per the escalated design-gap decision --
-		// workflow_id + the audit_events ledger already satisfies SOC2 CC8.1
-		// reconstruction, see IT-AW-1111-001). A fast-follow issue tracks wiring
-		// it end-to-end for audit readability.
-		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe, ""); err != nil {
+		// Issue #1711 cascade (DD-KA-001 v1.1): WorkflowName is now Required and
+		// catalog-authoritative on WorkflowRef's embedded WorkflowSnapshot (Issue
+		// #1661 Change 12), so it's read straight from the CRD spec here instead
+		// of the deferred empty-string placeholder (see IT-AW-1111-001 for the
+		// original SOC2 CC8.1 rationale on why workflow_id alone was sufficient
+		// before this field existed).
+		if err := r.AuditManager.RecordWorkflowSelectionCompleted(ctx, wfe, wfe.Spec.WorkflowRef.WorkflowName); err != nil {
 			logger.V(1).Info("Failed to record workflow.selection.completed audit event", "error", err)
 		}
 	} else {
