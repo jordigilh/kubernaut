@@ -5,6 +5,12 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4] - 2026-07-23
+
+### Fixed
+
+- **Empty `correlation_id` on fallback interactive sessions breaks `discover_workflows` (#1640)** — `createFallbackSession` stored the session's remediation ID under metadata key `rr_id` instead of `remediation_id`, the key every RCA-lookup and correlation-ID derivation actually reads. Every audit event (`aiagent.session.started`/`.completed`/`.observed`) emitted by a fresh interactive session (the common/default way a user starts an interactive investigation) therefore carried an empty `correlation_id`, which DataStorage rejects (OpenAPI `minLength: 1`), preventing `discover_workflows` from reconstructing conversation context from audit traces and failing remediation discovery. Also guards `GetLatestRCASummaryByRemediationID`/`GetLatestRCAResultByRemediationID` against matching fallback placeholder sessions, since they carry no real RCA result.
+
 ## [1.5.3] - 2026-07-08
 
 ### Fixed
