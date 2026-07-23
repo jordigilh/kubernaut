@@ -21,13 +21,28 @@ import (
 	"sync"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
+
+// jsonLogCapture captures funcr.NewJSON log records for substring assertions
+// on error/warning output without depending on exact structured formatting.
+type jsonLogCapture struct {
+	mu    sync.Mutex
+	lines []string
+}
+
+func (c *jsonLogCapture) capture(obj string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lines = append(c.lines, obj)
+}
 
 var _ = Describe("#1351 KA Session Lifecycle — handleCancel HTTP bridge", func() {
 
@@ -169,14 +184,63 @@ var _ = Describe("UT-KA-1351-004: SessionClosedHandler disconnect resolves HTTP 
 	})
 })
 
+// #1654: E2E-FP-1456-001 RCA found that a duplicate session sharing the same
+// remediation_id (MCP action=start fallback session alongside AA's own
+// autonomous investigation session) is left non-terminal when
+// CompleteHTTPSession only calls CompleteUserDriving for the one match found
+// by FindUserDrivingByRemediationID. AA may be polling the OTHER
+// (non-user_driving) sibling session, which never gets force-completed
+// because the previous either/or branching short-circuited on the first
+// match. CompleteHTTPSession must always attempt BOTH completion paths so
+// every sibling session sharing the remediation_id is resolved.
+var _ = Describe("#1654: CompleteHTTPSession completes ALL sibling sessions, not just the first match", func() {
+	It("should call ForceCompleteByRemediationID even when a user_driving session was found and completed", func() {
+		completer := &cancelLifecycleHTTPCompleter{
+			foundID: "http-sess-dual-001",
+			found:   true,
+		}
+		logger := logr.Discard()
+
+		mcptools.CompleteHTTPSession(completer, "rr-dual-001", nil, logger, "select_workflow")
+
+		completedID, _ := completer.getCompleted()
+		Expect(completedID).To(Equal("http-sess-dual-001"),
+			"CompleteHTTPSession must still complete the user_driving session it found")
+		Expect(completer.forceCompleteCalled()).To(BeTrue(),
+			"CompleteHTTPSession must ALSO call ForceCompleteByRemediationID to resolve any sibling "+
+				"session sharing the same remediation_id that AA might be polling instead (#1654)")
+	})
+
+	It("should not report a critical failure when the user_driving path succeeds and force-complete finds no sibling (ErrSessionNotFound)", func() {
+		completer := &cancelLifecycleHTTPCompleter{
+			foundID:            "http-sess-dual-002",
+			found:              true,
+			forceCompleteError: session.ErrSessionNotFound,
+		}
+		capture := &jsonLogCapture{}
+		logger := funcr.NewJSON(capture.capture, funcr.Options{})
+
+		mcptools.CompleteHTTPSession(completer, "rr-dual-002", nil, logger, "select_workflow")
+
+		completedID, _ := completer.getCompleted()
+		Expect(completedID).To(Equal("http-sess-dual-002"))
+		for _, line := range capture.lines {
+			Expect(line).NotTo(ContainSubstring("CRITICAL"),
+				"a successful user_driving completion must not be reported as a critical failure "+
+					"just because there was no sibling session left to force-complete (#1654)")
+		}
+	})
+})
+
 // cancelLifecycleHTTPCompleter tracks calls for lifecycle test assertions.
 type cancelLifecycleHTTPCompleter struct {
-	mu                    sync.Mutex
-	foundID               string
-	found                 bool
-	completedID           string
-	completedResult       *katypes.InvestigationResult
+	mu                     sync.Mutex
+	foundID                string
+	found                  bool
+	completedID            string
+	completedResult        *katypes.InvestigationResult
 	forceCompleteWasCalled bool
+	forceCompleteError     error
 }
 
 func (c *cancelLifecycleHTTPCompleter) FindUserDrivingByRemediationID(_ string) (string, bool) {
@@ -197,6 +261,9 @@ func (c *cancelLifecycleHTTPCompleter) ForceCompleteByRemediationID(_ string, re
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.forceCompleteWasCalled = true
+	if c.forceCompleteError != nil {
+		return c.forceCompleteError
+	}
 	c.completedResult = result
 	return nil
 }
