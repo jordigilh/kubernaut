@@ -224,33 +224,44 @@ func EventBridgeFromContext(ctx context.Context) *EventBridge {
 // limit (vs. 512 for ephemeral status) since reasoning can be multi-paragraph.
 // #1435: raised from 512 to prevent mid-sentence truncation in the Console.
 func (b *EventBridge) EmitReasoning(ctx context.Context, text string) error {
-	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeReasoning})
+	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeReasoning}, false)
 }
 
 // EmitOutput writes a TaskStatusUpdateEvent with metadata.type="output" for
 // final LLM response content (the markdown answer). Uses a 4096-rune limit.
 // #1435: raised from 512 to prevent truncation of final answers.
 func (b *EventBridge) EmitOutput(ctx context.Context, text string) error {
-	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeOutput})
+	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeOutput}, false)
 }
 
 // EmitReasoningContent writes a TaskStatusUpdateEvent with
 // metadata.type="reasoning_content" for KA's captured LLM reasoning/thinking
 // content (BR-AI-086 AC10). Distinct from EmitReasoning, which carries AF's
 // own ADK Thought-part narration and KA's orchestration-progress narration
-// (#1634, #1635, DD-LLM-009). Uses the same 4096-rune limit and no-op-on-empty
-// semantics as EmitReasoning/EmitOutput; an empty text (a redacted turn) is
-// silently skipped, matching that established pattern.
-func (b *EventBridge) EmitReasoningContent(ctx context.Context, text string) error {
-	return b.emitWithLimit(ctx, text, maxReasoningTextLen, map[string]any{"type": MetaTypeReasoningContent})
+// (#1634, #1635, DD-LLM-009). Uses the same 4096-rune limit and
+// no-op-on-empty semantics as EmitReasoning/EmitOutput for a genuinely empty,
+// non-redacted turn. When redacted is true, an empty text does NOT no-op:
+// a content-free signal (metadata.redacted=true, no visible text) is emitted
+// instead, so Console can render a "reasoning hidden by provider" placeholder
+// (#1716, DD-LLM-009 redaction sub-decision revisited).
+func (b *EventBridge) EmitReasoningContent(ctx context.Context, text string, redacted bool) error {
+	meta := map[string]any{"type": MetaTypeReasoningContent}
+	if redacted {
+		meta["redacted"] = true
+	}
+	return b.emitWithLimit(ctx, text, maxReasoningTextLen, meta, redacted)
 }
 
 // emitWithLimit sanitizes text with a caller-specified rune limit and emits
 // a TaskStatusUpdateEvent. Used by EmitReasoning/EmitOutput (4096 runes) to
-// differentiate from EmitStatus/EmitStatusWithMeta (512 runes).
-func (b *EventBridge) emitWithLimit(ctx context.Context, text string, maxLen int, meta map[string]any) error {
+// differentiate from EmitStatus/EmitStatusWithMeta (512 runes). forceEmit
+// bypasses the empty-text no-op guard (#1716): EmitReasoning/EmitOutput
+// always pass false, preserving their original no-op-on-empty contract;
+// EmitReasoningContent passes redacted, since a redacted turn's content-free
+// signal must be emitted even though its text is empty.
+func (b *EventBridge) emitWithLimit(ctx context.Context, text string, maxLen int, meta map[string]any, forceEmit bool) error {
 	text = sanitizeTextWithLimit(ctx, text, maxLen)
-	if text == "" {
+	if text == "" && !forceEmit {
 		return nil
 	}
 
@@ -450,13 +461,13 @@ func EmitOutputSafe(ctx context.Context, text string) error {
 
 // EmitReasoningContentSafe is a nil-safe helper that emits KA's captured
 // reasoning content via the bridge. If no bridge is present, it's a no-op.
-// Write failures are logged (AU-2). #1635.
-func EmitReasoningContentSafe(ctx context.Context, text string) error {
+// Write failures are logged (AU-2). #1635; redacted param added by #1716.
+func EmitReasoningContentSafe(ctx context.Context, text string, redacted bool) error {
 	bridge := EventBridgeFromContext(ctx)
 	if bridge == nil {
 		return nil
 	}
-	if err := bridge.EmitReasoningContent(ctx, text); err != nil {
+	if err := bridge.EmitReasoningContent(ctx, text, redacted); err != nil {
 		logr.FromContextOrDiscard(ctx).Error(err, "A2A bridge write failed", "channel", "reasoning_content")
 		return err
 	}
