@@ -76,7 +76,6 @@ func noopAwaitingCallbacks() prodcontroller.AwaitingApprovalCallbacks {
 			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
 				return "wfe-test", nil
 			},
-			ResolveWorkflowDisplay: func(_ context.Context, _ string) (string, string) { return "TestAction", "test-wf" },
 		},
 	}
 }

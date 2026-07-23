@@ -64,6 +64,12 @@ func buildTestNotification(body string, metadata map[string]string) *notificatio
 		}
 		nctx.Workflow.ExecutionEngine = ee
 	}
+	if wn := metadata["workflowName"]; wn != "" {
+		if nctx.Workflow == nil {
+			nctx.Workflow = &notificationv1alpha1.WorkflowContext{}
+		}
+		nctx.Workflow.WorkflowName = wn
+	}
 	if rr := metadata["remediationRequest"]; rr != "" {
 		nctx.Lineage = &notificationv1alpha1.LineageContext{RemediationRequest: rr}
 	}
@@ -155,6 +161,54 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 
 			Expect(result.Spec.Body).To(ContainSubstring("crashloop-config-fix"))
 			Expect(resolver.callCount).To(Equal(1))
+		})
+	})
+
+	Context("Issue #1677 Phase 1: pre-populated WorkflowName (no live DataStorage call)", func() {
+		It("UT-NOT-1677-001: uses pre-populated WorkflowName instead of calling the live resolver", func() {
+			resolver := &mockWorkflowNameResolver{name: "WRONG-NAME-should-not-be-used"}
+			e := enrichment.NewEnricher(resolver, logr.Discard())
+
+			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
+			nr := buildTestNotification(body, map[string]string{
+				"workflowId":   testUUID,
+				"workflowName": "oom-recovery",
+			})
+
+			result := e.EnrichNotification(context.Background(), nr)
+
+			Expect(result.Spec.Body).To(ContainSubstring("**Workflow Executed**: oom-recovery"))
+			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
+			Expect(result.Spec.Body).NotTo(ContainSubstring("WRONG-NAME"))
+			Expect(resolver.callCount).To(Equal(0), "resolver must not be called when WorkflowName is pre-populated")
+		})
+
+		It("UT-NOT-1677-002: pre-populated WorkflowName works even with a nil resolver", func() {
+			e := enrichment.NewEnricher(nil, logr.Discard())
+
+			body := fmt.Sprintf("**Proposed Workflow**: %s", testUUID)
+			nr := buildTestNotification(body, map[string]string{
+				"selectedWorkflow": testUUID,
+				"workflowName":     "crashloop-config-fix",
+			})
+
+			result := e.EnrichNotification(context.Background(), nr)
+
+			Expect(result.Spec.Body).To(ContainSubstring("**Proposed Workflow**: crashloop-config-fix"))
+			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
+		})
+
+		It("UT-NOT-1677-003: falls back to the live resolver when WorkflowName is absent", func() {
+			resolver := &mockWorkflowNameResolver{name: "oom-recovery"}
+			e := enrichment.NewEnricher(resolver, logr.Discard())
+
+			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
+			nr := buildTestNotification(body, map[string]string{"workflowId": testUUID})
+
+			result := e.EnrichNotification(context.Background(), nr)
+
+			Expect(result.Spec.Body).To(ContainSubstring("**Workflow Executed**: oom-recovery"))
+			Expect(resolver.callCount).To(Equal(1), "resolver is the fallback when WorkflowName is absent")
 		})
 	})
 

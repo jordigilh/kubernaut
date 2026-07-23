@@ -134,6 +134,10 @@ var _ = Describe("NotificationCreator", func() {
 			Expect(nr.OwnerReferences).To(HaveLen(1))
 			Expect(nr.OwnerReferences[0].Name).To(Equal(rr.Name))
 			Expect(nr.Spec.Context.Workflow.SelectedWorkflow).To(Equal("restart-pod"))
+			// Issue #1677 Phase 1: WorkflowName/ActionType sourced directly from
+			// ai.Status.SelectedWorkflow -- no live DataStorage lookup needed by Notification.
+			Expect(nr.Spec.Context.Workflow.WorkflowName).To(Equal("restart-pod"))
+			Expect(nr.Spec.Context.Workflow.ActionType).To(Equal("restart"))
 		})
 
 		It("is idempotent: reusing an existing approval notification returns the same name without error", func() {
@@ -183,6 +187,10 @@ var _ = Describe("NotificationCreator", func() {
 			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
 			Expect(nr.Spec.Context.Workflow.WorkflowID).To(Equal("restart-pod"))
 			Expect(nr.Spec.Context.Workflow.ExecutionEngine).To(Equal("kubernetes-job"))
+			// Issue #1677 Phase 1: WorkflowName/ActionType sourced directly from
+			// ai.Status.SelectedWorkflow -- no live DataStorage lookup needed by Notification.
+			Expect(nr.Spec.Context.Workflow.WorkflowName).To(Equal("restart-pod"))
+			Expect(nr.Spec.Context.Workflow.ActionType).To(Equal("restart"))
 			Expect(nr.Spec.Context.Verification.Assessed).To(BeFalse())
 			Expect(nr.Spec.Context.Verification.Outcome).To(Equal("unavailable"))
 		})

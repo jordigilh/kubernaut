@@ -594,20 +594,6 @@ func (r *Reconciler) emitTimeoutAudit(ctx context.Context, rr *remediationv1.Rem
 	}
 }
 
-// resolveWorkflowDisplay resolves a workflow UUID to human-readable display
-// fields (WorkflowName + ActionType) by querying DataStorage.
-// Returns (actionType, workflowName) for use with FormatWorkflowDisplay.
-// Falls back to ("", workflowID) if the resolver is nil or DS lookup fails.
-// Issue #643 v2: Replaced CRD-based resolution with authoritative DS lookup.
-func (r *Reconciler) resolveWorkflowDisplay(ctx context.Context, workflowID string) (string, string) {
-	if r.workflowResolver != nil {
-		if info := r.workflowResolver.ResolveWorkflowDisplay(ctx, workflowID); info != nil {
-			return info.ActionType, info.WorkflowName
-		}
-	}
-	return "", workflowID
-}
-
 // emitRetentionCleanupAudit emits an audit event before deleting an expired RR (#265).
 // Ensures the audit trail is complete before CRD removal — PostgreSQL is the long-term store.
 // Non-blocking: failures are logged but do not prevent deletion.

@@ -39,22 +39,31 @@ func NewEnricher(resolver WorkflowNameResolver, logger logr.Logger) *Enricher {
 
 // EnrichNotification returns a copy of the notification with the workflow UUID
 // replaced by the human-readable workflow name. Returns the original notification
-// unchanged if resolution fails or no workflow metadata is present.
+// unchanged if no workflow metadata is present or no name can be determined.
+//
+// Issue #1677 Phase 1 (DD-WORKFLOW-018 v1.1): prefers the catalog-authoritative
+// WorkflowName already populated on the context by RemediationOrchestrator
+// (sourced from AIAnalysis.Status.SelectedWorkflow) -- no live DataStorage call
+// needed. Falls back to the live resolver only when WorkflowName is absent,
+// preserving compatibility with notification paths that don't populate it yet.
 func (e *Enricher) EnrichNotification(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest {
-	if e.resolver == nil {
-		return notification
-	}
-
 	workflowID := extractWorkflowID(notification.Spec.Context)
 	if workflowID == "" {
 		return notification
 	}
 
-	name, err := e.resolver.ResolveWorkflowName(ctx, workflowID)
-	if err != nil || name == "" {
-		e.logger.Info("Workflow name resolution failed or empty, keeping UUID",
-			"workflowId", workflowID, "error", err)
-		return notification
+	name := extractWorkflowName(notification.Spec.Context)
+	if name == "" {
+		if e.resolver == nil {
+			return notification
+		}
+		resolved, err := e.resolver.ResolveWorkflowName(ctx, workflowID)
+		if err != nil || resolved == "" {
+			e.logger.Info("Workflow name resolution failed or empty, keeping UUID",
+				"workflowId", workflowID, "error", err)
+			return notification
+		}
+		name = resolved
 	}
 
 	enriched := notification.DeepCopy()
@@ -75,4 +84,14 @@ func extractWorkflowID(ctx *notificationv1alpha1.NotificationContext) string {
 		return ctx.Workflow.SelectedWorkflow
 	}
 	return ""
+}
+
+// extractWorkflowName reads the catalog-authoritative WorkflowName from the
+// typed notification context, when already populated by the caller (Issue
+// #1677 Phase 1). Returns "" if absent, signaling the live-resolver fallback.
+func extractWorkflowName(ctx *notificationv1alpha1.NotificationContext) string {
+	if ctx == nil || ctx.Workflow == nil {
+		return ""
+	}
+	return ctx.Workflow.WorkflowName
 }

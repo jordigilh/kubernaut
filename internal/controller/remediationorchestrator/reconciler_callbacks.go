@@ -188,13 +188,6 @@ func (r *Reconciler) updateRARTimeRemaining(ctx context.Context, rar *remediatio
 	})
 }
 
-// SetWorkflowResolver wires the DS-backed workflow display resolver.
-// Must be called after NewReconciler in production (cmd/remediationorchestrator/main.go).
-// nil is safe — resolveWorkflowDisplay falls back to the raw UUID.
-func (r *Reconciler) SetWorkflowResolver(resolver routing.WorkflowDisplayResolver) {
-	r.workflowResolver = resolver
-}
-
 // SetRetentionPeriod configures how long terminal RemediationRequest CRDs persist
 // before automatic cleanup. Default: 24h. Issue #265.
 // Thread-safe: acquires configMu write lock (#835, DD-INFRA-001).
