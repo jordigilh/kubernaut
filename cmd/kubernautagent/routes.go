@@ -422,6 +422,13 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 	wfFetcher := resolveWorkflowCatalogFetcher(p.wfCatalog, logger)
 	catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfFetcher)
 
+	// #1677 Phase 2f (DD-WORKFLOW-019): kubernaut_list_workflows is a
+	// stateless catalog browse (no rr_id/session), backed by the same
+	// wfCatalog as the discovery adapter above, with the same fail-open
+	// contract when the cache is unavailable.
+	wfLister := resolveWorkflowLister(p.wfCatalog, logger)
+	listWorkflowsTool := mcptools.NewListWorkflowsTool(wfLister)
+
 	investigateTool, selectWfTool, completeNoActionTool := buildMCPTools(mcpToolsDeps{
 		leaseMgr:           core.leaseMgr,
 		investigatorRunner: investigatorRunner,
@@ -444,6 +451,7 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 	toolDeps.Investigate = mcptools.InvestigateRegistration(investigateTool, core.eventStore, sessionNotifier, logger)
 	toolDeps.SelectWorkflow = mcptools.SelectWorkflowRegistration(selectWfTool, logger)
 	toolDeps.CompleteNoAction = mcptools.CompleteNoActionRegistration(completeNoActionTool, logger)
+	toolDeps.ListWorkflows = mcptools.ListWorkflowsRegistration(listWorkflowsTool, logger)
 	return toolDeps, sessionNotifier
 }
 
@@ -482,6 +490,7 @@ func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mc
 		"investigate", true,
 		"select_workflow", true,
 		"complete_no_action", true,
+		"list_workflows", true,
 		"enrichment_in_select_workflow", p.enricher != nil,
 		"event_store", true,
 		"timeout_manager", true,
@@ -787,3 +796,27 @@ func (n *noopWorkflowCatalogFetcher) GetByID(_ context.Context, _ string) (*dsmo
 
 // Compile-time interface compliance check.
 var _ mcpadapters.WorkflowCatalogFetcher = (*noopWorkflowCatalogFetcher)(nil)
+
+// noopWorkflowLister is a no-op mcptools.WorkflowLister used when KA's
+// workflow catalog cache is unavailable, mirroring
+// noopWorkflowCatalogFetcher's fail-open pattern for the stateless
+// kubernaut_list_workflows tool (#1677 Phase 2f, DD-WORKFLOW-019).
+type noopWorkflowLister struct{}
+
+func (n *noopWorkflowLister) List(_ context.Context, _ *dsmodels.WorkflowSearchFilters, _, _ int) ([]dsmodels.RemediationWorkflow, int, error) {
+	return nil, 0, errDSUnavailable
+}
+
+// Compile-time interface compliance check.
+var _ mcptools.WorkflowLister = (*noopWorkflowLister)(nil)
+
+// resolveWorkflowLister returns the wfCatalog-backed lister when KA's
+// informer cache is available, or a no-op fail-open implementation
+// otherwise (mirrors resolveWorkflowCatalogFetcher's fail-open pattern).
+func resolveWorkflowLister(wfCatalog *workflowcatalog.Catalog, logger logr.Logger) mcptools.WorkflowLister {
+	if wfCatalog == nil {
+		logger.Info("MCP interactive mode: workflow catalog cache unavailable — kubernaut_list_workflows disabled")
+		return &noopWorkflowLister{}
+	}
+	return wfCatalog
+}

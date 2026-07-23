@@ -247,7 +247,7 @@ func registerInvestigationTool(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semap
 		})
 }
 
-// registerKAMCPTools registers the workflow-selection/discovery/decision KA MCP tools.
+// registerKAMCPTools registers the workflow-selection/discovery/decision/catalog KA MCP tools.
 func registerKAMCPTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted, shouldRegister toolGate) {
 	if shouldRegister("kubernaut_select_workflow") {
 		registerTool(srv, cfg, sem, "kubernaut_select_workflow", "Select a workflow for an investigation",
@@ -275,19 +275,19 @@ func registerKAMCPTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.We
 				return tools.HandlePresentDecision(args), nil
 			})
 	}
+
+	// kubernaut_list_workflows: moved from registerDSTools -- now backed by
+	// KA's workflow catalog (cache-backed), not DS's REST API. #1677 Phase
+	// 2f (DD-WORKFLOW-019).
+	registerTool(srv, cfg, sem, "kubernaut_list_workflows", "List available workflows",
+		func(ctx context.Context, args tools.ListWorkflowsArgs) (any, error) {
+			return tools.HandleListWorkflowsKA(ctx, cfg.KAMCPClient, args)
+		})
 }
 
 // registerDSTools registers the DataStorage-backed read-only query tools.
 // These are always registered regardless of InteractiveEnabled.
 func registerDSTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.Weighted) {
-	registerTool(srv, cfg, sem, "kubernaut_list_workflows", "List available workflows",
-		func(ctx context.Context, args tools.ListWorkflowsArgs) (any, error) {
-			if cfg.DSClient == nil {
-				return nil, fmt.Errorf("datastorage service unavailable")
-			}
-			return tools.HandleListWorkflows(ctx, cfg.DSClient, args)
-		})
-
 	registerTool(srv, cfg, sem, "kubernaut_get_remediation_history", "Get remediation execution history",
 		func(ctx context.Context, args tools.GetRemediationHistoryArgs) (any, error) {
 			if cfg.DSClient == nil {

@@ -52,4 +52,49 @@ var _ = Describe("KA/DS Tools Integration (tools/ via real containers)", func() 
 			Expect(result.Workflows).NotTo(BeNil())
 		})
 	})
+
+	// #1677 Phase 2f (DD-WORKFLOW-019): kubernaut_list_workflows moved off DS
+	// onto KA's workflow catalog (cache-backed). This proves the AF-side
+	// handler wiring (HandleListWorkflowsKA -> ka.MCPClient.ListWorkflows)
+	// independent of the MCP bridge dispatch already covered by
+	// pkg/apifrontend/handler's UT-AF-B-011/IT-BRIDGE-004.
+	Describe("AC-27: kubernaut_list_workflows dispatches to KA's catalog (#1677 Phase 2f)", func() {
+		It("IT-AF-1677-001: HandleListWorkflowsKA narrows KA catalog results to WorkflowSummary", func() {
+			mockMCP := &ka.MockMCPClient{
+				ListWorkflowsFn: func(_ context.Context, args ka.ListWorkflowsArgs) (*ka.ListWorkflowsResult, error) {
+					Expect(args.Kind).To(Equal("Deployment"))
+					return &ka.ListWorkflowsResult{
+						Workflows: []ka.WorkflowSummary{
+							{ID: "wf-restart", Name: "Restart Pod", Description: "Restarts the pod", Kind: "Deployment"},
+						},
+						Count: 1,
+					}, nil
+				},
+			}
+
+			result, err := tools.HandleListWorkflowsKA(context.Background(), mockMCP, tools.ListWorkflowsArgs{Kind: "Deployment"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Count).To(Equal(1))
+			Expect(result.Workflows).To(ConsistOf(tools.WorkflowSummary{
+				ID: "wf-restart", Name: "Restart Pod", Description: "Restarts the pod", Kind: "Deployment",
+			}))
+		})
+
+		It("IT-AF-1677-002: HandleListWorkflowsKA returns a clear error when the KA MCP client is nil", func() {
+			_, err := tools.HandleListWorkflowsKA(context.Background(), nil, tools.ListWorkflowsArgs{})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("not available"))
+		})
+
+		It("IT-AF-1677-003: HandleListWorkflowsKA propagates ka.ErrMCPUnavailable", func() {
+			unreachableMCP := &ka.MockMCPClient{
+				ListWorkflowsFn: func(_ context.Context, _ ka.ListWorkflowsArgs) (*ka.ListWorkflowsResult, error) {
+					return nil, ka.ErrMCPUnavailable
+				},
+			}
+			_, err := tools.HandleListWorkflowsKA(context.Background(), unreachableMCP, tools.ListWorkflowsArgs{})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unavailable"))
+		})
+	})
 })

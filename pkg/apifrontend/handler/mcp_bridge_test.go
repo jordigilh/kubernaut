@@ -521,6 +521,9 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 							Closer:    func() { close(eventCh) },
 						}, nil
 					},
+					ListWorkflowsFn: func(_ context.Context, _ ka.ListWorkflowsArgs) (*ka.ListWorkflowsResult, error) {
+						return &ka.ListWorkflowsResult{Workflows: []ka.WorkflowSummary{{ID: "wf-1", Name: "restart", Description: "Restart pods"}}, Count: 1}, nil
+					},
 				},
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
