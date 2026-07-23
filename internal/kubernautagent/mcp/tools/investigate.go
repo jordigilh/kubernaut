@@ -1148,10 +1148,17 @@ func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input Inves
 // ensures the user always has an investigation to drive after acquiring the
 // MCP lease (SC-24, #1440).
 func (t *InvestigateTool) createFallbackSession(ctx context.Context, rrID string, user mcpinternal.UserInfo) string {
+	// #1640: key must be "remediation_id" to match every other by-RR-ID
+	// lookup (FindByRemediationID, FindUserDrivingByRemediationID,
+	// GetLatestRCASummaryByRemediationID, etc.) and the correlation_id
+	// derivation in StartInvestigation — using "rr_id" here made fallback
+	// sessions invisible to those lookups and left their audit events with
+	// an empty correlation_id, which DataStorage rejects (minLength: 1),
+	// breaking discover_workflows' audit-trace reconstruction.
 	metadata := map[string]string{
-		"rr_id":    rrID,
-		"username": user.Username,
-		"mode":     "interactive_fallback",
+		"remediation_id": rrID,
+		"username":       user.Username,
+		"mode":           "interactive_fallback",
 	}
 	investigateFn := session.InvestigateFunc(func(_ context.Context) (*katypes.InvestigationResult, error) {
 		return &katypes.InvestigationResult{

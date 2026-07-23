@@ -540,6 +540,15 @@ func (m *Manager) FindPendingByRemediationID(rrID string) (string, bool) {
 	return "", false
 }
 
+// isFallbackSession reports whether sess is a placeholder created by
+// createFallbackSession (mode=interactive_fallback) rather than a genuine
+// investigation. Its canned RCASummary ("Interactive session — awaiting
+// user direction") must never be surfaced by the RCA-summary lookups below as
+// if it were real investigation output (#1640).
+func isFallbackSession(sess *Session) bool {
+	return sess.Metadata["mode"] == "interactive_fallback"
+}
+
 // GetLatestRCASummaryByRemediationID returns the RCA summary from the most
 // recent completed/user-driving session for the given remediation_id, if any.
 // BR-INTERACTIVE-010: enables context reconstruction to use the concise RCA
@@ -551,6 +560,9 @@ func (m *Manager) GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
 	var latestSummary string
 	for _, sess := range m.store.sessions {
 		if sess.Metadata["remediation_id"] != rrID {
+			continue
+		}
+		if isFallbackSession(sess) {
 			continue
 		}
 		if sess.Result == nil || sess.Result.RCASummary == "" {
@@ -580,6 +592,9 @@ func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.Inves
 	var latestResult *katypes.InvestigationResult
 	for _, sess := range m.store.sessions {
 		if sess.Metadata["remediation_id"] != rrID {
+			continue
+		}
+		if isFallbackSession(sess) {
 			continue
 		}
 		if sess.Result == nil {
