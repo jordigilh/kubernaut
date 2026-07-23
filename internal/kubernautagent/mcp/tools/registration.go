@@ -122,32 +122,55 @@ func wireInvestigationEventBridge(ctx context.Context, sess *mcpsdk.ServerSessio
 	go bridge.Run(context.Background()) //nolint:contextcheck // event bridge runs detached for the life of the investigation session, independent of the registering request
 }
 
+// actingUserInput is satisfied by any MCP tool input struct that carries a
+// trusted-intermediary identity override (#1287: acting_user/acting_user_groups
+// take precedence over the middleware-extracted identity).
+type actingUserInput interface {
+	actingUserOverride() (actingUser string, actingUserGroups []string)
+}
+
+// simpleToolRegistration builds a ToolRegistration for tools that follow the
+// plain resolve-user/handle/error-boundary shape, with no session-mapping or
+// event-bridge wiring of their own (unlike InvestigateRegistration above).
+// Issue #1530 (dupl): extracted from SelectWorkflowRegistration and
+// CompleteNoActionRegistration, which were byte-identical apart from the
+// tool name/description and the concrete input/output types.
+func simpleToolRegistration[TIn actingUserInput, TOut any](
+	name, description string,
+	handle func(ctx context.Context, input TIn, user mcpinternal.UserInfo) (TOut, error),
+	logger logr.Logger,
+) mcpinternal.ToolRegistration {
+	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
+		mcpsdk.AddTool(server, &mcpsdk.Tool{
+			Name:        name,
+			Description: description,
+		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input TIn) (*mcpsdk.CallToolResult, TOut, error) {
+			actingUser, actingUserGroups := input.actingUserOverride()
+			user := ResolveUser(userFromCtx(ctx), actingUser, actingUserGroups)
+			output, err := handle(ctx, input, user)
+			return nil, output, ErrorBoundary(logger, name, err)
+		})
+	}
+}
+
 // SelectWorkflowRegistration returns a ToolRegistration that registers the
 // kubernaut_select_workflow tool with the MCP SDK server.
 func SelectWorkflowRegistration(tool *SelectWorkflowTool, logger logr.Logger) mcpinternal.ToolRegistration {
-	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
-		mcpsdk.AddTool(server, &mcpsdk.Tool{
-			Name:        "kubernaut_select_workflow",
-			Description: "Select a remediation workflow from the catalog during an interactive investigation. Requires a prior discover_workflows call.",
-		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input SelectWorkflowInput) (*mcpsdk.CallToolResult, SelectWorkflowOutput, error) {
-			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
-			output, err := tool.Handle(ctx, input, user)
-			return nil, output, ErrorBoundary(logger, "kubernaut_select_workflow", err)
-		})
-	}
+	return simpleToolRegistration(
+		"kubernaut_select_workflow",
+		"Select a remediation workflow from the catalog during an interactive investigation. Requires a prior discover_workflows call.",
+		tool.Handle,
+		logger,
+	)
 }
 
 // CompleteNoActionRegistration returns a ToolRegistration that registers the
 // kubernaut_complete_no_action tool with the MCP SDK server.
 func CompleteNoActionRegistration(tool *CompleteNoActionTool, logger logr.Logger) mcpinternal.ToolRegistration {
-	return func(server *mcpsdk.Server, userFromCtx func(context.Context) mcpinternal.UserInfo) {
-		mcpsdk.AddTool(server, &mcpsdk.Tool{
-			Name:        "kubernaut_complete_no_action",
-			Description: "Complete an interactive investigation without selecting a workflow. Use when no remediation action is needed.",
-		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input CompleteNoActionInput) (*mcpsdk.CallToolResult, CompleteNoActionOutput, error) {
-			user := ResolveUser(userFromCtx(ctx), input.ActingUser, input.ActingUserGroups)
-			output, err := tool.Handle(ctx, input, user)
-			return nil, output, ErrorBoundary(logger, "kubernaut_complete_no_action", err)
-		})
-	}
+	return simpleToolRegistration(
+		"kubernaut_complete_no_action",
+		"Complete an interactive investigation without selecting a workflow. Use when no remediation action is needed.",
+		tool.Handle,
+		logger,
+	)
 }
