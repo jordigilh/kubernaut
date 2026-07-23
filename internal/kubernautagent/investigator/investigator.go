@@ -1271,7 +1271,14 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		}
 		resp, err := inv.chatOrStream(ctx, client, chatReq, turn, string(phase), modelName, runtimeParams)
 		if err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			// A DeadlineExceeded only means cancellation when the OUTER
+			// (parent) context is the one that's done — chatOrStream/
+			// ChatWithParams create their own per-attempt child context via
+			// context.WithTimeout, so that child expiring on its own
+			// (backend too slow, ctx.Err() on the parent still nil) is a
+			// backend failure, not an operator/system cancellation (#1612).
+			// A literal context.Canceled is always treated as cancellation.
+			if errors.Is(err, context.Canceled) || (errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil) {
 				emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)
 				return &CancelledResult{
 					Messages: messages,
@@ -1287,6 +1294,16 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			failEvent.Data["phase"] = string(phase)
 			failEvent.Data["duration_seconds"] = time.Since(loopStart).Seconds()
 			audit.StoreBestEffort(ctx, inv.auditStore, failEvent, inv.auditLog())
+			// session.EventTypeError already has a live consumer (API
+			// Frontend's SSE bridge, ka_investigate_bridge.go) that extracts
+			// Data["error"] and surfaces it to the operator — it just had no
+			// producer for a generic (non-cancellation) LLM turn failure
+			// until now. This gives the observer a distinguishable "backend
+			// unavailable" signal in real time instead of silence until the
+			// whole investigation fails (#1612 gap).
+			emitToSink(ctx, session.EventTypeError, turn, string(phase), map[string]interface{}{
+				"error": err.Error(),
+			})
 			return nil, fmt.Errorf("%s LLM call turn %d: %w", phase, turn, err)
 		}
 
@@ -1409,6 +1426,13 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 // escalateMaxTokens computes a higher MaxTokens value for truncation recovery.
 // If the truncated response used N completion tokens, we request 2x. Falls back
 // to a default of 8192 if the usage data is unavailable.
+// chatOrStream dispatches to either streaming or non-streaming chat
+// depending on whether an event sink is present in ctx. The streaming
+// branch retries with backoff exactly like ChatWithParams (#1612), sharing
+// the same llm.RetryWithBackoff machinery and RuntimeParams-driven policy
+// (MaxRetries, RetryBackoff) — previously RuntimeParams.MaxRetries was
+// silently dead here, since StreamChat was called exactly once with no
+// retry at all.
 func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, req llm.ChatRequest, turn int, phase string, modelName string, runtimeParams llm.RuntimeParams) (llm.ChatResponse, error) {
 	sink := session.EventSinkFromContext(ctx)
 	if sink == nil {
@@ -1428,21 +1452,58 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 	temp := runtimeParams.Temperature
 	req.Options.Temperature = &temp
 
-	callCtx := ctx
-	var cancel context.CancelFunc
-	if runtimeParams.TimeoutSeconds > 0 {
-		callCtx, cancel = context.WithTimeout(ctx, time.Duration(runtimeParams.TimeoutSeconds)*time.Second)
-		defer cancel()
+	bo := llm.ResolveRetryBackoff(runtimeParams)
+	maxAttempts := llm.ResolveMaxAttempts(runtimeParams)
+
+	var attempts int
+	resp, err := llm.RetryWithBackoff(ctx, maxAttempts, bo, func(int) llm.AttemptResult[llm.ChatResponse] {
+		attempts++
+		callCtx := ctx
+		var cancel context.CancelFunc
+		if runtimeParams.TimeoutSeconds > 0 {
+			callCtx, cancel = context.WithTimeout(ctx, time.Duration(runtimeParams.TimeoutSeconds)*time.Second)
+		}
+
+		// eventSent tracks whether this attempt's callback has already
+		// forwarded a token delta to the sink. Once true, a retry is never
+		// safe regardless of error classification — the operator has
+		// already observed partial output from this attempt, and
+		// re-running the call from scratch would duplicate/interleave
+		// stream events (#1612).
+		var eventSent bool
+		resp, err := client.StreamChat(callCtx, req, func(evt llm.ChatStreamEvent) error {
+			if evt.Delta != "" {
+				eventSent = true
+				emitToSink(ctx, session.EventTypeTokenDelta, turn, phase, map[string]interface{}{
+					"delta": evt.Delta,
+				})
+			}
+			return nil
+		})
+
+		if cancel != nil {
+			cancel()
+		}
+
+		return llm.AttemptResult[llm.ChatResponse]{Value: resp, Err: err, SafeToRetry: !eventSent && llm.IsRetryable(err)}
+	})
+
+	// Retry-attempt telemetry (#1612 gap remediation): only record when a
+	// retry actually happened (attempts > 1) — a first-try success or
+	// first-try non-retryable failure isn't a "retry" event and would just
+	// add noise to the metric.
+	if attempts > 1 {
+		outcome := "succeeded"
+		if err != nil {
+			outcome = "exhausted"
+			if !llm.IsRetryable(err) {
+				outcome = "non_retryable"
+			}
+		}
+		inv.metrics.RecordLLMCallRetry(phase, outcome)
 	}
 
-	return client.StreamChat(callCtx, req, func(evt llm.ChatStreamEvent) error {
-		if evt.Delta != "" {
-			emitToSink(ctx, session.EventTypeTokenDelta, turn, phase, map[string]interface{}{
-				"delta": evt.Delta,
-			})
-		}
-		return nil
-	})
+	return resp, err
 }
 
 // emitToSink sends an InvestigationEvent to the context-carried event sink
