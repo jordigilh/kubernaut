@@ -52,19 +52,21 @@ import (
 var _ = Describe("WorkflowRef — Issue #1661 Change 11c CRD-embedded execution snapshot", func() {
 	It("UT-WFE-339-001: carries ExecutionEngine/ServiceAccountName/Dependencies/Resources/DeclaredParameterNames and deep-copies them independently", func() {
 		original := workflowexecutionv1alpha1.WorkflowRef{
-			WorkflowID:      "wf-oom-recovery",
-			Version:         "v1.0.0",
-			ExecutionBundle: "quay.io/kubernaut/oom-recovery:v1",
-			ExecutionEngine: "job",
-			ServiceAccountName: "kubernaut-workflow-runner",
-			Dependencies: &sharedtypes.WorkflowDependencies{
-				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:         "wf-oom-recovery",
+				Version:            "v1.0.0",
+				ExecutionBundle:    "quay.io/kubernaut/oom-recovery:v1",
+				ExecutionEngine:    "job",
+				ServiceAccountName: "kubernaut-workflow-runner",
+				Dependencies: &sharedtypes.WorkflowDependencies{
+					Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+				},
+				Resources: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+					Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+				},
+				DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true},
 			},
-			Resources: &corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
-				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
-			},
-			DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true, "REPLICAS": true},
 		}
 
 		clone := original.DeepCopy()

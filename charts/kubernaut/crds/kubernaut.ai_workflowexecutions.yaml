@@ -20,8 +20,12 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .spec.workflowRef.workflowName
+      name: Workflow
+      type: string
     - jsonPath: .spec.workflowRef.workflowId
       name: WorkflowID
+      priority: 1
       type: string
     - jsonPath: .spec.targetResource
       name: Target
@@ -162,12 +166,13 @@ spec:
                   actionType:
                     description: |-
                       ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g.,
-                      ScaleReplicas, RestartPod), resolved by KA/DataStorage at selection
-                      time and propagated from AIAnalysis.Status.SelectedWorkflow.ActionType
-                      (Issue #1661 Change 3, promoted to the CRD-embedded snapshot alongside
-                      its siblings above). Audit-readability only -- WorkflowID remains the
-                      functional/join key for SOC2 CC8.1 reconstruction regardless of
-                      whether this is populated (IT-AW-1111-001).
+                      ScaleReplicas, RestartPod), resolved from the DS catalog at selection
+                      time. Required here because the upstream source of truth,
+                      RemediationWorkflow.Spec.ActionType, is itself
+                      so it is always non-empty once a workflow has been resolved from the
+                      catalog. Audit-readability only -- WorkflowID remains the
+                      functional/join key for SOC2 CC8.1 reconstruction regardless
+                      (IT-AW-1111-001).
                     type: string
                   declaredParameterNames:
                     additionalProperties:
@@ -184,8 +189,8 @@ spec:
                     type: object
                   dependencies:
                     description: |-
-                      Dependencies declares the Secrets/ConfigMaps the workflow's execution
-                      requires in the target namespace (DD-WE-006).
+                      Dependencies declares the Secrets/ConfigMaps the workflow's schema
+                      requires in the execution namespace (DD-WE-006).
                     properties:
                       configMaps:
                         items:
@@ -215,21 +220,30 @@ spec:
                   engineConfig:
                     description: |-
                       EngineConfig holds engine-specific configuration (BR-WE-016).
-                      For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}
+                      For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
                       For tekton/job: nil.
                     x-kubernetes-preserve-unknown-fields: true
                   executionBundle:
                     description: |-
-                      ExecutionBundle resolved from workflow catalog (Data Storage API)
-                      OCI bundle reference for Tekton PipelineRun
+                      ExecutionBundle is the OCI execution bundle reference (digest-pinned),
+                      resolved from the DS workflow catalog.
                     type: string
                   executionBundleDigest:
-                    description: ExecutionBundleDigest for audit trail and reproducibility
+                    description: ExecutionBundleDigest is retained for audit trail
+                      and reproducibility.
                     type: string
                   executionEngine:
                     description: |-
-                      ExecutionEngine is the workflow's execution engine (e.g. "job", "tekton",
-                      "ansible"), resolved by KA/DataStorage at selection time.
+                      ExecutionEngine specifies the backend engine for workflow execution,
+                      resolved from the DS workflow catalog at selection time. Required:
+                      RemediationOrchestrator's buildWorkflowRef already fails closed on an
+                      empty value ("selectedWorkflow.executionEngine is required") rather
+                      than silently defaulting, so this formalizes an invariant already
+                      enforced at runtime -- moving the failure to admission time instead.
+                    enum:
+                    - tekton
+                    - job
+                    - ansible
                     type: string
                   resources:
                     description: |-
@@ -294,19 +308,34 @@ spec:
                     type: object
                   serviceAccountName:
                     description: |-
-                      ServiceAccountName is the pre-existing ServiceAccount resolved from the
-                      workflow catalog at selection time (Issue #650). Used for pod execution.
+                      ServiceAccountName is the pre-existing ServiceAccount resolved from
+                      the DS workflow catalog at selection time (Issue #650), used for pod
+                      execution.
                     type: string
                   version:
-                    description: Version of the workflow
+                    description: Version is the workflow's semantic version.
                     type: string
                   workflowId:
-                    description: WorkflowID is the catalog lookup key
+                    description: WorkflowID is the catalog lookup key (DS-assigned
+                      UUID).
+                    type: string
+                  workflowName:
+                    description: |-
+                      WorkflowName is the human-readable workflow identifier, always equal
+                      to RemediationWorkflow.metadata.name -- a Kubernetes-guaranteed
+                      non-empty value on every object, making this Required safe on both
+                      embedding CRDs. Surfaced for kubectl/operator readability so CRD
+                      consumers aren't limited to the opaque WorkflowID UUID.
+                      Catalog-authoritative: always sourced from DataStorage, never
+                      LLM-suppliable (Issue #1661 Change 12).
                     type: string
                 required:
+                - actionType
                 - executionBundle
+                - executionEngine
                 - version
                 - workflowId
+                - workflowName
                 type: object
             required:
             - remediationRequestRef
@@ -592,12 +621,16 @@ spec:
                 type: string
               workflowName:
                 description: |-
-                  WorkflowName is the human-readable workflow name. Deliberately never
-                  populated: WorkflowRef carries no such field (KA's autonomous
-                  selection path never emits a display name distinct from WorkflowID
-                  either), so there is no source to mirror it from. WorkflowID remains
-                  the functional/join key for SOC2 CC8.1 reconstruction regardless
-                  (IT-AW-1111-001). Kept for audit-payload schema compatibility only.
+                  WorkflowName is the human-readable workflow name. Superseded (Issue
+                  #1661 Change 12): the authoritative value now lives on
+                  Spec.WorkflowRef.WorkflowName (immutable, set at creation time from
+                  AIAnalysis.Status.SelectedWorkflow.WorkflowName) -- mirroring the
+                  ActionType precedent from Change 11f. This Status field is never
+                  populated by the controller and is kept only for audit-payload schema
+                  back-compat; read Spec.WorkflowRef.WorkflowName instead. WorkflowID
+                  remains the functional/join key for SOC2 CC8.1 reconstruction
+                  regardless of whether either name field is populated
+                  (IT-AW-1111-001).
                 type: string
             type: object
         type: object

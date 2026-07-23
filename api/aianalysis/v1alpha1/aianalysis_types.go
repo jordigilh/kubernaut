@@ -18,7 +18,6 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -649,47 +648,13 @@ type RemediationTarget struct {
 // DD-CONTRACT-002: Output format for RO to create WorkflowExecution
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || self == oldSelf",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
 type SelectedWorkflow struct {
-	// Workflow identifier (catalog lookup key)
-	// +kubebuilder:validation:Required
-	WorkflowID string `json:"workflowId"`
-	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
-	// Propagated from KA three-step discovery protocol to RO audit events.
-	// +optional
-	ActionType string `json:"actionType,omitempty"`
-	// Workflow version
-	// +kubebuilder:validation:Required
-	Version string `json:"version"`
-	// Execution bundle OCI reference (digest-pinned) - resolved by KA
-	// +kubebuilder:validation:Required
-	ExecutionBundle string `json:"executionBundle"`
-	// Execution bundle digest for audit trail
-	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
-	// Confidence score (0.0-1.0)
-	// +kubebuilder:validation:Minimum=0.0
-	// +kubebuilder:validation:Maximum=1.0
-	Confidence float64 `json:"confidence"`
-	// Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
-	Parameters map[string]string `json:"parameters,omitempty"`
-	// Rationale explaining why this workflow was selected
-	Rationale string `json:"rationale"`
-	// ExecutionEngine specifies the backend engine for workflow execution.
-	// Populated from KA workflow recommendation.
-	// When empty, defaults to "tekton" for backwards compatibility.
-	// +kubebuilder:validation:Enum=tekton;job;ansible
-	// +optional
-	ExecutionEngine string `json:"executionEngine,omitempty"`
-
-	// EngineConfig holds engine-specific configuration (BR-WE-016).
-	// For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
-	// +kubebuilder:pruning:PreserveUnknownFields
-	// +optional
-	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
-
-	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
-	// DS workflow catalog (Issue #650). Propagated to the WFE for pod execution.
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-
+	// WorkflowSnapshot is the catalog-resolved execution snapshot
+	// (WorkflowID/WorkflowName/ActionType/Version/ExecutionBundle/
+	// ExecutionBundleDigest/ExecutionEngine/EngineConfig/ServiceAccountName/
+	// Dependencies/Resources/DeclaredParameterNames), inline-embedded so its
+	// field list can never drift from WorkflowExecution.Spec.WorkflowRef,
+	// which embeds the same type (Issue #1661 Change 12, DD-WORKFLOW-018).
+	//
 	// ========================================
 	// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11b, DD-WORKFLOW-018)
 	// ========================================
@@ -700,21 +665,16 @@ type SelectedWorkflow struct {
 	// DataStorage — closing the gap where an in-flight remediation could
 	// observe a RemediationWorkflow that was updated or deleted after
 	// selection completed.
+	sharedtypes.WorkflowSnapshot `json:",inline"`
 
-	// Dependencies declares the Secrets/ConfigMaps the workflow's schema
-	// requires in the execution namespace (DD-WE-006).
-	// +optional
-	Dependencies *sharedtypes.WorkflowDependencies `json:"dependencies,omitempty"`
-
-	// Resources declares the per-workflow Job container CPU/memory
-	// requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
-	// +optional
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-
-	// DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
-	// uses for defense-in-depth stripping of undeclared parameters (#243).
-	// +optional
-	DeclaredParameterNames map[string]bool `json:"declaredParameterNames,omitempty"`
+	// Confidence score (0.0-1.0)
+	// +kubebuilder:validation:Minimum=0.0
+	// +kubebuilder:validation:Maximum=1.0
+	Confidence float64 `json:"confidence"`
+	// Workflow parameters (UPPER_SNAKE_CASE keys per DD-WORKFLOW-003)
+	Parameters map[string]string `json:"parameters,omitempty"`
+	// Rationale explaining why this workflow was selected
+	Rationale string `json:"rationale"`
 
 	// SelectedAt records when this snapshot was first populated. Once
 	// non-nil, the entire SelectedWorkflow becomes immutable via the

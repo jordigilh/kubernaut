@@ -18,7 +18,6 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -183,87 +182,29 @@ type WorkflowExecutionSpec struct {
 	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
 }
 
-// WorkflowRef contains catalog-resolved workflow reference
+// WorkflowRef contains the catalog-resolved workflow reference.
+//
+// ========================================
+// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11c/12, DD-WORKFLOW-018)
+// ========================================
+// WorkflowRef is now (Change 12) nothing but an inline embed of
+// sharedtypes.WorkflowSnapshot -- the same type embedded in
+// AIAnalysis.Status.SelectedWorkflow. All fields (WorkflowID, WorkflowName,
+// ActionType, Version, ExecutionBundle, ExecutionBundleDigest,
+// ExecutionEngine, EngineConfig, ServiceAccountName, Dependencies,
+// Resources, DeclaredParameterNames) are copied verbatim from
+// AIAnalysis.Status.SelectedWorkflow (Change 11b) by RemediationOrchestrator
+// when building this WorkflowExecution (Change 11d), letting
+// WorkflowExecution stop re-fetching this data from DataStorage
+// (Change 11e). Sharing one Go/CRD-schema type between the two CRDs (rather
+// than two independently hand-copied field lists) makes it structurally
+// impossible for the two to drift again -- see git history: ActionType was
+// originally left off this list once, and WorkflowName was never wired at
+// all until Change 12 closed that gap. No per-field CEL rule is needed:
+// WorkflowExecutionSpec's existing "self == oldSelf" XValidation (ADR-001)
+// already covers WorkflowRef as a whole, including these fields.
 type WorkflowRef struct {
-	// WorkflowID is the catalog lookup key
-	WorkflowID string `json:"workflowId"`
-
-	// Version of the workflow
-	Version string `json:"version"`
-
-	// ExecutionBundle resolved from workflow catalog (Data Storage API)
-	// OCI bundle reference for Tekton PipelineRun
-	ExecutionBundle string `json:"executionBundle"`
-
-	// ExecutionBundleDigest for audit trail and reproducibility
-	// +optional
-	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
-
-	// EngineConfig holds engine-specific configuration (BR-WE-016).
-	// For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}
-	// For tekton/job: nil.
-	// +kubebuilder:pruning:PreserveUnknownFields
-	// +optional
-	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
-
-	// ========================================
-	// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11c, DD-WORKFLOW-018)
-	// ========================================
-	// The six fields below (ExecutionEngine, ServiceAccountName, ActionType,
-	// Dependencies, Resources, DeclaredParameterNames) are copied verbatim
-	// from AIAnalysis.Status.SelectedWorkflow (Change 11b) by
-	// RemediationOrchestrator when building this WorkflowExecution
-	// (Change 11d), letting WorkflowExecution stop re-fetching this data from
-	// DataStorage (Change 11e) -- and, as of the ActionType addition, letting
-	// every production consumer read directly from this immutable Spec
-	// snapshot instead of through a Status mirror that a resolve step has to
-	// remember to keep in sync (see git history: ActionType was originally
-	// left off this list and its Status-mirror equivalent was silently never
-	// wired, breaking workflowexecution.execution.started's audit payload).
-	// No new per-field CEL rule is needed: WorkflowExecutionSpec's existing
-	// "self == oldSelf" XValidation (ADR-001) already covers WorkflowRef as a
-	// whole, including these fields.
-
-	// ExecutionEngine is the workflow's execution engine (e.g. "job", "tekton",
-	// "ansible"), resolved by KA/DataStorage at selection time.
-	// +optional
-	ExecutionEngine string `json:"executionEngine,omitempty"`
-
-	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
-	// workflow catalog at selection time (Issue #650). Used for pod execution.
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-
-	// ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g.,
-	// ScaleReplicas, RestartPod), resolved by KA/DataStorage at selection
-	// time and propagated from AIAnalysis.Status.SelectedWorkflow.ActionType
-	// (Issue #1661 Change 3, promoted to the CRD-embedded snapshot alongside
-	// its siblings above). Audit-readability only -- WorkflowID remains the
-	// functional/join key for SOC2 CC8.1 reconstruction regardless of
-	// whether this is populated (IT-AW-1111-001).
-	// +optional
-	ActionType string `json:"actionType,omitempty"`
-
-	// Dependencies declares the Secrets/ConfigMaps the workflow's execution
-	// requires in the target namespace (DD-WE-006).
-	// +optional
-	Dependencies *sharedtypes.WorkflowDependencies `json:"dependencies,omitempty"`
-
-	// Resources declares the per-workflow Job container CPU/memory
-	// requests/limits (BR-WE-019 / DD-WE-008). Nil preserves BestEffort QoS.
-	// +optional
-	Resources *corev1.ResourceRequirements `json:"resources,omitempty"`
-
-	// DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
-	// uses for defense-in-depth stripping of undeclared parameters (#243). Not
-	// "omitempty": nil (no schema, no filtering) and a non-nil empty map
-	// (schema declares zero allowed parameters, strip everything) are
-	// distinct, meaningful values (IT-WE-243-002 vs IT-WE-243-003) -- Go's
-	// encoding/json "omitempty" treats a zero-length map the same as nil and
-	// silently drops it from the wire payload, collapsing that distinction.
-	// +optional
-	// +nullable
-	DeclaredParameterNames map[string]bool `json:"declaredParameterNames"`
+	sharedtypes.WorkflowSnapshot `json:",inline"`
 }
 
 // ExecutionConfig contains minimal execution settings.
@@ -383,12 +324,16 @@ type WorkflowExecutionStatus struct {
 	// +optional
 	EphemeralCredentialIDs []int `json:"ephemeralCredentialIDs,omitempty"`
 
-	// WorkflowName is the human-readable workflow name. Deliberately never
-	// populated: WorkflowRef carries no such field (KA's autonomous
-	// selection path never emits a display name distinct from WorkflowID
-	// either), so there is no source to mirror it from. WorkflowID remains
-	// the functional/join key for SOC2 CC8.1 reconstruction regardless
-	// (IT-AW-1111-001). Kept for audit-payload schema compatibility only.
+	// WorkflowName is the human-readable workflow name. Superseded (Issue
+	// #1661 Change 12): the authoritative value now lives on
+	// Spec.WorkflowRef.WorkflowName (immutable, set at creation time from
+	// AIAnalysis.Status.SelectedWorkflow.WorkflowName) -- mirroring the
+	// ActionType precedent from Change 11f. This Status field is never
+	// populated by the controller and is kept only for audit-payload schema
+	// back-compat; read Spec.WorkflowRef.WorkflowName instead. WorkflowID
+	// remains the functional/join key for SOC2 CC8.1 reconstruction
+	// regardless of whether either name field is populated
+	// (IT-AW-1111-001).
 	// +optional
 	WorkflowName string `json:"workflowName,omitempty"`
 
@@ -604,7 +549,8 @@ const (
 //+kubebuilder:selectablefield:JSONPath=.spec.remediationRequestRef.name
 //+kubebuilder:resource:shortName=wfe
 //+kubebuilder:printcolumn:name="Phase",type=string,JSONPath=`.status.phase`
-//+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`
+//+kubebuilder:printcolumn:name="Workflow",type=string,JSONPath=`.spec.workflowRef.workflowName`
+//+kubebuilder:printcolumn:name="WorkflowID",type=string,JSONPath=`.spec.workflowRef.workflowId`,priority=1
 //+kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.targetResource`
 //+kubebuilder:printcolumn:name="Duration",type=string,JSONPath=`.status.duration`
 //+kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`,priority=1

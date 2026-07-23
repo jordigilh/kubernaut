@@ -1116,8 +1116,14 @@ spec:
                 properties:
                   actionType:
                     description: |-
-                      Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
-                      Propagated from KA three-step discovery protocol to RO audit events.
+                      ActionType is the DD-WORKFLOW-016 taxonomy action type (e.g.,
+                      ScaleReplicas, RestartPod), resolved from the DS catalog at selection
+                      time. Required here because the upstream source of truth,
+                      RemediationWorkflow.Spec.ActionType, is itself
+                      so it is always non-empty once a workflow has been resolved from the
+                      catalog. Audit-readability only -- WorkflowID remains the
+                      functional/join key for SOC2 CC8.1 reconstruction regardless
+                      (IT-AW-1111-001).
                     type: string
                   confidence:
                     description: Confidence score (0.0-1.0)
@@ -1129,7 +1135,13 @@ spec:
                       type: boolean
                     description: |-
                       DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
-                      uses for defense-in-depth stripping of undeclared parameters (#243).
+                      uses for defense-in-depth stripping of undeclared parameters (#243). Not
+                      "omitempty": nil (no schema, no filtering) and a non-nil empty map
+                      (schema declares zero allowed parameters, strip everything) are
+                      distinct, meaningful values (IT-WE-243-002 vs IT-WE-243-003) -- Go's
+                      encoding/json "omitempty" treats a zero-length map the same as nil and
+                      silently drops it from the wire payload, collapsing that distinction.
+                    nullable: true
                     type: object
                   dependencies:
                     description: |-
@@ -1165,19 +1177,25 @@ spec:
                     description: |-
                       EngineConfig holds engine-specific configuration (BR-WE-016).
                       For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
+                      For tekton/job: nil.
                     x-kubernetes-preserve-unknown-fields: true
                   executionBundle:
-                    description: Execution bundle OCI reference (digest-pinned) -
-                      resolved by KA
+                    description: |-
+                      ExecutionBundle is the OCI execution bundle reference (digest-pinned),
+                      resolved from the DS workflow catalog.
                     type: string
                   executionBundleDigest:
-                    description: Execution bundle digest for audit trail
+                    description: ExecutionBundleDigest is retained for audit trail
+                      and reproducibility.
                     type: string
                   executionEngine:
                     description: |-
-                      ExecutionEngine specifies the backend engine for workflow execution.
-                      Populated from KA workflow recommendation.
-                      When empty, defaults to "tekton" for backwards compatibility.
+                      ExecutionEngine specifies the backend engine for workflow execution,
+                      resolved from the DS workflow catalog at selection time. Required:
+                      RemediationOrchestrator's buildWorkflowRef already fails closed on an
+                      empty value ("selectedWorkflow.executionEngine is required") rather
+                      than silently defaulting, so this formalizes an invariant already
+                      enforced at runtime -- moving the failure to admission time instead.
                     enum:
                     - tekton
                     - job
@@ -1262,21 +1280,36 @@ spec:
                     type: string
                   serviceAccountName:
                     description: |-
-                      ServiceAccountName is the pre-existing ServiceAccount resolved from the
-                      DS workflow catalog (Issue #650). Propagated to the WFE for pod execution.
+                      ServiceAccountName is the pre-existing ServiceAccount resolved from
+                      the DS workflow catalog at selection time (Issue #650), used for pod
+                      execution.
                     type: string
                   version:
-                    description: Workflow version
+                    description: Version is the workflow's semantic version.
                     type: string
                   workflowId:
-                    description: Workflow identifier (catalog lookup key)
+                    description: WorkflowID is the catalog lookup key (DS-assigned
+                      UUID).
+                    type: string
+                  workflowName:
+                    description: |-
+                      WorkflowName is the human-readable workflow identifier, always equal
+                      to RemediationWorkflow.metadata.name -- a Kubernetes-guaranteed
+                      non-empty value on every object, making this Required safe on both
+                      embedding CRDs. Surfaced for kubectl/operator readability so CRD
+                      consumers aren't limited to the opaque WorkflowID UUID.
+                      Catalog-authoritative: always sourced from DataStorage, never
+                      LLM-suppliable (Issue #1661 Change 12).
                     type: string
                 required:
+                - actionType
                 - confidence
                 - executionBundle
+                - executionEngine
                 - rationale
                 - version
                 - workflowId
+                - workflowName
                 type: object
                 x-kubernetes-validations:
                 - message: 'selectedWorkflow is immutable once selectedAt is populated
