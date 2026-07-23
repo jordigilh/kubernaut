@@ -845,7 +845,11 @@ jobs:
     needs: [detect-changes, build-and-push-images, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # #1712: 30 -> 40. Safety margin for scripts/helm-smoke-test.sh's
+    # TIMEOUT_PODS increase (300s -> 480s per flow, x2 flows) to absorb
+    # kubelet CrashLoopBackOff recovery from transient Kind control-plane
+    # CPU contention during concurrent pod startup (see TIMEOUT_PODS comment).
+    timeout-minutes: 40
     env:
       KIND_CLUSTER_NAME: helm-smoke
       IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}/kubernaut

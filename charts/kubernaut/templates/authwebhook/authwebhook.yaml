@@ -195,10 +195,23 @@ spec:
               # is what CI must-gather logs showed (container exits fast with
               # Init:Error rather than hanging, but still fails overall).
               # kube_retry wraps every kubectl call, closing that gap.
+              #
+              # v1.5 backport round 2 (helios08 local repro, #1712): live
+              # repro against a fresh Kind v0.32.0 cluster showed the Kind
+              # control-plane container pegged at ~94% CPU while ~13
+              # kubernaut pods started concurrently, with the apiserver
+              # returning "context deadline exceeded" for several minutes —
+              # long enough to exhaust the original 20-attempt (~160s)
+              # budget outright. Raised to 40 attempts (~320s) per call to
+              # span the observed contention window with margin. This is a
+              # startup-burst characteristic of the test topology, not a
+              # permanent outage, confirmed by the same pods going Ready
+              # once given more time (see sibling liveness-probe fix below).
+              KUBE_RETRY_MAX_ATTEMPTS=40
               kube_retry() {
                 attempt=0
                 err=""
-                while [ "$attempt" -lt 20 ]; do
+                while [ "$attempt" -lt "$KUBE_RETRY_MAX_ATTEMPTS" ]; do
                   if out=$(kube "$@" 2>&1); then
                     printf '%s\n' "$out"
                     return 0
@@ -214,7 +227,16 @@ spec:
               patch_webhooks() {
                 KIND="$1"
                 NAME="$2"
-                COUNT=$(kube_retry get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
+                # #1712 round 2: capture kube_retry's output into a variable
+                # (rather than piping it directly into `wc -w`) so a failed
+                # `kube_retry` propagates its non-zero exit status under
+                # `set -e`. /bin/sh here is dash (bitnami's Debian-based
+                # image), which has no `pipefail`, so `kube_retry ... | wc -w`
+                # previously always "succeeded" with COUNT=0 regardless of
+                # whether kube_retry itself failed — silently patching zero
+                # webhooks instead of surfacing the real API-server timeout.
+                NAMES=$(kube_retry get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}')
+                COUNT=$(printf '%s' "$NAMES" | wc -w | tr -d ' ')
                 PATCH="["
                 i=0
                 while [ "$i" -lt "$COUNT" ]; do

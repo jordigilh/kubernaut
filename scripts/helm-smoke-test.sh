@@ -22,7 +22,18 @@ IMAGE_REGISTRY=""
 PULL_SECRET=""
 CHART_PATH="charts/kubernaut/"
 NAMESPACE="kubernaut-system"
-TIMEOUT_PODS="300s"
+# #1712: 300s -> 480s. Local Kind v0.32.0 repro (helios08) showed the
+# single-node control-plane container pegged at ~94% CPU during the
+# concurrent startup burst of ~7 controller-runtime services, each issuing
+# a one-shot (no-retry) K8s API discovery call at boot (standard kubebuilder
+# fail-fast idiom: a transient timeout there is fatal, exit(1), relying on
+# kubelet's own CrashLoopBackOff to retry). Observed contention windows
+# lasted several minutes; a fresh install attempted after contention
+# subsided came up 1/1 across all pods in <60s with zero restarts,
+# confirming this is a transient startup-burst characteristic of the test
+# topology (not a permanent defect) that just needs more wall-clock runway
+# for kubelet's exponential-backoff retries to land a lucky attempt.
+TIMEOUT_PODS="480s"
 CERT_MANAGER_ISSUER="selfsigned-issuer"
 
 # TAP state
