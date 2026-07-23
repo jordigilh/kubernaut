@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -88,15 +90,17 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-ansible-restart",
-			Version:         "v2.0.0",
-			ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
-			Confidence:      0.92,
-			Rationale:       "Ansible playbook for deployment restart",
-			ExecutionEngine: "ansible",
-			EngineConfig: &apiextensionsv1.JSON{
-				Raw: ansibleConfig,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-ansible-restart",
+				Version:         "v2.0.0",
+				ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+				ExecutionEngine: "ansible",
+				EngineConfig: &apiextensionsv1.JSON{
+					Raw: ansibleConfig,
+				},
 			},
+			Confidence: 0.92,
+			Rationale:  "Ansible playbook for deployment restart",
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Memory leak detected",

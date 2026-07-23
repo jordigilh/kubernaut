@@ -93,10 +93,12 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 				Phase:     aianalysis.PhaseAnalyzing,
 				RootCause: "OOM caused by memory leak",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID:      "wf-restart-pod",
-					ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
-					Confidence:      0.92,
-					Rationale:       "Selected for OOM recovery",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "wf-restart-pod",
+						ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
+					},
+					Confidence: 0.92,
+					Rationale:  "Selected for OOM recovery",
 				},
 				PostRCAContext: &aianalysisv1.PostRCAContext{
 					DetectedLabels: &sharedtypes.DetectedLabels{

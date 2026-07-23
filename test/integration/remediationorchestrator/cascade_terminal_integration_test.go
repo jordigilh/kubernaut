@@ -19,6 +19,8 @@ package remediationorchestrator
 import (
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -287,9 +289,11 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 					Namespace:  ROControllerNamespace,
 				},
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
-					WorkflowID:      "restart-deployment",
-					Version:         "v1",
-					ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "restart-deployment",
+						Version:         "v1",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1",
+					},
 				},
 				TargetResource: fmt.Sprintf("%s/deployment/test-app", ROControllerNamespace),
 			},

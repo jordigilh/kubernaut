@@ -40,6 +40,8 @@ import (
 	"context"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -96,13 +98,15 @@ var _ = Describe("reconcilePending orchestration [GO-ANTIPATTERN-AUDIT-2026-07-0
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				TargetResource: targetResource,
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:      "wf-" + name,
-					Version:         "v1",
-					ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
-					// Issue #1661 Change 11e: engine is read directly from
-					// WorkflowRef, not resolved via a DataStorage round-trip
-					// at runtime.
-					ExecutionEngine: "tekton",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "wf-" + name,
+						Version:         "v1",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+						// Issue #1661 Change 11e: engine is read directly from
+						// WorkflowRef, not resolved via a DataStorage round-trip
+						// at runtime.
+						ExecutionEngine: "tekton",
+					},
 				},
 			},
 		}

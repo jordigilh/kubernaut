@@ -84,13 +84,15 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: depSecretJobUUID,
-						Version:    "v1.0.0",
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
-						ExecutionEngine: "job",
-						Dependencies: &sharedtypes.WorkflowDependencies{
-							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret"}},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: depSecretJobUUID,
+							Version:    "v1.0.0",
+							ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
+								infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+							ExecutionEngine: "job",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret"}},
+							},
 						},
 					},
 					TargetResource: targetResource1,
@@ -186,13 +188,15 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: depSecretJobUUID,
-						Version:    "v1.0.0",
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
-						ExecutionEngine: "job",
-						Dependencies: &sharedtypes.WorkflowDependencies{
-							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret"}},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: depSecretJobUUID,
+							Version:    "v1.0.0",
+							ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
+								infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+							ExecutionEngine: "job",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret"}},
+							},
 						},
 					},
 					TargetResource: targetResource2,
@@ -256,13 +260,15 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: helloWorldUUID,
-						Version:    "v1.0.0",
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
-						ExecutionEngine: "job",
 						// Deliberately no Dependencies -- this test proves no dependency
 						// volumes are created when the WorkflowRef declares none.
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: helloWorldUUID,
+							Version:    "v1.0.0",
+							ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
+								infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+							ExecutionEngine: "job",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -335,12 +341,14 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      depSecretTektonUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
-						ExecutionEngine: "tekton",
-						Dependencies: &sharedtypes.WorkflowDependencies{
-							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-tekton"}},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      depSecretTektonUUID,
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-tekton"}},
+							},
 						},
 					},
 					TargetResource: targetResource,
@@ -418,13 +426,15 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: depConfigMapJobUUID,
-						Version:    "v1.0.0",
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
-						ExecutionEngine: "job",
-						Dependencies: &sharedtypes.WorkflowDependencies{
-							ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap"}},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: depConfigMapJobUUID,
+							Version:    "v1.0.0",
+							ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
+								infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+							ExecutionEngine: "job",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap"}},
+							},
 						},
 					},
 					TargetResource: targetResource,
@@ -504,12 +514,14 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      depConfigMapTektonUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
-						ExecutionEngine: "tekton",
-						Dependencies: &sharedtypes.WorkflowDependencies{
-							ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-tekton"}},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      depConfigMapTektonUUID,
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-tekton"}},
+							},
 						},
 					},
 					TargetResource: targetResource,

@@ -21,6 +21,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -155,11 +157,13 @@ func newAnsibleWFE(name, namespace string, engineConfigJSON []byte, params map[s
 				Namespace:  namespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:      "ansible-restart",
-				Version:         "1.0.0",
-				ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
-				EngineConfig: &apiextensionsv1.JSON{
-					Raw: engineConfigJSON,
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "ansible-restart",
+					Version:         "1.0.0",
+					ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+					EngineConfig: &apiextensionsv1.JSON{
+						Raw: engineConfigJSON,
+					},
 				},
 			},
 			Parameters: params,
@@ -267,10 +271,12 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "ansible-test",
-						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineConfig},
-						ExecutionEngine: "ansible",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "ansible-test",
+							ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineConfig},
+							ExecutionEngine: "ansible",
+						},
 					},
 				},
 			}
@@ -289,9 +295,11 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "ansible-test",
-						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
-						ExecutionEngine: "ansible",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "ansible-test",
+							ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+							ExecutionEngine: "ansible",
+						},
 					},
 				},
 			}

@@ -19,6 +19,8 @@ package workflowexecution
 import (
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -56,10 +58,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "test-workflow",
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/condition-test-app",
 					Parameters: map[string]string{
@@ -122,10 +126,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "test-workflow",
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/running-test-app",
 				},
@@ -186,10 +192,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "test-workflow",
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/complete-success-app",
 				},
@@ -270,10 +278,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "test-workflow",
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/audit-test-app",
 				},
@@ -325,10 +335,12 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "test-workflow",
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
 				},

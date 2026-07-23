@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -81,9 +83,11 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				TargetResource: "default/pod/test-pod",
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
-					WorkflowID:     "test-workflow",
-					Version:        "v1",
-					ExecutionBundle: "test/image:latest",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "test-workflow",
+						Version:         "v1",
+						ExecutionBundle: "test/image:latest",
+					},
 				},
 			},
 		}
@@ -137,10 +141,10 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 				ConfidenceLevel: "medium",
 				Reason:          "E2E test: Testing approval flow",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-					WorkflowID:     "test-workflow",
-					Version:        "v1",
+					WorkflowID:      "test-workflow",
+					Version:         "v1",
 					ExecutionBundle: "test/image:latest",
-					Rationale:      "Test remediation plan for E2E validation",
+					Rationale:       "Test remediation plan for E2E validation",
 				},
 				// REQUIRED FIELDS (CRD validation)
 				InvestigationSummary: "E2E test investigation: Simulating approval request flow for SOC2 attribution verification",
@@ -241,9 +245,11 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 				Spec: workflowexecutionv1.WorkflowExecutionSpec{
 					TargetResource: fmt.Sprintf("default/pod/test-pod-%d", idx),
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
-						WorkflowID:     fmt.Sprintf("test-workflow-%d", idx),
-						Version:        "v1",
-						ExecutionBundle: "test/image:latest",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      fmt.Sprintf("test-workflow-%d", idx),
+							Version:         "v1",
+							ExecutionBundle: "test/image:latest",
+						},
 					},
 				},
 			}

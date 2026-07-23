@@ -22,6 +22,8 @@ import (
 	"math/rand"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -214,10 +216,12 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 				Namespace:  namespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:      "test-workflow",
-				Version:         "v1.0.0",
-				ExecutionBundle: "quay.io/jordigilh/test-workflows/test:v1.0.0",
-				ExecutionEngine: "tekton",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "test-workflow",
+					Version:         "v1.0.0",
+					ExecutionBundle: "quay.io/jordigilh/test-workflows/test:v1.0.0",
+					ExecutionEngine: "tekton",
+				},
 			},
 			TargetResource: "default/deployment/test-app-" + name, // Unique per test for deterministic PR names
 		},

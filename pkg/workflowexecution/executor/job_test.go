@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
@@ -92,10 +94,12 @@ func newTestWFE(name, targetResource, clusterID string) *workflowexecutionv1alph
 		},
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:         "wf-001",
-				Version:            "v1.0.0",
-				ExecutionBundle:    "registry.example.com/workflow:v1",
-				ServiceAccountName: "kubernaut-runner",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:         "wf-001",
+					Version:            "v1.0.0",
+					ExecutionBundle:    "registry.example.com/workflow:v1",
+					ServiceAccountName: "kubernaut-runner",
+				},
 			},
 			TargetResource: targetResource,
 			ClusterID:      clusterID,

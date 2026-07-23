@@ -50,12 +50,14 @@ var _ = Describe("resolveSchemaMetadata (Issue #1661 Change 11e)", func() {
 		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID: "wf-pending-red-001",
-					Dependencies: &sharedtypes.WorkflowDependencies{
-						Secrets:    []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
-						ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "app-config"}},
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID: "wf-pending-red-001",
+						Dependencies: &sharedtypes.WorkflowDependencies{
+							Secrets:    []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+							ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "app-config"}},
+						},
+						DeclaredParameterNames: map[string]bool{"TARGET_POD": true, "NAMESPACE": true},
 					},
-					DeclaredParameterNames: map[string]bool{"TARGET_POD": true, "NAMESPACE": true},
 				},
 			},
 		}

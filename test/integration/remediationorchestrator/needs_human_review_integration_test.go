@@ -41,6 +41,8 @@ package remediationorchestrator
 import (
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -403,7 +405,9 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				HumanReviewReason: "low_confidence",
 				Message:           "AI confidence (0.55) below threshold (0.70)",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID: "restart-pod-v1",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID: "restart-pod-v1",
+					},
 					Confidence: 0.55,
 				},
 			}

@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -390,10 +392,12 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      failureUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      failureUUID,
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -591,11 +595,13 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: failureUUID,
-						Version:    "v1.0.0",
-						// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
-						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: failureUUID,
+							Version:    "v1.0.0",
+							// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{

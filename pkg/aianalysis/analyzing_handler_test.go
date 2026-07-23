@@ -113,10 +113,12 @@ var _ = Describe("AnalyzingHandler", func() {
 				// Simulating data from InvestigatingHandler
 				RootCause: "OOM caused by memory leak",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID:     "wf-restart-pod",
-					ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
-					Confidence:     0.92,
-					Rationale:      "Selected for OOM remediation",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "wf-restart-pod",
+						ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
+					},
+					Confidence: 0.92,
+					Rationale:  "Selected for OOM remediation",
 				},
 			},
 		}
@@ -169,102 +171,102 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(analysis.Status.ApprovalContext.WhyApprovalRequired).To(ContainSubstring("Production"))
 			})
 
-		// BR-AI-019: Confidence level classification for operator visibility
-		// Business Value: Operators can quickly assess AI confidence without reading raw numbers
-		DescribeTable("should populate ApprovalContext with correct confidence level",
-			func(confidenceScore float64, expectedLevel string) {
+			// BR-AI-019: Confidence level classification for operator visibility
+			// Business Value: Operators can quickly assess AI confidence without reading raw numbers
+			DescribeTable("should populate ApprovalContext with correct confidence level",
+				func(confidenceScore float64, expectedLevel string) {
+					analysis := createTestAnalysis()
+					analysis.Status.SelectedWorkflow.Confidence = confidenceScore
+					// Ensure approval is triggered: missing remediation target guarantees it
+					analysis.Status.RootCauseAnalysis = nil
+
+					_, err := handler.Handle(ctx, analysis)
+
+					Expect(err).NotTo(HaveOccurred())
+					Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+					Expect(analysis.Status.ApprovalContext.ConfidenceScore).To(BeNumerically("~", confidenceScore, 0.01))
+					Expect(analysis.Status.ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel))
+				},
+				// High confidence (≥0.8): AI is very confident
+				Entry("0.92 → high (above threshold)", 0.92, "high"),
+				Entry("0.80 → high (at threshold)", 0.80, "high"),
+				Entry("0.95 → high (near perfect)", 0.95, "high"),
+				// Medium confidence (0.6-0.8): AI has reasonable confidence
+				Entry("0.79 → medium (just below high threshold)", 0.79, "medium"),
+				Entry("0.70 → medium (typical medium)", 0.70, "medium"),
+				Entry("0.60 → medium (at threshold)", 0.60, "medium"),
+				// Low confidence (<0.6): AI has low confidence - needs careful review
+				Entry("0.59 → low (just below medium threshold)", 0.59, "low"),
+				Entry("0.40 → low (typical low)", 0.40, "low"),
+				Entry("0.10 → low (very uncertain)", 0.10, "low"),
+			)
+
+			It("should populate ApprovalContext with RecommendedActions from SelectedWorkflow", func() {
 				analysis := createTestAnalysis()
-				analysis.Status.SelectedWorkflow.Confidence = confidenceScore
-				// Ensure approval is triggered: missing remediation target guarantees it
-				analysis.Status.RootCauseAnalysis = nil
+				// Missing RemediationTarget triggers approval via real policy
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-				Expect(analysis.Status.ApprovalContext.ConfidenceScore).To(BeNumerically("~", confidenceScore, 0.01))
-				Expect(analysis.Status.ApprovalContext.ConfidenceLevel).To(Equal(expectedLevel))
-			},
-			// High confidence (≥0.8): AI is very confident
-			Entry("0.92 → high (above threshold)", 0.92, "high"),
-			Entry("0.80 → high (at threshold)", 0.80, "high"),
-			Entry("0.95 → high (near perfect)", 0.95, "high"),
-			// Medium confidence (0.6-0.8): AI has reasonable confidence
-			Entry("0.79 → medium (just below high threshold)", 0.79, "medium"),
-			Entry("0.70 → medium (typical medium)", 0.70, "medium"),
-			Entry("0.60 → medium (at threshold)", 0.60, "medium"),
-			// Low confidence (<0.6): AI has low confidence - needs careful review
-			Entry("0.59 → low (just below medium threshold)", 0.59, "low"),
-			Entry("0.40 → low (typical low)", 0.40, "low"),
-			Entry("0.10 → low (very uncertain)", 0.10, "low"),
-		)
+				Expect(analysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(1))
+				Expect(analysis.Status.ApprovalContext.RecommendedActions[0].WorkflowId).To(Equal("wf-restart-pod"))
+			})
 
-		It("should populate ApprovalContext with RecommendedActions from SelectedWorkflow", func() {
-			analysis := createTestAnalysis()
-			// Missing RemediationTarget triggers approval via real policy
+			// BR-AI-019: Investigation summary from RootCauseAnalysis
+			// Business Value: Operators see AI's investigation findings in approval context
+			It("should populate ApprovalContext with InvestigationSummary from RCA", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.SelectedWorkflow.Confidence = 0.5
+				analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+					Summary:             "Memory leak in application container",
+					ContributingFactors: []string{"OOM killed event", "Gradual memory increase over 2 hours"},
+					RemediationTarget: &aianalysisv1.RemediationTarget{
+						Kind: "Deployment", Name: "api-server", Namespace: "production",
+					},
+				}
 
-			_, err := handler.Handle(ctx, analysis)
+				_, err := handler.Handle(ctx, analysis)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-			Expect(analysis.Status.ApprovalContext.RecommendedActions).To(HaveLen(1))
-			Expect(analysis.Status.ApprovalContext.RecommendedActions[0].WorkflowId).To(Equal("wf-restart-pod"))
-		})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(Equal("Memory leak in application container"))
+				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(HaveLen(2))
+				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(ContainElement("OOM killed event"))
+			})
 
-		// BR-AI-019: Investigation summary from RootCauseAnalysis
-		// Business Value: Operators see AI's investigation findings in approval context
-		It("should populate ApprovalContext with InvestigationSummary from RCA", func() {
-			analysis := createTestAnalysis()
-			analysis.Status.SelectedWorkflow.Confidence = 0.5
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:             "Memory leak in application container",
-				ContributingFactors: []string{"OOM killed event", "Gradual memory increase over 2 hours"},
-				RemediationTarget: &aianalysisv1.RemediationTarget{
-					Kind: "Deployment", Name: "api-server", Namespace: "production",
-				},
-			}
+			// BR-AI-019: Edge case - no RCA available
+			// Business Value: System handles missing investigation gracefully
+			It("should handle missing RootCauseAnalysis gracefully", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.RootCauseAnalysis = nil
+				// Missing RemediationTarget triggers approval via real policy
 
-			_, err := handler.Handle(ctx, analysis)
+				_, err := handler.Handle(ctx, analysis)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-			Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(Equal("Memory leak in application container"))
-			Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(HaveLen(2))
-			Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(ContainElement("OOM killed event"))
-		})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(BeEmpty())
+				Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(BeNil())
+			})
 
-		// BR-AI-019: Edge case - no RCA available
-		// Business Value: System handles missing investigation gracefully
-		It("should handle missing RootCauseAnalysis gracefully", func() {
-			analysis := createTestAnalysis()
-			analysis.Status.RootCauseAnalysis = nil
-			// Missing RemediationTarget triggers approval via real policy
-
-			_, err := handler.Handle(ctx, analysis)
-
-			Expect(err).NotTo(HaveOccurred())
-			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-			Expect(analysis.Status.ApprovalContext.InvestigationSummary).To(BeEmpty())
-			Expect(analysis.Status.ApprovalContext.EvidenceCollected).To(BeNil())
-		})
-
-		// BR-AI-019: AlternativesConsidered from AlternativeWorkflows
-		// Business Value: Operators can see what other options AI considered
-		It("should populate ApprovalContext with AlternativesConsidered", func() {
-			analysis := createTestAnalysis()
-			// Missing RemediationTarget triggers approval via real policy
-			analysis.Status.AlternativeWorkflows = []aianalysisv1.AlternativeWorkflow{
+			// BR-AI-019: AlternativesConsidered from AlternativeWorkflows
+			// Business Value: Operators can see what other options AI considered
+			It("should populate ApprovalContext with AlternativesConsidered", func() {
+				analysis := createTestAnalysis()
+				// Missing RemediationTarget triggers approval via real policy
+				analysis.Status.AlternativeWorkflows = []aianalysisv1.AlternativeWorkflow{
 					{
-						WorkflowID:     "wf-scale-up",
+						WorkflowID:      "wf-scale-up",
 						ExecutionBundle: "kubernaut.io/workflows/scale:v1.0.0",
-						Confidence:     0.75,
-						Rationale:      "Could scale up instead of restart",
+						Confidence:      0.75,
+						Rationale:       "Could scale up instead of restart",
 					},
 					{
-						WorkflowID:     "wf-rollback",
+						WorkflowID:      "wf-rollback",
 						ExecutionBundle: "kubernaut.io/workflows/rollback:v1.0.0",
-						Confidence:     0.60,
-						Rationale:      "Could rollback to previous version",
+						Confidence:      0.60,
+						Rationale:       "Could rollback to previous version",
 					},
 				}
 
@@ -277,24 +279,24 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(analysis.Status.ApprovalContext.AlternativesConsidered[1].Approach).To(Equal("wf-rollback"))
 			})
 
-		// BR-AI-019: Edge case - no alternatives available
-		// Business Value: System handles single workflow scenarios
-		It("should handle empty AlternativeWorkflows gracefully", func() {
-			analysis := createTestAnalysis()
-			analysis.Status.AlternativeWorkflows = nil
-			// Missing RemediationTarget triggers approval via real policy
+			// BR-AI-019: Edge case - no alternatives available
+			// Business Value: System handles single workflow scenarios
+			It("should handle empty AlternativeWorkflows gracefully", func() {
+				analysis := createTestAnalysis()
+				analysis.Status.AlternativeWorkflows = nil
+				// Missing RemediationTarget triggers approval via real policy
 
-			_, err := handler.Handle(ctx, analysis)
+				_, err := handler.Handle(ctx, analysis)
 
-			Expect(err).NotTo(HaveOccurred())
-			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
-			Expect(analysis.Status.ApprovalContext.AlternativesConsidered).To(BeNil())
-		})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.AlternativesConsidered).To(BeNil())
+			})
 
-		// BR-AI-019: Business outcome - operator can see policy decision in approval context
-		It("should include policy evaluation details for operator visibility", func() {
-			analysis := createTestAnalysis()
-			// Missing RemediationTarget triggers approval via real policy
+			// BR-AI-019: Business outcome - operator can see policy decision in approval context
+			It("should include policy evaluation details for operator visibility", func() {
+				analysis := createTestAnalysis()
+				// Missing RemediationTarget triggers approval via real policy
 
 				_, err := handler.Handle(ctx, analysis)
 

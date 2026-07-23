@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -63,12 +65,14 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "ansible-restart",
-						Version:         "1.0.0",
-						ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
-						ExecutionEngine: "ansible",
-						EngineConfig: &apiextensionsv1.JSON{
-							Raw: engineConfig,
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "ansible-restart",
+							Version:         "1.0.0",
+							ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+							ExecutionEngine: "ansible",
+							EngineConfig: &apiextensionsv1.JSON{
+								Raw: engineConfig,
+							},
 						},
 					},
 					Parameters: map[string]string{

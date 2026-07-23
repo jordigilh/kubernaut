@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -284,16 +286,18 @@ func NewCompletedAIAnalysis(name, namespace string) *aianalysisv1.AIAnalysis {
 		Phase:            aianalysisv1.PhaseCompleted,
 		ApprovalRequired: false,
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-			WorkflowID:            "pod-restart-workflow",
-			Version:               "v1.0.0",
-			ExecutionBundle:       "kubernaut/workflows/pod-restart:v1.0.0",
-			ExecutionBundleDigest: "sha256:abc123",
-			// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
-			// required field on validateSelectedWorkflow -- RO no longer has a DS
-			// fallback to resolve it at WFE-creation time.
-			ExecutionEngine: "job",
-			Confidence:      0.95,
-			Rationale:       "High confidence match for pod restart scenario",
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:            "pod-restart-workflow",
+				Version:               "v1.0.0",
+				ExecutionBundle:       "kubernaut/workflows/pod-restart:v1.0.0",
+				ExecutionBundleDigest: "sha256:abc123",
+				// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
+				// required field on validateSelectedWorkflow -- RO no longer has a DS
+				// fallback to resolve it at WFE-creation time.
+				ExecutionEngine: "job",
+			},
+			Confidence: 0.95,
+			Rationale:  "High confidence match for pod restart scenario",
 			Parameters: map[string]string{
 				"TARGET_POD": "test-pod",
 			},
@@ -307,13 +311,17 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 		Phase:            aianalysisv1.PhaseCompleted,
 		ApprovalRequired: true,
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-			WorkflowID:            "deployment-rollback-workflow",
-			Version:               "v1.0.0",
-			ExecutionBundle:       "kubernaut/workflows/deployment-rollback:v1.0.0",
-			ExecutionBundleDigest: "sha256:def456",
-			ExecutionEngine:       "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
-			Confidence:            0.65,  // Low confidence triggers approval
-			Rationale:             "Moderate confidence - human review recommended",
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:            "deployment-rollback-workflow",
+				Version:               "v1.0.0",
+				ExecutionBundle:       "kubernaut/workflows/deployment-rollback:v1.0.0",
+				ExecutionBundleDigest: "sha256:def456",
+				ExecutionEngine:       "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.65,
+			// Low confidence triggers approval
+			Rationale: "Moderate confidence - human review recommended",
 			Parameters: map[string]string{
 				"TARGET_DEPLOYMENT": "test-deployment",
 			},
@@ -361,10 +369,12 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 		},
 		Spec: workflowexecutionv1.WorkflowExecutionSpec{
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID:            "pod-restart-workflow",
-				Version:               "v1.0.0",
-				ExecutionBundle:       "kubernaut/workflows/pod-restart:v1.0.0",
-				ExecutionBundleDigest: "sha256:abc123",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:            "pod-restart-workflow",
+					Version:               "v1.0.0",
+					ExecutionBundle:       "kubernaut/workflows/pod-restart:v1.0.0",
+					ExecutionBundleDigest: "sha256:abc123",
+				},
 			},
 			TargetResource: fmt.Sprintf("%s/Pod/test-pod", namespace),
 			Parameters: map[string]string{

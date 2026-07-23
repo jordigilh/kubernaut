@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -247,12 +249,15 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.ApprovalRequired = false
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			Confidence:      0.95,
-			ExecutionBundle: "kubernaut/workflows:latest",
-			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
-			Rationale:       "High confidence auto-approve (characterization test)",
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				Version:         "v1.0.0",
+				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job",
+			},
+			Confidence: 0.95,
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Rationale: "High confidence auto-approve (characterization test)",
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
@@ -341,12 +346,15 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.ApprovalRequired = false
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			Confidence:      0.95,
-			ExecutionBundle: "kubernaut/workflows:latest",
-			ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
-			Rationale:       "High confidence auto-approve",
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				Version:         "v1.0.0",
+				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job",
+			},
+			Confidence: 0.95,
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Rationale: "High confidence auto-approve",
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",

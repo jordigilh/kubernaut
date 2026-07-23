@@ -17,6 +17,7 @@ limitations under the License.
 package workflowexecution_test
 
 import (
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,9 +47,11 @@ var _ = Describe("Per-Workflow ServiceAccount Spec Tests [DD-WE-005] (#650, #166
 			},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:         "wf-123",
-					ExecutionBundle:    "quay.io/test:v1@sha256:abc123",
-					ServiceAccountName: saName,
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:         "wf-123",
+						ExecutionBundle:    "quay.io/test:v1@sha256:abc123",
+						ServiceAccountName: saName,
+					},
 				},
 				TargetResource: "default/Deployment/nginx",
 			},

@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -157,13 +159,15 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
 			analysis.Status.RootCause = "Memory exhaustion due to unbounded cache growth"
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:            "restart-pod-v1",
-				Version:               "1.0.0",
-				ExecutionBundle:       "quay.io/kubernaut/restart-pod:v1",
-				ExecutionBundleDigest: "sha256:abc123def456",
-				Confidence:            0.95,
-				Rationale:             "High confidence match for pod restart scenario",
-				ExecutionEngine:       "tekton",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:            "restart-pod-v1",
+					Version:               "1.0.0",
+					ExecutionBundle:       "quay.io/kubernaut/restart-pod:v1",
+					ExecutionBundleDigest: "sha256:abc123def456",
+					ExecutionEngine:       "tekton",
+				},
+				Confidence: 0.95,
+				Rationale:  "High confidence match for pod restart scenario",
 				Parameters: map[string]string{
 					"TARGET_POD": "test-pod-completion",
 				},

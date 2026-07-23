@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -456,10 +458,12 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 				Namespace:  DefaultNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:      "test-workflow",
-				Version:         "v1.0.0",
-				ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
-				ExecutionEngine: "tekton",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "test-workflow",
+					Version:         "v1.0.0",
+					ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+					ExecutionEngine: "tekton",
+				},
 			},
 			TargetResource: targetResource,
 		},

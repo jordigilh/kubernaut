@@ -143,13 +143,15 @@ var _ = Describe("BR-ORCH-030: Operator Override Integration (#594)", Label("int
 
 	defaultAIWorkflow := func() *aianalysisv1.SelectedWorkflow {
 		return &aianalysisv1.SelectedWorkflow{
-			WorkflowID:            "wf-ai-original",
-			Version:               "1.0.0",
-			Confidence:            0.72,
-			ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
-			ExecutionBundleDigest: "sha256:aaa",
-			ExecutionEngine:       "tekton",
-			Rationale:             "AI recommended restart",
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:            "wf-ai-original",
+				Version:               "1.0.0",
+				ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
+				ExecutionBundleDigest: "sha256:aaa",
+				ExecutionEngine:       "tekton",
+			},
+			Confidence: 0.72,
+			Rationale:  "AI recommended restart",
 			Parameters: map[string]string{
 				"NAMESPACE": "default",
 				"POD_NAME":  "app-pod-1",

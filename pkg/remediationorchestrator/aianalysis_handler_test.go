@@ -21,6 +21,8 @@ import (
 	"errors"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -764,7 +766,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.Phase = aianalysisv1.PhaseCompleted
 				ai.Status.NeedsHumanReview = false
 				ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-					WorkflowID: "restart-pod-v1",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID: "restart-pod-v1",
+					},
 					Confidence: 0.85,
 				}
 

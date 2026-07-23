@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -129,12 +131,14 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 					Namespace:  controllerNamespace,
 				},
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID: workflowID,
-					Version:    rw.Spec.Version,
-					// Same already-proven hello-world Tekton bundle used by
-					// createTestWFE elsewhere in this suite.
-					ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
-					ExecutionEngine: "tekton",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID: workflowID,
+						Version:    rw.Spec.Version,
+						// Same already-proven hello-world Tekton bundle used by
+						// createTestWFE elsewhere in this suite.
+						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
+						ExecutionEngine: "tekton",
+					},
 				},
 				TargetResource: targetResource,
 				Parameters: map[string]string{

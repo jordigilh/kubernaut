@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -178,13 +180,15 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: failureUUID,
-						Version:    "v1.0.0",
-						// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
-						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
-						// Issue #1661 Change 11e: engine is now read directly from WorkflowRef,
-						// not resolved from DS at runtime.
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: failureUUID,
+							Version:    "v1.0.0",
+							// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+							// Issue #1661 Change 11e: engine is now read directly from WorkflowRef,
+							// not resolved from DS at runtime.
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{

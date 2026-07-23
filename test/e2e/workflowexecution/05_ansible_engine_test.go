@@ -331,13 +331,15 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      depSecretAnsibleUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
-						ExecutionEngine: "ansible",
-						Dependencies: &sharedtypes.WorkflowDependencies{
-							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      depSecretAnsibleUUID,
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+							},
 						},
 					},
 					TargetResource: targetResource,
@@ -406,13 +408,15 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      depConfigMapAnsibleUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
-						ExecutionEngine: "ansible",
-						Dependencies: &sharedtypes.WorkflowDependencies{
-							ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-ansible"}},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      depConfigMapAnsibleUUID,
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-ansible"}},
+							},
 						},
 					},
 					TargetResource: targetResource,
@@ -483,13 +487,15 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      credMergeUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
-						ExecutionEngine: "ansible",
-						Dependencies: &sharedtypes.WorkflowDependencies{
-							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      credMergeUUID,
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+							},
 						},
 					},
 					TargetResource: targetResource,
@@ -562,11 +568,13 @@ func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateNa
 				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:      workflowID,
-				Version:         "v1.0.0",
-				ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-				EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
-				ExecutionEngine: "ansible",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      workflowID,
+					Version:         "v1.0.0",
+					ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+					EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+					ExecutionEngine: "ansible",
+				},
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{

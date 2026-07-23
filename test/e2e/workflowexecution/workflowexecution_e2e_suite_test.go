@@ -26,6 +26,8 @@ import (
 	"strings"
 	"testing"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -411,14 +413,16 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID: helloWorldUUID,
-				Version:    "v1.0.0",
-				// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (amd64 + arm64)
-				// Built with `tkn bundle push` — contains Tekton Pipeline with required annotations
-				// Schema image (test-workflows/) is used for DataStorage registration (DD-WORKFLOW-017)
-				// Tekton bundle (tekton-bundles/) is used for WFE execution via bundle resolver
-				ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
-				ExecutionEngine: "tekton",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID: helloWorldUUID,
+					Version:    "v1.0.0",
+					// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (amd64 + arm64)
+					// Built with `tkn bundle push` — contains Tekton Pipeline with required annotations
+					// Schema image (test-workflows/) is used for DataStorage registration (DD-WORKFLOW-017)
+					// Tekton bundle (tekton-bundles/) is used for WFE execution via bundle resolver
+					ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
+					ExecutionEngine: "tekton",
+				},
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{

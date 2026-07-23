@@ -19,6 +19,8 @@ package remediationorchestrator
 import (
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -126,13 +128,16 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				},
 			}
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "wf-test-001",
-				ActionType:      "restart",
-				Version:         "v1",
-				ExecutionBundle: "test-image:latest",
-				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
-				Confidence:      0.95,
-				Rationale:       "Test rationale",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-test-001",
+					ActionType:      "restart",
+					Version:         "v1",
+					ExecutionBundle: "test-image:latest",
+					ExecutionEngine: "job",
+				},
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Confidence: 0.95,
+				Rationale:  "Test rationale",
 			}
 			return k8sClient.Status().Update(ctx, ai)
 		}, timeout, interval).Should(Succeed())
@@ -364,13 +369,16 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 							},
 						}
 						ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-							WorkflowID:      "wf-test-001",
-							ActionType:      "restart",
-							Version:         "v1",
-							ExecutionBundle: "test-image:latest",
-							ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
-							Confidence:      0.65,
-							Rationale:       "Test rationale - approval required",
+							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+								WorkflowID:      "wf-test-001",
+								ActionType:      "restart",
+								Version:         "v1",
+								ExecutionBundle: "test-image:latest",
+								ExecutionEngine: "job",
+							},
+							// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+							Confidence: 0.65,
+							Rationale:  "Test rationale - approval required",
 						}
 						return k8sClient.Status().Update(ctx, ai)
 					}, timeout, interval).Should(Succeed())

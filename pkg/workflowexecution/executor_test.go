@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -141,9 +143,11 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/my-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "restart-deployment",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
-						ExecutionEngine: "job",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-deployment",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+							ExecutionEngine: "job",
+						},
 					},
 					Parameters: map[string]string{
 						"NAMESPACE": "default",
@@ -202,9 +206,11 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/another-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "restart-deployment",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
-						ExecutionEngine: "job",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-deployment",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+							ExecutionEngine: "job",
+						},
 					},
 				},
 			}
@@ -346,7 +352,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ExecutionEngine: "job",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							ExecutionEngine: "job",
+						},
 					},
 				},
 			}
@@ -371,7 +379,9 @@ var _ = Describe("JobExecutor (BR-WE-014)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/nonexistent",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ExecutionEngine: "job",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							ExecutionEngine: "job",
+						},
 					},
 				},
 			}
@@ -759,7 +769,9 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: targetResource,
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							ExecutionEngine: "tekton",
+						},
 					},
 				},
 			}
@@ -784,7 +796,9 @@ var _ = Describe("TektonExecutor (BR-WE-014)", func() {
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/nonexistent",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							ExecutionEngine: "tekton",
+						},
 					},
 				},
 			}
@@ -1457,9 +1471,11 @@ func newTestWFE(name, namespace, targetResource, workflowID, containerImage stri
 		Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 			TargetResource: targetResource,
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:      workflowID,
-				ExecutionBundle: containerImage,
-				ExecutionEngine: "tekton",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      workflowID,
+					ExecutionBundle: containerImage,
+					ExecutionEngine: "tekton",
+				},
 			},
 			Parameters: params,
 		},

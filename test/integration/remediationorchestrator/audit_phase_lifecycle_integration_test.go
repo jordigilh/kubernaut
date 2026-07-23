@@ -38,6 +38,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -247,10 +249,12 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 			// Complete AIAnalysis to trigger phase transition to Analyzing
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "test-workflow",
-				Version:         "1.0.0",
-				ExecutionBundle: "test-image:latest",
-				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "test-workflow",
+					Version:         "1.0.0",
+					ExecutionBundle: "test-image:latest",
+					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				},
 			}
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution.
 			// Use a unique target name to avoid ResourceBusy conflicts with other tests
@@ -357,10 +361,12 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "test-workflow",
-				Version:         "1.0.0",
-				ExecutionBundle: "test-image:latest",
-				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "test-workflow",
+					Version:         "1.0.0",
+					ExecutionBundle: "test-image:latest",
+					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				},
 			}
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

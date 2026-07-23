@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	prometheus "github.com/prometheus/client_golang/prometheus"
@@ -58,8 +60,10 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: "Completed",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID: "wf-restart",
-					ActionType: "patch",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID: "wf-restart",
+						ActionType: "patch",
+					},
 					Confidence: 0.95,
 				},
 				RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{

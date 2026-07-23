@@ -20,6 +20,8 @@ import (
 	"context"
 	"strings"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -130,9 +132,11 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "restart-deployment",
-						Version:         "v1",
-						ExecutionBundle: "registry.example.com/workflows/restart:v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-deployment",
+							Version:         "v1",
+							ExecutionBundle: "registry.example.com/workflows/restart:v1",
+						},
 					},
 				},
 			}
@@ -194,9 +198,11 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "restart-deployment",
-						Version:         "v1",
-						ExecutionBundle: "registry.example.com/workflows/restart:v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-deployment",
+							Version:         "v1",
+							ExecutionBundle: "registry.example.com/workflows/restart:v1",
+						},
 					},
 				},
 			}
@@ -258,9 +264,11 @@ var _ = Describe("WorkflowExecution Controller K8s Events [DD-EVENT-001]", func(
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					TargetResource: "default/deployment/test-app",
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "restart-deployment",
-						Version:         "v1",
-						ExecutionBundle: "registry.example.com/workflows/restart:v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-deployment",
+							Version:         "v1",
+							ExecutionBundle: "registry.example.com/workflows/restart:v1",
+						},
 					},
 				},
 			}
@@ -369,9 +377,11 @@ var _ = Describe("WorkflowExecution Controller Observability [Issue #659]", func
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				TargetResource: "default/deployment/test-app",
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:      uuid.New().String(),
-					Version:         "v1",
-					ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      uuid.New().String(),
+						Version:         "v1",
+						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1.0.0",
+					},
 				},
 			},
 		}

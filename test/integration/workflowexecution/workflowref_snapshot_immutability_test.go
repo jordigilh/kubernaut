@@ -64,18 +64,20 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 					Namespace:  DefaultNamespace,
 				},
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:         "wf-oom-recovery",
-					Version:            "v1.0.0",
-					ExecutionBundle:    "quay.io/kubernaut/oom-recovery:v1",
-					ExecutionEngine:    "job",
-					ServiceAccountName: "kubernaut-workflow-runner",
-					Dependencies: &sharedtypes.WorkflowDependencies{
-						Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:         "wf-oom-recovery",
+						Version:            "v1.0.0",
+						ExecutionBundle:    "quay.io/kubernaut/oom-recovery:v1",
+						ExecutionEngine:    "job",
+						ServiceAccountName: "kubernaut-workflow-runner",
+						Dependencies: &sharedtypes.WorkflowDependencies{
+							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+						},
+						Resources: &corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+						},
+						DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true},
 					},
-					Resources: &corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
-					},
-					DeclaredParameterNames: map[string]bool{"TARGET_NAMESPACE": true},
 				},
 				TargetResource: "default/deployment/test-app",
 			},

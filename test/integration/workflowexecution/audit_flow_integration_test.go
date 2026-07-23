@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -127,10 +129,12 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						Namespace:  testNs.Name,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "test-workflow",
-						Version:         "v1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 				},
@@ -243,10 +247,12 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 						Namespace:  testNs.Name,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "test-workflow",
-						Version:         "v1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 				},

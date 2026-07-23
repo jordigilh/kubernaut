@@ -52,22 +52,24 @@ var _ = Describe("validateExecutionEngineResolved (Issue #1661 Change 11f)", fun
 		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:            "wf-catalog-red-001",
-					Version:               "1.0.0",
-					ExecutionBundle:       "quay.io/kubernaut/workflows/red-001:v1@sha256:deadbeef",
-					ExecutionBundleDigest: "sha256:deadbeef",
-					EngineConfig:          &apiextensionsv1.JSON{Raw: []byte(`{"playbookPath":"deploy.yml"}`)},
-					ExecutionEngine:       "job",
-					ServiceAccountName:    "workflow-runner-sa",
-					ActionType:            "ScaleReplicas",
-					Dependencies: &sharedtypes.WorkflowDependencies{
-						Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:            "wf-catalog-red-001",
+						Version:               "1.0.0",
+						ExecutionBundle:       "quay.io/kubernaut/workflows/red-001:v1@sha256:deadbeef",
+						ExecutionBundleDigest: "sha256:deadbeef",
+						EngineConfig:          &apiextensionsv1.JSON{Raw: []byte(`{"playbookPath":"deploy.yml"}`)},
+						ExecutionEngine:       "job",
+						ServiceAccountName:    "workflow-runner-sa",
+						ActionType:            "ScaleReplicas",
+						Dependencies: &sharedtypes.WorkflowDependencies{
+							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+						},
+						Resources: &corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+							Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+						},
+						DeclaredParameterNames: map[string]bool{"TARGET_POD": true},
 					},
-					Resources: &corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
-						Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
-					},
-					DeclaredParameterNames: map[string]bool{"TARGET_POD": true},
 				},
 			},
 		}

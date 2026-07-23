@@ -49,19 +49,21 @@ var _ = Describe("SelectedWorkflow write-once immutability (Issue #1661 Change 1
 
 	newSelectedWorkflow := func(selectedAt *metav1.Time, declared map[string]bool) *aianalysisv1.SelectedWorkflow {
 		return &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "increase-memory-v1",
-			Version:         "v1.0.0",
-			ExecutionBundle: "ghcr.io/kubernaut/increase-memory:v1.0",
-			Confidence:      0.92,
-			Rationale:       "memory pressure detected",
-			Dependencies: &sharedtypes.WorkflowDependencies{
-				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "increase-memory-v1",
+				Version:         "v1.0.0",
+				ExecutionBundle: "ghcr.io/kubernaut/increase-memory:v1.0",
+				Dependencies: &sharedtypes.WorkflowDependencies{
+					Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+				},
+				Resources: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+				},
+				DeclaredParameterNames: declared,
 			},
-			Resources: &corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
-			},
-			DeclaredParameterNames: declared,
-			SelectedAt:             selectedAt,
+			Confidence: 0.92,
+			Rationale:  "memory pressure detected",
+			SelectedAt: selectedAt,
 		}
 	}
 
