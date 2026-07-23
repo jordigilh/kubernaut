@@ -44,6 +44,8 @@ import (
 	"net/http"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -149,11 +151,14 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						Namespace:  namespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "k8s-restart-pod-v1", // Label-safe: no slashes
-						Version:         "v1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
-						ExecutionEngine: "tekton",
-						ActionType:      "RestartPod",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "k8s-restart-pod-v1",
+							// Label-safe: no slashes
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
+							ExecutionEngine: "tekton",
+							ActionType:      "RestartPod",
+						},
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
 					Parameters: map[string]string{
@@ -301,10 +306,13 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						Namespace:  namespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      "k8s-scale-deployment-v1", // Label-safe: no slashes
-						Version:         "v1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
-						ExecutionEngine: "tekton",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID: "k8s-scale-deployment-v1",
+							// Label-safe: no slashes
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
 				},

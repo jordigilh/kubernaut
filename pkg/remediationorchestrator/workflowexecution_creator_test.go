@@ -168,7 +168,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		// (Change 11e), RO's buildWorkflowExecution must be the one
 		// production call site that copies them from the CRD-embedded
 		// AIAnalysis.Status.SelectedWorkflow snapshot into WorkflowRef.
-		It("UT-RO-341-001: copies Dependencies/Resources/DeclaredParameterNames/ExecutionEngine/ServiceAccountName/ActionType from SelectedWorkflow into WorkflowRef", func() {
+		It("UT-RO-341-001: copies Dependencies/Resources/DeclaredParameterNames/ExecutionEngine/ServiceAccountName/ActionType/WorkflowName from SelectedWorkflow into WorkflowRef", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
 			rr := helpers.NewRemediationRequest("test-snapshot-passthrough", "default")
@@ -176,6 +176,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			ai.Status.SelectedWorkflow.ExecutionEngine = "job"
 			ai.Status.SelectedWorkflow.ServiceAccountName = "workflow-runner-sa"
 			ai.Status.SelectedWorkflow.ActionType = "ScaleReplicas"
+			ai.Status.SelectedWorkflow.WorkflowName = "scale-replicas-fix"
 			ai.Status.SelectedWorkflow.Dependencies = &sharedtypes.WorkflowDependencies{
 				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
 			}
@@ -197,6 +198,8 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			Expect(created.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-runner-sa"))
 			Expect(created.Spec.WorkflowRef.ActionType).To(Equal("ScaleReplicas"),
 				"Issue #1661 Change 11f: ActionType must pass through to WorkflowRef like its siblings")
+			Expect(created.Spec.WorkflowRef.WorkflowName).To(Equal("scale-replicas-fix"),
+				"Issue #1661 Change 12: WorkflowName must pass through to WorkflowRef like its siblings")
 			Expect(created.Spec.WorkflowRef.Dependencies).To(Equal(ai.Status.SelectedWorkflow.Dependencies))
 			Expect(created.Spec.WorkflowRef.Resources).To(Equal(ai.Status.SelectedWorkflow.Resources))
 			Expect(created.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_POD": true}))

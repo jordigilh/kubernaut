@@ -38,10 +38,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -187,6 +187,99 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		sw := analysis.Status.SelectedWorkflow
 		Expect(sw).ToNot(BeNil(), "low-confidence path must still preserve SelectedWorkflow for operator visibility")
 		Expect(sw.SelectedAt).ToNot(BeNil(), "SelectedAt must be stamped on the low-confidence preservation path too")
+	})
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// UT-AA-1661-653: ActionType/WorkflowName propagate through all three
+	// SelectedWorkflow population call sites (Change 12, DD-WORKFLOW-018)
+	// ═══════════════════════════════════════════════════════════════════════
+
+	It("UT-AA-1661-653-001: storeSelectedWorkflow extracts ActionType/WorkflowName from the KA response", func() {
+		kaResp := &agentclient.IncidentResponse{
+			IncidentID:       "test-wfsnap-653a",
+			Analysis:         "Root cause: memory pressure",
+			NeedsHumanReview: agentclient.NewOptBool(false),
+			Confidence:       0.92,
+			Timestamp:        "2026-07-16T12:00:00Z",
+			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
+				Value: agentclient.IncidentResponseSelectedWorkflow{
+					"workflow_id":      jx.Raw(`"increase-memory-v1"`),
+					"workflow_name":    jx.Raw(`"increase-memory"`),
+					"action_type":      jx.Raw(`"ScaleReplicas"`),
+					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/increase-memory:v1.0"`),
+					"confidence":       jx.Raw(`0.92`),
+				},
+				Set: true,
+			},
+		}
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		sw := analysis.Status.SelectedWorkflow
+		Expect(sw).ToNot(BeNil())
+		Expect(sw.ActionType).To(Equal("ScaleReplicas"))
+		Expect(sw.WorkflowName).To(Equal("increase-memory"))
+	})
+
+	It("UT-AA-1661-653-002: preserveLowConfidenceWorkflow extracts ActionType/WorkflowName from the KA response", func() {
+		kaResp := &agentclient.IncidentResponse{
+			IncidentID:       "test-wfsnap-653b",
+			Analysis:         "Root cause: low confidence match",
+			NeedsHumanReview: agentclient.NewOptBool(true),
+			Confidence:       0.4,
+			Timestamp:        "2026-07-16T12:10:00Z",
+			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
+				Value: agentclient.IncidentResponseSelectedWorkflow{
+					"workflow_id":      jx.Raw(`"low-confidence-v1"`),
+					"workflow_name":    jx.Raw(`"low-confidence-fix"`),
+					"action_type":      jx.Raw(`"RestartPod"`),
+					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/low-confidence:v1.0"`),
+					"confidence":       jx.Raw(`0.4`),
+				},
+				Set: true,
+			},
+		}
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		sw := analysis.Status.SelectedWorkflow
+		Expect(sw).ToNot(BeNil())
+		Expect(sw.ActionType).To(Equal("RestartPod"))
+		Expect(sw.WorkflowName).To(Equal("low-confidence-fix"))
+	})
+
+	It("UT-AA-1661-653-003: preservePartialSelectedWorkflow extracts ActionType/WorkflowName from the KA response (workflow-resolution-failure path)", func() {
+		kaResp := &agentclient.IncidentResponse{
+			IncidentID:       "test-wfsnap-653c",
+			Analysis:         "Workflow resolution failed",
+			NeedsHumanReview: agentclient.NewOptBool(true),
+			HumanReviewReason: agentclient.OptNilHumanReviewReason{
+				Value: agentclient.HumanReviewReasonParameterValidationFailed,
+				Set:   true,
+			},
+			Confidence: 0.8,
+			Timestamp:  "2026-07-16T12:15:00Z",
+			Warnings:   []string{"parameter validation failed"},
+			SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
+				Value: agentclient.IncidentResponseSelectedWorkflow{
+					"workflow_id":      jx.Raw(`"partial-v1"`),
+					"workflow_name":    jx.Raw(`"partial-fix"`),
+					"action_type":      jx.Raw(`"ScaleReplicas"`),
+					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/partial:v1.0"`),
+				},
+				Set: true,
+			},
+		}
+
+		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+		Expect(err).ToNot(HaveOccurred())
+
+		sw := analysis.Status.SelectedWorkflow
+		Expect(sw).ToNot(BeNil(), "partial workflow must be preserved for operator visibility")
+		Expect(sw.ActionType).To(Equal("ScaleReplicas"))
+		Expect(sw.WorkflowName).To(Equal("partial-fix"))
 	})
 })
 
