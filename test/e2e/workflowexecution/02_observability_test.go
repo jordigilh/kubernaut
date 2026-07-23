@@ -394,6 +394,8 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      failureUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
 							ExecutionEngine: "tekton",
@@ -596,8 +598,10 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: failureUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   failureUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
 							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
 							ExecutionEngine: "tekton",

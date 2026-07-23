@@ -288,6 +288,8 @@ func NewCompletedAIAnalysis(name, namespace string) *aianalysisv1.AIAnalysis {
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:            "pod-restart-workflow",
+				WorkflowName:          "pod-restart-workflow",
+				ActionType:            "RestartPod",
 				Version:               "v1.0.0",
 				ExecutionBundle:       "kubernaut/workflows/pod-restart:v1.0.0",
 				ExecutionBundleDigest: "sha256:abc123",
@@ -313,6 +315,8 @@ func NewAIAnalysisRequiringApproval(name, namespace, approvalReason string) *aia
 		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:            "deployment-rollback-workflow",
+				WorkflowName:          "deployment-rollback-workflow",
+				ActionType:            "RestartPod",
 				Version:               "v1.0.0",
 				ExecutionBundle:       "kubernaut/workflows/deployment-rollback:v1.0.0",
 				ExecutionBundleDigest: "sha256:def456",
@@ -371,6 +375,8 @@ func NewWorkflowExecution(name, namespace string, opts ...WorkflowExecutionOpts)
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:            "pod-restart-workflow",
+					WorkflowName:          "pod-restart-workflow",
+					ActionType:            "RestartPod",
 					Version:               "v1.0.0",
 					ExecutionBundle:       "kubernaut/workflows/pod-restart:v1.0.0",
 					ExecutionBundleDigest: "sha256:abc123",

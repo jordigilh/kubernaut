@@ -257,6 +257,8 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "test-workflow",
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
 					Version:         "1.0.0",
 					ExecutionBundle: "test-image:latest",
 					ExecutionEngine: "job",
@@ -531,6 +533,8 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "test-workflow",
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
 					Version:         "1.0.0",
 					ExecutionBundle: "test-image:latest",
 					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback

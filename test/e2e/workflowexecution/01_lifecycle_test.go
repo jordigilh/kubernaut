@@ -181,8 +181,10 @@ var _ = Describe("WorkflowExecution Lifecycle E2E", func() {
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: failureUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   failureUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
 							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
 							// Issue #1661 Change 11e: engine is now read directly from WorkflowRef,

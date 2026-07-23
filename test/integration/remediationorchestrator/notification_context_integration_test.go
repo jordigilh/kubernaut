@@ -109,6 +109,8 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "wf-approval-003",
+						WorkflowName:    "wf-approval-003",
+						ActionType:      "RestartPod",
 						Version:         "v1",
 						ExecutionBundle: "oci://test/bundle@sha256:003",
 					},
@@ -205,6 +207,8 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "wf-complete-006",
+						WorkflowName:    "wf-complete-006",
+						ActionType:      "RestartPod",
 						Version:         "v2",
 						ExecutionBundle: "oci://test/bundle@sha256:006",
 						ExecutionEngine: "tekton",

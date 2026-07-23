@@ -99,6 +99,7 @@ var _ = Describe("NotificationCreator", func() {
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "restart-pod",
+						WorkflowName:    "restart-pod",
 						Version:         "1.0.0",
 						ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
 						ActionType:      "restart",

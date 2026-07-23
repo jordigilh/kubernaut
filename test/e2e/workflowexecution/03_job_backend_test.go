@@ -160,8 +160,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: jobFailureUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   jobFailureUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							// job-failing:v1.0.0-exec exits non-zero. #1661 Change 11e: WFE no
 							// longer resolves/overrides this from DS at runtime, so the real
 							// digest-pinned bundle must be supplied directly (see
@@ -250,8 +252,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: jobOomkillUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   jobOomkillUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							// job-oomkill:v1.0.0-exec unconditionally exits 137. #1661 Change
 							// 11e: WFE no longer resolves/overrides this from DS at runtime, so
 							// the real digest-pinned bundle must be supplied directly (see
@@ -370,8 +374,10 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: jobFailureUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   jobFailureUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							// job-failing:v1.0.0-exec exits non-zero. #1661 Change 11e: WFE no
 							// longer resolves/overrides this from DS at runtime, so the real
 							// digest-pinned bundle must be supplied directly (see
@@ -716,8 +722,10 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID: jobHelloWorldUUID,
-					Version:    "v1.0.0",
+					WorkflowID:   jobHelloWorldUUID,
+					WorkflowName: "test-workflow",
+					ActionType:   "RestartPod",
+					Version:      "v1.0.0",
 					ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 						infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 					ExecutionEngine: "job",

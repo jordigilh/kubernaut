@@ -289,6 +289,8 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pod",
+					WorkflowName:    "wf-restart-pod",
+					ActionType:      "RestartPod",
 					ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
 				},
 				Confidence: 0.85,
@@ -432,6 +434,8 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pod",
+					WorkflowName:    "wf-restart-pod",
+					ActionType:      "RestartPod",
 					ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
 				},
 				Confidence: 0.85,
@@ -510,6 +514,8 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pod",
+					WorkflowName:    "wf-restart-pod",
+					ActionType:      "RestartPod",
 					ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
 				},
 				Confidence: 0.85,

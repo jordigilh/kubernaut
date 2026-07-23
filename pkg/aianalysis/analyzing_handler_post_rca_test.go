@@ -95,6 +95,8 @@ var _ = Describe("AnalyzingHandler PostRCAContext Rego Integration (ADR-056)", f
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "wf-restart-pod",
+						WorkflowName:    "wf-restart-pod",
+						ActionType:      "RestartPod",
 						ExecutionBundle: "kubernaut.io/workflows/restart:v1.0.0",
 					},
 					Confidence: 0.92,

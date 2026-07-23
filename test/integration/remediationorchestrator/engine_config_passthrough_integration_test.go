@@ -92,6 +92,8 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-ansible-restart",
+				WorkflowName:    "wf-ansible-restart",
+				ActionType:      "RestartPod",
 				Version:         "v2.0.0",
 				ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
 				ExecutionEngine: "ansible",

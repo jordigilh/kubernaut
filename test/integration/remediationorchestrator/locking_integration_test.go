@@ -130,6 +130,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-test-001",
+					WorkflowName:    "wf-test-001",
 					ActionType:      "restart",
 					Version:         "v1",
 					ExecutionBundle: "test-image:latest",
@@ -371,6 +372,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 						ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 								WorkflowID:      "wf-test-001",
+								WorkflowName:    "wf-test-001",
 								ActionType:      "restart",
 								Version:         "v1",
 								ExecutionBundle: "test-image:latest",

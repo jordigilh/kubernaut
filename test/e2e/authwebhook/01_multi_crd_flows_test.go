@@ -85,6 +85,8 @@ var _ = Describe("E2E-MULTI-01: Multiple CRDs in Sequence", Ordered, ContinueOnF
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "test-workflow",
+						WorkflowName:    "test-workflow",
+						ActionType:      "RestartPod",
 						Version:         "v1",
 						ExecutionBundle: "test/image:latest",
 					},
@@ -247,6 +249,8 @@ var _ = Describe("E2E-MULTI-02: Concurrent Webhook Requests", func() {
 					WorkflowRef: workflowexecutionv1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      fmt.Sprintf("test-workflow-%d", idx),
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1",
 							ExecutionBundle: "test/image:latest",
 						},

@@ -767,7 +767,9 @@ var _ = Describe("AIAnalysisHandler", func() {
 				ai.Status.NeedsHumanReview = false
 				ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: "restart-pod-v1",
+						WorkflowID:   "restart-pod-v1",
+						WorkflowName: "restart-pod-v1",
+						ActionType:   "RestartPod",
 					},
 					Confidence: 0.85,
 				}

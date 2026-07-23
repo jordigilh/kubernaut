@@ -132,8 +132,10 @@ var _ = Describe("E2E-WE-1661-SNAPSHOT: WorkflowRef survives source RemediationW
 				},
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: workflowID,
-						Version:    rw.Spec.Version,
+						WorkflowID:   workflowID,
+						WorkflowName: "test-workflow",
+						ActionType:   "RestartPod",
+						Version:      rw.Spec.Version,
 						// Same already-proven hello-world Tekton bundle used by
 						// createTestWFE elsewhere in this suite.
 						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",

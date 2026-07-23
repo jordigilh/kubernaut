@@ -66,6 +66,8 @@ var _ = Describe("WorkflowRef CRD-embedded execution snapshot immutability (Issu
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:         "wf-oom-recovery",
+						WorkflowName:       "wf-oom-recovery",
+						ActionType:         "RestartPod",
 						Version:            "v1.0.0",
 						ExecutionBundle:    "quay.io/kubernaut/oom-recovery:v1",
 						ExecutionEngine:    "job",

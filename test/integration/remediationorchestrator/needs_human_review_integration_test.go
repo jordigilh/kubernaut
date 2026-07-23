@@ -406,7 +406,9 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				Message:           "AI confidence (0.55) below threshold (0.70)",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: "restart-pod-v1",
+						WorkflowID:   "restart-pod-v1",
+						WorkflowName: "restart-pod-v1",
+						ActionType:   "RestartPod",
 					},
 					Confidence: 0.55,
 				},

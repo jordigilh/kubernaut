@@ -61,8 +61,9 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 				Phase: "Completed",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: "wf-restart",
-						ActionType: "patch",
+						WorkflowID:   "wf-restart",
+						WorkflowName: "wf-restart",
+						ActionType:   "patch",
 					},
 					Confidence: 0.95,
 				},

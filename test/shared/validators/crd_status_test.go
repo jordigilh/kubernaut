@@ -97,6 +97,7 @@ func completeAA() *aianalysisv1.AIAnalysis {
 			SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:            "restart-pod",
+					WorkflowName:          "restart-pod",
 					ActionType:            "RestartPod",
 					Version:               "v1",
 					ExecutionBundle:       "oci://registry/restart-pod:v1",

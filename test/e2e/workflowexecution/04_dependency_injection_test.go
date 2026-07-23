@@ -85,8 +85,10 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: depSecretJobUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   depSecretJobUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 								infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 							ExecutionEngine: "job",
@@ -189,8 +191,10 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: depSecretJobUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   depSecretJobUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 								infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 							ExecutionEngine: "job",
@@ -263,8 +267,10 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 						// Deliberately no Dependencies -- this test proves no dependency
 						// volumes are created when the WorkflowRef declares none.
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: helloWorldUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   helloWorldUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 								infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 							ExecutionEngine: "job",
@@ -343,6 +349,8 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      depSecretTektonUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
 							ExecutionEngine: "tekton",
@@ -427,8 +435,10 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: depConfigMapJobUUID,
-							Version:    "v1.0.0",
+							WorkflowID:   depConfigMapJobUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
 							ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
 								infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
 							ExecutionEngine: "job",
@@ -516,6 +526,8 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      depConfigMapTektonUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/hello-world:v1.0.0",
 							ExecutionEngine: "tekton",

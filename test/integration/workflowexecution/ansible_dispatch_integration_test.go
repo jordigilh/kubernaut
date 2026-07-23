@@ -67,6 +67,8 @@ var _ = Describe("Ansible Executor Integration (BR-WE-015)", func() {
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "ansible-restart",
+							WorkflowName:    "ansible-restart",
+							ActionType:      "RestartPod",
 							Version:         "1.0.0",
 							ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
 							ExecutionEngine: "ansible",

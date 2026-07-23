@@ -460,6 +460,8 @@ func createUniqueWFE(testID, targetResource string) *workflowexecutionv1alpha1.W
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "test-workflow",
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 					ExecutionEngine: "tekton",

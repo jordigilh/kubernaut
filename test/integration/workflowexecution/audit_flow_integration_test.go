@@ -131,6 +131,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 							ExecutionEngine: "tekton",
@@ -249,6 +251,8 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/test@sha256:abc123",
 							ExecutionEngine: "tekton",

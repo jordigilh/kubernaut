@@ -378,6 +378,8 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "wf-restart-pods",
+						WorkflowName:    "wf-restart-pods",
+						ActionType:      "RestartPod",
 						Version:         "v1.0.0",
 						ExecutionBundle: "test-image:latest",
 						ExecutionEngine: "job",
@@ -402,6 +404,8 @@ var _ = Describe("Target Resource Casing Preservation (Issue #203)", func() {
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
 				Version:         "v1.0.0",
 				ExecutionBundle: "test-image:latest",
 			},

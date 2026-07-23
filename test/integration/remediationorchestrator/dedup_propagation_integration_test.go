@@ -83,6 +83,8 @@ func driveToExecuting(ns, rrName string) *remediationv1.RemediationRequest {
 	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 			WorkflowID:      "wf-restart-pods",
+			WorkflowName:    "wf-restart-pods",
+			ActionType:      "RestartPod",
 			Version:         "v1.0.0",
 			ExecutionBundle: "test-image:latest",
 			ExecutionEngine: "job",
@@ -136,8 +138,10 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: "wf-restart-pods",
-						Version:    "v1.0.0",
+						WorkflowID:   "wf-restart-pods",
+						WorkflowName: "wf-restart-pods",
+						ActionType:   "RestartPod",
+						Version:      "v1.0.0",
 					},
 				},
 				TargetResource: ns + "/deployment/test-app",
@@ -218,8 +222,10 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: "wf-restart-pods",
-						Version:    "v1.0.0",
+						WorkflowID:   "wf-restart-pods",
+						WorkflowName: "wf-restart-pods",
+						ActionType:   "RestartPod",
+						Version:      "v1.0.0",
 					},
 				},
 				TargetResource: ns + "/deployment/test-app",
@@ -284,8 +290,10 @@ var _ = Describe("Issue #190: Dedup Result Propagation Integration", Label("inte
 			Spec: workflowexecutionv1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: "wf-restart-pods",
-						Version:    "v1.0.0",
+						WorkflowID:   "wf-restart-pods",
+						WorkflowName: "wf-restart-pods",
+						ActionType:   "RestartPod",
+						Version:      "v1.0.0",
 					},
 				},
 				TargetResource: ns + "/deployment/test-app",

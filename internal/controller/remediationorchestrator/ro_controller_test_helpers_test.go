@@ -238,7 +238,11 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 	ai.Status.CompletedAt = &now
 	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID:      workflowID,
+			WorkflowID: workflowID,
+			// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
+			// these required fields on validateSelectedWorkflow.
+			WorkflowName:    workflowID,
+			ActionType:      "RestartPod",
 			Version:         "v1",
 			ExecutionBundle: "test-image:latest",
 			// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a

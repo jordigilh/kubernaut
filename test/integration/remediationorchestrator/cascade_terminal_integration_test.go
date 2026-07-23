@@ -291,6 +291,8 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 				WorkflowRef: workflowexecutionv1.WorkflowRef{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "restart-deployment",
+						WorkflowName:    "restart-deployment",
+						ActionType:      "RestartPod",
 						Version:         "v1",
 						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart:v1",
 					},

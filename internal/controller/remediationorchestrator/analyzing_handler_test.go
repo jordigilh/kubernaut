@@ -133,8 +133,9 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 				ApprovalRequired: approvalRequired,
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: "wf-restart",
-						ActionType: "patch",
+						WorkflowID:   "wf-restart",
+						WorkflowName: "wf-restart",
+						ActionType:   "patch",
 					},
 					Confidence: 0.95,
 				},

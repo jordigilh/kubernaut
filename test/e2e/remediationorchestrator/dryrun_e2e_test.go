@@ -226,6 +226,8 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "restart-pod-v1",
+					WorkflowName:    "restart-pod-v1",
+					ActionType:      "RestartPod",
 					Version:         "1.0.0",
 					ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
 					ExecutionEngine: "job",

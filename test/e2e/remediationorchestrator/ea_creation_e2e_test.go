@@ -151,6 +151,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "restart-deployment-v1",
+				WorkflowName:    "restart-deployment-v1",
+				ActionType:      "RestartPod",
 				Version:         "1.0.0",
 				ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
 				ExecutionEngine: "job",
@@ -395,6 +397,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "restart-deployment-v1",
+					WorkflowName:    "restart-deployment-v1",
+					ActionType:      "RestartPod",
 					Version:         "1.0.0",
 					ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
 					ExecutionEngine: "job",

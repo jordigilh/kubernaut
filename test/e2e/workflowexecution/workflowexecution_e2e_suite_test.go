@@ -414,8 +414,10 @@ func createTestWFE(name, targetResource string) *workflowexecutionv1alpha1.Workf
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-					WorkflowID: helloWorldUUID,
-					Version:    "v1.0.0",
+					WorkflowID:   helloWorldUUID,
+					WorkflowName: "test-workflow",
+					ActionType:   "RestartPod",
+					Version:      "v1.0.0",
 					// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (amd64 + arm64)
 					// Built with `tkn bundle push` — contains Tekton Pipeline with required annotations
 					// Schema image (test-workflows/) is used for DataStorage registration (DD-WORKFLOW-017)

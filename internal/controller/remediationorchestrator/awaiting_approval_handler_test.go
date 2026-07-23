@@ -126,8 +126,9 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 				Phase: "Completed",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID: "wf-restart",
-						ActionType: "patch",
+						WorkflowID:   "wf-restart",
+						WorkflowName: "wf-restart",
+						ActionType:   "patch",
 					},
 					Confidence: 0.95,
 				},

@@ -152,7 +152,8 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: "k8s-restart-pod-v1",
+							WorkflowID:   "k8s-restart-pod-v1",
+							WorkflowName: "k8s-restart-pod-v1",
 							// Label-safe: no slashes
 							Version:         "v1.0.0",
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
@@ -307,7 +308,9 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-							WorkflowID: "k8s-scale-deployment-v1",
+							WorkflowID:   "k8s-scale-deployment-v1",
+							WorkflowName: "k8s-scale-deployment-v1",
+							ActionType:   "RestartPod",
 							// Label-safe: no slashes
 							Version:         "v1.0.0",
 							ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",

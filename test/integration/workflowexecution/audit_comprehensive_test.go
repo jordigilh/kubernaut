@@ -76,6 +76,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/test:v1",
 							ExecutionEngine: "tekton",
@@ -132,6 +134,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/test:v1",
 							ExecutionEngine: "tekton",
@@ -184,6 +188,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow-success",
+							WorkflowName:    "test-workflow-success",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/test:v1",
 							ExecutionEngine: "tekton",
@@ -281,6 +287,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "nonexistent-workflow",
+							WorkflowName:    "nonexistent-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "",
 							// Empty image triggers pre-execution failure
@@ -336,6 +344,8 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow-ordering",
+							WorkflowName:    "test-workflow-ordering",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/test:v1",
 							ExecutionEngine: "tekton",

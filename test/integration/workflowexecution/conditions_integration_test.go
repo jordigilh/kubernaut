@@ -60,6 +60,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 							ExecutionEngine: "tekton",
@@ -128,6 +130,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 							ExecutionEngine: "tekton",
@@ -194,6 +198,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 							ExecutionEngine: "tekton",
@@ -280,6 +286,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 							ExecutionEngine: "tekton",
@@ -337,6 +345,8 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
 							Version:         "v1.0.0",
 							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
 							ExecutionEngine: "tekton",

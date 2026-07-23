@@ -218,6 +218,8 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "test-workflow",
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "quay.io/jordigilh/test-workflows/test:v1.0.0",
 					ExecutionEngine: "tekton",

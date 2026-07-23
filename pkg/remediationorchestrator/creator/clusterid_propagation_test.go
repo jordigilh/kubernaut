@@ -229,6 +229,8 @@ var _ = Describe("SignalProcessingCreator ClusterID Propagation (BR-INTEGRATION-
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
 					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 						WorkflowID:      "restart-pod",
+						WorkflowName:    "restart-pod",
+						ActionType:      "RestartPod",
 						Version:         "1.0.0",
 						ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
 					},

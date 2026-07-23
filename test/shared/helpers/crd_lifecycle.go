@@ -163,7 +163,11 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 		}
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-				WorkflowID:      "restart-pod-v1",
+				WorkflowID: "restart-pod-v1",
+				// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
+				// these required fields on validateSelectedWorkflow.
+				WorkflowName:    "restart-pod-v1",
+				ActionType:      "RestartPod",
 				Version:         "1.0.0",
 				ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
 				ExecutionEngine: "job",

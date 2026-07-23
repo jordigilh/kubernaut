@@ -161,6 +161,8 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:            "restart-pod-v1",
+					WorkflowName:          "restart-pod-v1",
+					ActionType:            "RestartPod",
 					Version:               "1.0.0",
 					ExecutionBundle:       "quay.io/kubernaut/restart-pod:v1",
 					ExecutionBundleDigest: "sha256:abc123def456",

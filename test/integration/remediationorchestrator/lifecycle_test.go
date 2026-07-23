@@ -482,6 +482,8 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pods",
+					WorkflowName:    "wf-restart-pods",
+					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
 					ExecutionEngine: "job",
@@ -547,6 +549,8 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pods",
+					WorkflowName:    "wf-restart-pods",
+					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
 					ExecutionEngine: "job",
@@ -622,6 +626,8 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pods",
+					WorkflowName:    "wf-restart-pods",
+					ActionType:      "RestartPod",
 					Version:         "v1.0.0",
 					ExecutionBundle: "kubernaut/workflows:latest",
 					ExecutionEngine: "job",
