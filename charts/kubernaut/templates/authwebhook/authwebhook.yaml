@@ -200,27 +200,33 @@ spec:
               # repro against a fresh Kind v0.32.0 cluster showed the Kind
               # control-plane container pegged at ~94% CPU while ~13
               # kubernaut pods started concurrently, with the apiserver
-              # returning "context deadline exceeded" for several minutes —
-              # long enough to exhaust the original 20-attempt (~160s)
-              # budget outright. Raised to 40 attempts (~320s) per call to
-              # span the observed contention window with margin. This is a
-              # startup-burst characteristic of the test topology, not a
-              # permanent outage, confirmed by the same pods going Ready
-              # once given more time (see sibling liveness-probe fix below).
-              KUBE_RETRY_MAX_ATTEMPTS=40
+              # returning "context deadline exceeded" for several minutes.
+              #
+              # v1.5 backport round 3 (CI run 30050619660, #1712): an
+              # attempt-count budget (40 attempts x ~8s) doesn't compose
+              # predictably across patch_webhooks' 4 sequential kubectl
+              # calls (get+patch x 2 resources) -- CI showed authwebhook
+              # still in Init:0/1 after 18+ minutes, far past
+              # scripts/helm-smoke-test.sh's own TIMEOUT_PODS budget for
+              # "all pods Ready", making the whole check fail even on a
+              # path that would have eventually succeeded. Switched to a
+              # wall-clock deadline per call (100s) so the 4-call worst
+              # case (~400s) stays predictably under TIMEOUT_PODS (600s),
+              # instead of an attempt-count budget whose total duration is
+              # easy to miscalibrate against the caller's own timeout.
+              KUBE_RETRY_TIMEOUT_SECS=100
               kube_retry() {
-                attempt=0
+                deadline=$(($(date +%s) + KUBE_RETRY_TIMEOUT_SECS))
                 err=""
-                while [ "$attempt" -lt "$KUBE_RETRY_MAX_ATTEMPTS" ]; do
+                while [ "$(date +%s)" -lt "$deadline" ]; do
                   if out=$(kube "$@" 2>&1); then
                     printf '%s\n' "$out"
                     return 0
                   fi
                   err="$out"
-                  attempt=$((attempt + 1))
                   sleep 3
                 done
-                echo "ERROR: 'kubectl $*' failed after ${attempt} attempts. Last error: ${err}" >&2
+                echo "ERROR: 'kubectl $*' failed after ${KUBE_RETRY_TIMEOUT_SECS}s. Last error: ${err}" >&2
                 return 1
               }
 
