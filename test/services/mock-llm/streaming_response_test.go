@@ -17,6 +17,7 @@ package mockllm_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -26,6 +27,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	kallm "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/langchaingo"
 	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/config"
 	"github.com/jordigilh/kubernaut/test/services/mock-llm/handlers"
@@ -192,12 +195,49 @@ var _ = Describe("Streaming Chat Completions (issue #1637)", func() {
 				if len(toolCalls) > 0 {
 					sawToolCall = true
 					tc, _ := toolCalls[0].(map[string]any)
+					Expect(tc["type"]).To(Equal("function"), "delta tool_call must carry a non-empty type — langchaingo's updateToolCalls treats an empty type as an arguments-only continuation fragment, not a new tool call (#1640 root cause)")
 					fn, _ := tc["function"].(map[string]any)
 					Expect(fn["name"]).To(Equal("submit_result"))
 					Expect(fn["arguments"]).NotTo(BeEmpty())
 				}
 			}
 			Expect(sawToolCall).To(BeTrue(), "streamed delta must carry the scenario's tool call — regression guard for #1640 E2E-KA-DISC failures caused by empty streamed tool_calls")
+		})
+	})
+
+	Describe("UT-MOCK-1637-004: real langchaingo client reconstructs streamed tool_calls end-to-end", func() {
+		It("should populate ChatResponse.ToolCalls via KA's actual StreamChat path, not just raw SSE JSON", func() {
+			// v1.5's KA still uses the third-party tmc/langchaingo client
+			// (pkg/kubernautagent/llm/langchaingo). This drives the mock
+			// through that exact client — the same one chatOrStream uses
+			// in production — rather than only inspecting the raw wire
+			// format, so it fails if langchaingo's own SSE tool-call
+			// accumulator (openaiclient.updateToolCalls) ever regresses
+			// against this mock's chunk shape again (#1640 E2E-KA-DISC
+			// regression root cause).
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewRouter(registry, false, config.ModeAutonomous)
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			adapter, err := langchaingo.New("openai", ts.URL, "mock-model", "mock-api-key")
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = adapter.Close() }()
+
+			req := kallm.ChatRequest{
+				Messages: []kallm.Message{
+					{Role: "user", Content: "investigate OOMKilled"},
+				},
+				Tools: []kallm.ToolDefinition{
+					{Name: openai.ToolSubmitResult, Description: "submit the investigation result", Parameters: json.RawMessage(`{"type":"object"}`)},
+				},
+			}
+
+			resp, err := adapter.StreamChat(context.Background(), req, func(kallm.ChatStreamEvent) error { return nil })
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.ToolCalls).NotTo(BeEmpty(), "StreamChat must reconstruct at least one tool call from the mock's SSE stream")
+			Expect(resp.ToolCalls[0].Name).To(Equal(openai.ToolSubmitResult))
+			Expect(resp.ToolCalls[0].Arguments).NotTo(BeEmpty())
 		})
 	})
 })

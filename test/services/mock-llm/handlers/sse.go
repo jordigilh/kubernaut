@@ -46,8 +46,21 @@ type sseChunkDelta struct {
 }
 
 type sseChunkToolCall struct {
-	Index    int            `json:"index"`
-	ID       string         `json:"id,omitempty"`
+	Index int    `json:"index"`
+	ID    string `json:"id,omitempty"`
+	// Type must be a non-empty "function" on the chunk that introduces a
+	// tool call. v1.5's KA still depends on the third-party
+	// tmc/langchaingo client (main has since replaced it with an internal
+	// client), whose streaming accumulator
+	// (openaiclient.updateToolCalls) treats any delta tool_call entry
+	// with an empty Type AND a non-empty Function.Arguments as an
+	// arguments-only continuation fragment for the *previous* tool call
+	// rather than a new one. Since this mock emits the entire tool call
+	// (id + name + full arguments) in a single chunk, omitting Type here
+	// makes langchaingo misclassify it as a continuation with no prior
+	// tool call to attach to, silently discarding it — reproducing
+	// exactly the #1640 backport's empty-tool-calls E2E regression.
+	Type     string         `json:"type,omitempty"`
 	Function sseChunkToolFn `json:"function"`
 }
 
@@ -115,6 +128,7 @@ func sseChunkFromChoice(choice openai.Choice) sseChunk {
 		delta.ToolCalls = append(delta.ToolCalls, sseChunkToolCall{
 			Index: i,
 			ID:    tc.ID,
+			Type:  tc.Type,
 			Function: sseChunkToolFn{
 				Name:      tc.Function.Name,
 				Arguments: tc.Function.Arguments,
