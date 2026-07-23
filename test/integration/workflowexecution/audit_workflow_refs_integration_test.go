@@ -234,15 +234,16 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(eventData.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123"))
 			Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
 
-			// IT-WE-1661-001 (Issue #1661 Change 11e): WorkflowRef carries no
-			// WorkflowName field (unlike the retired DataStorage catalog querier),
-			// so the selection event omits workflow_name entirely. workflow_id
-			// alone -- joined against the immutable workflow_content already in
-			// the Postgres audit ledger -- satisfies SOC2 CC8.1 reconstruction; a
-			// fast-follow issue tracks wiring workflow_name end-to-end for
-			// audit-readability convenience only.
-			Expect(eventData.WorkflowName.IsSet()).To(BeFalse(),
-				"workflow_name is not carried by WorkflowRef and should be omitted from the selection event")
+			// IT-WE-1661-001 (Issue #1711 cascade, DD-KA-001 v1.1): WorkflowRef
+			// now inline-embeds sharedtypes.WorkflowSnapshot, whose WorkflowName
+			// is Required and catalog-authoritative (copied verbatim from
+			// AIAnalysis.Status.SelectedWorkflow at WFE creation), so the audit
+			// manager (pkg/workflowexecution/audit/manager.go) reads it directly
+			// from Spec.WorkflowRef.WorkflowName and populates the selection
+			// event with it -- no runtime DataStorage lookup required.
+			Expect(eventData.WorkflowName.IsSet()).To(BeTrue(),
+				"workflow_name is carried by WorkflowRef.WorkflowName and should be populated on the selection event")
+			Expect(eventData.WorkflowName.Value).To(Equal("k8s-restart-pod-v1"))
 
 			By("5. Validate workflowexecution.execution.started event structure (ADR-034 v1.5)")
 			executionEvents := filterEventsByType(allEvents, weaudit.EventTypeExecutionStarted)
@@ -263,18 +264,19 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(execEventData.PipelinerunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
 			Expect(execEventData.PipelinerunName.Value).To(HavePrefix("wfe-"), "PipelineRun name should start with 'wfe-' prefix")
 
-			// IT-WE-1661-002 (Issue #1661 Change 11f): ActionType is now sourced
-			// directly from the CRD-embedded WorkflowRef.ActionType snapshot (RO
-			// copies it verbatim from AIAnalysis.Status.SelectedWorkflow at WFE
-			// creation, before the WFE even exists), so it's populated on the
-			// execution.started event. WorkflowName still carries no such field
-			// (see the selection-event assertion above for the SOC2 CC8.1
-			// rationale) and remains omitted.
+			// IT-WE-1661-002 (Issue #1661 Change 11f, extended by #1711 cascade):
+			// ActionType and WorkflowName are both sourced directly from the
+			// CRD-embedded WorkflowRef snapshot (RO copies them verbatim from
+			// AIAnalysis.Status.SelectedWorkflow at WFE creation, before the WFE
+			// even exists), so both are populated on the execution.started event
+			// (see the selection-event assertion above for WorkflowName's
+			// rationale).
 			Expect(execEventData.ActionType.IsSet()).To(BeTrue(),
 				"action_type is carried by WorkflowRef.ActionType and should be populated on the execution.started event")
 			Expect(execEventData.ActionType.Value).To(Equal("RestartPod"))
-			Expect(execEventData.WorkflowName.IsSet()).To(BeFalse(),
-				"workflow_name is not carried by WorkflowRef and should be omitted from the execution.started event")
+			Expect(execEventData.WorkflowName.IsSet()).To(BeTrue(),
+				"workflow_name is carried by WorkflowRef.WorkflowName and should be populated on the execution.started event")
+			Expect(execEventData.WorkflowName.Value).To(Equal("k8s-restart-pod-v1"))
 		})
 	})
 
