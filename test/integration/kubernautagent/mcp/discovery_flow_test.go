@@ -38,7 +38,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
-	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -765,8 +764,9 @@ func newRealMCPTestStackWithDiscoveryAndResolver(k8sClient client.Client, namesp
 	)
 	stack.EventStore = mcpinternal.NewDelegatingEventStore()
 
-	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
-	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+	// #1677 Phase 2e (DD-WORKFLOW-019): catalog-backed by KA's own informer
+	// cache, not a DS-ogen-client-backed WorkflowQuerier round-trip.
+	catalog := mcpadapters.NewWorkflowCatalogAdapter(sharedWfCatalog)
 
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithRateLimiter(stack.RateLimiter),
@@ -864,10 +864,10 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 
 	resolver := &discoverySignalResolver{}
 
-	// Real catalog backed by DataStorage (#1174). Workflow UUIDs are resolved
-	// via the override file mounted into the Mock LLM container.
-	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
-	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+	// Real catalog backed by KA's own informer cache (#1677 Phase 2e,
+	// DD-WORKFLOW-019). Workflow UUIDs are resolved via the override file
+	// mounted into the Mock LLM container.
+	catalog := mcpadapters.NewWorkflowCatalogAdapter(sharedWfCatalog)
 
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithRateLimiter(stack.RateLimiter),

@@ -138,7 +138,8 @@ func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *ht
 		cfg: p.cfg, infra: p.core.infra, ds: p.core.ds, inv: p.inv, enricher: p.core.enricher,
 		mgr: p.mgr, agentMetrics: p.agentMetrics, instrumentedAudit: p.instrumentedAudit,
 		ogenSrv: p.ogenSrv, eventEmitter: p.core.eventEmitter, interactiveReadiness: p.core.interactiveReadiness,
-		apiRateLimiter: p.apiRateLimiter, maxRequestBodySize: p.maxRequestBodySize, logger: p.logger,
+		apiRateLimiter: p.apiRateLimiter, maxRequestBodySize: p.maxRequestBodySize,
+		wfCatalog: p.core.wfCatalog, logger: p.logger,
 	})
 
 	httpServer = &http.Server{

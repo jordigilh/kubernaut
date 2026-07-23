@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -35,7 +34,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	dsmodels "github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
-	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -48,6 +46,7 @@ import (
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 )
 
 // newAuthMiddleware creates the DD-AUTH-014 auth middleware using the shared k8sInfra clientset.
@@ -128,6 +127,7 @@ type apiRoutesParams struct {
 	interactiveReadiness *karbac.InteractiveReadiness
 	apiRateLimiter       *kaserver.RateLimiter
 	maxRequestBodySize   int64
+	wfCatalog            *workflowcatalog.Catalog
 	logger               logr.Logger
 }
 
@@ -198,7 +198,7 @@ func mountInteractiveMCPRoute(r chi.Router, ctx context.Context, p apiRoutesPara
 	mcpHandler, sessionDrainer := buildMCPHandler(ctx, mcpHandlerParams{
 		cfg: p.cfg, infra: p.infra, ds: p.ds, inv: p.inv, enricher: p.enricher,
 		autoMgr: p.mgr, authMw: authMw, agentMetrics: p.agentMetrics,
-		auditStore: p.instrumentedAudit, logger: p.logger,
+		auditStore: p.instrumentedAudit, wfCatalog: p.wfCatalog, logger: p.logger,
 	})
 	if mcpHandler == nil {
 		p.interactiveReadiness.SetSoftDisabled("handler construction failed (check preceding errors)")
@@ -245,6 +245,7 @@ type mcpHandlerParams struct {
 	authMw       *auth.Middleware
 	agentMetrics *kametrics.Metrics
 	auditStore   audit.AuditStore
+	wfCatalog    *workflowcatalog.Catalog
 	logger       logr.Logger
 }
 
@@ -258,15 +259,22 @@ func resolveContextReconstructor(ds *dsClients, logger logr.Logger) mcpkg.Contex
 	return mcpkg.NewDSContextReconstructor(ds.ogenClient, 10*time.Second, logger)
 }
 
-// resolveWorkflowQuerier returns the DS-backed WorkflowQuerier when DS is
-// available, or a no-op fail-open implementation otherwise (mirrors
-// resolveContextReconstructor's fail-open pattern).
-func resolveWorkflowQuerier(ds *dsClients, logger logr.Logger) wfclient.WorkflowQuerier {
-	if ds == nil {
-		logger.Info("MCP interactive mode: DS unavailable — workflow catalog lookups disabled")
-		return &noopWorkflowQuerier{}
+// resolveWorkflowCatalogFetcher returns the wfCatalog-backed fetcher when
+// KA's informer cache is available, or a no-op fail-open implementation
+// otherwise (mirrors resolveContextReconstructor's fail-open pattern).
+// #1677 Phase 2e (DD-WORKFLOW-019): wfCatalog replaces the former
+// DS-ogen-client-backed WorkflowQuerier -- select_workflow/
+// investigate_discovery now share the same cache-backed catalog as the 3
+// custom MCP tools (Phase 2d), instead of round-tripping through DS.
+func resolveWorkflowCatalogFetcher(wfCatalog *workflowcatalog.Catalog, logger logr.Logger) mcpadapters.WorkflowCatalogFetcher {
+	// Avoid the typed-nil-interface trap (same pattern as
+	// toolregistry.go:buildToolRegistry): only wrap wfCatalog in the
+	// interface when it is actually non-nil.
+	if wfCatalog == nil {
+		logger.Info("MCP interactive mode: workflow catalog cache unavailable — workflow catalog lookups disabled")
+		return &noopWorkflowCatalogFetcher{}
 	}
-	return wfclient.NewOgenWorkflowQuerier(ds.ogenClient)
+	return wfCatalog
 }
 
 // resolveMCPTimeouts applies the DefaultMCPKeepAlive/DefaultMCPSessionTimeout
@@ -383,8 +391,8 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 // registers them with the MCP SDK server. Returns the registered ToolDeps
 // and the SessionNotifier (needed later for the session drainer).
 func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.ToolDeps, *mcpkg.SessionNotifier) {
-	cfg, ds, inv, enricher, autoMgr, agentMetrics, auditStore, logger :=
-		p.cfg, p.ds, p.inv, p.enricher, p.autoMgr, p.agentMetrics, p.auditStore, p.logger
+	cfg, inv, enricher, autoMgr, agentMetrics, auditStore, logger :=
+		p.cfg, p.inv, p.enricher, p.autoMgr, p.agentMetrics, p.auditStore, p.logger
 
 	// Build the InvestigatorRunner adapter.
 	investigatorRunner := mcpadapters.NewInvestigatorRunnerAdapter(inv)
@@ -405,12 +413,14 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 	signalResolver := mcpadapters.NewSessionSignalContextResolver(autoMgr, core.ctrlCli, core.namespace)
 
 	// Build the WorkflowCatalog adapter (shared between InvestigateTool and SelectWorkflowTool).
-	// DS is optional at startup (same fail-open contract as recon above and
-	// buildToolRegistry/readinessHandler elsewhere in this package): when
-	// unavailable, catalog lookups fail per-call with a clear error instead
-	// of panicking the whole MCP interactive-mode handler at construction.
-	wfQuerier := resolveWorkflowQuerier(ds, logger)
-	catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+	// KA's workflow catalog cache is optional at startup (same fail-open
+	// contract as recon above and buildToolRegistry/readinessHandler
+	// elsewhere in this package): when unavailable, catalog lookups fail
+	// per-call with a clear error instead of panicking the whole MCP
+	// interactive-mode handler at construction. #1677 Phase 2e
+	// (DD-WORKFLOW-019): backed by wfCatalog instead of a DS round-trip.
+	wfFetcher := resolveWorkflowCatalogFetcher(p.wfCatalog, logger)
+	catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(wfFetcher)
 
 	investigateTool, selectWfTool, completeNoActionTool := buildMCPTools(mcpToolsDeps{
 		leaseMgr:           core.leaseMgr,
@@ -752,44 +762,28 @@ func (n *noopReconstructor) Reconstruct(_ context.Context, _ string, _ string) (
 	return nil, nil
 }
 
-// errDSUnavailable is returned by every noopWorkflowQuerier method. Bug fix
+// errDSUnavailable is returned by noopWorkflowCatalogFetcher.GetByID. Bug fix
 // (Wave 5 follow-up): buildMCPHandler previously dereferenced ds.ogenClient
 // unconditionally when building the workflow-catalog querier, panicking the
 // whole MCP interactive-mode handler when DS was nil, even though every
 // other DS-optional dependency in this package (recon above, plus
-// buildToolRegistry/readinessHandler) already fails open. A wrapped
-// "unavailable" error surfaces through WorkflowCatalogAdapter.GetWorkflowByID
-// and is returned by SelectWorkflowTool.Handle as "workflow catalog lookup
+// buildToolRegistry/readinessHandler) already fails open. #1677 Phase 2e
+// repoints this at wfCatalog (KA's own informer cache) instead of DS, but
+// preserves the same fail-open contract when the cache is unavailable. A
+// wrapped "unavailable" error surfaces through
+// WorkflowCatalogAdapter.GetWorkflowByID and is returned by
+// SelectWorkflowTool.Handle as "workflow catalog lookup
 // failed: %w" — a normal tool error the caller can act on, not a crash.
 var errDSUnavailable = fmt.Errorf("workflow catalog unavailable: DataStorage integration not configured")
 
-// noopWorkflowQuerier is a no-op wfclient.WorkflowQuerier used when DS is
-// unavailable, mirroring noopReconstructor's fail-open pattern.
-type noopWorkflowQuerier struct{}
+// noopWorkflowCatalogFetcher is a no-op mcpadapters.WorkflowCatalogFetcher
+// used when KA's workflow catalog cache is unavailable (e.g. dev mode
+// without K8s infra), mirroring noopReconstructor's fail-open pattern.
+type noopWorkflowCatalogFetcher struct{}
 
-func (n *noopWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*dsmodels.WorkflowDependencies, error) {
-	return nil, errDSUnavailable
-}
-
-func (n *noopWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context, _ string) (json.RawMessage, error) {
-	return nil, errDSUnavailable
-}
-
-func (n *noopWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
-	return "", "", errDSUnavailable
-}
-
-func (n *noopWorkflowQuerier) GetWorkflowExecutionBundle(_ context.Context, _ string) (string, string, error) {
-	return "", "", errDSUnavailable
-}
-
-func (n *noopWorkflowQuerier) ResolveWorkflowCatalogMetadata(_ context.Context, _ string) (*wfclient.WorkflowCatalogMetadata, error) {
-	return nil, errDSUnavailable
-}
-
-func (n *noopWorkflowQuerier) GetWorkflowSchemaMetadata(_ context.Context, _ string) (*wfclient.SchemaMetadata, error) {
+func (n *noopWorkflowCatalogFetcher) GetByID(_ context.Context, _ string) (*dsmodels.RemediationWorkflow, error) {
 	return nil, errDSUnavailable
 }
 
 // Compile-time interface compliance check.
-var _ wfclient.WorkflowQuerier = (*noopWorkflowQuerier)(nil)
+var _ mcpadapters.WorkflowCatalogFetcher = (*noopWorkflowCatalogFetcher)(nil)
