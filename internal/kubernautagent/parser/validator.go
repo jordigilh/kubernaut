@@ -196,6 +196,19 @@ func (v *Validator) GetWorkflowMeta(workflowID string) (WorkflowMeta, bool) {
 	return m, ok
 }
 
+// IsAllowed reports whether workflowID is present in the session allowlist
+// (i.e. it resolves against the DS catalog fetched for this request). This
+// is the same membership test Validate applies to workflow_id, exposed here
+// so callers outside Validate (e.g. enrichFromCatalog's Issue #1711 guard)
+// can distinguish "unresolvable ID" from "resolvable ID with no registered
+// WorkflowMeta" -- the latter occurs only in test fixtures that populate the
+// allowlist without a matching SetWorkflowMeta call; production always sets
+// both from the same catalog-fetch loop (see dsCatalogFetcher.FetchValidator).
+func (v *Validator) IsAllowed(workflowID string) bool {
+	_, ok := v.allowedWorkflows[workflowID]
+	return ok
+}
+
 // Validate checks the result against the allowlist, confidence bounds, and
 // parameter schema constraints. Returns a ParameterValidationError when
 // parameter validation fails (so correctionFn can access the structured result),

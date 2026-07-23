@@ -186,4 +186,19 @@ var _ = Describe("enrichFromCatalog — Issue #1711 (unresolvable workflow_id mu
 
 		Expect(result.WorkflowID).To(Equal("wf-known"))
 	})
+
+	It("UT-KA-1711-003: does not clear an allowlisted WorkflowID that has no registered WorkflowMeta (fix-forward regression guard)", func() {
+		// Distinguishes "unresolvable against the allowlist" (must clear) from
+		// "resolvable but no SetWorkflowMeta call was made" (must NOT clear --
+		// production always sets both from the same catalog-fetch loop, but
+		// many test fixtures across the suite legitimately populate only the
+		// allowlist). Regression guard for the bug where GetWorkflowMeta's
+		// !ok branch was used as the existence check instead of IsAllowed.
+		v := parser.NewValidator([]string{"restart", "scale-up"})
+		result := &katypes.InvestigationResult{WorkflowID: "restart"}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.WorkflowID).To(Equal("restart"))
+	})
 })
