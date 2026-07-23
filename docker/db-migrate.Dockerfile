@@ -26,6 +26,7 @@ RUN GOMODCACHE=$(mktemp -d) && \
     go get github.com/pressly/goose/v3/cmd/goose@v3.27.1 && \
     go get golang.org/x/crypto@v0.53.0 && \
     go get golang.org/x/net@v0.56.0 && \
+    go get google.golang.org/grpc@v1.82.1 && \
     go build -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
 FROM registry.access.redhat.com/ubi10/ubi-minimal:latest AS production
