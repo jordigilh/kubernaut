@@ -35,8 +35,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io.Writer) error {
@@ -84,7 +82,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
+		imageName, err := BuildImageForKind(context.Background(), cfg, writer)
 		buildResults <- imageBuildResult{"datastorage", imageName, err}
 	}()
 
@@ -96,7 +94,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
+		imageName, err := BuildImageForKind(context.Background(), cfg, writer)
 		buildResults <- imageBuildResult{"kubernautagent", imageName, err}
 	}()
 
@@ -108,7 +106,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: "",
 			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
+		imageName, err := BuildImageForKind(context.Background(), cfg, writer)
 		buildResults <- imageBuildResult{"aianalysis", imageName, err}
 	}()
 
@@ -121,7 +119,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 			BuildContextPath: projectRoot,
 			EnableCoverage:   false,
 		}
-		imageName, err := BuildImageForKind(ctx, cfg, writer)
+		imageName, err := BuildImageForKind(context.Background(), cfg, writer)
 		buildResults <- imageBuildResult{"mock-llm", imageName, err}
 	}()
 
@@ -172,7 +170,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// PHASE 4: Create Kind cluster (AFTER cleanup to maximize available space)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 4: Creating Kind cluster...")
-	if err := createAIAnalysisKindCluster(ctx, clusterName, kubeconfigPath, writer); err != nil {
+	if err := createAIAnalysisKindCluster(context.Background(), clusterName, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
@@ -267,7 +265,6 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// Wait for DataStorage to be ready (use port-forward)
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DataStorage to be ready...")
-	dataStorageURL := fmt.Sprintf("https://localhost:%d", 38080)
 	dataStorageHealthURL := fmt.Sprintf("http://localhost:%d", 38081)
 
 	// Start port-forward to DataStorage API and health ports
@@ -288,9 +285,9 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	ready := false
 	for i := 0; i < 30; i++ { // 30 seconds max
 		time.Sleep(1 * time.Second)
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/readyz", dataStorageHealthURL), http.NoBody)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/readyz", dataStorageHealthURL), nil)
 		if reqErr != nil {
-			return fmt.Errorf("failed to build readyz request: %w", reqErr)
+			return fmt.Errorf("failed to build readiness request: %w", reqErr)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err == nil && resp.StatusCode == 200 {
@@ -309,38 +306,18 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 
 	// Seed workflows and capture UUIDs (with DD-AUTH-014 authentication)
 	// Pattern: Uses shared workflow_seeding.go library (refactored from duplicate code)
-	_, _ = fmt.Fprintln(writer, "  🔐 Creating authenticated DataStorage client for workflow seeding...")
 
-	// Get ServiceAccount token for authentication
-	// GetServiceAccountToken signature: (ctx, namespace, saName, kubeconfigPath)
-	saToken, err := GetServiceAccountToken(context.Background(), namespace, "aianalysis-e2e-sa", kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get ServiceAccount token: %w", err)
-	}
-
-	// Create authenticated OpenAPI client for DataStorage (Issue #785: TLS to DS API on port-forward)
-	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to create TLS-aware transport for workflow seeding: %w", err)
-	}
-	seedClient, err := ogenclient.NewClient(
-		dataStorageURL,
-		ogenclient.WithClient(&http.Client{
-			Transport: testauth.NewServiceAccountTransportWithBase(saToken, tlsTransport),
-			Timeout:   30 * time.Second,
-		}),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create DataStorage client: %w", err)
-	}
-
-	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
-	if err := SeedActionTypesViaAPI(ctx, seedClient, writer); err != nil {
-		return fmt.Errorf("failed to seed action types: %w", err)
+	// DD-WORKFLOW-016: Seed action types before workflow registration.
+	// #1661 Phase 55: DS's Postgres-backed POST /api/v1/action-types endpoint was
+	// removed (DD-WORKFLOW-018); action types are now seeded exclusively as CRDs for
+	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
+	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
+		return fmt.Errorf("failed to seed action types (CRD): %w", err)
 	}
 
 	// Inline workflow definitions (CANNOT use test/integration/aianalysis wrapper - import cycle)
-	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsInDataStorage(ctx) function
+	// Pattern: DD-TEST-011 v2.0 - Use shared SeedWorkflowsViaKubectlApply() function (#1661 Phase 55)
 	// Note: test/integration/aianalysis imports test/infrastructure, creating circular dependency
 	// Acceptable trade-off: Small duplication avoids architectural issues
 	// Source of truth: test/integration/aianalysis/test_workflows.go:GetAIAnalysisTestWorkflows()
@@ -400,11 +377,16 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 		{WorkflowID: "test-signal-handler-v1", Name: "Test Signal Handler", Description: "Generic workflow for test signals (graceful shutdown tests)", Severity: "critical", Component: []string{"v1/Pod"}, Environment: "test", Priority: "P1", SchemaImage: aaWorkflowRegistry + "/test-signal-handler:v1.0.0", SchemaParameters: testSignalParams},
 	}
 
-	workflowUUIDs, err := SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "AIAnalysis E2E (via infrastructure)", writer)
+	// #1661 Phase 56 (discovered gap): this suite runs with no live AuthWebhook
+	// (unlike fullpipeline/fleet), so SeedWorkflowsViaKubectlApply's wait on
+	// .status.workflowId can never resolve -- use the direct-CRD-creation path
+	// instead, which computes the same deterministic UUID and stamps status
+	// itself (pkg/shared/contenthash).
+	workflowUUIDs, err := SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer)
 	if err != nil {
 		return fmt.Errorf("failed to seed test workflows: %w", err)
 	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows in DataStorage\n", len(workflowUUIDs))
+	_, _ = fmt.Fprintf(writer, "  ✅ Seeded %d workflows via direct CRD creation\n", len(workflowUUIDs))
 
 	// NOTE: ConfigMap creation moved to deployMockLLMInNamespace() (Phase 7c)
 	// This avoids duplication and ensures workflows are passed correctly
@@ -501,7 +483,7 @@ func DeleteAIAnalysisCluster(clusterName, kubeconfigPath string, testsFailed boo
 }
 
 func createAIAnalysisKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
-	// REFACTORED: Now uses shared CreateKindClusterWithConfig(ctx) helper
+	// REFACTORED: Now uses shared CreateKindClusterWithConfig() helper
 	opts := KindClusterOptions{
 		ClusterName:               clusterName,
 		KubeconfigPath:            kubeconfigPath,

@@ -178,6 +178,36 @@ spec:
       required: true
 `
 
+// workflowSchemaYAMLWithDepsAndResources exercises the three fields
+// UT-KA-337-001 covers: schema.Dependencies (secrets/configMaps),
+// execution.resources (requests/limits), and a multi-entry parameter list
+// (source for DeclaredParameterNames).
+const workflowSchemaYAMLWithDepsAndResources = `
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: test-workflow-deps-resources
+spec:
+  version: "1.0.0"
+  execution:
+    engine: job
+    resources:
+      requests:
+        cpu: "100m"
+      limits:
+        cpu: "500m"
+  dependencies:
+    secrets:
+      - name: db-creds
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+    - name: REPLICAS
+      type: integer
+      required: true
+`
+
 // workflowJSON returns a minimal RemediationWorkflow JSON payload satisfying
 // the ogen decoder's required-field validation for GET /api/v1/workflows.
 func workflowJSON(workflowID, content string) map[string]interface{} {
@@ -267,6 +297,52 @@ var _ = Describe("dsCatalogFetcher.FetchValidator", func() {
 		Expect(meta.ExecutionBundleDigest).To(Equal("sha256:aaa"))
 		Expect(meta.Parameters).To(HaveLen(1))
 		Expect(meta.Parameters[0].Name).To(Equal("TARGET_NAMESPACE"))
+	})
+
+	// UT-KA-337-001 (Issue #1661 Change 11a, DD-WORKFLOW-018): WorkflowMeta must
+	// surface Dependencies/Resources/DeclaredParameterNames -- schema-derived
+	// data buildWorkflowMeta's schemaParser already computes during parameter
+	// validation but previously discarded after populating only Parameters.
+	// AA's SelectedWorkflow needs these three fields to build the CRD-embedded
+	// execution snapshot (Change 11b-11e) without a second, redundant DS fetch
+	// from WorkflowExecution.
+	It("UT-KA-337-001: WorkflowMeta surfaces Dependencies/Resources/DeclaredParameterNames from schema content", func() {
+		const wfID = "550e8400-e29b-41d4-a716-446655440010"
+		mux := http.NewServeMux()
+		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"workflows": []interface{}{workflowJSON(wfID, workflowSchemaYAMLWithDepsAndResources)},
+			})
+		})
+
+		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
+		validator, err := f.FetchValidator(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(validator).NotTo(BeNil())
+
+		meta, ok := validator.GetWorkflowMeta(wfID)
+		Expect(ok).To(BeTrue())
+
+		Expect(meta.Dependencies).NotTo(BeNil(), "Dependencies must be extracted from schema content")
+		Expect(meta.Dependencies.Secrets).To(HaveLen(1))
+		Expect(meta.Dependencies.Secrets[0].Name).To(Equal("db-creds"))
+
+		Expect(meta.Resources).NotTo(BeNil(), "Resources must be extracted from schema content")
+		Expect(meta.Resources.Requests.Cpu().String()).To(Equal("100m"))
+		Expect(meta.Resources.Limits.Cpu().String()).To(Equal("500m"))
+
+		Expect(meta.DeclaredParameterNames).To(HaveLen(2))
+		Expect(meta.DeclaredParameterNames).To(HaveKey("TARGET_NAMESPACE"))
+		Expect(meta.DeclaredParameterNames).To(HaveKey("REPLICAS"))
+
+		// Issue #1661 Change 12 (DD-WORKFLOW-018): ActionType/WorkflowName are
+		// required, non-optional fields on the DS catalog response (see
+		// workflowJSON's actionType/workflowName), so buildWorkflowMeta must
+		// always copy them verbatim -- no schema-parsing dependency, unlike
+		// Dependencies/Resources/DeclaredParameterNames above.
+		Expect(meta.ActionType).To(Equal("RestartPod"))
+		Expect(meta.WorkflowName).To(Equal("test-workflow"))
 	})
 
 	It("strips parameters (fail-closed) when a workflow's schema content is malformed, but keeps it in the allowlist", func() {

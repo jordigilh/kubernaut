@@ -308,8 +308,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
-						we.Name, we.Status.Phase, we.Status.ExecutionEngine)
-					return we.Status.ExecutionEngine
+						we.Name, we.Status.Phase, we.Spec.WorkflowRef.ExecutionEngine)
+					return we.Spec.WorkflowRef.ExecutionEngine
 				}
 			}
 			return ""
@@ -620,6 +620,39 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(len(allAuditEvents)).To(BeNumerically(">=", expectedMinTotal),
 			"Audit trail must contain at least %d events (got %d): %d exactly-once + %d at-least-once",
 			expectedMinTotal, len(allAuditEvents), len(exactlyOnceEvents), len(atLeastOnceEvents))
+
+		// #1661 Change 3 introduced event_data.action_type on
+		// workflowexecution.execution.started, resolved via
+		// resolveWorkflowCatalog's DataStorage round-trip. Change 11e (GREEN:
+		// 898fe8574) removed that DS round-trip entirely, and ActionType was
+		// left off the Change 11c/11d WorkflowRef snapshot migration list --
+		// an oversight rather than a deliberate omission, since
+		// AIAnalysis.Status.SelectedWorkflow.ActionType (propagated from KA's
+		// three-step discovery protocol) is available at the exact same
+		// CRD-creation time as its ExecutionEngine/ServiceAccountName
+		// siblings. Change 11f folded ActionType into WorkflowRef alongside
+		// them, reading it straight from that immutable Spec snapshot (no
+		// Status mirror) -- but that only fixed the *read* site: KA itself
+		// never populated action_type/workflow_name in its selected_workflow
+		// wire response, so both stayed empty end-to-end regardless (this
+		// assertion was RED on CI until the fix landed). Change 12 closed
+		// the actual gap catalog-authoritatively in KA (enrichFromCatalog /
+		// applySelectedWorkflow), and deduplicated the two CRDs' snapshot
+		// field lists into one shared sharedtypes.WorkflowSnapshot type
+		// (DD-WORKFLOW-018) so this class of "field added to one CRD but not
+		// its sibling" drift can't recur.
+		for _, event := range allAuditEvents {
+			if event.EventType != "workflowexecution.execution.started" {
+				continue
+			}
+			payload, ok := event.EventData.GetWorkflowExecutionAuditPayload()
+			Expect(ok).To(BeTrue(), "workflowexecution.execution.started event_data should decode as WorkflowExecutionAuditPayload")
+			Expect(payload.ActionType.IsSet()).To(BeTrue(),
+				"action_type should be populated from WorkflowRef.ActionType (Issue #1661 Change 11f/12)")
+			Expect(payload.WorkflowName.IsSet()).To(BeTrue(),
+				"workflow_name should be populated from WorkflowRef.WorkflowName (Issue #1661 Change 12)")
+			break
+		}
 
 		// Verify temporal ordering: gateway.signal.received should be among the earliest events.
 		// Audit timestamps have second-level precision and services run on different pods,
@@ -1271,8 +1304,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
-						we.Name, we.Status.Phase, we.Status.ExecutionEngine)
-					return we.Status.ExecutionEngine
+						we.Name, we.Status.Phase, we.Spec.WorkflowRef.ExecutionEngine)
+					return we.Spec.WorkflowRef.ExecutionEngine
 				}
 			}
 			return ""

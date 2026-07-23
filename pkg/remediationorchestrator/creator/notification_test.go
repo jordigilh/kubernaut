@@ -19,6 +19,8 @@ package creator_test
 import (
 	"context"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -95,12 +97,15 @@ var _ = Describe("NotificationCreator", func() {
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID:      "restart-pod",
-					Version:         "1.0.0",
-					ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
-					Confidence:      0.85,
-					ActionType:      "restart",
-					Rationale:       "Pod restart recommended",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "restart-pod",
+						WorkflowName:    "restart-pod",
+						Version:         "1.0.0",
+						ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
+						ActionType:      "restart",
+					},
+					Confidence: 0.85,
+					Rationale:  "Pod restart recommended",
 				},
 				ApprovalReason: "High severity requires approval",
 				RootCause:      "Memory leak detected",

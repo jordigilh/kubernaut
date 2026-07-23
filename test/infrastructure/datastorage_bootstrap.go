@@ -59,12 +59,6 @@ type DSBootstrapConfig struct {
 	// This allows DataStorage to self-validate its auth middleware in the /health endpoint
 	// Optional: Only needed when using real middleware auth in integration tests
 	DataStorageServiceTokenPath string // Path to data-storage-sa token file (e.g., "/tmp/datastorage-service-token")
-
-	// ClientToken is a bearer token for an authenticated test client (DD-AUTH-014).
-	// If non-empty, StartDSBootstrap seeds action types via the DataStorage API as
-	// its last step, satisfying the FK constraint before any workflow registration.
-	// Set automatically by NewDSBootstrapConfigWithAuth from authConfig.Token.
-	ClientToken string
 }
 
 // NewDSBootstrapConfigWithAuth creates a DSBootstrapConfig with authentication properly configured
@@ -91,7 +85,7 @@ type DSBootstrapConfig struct {
 //	    "test/integration/gateway/config", authConfig)
 //
 //	// Phase 3: Start infrastructure
-//	dsInfra, err := infrastructure.StartDSBootstrap(ctx, cfg, GinkgoWriter)
+//	dsInfra, err := infrastructure.StartDSBootstrap(cfg, GinkgoWriter)
 //
 // Authority: DD-AUTH-014 (Middleware-based authentication)
 func NewDSBootstrapConfigWithAuth(
@@ -109,7 +103,6 @@ func NewDSBootstrapConfigWithAuth(
 		ConfigDir:                   configDir,
 		EnvtestKubeconfig:           authConfig.KubeconfigPath,
 		DataStorageServiceTokenPath: authConfig.DataStorageServiceTokenPath,
-		ClientToken:                 authConfig.Token,
 	}
 }
 
@@ -129,7 +122,7 @@ const (
 // - Consumer service name provides clear isolation (gateway vs aianalysis vs ro)
 // - UUID ensures zero collision risk (no timestamp needed - UUID is sufficient)
 // - Simplest possible format while maintaining uniqueness
-// - No redundancy - image name already contains infrastructure type (caller-supplied prefix)
+// - No redundancy - image name already contains infrastructure type
 func generateInfrastructureImageTag(consumer string) string {
 	// Use 8 hex characters from nanoseconds for UUID
 	uuid := fmt.Sprintf("%x", time.Now().UnixNano())[:8]
@@ -172,26 +165,23 @@ type DSBootstrapInfra struct {
 //   - IMAGE_TAG: Image tag (e.g., "pr-123", "main-abc1234")
 //
 // Returns:
-//   - imageName: The registry image reference (registry/serviceName:tag) when pulled
-//   - pulled: true if successfully pulled from registry, false otherwise
-//   - error: reserved for future use; current implementation always returns nil here
+//   - imageName: The registry image name (empty if not pulled)
+//   - pulled: true if successfully pulled from registry, false otherwise (caller should build locally)
 //
 // Usage:
 //
-//	if imageName, pulled, _ := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
+//	if imageName, pulled := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
 //	    return imageName, nil // Use registry image
 //	}
 //	// Otherwise, fall through to local build
 //
 // Authority: CI/CD pipeline optimization for integration tests
-//
-//nolint:unparam // error is reserved for future use (see doc comment above); all 3 call sites (here and shared_e2e.go/mock_llm.go) already check err != nil
-func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writer) (string, bool, error) {
+func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writer) (string, bool) {
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
 
 	if registry == "" || tag == "" {
-		return "", false, nil // Not configured, caller should build locally
+		return "", false // Not configured, caller should build locally
 	}
 
 	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
@@ -201,7 +191,7 @@ func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writ
 	if err != nil || !exists {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", err)
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
-		return "", false, nil
+		return "", false
 	}
 
 	_, _ = fmt.Fprintf(writer, "   📥 Pulling image from registry: %s\n", registryImage)
@@ -210,11 +200,11 @@ func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writ
 	pullCmd.Stderr = writer
 	if pullErr := pullCmd.Run(); pullErr != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Pull failed: %v, falling back to local build...\n", pullErr)
-		return "", false, nil
+		return "", false
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Image pulled from registry (skipping local build)\n")
 
-	return registryImage, true, nil
+	return registryImage, true
 }
 
 // BuildDataStorageImage builds the DataStorage Docker image for integration tests.
@@ -258,10 +248,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
 	// CI/CD Optimization: Try to pull from registry if configured
-	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
-		if err != nil {
-			return "", err // Tag failed after successful pull
-		}
+	if pulledImageName, pulled := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
 		return pulledImageName, nil // Use registry image
 	}
 
@@ -428,13 +415,10 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n\n")
 
-	// Step 7: Seed action types via DS API (DD-WORKFLOW-016: FK constraint)
-	if cfg.ClientToken != "" {
-		_, _ = fmt.Fprintf(writer, "🏷️  Seeding action types via DataStorage API...\n")
-		if err := SeedActionTypesViaAPIWithURL(ctx, infra.ServiceURL, cfg.ClientToken, 30*time.Second, writer); err != nil {
-			return nil, fmt.Errorf("failed to seed action types via API: %w", err)
-		}
-	}
+	// #1661 Phase 55: action type seeding via DS's Postgres-backed API was removed
+	// (DD-WORKFLOW-018 dropped the action_type_taxonomy table and the FK constraint
+	// this step used to satisfy). Suites needing ActionType CRDs to exist for DS's
+	// informer-backed cache now seed them directly via their own K8s client.
 
 	// Success
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -776,9 +760,9 @@ func waitForDSBootstrapHTTPHealth(ctx context.Context, infra *DSBootstrapInfra, 
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, infra.HealthURL+"/readyz", http.NoBody)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, infra.HealthURL+"/readyz", nil)
 		if reqErr != nil {
-			return fmt.Errorf("failed to build readyz request: %w", reqErr)
+			return fmt.Errorf("failed to build health check request: %w", reqErr)
 		}
 		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {

@@ -17,102 +17,94 @@ limitations under the License.
 package workflowexecution
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"testing"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-func TestWorkflowExecutionCatalogUnit(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "WorkflowExecution Catalog Unit Suite")
-}
-
-// mockCatalogWorkflowQuerier implements weclient.WorkflowQuerier for testing
-// resolveWorkflowCatalog. Only ResolveWorkflowCatalogMetadata is exercised by
-// this function; the remaining methods are unused stubs required to satisfy
-// the interface.
-type mockCatalogWorkflowQuerier struct {
-	meta *weclient.WorkflowCatalogMetadata
-	err  error
-}
-
-func (m *mockCatalogWorkflowQuerier) GetWorkflowDependencies(context.Context, string) (*models.WorkflowDependencies, error) {
-	panic("not used by resolveWorkflowCatalog")
-}
-
-func (m *mockCatalogWorkflowQuerier) GetWorkflowEngineConfig(context.Context, string) (json.RawMessage, error) {
-	panic("not used by resolveWorkflowCatalog")
-}
-
-func (m *mockCatalogWorkflowQuerier) GetWorkflowExecutionEngine(context.Context, string) (string, string, error) {
-	panic("not used by resolveWorkflowCatalog")
-}
-
-func (m *mockCatalogWorkflowQuerier) GetWorkflowExecutionBundle(context.Context, string) (string, string, error) {
-	panic("not used by resolveWorkflowCatalog")
-}
-
-func (m *mockCatalogWorkflowQuerier) ResolveWorkflowCatalogMetadata(_ context.Context, _ string) (*weclient.WorkflowCatalogMetadata, error) {
-	return m.meta, m.err
-}
-
-func (m *mockCatalogWorkflowQuerier) GetWorkflowSchemaMetadata(context.Context, string) (*weclient.SchemaMetadata, error) {
-	panic("not used by resolveWorkflowCatalog")
-}
-
-// ========================================
-// Issue #1674 (nilnil sentinel-error refactor), Batch 2: resolveWorkflowCatalog
-// previously returned (nil, nil) for the idempotent "already resolved" case,
-// ambiguous with a caller forgetting to check the error. This package had
-// zero unit-test coverage before this change.
-// BR-WE-003 (WorkflowExecution catalog resolution), Issue #650, Issue #518.
-// ========================================
-var _ = Describe("resolveWorkflowCatalog (Issue #1674 Batch 2)", func() {
-	var ctx context.Context
+// Issue #1661 Change 11f (DD-WORKFLOW-018): resolveWorkflowCatalog (the
+// former Spec->Status mirror for ExecutionEngine/ServiceAccountName/
+// Resources) is removed entirely. Every production consumer now reads
+// wfe.Spec.WorkflowRef.{ExecutionEngine,ServiceAccountName,Resources,
+// ActionType} directly -- there is nothing left to "resolve" at runtime
+// since WorkflowRef is RO's already-validated, immutable, CRD-embedded
+// snapshot (Change 11c/11d). validateExecutionEngineResolved is the sole
+// remaining function in this file: a defensive fail-closed guard (not a
+// resolution step) against a WorkflowRef that somehow lacks an execution
+// engine, which should be unreachable in practice since RO's
+// validateSelectedWorkflow already enforces this before the WFE is ever
+// created.
+var _ = Describe("validateExecutionEngineResolved (Issue #1661 Change 11f)", func() {
+	var (
+		r   *WorkflowExecutionReconciler
+		wfe *workflowexecutionv1alpha1.WorkflowExecution
+	)
 
 	BeforeEach(func() {
-		ctx = context.Background()
-	})
+		r = &WorkflowExecutionReconciler{}
 
-	It("UT-WE-1674-001: returns ErrAlreadyResolved when the execution engine is already set", func() {
-		wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
-		wfe.Status.ExecutionEngine = "tekton"
-		r := &WorkflowExecutionReconciler{
-			WorkflowQuerier: &mockCatalogWorkflowQuerier{},
-		}
-
-		meta, err := r.resolveWorkflowCatalog(ctx, wfe)
-
-		Expect(errors.Is(err, ErrAlreadyResolved)).To(BeTrue())
-		Expect(meta).To(BeNil())
-	})
-
-	It("UT-WE-1674-002: resolves engine, service account, and resources from the DS catalog", func() {
-		wfe := &workflowexecutionv1alpha1.WorkflowExecution{}
-		wfe.Spec.WorkflowRef.WorkflowID = "wf-1"
-		r := &WorkflowExecutionReconciler{
-			WorkflowQuerier: &mockCatalogWorkflowQuerier{
-				meta: &weclient.WorkflowCatalogMetadata{
-					ExecutionEngine:    "tekton",
-					WorkflowName:       "restart-pod",
-					ServiceAccountName: "wf-sa",
+		wfe = &workflowexecutionv1alpha1.WorkflowExecution{
+			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:            "wf-catalog-red-001",
+						Version:               "1.0.0",
+						ExecutionBundle:       "quay.io/kubernaut/workflows/red-001:v1@sha256:deadbeef",
+						ExecutionBundleDigest: "sha256:deadbeef",
+						EngineConfig:          &apiextensionsv1.JSON{Raw: []byte(`{"playbookPath":"deploy.yml"}`)},
+						ExecutionEngine:       "job",
+						ServiceAccountName:    "workflow-runner-sa",
+						ActionType:            "ScaleReplicas",
+						Dependencies: &sharedtypes.WorkflowDependencies{
+							Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+						},
+						Resources: &corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+							Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+						},
+						DeclaredParameterNames: map[string]bool{"TARGET_POD": true},
+					},
 				},
 			},
 		}
+	})
 
-		meta, err := r.resolveWorkflowCatalog(ctx, wfe)
+	It("UT-WE-1661-011-001: passes when WorkflowRef.ExecutionEngine is declared", func() {
+		Expect(r.validateExecutionEngineResolved(wfe)).ToNot(HaveOccurred())
+	})
 
-		Expect(err).ToNot(HaveOccurred())
-		Expect(meta).ToNot(BeNil())
-		Expect(wfe.Status.ExecutionEngine).To(Equal("tekton"))
-		Expect(wfe.Status.ServiceAccountName).To(Equal("wf-sa"))
+	It("UT-WE-1661-011-002: fails when WorkflowRef.ExecutionEngine is empty (defensive guard -- unreachable via RO's normal creation path)", func() {
+		wfe.Spec.WorkflowRef.ExecutionEngine = ""
+		Expect(r.validateExecutionEngineResolved(wfe)).To(HaveOccurred())
+	})
+
+	It("UT-WE-1661-011-003: ExecutionEngine/ServiceAccountName/Resources/ActionType are read straight off the immutable WorkflowRef snapshot -- there is no Status mirror to keep in sync", func() {
+		// #1661 Change 11f: these four all moved off wfe.Status entirely
+		// (WorkflowExecutionStatus has no ExecutionEngine/ServiceAccountName/
+		// Resources/ActionType fields anymore -- see api/workflowexecution/
+		// v1alpha1/workflowexecution_types.go). Every production consumer
+		// (pending.go, lifecycle.go, the three executors, the audit manager,
+		// RO's notification_creation.go) reads wfe.Spec.WorkflowRef.X
+		// directly, so this snapshot is authoritative from CRD-creation time
+		// with no additional per-reconcile resolution step required.
+		Expect(wfe.Spec.WorkflowRef.ExecutionEngine).To(Equal("job"))
+		Expect(wfe.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-runner-sa"))
+		Expect(wfe.Spec.WorkflowRef.Resources).ToNot(BeNil())
+		Expect(wfe.Spec.WorkflowRef.ActionType).To(Equal("ScaleReplicas"))
+	})
+
+	It("UT-WE-1661-011-004: WorkflowName has no source anywhere upstream and stays permanently unset on wfe.Status regardless of this change", func() {
+		// Unlike its five siblings, WorkflowRef carries no WorkflowName field
+		// at all (KA's autonomous selection path never emits a display name
+		// distinct from WorkflowID either), so there is nothing to read from
+		// Spec for this one. WorkflowID remains the functional/join key for
+		// SOC2 CC8.1 reconstruction regardless (IT-AW-1111-001).
+		Expect(wfe.Status.WorkflowName).To(BeEmpty())
 	})
 })

@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -48,6 +50,33 @@ type WorkflowMeta struct {
 	Component             []string // MandatoryLabels.Component: GVK scope (apiVersion/Kind, e.g. apps/v1/Deployment), plain Kind legacy, or ["*"]
 	Parameters            []models.WorkflowParameter
 	CompiledPatterns      map[string]*regexp.Regexp
+
+	// ActionType/WorkflowName are catalog-authoritative identifiers (Issue
+	// #1661 Change 12, DD-WORKFLOW-018) copied verbatim from the DS
+	// catalog response (both are required, non-optional fields there).
+	// enrichFromCatalog copies these onto InvestigationResult so KA's wire
+	// response carries them through to AIAnalysis.Status.SelectedWorkflow.
+	ActionType   string
+	WorkflowName string
+
+	// Dependencies declares the Secrets/ConfigMaps the workflow's schema
+	// requires in the execution namespace (DD-WE-006). Nil when the schema
+	// declares no dependencies section. Issue #1661 Change 11a
+	// (DD-WORKFLOW-018): sourced here so enrichFromCatalog can place it on
+	// InvestigationResult, letting AA embed it in the CRD execution snapshot
+	// instead of WorkflowExecution re-fetching it from DataStorage.
+	Dependencies *models.WorkflowDependencies
+
+	// Resources declares the per-workflow Job container CPU/memory
+	// requests/limits (BR-WE-019 / DD-WE-008). Nil when the schema's
+	// execution.resources section is absent (BestEffort QoS preserved).
+	Resources *corev1.ResourceRequirements
+
+	// DeclaredParameterNames is the parameter-name allowlist WorkflowExecution
+	// uses for defense-in-depth stripping of undeclared parameters (#243).
+	// nil means no schema content was parsed; empty means the schema
+	// declares zero parameters -- both are distinct from "unfiltered".
+	DeclaredParameterNames map[string]bool
 }
 
 // kaManagedParams are parameters injected by KA (not provided by the LLM).
@@ -165,6 +194,19 @@ func compileParameterPatterns(params []models.WorkflowParameter) map[string]*reg
 func (v *Validator) GetWorkflowMeta(workflowID string) (WorkflowMeta, bool) {
 	m, ok := v.catalogMeta[workflowID]
 	return m, ok
+}
+
+// IsAllowed reports whether workflowID is present in the session allowlist
+// (i.e. it resolves against the DS catalog fetched for this request). This
+// is the same membership test Validate applies to workflow_id, exposed here
+// so callers outside Validate (e.g. enrichFromCatalog's Issue #1711 guard)
+// can distinguish "unresolvable ID" from "resolvable ID with no registered
+// WorkflowMeta" -- the latter occurs only in test fixtures that populate the
+// allowlist without a matching SetWorkflowMeta call; production always sets
+// both from the same catalog-fetch loop (see dsCatalogFetcher.FetchValidator).
+func (v *Validator) IsAllowed(workflowID string) bool {
+	_, ok := v.allowedWorkflows[workflowID]
+	return ok
 }
 
 // Validate checks the result against the allowlist, confidence bounds, and

@@ -55,10 +55,9 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 	BeforeEach(func() {
 		logger := ctrl.Log.WithName("rw-at-audit-it")
 		rwDSClient := authwebhook.NewDSClientAdapterFromClient(dsClient, logger.WithName("rw-ds"))
-		atDSClient := authwebhook.NewDSClientAdapterFromClient(dsClient, logger.WithName("at-ds"))
 
 		rwHandler = authwebhook.NewRemediationWorkflowHandler(rwDSClient, auditStore, k8sClient)
-		atHandler = authwebhook.NewActionTypeHandler(atDSClient, auditStore, k8sClient)
+		atHandler = authwebhook.NewActionTypeHandler(auditStore, k8sClient)
 	})
 
 	flushAndQuery := func(correlationID, eventType string) []ogenclient.AuditEvent {
@@ -210,13 +209,13 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 
 		It("IT-AW-1111-001: remediationworkflow.admitted.create persisted to DS", func() {
 			uid := uniqueID("rw-create")
-			actionType := uniqueID("ITScaleCreate")
+			actionType := uniqueActionType("ITScaleCreate")
 
 			// DD-WORKFLOW-016: Register the action type in the taxonomy before
 			// creating the RW, otherwise DS rejects with 403 (FK constraint).
-			atSetupUID := uniqueID("at-setup-create")
-			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
-			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+			// #1661: Also creates the ActionType CRD in etcd (Active), required
+			// by AW's own RW-to-ActionType existence gate.
+			createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueID("at-setup-create"))
 
 			rw := buildRW(uniqueID("it-rw-create"), actionType)
 
@@ -226,15 +225,29 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 			events := flushAndQuery(uid, authwebhook.EventTypeRWAdmittedCreate)
 			Expect(events).To(HaveLen(1))
 			Expect(events[0].CorrelationID).To(Equal(uid))
+
+			// IT-AW-311-001 (#1661 Change 2): workflow_content/content_hash must
+			// survive the full round-trip — AW emit -> audit store -> DS Postgres
+			// persistence -> query API -> JSONB decode — proving the audit trail
+			// alone can reconstruct the exact workflow definition (SOC2 CC8.1).
+			payload, ok := events[0].EventData.GetRemediationWorkflowWebhookAuditPayload()
+			Expect(ok).To(BeTrue(), "event_data should decode as RemediationWorkflowWebhookAuditPayload")
+			Expect(payload.WorkflowContent.IsSet()).To(BeTrue(),
+				"workflow_content should be queryable from DS after round-trip persistence")
+			Expect(payload.WorkflowContent.Value.Version).To(Equal(rw.Spec.Version))
+			Expect(payload.WorkflowContent.Value.ActionType).To(Equal(rw.Spec.ActionType))
+			Expect(payload.WorkflowContent.Value.Parameters).To(HaveLen(1))
+			Expect(payload.WorkflowContent.Value.Parameters[0].Name).To(Equal("NAMESPACE"))
+			Expect(payload.ContentHash.IsSet()).To(BeTrue())
+			Expect(payload.ContentHash.Value).To(MatchRegexp("^[0-9a-f]{64}$"),
+				"content_hash must be a SHA-256 hex digest (64 lowercase hex chars)")
 		})
 
 		It("IT-AW-1111-002: remediationworkflow.admitted.update persisted to DS", func() {
 			uid := uniqueID("rw-update")
-			actionType := uniqueID("ITScaleUpdate")
+			actionType := uniqueActionType("ITScaleUpdate")
 
-			atSetupUID := uniqueID("at-setup-update")
-			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
-			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+			createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueID("at-setup-update"))
 
 			rw := buildRW(uniqueID("it-rw-update"), actionType)
 
@@ -247,11 +260,9 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 		})
 
 		It("IT-AW-1111-003: remediationworkflow.admitted.delete persisted to DS", func() {
-			actionType := uniqueID("ITScaleDelete")
+			actionType := uniqueActionType("ITScaleDelete")
 
-			atSetupUID := uniqueID("at-setup-delete")
-			atResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, buildAT(actionType), atSetupUID))
-			Expect(atResp.Allowed).To(BeTrue(), "AT setup CREATE should succeed: %s", atResp.Result)
+			createActiveActionTypeCRD(ctx, k8sClient, atHandler, buildAT(actionType), uniqueID("at-setup-delete"))
 
 			rw := buildRW(uniqueID("it-rw-delete"), actionType)
 
@@ -418,24 +429,19 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 		})
 
 		It("IT-AW-1111-009: actiontype.denied.delete persisted on active dependents", func() {
-			// Create AT in DS, then register a RW referencing it. DS tracks the
-			// dependency. Attempting to delete the AT → DS returns denied (active
-			// dependents exist). The handler's orphan recovery cross-check sees
-			// no live K8s CRDs (direct invocation doesn't create CRDs), but the
-			// force-disable path requires baseURL which NewDSClientAdapterFromClient
-			// doesn't set → orphan recovery fails → denied audit emitted.
-			atName := uniqueID("ITDeniedDel")
+			// #1661 Change 8d: the K8s-native live RemediationWorkflow list is
+			// now the SOLE dependents gate (DS's Postgres-backed tracking is
+			// gone). A dependent RW must therefore exist as a real CRD in
+			// etcd -- rwHandler.Handle alone (direct invocation, bypassing
+			// the real API server) never persists one -- so this test
+			// creates the RW via k8sClient.Create directly, mirroring
+			// createActiveActionTypeCRD's precedent for the AT side.
+			atName := uniqueActionType("ITDeniedDel")
 			at := buildAT(atName)
+			createActiveActionTypeCRD(ctx, k8sClient, atHandler, at, uniqueID("at-dep-create"))
 
-			atCreateUID := uniqueID("at-dep-create")
-			createResp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, at, atCreateUID))
-			Expect(createResp.Allowed).To(BeTrue(), "AT CREATE should succeed for dependency setup")
-
-			rwName := uniqueID("it-rw-dependent")
-			rw := buildRW(rwName, atName)
-			rwCreateUID := uniqueID("rw-dep-create")
-			rwResp := rwHandler.Handle(ctx, rwAdmissionRequest(admissionv1.Create, rw, rwCreateUID))
-			Expect(rwResp.Allowed).To(BeTrue(), "RW CREATE should succeed for dependency setup")
+			rw := buildRW(uniqueID("it-rw-dependent"), atName)
+			Expect(k8sClient.Create(ctx, rw)).To(Succeed(), "dependent RW CRD creation should succeed")
 
 			deleteUID := uniqueID("at-denied-del")
 			resp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Delete, at, deleteUID))
@@ -446,20 +452,15 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 			Expect(events[0].CorrelationID).To(Equal(deleteUID))
 		})
 
-		It("IT-AW-1111-010: actiontype.denied.create persisted on DS registration failure", func() {
-			// AT handleCreate emits denied audit when CreateActionType DS call fails.
-			// Send a valid AT JSON with an empty spec.name — DS should reject it.
-			uid := uniqueID("at-denied-create")
-
-			at := buildAT("")
-			at.Spec.Name = "" // empty name to trigger DS validation failure
-
-			resp := atHandler.Handle(ctx, atAdmissionRequest(admissionv1.Create, at, uid))
-			Expect(resp.Allowed).To(BeFalse(), "AT CREATE with empty name should be denied by DS")
-
-			events := flushAndQuery(uid, authwebhook.EventTypeATDeniedCreate)
-			Expect(events).To(HaveLen(1))
-			Expect(events[0].CorrelationID).To(Equal(uid))
-		})
+		// IT-AW-1111-010 ("actiontype.denied.create persisted on DS
+		// registration failure") is removed: #1661 Change 8d deleted
+		// ActionTypeHandler's DS round-trip entirely -- handleCreate no
+		// longer calls DS (or performs any local spec.name emptiness check
+		// of its own; that format constraint is enforced structurally by
+		// the apiserver's kubebuilder:validation:Pattern on
+		// ActionTypeSpec.Name, proven by IT-CRD-312-004a/b in
+		// crd_pattern_validation_test.go). There is no DS registration
+		// failure path left for a direct handler.Handle invocation to
+		// exercise.
 	})
 })

@@ -19,17 +19,14 @@ package datastorage_test
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/metrics"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
@@ -151,39 +148,6 @@ var _ = Describe("DataStorage issue #668 UT coverage", func() {
 			b, ok := v.([]byte)
 			Expect(ok).To(BeTrue())
 			Expect(string(b)).To(ContainSubstring("use"))
-		})
-	})
-
-	Describe("Workflow catalog audit event builders (BR-STORAGE-183)", func() {
-		It("BR-STORAGE-183 builds workflow.created audit with labels and UUID workflow id", func() {
-			wid := uuid.MustParse("11111111-1111-1111-1111-111111111111").String()
-			wf := &models.RemediationWorkflow{
-				WorkflowID:      wid,
-				WorkflowName:    "oom-fix",
-				Version:         "v1.0.0",
-				SchemaVersion:   "1.0",
-				Name:            "OOM fix",
-				Description:     models.StructuredDescription{What: "mem", WhenToUse: "OOM"},
-				Content:         "{}",
-				ContentHash:     "a" + strings.Repeat("b", 63), // len 64
-				ActionType:      "scale",
-				Status:          "Active",
-				ExecutionEngine: models.ExecutionEngineJob,
-				Labels: *models.NewMandatoryLabels(
-					[]string{"high"}, []string{"v1/Pod"}, []string{"prod"}, "P1",
-				),
-			}
-			ev, err := audit.NewWorkflowCreatedAuditEvent(wf)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(ev.EventType).To(Equal(audit.EventTypeWorkflowCreated))
-		})
-
-		It("BR-STORAGE-183 builds workflow.updated audit for mutable field changes", func() {
-			fields := ogenclient.WorkflowCatalogUpdatedFields{}
-			fields.SetStatus(ogenclient.NewOptString("Disabled"))
-			ev, err := audit.NewWorkflowUpdatedAuditEvent("22222222-2222-2222-2222-222222222222", fields)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(ev.EventType).To(Equal(audit.EventTypeWorkflowUpdated))
 		})
 	})
 

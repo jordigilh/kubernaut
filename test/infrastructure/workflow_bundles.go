@@ -20,23 +20,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
-	"time"
-
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
-
-// workflowConflictError is returned when the DS API reports a 409 Conflict,
-// indicating the workflow already exists. The caller can use errors.As to
-// distinguish this from fatal errors and fall back to a ListWorkflows query.
-type workflowConflictError struct{ detail string }
-
-func (e *workflowConflictError) Error() string {
-	return fmt.Sprintf("conflict (409): %s", e.detail)
-}
 
 // Workflow Bundle Infrastructure for WorkflowExecution E2E Tests
 //
@@ -66,6 +52,25 @@ const (
 
 	// TestWorkflowBundleVersion is the version tag for E2E test bundles
 	TestWorkflowBundleVersion = "v1.0.0"
+
+	// TestJobFailingExecutionBundle / TestJobOomkillExecutionBundle mirror the
+	// exact spec.execution.bundle digest pinned in
+	// test/fixtures/workflows/job-failing|job-oomkill/workflow-schema.yaml.
+	//
+	// #1661 Change 11e (DD-WORKFLOW-018) removed the WFE controller's runtime
+	// override of WorkflowRef.ExecutionBundle from a DataStorage catalog
+	// round-trip (see internal/controller/workflowexecution/workflowexecution_catalog.go's
+	// resolveWorkflowCatalog doc comment) -- WorkflowRef is now expected to
+	// arrive already-resolved from AIAnalysis.Status.SelectedWorkflow, and the
+	// WFE controller no longer mutates the spec at runtime. E2E tests that
+	// construct a WorkflowExecution CRD directly (bypassing AIAnalysis, as
+	// 03_job_backend_test.go's failure/OOM-kill cases do) must therefore supply
+	// the real bundle reference themselves -- a placeholder image here would
+	// silently run instead of the failure-simulating exec image and never
+	// exit non-zero. Keep in sync with the fixtures' `execution.bundle` field
+	// (re-sync via `make build-test-workflows` if the exec image is rebuilt).
+	TestJobFailingExecutionBundle = "quay.io/kubernaut-cicd/test-workflows/job-failing:v1.0.0-exec@sha256:c0cde2d0ae5550d3dd95dc998825904766b8de91e5a305a4d17fc590942ee7e0"
+	TestJobOomkillExecutionBundle = "quay.io/kubernaut-cicd/test-workflows/job-oomkill:v1.0.0-exec@sha256:949be6f31e137b8644cab7af1017b22e7196189d602f99f46dd5f88dcb84ff45"
 )
 
 // RegisteredWorkflowUUIDs maps workflow names to their DS-assigned UUIDs.
@@ -88,8 +93,22 @@ var RegisteredWorkflowUUIDs = make(map[string]string)
 // Also populates RegisteredWorkflowUUIDs for tests that need DS UUIDs (DD-WE-006).
 func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigPath, dataStorageURL, saToken string, output io.Writer) (map[string]string, error) {
 	// DD-WORKFLOW-016: Seed action types before workflow registration (FK constraint)
-	// Issue #785: TLS-aware seeding to DataStorage API (inter-service CA).
-	if err := SeedActionTypesViaAPIWithTLS(ctx, dataStorageURL, saToken, kubeconfigPath, 30*time.Second, output); err != nil {
+	// #1661 Phase 53: direct CRD creation -- no DataStorage round-trip dependency for
+	// ActionType, unlike the removed SeedActionTypesViaAPIWithTLS.
+	//
+	// #1661 Phase 56 (discovered gap): this suite deploys a REAL, live AuthWebhook
+	// (DeployAuthWebhookManifestsOnly, for SOC2 CC8.1 attribution), unlike the other
+	// SeedActionTypesViaCRD callers (Gateway/AIAnalysis/APIFrontend/KA/
+	// SignalProcessing) which run with no admission webhook at all. That live AW
+	// intercepts this ActionType CREATE too and asynchronously patches
+	// status.catalogStatus=Active (pkg/authwebhook/actiontype_handler.go
+	// updateCRDStatusCreate) -- SeedActionTypesViaCRD's plain "kubectl apply" returns
+	// before that goroutine lands, racing the very next step (workflow registration,
+	// whose RemediationWorkflow admission synchronously requires
+	// status.catalogStatus=Active via validateActionTypeExists). SeedE2EActionTypes
+	// is the AW-aware variant: same "kubectl apply", but blocks on
+	// `.status.registered=true` before returning, closing that race.
+	if err := SeedE2EActionTypes(ctx, kubeconfigPath, WorkflowExecutionNamespace, output); err != nil {
 		return nil, fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -111,51 +130,50 @@ func BuildAndRegisterTestWorkflows(ctx context.Context, clusterName, kubeconfigP
 
 	_, _ = fmt.Fprintf(output, "  ✅ Using bundles from %s\n", TestWorkflowBundleRegistry)
 
-	// Register workflows in DataStorage using inline content (ADR-058)
-	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows in DataStorage (inline)...\n")
+	// Register workflows via kubectl apply (#1661 Phase 53: CRD-native registration,
+	// exercising the same AuthWebhook admission path production traffic uses -- no
+	// DataStorage inline-registration REST call, per DD-WORKFLOW-018 Change 6).
+	_, _ = fmt.Fprintf(output, "\n📝 Registering workflows via kubectl apply...\n")
 
-	// ADR-058: Read workflow-schema.yaml from fixture directories and register inline.
 	// The fixture directory name maps to the workflow name (without "test-" prefix for some).
+	// version/description are declared in each fixture's workflow-schema.yaml and no
+	// longer need to be passed separately now that registration is CRD-native.
 	bundleWorkflows := []struct {
 		name       string
-		version    string
 		fixtureDIR string
 	}{
-		{"test-hello-world", "v1.0.0", "hello-world"},
-		{"test-intentional-failure", "v1.0.0", "failing"},
-		{"test-dep-secret-job", "v1.0.0", "dep-secret-job"},
-		{"test-dep-secret-tekton", "v1.0.0", "dep-secret-tekton"},
-		{"test-dep-configmap-job", "v1.0.0", "dep-configmap-job"},
-		{"test-dep-configmap-tekton", "v1.0.0", "dep-configmap-tekton"},
-		{"test-job-hello-world", "v1.0.0", "job-hello-world"},
-		{"test-job-intentional-failure", "v1.0.0", "job-failing"},
-		{"test-job-oomkill", "v1.0.0", "job-oomkill"},
-		{"test-ansible-success", "v1.0.0", "ansible-success"},
-		{"test-ansible-failure", "v1.0.0", "ansible-failure"},
-		{"test-dep-secret-ansible", "v1.0.0", "dep-secret-ansible"},
-		{"test-dep-configmap-ansible", "v1.0.0", "dep-configmap-ansible"},
+		{"test-hello-world", "hello-world"},
+		{"test-intentional-failure", "failing"},
+		{"test-dep-secret-job", "dep-secret-job"},
+		{"test-dep-secret-tekton", "dep-secret-tekton"},
+		{"test-dep-configmap-job", "dep-configmap-job"},
+		{"test-dep-configmap-tekton", "dep-configmap-tekton"},
+		{"test-job-hello-world", "job-hello-world"},
+		{"test-job-intentional-failure", "job-failing"},
+		{"test-job-oomkill", "job-oomkill"},
+		{"test-ansible-success", "ansible-success"},
+		{"test-ansible-failure", "ansible-failure"},
+		{"test-dep-secret-ansible", "dep-secret-ansible"},
+		{"test-dep-configmap-ansible", "dep-configmap-ansible"},
 	}
 
+	specs := make([]WorkflowSeedSpec, 0, len(bundleWorkflows))
 	for _, bw := range bundleWorkflows {
-		content, readErr := readWorkflowFixtureContent(bw.fixtureDIR)
-		if readErr != nil {
-			return nil, fmt.Errorf("failed to read fixture for %s: %w", bw.name, readErr)
-		}
+		specs = append(specs, WorkflowSeedSpec{FixtureDir: bw.fixtureDIR})
+	}
 
-		wfUUID, regErr := registerTestBundleWorkflow(
-			ctx,
-			dataStorageURL,
-			saToken,
-			kubeconfigPath,
-			bw.name,
-			bw.version,
-			content,
-			output,
-		)
-		if regErr != nil {
-			return nil, fmt.Errorf("failed to register %s workflow: %w", bw.name, regErr)
+	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, WorkflowExecutionNamespace, specs, output)
+	if seedErr != nil {
+		return nil, fmt.Errorf("failed to register test workflow bundles: %w", seedErr)
+	}
+	for _, bw := range bundleWorkflows {
+		// SeedWorkflowsViaKubectlApply keys its map "<crd-name>:<environment>"; these
+		// fixtures declare no environment, so the key carries a trailing colon.
+		uuid, ok := seededUUIDs[bw.name+":"]
+		if !ok {
+			return nil, fmt.Errorf("workflow %s missing from seeded UUIDs", bw.name)
 		}
-		RegisteredWorkflowUUIDs[bw.name] = wfUUID
+		RegisteredWorkflowUUIDs[bw.name] = uuid
 	}
 
 	// Populate bundles map with execution bundle references (still OCI images for Tekton/Job runtime)
@@ -180,89 +198,4 @@ func readWorkflowFixtureContent(fixtureName string) (string, error) {
 		return "", fmt.Errorf("read %s: %w", path, err)
 	}
 	return string(data), nil
-}
-
-// registerTestBundleWorkflow registers a workflow in DataStorage using the inline schema API.
-// ADR-058: Sends CRD YAML content directly (inline) instead of OCI pullspec.
-// Returns the DS-assigned UUID for use in WorkflowExecution specs (DD-WE-006).
-// Includes DD-AUTH-014 ServiceAccount authentication.
-func registerTestBundleWorkflow(ctx context.Context, dataStorageURL, saToken, kubeconfigPath, workflowName, version, schemaContent string, output io.Writer) (string, error) {
-	_, _ = fmt.Fprintf(output, "  Registering: %s (version %s) inline\n", workflowName, version)
-
-	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to create TLS-aware transport: %w", err)
-	}
-	httpClient := &http.Client{
-		Transport: testauth.NewServiceAccountTransportWithBase(saToken, tlsTransport),
-	}
-
-	client, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))
-	if err != nil {
-		return "", fmt.Errorf("failed to create DataStorage client: %w", err)
-	}
-
-	uuid, reEnabled, err := callCreateWorkflowInline(ctx, client, schemaContent, "e2e-test-infra")
-	if err != nil {
-		return "", fmt.Errorf("failed to register workflow: %w", err)
-	}
-
-	if reEnabled {
-		_, _ = fmt.Fprintf(output, "    ✅ Re-enabled in DataStorage: %s (UUID: %s)\n", workflowName, uuid)
-	} else {
-		_, _ = fmt.Fprintf(output, "    ✅ Registered in DataStorage: %s (UUID: %s)\n", workflowName, uuid)
-	}
-	return uuid, nil
-}
-
-// callCreateWorkflowInline sends an inline registration request to DataStorage and
-// extracts the UUID from the response. Shared by both bundle and seeding flows.
-// Returns (uuid, reEnabled, error).
-//
-// All ogen response types are handled so that the caller receives an actionable
-// error with the DS detail message instead of a generic "unexpected response type".
-// A *workflowConflictError is returned for 409 so callers can fall back to query.
-func callCreateWorkflowInline(ctx context.Context, client *dsgen.Client, content, registeredBy string) (string, bool, error) {
-	req := &dsgen.CreateWorkflowInlineRequest{
-		Content: content,
-	}
-	req.Source.SetTo("e2e-test")
-	req.RegisteredBy.SetTo(registeredBy)
-
-	resp, err := client.CreateWorkflow(ctx, req)
-	if err != nil {
-		return "", false, fmt.Errorf("transport error: %w", err)
-	}
-
-	switch v := resp.(type) {
-	case *dsgen.CreateWorkflowCreated:
-		rw := (*dsgen.RemediationWorkflow)(v)
-		if wfID, exists := rw.WorkflowId.Get(); exists {
-			return wfID.String(), false, nil
-		}
-		return "", false, fmt.Errorf("workflow registered but UUID not returned")
-	case *dsgen.CreateWorkflowOK:
-		rw := (*dsgen.RemediationWorkflow)(v)
-		if wfID, exists := rw.WorkflowId.Get(); exists {
-			return wfID.String(), true, nil
-		}
-		return "", false, fmt.Errorf("workflow re-enabled but UUID not returned")
-	case *dsgen.CreateWorkflowConflict:
-		p := (*dsgen.RFC7807Problem)(v)
-		return "", false, &workflowConflictError{detail: p.Detail.Value}
-	case *dsgen.CreateWorkflowBadRequest:
-		p := (*dsgen.RFC7807Problem)(v)
-		return "", false, fmt.Errorf("DS rejected registration (400): %s", p.Detail.Value)
-	case *dsgen.CreateWorkflowUnauthorized:
-		p := (*dsgen.RFC7807Problem)(v)
-		return "", false, fmt.Errorf("DS unauthorized (401): %s", p.Detail.Value)
-	case *dsgen.CreateWorkflowForbidden:
-		p := (*dsgen.RFC7807Problem)(v)
-		return "", false, fmt.Errorf("DS forbidden (403): %s", p.Detail.Value)
-	case *dsgen.CreateWorkflowInternalServerError:
-		p := (*dsgen.RFC7807Problem)(v)
-		return "", false, fmt.Errorf("DS internal error (500): %s", p.Detail.Value)
-	default:
-		return "", false, fmt.Errorf("unexpected response type: %T", resp)
-	}
 }

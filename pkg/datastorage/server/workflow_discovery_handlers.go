@@ -17,8 +17,6 @@ limitations under the License.
 package server
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -286,11 +284,4 @@ func ParsePagination(r *http.Request) (int, int) {
 	}
 
 	return offset, limit
-}
-
-// computeContentHash computes a SHA-256 hash of the workflow content.
-// DD-WORKFLOW-017: Content hash is derived from the raw YAML content (inline or OCI).
-func computeContentHash(content string) string {
-	hash := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(hash[:])
 }

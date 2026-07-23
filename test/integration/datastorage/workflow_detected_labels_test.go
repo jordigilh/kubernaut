@@ -17,9 +17,6 @@ limitations under the License.
 package datastorage
 
 import (
-	"crypto/sha256"
-	"fmt"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -36,13 +33,22 @@ import (
 // Test Plan: docs/testing/ADR-043/TEST_PLAN.md
 //
 // Tests cover:
-// - IT-DS-043-001 through IT-DS-043-007
-// - JSONB round-trip fidelity for DetectedLabels
-// - Workflow search/discovery filtering by DetectedLabels
-// - Version update with changed DetectedLabels
+// - IT-DS-043-001 through IT-DS-043-003, IT-DS-043-006
+// - JSONB round-trip fidelity for DetectedLabels, via the cache-backed
+//   discovery path (RemediationWorkflow CRD -> workflowcache.Cache ->
+//   crdDetectedLabelsToModel).
 //
-// Uses REAL PostgreSQL database (not mocks) per no-mocks policy.
+// #1661 Phase F: migrated off workflowRepo.Create (Postgres, zero production
+// callers post-Phase-B) to seedWorkflowCRD -- DD-WORKFLOW-018 (etcd sole
+// source of truth). Retrieval swapped from the dying GetLatestVersion (no
+// cache equivalent) to GetByID.
 //
+// IT-DS-043-007 ("version update with changed detectedLabels stores new
+// values") was removed: it exercised two coexisting versions of the same
+// workflow_name superseding one another, a concept that no longer exists
+// once metadata.name is the workflow's sole identity (DD-WORKFLOW-018) --
+// there is no "version" dimension left to update independently of the CRD
+// itself.
 // ========================================
 
 var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
@@ -52,42 +58,17 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 	)
 
 	BeforeEach(func() {
-		workflowRepo = workflow.NewRepository(db, logger)
+		workflowRepo = newCachedWorkflowRepo()
 		testID = generateTestID()
 	})
 
-	AfterEach(func() {
-		if db != nil {
-			_, _ = db.ExecContext(ctx,
-				"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1",
-				fmt.Sprintf("wf-dl-%s%%", testID))
-		}
-	})
-
-	baseWorkflow := func(name string, dl models.DetectedLabels) *models.RemediationWorkflow {
-		content := `{"steps":[{"action":"remediate"}]}`
-		contentHash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-		return &models.RemediationWorkflow{
-			WorkflowName: fmt.Sprintf("wf-dl-%s-%s", testID, name),
-			ActionType:   "RestartPod",
-			Version:      "v1.0",
-			SchemaVersion: "1.0",
-			Name:         name,
-			Description:  models.StructuredDescription{What: "Test workflow", WhenToUse: "Testing"},
-			Content:      content,
-			ContentHash:  contentHash,
-			Labels: models.MandatoryLabels{
-				Severity:    []string{"critical"},
-				Component:   []string{"v1/Pod"},
-				Environment: []string{"production"},
-				Priority:    "P0",
-			},
-			CustomLabels:    models.CustomLabels{},
-			DetectedLabels:  dl,
-			Status:          "Active",
-			ExecutionEngine: "tekton",
-			IsLatestVersion: true,
-		}
+	seedWorkflow := func(name string, dl models.DetectedLabels) string {
+		return seedWorkflowCRD(workflowCRDSpec{
+			Name:           testID + "-" + name,
+			ActionType:     "RestartPod",
+			Priority:       "P0",
+			DetectedLabels: &dl,
+		})
 	}
 
 	Describe("JSONB Round-Trip Fidelity", func() {
@@ -102,12 +83,9 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 				NetworkIsolated: true,
 				ServiceMesh:     "istio",
 			}
-			wf := baseWorkflow("all-fields", dl)
+			workflowID := seedWorkflow("all-fields", dl)
 
-			err := workflowRepo.Create(ctx, wf)
-			Expect(err).ToNot(HaveOccurred(), "workflow with detectedLabels should be created")
-
-			retrieved, err := workflowRepo.GetLatestVersion(ctx, wf.WorkflowName)
+			retrieved, err := workflowRepo.GetByID(ctx, workflowID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.DetectedLabels.GitOpsManaged).To(BeTrue())
 			Expect(retrieved.DetectedLabels.GitOpsTool).To(Equal("argocd"))
@@ -124,28 +102,22 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 				HPAEnabled: true,
 				GitOpsTool: "*",
 			}
-			wf := baseWorkflow("partial-fields", dl)
+			workflowID := seedWorkflow("partial-fields", dl)
 
-			err := workflowRepo.Create(ctx, wf)
-			Expect(err).ToNot(HaveOccurred())
-
-			retrieved, err := workflowRepo.GetLatestVersion(ctx, wf.WorkflowName)
+			retrieved, err := workflowRepo.GetByID(ctx, workflowID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.DetectedLabels.HPAEnabled).To(BeTrue())
 			Expect(retrieved.DetectedLabels.GitOpsTool).To(Equal("*"))
 			Expect(retrieved.DetectedLabels.PDBProtected).To(BeFalse(),
-				"unset boolean should be false after JSONB round-trip")
+				"unset boolean should be false after round-trip")
 			Expect(retrieved.DetectedLabels.ServiceMesh).To(BeEmpty(),
-				"unset string should be empty after JSONB round-trip")
+				"unset string should be empty after round-trip")
 		})
 
 		It("IT-DS-043-003: workflow without detectedLabels has empty DetectedLabels in catalog", func() {
-			wf := baseWorkflow("no-detected", models.DetectedLabels{})
+			workflowID := seedWorkflow("no-detected", models.DetectedLabels{})
 
-			err := workflowRepo.Create(ctx, wf)
-			Expect(err).ToNot(HaveOccurred())
-
-			retrieved, err := workflowRepo.GetLatestVersion(ctx, wf.WorkflowName)
+			retrieved, err := workflowRepo.GetByID(ctx, workflowID)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(retrieved.DetectedLabels.IsEmpty()).To(BeTrue(),
 				"empty DetectedLabels should round-trip as empty, not null")
@@ -158,49 +130,23 @@ var _ = Describe("Workflow DetectedLabels Integration (ADR-043 v1.3)", func() {
 				PDBProtected: true,
 				GitOpsTool:   "flux",
 			}
-			wf := baseWorkflow("full-roundtrip", dl)
-			wf.Labels.Severity = []string{"critical", "high"}
-			wf.CustomLabels = models.CustomLabels{
-				"team": []string{"platform"},
-			}
+			workflowID := seedWorkflowCRD(workflowCRDSpec{
+				Name:           testID + "-full-roundtrip",
+				ActionType:     "RestartPod",
+				Priority:       "P0",
+				Severity:       []string{"critical", "high"},
+				CustomLabels:   map[string]string{"team": "platform"},
+				DetectedLabels: &dl,
+			})
 
-			err := workflowRepo.Create(ctx, wf)
-			Expect(err).ToNot(HaveOccurred())
-
-			retrieved, err := workflowRepo.GetLatestVersion(ctx, wf.WorkflowName)
+			retrieved, err := workflowRepo.GetByID(ctx, workflowID)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(retrieved.Labels.Severity).To(ConsistOf("critical", "high"))
 			Expect(retrieved.CustomLabels).To(HaveKey("team"))
 			Expect(retrieved.DetectedLabels.PDBProtected).To(BeTrue())
 			Expect(retrieved.DetectedLabels.GitOpsTool).To(Equal("flux"))
-			Expect(retrieved.Description.What).To(Equal("Test workflow"))
-		})
-	})
-
-	Describe("Version Update", func() {
-		It("IT-DS-043-007: version update with changed detectedLabels stores new values", func() {
-			v1 := baseWorkflow("versioned", models.DetectedLabels{HPAEnabled: true})
-			err := workflowRepo.Create(ctx, v1)
-			Expect(err).ToNot(HaveOccurred())
-
-			v2 := baseWorkflow("versioned", models.DetectedLabels{
-				HPAEnabled:   true,
-				PDBProtected: true,
-				GitOpsTool:   "argocd",
-			})
-			v2.Version = "v2.0"
-			err = workflowRepo.Create(ctx, v2)
-			Expect(err).ToNot(HaveOccurred())
-
-			retrieved, err := workflowRepo.GetLatestVersion(ctx, v2.WorkflowName)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(retrieved.Version).To(Equal("v2.0"))
-			Expect(retrieved.DetectedLabels.HPAEnabled).To(BeTrue())
-			Expect(retrieved.DetectedLabels.PDBProtected).To(BeTrue(),
-				"v2 detectedLabels should include PDBProtected")
-			Expect(retrieved.DetectedLabels.GitOpsTool).To(Equal("argocd"),
-				"v2 detectedLabels should include GitOpsTool")
+			Expect(retrieved.Description.What).To(ContainSubstring(testID + "-full-roundtrip"))
 		})
 	})
 })

@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -285,9 +287,13 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.Message = "Analysis in progress"
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "wf-restart-pod",
-				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
-				Confidence:      0.85,
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-restart-pod",
+					WorkflowName:    "wf-restart-pod",
+					ActionType:      "RestartPod",
+					ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
+				},
+				Confidence: 0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 
@@ -426,9 +432,13 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "wf-restart-pod",
-				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
-				Confidence:      0.85,
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-restart-pod",
+					WorkflowName:    "wf-restart-pod",
+					ActionType:      "RestartPod",
+					ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
+				},
+				Confidence: 0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 
@@ -502,9 +512,13 @@ var _ = Describe("AIAnalysis Controller K8s Events [DD-EVENT-001]", func() {
 			// Set phase to Analyzing with a selected workflow
 			testAnalysis.Status.Phase = aianalysis.PhaseAnalyzing
 			testAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "wf-restart-pod",
-				ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
-				Confidence:      0.85,
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-restart-pod",
+					WorkflowName:    "wf-restart-pod",
+					ActionType:      "RestartPod",
+					ExecutionBundle: "kubernaut.io/workflows/restart-pod:v1.0.0",
+				},
+				Confidence: 0.85,
 			}
 			Expect(fakeClient.Status().Update(ctx, testAnalysis)).To(Succeed())
 

@@ -22,17 +22,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"time"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
-	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: Inter-service TLS
 )
 
 // ErrNoDependencies indicates the workflow catalog entry declares no schema
@@ -45,8 +41,13 @@ var ErrNoDependencies = errors.New("workflow has no dependencies declared")
 // catalog in a single GetWorkflowByID call (Issue #650). Consolidates what was
 // previously 4 separate calls into one round-trip.
 type WorkflowCatalogMetadata struct {
-	ExecutionEngine       string
-	WorkflowName          string
+	ExecutionEngine string
+	WorkflowName    string
+	// ActionType is the DD-WORKFLOW-016 taxonomy action type from the DS
+	// catalog entry. Audit-readability only (#1661 Change 3) -- stashed on
+	// WorkflowExecution.Status alongside WorkflowName so execution events are
+	// human-readable without a DS/audit join.
+	ActionType            string
 	ExecutionBundle       string
 	ExecutionBundleDigest string
 	ServiceAccountName    string
@@ -119,35 +120,6 @@ type OgenWorkflowQuerier struct {
 // NewOgenWorkflowQuerier creates a WorkflowQuerier from an existing ogen client wrapper.
 func NewOgenWorkflowQuerier(client WorkflowCatalogClient) *OgenWorkflowQuerier {
 	return &OgenWorkflowQuerier{client: client}
-}
-
-// NewOgenWorkflowQuerierFromConfig creates a WorkflowQuerier with a standalone
-// ogen client configured from the DataStorage URL and timeout.
-// Uses ServiceAccount auth transport (same pattern as DSHistoryAdapter).
-func NewOgenWorkflowQuerierFromConfig(baseURL string, timeout time.Duration) (*OgenWorkflowQuerier, error) {
-	if baseURL == "" {
-		return nil, fmt.Errorf("DataStorage base URL cannot be empty")
-	}
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
-
-	// Issue #853: Wrapped with RetryTransport for transient failure resilience.
-	baseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create base transport: %w", err)
-	}
-	transport := auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport)
-
-	ogenClient, err := ogenclient.NewClient(baseURL, ogenclient.WithClient(&http.Client{
-		Timeout:   timeout,
-		Transport: transport,
-	}))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create ogen client for workflow queries: %w", err)
-	}
-
-	return &OgenWorkflowQuerier{client: ogenClient}, nil
 }
 
 // classifyGetWorkflowResponse maps the polymorphic ogen response to either the
@@ -326,8 +298,8 @@ func (q *OgenWorkflowQuerier) GetWorkflowSchemaMetadata(ctx context.Context, wor
 
 	meta := &SchemaMetadata{
 		Engine:                wf.ExecutionEngine,
-		WorkflowName:         wf.WorkflowName,
-		ExecutionBundle:      bundle,
+		WorkflowName:          wf.WorkflowName,
+		ExecutionBundle:       bundle,
 		ExecutionBundleDigest: digest,
 	}
 
@@ -378,6 +350,7 @@ func (q *OgenWorkflowQuerier) ResolveWorkflowCatalogMetadata(ctx context.Context
 	meta := &WorkflowCatalogMetadata{
 		ExecutionEngine: wf.ExecutionEngine,
 		WorkflowName:    wf.WorkflowName,
+		ActionType:      wf.ActionType,
 	}
 	if wf.ExecutionBundle.IsSet() {
 		meta.ExecutionBundle = wf.ExecutionBundle.Value

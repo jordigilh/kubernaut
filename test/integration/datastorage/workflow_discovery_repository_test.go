@@ -17,9 +17,7 @@ limitations under the License.
 package datastorage
 
 import (
-	"crypto/sha256"
 	"errors"
-	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -37,15 +35,39 @@ import (
 // Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
 //
 // Test Plan: docs/testing/DD-HAPI-017/TEST_PLAN.md
-// Test IDs: IT-DS-017-001-001 through IT-DS-017-001-006
+// Test IDs: IT-DS-017-001-001, IT-DS-017-001-003, IT-DS-017-001-005/006,
+// IT-DS-464-001 through IT-DS-464-006, IT-DS-522-001 through IT-DS-522-003
 //
-// Strategy: TDD RED phase - tests written FIRST, implementation follows
-// Infrastructure: Real PostgreSQL (same as workflow_repository_integration_test.go)
+// #1661 Phase F: migrated off workflowRepo.Create (Postgres, zero production
+// callers post-Phase-B) to seedWorkflowCRD -- DD-WORKFLOW-018 (etcd sole
+// source of truth).
 //
+// Two categories of scenario were removed as obsolete rather than migrated:
+//
+//   - IT-DS-017-001-002 (pagination) survives unchanged in spirit but note the
+//     historical "GAP-WF-3" scenarios ("ListActions/ListWorkflowsByActionType
+//     returns only latest version counts") were deleted: they depended on
+//     creating two coexisting rows for the same workflow_name at different
+//     versions and asserting only the "latest" is counted. DD-WORKFLOW-018
+//     makes metadata.name the workflow's sole identity -- there is no
+//     "version" dimension left to disambiguate, so the scenario has no
+//     CRD-native equivalent (there is only ever one live object per name).
+//
+//   - IT-DS-017-001-004 ("excludes disabled workflows") was deleted: a
+//     RemediationWorkflow CRD is Always Active once admitted (mirrors the
+//     E2E-DS-017-001-002 deletion precedent) -- infrastructure.
+//     SeedWorkflowContentViaDirectCRDCreation always status-patches
+//     CatalogStatusActive, the same as AuthWebhook's real admission path, so
+//     there is no way to construct a "Disabled" workflow to exercise the
+//     exclusion in the first place. IT-DS-017-001-001 below was adjusted to
+//     drop its disabled-workflow leg for the same reason.
 // ========================================
 
-// Serial: These tests TRUNCATE remediation_workflow_catalog and assert exact counts.
-// Must not run concurrently with other tests that write to the workflow catalog.
+// Serial: several scenarios below assert exact global counts (ListActions
+// totalCount/WorkflowCount) with no per-spec prefix-scoping of results, unlike
+// e.g. workflow_detected_labels_cnv_test.go's filterOurs pattern. Must not run
+// concurrently (across any parallel process) with other specs that create
+// RemediationWorkflow CRDs in the shared workflowCRDNamespace.
 var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func() {
 	var (
 		workflowRepo *workflow.Repository
@@ -53,59 +75,26 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 	)
 
 	BeforeEach(func() {
-		workflowRepo = workflow.NewRepository(db, logger)
+		workflowRepo = newCachedWorkflowRepo()
 		testID = generateTestID()
-
-		// Clean up workflow catalog for test isolation
-		_, err := db.ExecContext(ctx, "TRUNCATE TABLE remediation_workflow_catalog")
-		Expect(err).ToNot(HaveOccurred(), "Workflow catalog truncation should succeed")
-	})
-
-	AfterEach(func() {
-		if db != nil {
-			_, _ = db.ExecContext(ctx,
-				"DELETE FROM remediation_workflow_catalog WHERE workflow_name LIKE $1",
-				fmt.Sprintf("wf-disc-%s%%", testID))
-		}
+		// #1661: this Describe asserts unscoped/global counts -- close the
+		// cross-process cache lag race, see waitForWorkflowCacheConverged's
+		// doc comment (workflow_crd_seeding_helper_test.go).
+		waitForWorkflowCacheConverged()
 	})
 
 	// ========================================
 	// HELPER: Create a test workflow with action_type
 	// ========================================
-	createTestWorkflow := func(name, version, actionType, severity, component, environment, priority, status string) *models.RemediationWorkflow {
-		content := fmt.Sprintf("apiVersion: v1\nkind: Workflow\nname: %s", name)
-		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-
-		labels := models.MandatoryLabels{
+	createTestWorkflow := func(name, actionType, severity, component, environment, priority string) string {
+		return seedWorkflowCRD(workflowCRDSpec{
+			Name:        testID + "-" + name,
+			ActionType:  actionType,
 			Severity:    []string{severity},
 			Component:   []string{component},
 			Environment: []string{environment},
 			Priority:    priority,
-		}
-
-		wf := &models.RemediationWorkflow{
-			WorkflowName:    fmt.Sprintf("wf-disc-%s-%s", testID, name),
-			Version:         version,
-			SchemaVersion:   "1.0",
-			Name:            name,
-			Description: models.StructuredDescription{
-				What:      fmt.Sprintf("Test workflow %s for discovery", name),
-				WhenToUse: "Testing",
-			},
-			Content:         content,
-			ContentHash:     hash,
-			Labels:          labels,
-			ExecutionEngine: models.ExecutionEngineTekton,
-			Status:          status,
-			IsLatestVersion: true,
-			ActionType:      actionType,
-		}
-
-		err := workflowRepo.Create(ctx, wf)
-		Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed for %s", name)
-		Expect(wf.WorkflowID).ToNot(BeEmpty(), "Workflow ID should be generated")
-
-		return wf
+		})
 	}
 
 	// ========================================
@@ -114,10 +103,11 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 	Describe("ListActions", func() {
 		Context("IT-DS-017-001-001: active status filter", func() {
 			It("should return only action types that have active workflows", func() {
-				// Arrange: 2 active ScaleReplicas, 1 disabled RestartPod
-				createTestWorkflow("scale-1", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("scale-2", "v1.0.0", "ScaleReplicas", "high", "apps/v1/Deployment", "staging", "P1", "Active")
-				createTestWorkflow("restart-disabled", "v1.0.0", "RestartPod", "critical", "v1/Pod", "production", "P0", "Disabled")
+				// Arrange: 2 active ScaleReplicas workflows (see file header: the
+				// disabled-workflow leg was dropped -- CRD-native seeding can only
+				// produce Active workflows, matching production reality).
+				createTestWorkflow("scale-1", "ScaleReplicas", "critical", "v1/Pod", "production", "P0")
+				createTestWorkflow("scale-2", "ScaleReplicas", "high", "apps/v1/Deployment", "staging", "P1")
 
 				// Act: List available actions (no specific context filters to get all)
 				filters := &models.WorkflowDiscoveryFilters{}
@@ -133,39 +123,16 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		})
 
 		// ========================================
-		// GAP-WF-3: ListActions -- returns only latest version counts
-		// ========================================
-		Context("GAP-WF-3: ListActions returns only latest version counts", func() {
-			It("should count only workflows with is_latest_version=true", func() {
-				// Arrange: Two versions of same workflow - only latest should be counted
-				createTestWorkflow("scale-v1", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("scale-v1", "v1.1.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
-
-				filters := &models.WorkflowDiscoveryFilters{}
-
-				// Act
-				result, totalCount, err := workflowRepo.ListActions(ctx, filters, 0, 10)
-
-				// Assert: ScaleReplicas should have workflow_count=1 (latest only), not 2
-				Expect(err).ToNot(HaveOccurred())
-				Expect(totalCount).To(Equal(1))
-				Expect(result).To(HaveLen(1))
-				Expect(result[0].ActionType).To(Equal("ScaleReplicas"))
-				Expect(result[0].WorkflowCount).To(Equal(1), "Should count only latest version")
-			})
-		})
-
-		// ========================================
 		// IT-DS-017-001-002: ListActions -- pagination
 		// ========================================
 		Context("IT-DS-017-001-002: pagination returns correct slice", func() {
 			It("should paginate action types correctly", func() {
 				// Arrange: Create workflows spanning 5 action types (all active) - DD-WORKFLOW-016 V1.0
-				createTestWorkflow("scale-wf", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("restart-wf", "v1.0.0", "RestartPod", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("rollback-wf", "v1.0.0", "RollbackDeployment", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("memory-wf", "v1.0.0", "IncreaseMemoryLimits", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("restart-deploy-wf", "v1.0.0", "RestartDeployment", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("scale-wf", "ScaleReplicas", "critical", "v1/Pod", "production", "P0")
+				createTestWorkflow("restart-wf", "RestartPod", "critical", "v1/Pod", "production", "P0")
+				createTestWorkflow("rollback-wf", "RollbackDeployment", "critical", "v1/Pod", "production", "P0")
+				createTestWorkflow("memory-wf", "IncreaseMemoryLimits", "critical", "v1/Pod", "production", "P0")
+				createTestWorkflow("restart-deploy-wf", "RestartDeployment", "critical", "v1/Pod", "production", "P0")
 
 				filters := &models.WorkflowDiscoveryFilters{}
 
@@ -200,9 +167,9 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-003: filters by action_type AND signal context", func() {
 			It("should return only workflows matching both action_type and context filters", func() {
 				// Arrange
-				createTestWorkflow("scale-conservative", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("scale-aggressive", "v1.0.0", "ScaleReplicas", "high", "apps/v1/Deployment", "staging", "P1", "Active")
-				createTestWorkflow("restart-simple", "v1.0.0", "RestartPod", "critical", "v1/Pod", "production", "P0", "Active")
+				createTestWorkflow("scale-conservative", "ScaleReplicas", "critical", "v1/Pod", "production", "P0")
+				createTestWorkflow("scale-aggressive", "ScaleReplicas", "high", "apps/v1/Deployment", "staging", "P1")
+				createTestWorkflow("restart-simple", "RestartPod", "critical", "v1/Pod", "production", "P0")
 
 				// Act: Filter for ScaleReplicas + severity=critical
 				filters := &models.WorkflowDiscoveryFilters{
@@ -217,61 +184,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 				Expect(err).ToNot(HaveOccurred())
 				Expect(totalCount).To(Equal(1))
 				Expect(results).To(HaveLen(1))
-				Expect(results[0].Name).To(Equal("scale-conservative"))
-			})
-		})
-
-		// ========================================
-		// GAP-WF-3: ListWorkflowsByActionType -- returns only latest versions
-		// ========================================
-		Context("GAP-WF-3: returns only latest workflow versions", func() {
-			It("should return only workflows with is_latest_version=true", func() {
-				// Arrange: Create two versions of same workflow (v1.0.0, v1.1.0)
-				// Create() sets v1.0.0 is_latest_version=true, then v1.1.0 creation flips v1.0.0 to false
-				createTestWorkflow("scale-v1", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("scale-v1", "v1.1.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
-
-				// Act
-				filters := &models.WorkflowDiscoveryFilters{
-					Severity:    "critical",
-					Component:   "v1/Pod",
-					Environment: "production",
-					Priority:    "P0",
-				}
-				results, totalCount, err := workflowRepo.ListWorkflowsByActionType(ctx, "ScaleReplicas", filters, 0, 10)
-
-				// Assert: Only one workflow (latest v1.1.0), not two
-				Expect(err).ToNot(HaveOccurred())
-				Expect(totalCount).To(Equal(1), "Discovery should return only latest version")
-				Expect(results).To(HaveLen(1))
-				Expect(results[0].Version).To(Equal("v1.1.0"))
-				Expect(results[0].IsLatestVersion).To(BeTrue())
-			})
-		})
-
-		// ========================================
-		// IT-DS-017-001-004: ListWorkflowsByActionType -- excludes disabled workflows
-		// ========================================
-		Context("IT-DS-017-001-004: excludes disabled workflows", func() {
-			It("should not return disabled workflows", func() {
-				// Arrange: One active, one disabled -- same action_type
-				createTestWorkflow("scale-active", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
-				createTestWorkflow("scale-disabled", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Disabled")
-
-				// Act
-				filters := &models.WorkflowDiscoveryFilters{
-					Severity:    "critical",
-					Component:   "v1/Pod",
-					Environment: "production",
-					Priority:    "P0",
-				}
-				results, totalCount, err := workflowRepo.ListWorkflowsByActionType(ctx, "ScaleReplicas", filters, 0, 10)
-
-				// Assert
-				Expect(err).ToNot(HaveOccurred())
-				Expect(totalCount).To(Equal(1))
-				Expect(results).To(HaveLen(1))
-				Expect(results[0].Name).To(Equal("scale-active"))
+				Expect(results[0].Name).To(Equal(testID + "-scale-conservative"))
 			})
 		})
 	})
@@ -283,7 +196,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-005: context match returns workflow", func() {
 			It("should return workflow when context filters match", func() {
 				// Arrange
-				wf := createTestWorkflow("scale-match", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
+				workflowID := createTestWorkflow("scale-match", "ScaleReplicas", "critical", "v1/Pod", "production", "P0")
 
 				// Act
 				filters := &models.WorkflowDiscoveryFilters{
@@ -292,11 +205,11 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 					Environment: "production",
 					Priority:    "P0",
 				}
-				result, err := workflowRepo.GetWorkflowWithContextFilters(ctx, wf.WorkflowID, filters)
+				result, err := workflowRepo.GetWorkflowWithContextFilters(ctx, workflowID, filters)
 
 				// Assert
 				Expect(err).ToNot(HaveOccurred())
-				Expect(result.WorkflowID).To(Equal(wf.WorkflowID))
+				Expect(result.WorkflowID).To(Equal(workflowID))
 				Expect(result.ActionType).To(Equal("ScaleReplicas"))
 			})
 		})
@@ -307,7 +220,7 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		Context("IT-DS-017-001-006: context mismatch returns nil (security gate)", func() {
 			It("should return workflow.ErrNotFound when context filters do not match", func() {
 				// Arrange: workflow with severity=critical, environment=production
-				wf := createTestWorkflow("scale-mismatch", "v1.0.0", "ScaleReplicas", "critical", "v1/Pod", "production", "P0", "Active")
+				workflowID := createTestWorkflow("scale-mismatch", "ScaleReplicas", "critical", "v1/Pod", "production", "P0")
 
 				// Act: Query with mismatching context (severity=high, environment=staging)
 				filters := &models.WorkflowDiscoveryFilters{
@@ -316,10 +229,10 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 					Environment: "staging",
 					Priority:    "P1",
 				}
-				result, err := workflowRepo.GetWorkflowWithContextFilters(ctx, wf.WorkflowID, filters)
+				result, err := workflowRepo.GetWorkflowWithContextFilters(ctx, workflowID, filters)
 
 				// Assert: Security gate -- no workflow returned. Issue #1674: the
-				// repository now signals "not found OR filtered out" via the
+				// repository signals "not found OR filtered out" via the
 				// workflow.ErrNotFound sentinel instead of the ambiguous (nil, nil)
 				// return; the two cases are still deliberately not distinguished
 				// from each other to prevent information leakage (DD-WORKFLOW-016).
@@ -340,43 +253,18 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 	//
 	// These tests validate that workflows using wildcard ("*") values in
 	// mandatory labels are correctly matched by the three-step discovery
-	// protocol against real PostgreSQL JSONB operators.
+	// protocol against the cache-backed discovery path.
 	// ========================================
 
-	createTestWorkflowWithArrayLabels := func(name, version, actionType string, severity []string, component string, environment []string, priority, status string) *models.RemediationWorkflow {
-		content := fmt.Sprintf("apiVersion: v1\nkind: Workflow\nname: %s", name)
-		hash := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
-
-		labels := models.MandatoryLabels{
+	createTestWorkflowWithArrayLabels := func(name, actionType string, severity []string, component string, environment []string, priority string) string {
+		return seedWorkflowCRD(workflowCRDSpec{
+			Name:        testID + "-" + name,
+			ActionType:  actionType,
 			Severity:    severity,
 			Component:   []string{component},
 			Environment: environment,
 			Priority:    priority,
-		}
-
-		wf := &models.RemediationWorkflow{
-			WorkflowName:  fmt.Sprintf("wf-disc-%s-%s", testID, name),
-			Version:       version,
-			SchemaVersion: "1.0",
-			Name:          name,
-			Description: models.StructuredDescription{
-				What:      fmt.Sprintf("Test workflow %s for wildcard discovery", name),
-				WhenToUse: "Testing wildcard label matching",
-			},
-			Content:         content,
-			ContentHash:     hash,
-			Labels:          labels,
-			ExecutionEngine: models.ExecutionEngineTekton,
-			Status:          status,
-			IsLatestVersion: true,
-			ActionType:      actionType,
-		}
-
-		err := workflowRepo.Create(ctx, wf)
-		Expect(err).ToNot(HaveOccurred(), "Workflow creation should succeed for %s", name)
-		Expect(wf.WorkflowID).ToNot(BeEmpty(), "Workflow ID should be generated")
-
-		return wf
+		})
 	}
 
 	Describe("ListActions - Wildcard Labels (#464)", func() {
@@ -385,8 +273,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		// ========================================
 		Context("IT-DS-464-001: wildcard component + priority", func() {
 			It("should match a workflow with component='*' and priority='*' when queried with specific values", func() {
-				createTestWorkflowWithArrayLabels("wc-comp-pri", "v1.0.0", "ScaleReplicas",
-					[]string{"critical"}, "*", []string{"production"}, "*", "Active")
+				createTestWorkflowWithArrayLabels("wc-comp-pri", "ScaleReplicas",
+					[]string{"critical"}, "*", []string{"production"}, "*")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
@@ -409,8 +297,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 		// ========================================
 		Context("IT-DS-464-002: all-wildcard mandatory labels", func() {
 			It("should match a fully wildcarded workflow for any combination of filter values", func() {
-				createTestWorkflowWithArrayLabels("wc-all", "v1.0.0", "ScaleReplicas",
-					[]string{"*"}, "*", []string{"*"}, "*", "Active")
+				createTestWorkflowWithArrayLabels("wc-all", "ScaleReplicas",
+					[]string{"*"}, "*", []string{"*"}, "*")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
@@ -434,8 +322,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 	Describe("ListWorkflowsByActionType - Wildcard Labels (#464)", func() {
 		Context("IT-DS-464-003: wildcard labels in Step 2 discovery", func() {
 			It("should return a wildcard-labeled workflow when queried with specific filter values", func() {
-				createTestWorkflowWithArrayLabels("wc-step2", "v1.0.0", "ScaleReplicas",
-					[]string{"critical"}, "*", []string{"production"}, "*", "Active")
+				createTestWorkflowWithArrayLabels("wc-step2", "ScaleReplicas",
+					[]string{"critical"}, "*", []string{"production"}, "*")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
@@ -459,8 +347,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 	Describe("GetWorkflowWithContextFilters - Wildcard Labels (#464)", func() {
 		Context("IT-DS-464-004: security gate passes for wildcard workflow", func() {
 			It("should return the workflow (not nil) when wildcard labels match the query context", func() {
-				wf := createTestWorkflowWithArrayLabels("wc-gate", "v1.0.0", "ScaleReplicas",
-					[]string{"critical"}, "*", []string{"production"}, "*", "Active")
+				workflowID := createTestWorkflowWithArrayLabels("wc-gate", "ScaleReplicas",
+					[]string{"critical"}, "*", []string{"production"}, "*")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
@@ -468,11 +356,11 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 					Environment: "production",
 					Priority:    "P1",
 				}
-				result, err := workflowRepo.GetWorkflowWithContextFilters(ctx, wf.WorkflowID, filters)
+				result, err := workflowRepo.GetWorkflowWithContextFilters(ctx, workflowID, filters)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).ToNot(BeNil(), "IT-DS-464-004: security gate must not reject wildcard-labeled workflow")
-				Expect(result.WorkflowID).To(Equal(wf.WorkflowID))
+				Expect(result.WorkflowID).To(Equal(workflowID))
 			})
 		})
 	})
@@ -483,8 +371,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 	Describe("Demo Scenario - Mixed Wildcards (#464)", func() {
 		Context("IT-DS-464-005: exact demo scenario from issue #464", func() {
 			It("should match a workflow with mixed wildcard and exact labels", func() {
-				createTestWorkflowWithArrayLabels("wc-demo", "v1.0.0", "IncreaseMemoryLimits",
-					[]string{"critical", "high"}, "*", []string{"production", "staging", "*"}, "*", "Active")
+				createTestWorkflowWithArrayLabels("wc-demo", "IncreaseMemoryLimits",
+					[]string{"critical", "high"}, "*", []string{"production", "staging", "*"}, "*")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
@@ -508,8 +396,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 	Describe("Severity Wildcard JSONB Matching (#464)", func() {
 		Context("IT-DS-464-006: severity ['*'] matches via PostgreSQL JSONB ? operator", func() {
 			It("should match severity=['*'] when queried with severity=critical", func() {
-				createTestWorkflowWithArrayLabels("wc-sev", "v1.0.0", "RestartPod",
-					[]string{"*"}, "v1/Pod", []string{"production"}, "P0", "Active")
+				createTestWorkflowWithArrayLabels("wc-sev", "RestartPod",
+					[]string{"*"}, "v1/Pod", []string{"production"}, "P0")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "critical",
@@ -539,8 +427,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 	Describe("ListActions - Issue #522 Reproduction", func() {
 		Context("IT-DS-522-001: mixed exact severity + wildcard component/environment/priority", func() {
 			It("should match a workflow with severity=[critical,high], component='*', environment=['*'], priority='*'", func() {
-			createTestWorkflowWithArrayLabels("522-emptydir", "v1.0.0", "IncreaseMemoryLimits",
-				[]string{"critical", "high"}, "*", []string{"*"}, "*", "Active")
+				createTestWorkflowWithArrayLabels("522-emptydir", "IncreaseMemoryLimits",
+					[]string{"critical", "high"}, "*", []string{"*"}, "*")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
@@ -560,8 +448,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 		Context("IT-DS-522-002: all-wildcard labels with 'unknown' environment", func() {
 			It("should match a fully wildcarded workflow when environment=unknown", func() {
-			createTestWorkflowWithArrayLabels("522-allwild", "v1.0.0", "IncreaseMemoryLimits",
-				[]string{"*"}, "*", []string{"*"}, "*", "Active")
+				createTestWorkflowWithArrayLabels("522-allwild", "IncreaseMemoryLimits",
+					[]string{"*"}, "*", []string{"*"}, "*")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",
@@ -579,8 +467,8 @@ var _ = Describe("Workflow Discovery Repository Integration Tests", Serial, func
 
 		Context("IT-DS-522-003: ListWorkflowsByActionType with wildcard labels", func() {
 			It("should return the wildcard workflow in Step 2 discovery", func() {
-			createTestWorkflowWithArrayLabels("522-step2", "v1.0.0", "IncreaseMemoryLimits",
-				[]string{"critical", "high"}, "*", []string{"*"}, "*", "Active")
+				createTestWorkflowWithArrayLabels("522-step2", "IncreaseMemoryLimits",
+					[]string{"critical", "high"}, "*", []string{"*"}, "*")
 
 				filters := &models.WorkflowDiscoveryFilters{
 					Severity:    "high",

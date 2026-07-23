@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2" //nolint:revive
 	. "github.com/onsi/gomega"    //nolint:revive
 
@@ -160,10 +162,18 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 			ai.Status.ApprovalReason = opts.ApprovalReason
 		}
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "restart-pod-v1",
-			Version:         "1.0.0",
-			ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
-			Confidence:      confidence,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID: "restart-pod-v1",
+				// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
+				// these required fields on validateSelectedWorkflow.
+				WorkflowName:    "restart-pod-v1",
+				ActionType:      "RestartPod",
+				Version:         "1.0.0",
+				ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: confidence,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Root cause identified",

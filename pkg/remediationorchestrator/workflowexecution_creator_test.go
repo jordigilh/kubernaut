@@ -22,6 +22,8 @@ import (
 	"errors"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -35,6 +37,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
@@ -158,25 +161,48 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		})
 	})
 
-	Describe("ExecutionEngine (RO creator does not set on WFE)", func() {
-		// Issue #518: ExecutionEngine is on WorkflowExecution status and resolved at runtime
-		// by the WE controller (workflow catalog). The RO WorkflowExecution creator does not
-		// copy SelectedWorkflow.ExecutionEngine onto the WFE.
-		It("should leave ExecutionEngine unset on created WorkflowExecution regardless of AI SelectedWorkflow", func() {
+	Describe("CRD-embedded execution snapshot pass-through (Issue #1661 Change 11d/11f)", func() {
+		// Authority: DD-WORKFLOW-018. Now that WorkflowRef carries these six
+		// fields (Change 11c, ActionType added by Change 11f) and
+		// WorkflowExecution will stop re-fetching them from DataStorage
+		// (Change 11e), RO's buildWorkflowExecution must be the one
+		// production call site that copies them from the CRD-embedded
+		// AIAnalysis.Status.SelectedWorkflow snapshot into WorkflowRef.
+		It("UT-RO-341-001: copies Dependencies/Resources/DeclaredParameterNames/ExecutionEngine/ServiceAccountName/ActionType/WorkflowName from SelectedWorkflow into WorkflowRef", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			rr := helpers.NewRemediationRequest("test-engine-unset", "default")
-			ai := helpers.NewCompletedAIAnalysis("ai-test-engine-unset", "default")
+			rr := helpers.NewRemediationRequest("test-snapshot-passthrough", "default")
+			ai := helpers.NewCompletedAIAnalysis("ai-test-snapshot-passthrough", "default")
 			ai.Status.SelectedWorkflow.ExecutionEngine = "job"
+			ai.Status.SelectedWorkflow.ServiceAccountName = "workflow-runner-sa"
+			ai.Status.SelectedWorkflow.ActionType = "ScaleReplicas"
+			ai.Status.SelectedWorkflow.WorkflowName = "scale-replicas-fix"
+			ai.Status.SelectedWorkflow.Dependencies = &sharedtypes.WorkflowDependencies{
+				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "db-creds"}},
+			}
+			ai.Status.SelectedWorkflow.Resources = &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("100m")},
+				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("500m")},
+			}
+			ai.Status.SelectedWorkflow.DeclaredParameterNames = map[string]bool{"TARGET_POD": true}
 			ctx := context.Background()
 
 			name, err := weCreator.Create(ctx, rr, ai)
 			Expect(err).ToNot(HaveOccurred())
+
 			created := &workflowexecutionv1.WorkflowExecution{}
-			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Status.ExecutionEngine).To(BeEmpty(),
-				"RO must not populate ExecutionEngine; WE resolves it from the catalog at runtime")
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)).To(Succeed())
+
+			Expect(created.Spec.WorkflowRef.ExecutionEngine).To(Equal("job"),
+				"Issue #1661 Change 11d: ExecutionEngine must pass through to WorkflowRef")
+			Expect(created.Spec.WorkflowRef.ServiceAccountName).To(Equal("workflow-runner-sa"))
+			Expect(created.Spec.WorkflowRef.ActionType).To(Equal("ScaleReplicas"),
+				"Issue #1661 Change 11f: ActionType must pass through to WorkflowRef like its siblings")
+			Expect(created.Spec.WorkflowRef.WorkflowName).To(Equal("scale-replicas-fix"),
+				"Issue #1661 Change 12: WorkflowName must pass through to WorkflowRef like its siblings")
+			Expect(created.Spec.WorkflowRef.Dependencies).To(Equal(ai.Status.SelectedWorkflow.Dependencies))
+			Expect(created.Spec.WorkflowRef.Resources).To(Equal(ai.Status.SelectedWorkflow.Resources))
+			Expect(created.Spec.WorkflowRef.DeclaredParameterNames).To(Equal(map[string]bool{"TARGET_POD": true}))
 		})
 	})
 
@@ -362,6 +388,39 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				"ExecutionBundle is empty",
 				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ExecutionBundle = "" },
 				"executionBundle is required"),
+			Entry("empty ExecutionEngine",
+				// UT-RO-341-002 (Issue #1661 Change 11d, DD-WORKFLOW-018): once WFE
+				// stops resolving ExecutionEngine from DS at runtime (Change 11e),
+				// an empty value here would silently default to the wrong engine
+				// instead of failing closed -- so RO must reject it up front,
+				// mirroring the existing WorkflowID/ExecutionBundle checks.
+				"ExecutionEngine is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ExecutionEngine = "" },
+				"executionEngine is required"),
+			Entry("empty WorkflowName",
+				// UT-RO-1711-001 (Issue #1711 cascade, DD-KA-001 v1.1): WorkflowName
+				// is a Required (no-omitempty) field on sharedtypes.WorkflowSnapshot
+				// -- its upstream source (RemediationWorkflow.metadata.name) is
+				// Kubernetes-guaranteed non-empty, so an empty value here means the
+				// snapshot never went through catalog enrichment and must not
+				// silently create a WorkflowExecution with a missing name.
+				"WorkflowName is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.WorkflowName = "" },
+				"workflowName is required"),
+			Entry("empty ActionType",
+				// UT-RO-1711-002 (Issue #1711 cascade, DD-KA-001 v1.1): ActionType is
+				// likewise Required on WorkflowSnapshot -- catalog-authoritative,
+				// never LLM-suppliable (Issue #1661 Change 12). Same rationale as
+				// WorkflowName above.
+				"ActionType is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.ActionType = "" },
+				"actionType is required"),
+			Entry("empty Version",
+				// UT-RO-1711-003 (Issue #1711 cascade, DD-KA-001 v1.1): Version is
+				// likewise Required on WorkflowSnapshot.
+				"Version is empty",
+				func(ai *aianalysisv1.AIAnalysis) { ai.Status.SelectedWorkflow.Version = "" },
+				"version is required"),
 		)
 
 		It("should return error when client Create fails per BR-ORCH-025", func() {

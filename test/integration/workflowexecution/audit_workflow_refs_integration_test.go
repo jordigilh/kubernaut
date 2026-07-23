@@ -44,6 +44,8 @@ import (
 	"net/http"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -97,19 +99,16 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			_ = resp.Body.Close()
 		}
 
-	// Create test namespace with UUID for parallelism safety
-	namespace = fmt.Sprintf("we-gap56-test-%s", uuid.New().String()[:8])
-	testNs := &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: namespace},
-	}
-	Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
+		// Create test namespace with UUID for parallelism safety
+		namespace = fmt.Sprintf("we-gap56-test-%s", uuid.New().String()[:8])
+		testNs := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{Name: namespace},
+		}
+		Expect(k8sClient.Create(ctx, testNs)).To(Succeed())
 
 		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
 		// dsClients is created in SynchronizedBeforeSuite with ServiceAccount token
 		dsClient = dsClients.OpenAPIClient
-
-		// #518: Ensure engine mock is reset before each test to prevent leak from Job tests
-		testWorkflowQuerier.setEngine("tekton")
 	})
 
 	AfterEach(func() {
@@ -133,8 +132,6 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			// Per ADR-034 v1.5: All event types prefixed with "workflowexecution"
 
 			By("1. Creating WorkflowExecution CRD (BUSINESS LOGIC TRIGGER)")
-			// IT-WE-1033-001: Set workflow name in catalog querier for workflow_name audit assertion
-			testWorkflowQuerier.WorkflowName = "fix-security-context-job"
 			wfeName := fmt.Sprintf("gap56-happy-%s", uuid.New().String()[:8])
 			rrName := "test-rr-" + wfeName
 			// DD-AUDIT-CORRELATION-001: Correlation ID = RemediationRequest name
@@ -154,18 +151,21 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						Namespace:  namespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "k8s-restart-pod-v1", // Label-safe: no slashes
-						Version:        "v1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   "k8s-restart-pod-v1",
+							WorkflowName: "k8s-restart-pod-v1",
+							// Label-safe: no slashes
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123",
+							ExecutionEngine: "tekton",
+							ActionType:      "RestartPod",
+						},
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/test-app", namespace),
 					Parameters: map[string]string{
 						"pod_name":  "test-pod-123",
 						"namespace": namespace,
 					},
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -234,11 +234,16 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(eventData.ContainerImage).To(Equal("ghcr.io/kubernaut/workflows/restart-pod@sha256:abc123"))
 			Expect(eventData.Phase).To(Equal(ogenclient.WorkflowExecutionAuditPayloadPhasePending))
 
-			// IT-WE-1033-001: Validate workflow_name in selection audit event (Issue #1033 Gap 2)
+			// IT-WE-1661-001 (Issue #1711 cascade, DD-KA-001 v1.1): WorkflowRef
+			// now inline-embeds sharedtypes.WorkflowSnapshot, whose WorkflowName
+			// is Required and catalog-authoritative (copied verbatim from
+			// AIAnalysis.Status.SelectedWorkflow at WFE creation), so the audit
+			// manager (pkg/workflowexecution/audit/manager.go) reads it directly
+			// from Spec.WorkflowRef.WorkflowName and populates the selection
+			// event with it -- no runtime DataStorage lookup required.
 			Expect(eventData.WorkflowName.IsSet()).To(BeTrue(),
-				"workflow_name should be set when catalog provides a name")
-			Expect(eventData.WorkflowName.Value).To(Equal("fix-security-context-job"),
-				"workflow_name should carry the human-readable name from the catalog")
+				"workflow_name is carried by WorkflowRef.WorkflowName and should be populated on the selection event")
+			Expect(eventData.WorkflowName.Value).To(Equal("k8s-restart-pod-v1"))
 
 			By("5. Validate workflowexecution.execution.started event structure (ADR-034 v1.5)")
 			executionEvents := filterEventsByType(allEvents, weaudit.EventTypeExecutionStarted)
@@ -258,6 +263,20 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			Expect(execEventData.WorkflowID).To(Equal("k8s-restart-pod-v1"))
 			Expect(execEventData.PipelinerunName.IsSet()).To(BeTrue(), "PipelineRun name should be set")
 			Expect(execEventData.PipelinerunName.Value).To(HavePrefix("wfe-"), "PipelineRun name should start with 'wfe-' prefix")
+
+			// IT-WE-1661-002 (Issue #1661 Change 11f, extended by #1711 cascade):
+			// ActionType and WorkflowName are both sourced directly from the
+			// CRD-embedded WorkflowRef snapshot (RO copies them verbatim from
+			// AIAnalysis.Status.SelectedWorkflow at WFE creation, before the WFE
+			// even exists), so both are populated on the execution.started event
+			// (see the selection-event assertion above for WorkflowName's
+			// rationale).
+			Expect(execEventData.ActionType.IsSet()).To(BeTrue(),
+				"action_type is carried by WorkflowRef.ActionType and should be populated on the execution.started event")
+			Expect(execEventData.ActionType.Value).To(Equal("RestartPod"))
+			Expect(execEventData.WorkflowName.IsSet()).To(BeTrue(),
+				"workflow_name is carried by WorkflowRef.WorkflowName and should be populated on the execution.started event")
+			Expect(execEventData.WorkflowName.Value).To(Equal("k8s-restart-pod-v1"))
 		})
 	})
 
@@ -290,9 +309,15 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 						Namespace:  namespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "k8s-scale-deployment-v1", // Label-safe: no slashes
-						Version:        "v1.0.0",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   "k8s-scale-deployment-v1",
+							WorkflowName: "k8s-scale-deployment-v1",
+							ActionType:   "RestartPod",
+							// Label-safe: no slashes
+							Version:         "v1.0.0",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/scale@sha256:def456",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: fmt.Sprintf("%s/deployment/api-server", namespace),
 				},

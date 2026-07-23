@@ -27,9 +27,13 @@ import (
 type ActionTypeSpec struct {
 	// Name is the PascalCase action type identifier (e.g., RestartPod, ScaleReplicas).
 	// Immutable after creation.
+	// Pattern requires an uppercase leading letter followed by alphanumerics
+	// only (no underscores/hyphens/spaces), matching RemediationWorkflow's
+	// spec.actionType contract so the two stay in lockstep. Issue #1661.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:Pattern=`^[A-Z][A-Za-z0-9]*$`
 	Name string `json:"name"`
 
 	// Description provides structured information about the action type.

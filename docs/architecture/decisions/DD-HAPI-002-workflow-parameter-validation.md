@@ -1,7 +1,11 @@
 # DD-HAPI-002: Workflow Response Validation Architecture
 
+> **SUPERSEDED** by [DD-KA-001](./DD-KA-001-workflow-response-validation-architecture.md) (Workflow Response Validation Architecture, July 2026).
+>
+> DD-KA-001 is a clean-cut replacement, not an incremental update: this document's implementation sections still describe the pre-Go-rewrite Python architecture, and it predates the `DD-KA-` naming convention that matches the current service name (KubernautAgent). DD-KA-001 restates what's still true here (fail-closed startup, three-phase RCA, undeclared-parameter stripping) in current terms, and records the new decision this document did not anticipate: the retirement of Workflow Engine's independent Issue #243 re-check now that Issue #1661/DD-WORKFLOW-018 propagates KA's already-validated schema data through the CRD chain instead of a second independent DS fetch. Kept below for historical reference only.
+
 **Date**: December 1, 2025
-**Status**: ✅ APPROVED (Updated v1.5)
+**Status**: **SUPERSEDED** by DD-KA-001
 **Deciders**: Architecture Team, Workflow Engine Team, HolmesGPT-API Team
 **Version**: 1.5
 **Related**: DD-WORKFLOW-002, DD-HAPI-001, BR-HAPI-191, BR-AI-023, DD-WE-006, GitHub Issue #241, GitHub Issue #529, BR-HAPI-433

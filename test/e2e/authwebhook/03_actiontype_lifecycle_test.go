@@ -346,10 +346,18 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, ContinueOnFail
 	})
 
 	// ========================================
-	// E2E-AT-300-007: Re-applying deleted ActionType re-enables
+	// E2E-AT-300-007: Re-applying a deleted ActionType re-registers it
 	// BR-WORKFLOW-007.1
 	// ========================================
-	It("E2E-AT-300-007: re-applying deleted ActionType re-enables with previouslyExisted=true", func() {
+	// #1661 Change 8d: registration is now a pure local computation with no
+	// DS round-trip and no "disabled" intermediate CRD state (a DELETE is a
+	// true etcd removal) -- there is no longer any local state from which to
+	// distinguish "brand new" from "recreated after deletion", so
+	// status.previouslyExisted is always false by design (see
+	// actiontype_handler.go handleCreate/updateCRDStatusCreate). This test
+	// now proves re-creation still succeeds and reaches the same Active
+	// state, rather than asserting the retired previouslyExisted=true signal.
+	It("E2E-AT-300-007: re-applying a deleted ActionType re-registers it as Active", func() {
 		By("Re-creating the ActionType that was deleted")
 		at := &atv1alpha1.ActionType{
 			ObjectMeta: metav1.ObjectMeta{
@@ -367,23 +375,25 @@ var _ = Describe("E2E: ActionType CRD Lifecycle (#300)", Ordered, ContinueOnFail
 		}
 		Expect(k8sClient.Create(testCtx, at)).To(Succeed())
 
-		By("Waiting for status.previouslyExisted to become true")
+		By("Waiting for status.registered to become true again")
 		Eventually(func() bool {
 			updated := &atv1alpha1.ActionType{}
 			if err := k8sClient.Get(testCtx, client.ObjectKeyFromObject(at), updated); err != nil {
 				return false
 			}
-			return updated.Status.PreviouslyExisted
+			return updated.Status.Registered
 		}, 30*time.Second, 1*time.Second).Should(BeTrue(),
-			"Re-applied ActionType should have status.previouslyExisted=true")
+			"Re-applied ActionType should have status.registered=true")
 
-		By("Verifying status is active")
+		By("Verifying status is active and previouslyExisted is false (#1661: always false by design)")
 		updated := &atv1alpha1.ActionType{}
 		Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(at), updated)).To(Succeed())
 		Expect(updated.Status.Registered).To(BeTrue())
 		Expect(updated.Status.CatalogStatus).To(Equal(sharedtypes.CatalogStatusActive))
+		Expect(updated.Status.PreviouslyExisted).To(BeFalse(),
+			"previouslyExisted is always false post-#1661 -- there is no 'disabled' intermediate CRD state to have previously existed in")
 
-		GinkgoWriter.Println("✅ Re-enable: previouslyExisted=true, status=active")
+		GinkgoWriter.Println("✅ Re-register: registered=true, status=active, previouslyExisted=false")
 	})
 
 	// ========================================

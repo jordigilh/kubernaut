@@ -91,16 +91,16 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 
 | Test ID | Scenario | Setup | Validation | BR | Status |
 |---------|----------|-------|-----------|-----|--------|
-| E2E-FP-251-001 | cert-manager CRD: full pipeline async hash deferral | Install cert-manager in BeforeAll (self-contained); inject CertManagerCertNotReady alert; Mock LLM returns `rca_resource_kind: Certificate` | RO resolves `Certificate` via REST mapper → `cert-manager.io/v1` (non-built-in) → sets `Config.HashComputeDelay`; EM defers hash computation; audit `assessment.scheduled` includes `hash_compute_after` (derived timestamp); EA reaches terminal phase | BR-EM-010, BR-RO-103 | **Implemented** |
+| E2E-FP-251-001 | cert-manager CRD: full pipeline async hash deferral | Install cert-manager in BeforeAll (self-contained); inject CertManagerCertNotReady alert; Mock LLM returns `rca_resource_kind: Certificate` | RO resolves `Certificate` via REST mapper → `cert-manager.io/v1` (non-built-in) → sets `Config.HashComputeDelay`; EM defers hash computation; audit `assessment.scheduled` includes `hash_compute_after` (derived timestamp); EA reaches terminal phase | BR-EM-010, BR-RO-103 | **Removed (2026-07-21)** |
 
-**File**: `test/e2e/fullpipeline/02_async_hash_deferral_test.go`
+**File**: was `test/e2e/fullpipeline/02_async_hash_deferral_test.go` (extended into `E2E-FP-253-001` by #253, then removed — see [ISSUE-253 Tier Skip Rationale](../ISSUE-253/TEST_PLAN.md#tier-skip-rationale) for why this real-cert-manager E2E scenario was found to add no coverage beyond UT+IT and was replaced by `UT-RO-253-009..013`)
 
-**Design decisions**:
-- Runs in the Full Pipeline (FP) E2E suite — same Kind cluster as `01_full_remediation_lifecycle_test.go`
+**Design decisions (historical, when this test existed)**:
+- Ran in the Full Pipeline (FP) E2E suite — same Kind cluster as `01_full_remediation_lifecycle_test.go`
 - cert-manager installed in `BeforeAll` (self-contained, ~2 min impact only on this test)
-- Reuses `oomkill-increase-memory-v1` workflow for pipeline flow (the async detection depends only on `AffectedResource.Kind`, not the actual workflow)
-- Mock LLM `cert_not_ready` scenario returns `rca_resource_kind: "Certificate"` with `rca_resource_api_version: "cert-manager.io/v1"`
-- Test fixtures are isolated: own namespace, own cleanup, no impact on other FP tests
+- Reused `oomkill-increase-memory-v1` workflow for pipeline flow (the async detection depends only on `AffectedResource.Kind`, not the actual workflow)
+- Mock LLM `cert_not_ready` scenario returned `rca_resource_kind: "Certificate"` with `rca_resource_api_version: "cert-manager.io/v1"`
+- Test fixtures were isolated: own namespace, own cleanup, no impact on other FP tests
 
 ---
 
@@ -113,7 +113,7 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 | UT — EM hash gating | 5 | `test/unit/effectivenessmonitor/hash_deferral_test.go` | Implemented |
 | IT — EM hash deferral | 3 | `test/integration/effectivenessmonitor/hash_deferral_integration_test.go` | Implemented |
 | IT — RO async detection | 2 | `test/integration/remediationorchestrator/ea_async_detection_integration_test.go` | Implemented |
-| E2E — cert-manager async | 1 | `test/e2e/fullpipeline/02_async_hash_deferral_test.go` | Implemented |
+| E2E — cert-manager async | 0 | (removed 2026-07-21; see ISSUE-253 Tier Skip Rationale) | Removed |
 | **Total implemented** | **18** (31 sub-cases) | | |
 
 ---
@@ -125,7 +125,7 @@ UT-RO-251-008 through UT-RO-251-013 cover the RO reconciler's async detection lo
 | EA CRD config field (`Config.HashComputeDelay`) | Required | `make generate manifests` + Helm chart sync |
 | `resolveGVKForKind` accessible from EA creator | Required | Extract to shared utility or pass resolved group |
 | AA.Status.PostRCAContext.DetectedLabels available | Existing | RO reads from already-fetched AA object |
-| cert-manager deployed in E2E cluster | Required for E2E | Kind cluster with cert-manager installed |
+| cert-manager deployed in E2E cluster | No longer required (E2E removed 2026-07-21) | — |
 
 ---
 

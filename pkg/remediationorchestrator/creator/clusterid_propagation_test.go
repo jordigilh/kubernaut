@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -225,11 +227,15 @@ var _ = Describe("SignalProcessingCreator ClusterID Propagation (BR-INTEGRATION-
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID:      "restart-pod",
-					Version:         "1.0.0",
-					ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
-					Confidence:      0.85,
-					Rationale:       "Pod restart recommended for high latency",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "restart-pod",
+						WorkflowName:    "restart-pod",
+						ActionType:      "RestartPod",
+						Version:         "1.0.0",
+						ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
+					},
+					Confidence: 0.85,
+					Rationale:  "Pod restart recommended for high latency",
 				},
 				ApprovalReason: "High severity requires approval",
 				RootCause:      "Memory leak detected",

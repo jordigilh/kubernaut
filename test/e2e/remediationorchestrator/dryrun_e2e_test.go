@@ -21,6 +21,8 @@ import (
 	"os/exec"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -222,11 +224,17 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 			analysis.Status.NeedsHumanReview = false
 			analysis.Status.Message = workflowRecommendedRestartPodV1
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "restart-pod-v1",
-				Version:         "1.0.0",
-				ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
-				Confidence:      0.95,
-				Rationale:       "High confidence workflow match for pod restart scenario",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "restart-pod-v1",
+					WorkflowName:    "restart-pod-v1",
+					ActionType:      "RestartPod",
+					Version:         "1.0.0",
+					ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
+					ExecutionEngine: "job",
+				},
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Confidence: 0.95,
+				Rationale:  "High confidence workflow match for pod restart scenario",
 			}
 			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "OOM kill detected on pod",

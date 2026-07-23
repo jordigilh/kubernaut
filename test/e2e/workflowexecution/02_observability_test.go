@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -390,9 +392,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      failureUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      failureUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -590,10 +597,15 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: failureUUID,
-						Version:    "v1.0.0",
-						// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
-						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   failureUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
+							// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -960,12 +972,12 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 	})
 })
 
-// extractMetricValue parses Prometheus metrics format and extracts the value for the
-// workflowexecution_reconciler_total metric with the given outcome label.
-// Example: workflowexecution_reconciler_total{outcome="Completed"} 5.0
+// extractMetricValue parses Prometheus metrics format and extracts the value for a specific label
+// of the workflowexecution execution-total metric.
+// Example: workflowexecution_total{outcome="Completed"} 5.0
 func extractMetricValue(metricsBody, outcomeLabel string) float64 {
 	// Parse Prometheus text format
-	// Look for lines like: workflowexecution_reconciler_total{outcome="Completed"} 5.0
+	// Look for lines like: workflowexecution_total{outcome="Completed"} 5.0
 	lines := strings.Split(metricsBody, "\n")
 
 	for _, line := range lines {

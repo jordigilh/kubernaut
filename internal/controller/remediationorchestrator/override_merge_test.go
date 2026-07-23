@@ -62,20 +62,23 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 		_ = aianalysisv1.AddToScheme(scheme)
 
 		aiWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:            "wf-ai-001",
-			ActionType:            "RestartPod",
-			Version:               "1.0.0",
-			ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
-			ExecutionBundleDigest: "sha256:aaa",
-			Confidence:            0.72,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:            "wf-ai-001",
+				WorkflowName:          "wf-ai-001",
+				ActionType:            "RestartPod",
+				Version:               "1.0.0",
+				ExecutionBundle:       "ai-bundle:v1.0@sha256:aaa",
+				ExecutionBundleDigest: "sha256:aaa",
+				ExecutionEngine:       "tekton",
+				EngineConfig:          &apiextensionsv1.JSON{Raw: []byte(`{"pipelineRef":"restart-pipeline"}`)},
+				ServiceAccountName:    "ai-sa",
+			},
+			Confidence: 0.72,
 			Parameters: map[string]string{
 				"NAMESPACE": defaultFixture,
 				"POD_NAME":  "app-pod-1",
 			},
-			Rationale:          "AI recommended pod restart for OOMKill recovery",
-			ExecutionEngine:    "tekton",
-			EngineConfig:       &apiextensionsv1.JSON{Raw: []byte(`{"pipelineRef":"restart-pipeline"}`)},
-			ServiceAccountName: "ai-sa",
+			Rationale: "AI recommended pod restart for OOMKill recovery",
 		}
 	})
 
@@ -131,6 +134,8 @@ var _ = Describe("BR-ORCH-032: RO Override Merge Logic (#594)", func() {
 			Expect(applied).To(BeTrue())
 
 			Expect(resolved.WorkflowID).To(Equal("wf-override-002"))
+			Expect(resolved.WorkflowName).To(Equal("drain-restart"),
+				"Issue #1661 Change 12: WorkflowName must be re-mapped from the override-target RW's metadata.name")
 			Expect(resolved.ActionType).To(Equal("DrainRestart"))
 			Expect(resolved.Version).To(Equal("2.0.0"))
 			Expect(resolved.ExecutionBundle).To(Equal("override-bundle:v2.0@sha256:bbb"))

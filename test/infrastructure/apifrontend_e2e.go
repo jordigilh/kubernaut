@@ -238,19 +238,21 @@ func SetupAPIFrontendE2EInfrastructure(ctx context.Context, clusterName, kubecon
 	// Seed DS with action types + workflows so kubernaut_list_workflows returns
 	// a non-empty catalog. Must run after afDeployE2ERBAC (creates the apifrontend SA).
 	_, _ = fmt.Fprintln(writer, "  Seeding DS action types + workflows for AF E2E...")
-	saToken, seedErr := GetServiceAccountToken(ctx, namespace, "apifrontend", kubeconfigPath)
-	if seedErr != nil {
-		return fmt.Errorf("get apifrontend SA token for DS seeding: %w", seedErr)
-	}
-	seedClient, seedErr := CreateTLSAuthenticatedDataStorageClient("https://localhost:8089", saToken, kubeconfigPath)
-	if seedErr != nil {
-		return fmt.Errorf("create DS seed client: %w", seedErr)
-	}
-	if seedErr = SeedActionTypesViaAPI(ctx, seedClient, writer); seedErr != nil {
-		return fmt.Errorf("seed action types: %w", seedErr)
+	// #1661 Phase 55: DS's Postgres-backed POST /api/v1/action-types endpoint was
+	// removed (DD-WORKFLOW-018); action types are now seeded exclusively as CRDs for
+	// DS's informer-backed cache. Workflows here seed via SeedWorkflowsViaKubectlApply
+	// (real AuthWebhook admission), so this file no longer touches DS's REST API at all.
+	var seedErr error
+	if seedErr = SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); seedErr != nil {
+		return fmt.Errorf("seed action types (CRD): %w", seedErr)
 	}
 	testWorkflows := GetKAE2ETestWorkflows()
-	if _, seedErr = SeedWorkflowsInDataStorage(ctx, seedClient, testWorkflows, "AF E2E", writer); seedErr != nil {
+	// #1661 Phase 56 (discovered gap): this suite runs with no live AuthWebhook
+	// (unlike fullpipeline/fleet), so SeedWorkflowsViaKubectlApply's wait on
+	// .status.workflowId can never resolve -- use the direct-CRD-creation path
+	// instead, which computes the same deterministic UUID and stamps status
+	// itself (pkg/shared/contenthash).
+	if _, seedErr = SeedWorkflowsViaDirectCRDCreationFromKubeconfig(ctx, kubeconfigPath, namespace, testWorkflowsToSeedSpecs(testWorkflows), writer); seedErr != nil {
 		return fmt.Errorf("seed workflows: %w", seedErr)
 	}
 

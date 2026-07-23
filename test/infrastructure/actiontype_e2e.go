@@ -20,13 +20,9 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os/exec"
 	"strings"
 	"time"
-
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // actionTypeDef holds the minimal fields needed to create an ActionType CR.
@@ -53,90 +49,14 @@ var e2eActionTypes = []actionTypeDef{
 	{MetadataName: "reconfigure-resource", SpecName: "ReconfigureResource", What: "Reconfigure a Kubernetes resource spec to fix misconfiguration.", WhenToUse: "Root cause is a resource misconfiguration that can be corrected by updating spec fields."},
 }
 
-// SeedActionTypesViaAPI populates the action_type_taxonomy table by calling the
-// DataStorage POST /api/v1/action-types endpoint for each standard action type.
-// Idempotent: the API returns 200 (exists) if the action type is already present.
-// Must be called AFTER DataStorage is healthy, BEFORE any workflow registration.
-// DD-WORKFLOW-016: FK constraint for remediation_workflow_catalog.
-func SeedActionTypesViaAPI(ctx context.Context, client *ogenclient.Client, writer io.Writer) error {
-	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	_, _ = fmt.Fprintf(writer, "🏷️  Seeding %d action types via DataStorage API\n", len(e2eActionTypes))
-	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	for _, at := range e2eActionTypes {
-		req := &ogenclient.ActionTypeCreateRequest{
-			Name: at.SpecName,
-			Description: ogenclient.ActionTypeDescription{
-				What:      at.What,
-				WhenToUse: at.WhenToUse,
-			},
-			RegisteredBy: "test-infrastructure-seeder",
-		}
-
-		res, err := client.CreateActionType(ctx, req)
-		if err != nil {
-			_, _ = fmt.Fprintf(writer, "  ❌ %s: %v\n", at.SpecName, err)
-			return fmt.Errorf("failed to seed action type %s via API: %w", at.SpecName, err)
-		}
-
-		switch r := res.(type) {
-		case *ogenclient.CreateActionTypeCreated:
-			_, _ = fmt.Fprintf(writer, "  ✅ %s (created)\n", at.SpecName)
-		case *ogenclient.CreateActionTypeOK:
-			_, _ = fmt.Fprintf(writer, "  ✅ %s (status: %s)\n", at.SpecName, r.Status)
-		default:
-			_, _ = fmt.Fprintf(writer, "  ✅ %s (ok)\n", at.SpecName)
-		}
-	}
-
-	_, _ = fmt.Fprintf(writer, "✅ All action types seeded via DataStorage API (%d types)\n\n", len(e2eActionTypes))
-	return nil
-}
-
-// SeedActionTypesViaAPIWithURL is a convenience wrapper that creates a temporary
-// authenticated ogen client and delegates to SeedActionTypesViaAPI.
-// Use when the caller has a DS URL + SA token but not a pre-built ogen client.
-func SeedActionTypesViaAPIWithURL(ctx context.Context, dsURL, token string, timeout time.Duration, writer io.Writer) error {
-	httpClient := &http.Client{
-		Transport: testauth.NewServiceAccountTransport(token),
-		Timeout:   timeout,
-	}
-	client, err := ogenclient.NewClient(dsURL, ogenclient.WithClient(httpClient))
-	if err != nil {
-		return fmt.Errorf("failed to create ogen client for action type seeding: %w", err)
-	}
-	return SeedActionTypesViaAPI(ctx, client, writer)
-}
-
-// SeedActionTypesViaAPIWithTLS is a TLS-aware convenience wrapper that creates a
-// temporary authenticated ogen client with inter-service CA trust and delegates
-// to SeedActionTypesViaAPI.
-// Use in E2E tests where DataStorage serves HTTPS with a private CA.
-//
-// Issue #785: E2E HTTPS migration requires TLS-aware seeding.
-func SeedActionTypesViaAPIWithTLS(ctx context.Context, dsURL, token, kubeconfigPath string, timeout time.Duration, writer io.Writer) error {
-	tlsTransport, err := NewTLSAwareTransport(kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to create TLS-aware transport for action type seeding: %w", err)
-	}
-	httpClient := &http.Client{
-		Transport: testauth.NewServiceAccountTransportWithBase(token, tlsTransport),
-		Timeout:   timeout,
-	}
-	client, err := ogenclient.NewClient(dsURL, ogenclient.WithClient(httpClient))
-	if err != nil {
-		return fmt.Errorf("failed to create ogen client for action type seeding: %w", err)
-	}
-	return SeedActionTypesViaAPI(ctx, client, writer)
-}
-
-// SeedE2EActionTypes creates the ActionType CRs required by E2E test workflows.
-// Must be called AFTER CRDs are installed and the AuthWebhook is deployed, but
-// BEFORE SeedWorkflowsInDataStorage — the AW webhook registers each AT in the DB,
-// satisfying the action_type_taxonomy FK constraint for workflow registration.
+// SeedE2EActionTypes creates the ActionType CRs required by E2E test workflows,
+// via the real AuthWebhook admission path (kubectl apply -> AW admits -> AW
+// patches .status.registered=true locally, no DS round-trip as of #1661 Change
+// 8d). Must be called AFTER CRDs are installed and AuthWebhook is deployed, but
+// BEFORE seeding workflows (SeedWorkflowsViaKubectlApply et al.). Use this
+// variant when the E2E suite already deploys AuthWebhook and the test wants to
+// prove the real admission path works; otherwise use SeedActionTypesViaCRD,
+// which has no AuthWebhook dependency.
 func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d E2E ActionType CRDs in %s\n", len(e2eActionTypes), namespace)
@@ -175,6 +95,69 @@ func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, o
 	}
 
 	_, _ = fmt.Fprintf(output, "✅ All E2E ActionTypes seeded and registered\n\n")
+	return nil
+}
+
+// SeedActionTypesViaCRD creates the ActionType CRs required by E2E/integration
+// test workflows, directly against the K8s API -- with no dependency on
+// AuthWebhook being deployed. Use this instead of SeedE2EActionTypes for
+// suites that don't run AuthWebhook (e.g. Gateway, AIAnalysis, APIFrontend, KA,
+// SignalProcessing, WorkflowExecution-bundles E2E/IT suites, which exercise
+// their own component rather than AW's admission path).
+//
+// #1661 Phase 52 (Change 9, discovered gap): the sole DS-catalog-facing
+// replacement for SeedActionTypesViaAPI/SeedActionTypesViaAPIWithTLS, which
+// call DataStorage's Postgres-backed POST /api/v1/action-types endpoint
+// (removed in Phase 55).
+//
+// #1661 discovered gap (this fix): listActionsFromCache (discovery_cache.go,
+// Step 1 of the discovery protocol) only counts ActionTypes whose
+// .status.catalogStatus == Active -- it is NOT enough for the raw CRD to
+// exist, contrary to this function's original doc comment. In production,
+// AuthWebhook's admission handler (actiontype_handler.go
+// updateCRDStatusCreate) sets catalogStatus=Active as part of admitting the
+// CRD; suites using this no-AuthWebhook seeding path must replicate that
+// status patch themselves or Step 1 discovery silently returns zero action
+// types for every filter, no matter how long callers poll.
+func SeedActionTypesViaCRD(ctx context.Context, kubeconfigPath, namespace string, output io.Writer) error {
+	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	_, _ = fmt.Fprintf(output, "🏷️  Seeding %d action types via direct CRD creation (no AuthWebhook)\n", len(e2eActionTypes))
+	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+
+	for _, at := range e2eActionTypes {
+		yaml := buildActionTypeYAML(at, namespace)
+
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
+			"--kubeconfig", kubeconfigPath,
+			"-f", "-")
+		cmd.Stdin = strings.NewReader(yaml)
+
+		cmdOutput, err := cmd.CombinedOutput()
+		if err != nil {
+			_, _ = fmt.Fprintf(output, "  ❌ %s: %s\n", at.SpecName, cmdOutput)
+			return fmt.Errorf("failed to apply ActionType %s: %w", at.SpecName, err)
+		}
+
+		// Mirror AuthWebhook's updateCRDStatusCreate (actiontype_handler.go):
+		// listActionsFromCache requires catalogStatus == Active, which kubectl
+		// apply above never sets (no status: block in the YAML, and Active is
+		// not the Kubernetes zero-value for the CatalogStatus enum).
+		const statusPatch = `{"status":{"registered":true,"catalogStatus":"Active","registeredBy":"test-infrastructure-seeder"}}`
+		patchCmd := exec.CommandContext(ctx, "kubectl", "patch",
+			"--kubeconfig", kubeconfigPath,
+			"actiontype", at.MetadataName,
+			"-n", namespace,
+			"--type=merge",
+			"--subresource=status",
+			"-p", statusPatch)
+		if patchOutput, patchErr := patchCmd.CombinedOutput(); patchErr != nil {
+			_, _ = fmt.Fprintf(output, "  ❌ %s status patch: %s\n", at.SpecName, patchOutput)
+			return fmt.Errorf("failed to patch ActionType %s status to Active: %w", at.SpecName, patchErr)
+		}
+		_, _ = fmt.Fprintf(output, "  ✅ %s (status.catalogStatus=Active)\n", at.SpecName)
+	}
+
+	_, _ = fmt.Fprintf(output, "✅ All action types seeded as CRDs (%d types, no AuthWebhook dependency)\n\n", len(e2eActionTypes))
 	return nil
 }
 

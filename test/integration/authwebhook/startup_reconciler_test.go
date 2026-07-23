@@ -27,7 +27,6 @@ import (
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/testutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,26 +34,16 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// integrationMockDS records DS calls from the startup reconciler during integration tests.
-type integrationMockDS struct {
-	atCreated []string
-	rwCreated []string
-}
-
-func (m *integrationMockDS) CreateActionType(_ context.Context, name string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
-	m.atCreated = append(m.atCreated, name)
-	return &authwebhook.ActionTypeRegistrationResult{ActionType: name, Status: "created"}, nil
-}
-
-func (m *integrationMockDS) CreateWorkflowInline(_ context.Context, _, source, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-	m.rwCreated = append(m.rwCreated, source)
-	return &authwebhook.WorkflowRegistrationResult{
-		WorkflowID:   fmt.Sprintf("it-uuid-%s", source),
-		WorkflowName: source,
-		Version:      "1.0.0",
-		Status:       "Active",
-	}, nil
-}
+// integrationMockDS is a placeholder passed to StartupReconciler.DSWorkflow
+// during integration tests. #1661 Phase 55c: CreateActionType was removed
+// once DS's ActionType REST endpoints were deleted (DD-WORKFLOW-018) and
+// StartupReconciler.DSActionType was removed alongside them --
+// syncActionTypeCRD already computed/patched CRD status locally with zero
+// DS calls since Change 8d. WorkflowDSClient is still an empty marker
+// interface (interface{}), so this type needs zero methods to satisfy it --
+// it exists only to give DSWorkflow a distinguishable non-nil value,
+// pending the equivalent DSWorkflow field removal in Phase B.
+type integrationMockDS struct{}
 
 var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFailure, func() {
 
@@ -71,7 +60,7 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 			testAT = &atv1alpha1.ActionType{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("it-at-548-%d", GinkgoParallelProcess()),
-					Namespace: defaultFixture,
+					Namespace: "default",
 				},
 				Spec: atv1alpha1.ActionTypeSpec{
 					Name: fmt.Sprintf("ITScaleMemory%d", GinkgoParallelProcess()),
@@ -85,7 +74,7 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 			testRW = &rwv1alpha1.RemediationWorkflow{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("it-rw-548-%d", GinkgoParallelProcess()),
-					Namespace: defaultFixture,
+					Namespace: "default",
 				},
 				Spec: rwv1alpha1.RemediationWorkflowSpec{
 					Version:    "1.0.0",
@@ -133,15 +122,14 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 			_ = k8sClient.Delete(ctx, testRW)
 		})
 
-		It("should sync CRDs to mock DS and update CRD statuses", func() {
+		It("should sync CRDs locally and update CRD statuses with zero DS calls (#1661 Change 8c/8d)", func() {
 			mockDS := &integrationMockDS{}
 
 			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:    k8sClient,
-				DSWorkflow:   mockDS,
-				DSActionType: mockDS,
-				Logger:       ctrl.Log.WithName("it-startup-548"),
-				Timeout:      30 * time.Second,
+				K8sClient:  k8sClient,
+				DSWorkflow: mockDS,
+				Logger:     ctrl.Log.WithName("it-startup-548"),
+				Timeout:    30 * time.Second,
 			}
 
 			testCtx, testCancel := context.WithTimeout(ctx, 30*time.Second)
@@ -149,7 +137,16 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 			err := reconciler.Start(testCtx)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(mockDS.atCreated).To(ContainElement(testAT.Spec.Name))
+			Eventually(func(g Gomega) {
+				updatedAT := &atv1alpha1.ActionType{}
+				g.Expect(k8sClient.Get(ctx, types.NamespacedName{
+					Namespace: testAT.Namespace,
+					Name:      testAT.Name,
+				}, updatedAT)).To(Succeed())
+				g.Expect(updatedAT.Status.Registered).To(BeTrue(),
+					"ActionType status should be populated from the local computation")
+				g.Expect(string(updatedAT.Status.CatalogStatus)).To(Equal("Active"))
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
 			Eventually(func(g Gomega) {
 				updated := &rwv1alpha1.RemediationWorkflow{}
@@ -166,67 +163,15 @@ var _ = Describe("StartupReconciler Integration (#548)", Ordered, ContinueOnFail
 		})
 	})
 
-	// ========================================
-	// IT-AW-548-002: Startup failure halts manager readiness
-	// ========================================
-	Describe("IT-AW-548-002: Startup failure returns error (fail-closed)", func() {
-		It("should return an error when DS is unavailable and timeout expires", func() {
-			failDS := &failingIntegrationDS{}
-
-			testAT := &atv1alpha1.ActionType{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("it-at-548-fail-%d", GinkgoParallelProcess()),
-					Namespace: defaultFixture,
-				},
-				Spec: atv1alpha1.ActionTypeSpec{
-					Name: fmt.Sprintf("ITFailType%d", GinkgoParallelProcess()),
-					Description: atv1alpha1.ActionTypeDescription{
-						What:      "Failing integration test action type",
-						WhenToUse: "Testing fail-closed behavior",
-					},
-				},
-			}
-			Expect(k8sClient.Create(ctx, testAT)).To(Succeed())
-			defer func() { _ = k8sClient.Delete(ctx, testAT) }()
-
-			By("Waiting for AT to be visible in the cached client")
-			Eventually(func(g Gomega) {
-				var atList atv1alpha1.ActionTypeList
-				g.Expect(k8sClient.List(ctx, &atList)).To(Succeed())
-				g.Expect(atList.Items).NotTo(BeEmpty(),
-					"informer cache must reflect the ActionType before starting the reconciler")
-			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
-
-			reconciler := &authwebhook.StartupReconciler{
-				K8sClient:      k8sClient,
-				DSWorkflow:     failDS,
-				DSActionType:   failDS,
-				Logger:         ctrl.Log.WithName("it-startup-548-fail"),
-				Timeout:        1 * time.Second,
-				InitialBackoff: 100 * time.Millisecond,
-			}
-
-			testCtx, testCancel := context.WithTimeout(ctx, 5*time.Second)
-			defer testCancel()
-			err := reconciler.Start(testCtx)
-			Expect(err).To(HaveOccurred(),
-				"startup reconciler should fail-closed when DS is unavailable")
-		})
-	})
+	// IT-AW-548-002 ("Startup failure halts manager readiness when DS is
+	// unavailable") is removed: #1661 Change 8c/8d deleted both
+	// syncWorkflowCRD's and syncActionTypeCRD's DS round-trips (and the
+	// deadline/backoff/retry machinery that only existed to survive DS being
+	// transiently unavailable) entirely. Start() no longer talks to DS at
+	// all, so there is no DS-unavailability scenario left to exercise --
+	// see startup_graceful_test.go (deleted) for the unit-test-level
+	// precedent of this same removal.
 })
-
-type failingIntegrationDS struct{}
-
-func (f *failingIntegrationDS) CreateActionType(_ context.Context, _ string, _ ogenclient.ActionTypeDescription, _ string) (*authwebhook.ActionTypeRegistrationResult, error) {
-	return nil, fmt.Errorf("connection refused")
-}
-
-func (f *failingIntegrationDS) CreateWorkflowInline(_ context.Context, _, _, _ string) (*authwebhook.WorkflowRegistrationResult, error) {
-	return nil, fmt.Errorf("connection refused")
-}
 
 // Compile-time interface compliance check
 var _ authwebhook.WorkflowDSClient = (*integrationMockDS)(nil)
-var _ authwebhook.ActionTypeDSClient = (*integrationMockDS)(nil)
-var _ authwebhook.WorkflowDSClient = (*failingIntegrationDS)(nil)
-var _ authwebhook.ActionTypeDSClient = (*failingIntegrationDS)(nil)

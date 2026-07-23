@@ -66,7 +66,12 @@ spec:
               Workflow name is derived from the CRD's metadata.name (not duplicated in spec).
             properties:
               actionType:
-                description: ActionType is the action type from the taxonomy (PascalCase).
+                description: |-
+                  ActionType is the action type from the taxonomy (PascalCase).
+                  Pattern requires an uppercase leading letter followed by alphanumerics
+                  only (no underscores/hyphens/spaces), matching ActionType.spec.name's
+                  own PascalCase contract so the two stay in lockstep. Issue #1661.
+                pattern: ^[A-Z][A-Za-z0-9]*$
                 type: string
               customLabels:
                 additionalProperties:
@@ -209,6 +214,11 @@ spec:
                     information
                   properties:
                     email:
+                      description: |-
+                        Email must contain exactly one "@" with a non-empty local part, domain,
+                        and TLD, and no whitespace. Intentionally permissive (not full RFC 5322)
+                        since this is a contact-hint field, not an auth credential. Issue #1661.
+                      pattern: ^[^\s@]+@[^\s@]+\.[^\s@]+$
                       type: string
                     name:
                       type: string
@@ -305,8 +315,13 @@ spec:
                   type: object
                 type: array
               version:
-                description: Version is the semantic version (e.g., "1.0.0")
+                description: |-
+                  Version is the semantic version (e.g., "1.0.0").
+                  Pattern enforces semver-core (MAJOR.MINOR.PATCH, numeric, no leading "v")
+                  with optional "-<pre-release>" and "+<build>" suffixes per semver.org §9-10.
+                  Issue #1661 (CRD schema format hardening).
                 maxLength: 50
+                pattern: ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$
                 type: string
             required:
             - actionType
@@ -337,7 +352,10 @@ spec:
                   - Archived
                   - Disabled
                   - Superseded
-                description: CatalogStatus reflects the DS catalog lifecycle state.
+                description: |-
+                  CatalogStatus reflects the workflow's lifecycle state. Always "Active"
+                  once admitted -- there is no external catalog decision to defer to
+                  (#1661 Change 8c, DD-WORKFLOW-018).
                 type: string
               conditions:
                 description: Conditions represent the latest available observations
@@ -397,6 +415,13 @@ spec:
                   - type
                   type: object
                 type: array
+              contentHash:
+                description: |-
+                  ContentHash is the sha256 hex digest of the workflow's clean CRD content
+                  (apiVersion/kind/metadata.name/spec), computed locally by AuthWebhook
+                  (#1661 Change 8c). Lets DELETE/UPDATE flows and downstream consumers
+                  verify content identity without any Data Storage round-trip.
+                type: string
               previouslyExisted:
                 description: PreviouslyExisted indicates if this workflow was re-registered
                   after deletion
@@ -409,8 +434,11 @@ spec:
                 description: RegisteredBy is the identity of the registrant
                 type: string
               workflowId:
-                description: WorkflowID is the UUID assigned by Data Storage upon
-                  registration
+                description: |-
+                  WorkflowID is the deterministic UUID derived from the workflow's content
+                  hash (DeterministicUUID(ComputeContentHash(spec))). Computed locally by
+                  AuthWebhook (#1661 Change 8a/8c) rather than assigned by Data Storage --
+                  stable across the etcd-single-source-of-truth migration (DD-WORKFLOW-018).
                 type: string
             type: object
         type: object

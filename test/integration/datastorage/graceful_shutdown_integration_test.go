@@ -1127,6 +1127,7 @@ func createTestServerWithAccess() (*httptest.Server, *httptest.Server, *server.S
 		Authenticator: mockAuthenticator,
 		Authorizer:    mockAuthorizer,
 		AuthNamespace: "datastorage-test",
+		K8sRestConfig: dsK8sRestConfig,
 	})
 	Expect(err).ToNot(HaveOccurred(), "Server creation should succeed")
 

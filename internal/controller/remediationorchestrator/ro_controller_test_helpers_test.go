@@ -20,6 +20,8 @@ import (
 	"context"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -235,10 +237,19 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 	now := metav1.Now()
 	ai.Status.CompletedAt = &now
 	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowID:      workflowID,
-		Version:         "v1",
-		ExecutionBundle: "test-image:latest",
-		Confidence:      confidence,
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID: workflowID,
+			// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
+			// these required fields on validateSelectedWorkflow.
+			WorkflowName:    workflowID,
+			ActionType:      "RestartPod",
+			Version:         "v1",
+			ExecutionBundle: "test-image:latest",
+			// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
+			// required field on validateSelectedWorkflow.
+			ExecutionEngine: "job",
+		},
+		Confidence: confidence,
 	}
 	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 		Summary:  "Test root cause",
@@ -319,8 +330,12 @@ func newWorkflowExecution(name, namespace, rrName string, phase string) *workflo
 				Namespace:  namespace,
 			},
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID: "test-workflow",
-				Version:    "v1",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:   "test-workflow",
+					WorkflowName: "test-workflow",
+					ActionType:   "RestartPod",
+					Version:      "v1",
+				},
 			},
 			TargetResource: namespace + "/deployment/test-app",
 		},

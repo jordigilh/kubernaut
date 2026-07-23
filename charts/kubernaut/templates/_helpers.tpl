@@ -703,12 +703,12 @@ Usage: {{ include "kubernaut.containerSecurityContext" .Values.gateway | nindent
 {{- end }}
 
 {{/*
-Generic merge(override, defaults) -> toYaml for a securityContext block,
-for components needing different defaults than kubernaut.podSecurityContext/
-kubernaut.containerSecurityContext above (e.g. postgresql/valkey, whose
-upstream images already run non-root and need write access to their own
-data directories, so they don't set runAsNonRoot/readOnlyRootFilesystem/
-capabilities.drop by default).
+Generic merge(override, defaults) -> toYaml for a securityContext block.
+Used by postgresql/valkey (and any component needing custom defaults).
+Defaults now include restricted-PSA-oriented settings (runAsNonRoot,
+capabilities.drop ALL) while keeping readOnlyRootFilesystem false so
+upstream images can write their data directories. Overrides in values.yaml
+always win via merge.
 Usage: {{ include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.podSecurityContext "defaults" (dict "seccompProfile" (dict "type" "RuntimeDefault"))) | nindent 8 }}
 */}}
 {{- define "kubernaut.mergedSecurityContext" -}}

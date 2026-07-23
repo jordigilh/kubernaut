@@ -66,10 +66,12 @@ var _ = Describe("WorkflowCatalogAdapter — PR6a", func() {
 		It("should map all fields correctly", func() {
 			querier := &mockWorkflowQuerier{
 				meta: &wfclient.WorkflowCatalogMetadata{
-					WorkflowName:       "restart-pod",
-					ExecutionEngine:    "tekton",
-					ExecutionBundle:    "ghcr.io/kubernaut/restart-pod:v1",
-					ServiceAccountName: "remediation-sa",
+					WorkflowName:          "restart-pod",
+					ActionType:            "RestartPod",
+					ExecutionEngine:       "tekton",
+					ExecutionBundle:       "ghcr.io/kubernaut/restart-pod:v1",
+					ExecutionBundleDigest: "sha256:abc123",
+					ServiceAccountName:    "remediation-sa",
 				},
 			}
 
@@ -78,8 +80,12 @@ var _ = Describe("WorkflowCatalogAdapter — PR6a", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.WorkflowID).To(Equal("wf-123"))
 			Expect(result.WorkflowName).To(Equal("restart-pod"))
+			// Issue #1661 Change 12: ActionType closes the sibling gap next
+			// to WorkflowName, which was already wired here.
+			Expect(result.ActionType).To(Equal("RestartPod"))
 			Expect(result.ExecutionEngine).To(Equal("tekton"))
 			Expect(result.ExecutionBundle).To(Equal("ghcr.io/kubernaut/restart-pod:v1"))
+			Expect(result.ExecutionBundleDigest).To(Equal("sha256:abc123"))
 			Expect(result.ServiceAccountName).To(Equal("remediation-sa"))
 		})
 	})

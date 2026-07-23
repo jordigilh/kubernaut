@@ -25,11 +25,20 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
+
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
+
+// seedNamespace is the namespace RemediationWorkflow CRDs are seeded into
+// directly (no AuthWebhook in this suite -- see SeedWorkflowsViaDirectCRDCreation),
+// matching CreateIntegrationServiceAccountWithDataStorageAccess's "default" below.
+const seedNamespace = "default"
 
 func TestKubernautAgentCustomToolsIntegration(t *testing.T) {
 	RegisterFailHandler(Fail)
@@ -53,8 +62,6 @@ var (
 var _ = SynchronizedBeforeSuite(
 	// Phase 1: Start shared infrastructure (Process 1 only)
 	func() []byte {
-		ctx := context.Background()
-
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("KA Custom Tools IT - PHASE 1: Infrastructure Setup")
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -70,13 +77,17 @@ var _ = SynchronizedBeforeSuite(
 
 		kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "ka-custom-tools")
 		Expect(err).ToNot(HaveOccurred())
+		_ = kubeconfigPath
 
 		By("Creating ServiceAccount for DataStorage authentication")
 		authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
-			sharedK8sConfig, "ka-custom-tools-sa", "default", GinkgoWriter,
+			sharedK8sConfig, "ka-custom-tools-sa", seedNamespace, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred())
-		_ = kubeconfigPath
+
+		Expect(rwv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
+		seedK8sClient, err := client.New(sharedK8sConfig, client.Options{Scheme: scheme.Scheme})
+		Expect(err).ToNot(HaveOccurred(), "build seed k8s client")
 
 		By("Starting DataStorage infrastructure (PostgreSQL, Redis, DataStorage)")
 		cfg := infrastructure.NewDSBootstrapConfigWithAuth(
@@ -85,39 +96,18 @@ var _ = SynchronizedBeforeSuite(
 			"test/integration/kubernautagent/tools/custom/config",
 			authConfig,
 		)
-		dsInfra, err = infrastructure.StartDSBootstrap(ctx, cfg, GinkgoWriter)
+		dsInfra, err = infrastructure.StartDSBootstrap(context.Background(), cfg, GinkgoWriter)
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		dsInfra.SharedTestEnv = sharedTestEnv
 
-		By("Seeding test workflows via DataStorage API")
-		dsURL := fmt.Sprintf("http://127.0.0.1:%d", kaDataStoragePort)
-		dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, authConfig.Token, 5*time.Second)
-
-		testWorkflows := []infrastructure.TestWorkflow{
-			{
-				WorkflowID:  "oom-recovery-v1",
-				Name:        "oom-recovery",
-				Description: "OOM recovery workflow",
-				ActionType:  "IncreaseMemoryLimits",
-				Environment: "production",
-			},
-			{
-				WorkflowID:  "oomkill-increase-memory-v1",
-				Name:        "oomkill-increase-memory",
-				Description: "OOMKill memory increase workflow",
-				ActionType:  "IncreaseMemoryLimits",
-				Environment: "production",
-			},
-			{
-				WorkflowID:  "oom-recovery-aggressive-v1",
-				Name:        "oom-recovery-aggressive",
-				Description: "Aggressive OOM recovery with wildcard labels",
-				ActionType:  "IncreaseMemoryLimits",
-				Environment: "production",
-			},
+		By("Seeding test workflows via direct CRD creation (#1661 Phase 55: no AuthWebhook in this suite)")
+		testWorkflows := []infrastructure.WorkflowSeedSpec{
+			{FixtureDir: "oom-recovery", Environment: "production"},
+			{FixtureDir: "oomkill-increase-memory", Environment: "production"},
+			{FixtureDir: "oom-recovery-aggressive", Environment: "production"},
 		}
-		wfUUIDs, err := infrastructure.SeedWorkflowsInDataStorage(ctx, 
-			dsClients.OpenAPIClient, testWorkflows, "ka-custom-tools", GinkgoWriter,
+		wfUUIDs, err := infrastructure.SeedWorkflowsViaDirectCRDCreation(
+			context.Background(), seedK8sClient, seedNamespace, testWorkflows, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "workflow seeding must succeed")
 		GinkgoWriter.Printf("✅ Seeded workflows: %v\n", wfUUIDs)

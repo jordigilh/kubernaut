@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -147,11 +149,17 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		analysis.Status.Message = "Workflow recommended: restart-deployment-v1"
 		analysis.Status.RootCause = "CPU throttling due to resource limits"
 		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "restart-deployment-v1",
-			Version:         "1.0.0",
-			ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
-			Confidence:      0.92,
-			Rationale:       "High confidence match for CPU remediation",
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "restart-deployment-v1",
+				WorkflowName:    "restart-deployment-v1",
+				ActionType:      "RestartPod",
+				Version:         "1.0.0",
+				ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.92,
+			Rationale:  "High confidence match for CPU remediation",
 		}
 		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -387,11 +395,17 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			analysis.Status.Message = "Workflow recommended: restart-deployment-v1"
 			analysis.Status.RootCause = "CPU throttling due to resource limits"
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "restart-deployment-v1",
-				Version:         "1.0.0",
-				ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
-				Confidence:      0.92,
-				Rationale:       "High confidence match for CPU remediation",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "restart-deployment-v1",
+					WorkflowName:    "restart-deployment-v1",
+					ActionType:      "RestartPod",
+					Version:         "1.0.0",
+					ExecutionBundle: "quay.io/kubernaut/restart-deployment:v1",
+					ExecutionEngine: "job",
+				},
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Confidence: 0.92,
+				Rationale:  "High confidence match for CPU remediation",
 			}
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{

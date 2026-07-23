@@ -18,8 +18,6 @@ package authwebhook_test
 
 import (
 	"context"
-	"fmt"
-	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -27,22 +25,9 @@ import (
 
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
-
-// atomicATCounter uses atomic int for goroutine-safe call tracking.
-type atomicATCounter struct {
-	calls     atomic.Int32
-	returnErr error
-}
-
-func (m *atomicATCounter) GetActiveWorkflowCount(_ context.Context, _ string) (int, error) {
-	m.calls.Add(1)
-	if m.returnErr != nil {
-		return 0, m.returnErr
-	}
-	return 0, nil
-}
 
 var _ = Describe("RemediationWorkflow Handler DELETE — Fix A (#418)", func() {
 	var (
@@ -54,30 +39,36 @@ var _ = Describe("RemediationWorkflow Handler DELETE — Fix A (#418)", func() {
 	})
 
 	// ========================================
-	// UT-AW-418-007: Fix A — goroutine fires on DS success
-	// BR-WORKFLOW-006
+	// UT-AW-418-007: Fix A — goroutine fires on DELETE (#1661 Change 8c: always,
+	// since there is no more DS disable call whose outcome could gate it) and,
+	// per #1661 Change 8d, refreshes activeWorkflowCount from a live K8s list
+	// that excludes the RW being deleted itself (still present in etcd behind
+	// its finalizer at this point — see listDependentWorkflowNames doc).
+	// BR-WORKFLOW-006, BR-WORKFLOW-007
 	// ========================================
-	Describe("UT-AW-418-007: DELETE with DS success triggers AT count refresh goroutine", func() {
-		It("should invoke refreshActionTypeWorkflowCount when DisableWorkflow succeeds", func() {
+	Describe("UT-AW-418-007: DELETE triggers AT count refresh goroutine", func() {
+		It("should update ActionType status.activeWorkflowCount to the live K8s count excluding the deleted RW", func() {
 			rw := buildRemediationWorkflowWithStatus("fix-a-success", "uuid-fix-a-007")
+			rw.Spec.ActionType = testActionTypeScaleMemory
+			// A second, unrelated live RW referencing the same ActionType proves
+			// the refreshed count reflects "what remains after this deletion",
+			// not zero and not the pre-deletion total.
+			otherRW := buildRemediationWorkflowWithStatus("fix-a-other", "uuid-fix-a-007-other")
+			otherRW.Spec.ActionType = testActionTypeScaleMemory
 
 			scheme := newTestScheme()
-			at := buildATForReconciler("scale-memory-at", "kubernaut-system", "ScaleMemory", 1)
+			at := buildATForReconciler("scale-memory-at", "kubernaut-system", testActionTypeScaleMemory, 2)
 
 			fakeK8s := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(at).
+				WithObjects(at, rw, otherRW).
 				WithStatusSubresource(&atv1alpha1.ActionType{}).
 				Build()
 
 			mockDS := &mockWorkflowCatalogClient{}
 			mockAudit := &MockAuditStoreRW{}
-			counter := &atomicATCounter{}
 
-			handler := authwebhook.NewRemediationWorkflowHandler(
-				mockDS, mockAudit, fakeK8s,
-				authwebhook.WithActionTypeWorkflowCounter(counter),
-			)
+			handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, fakeK8s)
 
 			admReq := buildDeleteAdmissionRequest(rw)
 			resp := handler.Handle(ctx, admReq)
@@ -85,54 +76,12 @@ var _ = Describe("RemediationWorkflow Handler DELETE — Fix A (#418)", func() {
 			Expect(resp.Allowed).To(BeTrue(),
 				"DELETE should always be Allowed")
 
-			Eventually(func() int32 {
-				return counter.calls.Load()
-			}, 5*time.Second, 100*time.Millisecond).Should(BeNumerically(">=", 1),
-				"GetActiveWorkflowCount should be called when DS disable succeeds (goroutine fired)")
-		})
-	})
-
-	// ========================================
-	// UT-AW-418-008: Fix A — goroutine skipped on DS failure
-	// BR-WORKFLOW-006
-	// ========================================
-	Describe("UT-AW-418-008: DELETE with DS failure does NOT trigger AT count refresh goroutine", func() {
-		It("should NOT invoke refreshActionTypeWorkflowCount when DisableWorkflow fails", func() {
-			rw := buildRemediationWorkflowWithStatus("fix-a-fail", "uuid-fix-a-008")
-
-			scheme := newTestScheme()
-			at := buildATForReconciler("scale-memory-at-2", "kubernaut-system", "ScaleMemory", 1)
-
-			fakeK8s := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(at).
-				WithStatusSubresource(&atv1alpha1.ActionType{}).
-				Build()
-
-			mockDS := &mockWorkflowCatalogClient{
-				disableFn: func(_ context.Context, _, _, _ string) error {
-					return fmt.Errorf("connection refused: DS unavailable")
-				},
-			}
-			mockAudit := &MockAuditStoreRW{}
-			counter := &atomicATCounter{}
-
-			handler := authwebhook.NewRemediationWorkflowHandler(
-				mockDS, mockAudit, fakeK8s,
-				authwebhook.WithActionTypeWorkflowCounter(counter),
-			)
-
-			admReq := buildDeleteAdmissionRequest(rw)
-			resp := handler.Handle(ctx, admReq)
-
-			Expect(resp.Allowed).To(BeTrue(),
-				"DELETE should always be Allowed (best-effort)")
-
-			// Give any errant goroutine time to fire (it shouldn't)
-			Consistently(func() int32 {
-				return counter.calls.Load()
-			}, 500*time.Millisecond, 50*time.Millisecond).Should(Equal(int32(0)),
-				"GetActiveWorkflowCount should NOT be called when DS disable fails (no stale write)")
+			Eventually(func() int {
+				updated := &atv1alpha1.ActionType{}
+				Expect(fakeK8s.Get(ctx, types.NamespacedName{Name: "scale-memory-at", Namespace: "kubernaut-system"}, updated)).To(Succeed())
+				return updated.Status.ActiveWorkflowCount
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(1),
+				"activeWorkflowCount should reflect the one remaining live RW (fix-a-other), excluding the one being deleted")
 		})
 	})
 })

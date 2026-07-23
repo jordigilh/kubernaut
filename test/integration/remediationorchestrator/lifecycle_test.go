@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -478,11 +480,17 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = "Confidence below 80% threshold"
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "wf-restart-pods",
-				Version:         "v1.0.0",
-				Confidence:      0.72,
-				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:       "Pod restart recommended based on OOM patterns",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-restart-pods",
+					WorkflowName:    "wf-restart-pods",
+					ActionType:      "RestartPod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "kubernaut/workflows:latest",
+					ExecutionEngine: "job",
+				},
+				Confidence: 0.72,
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Rationale: "Pod restart recommended based on OOM patterns",
 			}
 			ai.Status.RootCause = "Memory leak causing OOM kills"
 			now := metav1.Now()
@@ -539,11 +547,17 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "wf-restart-pods",
-				Version:         "v1.0.0",
-				Confidence:      0.70,
-				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:       "Restart recommended",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-restart-pods",
+					WorkflowName:    "wf-restart-pods",
+					ActionType:      "RestartPod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "kubernaut/workflows:latest",
+					ExecutionEngine: "job",
+				},
+				Confidence: 0.70,
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Rationale: "Restart recommended",
 			}
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
@@ -610,11 +624,17 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai.Status.ApprovalRequired = true
 			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "wf-restart-pods",
-				Version:         "v1.0.0",
-				Confidence:      0.70,
-				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:       "Restart recommended",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-restart-pods",
+					WorkflowName:    "wf-restart-pods",
+					ActionType:      "RestartPod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "kubernaut/workflows:latest",
+					ExecutionEngine: "job",
+				},
+				Confidence: 0.70,
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Rationale: "Restart recommended",
 			}
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now

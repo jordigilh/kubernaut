@@ -17,19 +17,13 @@ limitations under the License.
 package datastorage_test
 
 import (
-	"bytes"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/server"
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
@@ -190,83 +184,21 @@ var _ = Describe("UT-DS/WF-017: Execution Bundle Validation", func() {
 		})
 	})
 
-	// =========================================================================
-	// 2. Handler Validation (UT-WF-017-010 through UT-WF-017-012)
-	// =========================================================================
-	// SUT: server.Handler.HandleCreateWorkflow()
-	// Preconditions: Handler wired with MockImagePuller + SchemaExtractor,
-	// no DB (nil repository). RFC 7807 Problem Details on rejection.
-
-	Context("Handler validation: execution.bundle in inline registration", func() {
-
-		newHandlerWithMockExtractor := func(puller oci.ImagePuller) *server.Handler {
-			p := schema.NewParser()
-			extractor := oci.NewSchemaExtractor(puller, p)
-			return server.NewHandler( server.WithSchemaExtractor(extractor))
-		}
-
-		makeInlineCreateRequest := func(content string) *http.Request {
-			body := map[string]string{"content": content}
-			jsonBody, err := json.Marshal(body)
-			Expect(err).ToNot(HaveOccurred())
-			return httptest.NewRequest(http.MethodPost, "/api/v1/workflows", bytes.NewReader(jsonBody))
-		}
-
-		It("UT-WF-017-010: should accept inline registration with valid digest-pinned bundle", func() {
-			puller := oci.NewMockImagePuller(validDigestOnlyBundleSchemaYAML)
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeInlineCreateRequest(validDigestOnlyBundleSchemaYAML)
-			rr := httptest.NewRecorder()
-
-			handler.HandleCreateWorkflow(rr, req)
-
-			Expect(rr.Code).ToNot(Equal(http.StatusBadRequest),
-				"valid bundle must not be rejected as bad request")
-		})
-
-		It("UT-WF-017-011: should reject inline registration when bundle has tag-only reference", func() {
-			puller := oci.NewMockImagePuller(tagOnlyBundleSchemaYAML)
-			handler := newHandlerWithMockExtractor(puller)
-			req := makeInlineCreateRequest(tagOnlyBundleSchemaYAML)
-			rr := httptest.NewRecorder()
-
-			handler.HandleCreateWorkflow(rr, req)
-
-			Expect(rr.Code).To(Equal(http.StatusBadRequest),
-				"tag-only execution.bundle must be rejected with 400")
-
-			var problem map[string]interface{}
-			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
-				"response body must be valid RFC 7807 JSON")
-			Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"),
-				"error detail must indicate schema validation failure")
-		})
-
-		It("UT-WF-017-012: should reject inline registration when execution section is missing", func() {
-			handler := server.NewHandler()
-			req := makeInlineCreateRequest(noExecutionSectionSchemaYAML)
-			rr := httptest.NewRecorder()
-
-			handler.HandleCreateWorkflow(rr, req)
-
-			Expect(rr.Code).To(Equal(http.StatusBadRequest),
-				"missing execution section must be rejected with 400")
-
-			var problem map[string]interface{}
-			Expect(json.Unmarshal(rr.Body.Bytes(), &problem)).To(Succeed(),
-				"response body must be valid RFC 7807 JSON")
-			Expect(problem["detail"]).To(ContainSubstring("workflow schema validation failed"),
-				"error detail must indicate schema validation failure")
-		})
-
-		// UT-WF-017-013 ("should reject inline registration when execution.bundle
-		// image does not exist in registry") was removed by Issue #1642: the
-		// pre-flight registry existence check ran from the DataStorage pod's own
-		// network/credential context, which cannot validate self-signed or
-		// credential-required private registries reachable only by the actual
-		// workflow execution environment — this unconditionally blocked valid
-		// registrations. Kubernetes now fails fast at Job/PipelineRun image-pull
-		// time instead (BR-WORKFLOW-008), mirroring the precedent set by Issue
-		// #1481 for schema-declared dependency existence checks.
-	})
+	// Section 2 ("Handler Validation", UT-WF-017-010..012) was removed by
+	// Issue #1661 Phase B: it exercised server.Handler.HandleCreateWorkflow(),
+	// which was deleted along with the rest of the RW mutation surface --
+	// AuthWebhook now owns inline-registration validation entirely locally
+	// (DD-WORKFLOW-018). Schema-level bundle validation (Section 1 above,
+	// schema.Parser.ParseAndValidate) is unaffected and remains the
+	// authoritative coverage for BR-WORKFLOW-004 bundle format rules.
+	//
+	// UT-WF-017-013 ("should reject inline registration when execution.bundle
+	// image does not exist in registry") was removed earlier by Issue #1642: the
+	// pre-flight registry existence check ran from the DataStorage pod's own
+	// network/credential context, which cannot validate self-signed or
+	// credential-required private registries reachable only by the actual
+	// workflow execution environment — this unconditionally blocked valid
+	// registrations. Kubernetes now fails fast at Job/PipelineRun image-pull
+	// time instead (BR-WORKFLOW-008), mirroring the precedent set by Issue
+	// #1481 for schema-declared dependency existence checks.
 })

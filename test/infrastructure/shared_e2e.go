@@ -47,6 +47,14 @@ const coverageSecurityContextYAMLFixture = `
         runAsUser: 0
         runAsGroup: 0`
 
+// e2eTestCoverageTag is the shared image tag suffix for coverage-instrumented
+// E2E builds (goconst dedup: identical across gateway/signalprocessing).
+const e2eTestCoverageTag = "e2e-test-coverage"
+
+// archARM64 identifies the ARM64 GOARCH value, used to gate coverage
+// instrumentation workarounds (Go runtime crash on ARM64).
+const archARM64 = "arm64"
+
 // createKAKindCluster creates a Kind cluster using the KA Kind config.
 // Reused by both KA and AIAnalysis E2E suites (same port layout).
 func createKAKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
@@ -705,10 +713,7 @@ func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io
 	tag := os.Getenv("IMAGE_TAG")
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
-	registryImage, pulled, err := tryPullFromRegistry(ctx, "kubernautagent", writer)
-	if err != nil {
-		return "", fmt.Errorf("failed during registry pull attempt: %w", err)
-	}
+	registryImage, pulled := tryPullFromRegistry(ctx, "kubernautagent", writer)
 	if pulled {
 		return registryImage, nil
 	}

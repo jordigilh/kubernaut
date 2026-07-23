@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
@@ -330,10 +331,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      depSecretAnsibleUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      depSecretAnsibleUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+							},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -401,10 +410,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      depConfigMapAnsibleUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      depConfigMapAnsibleUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-ansible"}},
+							},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -474,10 +491,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      credMergeUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      credMergeUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+							},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -528,7 +553,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	})
 })
 
-// createAnsibleWFE builds a WorkflowExecution CRD for ansible workflows (engine resolved from DS at runtime).
+// createAnsibleWFE builds a WorkflowExecution CRD for ansible workflows.
 func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateName string) *workflowexecutionv1alpha1.WorkflowExecution {
 	engineCfgJSON, err := json.Marshal(map[string]string{
 		"playbookPath":    playbookPath,
@@ -549,10 +574,15 @@ func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateNa
 				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:      workflowID,
-				Version:         "v1.0.0",
-				ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-				EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      workflowID,
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+					EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+					ExecutionEngine: "ansible",
+				},
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{

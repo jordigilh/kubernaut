@@ -20,9 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
@@ -35,16 +32,18 @@ import (
 )
 
 const (
-	// RWFinalizerName ensures DS catalog consistency before RW deletion.
-	// Issue #418: fire-and-forget goroutines in the webhook cannot guarantee
-	// that the DS disable + AT count refresh complete before the CRD is removed.
+	// RWFinalizerName guarantees the parent ActionType's activeWorkflowCount
+	// refresh completes before the CRD is removed from etcd. Issue #418:
+	// fire-and-forget goroutines in the webhook cannot guarantee this on
+	// their own. #1661 Change 8c: no longer also guards a DS-disable step --
+	// DELETE is a true etcd removal with no DS-side "disabled" state.
 	RWFinalizerName = "remediationworkflow.kubernaut.ai/catalog-cleanup"
 )
 
-// RemediationWorkflowReconciler ensures DS catalog consistency for RW CRD
-// lifecycle events. It adds a finalizer on creation and, during deletion,
-// guarantees the workflow is disabled in DS and the parent ActionType's
-// activeWorkflowCount is refreshed before the CRD is removed from etcd.
+// RemediationWorkflowReconciler guarantees the parent ActionType's
+// activeWorkflowCount is refreshed before an RW CRD is removed from etcd. It
+// adds a finalizer on creation and, during deletion, performs that refresh
+// before allowing the finalizer to be removed.
 //
 // Issue #418, BR-WORKFLOW-006, BR-WORKFLOW-007.
 type RemediationWorkflowReconciler struct {
@@ -88,9 +87,12 @@ func (r *RemediationWorkflowReconciler) Reconcile(ctx context.Context, req ctrl.
 }
 
 // reconcileDelete handles the deletion flow:
-//  1. Disable the workflow in DS (retry until success)
-//  2. Refresh the parent ActionType's activeWorkflowCount from DS
-//  3. Remove the finalizer so K8s completes the deletion
+//  1. Refresh the parent ActionType's activeWorkflowCount from DS
+//  2. Remove the finalizer so K8s completes the deletion
+//
+// #1661 Change 8c: the DS-disable step is removed entirely -- DELETE is now a
+// true etcd removal with no DS-side "disabled" state to notify. This
+// finalizer's only remaining job is the ActionType count refresh guarantee.
 func (r *RemediationWorkflowReconciler) reconcileDelete(ctx context.Context, logger logr.Logger, rw *rwv1alpha1.RemediationWorkflow) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(rw, RWFinalizerName) {
 		return ctrl.Result{}, nil
@@ -98,11 +100,7 @@ func (r *RemediationWorkflowReconciler) reconcileDelete(ctx context.Context, log
 
 	logger.Info("Reconciling deletion")
 
-	if requeue := r.disableWorkflowInDS(ctx, logger, rw.Status.WorkflowID); requeue {
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-	}
-
-	r.refreshActionTypeWorkflowCount(ctx, logger, rw.Spec.ActionType, rw.Namespace)
+	r.refreshActionTypeWorkflowCount(ctx, logger, rw.Spec.ActionType, rw.Namespace, rw.Name)
 
 	controllerutil.RemoveFinalizer(rw, RWFinalizerName)
 	if err := r.Update(ctx, rw); err != nil {
@@ -114,49 +112,31 @@ func (r *RemediationWorkflowReconciler) reconcileDelete(ctx context.Context, log
 	return ctrl.Result{}, nil
 }
 
-// disableWorkflowInDS notifies DS that the workflow is disabled due to CRD
-// deletion. It returns true when the caller should requeue (a non-connection
-// error occurred and DS disable should be retried).
-func (r *RemediationWorkflowReconciler) disableWorkflowInDS(ctx context.Context, logger logr.Logger, workflowID string) bool {
-	if workflowID == "" {
-		logger.Info("No WorkflowID in status — skipping DS disable")
-		return false
-	}
-
-	err := r.DSClient.DisableWorkflow(ctx, workflowID, "CRD deleted (finalizer)", "")
-	if err == nil {
-		logger.Info("Workflow disabled in DS", "workflowID", workflowID)
-		return false
-	}
-
-	if isConnectionError(err) {
-		// Issue #469: During helm uninstall + reinstall, DS may be
-		// unreachable. Proceed with finalizer removal so CRDs don't
-		// get stuck in Terminating. The stale catalog entry (if any)
-		// will be overwritten by the seed job on next install.
-		logger.Error(err, "DS unreachable during deletion, proceeding with finalizer removal", "workflowID", workflowID)
-		return false
-	}
-
-	logger.Error(err, "DS DisableWorkflow failed, will retry", "workflowID", workflowID)
-	return true
-}
-
-// refreshActionTypeWorkflowCount queries DS for the authoritative active
-// workflow count and patches the matching ActionType CRD's status.
+// refreshActionTypeWorkflowCount counts live RemediationWorkflow CRDs
+// referencing actionType and patches the matching ActionType CRD's status.
 // Uses RetryOnConflict to handle races with the webhook's concurrent
 // status update goroutine (fixes E2E-AT-300-003 flake).
 // Best-effort: errors are logged but do not block finalizer removal.
-func (r *RemediationWorkflowReconciler) refreshActionTypeWorkflowCount(ctx context.Context, logger logr.Logger, actionType, namespace string) {
-	if r.ATCounter == nil || actionType == "" {
+//
+// #1661 Change 8d: the count is now a direct K8s-native list against the
+// cache-backed client -- DS's Postgres catalog stopped learning about
+// RemediationWorkflow CRDs the moment Change 8c removed AW's
+// CreateWorkflowInline call, making a DS-backed count permanently stale
+// (DD-WORKFLOW-018). excludeRWName excludes the RW currently being deleted
+// (still present in etcd at this point -- finalizers block physical removal
+// until this reconcile completes) so the count reflects what remains
+// afterward, not what remains including it (see listDependentWorkflowNames).
+func (r *RemediationWorkflowReconciler) refreshActionTypeWorkflowCount(ctx context.Context, logger logr.Logger, actionType, namespace, excludeRWName string) {
+	if actionType == "" {
 		return
 	}
 
-	count, err := r.ATCounter.GetActiveWorkflowCount(ctx, actionType)
+	dependents, err := listDependentWorkflowNames(ctx, r.Client, actionType, excludeRWName)
 	if err != nil {
-		logger.Error(err, "Failed to fetch active workflow count from DS", "actionType", actionType)
+		logger.Error(err, "Failed to list dependent RemediationWorkflows", "actionType", actionType)
 		return
 	}
+	count := len(dependents)
 
 	atKey, err := r.findActionTypeKey(ctx, actionType, namespace)
 	if err != nil {
@@ -200,28 +180,4 @@ func (r *RemediationWorkflowReconciler) SetupWithManager(mgr ctrl.Manager) error
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&rwv1alpha1.RemediationWorkflow{}).
 		Complete(r)
-}
-
-// isConnectionError returns true when err indicates that DataStorage is
-// unreachable (connection refused, DNS failure, timeout). These are expected
-// during helm uninstall when DS pods are being deleted concurrently.
-func isConnectionError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return true
-	}
-	var netErr *net.OpError
-	if errors.As(err, &netErr) {
-		return true
-	}
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "connection refused") ||
-		strings.Contains(msg, "no such host") ||
-		strings.Contains(msg, "i/o timeout")
 }

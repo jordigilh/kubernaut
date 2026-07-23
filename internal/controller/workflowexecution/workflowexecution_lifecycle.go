@@ -48,17 +48,19 @@ import (
 func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	// Issue #518: Lazy resolution for pre-migration WFEs that lack status.executionEngine.
+	// Issue #518/#1661 Change 11f: defensive guard against WFEs whose
+	// spec.workflowRef lacks an execution engine (should be unreachable --
+	// RO validates this before WFE creation).
 	if engineErr := r.validateExecutionEngineResolved(wfe); engineErr != nil {
 		logger.Error(engineErr, "Failed to resolve execution engine during Running phase")
 		return r.MarkFailed(ctx, wfe, nil)
 	}
-	logger.Info("Reconciling Running phase", "engine", wfe.Status.ExecutionEngine)
+	logger.Info("Reconciling Running phase", "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 
 	// ========================================
 	// Step 1: Get execution status via executor dispatch (BR-WE-014)
 	// ========================================
-	exec, err := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
+	exec, err := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
 	if err != nil {
 		logger.Error(err, "Unsupported execution engine during Running phase")
 		return r.MarkFailed(ctx, wfe, nil)
@@ -68,7 +70,7 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 	if getErr != nil {
 		if apierrors.IsNotFound(getErr) {
 			logger.Error(getErr, "Execution resource not found - deleted externally",
-				"engine", wfe.Status.ExecutionEngine)
+				"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 			return r.MarkFailed(ctx, wfe, nil)
 		}
 		return ctrl.Result{}, getErr
@@ -102,23 +104,23 @@ func (r *WorkflowExecutionReconciler) reconcileRunning(ctx context.Context, wfe 
 func (r *WorkflowExecutionReconciler) handleRunningExecutionResult(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, result *weexecutor.ExecutionResult, logger logr.Logger) (ctrl.Result, error, bool) {
 	switch result.Phase {
 	case workflowexecutionv1alpha1.PhaseCompleted:
-		logger.Info("Execution succeeded", "engine", wfe.Status.ExecutionEngine)
+		logger.Info("Execution succeeded", "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 		pr := r.fetchTektonPipelineRunForMark(ctx, wfe)
 		res, err := r.MarkCompleted(ctx, wfe, pr, result.Summary)
 		return res, err, true
 
 	case workflowexecutionv1alpha1.PhaseFailed:
-		logger.Info("Execution failed", "engine", wfe.Status.ExecutionEngine, "reason", result.Reason)
+		logger.Info("Execution failed", "engine", wfe.Spec.WorkflowRef.ExecutionEngine, "reason", result.Reason)
 		pr := r.fetchTektonPipelineRunForMark(ctx, wfe)
 		res, err := r.MarkFailed(ctx, wfe, pr, result.Summary)
 		return res, err, true
 
 	default:
 		// Still running - update conditions and requeue
-		logger.V(1).Info("Execution still running", "reason", result.Reason, "engine", wfe.Status.ExecutionEngine)
+		logger.V(1).Info("Execution still running", "reason", result.Reason, "engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 		weconditions.SetExecutionRunning(wfe, true,
 			weconditions.ReasonExecutionStarted,
-			fmt.Sprintf("Execution running (%s: %s)", wfe.Status.ExecutionEngine, result.Reason))
+			fmt.Sprintf("Execution running (%s: %s)", wfe.Spec.WorkflowRef.ExecutionEngine, result.Reason))
 		return ctrl.Result{}, nil, false
 	}
 }
@@ -130,7 +132,7 @@ func (r *WorkflowExecutionReconciler) handleRunningExecutionResult(ctx context.C
 // PipelineRun). Extracted from reconcileRunning (Wave 6 6e-ii GREEN: funlen
 // remediation) — pure code motion, no behavior change.
 func (r *WorkflowExecutionReconciler) fetchTektonPipelineRunForMark(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) *tektonv1.PipelineRun {
-	if wfe.Status.ExecutionEngine != workflowexecutionv1alpha1.ExecutionEngineTekton {
+	if wfe.Spec.WorkflowRef.ExecutionEngine != workflowexecutionv1alpha1.ExecutionEngineTekton {
 		return nil
 	}
 	var pr tektonv1.PipelineRun
@@ -215,10 +217,10 @@ func (r *WorkflowExecutionReconciler) releaseExecutionLock(ctx context.Context, 
 // 6e-ii GREEN: funlen/nestif remediation) — pure code motion, no behavior
 // change.
 func (r *WorkflowExecutionReconciler) releaseExecutionLockViaExecutor(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, cooldown time.Duration, logger logr.Logger) error {
-	exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
+	exec, execErr := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
 	if execErr != nil {
 		logger.Error(execErr, "Unknown engine during cooldown cleanup, skipping",
-			"engine", wfe.Status.ExecutionEngine)
+			"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 		return nil
 	}
 	if exec == nil {
@@ -409,10 +411,10 @@ func (r *WorkflowExecutionReconciler) cleanupExecutionResourceForDelete(ctx cont
 // (Wave 6 6e-ii GREEN: funlen/nestif remediation) — pure code motion, no
 // behavior change.
 func (r *WorkflowExecutionReconciler) cleanupExecutionResourceForDeleteViaExecutor(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution, logger logr.Logger) error {
-	exec, execErr := r.ExecutorRegistry.Get(wfe.Status.ExecutionEngine)
+	exec, execErr := r.ExecutorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine)
 	if execErr != nil {
 		logger.Error(execErr, "Unknown engine during finalization cleanup, skipping executor cleanup",
-			"engine", wfe.Status.ExecutionEngine)
+			"engine", wfe.Spec.WorkflowRef.ExecutionEngine)
 		return nil
 	}
 	if exec == nil {

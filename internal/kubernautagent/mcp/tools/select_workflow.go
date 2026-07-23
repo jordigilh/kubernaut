@@ -455,6 +455,11 @@ func applySelectedWorkflow(result *katypes.InvestigationResult, workflow *Catalo
 	result.ServiceAccountName = workflow.ServiceAccountName
 	result.WorkflowVersion = workflow.Version
 	result.WorkflowRationale = "User-selected via interactive mode"
+	// Issue #1661 Change 12: catalog-authoritative, mirroring the
+	// autonomous path's enrichFromCatalog -- CatalogWorkflow already
+	// carries both from the DS catalog lookup one call up.
+	result.ActionType = workflow.ActionType
+	result.WorkflowName = workflow.WorkflowName
 }
 
 // discoveryAlternativeWorkflows converts the discovery result's alternative

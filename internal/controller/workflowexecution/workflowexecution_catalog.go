@@ -21,103 +21,59 @@ limitations under the License.
 package workflowexecution
 
 import (
-	"context"
-	"errors"
 	"fmt"
 
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
 // ========================================
-// Issue #518: Runtime Execution Engine Resolution
+// Issue #1661 Change 11e (DD-WORKFLOW-018): CRD-Embedded Execution Snapshot
 // ========================================
+//
+// Prior to #1661 this file resolved ExecutionEngine/ServiceAccountName/
+// Resources/WorkflowName/ActionType from a DataStorage catalog round-trip
+// (Issue #518/#650) into wfe.Status, and additionally overrode
+// WorkflowRef.ExecutionBundle/EngineConfig at runtime from that catalog
+// entry. WorkflowRef is now RO's already-validated, CRD-embedded snapshot
+// (Change 11c/11d) copied verbatim from AIAnalysis.Status.SelectedWorkflow —
+// there is no DS entry left to consult, and mutating the spec at runtime is
+// no longer appropriate.
+//
+// Post-firefight follow-up (Issue #1661 Change 11f): the former
+// resolveWorkflowCatalog function used to mirror
+// ExecutionEngine/ServiceAccountName/Resources from Spec.WorkflowRef into
+// Status once during Pending, guarded by an idempotency check on
+// Status.ExecutionEngine != "". That mirror step is now removed entirely —
+// every consumer reads wfe.Spec.WorkflowRef.{ExecutionEngine,
+// ServiceAccountName,Resources,ActionType} directly, since WorkflowRef is
+// immutable from CRD-creation time (ADR-001 "self == oldSelf" CEL) and
+// there is nothing left to "resolve" or guard against re-resolving. This
+// closes the exact bug class that motivated the removal: ActionType was
+// left off the original Status-mirror list and its Status.ActionType
+// equivalent was silently never wired, breaking
+// workflowexecution.execution.started's audit payload (event_data.action_type
+// always empty) without any test catching it until a full-pipeline E2E
+// journey exercised it. Reading straight from the immutable Spec snapshot
+// removes the possibility of a consumer/mirror-step drifting apart again.
+//
+// WorkflowName remains permanently unset: WorkflowRef carries no such field
+// (KA's autonomous selection path never emits a display name distinct from
+// WorkflowID either), so there is no source to read regardless of which
+// struct holds it. WorkflowID remains the functional/join key for SOC2
+// CC8.1 reconstruction either way (IT-AW-1111-001).
 
-// ErrAlreadyResolved indicates the WFE's execution engine is already set, so
-// resolveWorkflowCatalog is a no-op (idempotency guard). Issue #1674: typed
-// sentinel replacing the previous ambiguous (nil, nil) return.
-var ErrAlreadyResolved = errors.New("workflow catalog already resolved")
-
-// resolveWorkflowCatalog fetches all workflow metadata from the DS catalog in a
-// single GetWorkflowByID call (Issue #650). Consolidates resolveExecutionEngine,
-// resolveExecutionBundle, resolveDependencies, and GetWorkflowEngineConfig.
-// Idempotent: returns ErrAlreadyResolved if the engine is already resolved.
-func (r *WorkflowExecutionReconciler) resolveWorkflowCatalog(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (*weclient.WorkflowCatalogMetadata, error) {
-	if wfe.Status.ExecutionEngine != "" {
-		return nil, ErrAlreadyResolved
-	}
-
-	if r.WorkflowQuerier == nil {
-		return nil, fmt.Errorf("DataStorage workflow querier not available — cannot resolve workflow catalog for %s", wfe.Spec.WorkflowRef.WorkflowID)
-	}
-
-	workflowID := wfe.Spec.WorkflowRef.WorkflowID
-	if workflowID == "" {
-		return nil, fmt.Errorf("workflowRef.workflowId is empty — cannot resolve workflow catalog")
-	}
-
-	logger := log.FromContext(ctx)
-
-	meta, err := r.WorkflowQuerier.ResolveWorkflowCatalogMetadata(ctx, workflowID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve workflow catalog from DS for workflow %s: %w", workflowID, err)
-	}
-
-	if meta.ExecutionEngine == "" {
-		label := workflowID
-		if meta.WorkflowName != "" {
-			label = fmt.Sprintf("%s - %s", meta.WorkflowName, workflowID)
-		}
-		return nil, fmt.Errorf("no engine defined in remediation workflow %s", label)
-	}
-
-	wfe.Status.ExecutionEngine = meta.ExecutionEngine
-	wfe.Status.ServiceAccountName = meta.ServiceAccountName
-	// BR-WE-019 / DD-WE-008: resolved once during Pending (this function is a
-	// no-op on subsequent reconciles per the idempotency guard above), applied
-	// to the Job's "workflow" container by resourcesFor(). nil when the
-	// catalog entry declares none (BestEffort QoS, unchanged behavior).
-	wfe.Status.Resources = meta.Resources
-
-	// WE-H1: In-memory spec mutation is acceptable here because ResolveWorkflowCatalogMetadata
-	// is called on every Pending-phase reconcile. If the controller requeues in Pending,
-	// the catalog lookup re-applies the override. Once the WFE leaves Pending, the bundle
-	// value is already consumed (execution resource created).
-	if meta.ExecutionBundle != "" {
-		if wfe.Spec.WorkflowRef.ExecutionBundle != meta.ExecutionBundle {
-			logger.Info("Overriding execution bundle from DS catalog",
-				"specBundle", wfe.Spec.WorkflowRef.ExecutionBundle,
-				"catalogBundle", meta.ExecutionBundle,
-				"workflowID", workflowID,
-			)
-		}
-		wfe.Spec.WorkflowRef.ExecutionBundle = meta.ExecutionBundle
-		if meta.ExecutionBundleDigest != "" {
-			wfe.Spec.WorkflowRef.ExecutionBundleDigest = meta.ExecutionBundleDigest
-		}
-	}
-
-	if wfe.Spec.WorkflowRef.EngineConfig == nil && meta.EngineConfig != nil {
-		logger.Info("Resolved engineConfig from DS catalog",
-			"workflowID", workflowID,
-			"engine", meta.ExecutionEngine)
-		wfe.Spec.WorkflowRef.EngineConfig = &apiextensionsv1.JSON{Raw: meta.EngineConfig}
-	}
-
-	return meta, nil
-}
-
-// validateExecutionEngineResolved checks that the WFE status already carries
-// a resolved execution engine. In non-Pending phases the engine was already
-// resolved during Pending and persisted to wfe.Status.ExecutionEngine, which
-// all callers read directly after this check passes; there is a programming
-// error (Pending handler should have set it) only if it is still missing.
+// validateExecutionEngineResolved checks that the WFE's CRD-embedded
+// WorkflowRef snapshot declares an execution engine. Name retained from the
+// pre-Change-11f Status-mirroring design (git history/callers reference it
+// as "resolved") even though there is no runtime resolution step left: RO's
+// validateSelectedWorkflow (pkg/remediationorchestrator/creator/
+// workflowexecution.go) already enforces this before the WFE is ever
+// created, so this is a defensive fail-closed guard against corrupted or
+// manually-constructed WorkflowExecution objects (e.g. test fixtures), not
+// a real per-reconcile resolution step.
 func (r *WorkflowExecutionReconciler) validateExecutionEngineResolved(wfe *workflowexecutionv1alpha1.WorkflowExecution) error {
-	if wfe.Status.ExecutionEngine != "" {
+	if wfe.Spec.WorkflowRef.ExecutionEngine != "" {
 		return nil
 	}
-	return fmt.Errorf("execution engine not resolved for WFE %s/%s — expected to be set during Pending phase", wfe.Namespace, wfe.Name)
+	return fmt.Errorf("execution engine not declared for WFE %s/%s — expected on spec.workflowRef at creation time", wfe.Namespace, wfe.Name)
 }

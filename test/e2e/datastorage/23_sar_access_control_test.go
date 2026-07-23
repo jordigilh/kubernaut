@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
@@ -200,7 +199,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:  "sar-test-authorized",
+						SignalName:   "sar-test-authorized",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint",
 					},
@@ -246,7 +245,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:  "sar-test-unauthorized",
+						SignalName:   "sar-test-unauthorized",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint-unauth",
 					},
@@ -285,7 +284,7 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 					GatewayAuditPayload: dsgen.GatewayAuditPayload{
 						EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 						SignalType:  dsgen.GatewayAuditPayloadSignalTypeAlert,
-						SignalName:  "sar-test-readonly",
+						SignalName:   "sar-test-readonly",
 						Namespace:   "datastorage-e2e",
 						Fingerprint: "test-fingerprint-readonly",
 					},
@@ -307,71 +306,15 @@ var _ = Describe("E2E-DS-023: SAR Access Control Validation (DD-AUTH-014, DD-AUT
 		})
 	})
 
-	Context("DD-AUTH-012: Workflow Catalog User Attribution", func() {
-		It("should capture user identity for workflow catalog operations", func() {
-			logger.Info("🧪 Test 4: Workflow catalog operations capture X-Auth-Request-User header")
-
-			// DD-WORKFLOW-017: Register workflow inline for SAR validation
-			// Uses authorizedClient to validate RBAC "create" permission
-			_, generatedWorkflowID := ensureWorkflowRegistered(testCtx, authorizedClient, e2eTestWorkflowStubContent)
-			logger.Info("✅ Workflow ready for SAR validation", "workflowID", generatedWorkflowID)
-
-			// Verify audit event was created with user attribution
-			logger.Info("📋 Verifying audit event captured user attribution...")
-
-			// Query audit events for workflow creation (use all 3 filters for precision)
-			// CorrelationID = workflow_id (per pkg/datastorage/audit/workflow_catalog_event.go:56)
-			Eventually(func() bool {
-				auditResp, err := authorizedClient.QueryAuditEvents(testCtx, dsgen.QueryAuditEventsParams{
-					CorrelationID: dsgen.NewOptString(generatedWorkflowID.String()),
-					EventCategory: dsgen.NewOptString(dsaudit.EventCategoryWorkflow),
-					EventType:     dsgen.NewOptString(dsaudit.EventTypeWorkflowCreated),
-					Limit:         dsgen.NewOptInt(10),
-				})
-				if err != nil {
-					logger.Info("Audit query failed", "error", err)
-					return false
-				}
-
-				// With 3 filters, should return exactly 1 event (no pagination needed)
-				if len(auditResp.Data) == 0 {
-					logger.Info("No audit events found yet", "workflow_id", generatedWorkflowID)
-					return false
-				}
-
-				event := auditResp.Data[0]
-				// Verify actor_id contains ServiceAccount name
-				logger.Info("✅ Audit event found with user attribution",
-					"actor_id", event.ActorID.Value,
-					"event_type", event.EventType,
-					"resource_id", event.ResourceID.Value)
-				return true
-			}, 30*time.Second, 2*time.Second).Should(BeTrue(), "Audit event with user attribution should be created")
-
-			logger.Info("✅ Workflow catalog operation captured user attribution correctly")
-		})
-
-		It("should reject workflow operations from unauthorized ServiceAccount", func() {
-			logger.Info("🧪 Test 5: Unauthorized ServiceAccount cannot access workflow catalog endpoints")
-
-			// DD-WORKFLOW-017: Attempt to create workflow inline with unauthorized client
-			// This workflow is never created (403 expected), but request must be valid for SAR check
-			workflowReq := &dsgen.CreateWorkflowInlineRequest{Content: e2eTestWorkflowStubContent}
-			workflowReq.Source.SetTo("e2e-test")
-
-			// Attempt to create workflow (should fail with 403)
-			resp, err := unauthorizedClient.CreateWorkflow(testCtx, workflowReq)
-
-			// Verify request returned 403 Forbidden response
-			Expect(err).ToNot(HaveOccurred(), "Client should receive response (not error)")
-
-			// Check if response is 403 Forbidden
-			_, isForbidden := resp.(*dsgen.CreateWorkflowForbidden)
-			Expect(isForbidden).To(BeTrue(), fmt.Sprintf("Expected 403 Forbidden response, got: %T", resp))
-
-			logger.Info("✅ Workflow creation correctly rejected with 403 Forbidden")
-		})
-	})
+	// Context("DD-AUTH-012: Workflow Catalog User Attribution") removed --
+	// Issue #1661 Phase 55: both specs exercised POST /api/v1/workflows
+	// (CreateWorkflowInline), which is being deleted entirely (DD-WORKFLOW-018
+	// Change 6). User-identity-capture for RemediationWorkflow admission is
+	// covered CRD-natively by pkg/authwebhook/remediationworkflow_handler_test.go
+	// (event.ActorID.Value assertions, 3 call sites); unauthorized-ServiceAccount
+	// rejection for RemediationWorkflow CRUD is now native Kubernetes RBAC on the
+	// CRD resource, enforced by the apiserver before AuthWebhook's webhook is even
+	// invoked -- a Kubernetes platform guarantee, not Kubernaut business logic.
 
 	Context("DD-AUTH-011: RBAC Verification", func() {
 		It("should verify RBAC permissions using kubectl auth can-i", func() {

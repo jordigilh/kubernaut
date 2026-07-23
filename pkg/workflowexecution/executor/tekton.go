@@ -237,7 +237,7 @@ func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexec
 			Params:     params,
 			Workspaces: workspaces,
 			TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
-				ServiceAccountName: wfe.Status.ServiceAccountName,
+				ServiceAccountName: wfe.Spec.WorkflowRef.ServiceAccountName,
 				PodTemplate: &pod.PodTemplate{
 					SecurityContext: restrictedPodSecurityContext(),
 				},

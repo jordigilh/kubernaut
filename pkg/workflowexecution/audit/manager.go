@@ -277,6 +277,30 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	return nil
 }
 
+// setWorkflowIdentifiers sets payload.WorkflowName/ActionType.
+// #1661 Change 11f: ActionType is read directly from the immutable,
+// CRD-embedded wfe.Spec.WorkflowRef.ActionType snapshot (no Status mirror
+// or resolve step involved -- it's known at WFE creation time, same as
+// WorkflowID/Version/ExecutionBundle read elsewhere in this file).
+// WorkflowName has no equivalent source anywhere upstream (WorkflowRef
+// carries no display-name field; KA's autonomous selection path never
+// emits one either) so it stays permanently unset on wfe.Status --
+// WorkflowID remains the functional/join key for SOC2 CC8.1 reconstruction
+// regardless (IT-AW-1111-001).
+func setWorkflowIdentifiers(payload *api.WorkflowExecutionAuditPayload, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
+	// Issue #1661 Change 12: WorkflowName now lives on the CRD-embedded
+	// execution snapshot (Spec.WorkflowRef.WorkflowName), same as its
+	// sibling ActionType below -- Status.WorkflowName was never actually
+	// set by production code (a dead field superseded by this Spec value;
+	// see WorkflowExecutionStatus.WorkflowName's doc comment).
+	if wfe.Spec.WorkflowRef.WorkflowName != "" {
+		payload.WorkflowName.SetTo(wfe.Spec.WorkflowRef.WorkflowName)
+	}
+	if wfe.Spec.WorkflowRef.ActionType != "" {
+		payload.ActionType.SetTo(wfe.Spec.WorkflowRef.ActionType)
+	}
+}
+
 // buildExecutionStartedPayload builds the WorkflowExecutionAuditPayload for
 // an execution.workflow.started event (Gap #6), defaulting Phase to
 // "Pending" when the WFE phase is not yet set and including execution
@@ -298,6 +322,7 @@ func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecuti
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
 	}
 	payload.PipelinerunName.SetTo(pipelineRunName)
+	setWorkflowIdentifiers(&payload, wfe)
 
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
@@ -424,6 +449,7 @@ func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowE
 		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 	}
+	setWorkflowIdentifiers(&payload, wfe)
 
 	if wfe.Status.StartTime != nil {
 		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)

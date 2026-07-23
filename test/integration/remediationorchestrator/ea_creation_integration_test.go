@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -83,10 +85,16 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.95,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.95,
 		}
 		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -270,8 +278,15 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID: "wf-restart-pods", Version: "v1.0.0",
-			ExecutionBundle: "test-image:latest", Confidence: 0.95,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			},
+			Confidence: 0.95,
 		}
 		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -449,10 +464,16 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.95,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.95,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
@@ -546,10 +567,16 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-scale-hpa",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.90,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-scale-hpa",
+				WorkflowName:    "wf-scale-hpa",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.90,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "HPA maxed out, scaling target pod autoscaler",
@@ -648,10 +675,16 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.85,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.85,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Generic OOM detected",
