@@ -26,25 +26,25 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 )
 
-// errorDS returns errors from all DS methods.
+// errorDS returns errors from all Catalog methods (Issue #1677 Phase 2d:
+// adapted from the former ogenclient-shaped fake to custom.WorkflowCatalog).
 type errorDS struct {
 	actionsErr   error
 	workflowsErr error
 	getErr       error
 }
 
-func (e *errorDS) ListAvailableActions(_ context.Context, _ ogenclient.ListAvailableActionsParams) (ogenclient.ListAvailableActionsRes, error) {
-	return nil, e.actionsErr
+func (e *errorDS) ListActions(_ context.Context, _ *models.WorkflowDiscoveryFilters, _, _ int) ([]models.ActionTypeEntry, int, error) {
+	return nil, 0, e.actionsErr
 }
-func (e *errorDS) ListWorkflowsByActionType(_ context.Context, _ ogenclient.ListWorkflowsByActionTypeParams) (ogenclient.ListWorkflowsByActionTypeRes, error) {
-	return nil, e.workflowsErr
+func (e *errorDS) ListWorkflowsByActionType(_ context.Context, _ string, _ *models.WorkflowDiscoveryFilters, _, _ int) ([]models.RemediationWorkflow, int, error) {
+	return nil, 0, e.workflowsErr
 }
-func (e *errorDS) GetWorkflowByID(_ context.Context, _ ogenclient.GetWorkflowByIDParams) (ogenclient.GetWorkflowByIDRes, error) {
+func (e *errorDS) GetWorkflowWithContextFilters(_ context.Context, _ string, _ *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
 	return nil, e.getErr
 }
 
@@ -64,16 +64,9 @@ var _ = Describe("UT-KA-779-ERR: DS error path and get_workflow tests", func() {
 	Describe("UT-KA-779-ERR-001: get_workflow Execute returns valid JSON for known workflow", func() {
 		It("should return marshaled workflow data", func() {
 			wfID := uuid.New()
-			fake := &fakeWorkflowDS{
-				listActionsResponse: &ogenclient.ActionTypeListResponse{
-					Pagination: ogenclient.PaginationMetadata{HasMore: false},
-				},
-				listWorkflowsResponse: &ogenclient.WorkflowDiscoveryResponse{
-					Pagination: ogenclient.PaginationMetadata{HasMore: false},
-				},
-			}
+			fake := &fakeWorkflowDS{}
 
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			getWorkflow := allTools[2]
 
 			result, err := getWorkflow.Execute(signalCtx,
@@ -90,7 +83,7 @@ var _ = Describe("UT-KA-779-ERR: DS error path and get_workflow tests", func() {
 	Describe("UT-KA-779-ERR-002: get_workflow returns error for invalid UUID", func() {
 		It("should return error with invalid UUID message", func() {
 			fake := &fakeWorkflowDS{}
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			getWorkflow := allTools[2]
 
 			_, err := getWorkflow.Execute(signalCtx,
@@ -104,7 +97,7 @@ var _ = Describe("UT-KA-779-ERR: DS error path and get_workflow tests", func() {
 	Describe("UT-KA-779-ERR-003: get_workflow returns error for malformed JSON args", func() {
 		It("should return error when args cannot be parsed", func() {
 			fake := &fakeWorkflowDS{}
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			getWorkflow := allTools[2]
 
 			_, err := getWorkflow.Execute(signalCtx, json.RawMessage(`{bad json`))
@@ -114,11 +107,11 @@ var _ = Describe("UT-KA-779-ERR: DS error path and get_workflow tests", func() {
 		})
 	})
 
-	Describe("UT-KA-779-ERR-004: list_available_actions wraps DS errors", func() {
-		It("should return wrapped error when DS ListAvailableActions fails", func() {
+	Describe("UT-KA-779-ERR-004: list_available_actions wraps catalog errors", func() {
+		It("should return wrapped error when catalog ListActions fails", func() {
 			dsErr := errors.New("connection refused")
 			errDS := &errorDS{actionsErr: dsErr}
-			allTools := custom.NewAllTools(errDS)
+			allTools := newTestTools(errDS)
 			listActions := allTools[0]
 
 			_, err := listActions.Execute(signalCtx, json.RawMessage(`{}`))
@@ -126,15 +119,15 @@ var _ = Describe("UT-KA-779-ERR: DS error path and get_workflow tests", func() {
 			Expect(err.Error()).To(ContainSubstring("listing action types"),
 				"Error should be wrapped with tool context")
 			Expect(errors.Is(err, dsErr)).To(BeTrue(),
-				"Original DS error should be unwrappable")
+				"Original catalog error should be unwrappable")
 		})
 	})
 
-	Describe("UT-KA-779-ERR-005: list_workflows wraps DS errors", func() {
-		It("should return wrapped error when DS ListWorkflowsByActionType fails", func() {
+	Describe("UT-KA-779-ERR-005: list_workflows wraps catalog errors", func() {
+		It("should return wrapped error when catalog ListWorkflowsByActionType fails", func() {
 			dsErr := errors.New("timeout")
 			errDS := &errorDS{workflowsErr: dsErr}
-			allTools := custom.NewAllTools(errDS)
+			allTools := newTestTools(errDS)
 			listWorkflows := allTools[1]
 
 			_, err := listWorkflows.Execute(signalCtx,
@@ -143,15 +136,15 @@ var _ = Describe("UT-KA-779-ERR: DS error path and get_workflow tests", func() {
 			Expect(err.Error()).To(ContainSubstring("listing workflows"),
 				"Error should be wrapped with tool context")
 			Expect(errors.Is(err, dsErr)).To(BeTrue(),
-				"Original DS error should be unwrappable")
+				"Original catalog error should be unwrappable")
 		})
 	})
 
-	Describe("UT-KA-779-ERR-006: get_workflow wraps DS errors", func() {
-		It("should return wrapped error when DS GetWorkflowByID fails", func() {
+	Describe("UT-KA-779-ERR-006: get_workflow wraps catalog errors", func() {
+		It("should return wrapped error when catalog GetWorkflowWithContextFilters fails", func() {
 			dsErr := errors.New("not found")
 			errDS := &errorDS{getErr: dsErr}
-			allTools := custom.NewAllTools(errDS)
+			allTools := newTestTools(errDS)
 			getWorkflow := allTools[2]
 
 			wfID := uuid.New()
@@ -161,7 +154,7 @@ var _ = Describe("UT-KA-779-ERR: DS error path and get_workflow tests", func() {
 			Expect(err.Error()).To(ContainSubstring("getting workflow"),
 				"Error should be wrapped with tool context")
 			Expect(errors.Is(err, dsErr)).To(BeTrue(),
-				"Original DS error should be unwrappable")
+				"Original catalog error should be unwrappable")
 		})
 	})
 })

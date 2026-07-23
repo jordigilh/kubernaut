@@ -35,6 +35,7 @@ import (
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
@@ -48,7 +49,9 @@ import (
 )
 
 // buildToolRegistry creates and populates the tool registry with all available tool sets.
-func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients, auditStore audit.AuditStore) *registry.Registry {
+// wfCatalog may be nil (e.g. dev mode without K8s infra, #1677 Phase 2a) -- the 3 workflow
+// discovery tools are still registered but fail at execution time rather than registration time.
+func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients, wfCatalog *workflowcatalog.Catalog, auditStore audit.AuditStore) *registry.Registry {
 	reg := registry.New()
 
 	if infra != nil {
@@ -64,7 +67,16 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 	}
 
 	if ds != nil {
-		custom.RegisterAll(reg, ds.ogenClient, ds.dsAdapter, ds.k8sAdapter, logger)
+		// Avoid the typed-nil-interface trap: only wrap wfCatalog in the
+		// custom.WorkflowCatalog interface when it is actually non-nil, so
+		// custom.RegisterAll's own "catalog == nil" execution-time guard
+		// (rather than a nil-pointer panic) is what fires when K8s infra was
+		// unavailable at boot (#1677 Phase 2a dev-mode fallback).
+		var catalog custom.WorkflowCatalog
+		if wfCatalog != nil {
+			catalog = wfCatalog
+		}
+		custom.RegisterAll(reg, catalog, auditStore, ds.dsAdapter, ds.k8sAdapter, logger)
 		logger.Info("registered custom tools", "count", len(custom.AllToolNames))
 	}
 

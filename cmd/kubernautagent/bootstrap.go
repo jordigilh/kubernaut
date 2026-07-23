@@ -127,7 +127,7 @@ func buildCoreServices(
 		logger.Error(nil, "FATAL: DataStorage client initialization failed — KA cannot operate without DS (workflow discovery, audit, enrichment all require it)")
 		os.Exit(1)
 	}
-	reg := buildToolRegistry(cfg, logger, infra, ds, auditStore)
+	reg := buildToolRegistry(cfg, logger, infra, ds, wfCatalog, auditStore)
 	fleetClient, fleetToolNames := registerFleetTools(context.Background(), cfg, reg, logger)
 	if len(fleetToolNames) > 0 {
 		investigator.AppendFleetToolsToRCA(phaseTools, fleetToolNames)

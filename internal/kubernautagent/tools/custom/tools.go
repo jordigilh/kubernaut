@@ -22,12 +22,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+
+	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
@@ -59,14 +62,19 @@ var getWorkflowSchemaJSON = json.RawMessage(`{
 	"required": ["workflow_id"]
 }`)
 
-
-// WorkflowDiscoveryClient is the subset of the ogen-generated DS client used by the
-// three workflow discovery tools. Satisfied by *ogenclient.Client. Defined here
-// so unit tests can substitute a lightweight fake without an HTTP server.
-type WorkflowDiscoveryClient interface {
-	ListAvailableActions(ctx context.Context, params ogenclient.ListAvailableActionsParams) (ogenclient.ListAvailableActionsRes, error)
-	ListWorkflowsByActionType(ctx context.Context, params ogenclient.ListWorkflowsByActionTypeParams) (ogenclient.ListWorkflowsByActionTypeRes, error)
-	GetWorkflowByID(ctx context.Context, params ogenclient.GetWorkflowByIDParams) (ogenclient.GetWorkflowByIDRes, error)
+// WorkflowCatalog is the subset of workflowcatalog.Catalog's three-step
+// discovery protocol used by the custom MCP tools below. Satisfied by
+// *workflowcatalog.Catalog in production; defined here (rather than
+// importing the workflowcatalog package) so unit tests can substitute a
+// lightweight fake without standing up an informer cache/envtest.
+//
+// Issue #1677 Phase 2d (DD-WORKFLOW-019): replaces the former
+// WorkflowDiscoveryClient/*ogenclient.Client indirection through
+// DataStorage -- KA now queries its own cache-backed Catalog directly.
+type WorkflowCatalog interface {
+	ListActions(ctx context.Context, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.ActionTypeEntry, int, error)
+	ListWorkflowsByActionType(ctx context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.RemediationWorkflow, int, error)
+	GetWorkflowWithContextFilters(ctx context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error)
 }
 
 // AllToolNames lists the 5 custom tool names for DataStorage interaction and resource context.
@@ -78,21 +86,22 @@ var AllToolNames = []string{
 	"get_cluster_resource_context",
 }
 
-// NewAllTools creates the 3 custom tools using any WorkflowDiscoveryClient.
-// Pass *ogenclient.Client in production or a fake in tests.
-func NewAllTools(ds WorkflowDiscoveryClient) []tools.Tool {
+// NewAllTools creates the 3 workflow discovery tools using any WorkflowCatalog.
+// Pass *workflowcatalog.Catalog in production or a fake in tests. auditStore may be
+// nil (audit emission becomes a no-op, matching kaaudit.StoreBestEffort callers elsewhere).
+func NewAllTools(catalog WorkflowCatalog, auditStore kaaudit.AuditStore, logger logr.Logger) []tools.Tool {
 	return []tools.Tool{
-		&listActionsTool{ds: ds},
-		&listWorkflowsTool{ds: ds},
-		&getWorkflowTool{ds: ds},
+		&listActionsTool{catalog: catalog, auditStore: auditStore, logger: logger},
+		&listWorkflowsTool{catalog: catalog, auditStore: auditStore, logger: logger},
+		&getWorkflowTool{catalog: catalog, auditStore: auditStore, logger: logger},
 	}
 }
 
-// RegisterAll registers all 5 custom tools (3 DS workflow tools + 2 resource context tools)
-// into the given registry. Pass nil for any dependency to create tools that will fail at
-// execution time rather than registration time.
-func RegisterAll(reg *registry.Registry, dsOgenClient WorkflowDiscoveryClient, dsClient enrichment.DataStorageClient, k8sClient enrichment.K8sClient, logger logr.Logger) {
-	for _, t := range NewAllTools(dsOgenClient) {
+// RegisterAll registers all 5 custom tools (3 workflow discovery tools + 2 resource context
+// tools) into the given registry. Pass nil for any dependency to create tools that will fail
+// at execution time rather than registration time.
+func RegisterAll(reg *registry.Registry, catalog WorkflowCatalog, auditStore kaaudit.AuditStore, dsClient enrichment.DataStorageClient, k8sClient enrichment.K8sClient, logger logr.Logger) {
+	for _, t := range NewAllTools(catalog, auditStore, logger) {
 		reg.Register(t)
 	}
 	reg.Register(NewNamespacedResourceContextTool(dsClient, k8sClient, logger))
@@ -100,7 +109,7 @@ func RegisterAll(reg *registry.Registry, dsOgenClient WorkflowDiscoveryClient, d
 }
 
 // signalFromContext extracts the SignalContext from ctx. Workflow discovery
-// tools require this to filter the DS catalog by the active incident's
+// tools require this to filter the catalog by the active incident's
 // severity, component, environment, and priority (#779).
 func signalFromContext(ctx context.Context, toolName string) (katypes.SignalContext, error) {
 	signal, ok := katypes.SignalContextFromContext(ctx)
@@ -110,14 +119,50 @@ func signalFromContext(ctx context.Context, toolName string) (katypes.SignalCont
 	return signal, nil
 }
 
+// componentFromSignal resolves the discovery Component filter: the GVK
+// (apiVersion/Kind) form when available, falling back to the lowercased
+// bare resource kind (#1051, #1439).
+func componentFromSignal(signal katypes.SignalContext) string {
+	component := signal.ComponentGVK()
+	if component == "" {
+		component = strings.ToLower(signal.ResourceKind)
+	}
+	return component
+}
+
+// filtersFromSignal builds the discovery-protocol context filters forwarded
+// on every list_available_actions/list_workflows call (BR-WORKFLOW-016,
+// #779, #1052, #1511). Unlike get_workflow's best-effort forwarding, these
+// two tools always have a required signal context (signalFromContext).
+func filtersFromSignal(signal katypes.SignalContext) *models.WorkflowDiscoveryFilters {
+	filters := &models.WorkflowDiscoveryFilters{
+		Severity:      signal.Severity,
+		Component:     componentFromSignal(signal),
+		Environment:   signal.Environment,
+		Priority:      signal.Priority,
+		RemediationID: signal.RemediationID,
+		Cluster:       signal.ClusterClassification,
+	}
+	if signal.DetectedLabelsJSON != "" {
+		var dl models.DetectedLabels
+		if err := json.Unmarshal([]byte(signal.DetectedLabelsJSON), &dl); err == nil {
+			filters.DetectedLabels = &dl
+		}
+	}
+	return filters
+}
 
 // --- list_available_actions ---
 
-type listActionsTool struct{ ds WorkflowDiscoveryClient }
+type listActionsTool struct {
+	catalog    WorkflowCatalog
+	auditStore kaaudit.AuditStore
+	logger     logr.Logger
+}
 
 func (t *listActionsTool) Name() string { return "list_available_actions" }
 func (t *listActionsTool) Description() string {
-	return "List available remediation action types from DataStorage"
+	return "List available remediation action types from the workflow catalog"
 }
 func (t *listActionsTool) Parameters() json.RawMessage { return listAvailableActionsSchema }
 
@@ -135,44 +180,38 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	component := signal.ComponentGVK()
-	gvkResolved := component != ""
-	if !gvkResolved {
-		component = strings.ToLower(signal.ResourceKind)
-	}
+	filters := filtersFromSignal(signal)
 	logr.FromContextOrDiscard(ctx).V(1).Info("list_available_actions: resolved component",
-		"component", component, "gvk_resolved", gvkResolved,
-		"remediation_id", signal.RemediationID)
-	params := ogenclient.ListAvailableActionsParams{
-		Severity:    ogenclient.ListAvailableActionsSeverity(signal.Severity),
-		Component:   component,
-		Environment: signal.Environment,
-		Priority:    ogenclient.ListAvailableActionsPriority(signal.Priority),
-	}
-	if signal.RemediationID != "" {
-		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
-	}
-	if signal.DetectedLabelsJSON != "" {
-		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
-	}
-	// BR-FLEET-003 (#1511): forward the optional cluster business classification.
-	// Omitted entirely (not sent as empty string) for non-fleet deployments so DS
-	// applies no cluster filter at all -- backward compatible (R6.1).
-	if signal.ClusterClassification != "" {
-		params.Cluster = ogenclient.NewOptString(signal.ClusterClassification)
-	}
+		"component", filters.Component, "remediation_id", signal.RemediationID)
+
+	offset, limit := 0, defaultPaginationLimit
 	if a.Page != "" && a.Cursor != "" {
-		offset, limit := decodeCursor(a.Cursor)
-		params.Offset = ogenclient.NewOptInt(offset)
-		params.Limit = ogenclient.NewOptInt(limit)
+		offset, limit = decodeCursor(a.Cursor)
 	}
 
-	res, err := t.ds.ListAvailableActions(ctx, params)
+	if t.catalog == nil {
+		return "", fmt.Errorf("listing action types: workflow catalog unavailable")
+	}
+
+	start := time.Now()
+	entries, totalCount, err := t.catalog.ListActions(ctx, filters, offset, limit)
+	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
 		return "", fmt.Errorf("listing action types: %w", err)
 	}
 
-	data, err := json.Marshal(res)
+	t.emitAuditEvent(ctx, filters, totalCount, durationMs)
+
+	resp := models.ActionTypeListResponse{
+		ActionTypes: entries,
+		Pagination: models.PaginationMetadata{
+			TotalCount: totalCount,
+			Offset:     offset,
+			Limit:      limit,
+			HasMore:    offset+limit < totalCount,
+		},
+	}
+	data, err := json.Marshal(resp)
 	if err != nil {
 		return "", fmt.Errorf("marshaling action types response: %w", err)
 	}
@@ -181,11 +220,15 @@ func (t *listActionsTool) Execute(ctx context.Context, args json.RawMessage) (st
 
 // --- list_workflows ---
 
-type listWorkflowsTool struct{ ds WorkflowDiscoveryClient }
+type listWorkflowsTool struct {
+	catalog    WorkflowCatalog
+	auditStore kaaudit.AuditStore
+	logger     logr.Logger
+}
 
 func (t *listWorkflowsTool) Name() string { return "list_workflows" }
 func (t *listWorkflowsTool) Description() string {
-	return "Search for workflows by action type in DataStorage"
+	return "Search for workflows by action type in the workflow catalog"
 }
 func (t *listWorkflowsTool) Parameters() json.RawMessage { return listWorkflowsSchemaJSON }
 
@@ -204,54 +247,82 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	component := signal.ComponentGVK()
-	gvkResolved := component != ""
-	if !gvkResolved {
-		component = strings.ToLower(signal.ResourceKind)
-	}
+	filters := filtersFromSignal(signal)
 	logr.FromContextOrDiscard(ctx).V(1).Info("list_workflows: resolved component",
-		"component", component, "gvk_resolved", gvkResolved,
-		"remediation_id", signal.RemediationID)
-	params := ogenclient.ListWorkflowsByActionTypeParams{
-		ActionType:  a.ActionType,
-		Severity:    ogenclient.ListWorkflowsByActionTypeSeverity(signal.Severity),
-		Component:   component,
-		Environment: signal.Environment,
-		Priority:    ogenclient.ListWorkflowsByActionTypePriority(signal.Priority),
-	}
-	if signal.RemediationID != "" {
-		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
-	}
-	if signal.DetectedLabelsJSON != "" {
-		params.DetectedLabels = ogenclient.NewOptString(signal.DetectedLabelsJSON)
-	}
-	// BR-FLEET-003 (#1511): forward the optional cluster business classification.
-	// Omitted entirely (not sent as empty string) for non-fleet deployments so DS
-	// applies no cluster filter at all -- backward compatible (R6.1).
-	if signal.ClusterClassification != "" {
-		params.Cluster = ogenclient.NewOptString(signal.ClusterClassification)
-	}
+		"component", filters.Component, "remediation_id", signal.RemediationID)
+
+	offset, limit := 0, defaultPaginationLimit
 	if a.Page != "" && a.Cursor != "" {
-		offset, limit := decodeCursor(a.Cursor)
-		params.Offset = ogenclient.NewOptInt(offset)
-		params.Limit = ogenclient.NewOptInt(limit)
+		offset, limit = decodeCursor(a.Cursor)
 	}
 
-	res, err := t.ds.ListWorkflowsByActionType(ctx, params)
+	if t.catalog == nil {
+		return "", fmt.Errorf("listing workflows: workflow catalog unavailable")
+	}
+
+	start := time.Now()
+	workflows, totalCount, err := t.catalog.ListWorkflowsByActionType(ctx, a.ActionType, filters, offset, limit)
+	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
 		return "", fmt.Errorf("listing workflows: %w", err)
 	}
 
-	data, err := json.Marshal(res)
+	t.emitAuditEvent(ctx, a.ActionType, filters, totalCount, durationMs)
+
+	resp := models.WorkflowDiscoveryResponse{
+		ActionType: a.ActionType,
+		Workflows:  convertWorkflowsToDiscoveryEntries(workflows),
+		Pagination: models.PaginationMetadata{
+			TotalCount: totalCount,
+			Offset:     offset,
+			Limit:      limit,
+			HasMore:    offset+limit < totalCount,
+		},
+	}
+	data, err := json.Marshal(resp)
 	if err != nil {
 		return "", fmt.Errorf("marshaling workflows response: %w", err)
 	}
 	return string(transformPagination(data)), nil
 }
 
+// convertWorkflowsToDiscoveryEntries converts catalog workflow records into
+// the LLM-facing discovery entry shape. DD-HAPI-017 v1.1: ActualSuccessRate
+// and TotalExecutions are intentionally excluded -- global aggregate metrics
+// are misleading for per-incident workflow selection. Ported verbatim from
+// pkg/datastorage/server/workflow_discovery_handlers.go (Issue #1677 Phase 2d).
+func convertWorkflowsToDiscoveryEntries(workflows []models.RemediationWorkflow) []models.WorkflowDiscoveryEntry {
+	discoveryEntries := make([]models.WorkflowDiscoveryEntry, 0, len(workflows))
+	for _, wf := range workflows {
+		entry := models.WorkflowDiscoveryEntry{
+			WorkflowID:      wf.WorkflowID,
+			WorkflowName:    wf.WorkflowName,
+			Name:            wf.Name,
+			Description:     wf.Description,
+			Version:         wf.Version,
+			ExecutionEngine: string(wf.ExecutionEngine),
+		}
+		if wf.SchemaImage != nil {
+			entry.SchemaImage = *wf.SchemaImage
+		}
+		if wf.ExecutionBundle != nil {
+			entry.ExecutionBundle = *wf.ExecutionBundle
+		}
+		if wf.ServiceAccountName != nil {
+			entry.ServiceAccountName = *wf.ServiceAccountName
+		}
+		discoveryEntries = append(discoveryEntries, entry)
+	}
+	return discoveryEntries
+}
+
 // --- get_workflow ---
 
-type getWorkflowTool struct{ ds WorkflowDiscoveryClient }
+type getWorkflowTool struct {
+	catalog    WorkflowCatalog
+	auditStore kaaudit.AuditStore
+	logger     logr.Logger
+}
 
 func (t *getWorkflowTool) Name() string                { return "get_workflow" }
 func (t *getWorkflowTool) Description() string         { return "Get a specific workflow definition by ID" }
@@ -265,45 +336,44 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 		return "", fmt.Errorf("parsing args: %w", err)
 	}
 
-	uid, err := uuid.Parse(a.WorkflowID)
-	if err != nil {
+	if _, err := uuid.Parse(a.WorkflowID); err != nil {
 		return "", fmt.Errorf("invalid workflow ID %q: %w", a.WorkflowID, err)
-	}
-
-	params := ogenclient.GetWorkflowByIDParams{
-		WorkflowID: uid,
 	}
 
 	// Best-effort: forward signal context for audit correlation and security-gate
 	// filtering. Non-investigator callers (e.g., notification resolver) may not
 	// have a signal context — that is acceptable (#1111).
+	var filters *models.WorkflowDiscoveryFilters
 	signal, ok := katypes.SignalContextFromContext(ctx)
 	if ok && signal.RemediationID != "" {
-		params.RemediationID = ogenclient.NewOptString(signal.RemediationID)
-		if signal.Severity != "" {
-			params.Severity = ogenclient.NewOptGetWorkflowByIDSeverity(
-				ogenclient.GetWorkflowByIDSeverity(signal.Severity))
-		}
-		component := signal.ComponentGVK()
-		if component == "" {
-			component = strings.ToLower(signal.ResourceKind)
-		}
-		params.Component = ogenclient.NewOptString(component)
-		if signal.Environment != "" {
-			params.Environment = ogenclient.NewOptString(signal.Environment)
-		}
-		if signal.Priority != "" {
-			params.Priority = ogenclient.NewOptGetWorkflowByIDPriority(
-				ogenclient.GetWorkflowByIDPriority(signal.Priority))
+		filters = &models.WorkflowDiscoveryFilters{
+			Severity:      signal.Severity,
+			Component:     componentFromSignal(signal),
+			Environment:   signal.Environment,
+			Priority:      signal.Priority,
+			RemediationID: signal.RemediationID,
 		}
 	}
 
-	res, err := t.ds.GetWorkflowByID(ctx, params)
+	if t.catalog == nil {
+		return "", fmt.Errorf("getting workflow: workflow catalog unavailable")
+	}
+
+	start := time.Now()
+	wf, err := t.catalog.GetWorkflowWithContextFilters(ctx, a.WorkflowID, filters)
+	durationMs := time.Since(start).Milliseconds()
 	if err != nil {
 		return "", fmt.Errorf("getting workflow: %w", err)
 	}
 
-	data, err := json.Marshal(res)
+	t.emitAuditEvents(ctx, a.WorkflowID, filters, durationMs)
+
+	// DD-WORKFLOW-018/Issue #1677 Phase 2d (user-confirmed): the on-demand
+	// success-metrics overlay (TotalExecutions/SuccessfulExecutions/
+	// ActualSuccessRate) is dropped entirely rather than migrated -- it was
+	// best-effort display telemetry from an abandoned success-rate-weighted
+	// selection design with zero use in the actual scoring logic.
+	data, err := json.Marshal(wf)
 	if err != nil {
 		return "", fmt.Errorf("marshaling workflow response: %w", err)
 	}
@@ -365,7 +435,7 @@ func EncodeCursor(offset, limit int) string {
 
 // decodeCursor decodes an opaque cursor token into offset and limit.
 // Returns safe defaults (0, 10) on any failure (invalid base64, non-JSON, tampered values).
-// Mirrors DS ParsePagination clamping for defense-in-depth.
+// Mirrors the discovery protocol's pagination clamping for defense-in-depth.
 func decodeCursor(token string) (offset int, limit int) {
 	if token == "" {
 		return 0, defaultPaginationLimit
@@ -394,7 +464,7 @@ func decodeCursor(token string) (offset int, limit int) {
 	return p.Offset, p.Limit
 }
 
-// transformPagination converts DS PaginationMetadata (totalCount, offset, limit, hasMore)
+// transformPagination converts PaginationMetadata (totalCount, offset, limit, hasMore)
 // into LLM-facing cursor-based pagination (hasNext, nextCursor, hasPrevious, previousCursor).
 // Single-page results (offset=0, hasMore=false) have pagination stripped entirely.
 // DD-WORKFLOW-016 v1.4: totalCount is never exposed to the LLM.

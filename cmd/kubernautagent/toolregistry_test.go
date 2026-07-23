@@ -64,7 +64,7 @@ var _ = Describe("buildToolRegistry", func() {
 	It("BR-SECURITY-AC6: registers only the baseline tool (least privilege) when no integrations are configured", func() {
 		cfg := &kaconfig.Config{}
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		all := reg.All()
 		Expect(all).To(HaveLen(1), "expected exactly 1 baseline tool (least privilege), got %v", toolNames(all))
@@ -75,7 +75,7 @@ var _ = Describe("buildToolRegistry", func() {
 	It("BR-SECURITY-AC6: does not register Prometheus tools when Prometheus is not configured", func() {
 		cfg := &kaconfig.Config{}
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range promtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -87,7 +87,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg := &kaconfig.Config{}
 		cfg.Integrations.Tools.Prometheus.URL = "http://localhost:9090"
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range promtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -101,7 +101,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg.Integrations.Tools.Prometheus.URL = "https://prometheus.example.com"
 		cfg.Integrations.Tools.Prometheus.TLSCaFile = caPath
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range promtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -117,7 +117,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg.Integrations.Tools.Prometheus.URL = "https://prometheus.example.com"
 		cfg.Integrations.Tools.Prometheus.TLSCaFile = "/nonexistent/ca.crt"
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range promtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -129,7 +129,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg := &kaconfig.Config{}
 		cfg.Integrations.Tools.Alertmanager.URL = "http://localhost:9093"
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range amtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -142,7 +142,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg.Integrations.Tools.Alertmanager.URL = "https://alertmanager.example.com"
 		cfg.Integrations.Tools.Alertmanager.TLSCaFile = "/nonexistent/ca.crt"
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range amtools.AllToolNames {
 			_, err := reg.Get(name)
