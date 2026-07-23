@@ -158,24 +158,35 @@ spec:
               # seconds is far cheaper than relying on kubelet's
               # container-restart backoff, which escalates into
               # multi-minute waits for the same transient condition.
+              #
+              # --request-timeout is mandatory on every call below: without
+              # it, kubectl's discovery client (client-go memcache.go) issues
+              # its own internal API-group-list request with a hardcoded 32s
+              # timeout and retries it several times before the command
+              # actually returns — confirmed via CI must-gather logs showing
+              # "Unhandled Error" retries at exact 30s intervals, so a single
+              # unbounded kubectl invocation could block for 2.5+ minutes
+              # instead of failing fast, starving this retry loop of attempts
+              # (ref: kubectl/client-go discovery timeout defaults; see also
+              # https://cloud.google.com/kubernetes-engine/distributed-cloud/vmware/docs/troubleshooting/kube-apiserver).
               wait_for_api_server() {
-                ATTEMPTS=30
+                ATTEMPTS=20
                 i=0
                 while [ "$i" -lt "$ATTEMPTS" ]; do
-                  if kubectl get --raw=/healthz >/dev/null 2>&1; then
+                  if kubectl get --raw=/healthz --request-timeout=3s >/dev/null 2>&1; then
                     return 0
                   fi
                   i=$((i + 1))
                   sleep 2
                 done
-                echo "ERROR: API server unreachable after ${ATTEMPTS} attempts (60s)"
+                echo "ERROR: API server unreachable after ${ATTEMPTS} attempts (~100s)"
                 return 1
               }
 
               patch_webhooks() {
                 KIND="$1"
                 NAME="$2"
-                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
+                COUNT=$(kubectl get "$KIND" "$NAME" --request-timeout=5s -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
                 PATCH="["
                 i=0
                 while [ "$i" -lt "$COUNT" ]; do
@@ -185,7 +196,7 @@ spec:
                 done
                 PATCH="${PATCH}]"
                 echo "  Patching $NAME ($COUNT webhooks)..."
-                kubectl patch "$KIND" "$NAME" --type='json' -p "$PATCH"
+                kubectl patch "$KIND" "$NAME" --request-timeout=5s --type='json' -p "$PATCH"
               }
 
               echo "==> Init-container: patching webhook caBundle (#377 self-healing)..."
