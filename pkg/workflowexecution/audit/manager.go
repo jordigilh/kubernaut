@@ -288,8 +288,13 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 // WorkflowID remains the functional/join key for SOC2 CC8.1 reconstruction
 // regardless (IT-AW-1111-001).
 func setWorkflowIdentifiers(payload *api.WorkflowExecutionAuditPayload, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
-	if wfe.Status.WorkflowName != "" {
-		payload.WorkflowName.SetTo(wfe.Status.WorkflowName)
+	// Issue #1661 Change 12: WorkflowName now lives on the CRD-embedded
+	// execution snapshot (Spec.WorkflowRef.WorkflowName), same as its
+	// sibling ActionType below -- Status.WorkflowName was never actually
+	// set by production code (a dead field superseded by this Spec value;
+	// see WorkflowExecutionStatus.WorkflowName's doc comment).
+	if wfe.Spec.WorkflowRef.WorkflowName != "" {
+		payload.WorkflowName.SetTo(wfe.Spec.WorkflowRef.WorkflowName)
 	}
 	if wfe.Spec.WorkflowRef.ActionType != "" {
 		payload.ActionType.SetTo(wfe.Spec.WorkflowRef.ActionType)

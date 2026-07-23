@@ -21,6 +21,8 @@ import (
 	"context"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -111,30 +113,40 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 }
 
 // buildWorkflowRef maps the AIAnalysis-selected workflow snapshot onto WorkflowRef.
-// Issue #1661 Change 11d (DD-WORKFLOW-018): the six CRD-embedded execution-snapshot
-// fields (ExecutionEngine, ServiceAccountName, ActionType, Dependencies, Resources,
-// DeclaredParameterNames) are a pass-through from the AIAnalysis snapshot that KA/AA
-// already validated (Change 11a/11b), so WorkflowExecution stops re-fetching this data
+// Issue #1661 Change 11d (DD-WORKFLOW-018): the CRD-embedded execution-snapshot
+// fields are a pass-through from the AIAnalysis snapshot that KA/AA already
+// validated (Change 11a/11b), so WorkflowExecution stops re-fetching this data
 // from DataStorage (Change 11e). Supersedes Issue #518 (ExecutionEngine) and Issue #650
 // (ServiceAccountName), which previously kept these off the WFE spec and resolved them
 // at runtime from the DS catalog. ActionType was originally left off this list (Change
 // 3 instead resolved it into a now-defunct Status mirror -- see
 // internal/controller/workflowexecution/workflowexecution_catalog.go git history);
-// folding it in here lets every consumer (including the audit payload builder) read it
-// straight off this immutable snapshot like its five siblings, closing that gap for good.
+// folding it in closed that gap for good.
+//
+// Since Change 12 (DD-WORKFLOW-018), both SelectedWorkflow and WorkflowRef
+// inline-embed the same sharedtypes.WorkflowSnapshot type, so this is a
+// straight field-for-field copy of that whole embedded struct -- a future
+// field added to WorkflowSnapshot only needs to be added here once, not
+// independently re-derived on both CRDs. WorkflowName is the newest example:
+// it was never wired at all until Change 12 (KA never emitted it), closing
+// the same class of "field left off one side" bug ActionType hit here once
+// already.
 func buildWorkflowRef(sw *aianalysisv1.SelectedWorkflow) workflowexecutionv1.WorkflowRef {
 	return workflowexecutionv1.WorkflowRef{
-		WorkflowID:             sw.WorkflowID,
-		Version:                sw.Version,
-		ExecutionBundle:        sw.ExecutionBundle,
-		ExecutionBundleDigest:  sw.ExecutionBundleDigest,
-		EngineConfig:           sw.EngineConfig,
-		ExecutionEngine:        sw.ExecutionEngine,
-		ServiceAccountName:     sw.ServiceAccountName,
-		ActionType:             sw.ActionType,
-		Dependencies:           sw.Dependencies,
-		Resources:              sw.Resources,
-		DeclaredParameterNames: sw.DeclaredParameterNames,
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:             sw.WorkflowID,
+			WorkflowName:           sw.WorkflowName,
+			Version:                sw.Version,
+			ExecutionBundle:        sw.ExecutionBundle,
+			ExecutionBundleDigest:  sw.ExecutionBundleDigest,
+			EngineConfig:           sw.EngineConfig,
+			ExecutionEngine:        sw.ExecutionEngine,
+			ServiceAccountName:     sw.ServiceAccountName,
+			ActionType:             sw.ActionType,
+			Dependencies:           sw.Dependencies,
+			Resources:              sw.Resources,
+			DeclaredParameterNames: sw.DeclaredParameterNames,
+		},
 	}
 }
 
