@@ -335,6 +335,14 @@ var _ = Describe("dsCatalogFetcher.FetchValidator", func() {
 		Expect(meta.DeclaredParameterNames).To(HaveLen(2))
 		Expect(meta.DeclaredParameterNames).To(HaveKey("TARGET_NAMESPACE"))
 		Expect(meta.DeclaredParameterNames).To(HaveKey("REPLICAS"))
+
+		// Issue #1661 Change 12 (DD-WORKFLOW-018): ActionType/WorkflowName are
+		// required, non-optional fields on the DS catalog response (see
+		// workflowJSON's actionType/workflowName), so buildWorkflowMeta must
+		// always copy them verbatim -- no schema-parsing dependency, unlike
+		// Dependencies/Resources/DeclaredParameterNames above.
+		Expect(meta.ActionType).To(Equal("RestartPod"))
+		Expect(meta.WorkflowName).To(Equal("test-workflow"))
 	})
 
 	It("strips parameters (fail-closed) when a workflow's schema content is malformed, but keeps it in the allowlist", func() {

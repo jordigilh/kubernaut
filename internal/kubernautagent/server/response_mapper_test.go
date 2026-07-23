@@ -583,4 +583,85 @@ var _ = Describe("Response Mapper — #433", func() {
 			Expect(sw).NotTo(HaveKey("declared_parameter_names"))
 		})
 	})
+
+	// UT-KA-1661-652 (Issue #1661 Change 12, DD-WORKFLOW-018): the wire
+	// selected_workflow payload buildSelectedWorkflow returns must carry
+	// ActionType/WorkflowName -- catalog-authoritative data enrichFromCatalog
+	// (UT-KA-1661-651) placed on InvestigationResult -- so AA can populate
+	// the CRD-embedded execution snapshot without WorkflowExecution making
+	// its own DS round-trip. Closes the gap that broke
+	// workflowexecution.execution.started's audit payload (Change 11f).
+	Describe("UT-KA-1661-652: selected_workflow carries ActionType/WorkflowName", func() {
+		It("should include action_type and workflow_name keys when populated", func() {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{
+					RCASummary:   "OOMKilled due to container memory limit exceeded",
+					WorkflowID:   "oom-recovery-v1",
+					ActionType:   "ScaleReplicas",
+					WorkflowName: "scale-memory-fix",
+					Confidence:   0.9,
+				}, nil
+			}, map[string]string{"incident_id": "inc-action-type"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() session.Status {
+				sess, _ := manager.GetSession(id)
+				if sess == nil {
+					return ""
+				}
+				return sess.Status
+			}, 2*time.Second, 10*time.Millisecond).Should(Equal(session.StatusCompleted))
+
+			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{SessionID: id}
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			ir, ok := resp.(*agentclient.IncidentResponse)
+			Expect(ok).To(BeTrue())
+
+			sw, hasSW := ir.SelectedWorkflow.Get()
+			Expect(hasSW).To(BeTrue())
+			Expect(sw).To(HaveKey("action_type"))
+			Expect(sw).To(HaveKey("workflow_name"))
+
+			var actionType string
+			Expect(json.Unmarshal([]byte(sw["action_type"]), &actionType)).To(Succeed())
+			Expect(actionType).To(Equal("ScaleReplicas"))
+
+			var workflowName string
+			Expect(json.Unmarshal([]byte(sw["workflow_name"]), &workflowName)).To(Succeed())
+			Expect(workflowName).To(Equal("scale-memory-fix"))
+		})
+
+		It("should omit action_type/workflow_name keys when unset", func() {
+			id, err := manager.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{
+					RCASummary: "CrashLoopBackOff",
+					WorkflowID: "restart-pod-v1",
+					Confidence: 0.8,
+				}, nil
+			}, nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() session.Status {
+				sess, _ := manager.GetSession(id)
+				if sess == nil {
+					return ""
+				}
+				return sess.Status
+			}, 2*time.Second, 10*time.Millisecond).Should(Equal(session.StatusCompleted))
+
+			params := agentclient.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{SessionID: id}
+			resp, err := handler.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(context.Background(), params)
+			Expect(err).NotTo(HaveOccurred())
+
+			ir, ok := resp.(*agentclient.IncidentResponse)
+			Expect(ok).To(BeTrue())
+
+			sw, hasSW := ir.SelectedWorkflow.Get()
+			Expect(hasSW).To(BeTrue())
+			Expect(sw).NotTo(HaveKey("action_type"))
+			Expect(sw).NotTo(HaveKey("workflow_name"))
+		})
+	})
 })

@@ -575,6 +575,7 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 			workflow := &mcptools.CatalogWorkflow{
 				WorkflowID:         "wf-increase-mem",
 				WorkflowName:       "increase-memory",
+				ActionType:         "ScaleReplicas",
 				ExecutionEngine:    "argo-workflows",
 				ExecutionBundle:    "oci://registry/increase-memory:v1.2.0",
 				ServiceAccountName: "remediation-sa",
@@ -593,6 +594,11 @@ var _ = Describe("kubernaut_select_workflow — helper functions", func() {
 			Expect(result.ServiceAccountName).To(Equal("remediation-sa"))
 			Expect(result.WorkflowVersion).To(Equal("v1.2.0"))
 			Expect(result.WorkflowRationale).To(Equal("User-selected via interactive mode"))
+			// Issue #1661 Change 12: ActionType/WorkflowName must flow through
+			// buildFinalResult (applySelectedWorkflow) the same as the other
+			// catalog-sourced fields above.
+			Expect(result.ActionType).To(Equal("ScaleReplicas"))
+			Expect(result.WorkflowName).To(Equal("increase-memory"))
 		})
 
 		It("should handle nil workflow gracefully", func() {

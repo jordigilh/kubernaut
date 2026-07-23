@@ -86,3 +86,60 @@ var _ = Describe("enrichFromCatalog — Issue #1661 Change 11a", func() {
 		Expect(result.DeclaredParameterNames).To(BeNil())
 	})
 })
+
+// ========================================
+// UT-KA-1661-651 (Issue #1661 Change 12, DD-WORKFLOW-018)
+// ========================================
+// ActionType/WorkflowName are catalog-authoritative (never LLM-suppliable),
+// so enrichFromCatalog must always overwrite from WorkflowMeta -- same
+// unconditional-assignment pattern as Dependencies/Resources/
+// DeclaredParameterNames above. This closes the gap where KA never
+// populated either field in its wire response, which silently broke
+// workflowexecution.execution.started's audit payload (Change 11f).
+// ========================================
+var _ = Describe("enrichFromCatalog — Issue #1661 Change 12", func() {
+	It("UT-KA-1661-651-001: copies ActionType/WorkflowName from WorkflowMeta onto the result", func() {
+		v := parser.NewValidator([]string{"wf-with-schema"})
+		v.SetWorkflowMeta("wf-with-schema", parser.WorkflowMeta{
+			ExecutionEngine: "job",
+			ActionType:      "ScaleReplicas",
+			WorkflowName:    "scale-memory-fix",
+		})
+
+		result := &katypes.InvestigationResult{WorkflowID: "wf-with-schema"}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.ActionType).To(Equal("ScaleReplicas"))
+		Expect(result.WorkflowName).To(Equal("scale-memory-fix"))
+	})
+
+	It("UT-KA-1661-651-002: always overwrites a pre-populated ActionType/WorkflowName from the catalog (catalog-authoritative, not LLM-suppliable)", func() {
+		v := parser.NewValidator([]string{"wf-with-schema"})
+		v.SetWorkflowMeta("wf-with-schema", parser.WorkflowMeta{
+			ActionType:   "RestartPod",
+			WorkflowName: "restart-pod-fix",
+		})
+
+		result := &katypes.InvestigationResult{
+			WorkflowID:   "wf-with-schema",
+			ActionType:   "llm-supplied-bogus-value",
+			WorkflowName: "llm-supplied-bogus-name",
+		}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.ActionType).To(Equal("RestartPod"))
+		Expect(result.WorkflowName).To(Equal("restart-pod-fix"))
+	})
+
+	It("UT-KA-1661-651-003: leaves ActionType/WorkflowName empty when the workflow has no catalog metadata", func() {
+		v := parser.NewValidator([]string{"wf-unknown"})
+		result := &katypes.InvestigationResult{WorkflowID: "wf-unknown"}
+
+		enrichFromCatalog(result, v)
+
+		Expect(result.ActionType).To(BeEmpty())
+		Expect(result.WorkflowName).To(BeEmpty())
+	})
+})
