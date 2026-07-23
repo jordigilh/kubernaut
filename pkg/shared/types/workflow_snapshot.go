@@ -38,15 +38,15 @@ import (
 // dedup only -- not a breaking change to either CRD's on-the-wire shape.
 //
 // Field requiredness/enum constraints follow the *stricter* of the two
-// pre-existing (and previously inconsistent) definitions, plus two fields
-// (ActionType, ExecutionEngine) tightened to Required because their
-// upstream sources already guarantee non-empty values in practice (see
-// each field's doc comment for the specific evidence) -- e.g. WorkflowID
-// is now Required on both (previously Required only on SelectedWorkflow)
-// and ExecutionEngine's enum is enforced on both (previously only on
-// SelectedWorkflow) -- since RemediationOrchestrator's buildWorkflowRef
-// always copies WorkflowRef verbatim from an already-validated
-// SelectedWorkflow, tightening WorkflowRef to match is a no-op on real data.
+// pre-existing (and previously inconsistent) definitions, plus fields
+// (WorkflowName, ActionType) tightened to Required because their upstream
+// sources already guarantee non-empty values in practice (see each field's
+// doc comment for the specific evidence) -- e.g. WorkflowID is now Required
+// on both (previously Required only on SelectedWorkflow). ExecutionEngine
+// stays +optional on both (its pre-existing state on each) despite bearing
+// an Enum constraint: it is NOT safe to tighten, since AIAnalysis
+// legitimately persists it empty on partial/degenerate paths -- see its own
+// doc comment for the CI regression this caused when tried.
 type WorkflowSnapshot struct {
 	// WorkflowID is the catalog lookup key (DS-assigned UUID).
 	// +kubebuilder:validation:Required
@@ -88,14 +88,24 @@ type WorkflowSnapshot struct {
 	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
 
 	// ExecutionEngine specifies the backend engine for workflow execution,
-	// resolved from the DS workflow catalog at selection time. Required:
-	// RemediationOrchestrator's buildWorkflowRef already fails closed on an
-	// empty value ("selectedWorkflow.executionEngine is required") rather
-	// than silently defaulting, so this formalizes an invariant already
-	// enforced at runtime -- moving the failure to admission time instead.
+	// resolved from the DS workflow catalog at selection time. Deliberately
+	// NOT Required: unlike WorkflowID/WorkflowName/ActionType/Version/
+	// ExecutionBundle (whose upstream sources guarantee non-empty values),
+	// AIAnalysis legitimately persists a SelectedWorkflow with this field
+	// empty on its partial/degenerate paths (e.g. workflow-resolution
+	// failure, low-confidence preservation -- see
+	// preservePartialSelectedWorkflow/preserveLowConfidenceWorkflow in
+	// pkg/aianalysis/handlers/response_processor.go) before
+	// RemediationOrchestrator's validateSelectedWorkflow ever runs its own
+	// Go-level fail-closed check. Tightening this to Required+no-omitempty
+	// broke exactly that: an empty string is present-but-invalid against the
+	// Enum, not merely "missing" (#1661 Change 12 CI regression, confirmed
+	// against IT-AA-344-001 and three sibling suites -- 100go.co "validate
+	// at the right layer": RO's runtime check, not CRD admission, is the
+	// correct gate here).
 	// +kubebuilder:validation:Enum=tekton;job;ansible
-	// +kubebuilder:validation:Required
-	ExecutionEngine string `json:"executionEngine"`
+	// +optional
+	ExecutionEngine string `json:"executionEngine,omitempty"`
 
 	// EngineConfig holds engine-specific configuration (BR-WE-016).
 	// For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.

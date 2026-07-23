@@ -1191,11 +1191,21 @@ spec:
                   executionEngine:
                     description: |-
                       ExecutionEngine specifies the backend engine for workflow execution,
-                      resolved from the DS workflow catalog at selection time. Required:
-                      RemediationOrchestrator's buildWorkflowRef already fails closed on an
-                      empty value ("selectedWorkflow.executionEngine is required") rather
-                      than silently defaulting, so this formalizes an invariant already
-                      enforced at runtime -- moving the failure to admission time instead.
+                      resolved from the DS workflow catalog at selection time. Deliberately
+                      NOT Required: unlike WorkflowID/WorkflowName/ActionType/Version/
+                      ExecutionBundle (whose upstream sources guarantee non-empty values),
+                      AIAnalysis legitimately persists a SelectedWorkflow with this field
+                      empty on its partial/degenerate paths (e.g. workflow-resolution
+                      failure, low-confidence preservation -- see
+                      preservePartialSelectedWorkflow/preserveLowConfidenceWorkflow in
+                      pkg/aianalysis/handlers/response_processor.go) before
+                      RemediationOrchestrator's validateSelectedWorkflow ever runs its own
+                      Go-level fail-closed check. Tightening this to Required+no-omitempty
+                      broke exactly that: an empty string is present-but-invalid against the
+                      Enum, not merely "missing" (#1661 Change 12 CI regression, confirmed
+                      against IT-AA-344-001 and three sibling suites -- 100go.co "validate
+                      at the right layer": RO's runtime check, not CRD admission, is the
+                      correct gate here).
                     enum:
                     - tekton
                     - job
@@ -1305,7 +1315,6 @@ spec:
                 - actionType
                 - confidence
                 - executionBundle
-                - executionEngine
                 - rationale
                 - version
                 - workflowId
