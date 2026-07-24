@@ -351,7 +351,9 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | Parameter | Description | Default |
 |---|---|---|
 | `networkPolicies.enabled` | Enable default-deny NetworkPolicies for all services | `true` |
-| `networkPolicies.apiServerCIDR` | K8s API server CIDR (e.g., `10.96.0.1/32`) | `""` |
+| `networkPolicies.apiServerCIDR` | K8s API server real backend endpoint IP as a `/32` CIDR (e.g., `10.89.0.2/32`) -- **not** the `kubernetes` Service ClusterIP, which most CNIs ignore for NetworkPolicy egress. Usually left empty: auto-discovered via `lookup` during a real `helm install`/`upgrade`. Set explicitly only for `helm template`/GitOps rendering, restricted-RBAC installers, or to override discovery. | `""` |
+| `networkPolicies.apiServerCIDRs` | Additional API server backend endpoint IPs as `/32` CIDRs, for HA clusters with multiple control-plane nodes. Merged with `apiServerCIDR`. | `[]` |
+| `networkPolicies.apiServerPort` | Port the API server's real backend endpoint(s) listen on (commonly `6443`, not the `kubernetes` Service's port `443`). `0` means auto-discover via `lookup` (falls back to `443` if unavailable). | `0` |
 | `networkPolicies.monitoring.namespace` | Namespace for Prometheus metrics scraping ingress | `""` |
 | `networkPolicies.monitoring.prometheusPort` | Prometheus port (9090 vanilla, 9091 OCP) | `9090` |
 | `networkPolicies.monitoring.alertManagerPort` | AlertManager port (9093 vanilla, 9094 OCP) | `9093` |
@@ -364,12 +366,13 @@ When enabled, each service gets a NetworkPolicy with:
 - **Egress**: most services restrict egress to DNS, K8s API, and known peers; **Kubernaut Agent uses an ingress-only policy** (unrestricted egress) because it must reach arbitrary LLM providers, MCP servers, and tool endpoints
 - **Datastorage**: allows egress to PostgreSQL, Valkey, and external container registries (configurable CIDR for OCI bundle validation)
 
-Example:
+Example (a real `helm install` auto-discovers the API server endpoint, so
+`apiServerCIDR` is normally omitted -- only needed for `helm template`/GitOps
+rendering or if the installer's ServiceAccount can't read `Endpoints`):
 
 ```bash
 helm install kubernaut charts/kubernaut \
   --set networkPolicies.enabled=true \
-  --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
   --set networkPolicies.monitoring.namespace=monitoring \
   --set "networkPolicies.gateway.ingressNamespaces[0]=monitoring"
 ```

@@ -149,10 +149,119 @@ spec:
 
               CA_BUNDLE=$(base64 < "$CA_FILE" | tr -d '\n')
 
+              # Issue #1542 follow-up, round 1: this init container's failures
+              # were initially misdiagnosed as kube-proxy/CNI warm-up races
+              # (a retry loop, then a whole-cluster network-readiness gate).
+              # Instrumenting the retries surfaced "the connection to the
+              # server localhost:8080 was refused" — kubectl's ambient
+              # in-cluster config auto-detection was failing in this image.
+              # Configure the in-cluster API server explicitly from the
+              # mounted service account on every invocation instead of
+              # relying on kubectl auto-detection, and avoid writing a
+              # kubeconfig file since this container's root filesystem is
+              # read-only.
+              KUBE_SA="/var/run/secrets/kubernetes.io/serviceaccount"
+              KUBE_TOKEN=$(cat "${KUBE_SA}/token")
+              kube() {
+                kubectl --server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}" \
+                  --certificate-authority="${KUBE_SA}/ca.crt" \
+                  --token="${KUBE_TOKEN}" \
+                  --request-timeout=5s \
+                  "$@"
+              }
+
+              # Issue #1542 follow-up, round 2: with the config bug fixed, the
+              # *real* underlying issue became visible directly — genuine
+              # "context deadline exceeded" / connection timeouts reaching
+              # the in-cluster API server ClusterIP that persist for
+              # ~60-90s, recurring on every fresh pod (install, upgrade, and
+              # dev quick-start all hit it, ruling out a one-time cluster
+              # startup warm-up). Long-running controller pods never surface
+              # this: client-go retries silently in the background and their
+              # readiness probes have a generous initialDelaySeconds, so they
+              # just take a little longer to go Ready. This single-shot,
+              # `set -e` init container has no such tolerance, so retry each
+              # kubectl call explicitly with a budget wide enough to span the
+              # observed window instead of failing (and burning a
+              # CrashLoopBackOff cycle) on the first transient timeout.
+              #
+              # v1.5 backport note: an earlier iteration of this fix only
+              # wrapped the initial "is the API server up yet" probe in a
+              # retry loop and left patch_webhooks' own get/patch calls as
+              # single-shot (+ --request-timeout only). Since these timeouts
+              # recur on every fresh pod rather than being a one-time startup
+              # race, a fresh timeout window can hit exactly during
+              # patch_webhooks even after the initial probe succeeds — which
+              # is what CI must-gather logs showed (container exits fast with
+              # Init:Error rather than hanging, but still fails overall).
+              # kube_retry wraps every kubectl call, closing that gap.
+              #
+              # v1.5 backport round 2 (helios08 local repro, #1712): live
+              # repro against a fresh Kind v0.32.0 cluster showed the Kind
+              # control-plane container pegged at ~94% CPU while ~13
+              # kubernaut pods started concurrently, with the apiserver
+              # returning "context deadline exceeded" for several minutes.
+              #
+              # v1.5 backport round 3 (CI run 30050619660, #1712): an
+              # attempt-count budget (40 attempts x ~8s) doesn't compose
+              # predictably across patch_webhooks' 4 sequential kubectl
+              # calls (get+patch x 2 resources) -- CI showed authwebhook
+              # still in Init:0/1 after 18+ minutes, far past
+              # scripts/helm-smoke-test.sh's own TIMEOUT_PODS budget for
+              # "all pods Ready", making the whole check fail even on a
+              # path that would have eventually succeeded. Switched to a
+              # wall-clock deadline per call, self-recalibrated to 100s to
+              # fit under this branch's then-current TIMEOUT_PODS (600s).
+              #
+              # v1.5 backport round 5 (CI run 30081239865, #1712): with the
+              # image-preload fix (see helm-smoke-test job) eliminating the
+              # concurrent-registry-pull contention, all 12 other pods now
+              # start clean with zero restarts every time -- but authwebhook
+              # still failed, timing out right at the round-3 100s cutoff on
+              # its very first attempt. Compared directly against main's
+              # current authwebhook.yaml (the proven, currently-passing
+              # config this was backported from): main uses a 20-attempt
+              # loop (~5s timeout + 3s sleep per attempt, up to ~160s total),
+              # not a self-picked wall-clock number -- and main's own comment
+              # documents the observed API-server blip duration as "~60-90s".
+              # Round 3's 100s left only 10-40s of margin above that
+              # documented baseline; main's ~160s leaves 70-100s. Reverted to
+              # main's exact attempt-count parameters instead of
+              # re-deriving a new number, since main's config is the one
+              # with a real track record, and this branch's own TIMEOUT_PODS
+              # (480s) has ample headroom for the same 4-call worst case
+              # (~640s theoretical max, rarely hit in practice per main's
+              # history) that main tolerates under its own tighter 300s
+              # TIMEOUT_PODS.
+              kube_retry() {
+                attempt=0
+                err=""
+                while [ "$attempt" -lt 20 ]; do
+                  if out=$(kube "$@" 2>&1); then
+                    printf '%s\n' "$out"
+                    return 0
+                  fi
+                  err="$out"
+                  attempt=$((attempt + 1))
+                  sleep 3
+                done
+                echo "ERROR: 'kubectl $*' failed after ${attempt} attempts. Last error: ${err}" >&2
+                return 1
+              }
+
               patch_webhooks() {
                 KIND="$1"
                 NAME="$2"
-                COUNT=$(kubectl get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}' | wc -w | tr -d ' ')
+                # #1712 round 2: capture kube_retry's output into a variable
+                # (rather than piping it directly into `wc -w`) so a failed
+                # `kube_retry` propagates its non-zero exit status under
+                # `set -e`. /bin/sh here is dash (bitnami's Debian-based
+                # image), which has no `pipefail`, so `kube_retry ... | wc -w`
+                # previously always "succeeded" with COUNT=0 regardless of
+                # whether kube_retry itself failed — silently patching zero
+                # webhooks instead of surfacing the real API-server timeout.
+                NAMES=$(kube_retry get "$KIND" "$NAME" -o jsonpath='{.webhooks[*].name}')
+                COUNT=$(printf '%s' "$NAMES" | wc -w | tr -d ' ')
                 PATCH="["
                 i=0
                 while [ "$i" -lt "$COUNT" ]; do
@@ -162,7 +271,7 @@ spec:
                 done
                 PATCH="${PATCH}]"
                 echo "  Patching $NAME ($COUNT webhooks)..."
-                kubectl patch "$KIND" "$NAME" --type='json' -p "$PATCH"
+                kube_retry patch "$KIND" "$NAME" --type='json' -p "$PATCH"
               }
 
               echo "==> Init-container: patching webhook caBundle (#377 self-healing)..."

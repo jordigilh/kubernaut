@@ -22,8 +22,66 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
+
+// minKindVersionMajor, minKindVersionMinor define the minimum supported Kind
+// CLI version. Kind CLI v0.32.0 is the first release that can `kind load` node
+// images using containerd's config v4 format (see kindest/node:v1.36.1+ and
+// https://github.com/kubernetes-sigs/kind/releases/tag/v0.32.0). Older CLI
+// versions fail with "unknown containerd config version: 4".
+//
+// This is a minimum-version check (not exact-match) so future Kind patch/minor
+// releases don't require a code change here -- only the CI install step
+// (KIND_VERSION) needs bumping when we want to pick up a newer default.
+const (
+	minKindVersionMajor = 0
+	minKindVersionMinor = 32
+)
+
+var kindVersionPattern = regexp.MustCompile(`kind v(\d+)\.(\d+)\.(\d+)`)
+
+// checkKindVersionOutput parses `kind version` output (format: "kind v0.32.0
+// go1.26.4 linux/amd64") and returns an error if the installed CLI is older
+// than the minimum required version. Pure function (no I/O) so it is
+// independently unit-testable from the exec.Command wrapper below.
+func checkKindVersionOutput(versionStr string) error {
+	matches := kindVersionPattern.FindStringSubmatch(versionStr)
+	if matches == nil {
+		return fmt.Errorf("could not parse kind version from output: %s", versionStr)
+	}
+
+	major, _ := strconv.Atoi(matches[1])
+	minor, _ := strconv.Atoi(matches[2])
+
+	if major < minKindVersionMajor || (major == minKindVersionMajor && minor < minKindVersionMinor) {
+		return fmt.Errorf("kind version too old: required >= v%d.%d.0, got: %s", minKindVersionMajor, minKindVersionMinor, versionStr)
+	}
+	return nil
+}
+
+// validateKindVersion shells out to `kind version` and validates the result
+// against the minimum required version, logging progress to writer.
+func validateKindVersion(writer io.Writer) error {
+	versionCmd := exec.Command("kind", "version")
+	versionOutput, err := versionCmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to get kind version: %w", err)
+	}
+	versionStr := string(versionOutput)
+
+	if err := checkKindVersionOutput(versionStr); err != nil {
+		_, _ = fmt.Fprintf(writer, "  ⚠️  WARNING: Kind version too old\n")
+		_, _ = fmt.Fprintf(writer, "     Current: %s", versionStr)
+		_, _ = fmt.Fprintf(writer, "     Required: kind v%d.%d.0 or newer\n", minKindVersionMajor, minKindVersionMinor)
+		_, _ = fmt.Fprintf(writer, "     Install: go install sigs.k8s.io/kind@v%d.%d.0\n", minKindVersionMajor, minKindVersionMinor)
+		return err
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ Kind version validated: %s", versionStr)
+	return nil
+}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Shared Kind Cluster Helpers - Reusable across all E2E test services
@@ -67,23 +125,10 @@ func CreateKindClusterWithExtraMounts(
 	extraMounts []ExtraMount,
 	writer io.Writer,
 ) error {
-	// 0. Validate Kind version (v0.30.x required for E2E tests)
-	versionCmd := exec.Command("kind", "version")
-	versionOutput, err := versionCmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to get kind version: %w", err)
+	// 0. Validate Kind version (minimum version required for E2E tests)
+	if err := validateKindVersion(writer); err != nil {
+		return err
 	}
-	versionStr := string(versionOutput)
-
-	// Extract version (format: "kind v0.30.0 go1.25.0 darwin/arm64")
-	if !strings.Contains(versionStr, "kind v0.30.") {
-		_, _ = fmt.Fprintf(writer, "  ⚠️  WARNING: Unexpected Kind version detected\n")
-		_, _ = fmt.Fprintf(writer, "     Current: %s", versionStr)
-		_, _ = fmt.Fprintf(writer, "     Expected: kind v0.30.x\n")
-		_, _ = fmt.Fprintf(writer, "     Install: go install sigs.k8s.io/kind@v0.30.0\n")
-		return fmt.Errorf("kind version mismatch: expected v0.30.x, got: %s", versionStr)
-	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Kind version validated: %s", versionStr)
 
 	// 0b. Reuse existing cluster if present (idempotent retry support).
 	// When --flake-attempts or CI retry re-runs the suite, the cluster from
@@ -294,23 +339,10 @@ type KindClusterOptions struct {
 func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "🔧 Creating Kind cluster: %s\n", opts.ClusterName)
 
-	// 0. Validate Kind version (v0.30.x required for E2E tests)
-	versionCmd := exec.Command("kind", "version")
-	versionOutput, err := versionCmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to get kind version: %w", err)
+	// 0. Validate Kind version (minimum version required for E2E tests)
+	if err := validateKindVersion(writer); err != nil {
+		return err
 	}
-	versionStr := string(versionOutput)
-
-	// Extract version (format: "kind v0.30.0 go1.25.0 darwin/arm64")
-	if !strings.Contains(versionStr, "kind v0.30.") {
-		_, _ = fmt.Fprintf(writer, "  ⚠️  WARNING: Unexpected Kind version detected\n")
-		_, _ = fmt.Fprintf(writer, "     Current: %s", versionStr)
-		_, _ = fmt.Fprintf(writer, "     Expected: kind v0.30.x\n")
-		_, _ = fmt.Fprintf(writer, "     Install: go install sigs.k8s.io/kind@v0.30.0\n")
-		return fmt.Errorf("kind version mismatch: expected v0.30.x, got: %s", versionStr)
-	}
-	_, _ = fmt.Fprintf(writer, "  ✅ Kind version validated: %s", versionStr)
 
 	// 1. Check if cluster already exists
 	checkCmd := exec.Command("kind", "get", "clusters")

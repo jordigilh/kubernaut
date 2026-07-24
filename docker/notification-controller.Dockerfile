@@ -23,7 +23,7 @@ ARG TARGETARCH
 ARG GOOS=linux
 ARG GOARCH=${TARGETARCH}
 ARG GOFLAGS=""
-ARG APP_VERSION=v1.5.3
+ARG APP_VERSION=v1.5.4
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -69,7 +69,7 @@ EXPOSE 8080 8081
 ENTRYPOINT ["/manager"]
 CMD []
 
-ARG APP_VERSION=v1.5.3
+ARG APP_VERSION=v1.5.4
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
@@ -108,7 +108,7 @@ EXPOSE 8080 8081
 ENTRYPOINT ["/usr/local/bin/manager"]
 CMD []
 
-ARG APP_VERSION=v1.5.3
+ARG APP_VERSION=v1.5.4
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \

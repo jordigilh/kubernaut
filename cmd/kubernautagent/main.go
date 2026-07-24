@@ -1455,6 +1455,10 @@ func buildMCPHandler(
 		mcptools.WithLogger(logger.WithName("select-workflow")),
 		mcptools.WithHTTPSessionCompleter(autoMgr),
 		mcptools.WithMutexProvider(investigateTool),
+		// #1654: without this, select_workflow never cancels the session's
+		// inactivity timer on completion, so it fires ~InactivityTimeout
+		// later against an already-terminal session.
+		mcptools.WithSelectWorkflowTimeoutTracker(timeoutMgr),
 	}
 	if enricher != nil {
 		swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))
@@ -1466,6 +1470,10 @@ func buildMCPHandler(
 		mcptools.WithCompleteNoActionLogger(logger.WithName("complete-no-action")),
 		mcptools.WithCompleteNoActionHTTPCompleter(autoMgr),
 		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
+		// #1654: WithCompleteNoActionTimeoutTracker existed but was never
+		// wired here, leaving the inactivity timer running past session
+		// completion (same root cause as select_workflow above).
+		mcptools.WithCompleteNoActionTimeoutTracker(timeoutMgr),
 	)
 
 	// Register tools with the MCP SDK server.

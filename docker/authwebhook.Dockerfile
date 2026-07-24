@@ -26,7 +26,7 @@ ARG GOFLAGS=""
 ARG GOOS=linux
 ARG TARGETARCH
 ARG GOARCH=${TARGETARCH}
-ARG APP_VERSION=v1.5.3
+ARG APP_VERSION=v1.5.4
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
@@ -83,7 +83,7 @@ EXPOSE 9443
 ENTRYPOINT ["/authwebhook"]
 CMD []
 
-ARG APP_VERSION=v1.5.3
+ARG APP_VERSION=v1.5.4
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \
@@ -122,7 +122,7 @@ EXPOSE 9443
 ENTRYPOINT ["/usr/local/bin/authwebhook"]
 CMD []
 
-ARG APP_VERSION=v1.5.3
+ARG APP_VERSION=v1.5.4
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 LABEL org.opencontainers.image.source="https://github.com/jordigilh/kubernaut" \

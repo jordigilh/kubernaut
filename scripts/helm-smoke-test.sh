@@ -22,7 +22,32 @@ IMAGE_REGISTRY=""
 PULL_SECRET=""
 CHART_PATH="charts/kubernaut/"
 NAMESPACE="kubernaut-system"
-TIMEOUT_PODS="300s"
+# #1712 (superseded, see below): 300s -> 600s was a passive-wait mitigation
+# (relying solely on kubelet's own growing exponential CrashLoopBackOff
+# delay) that CI proved insufficient even at 600s -- must-gather from run
+# 30050619660 showed aianalysis-controller et al. still CrashLoopBackOff
+# after 12-23+ minutes. assert_pods_ready() now actively deletes
+# crash-looping pods as they're found (bypassing kubelet's backoff schedule
+# entirely -- see comment there, ported from main's proven fix 34840e312)
+# instead of just passively waiting.
+#
+# #1712 round 3 (CI run 30062957472): 300s was still too tight for a
+# *different* reason unrelated to CrashLoopBackOff recovery: authwebhook's
+# patch-cabundle init container (see authwebhook.yaml's kube_retry) can
+# legitimately still be on its *first* attempt for up to ~400s worst case
+# (4 sequential kube_retry calls in patch_webhooks -- get+patch x 2 webhook
+# configs -- each with a 100s wall-clock retry budget) before it has failed
+# even once. A pod mid-first-attempt reports Init:0/1, not CrashLoopBackOff
+# -- there is nothing for the active-recovery loop to detect or restart,
+# because the container hasn't crashed yet; it's legitimately still
+# working. 300s < that ~400s worst case meant assert_pods_ready could time
+# out on a pod that was never stuck, just slow. 480s gives that single
+# attempt room to complete plus margin for one active-recovery cycle if it
+# does subsequently fail.
+#
+# Must be a plain "<N>s" integer-seconds string -- assert_pods_ready() does
+# arithmetic on it (${TIMEOUT_PODS%s}).
+TIMEOUT_PODS="480s"
 CERT_MANAGER_ISSUER="selfsigned-issuer"
 
 # TAP state
@@ -272,7 +297,55 @@ assert_pods_ready() {
   local desc="${2:-ST-CHART-VERIFY-001: ${expected_count} pods reach 1/1 Running}"
   local ns="${3:-$NAMESPACE}"
 
-  if ! kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout="$TIMEOUT_PODS" >/dev/null 2>&1; then
+  # #1712: actively recover crash-looping pods instead of passively waiting
+  # through kubelet's own (growing) exponential CrashLoopBackOff delay.
+  # Ported from main's proven fix (34840e312, 2026-07-07) for the identical
+  # RCA confirmed here via must-gather on this PR's CI runs: concurrent
+  # controller-runtime startup on a resource-constrained Kind control-plane
+  # transiently fails K8s API discovery ("dial tcp <apiserver ClusterIP>:443:
+  # i/o timeout" / "connection refused" on liveness probes), tripping the
+  # standard kubebuilder fail-fast os.Exit(1) path. A deleted-and-recreated
+  # pod gets an immediate clean-slate retry rather than waiting out the
+  # 10s/20s/40s/80s/160s/300s backoff schedule that dominates wall-clock time
+  # by the 4th-5th restart.
+  #
+  # Recovery and readiness-waiting are interleaved (not sequential phases):
+  # a pod may not enter CrashLoopBackOff until partway through the readiness
+  # wait (it needs at least one failed start first), so a single up-front
+  # recovery pass followed by one long passive wait would miss crash-loops
+  # that develop later. Each pass instead does a short (30s) readiness wait,
+  # then re-checks and recovers any newly crash-looping pods, bounded by the
+  # same overall deadline as TIMEOUT_PODS.
+  local deadline=$(( $(date +%s) + ${TIMEOUT_PODS%s} ))
+  local ready=false
+  while [[ "$(date +%s)" -lt "$deadline" ]]; do
+    if kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout=30s >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    local crashing
+    # #1712 round 2 (CI run 30060551721): authwebhook's patch-cabundle
+    # init container kept crash-looping even after the round-1 fix, because
+    # a jq query that only inspects .status.containerStatuses[] (main
+    # containers) never matches an init-container crash-loop, so that pod
+    # was silently skipped by recovery every pass while the other 6
+    # affected controllers converged fine. any(...) (not `or` between two
+    # `[]?` streams -- an empty stream on one side of `or` suppresses the
+    # whole boolean regardless of the other side, a jq stream-semantics
+    # trap) checks both container kinds.
+    crashing=$(kubectl get pods -n "$ns" -o json 2>/dev/null | \
+      jq -r '.items[] | select(
+        (any(.status.containerStatuses[]?; .state.waiting.reason == "CrashLoopBackOff")) or
+        (any(.status.initContainerStatuses[]?; .state.waiting.reason == "CrashLoopBackOff"))
+      ) | .metadata.name' 2>/dev/null || true)
+    if [[ -n "$crashing" ]]; then
+      echo "# Restarting crash-looping pods in ${ns}: $(echo "$crashing" | tr '\n' ' ')"
+      # shellcheck disable=SC2086
+      kubectl delete pod -n "$ns" $crashing >/dev/null 2>&1 || true
+    fi
+  done
+
+  if [[ "$ready" != "true" ]]; then
     local status
     status=$(kubectl get pods -n "$ns" --no-headers 2>&1)
     tap_not_ok "$desc" "Timeout waiting for pods. Current state: ${status}"
@@ -387,6 +460,25 @@ common_install_flags() {
   fi
   echo "$flags"
 }
+# #1712 round 6 (helios08 live repro, RCA confirmed via direct curl from
+# inside a failing authwebhook pod vs. the Kind node): networkPolicies.
+# apiServerCIDR used to default to "" with no auto-discovery, so no service
+# ever got an explicit NetworkPolicy egress-allow rule for the apiserver.
+# That was a latent gap: the older kindnet CNI shipped with v1.5.3's Kind
+# version never enforced NetworkPolicy, so it was silently inert. The
+# v0.32.0 Kind bump (needed for containerd config v4) brought a newer
+# kindnet that does enforce it, surfacing the gap as authwebhook's
+# patch-cabundle init container hanging (TCP connect() to the apiserver
+# timing out). A manual `--set networkPolicies.apiServerCIDR=<ClusterIP>`
+# workaround does NOT fix this: confirmed live that NetworkPolicy ipBlock
+# rules are evaluated against the post-DNAT destination on kindnet (and
+# most other CNIs), so a rule keyed on the "kubernetes" Service's ClusterIP
+# is silently ignored, and the real backend listens on 6443, not 443
+# anyway. Backported main's actual fix instead (PR #1571): the chart now
+# auto-discovers the apiserver's real backend endpoint IP+port via `lookup`
+# during any real `helm install`/`upgrade` (kubernaut.np.apiServerPeers/
+# apiServerPort in _helpers.tpl) -- no explicit --set needed here, since
+# this script always runs against a live cluster.
 
 tls_flags() {
   if [[ "$PLATFORM" == "ocp" ]]; then

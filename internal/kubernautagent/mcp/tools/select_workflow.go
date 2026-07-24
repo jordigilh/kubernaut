@@ -147,6 +147,7 @@ type SelectWorkflowTool struct {
 	sessions          mcpinternal.SessionManager
 	httpCompleter     HTTPSessionCompleter
 	mutexProvider     SessionMutexProvider
+	timeoutTracker    TimeoutTracker
 	preSelectionHooks []PreSelectionHook
 	logger            logr.Logger
 }
@@ -176,6 +177,20 @@ func WithMutexProvider(provider SessionMutexProvider) SelectWorkflowOption {
 func WithLogger(logger logr.Logger) SelectWorkflowOption {
 	return func(t *SelectWorkflowTool) {
 		t.logger = logger
+	}
+}
+
+// WithSelectWorkflowTimeoutTracker sets the inactivity-timeout tracker so
+// select_workflow can cancel the session's timer on completion (#1654), the
+// same way complete_no_action and investigate(cancel) already do. Without
+// this, a session terminated by workflow selection keeps its inactivity
+// timer running until it fires ~InactivityTimeout later against an
+// already-terminal session.
+func WithSelectWorkflowTimeoutTracker(tt TimeoutTracker) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		if tt != nil {
+			t.timeoutTracker = tt
+		}
 	}
 }
 
@@ -262,6 +277,14 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 	workflow, err := t.catalog.GetWorkflowByID(ctx, input.WorkflowID)
 	if err != nil {
 		return SelectWorkflowOutput{}, fmt.Errorf("workflow catalog lookup failed: %w", err)
+	}
+
+	// #1654: stop the inactivity timer synchronously (not deferred to the
+	// completion goroutine below) — the session is terminating regardless of
+	// whether an HTTP completer is wired, so the timer must not be left
+	// running to fire later against an already-terminal session.
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.StopTracking(driver.SessionID)
 	}
 
 	// Auto-complete: build final InvestigationResult from RCA + selected workflow,
