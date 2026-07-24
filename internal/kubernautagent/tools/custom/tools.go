@@ -380,40 +380,12 @@ func (t *getWorkflowTool) Execute(ctx context.Context, args json.RawMessage) (st
 	return string(data), nil
 }
 
-// stripPaginationIfComplete removes the "pagination" field from a JSON response
-// when hasMore is false, meaning all results fit in one page. This avoids the
-// LLM wasting tool calls trying to paginate when there are no more pages.
-// When hasMore is true, the pagination metadata is preserved so the LLM knows
-// it is seeing a subset.
-func stripPaginationIfComplete(data json.RawMessage) json.RawMessage {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return data
-	}
-
-	paginationRaw, ok := obj["pagination"]
-	if !ok {
-		return data
-	}
-
-	var pagination struct {
-		HasMore bool `json:"hasMore"`
-	}
-	if err := json.Unmarshal(paginationRaw, &pagination); err != nil {
-		return data
-	}
-
-	if pagination.HasMore {
-		return data
-	}
-
-	delete(obj, "pagination")
-	result, err := json.Marshal(obj)
-	if err != nil {
-		return data
-	}
-	return result
-}
+// stripPaginationIfComplete (superseded by transformPagination, DD-WORKFLOW-016
+// v1.4) was removed as dead code (#1677 dead-code sweep, follow-up):
+// transformPagination is a strict superset -- it strips pagination under the
+// same "no more pages" condition plus the offset>0 edge case this function
+// didn't handle, and additionally converts raw offset/limit/totalCount into
+// LLM-safe cursors instead of exposing them directly.
 
 const defaultPaginationLimit = 10
 const maxPaginationLimit = 100

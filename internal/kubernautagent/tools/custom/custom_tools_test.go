@@ -115,60 +115,11 @@ var _ = Describe("NewAllTools registration order guard", func() {
 	})
 })
 
-var _ = Describe("UT-KA-688: Conditional pagination stripping", func() {
-
-	Describe("UT-KA-688-001: StripPaginationIfComplete removes pagination when all results fit in one page", func() {
-		It("should strip pagination when hasMore is false", func() {
-			input := `{"actionTypes":[{"actionType":"RestartDeployment"},{"actionType":"ScaleReplicas"}],"pagination":{"totalCount":2,"offset":0,"limit":10,"hasMore":false}}`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-
-			var parsed map[string]interface{}
-			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
-			Expect(parsed).NotTo(HaveKey("pagination"))
-			Expect(parsed).To(HaveKey("actionTypes"))
-		})
-
-		It("should preserve pagination when hasMore is true", func() {
-			input := `{"actionTypes":[{"actionType":"RestartDeployment"}],"pagination":{"totalCount":16,"offset":0,"limit":10,"hasMore":true}}`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-
-			var parsed map[string]interface{}
-			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
-			Expect(parsed).To(HaveKey("pagination"))
-			Expect(parsed).To(HaveKey("actionTypes"))
-		})
-	})
-
-	Describe("UT-KA-688-002: StripPaginationIfComplete works for workflow discovery responses", func() {
-		It("should strip pagination from workflow list when complete", func() {
-			input := `{"actionType":"RestartDeployment","workflows":[{"workflowId":"abc-123"}],"pagination":{"totalCount":1,"offset":0,"limit":10,"hasMore":false}}`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-
-			var parsed map[string]interface{}
-			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
-			Expect(parsed).NotTo(HaveKey("pagination"))
-			Expect(parsed).To(HaveKey("workflows"))
-			Expect(parsed).To(HaveKey("actionType"))
-		})
-	})
-
-	Describe("UT-KA-688-003: StripPaginationIfComplete is safe for edge cases", func() {
-		It("should return input unchanged when pagination field is absent", func() {
-			input := `{"actionTypes":[{"actionType":"RestartDeployment"}]}`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-
-			var parsed map[string]interface{}
-			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
-			Expect(parsed).To(HaveKey("actionTypes"))
-		})
-
-		It("should return input unchanged for invalid JSON", func() {
-			input := `not json`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-			Expect(string(result)).To(Equal(input))
-		})
-	})
-})
+// UT-KA-688-001/002/003 (stripPaginationIfComplete) were removed as dead-code
+// coverage (#1677 dead-code sweep, follow-up): stripPaginationIfComplete
+// itself was deleted -- superseded by TransformPagination (DD-WORKFLOW-016
+// v1.4, see UT-KA-688-110 through 115 below), which is a strict superset and
+// is the only pagination-shaping function called from production code.
 
 // --- Group A: Cursor Encoding/Decoding (UT-KA-688-100 through UT-KA-688-104) ---
 
