@@ -1,6 +1,6 @@
 {{- include "kubernaut.monitoring.validate" . -}}
 {{- $effectivenessmonitorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.effectivenessmonitor.fleet "oauth2" .Values.effectivenessmonitor.fleet.oauth2) | fromYaml }}
-{{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+{{- if and .Values.global.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
 {{- if not $effectivenessmonitorFleetPreamble.oauth2.tokenURL }}
 {{- fail "effectivenessmonitor.fleet.oauth2.tokenURL is required when effectivenessmonitor.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
@@ -46,7 +46,7 @@ data:
       {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
       tlsCaFile: /etc/ssl/em/service-ca.crt
       {{- end }}
-    {{- if .Values.effectivenessmonitor.fleet.enabled }}
+    {{- if .Values.global.fleet.enabled }}
     fleet:
       enabled: true
       mcpGatewayEndpoint: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayEndpoint | quote }}
@@ -249,7 +249,7 @@ spec:
               readOnly: true
             {{- end }}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+            {{- if and .Values.global.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/effectivenessmonitor/{{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
@@ -266,7 +266,7 @@ spec:
             name: effectivenessmonitor-service-ca
         {{- end }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+        {{- if and .Values.global.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}

@@ -1,6 +1,6 @@
 {{- if .Values.apifrontend.enabled }}
 {{- $apifrontendFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.apifrontend.fleet "oauth2" .Values.apifrontend.fleet.oauth2) | fromYaml }}
-{{- if and .Values.apifrontend.fleet.enabled .Values.apifrontend.fleet.oauth2.enabled }}
+{{- if and .Values.global.fleet.enabled .Values.apifrontend.fleet.oauth2.enabled }}
 {{- if not $apifrontendFleetPreamble.oauth2.tokenURL }}
 {{- fail "apifrontend.fleet.oauth2.tokenURL is required when apifrontend.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
 {{- end }}
@@ -200,7 +200,7 @@ data:
     logging:
       level: {{ .Values.apifrontend.logging.level | default "INFO" }}
       format: json
-    {{- if .Values.apifrontend.fleet.enabled }}
+    {{- if .Values.global.fleet.enabled }}
     fleet:
       enabled: true
       mcpGatewayEndpoint: {{ $apifrontendFleetPreamble.config.mcpGatewayEndpoint | quote }}
@@ -305,7 +305,7 @@ spec:
               mountPath: /etc/apifrontend/valkey
               readOnly: true
             {{- end }}
-            {{- if .Values.apifrontend.fleet.enabled }}
+            {{- if .Values.global.fleet.enabled }}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             {{- if .Values.apifrontend.fleet.oauth2.enabled }}
             - name: oauth2-credentials
@@ -346,7 +346,7 @@ spec:
               - key: valkey-secrets.yaml
                 path: valkey-secrets.yaml
         {{- end }}
-        {{- if .Values.apifrontend.fleet.enabled }}
+        {{- if .Values.global.fleet.enabled }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         {{- if .Values.apifrontend.fleet.oauth2.enabled }}
         - name: oauth2-credentials

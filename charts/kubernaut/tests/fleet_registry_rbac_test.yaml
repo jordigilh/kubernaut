@@ -304,7 +304,6 @@ tests:
     set:
       apifrontend:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
           namespace: team-a
@@ -329,7 +328,6 @@ tests:
     set:
       apifrontend:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
           namespace: team-a
@@ -349,7 +347,6 @@ tests:
     set:
       apifrontend:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
           namespace: ""
@@ -369,7 +366,6 @@ tests:
     set:
       apifrontend:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
           namespace: ""
@@ -390,7 +386,6 @@ tests:
     set:
       effectivenessmonitor:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
           namespace: team-a
@@ -415,7 +410,6 @@ tests:
     set:
       effectivenessmonitor:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
           namespace: team-a
@@ -435,7 +429,6 @@ tests:
     set:
       effectivenessmonitor:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
           namespace: ""
@@ -455,7 +448,6 @@ tests:
     set:
       effectivenessmonitor:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
           namespace: ""

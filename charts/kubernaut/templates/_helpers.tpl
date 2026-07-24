@@ -75,8 +75,11 @@ service (gateway, signalprocessing, remediationorchestrator,
 effectivenessmonitor, apifrontend, fleetmetadatacache) authenticates to the
 *same* MCP Gateway with the same OAuth2 client in practice -- set it once in
 global.fleet.oauth2 instead of duplicating it per service. Per-service
-`fleet.oauth2.enabled` (fleet integration on/off) is intentionally NOT
-handled here and stays independent per service.
+`fleet.oauth2.enabled` (fleet OAuth2 auth on/off) is intentionally NOT
+handled here and stays independent per service -- distinct from
+global.fleet.enabled (fleet federation on/off, consolidated across
+gateway/remediationorchestrator/apifrontend/effectivenessmonitor, Issue
+#1707).
 Named templates can only return a string, so the merged config is
 serialized as YAML -- parse it back with `fromYaml` at the call site.
 Usage:

@@ -208,6 +208,11 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Multi-cluster fleet federation on/off (Issue #1707), consolidated from four independent per-service toggles (gateway/remediationorchestrator/apifrontend/effectivenessmonitor fleet.enabled)"
+            },
             "mcpGatewayEndpoint": {
               "type": "string",
               "default": "",
@@ -430,13 +435,12 @@
         "tolerations": { "$ref": "#/definitions/tolerations" },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003)",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003). On/off toggle consolidated into global.fleet.enabled (Issue #1707)",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
             "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
             "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for federated scope checks. Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for federated scope checks. Required when global.fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
             "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
             "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
             "tokenSecretRef": { "type": "string", "default": "", "description": "K8s Secret (key: token) with an ACM Search bearer token. Mandatory when backend=acm; FleetConfig.Validate() rejects backend=acm without it (#1556)." },
@@ -731,13 +735,12 @@
         "tolerations": { "$ref": "#/definitions/tolerations" },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003)",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003). On/off toggle consolidated into global.fleet.enabled (Issue #1707)",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
             "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
             "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for reading remote resource specs (spec hash). Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
+            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for reading remote resource specs (spec hash). Required when global.fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
             "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
             "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
             "tokenSecretRef": { "type": "string", "default": "", "description": "K8s Secret (key: token) with an ACM Search bearer token. Mandatory when backend=acm; FleetConfig.Validate() rejects backend=acm without it (#1556)." },
@@ -892,10 +895,9 @@
         },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068)",
+          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068). On/off toggle consolidated into global.fleet.enabled (Issue #1707)",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
             "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads. Optional; falls back to global.fleet.mcpGatewayEndpoint when unset" },
             "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
             "namespace": { "type": "string", "default": "", "description": "Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC" },
@@ -1206,10 +1208,9 @@
         "logging": { "$ref": "#/definitions/serviceLogging" },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068)",
+          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068). On/off toggle consolidated into global.fleet.enabled (Issue #1707)",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
             "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads. Optional; falls back to global.fleet.mcpGatewayEndpoint when unset" },
             "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
             "namespace": { "type": "string", "default": "", "description": "Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC" },

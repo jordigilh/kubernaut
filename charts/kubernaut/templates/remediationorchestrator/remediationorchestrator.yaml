@@ -1,7 +1,7 @@
 {{- $remediationorchestratorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.remediationorchestrator.fleet "oauth2" .Values.remediationorchestrator.fleet.oauth2) | fromYaml }}
-{{- if .Values.remediationorchestrator.fleet.enabled }}
+{{- if .Values.global.fleet.enabled }}
 {{- if not $remediationorchestratorFleetPreamble.config.mcpGatewayEndpoint }}
-{{- fail "remediationorchestrator.fleet.mcpGatewayEndpoint is required when remediationorchestrator.fleet.enabled=true (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
+{{- fail "remediationorchestrator.fleet.mcpGatewayEndpoint is required when global.fleet.enabled=true (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
 {{- end }}
 {{- if .Values.remediationorchestrator.fleet.oauth2.enabled }}
 {{- if not $remediationorchestratorFleetPreamble.oauth2.tokenURL }}
@@ -67,7 +67,7 @@ data:
       ineffectiveTimeWindow: {{ .Values.remediationorchestrator.config.routing.ineffectiveTimeWindow | default "4h" | quote }}
     retention:
       period: {{ .Values.remediationorchestrator.config.retention.period | default "24h" | quote }}
-    {{- if .Values.remediationorchestrator.fleet.enabled }}
+    {{- if .Values.global.fleet.enabled }}
     fleet:
       enabled: true
       {{- if .Values.remediationorchestrator.fleet.backend }}
@@ -297,12 +297,12 @@ spec:
               mountPath: /etc/config
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
+            {{- if and .Values.global.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
-            {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
+            {{- if and .Values.global.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
             - name: fleet-acm-token
               mountPath: "/etc/remediationorchestrator/{{ .Values.remediationorchestrator.fleet.tokenSecretRef }}"
               readOnly: true
@@ -314,12 +314,12 @@ spec:
           configMap:
             name: remediationorchestrator-config
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
+        {{- if and .Values.global.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}
         {{- end }}
-        {{- if and .Values.remediationorchestrator.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
+        {{- if and .Values.global.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
         - name: fleet-acm-token
           secret:
             secretName: {{ .Values.remediationorchestrator.fleet.tokenSecretRef }}
