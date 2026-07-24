@@ -29,11 +29,25 @@ NAMESPACE="kubernaut-system"
 # after 12-23+ minutes. assert_pods_ready() now actively deletes
 # crash-looping pods as they're found (bypassing kubelet's backoff schedule
 # entirely -- see comment there, ported from main's proven fix 34840e312)
-# instead of just passively waiting, so 300s is overall-deadline runway for
-# that interleaved recover+wait loop, not a single passive `kubectl wait`.
+# instead of just passively waiting.
+#
+# #1712 round 3 (CI run 30062957472): 300s was still too tight for a
+# *different* reason unrelated to CrashLoopBackOff recovery: authwebhook's
+# patch-cabundle init container (see authwebhook.yaml's kube_retry) can
+# legitimately still be on its *first* attempt for up to ~400s worst case
+# (4 sequential kube_retry calls in patch_webhooks -- get+patch x 2 webhook
+# configs -- each with a 100s wall-clock retry budget) before it has failed
+# even once. A pod mid-first-attempt reports Init:0/1, not CrashLoopBackOff
+# -- there is nothing for the active-recovery loop to detect or restart,
+# because the container hasn't crashed yet; it's legitimately still
+# working. 300s < that ~400s worst case meant assert_pods_ready could time
+# out on a pod that was never stuck, just slow. 480s gives that single
+# attempt room to complete plus margin for one active-recovery cycle if it
+# does subsequently fail.
+#
 # Must be a plain "<N>s" integer-seconds string -- assert_pods_ready() does
 # arithmetic on it (${TIMEOUT_PODS%s}).
-TIMEOUT_PODS="300s"
+TIMEOUT_PODS="480s"
 CERT_MANAGER_ISSUER="selfsigned-issuer"
 
 # TAP state
