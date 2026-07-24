@@ -117,7 +117,7 @@ spec:
               # Issue #753 C-1: checks each inter-service secret independently.
               # Reuses CA from authwebhook-tls (extracted or freshly generated).
               INTERSERVICE_REGEN=false
-              for CHECK_SECRET in gateway-tls datastorage-tls kubernautagent-tls; do
+              for CHECK_SECRET in gateway-tls datastorage-tls kubernautagent-tls fleetmetadatacache-tls; do
                 if ! kubectl get secret "$CHECK_SECRET" -n "$NAMESPACE" >/dev/null 2>&1; then
                   echo "  $CHECK_SECRET missing — inter-service regen required."
                   INTERSERVICE_REGEN=true
@@ -143,7 +143,7 @@ spec:
                   kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}' | base64 -d > "$TMPDIR/ca.crt"
                 fi
 
-                for SVC_NAME in gateway-service data-storage-service kubernaut-agent; do
+                for SVC_NAME in gateway-service data-storage-service kubernaut-agent fleetmetadatacache-service; do
                   SECRET_NAME="${SVC_NAME%-service}-tls"
                   [ "$SVC_NAME" = "data-storage-service" ] && SECRET_NAME="datastorage-tls"
                   [ "$SVC_NAME" = "kubernaut-agent" ] && SECRET_NAME="kubernautagent-tls"
@@ -513,6 +513,7 @@ spec:
               kubectl delete secret gateway-tls -n "$NAMESPACE" --ignore-not-found
               kubectl delete secret datastorage-tls -n "$NAMESPACE" --ignore-not-found
               kubectl delete secret kubernautagent-tls -n "$NAMESPACE" --ignore-not-found
+              kubectl delete secret fleetmetadatacache-tls -n "$NAMESPACE" --ignore-not-found
               kubectl delete secret datastorage-signing-cert -n "$NAMESPACE" --ignore-not-found
               kubectl delete configmap inter-service-ca -n "$NAMESPACE" --ignore-not-found
               echo "==> Cleanup complete"

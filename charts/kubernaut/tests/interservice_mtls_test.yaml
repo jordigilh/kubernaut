@@ -167,14 +167,40 @@ tests:
           path: spec.dnsNames
           content: kubernaut-agent.NAMESPACE.svc.cluster.local
 
-  - it: "cert-manager mode: exactly 3 leaf Certificates rendered"
+  # Issue #1683: FMC joins the inter-service TLS leaf cert rotation so its
+  # API server can present a cert trusted by GW/RO's shared CA bundle.
+  - it: "cert-manager mode: fleetmetadatacache-tls leaf Certificate uses the fleetmetadatacache-service DNS names"
+    set:
+      tls:
+        mode: cert-manager
+    template: templates/interservice/leaf-certs.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-tls
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: fleetmetadatacache-tls
+      - equal:
+          path: spec.issuerRef.name
+          value: kubernaut-interservice-ca-issuer
+      - contains:
+          path: spec.dnsNames
+          content: fleetmetadatacache-service
+      - contains:
+          path: spec.dnsNames
+          content: fleetmetadatacache-service.NAMESPACE.svc.cluster.local
+
+  - it: "cert-manager mode: exactly 4 leaf Certificates rendered"
     set:
       tls:
         mode: cert-manager
     template: templates/interservice/leaf-certs.yaml
     asserts:
       - hasDocuments:
-          count: 3
+          count: 4
 
   # ── cert-manager mode: CA sync hook Job ─────────────────────────────────
   - it: "cert-manager mode: renders the CA-to-ConfigMap sync hook Job"

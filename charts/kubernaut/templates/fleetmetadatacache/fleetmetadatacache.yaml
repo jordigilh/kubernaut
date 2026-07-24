@@ -23,7 +23,10 @@ data:
   config.yaml: |
     server:
       apiAddr: ":8080"
-      metricsAddr: ":8081"
+      healthAddr: ":8081"
+      metricsAddr: ":9090"
+      tls:
+        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
     mcpGateway:
       endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
       gatewayType: {{ .Values.fleetmetadatacache.gatewayType | quote }}
@@ -75,19 +78,22 @@ spec:
             - name: api
               containerPort: 8080
               protocol: TCP
-            - name: metrics
+            - name: health
               containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
               protocol: TCP
           livenessProbe:
             httpGet:
               path: /healthz
-              port: api
+              port: health
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /readyz
-              port: api
+              port: health
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:
@@ -99,6 +105,9 @@ spec:
             - name: oauth2-credentials
               mountPath: /etc/fleetmetadatacache/fleet-oauth2
               readOnly: true
+            - name: tls-certs
+              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
+              readOnly: true
       volumes:
         - name: config
           configMap:
@@ -106,6 +115,10 @@ spec:
         - name: oauth2-credentials
           secret:
             secretName: {{ $fmcFleetPreamble.oauth2.credentialsSecretRef }}
+        - name: tls-certs
+          secret:
+            secretName: fleetmetadatacache-tls
+            optional: true
 ---
 apiVersion: v1
 kind: Service
@@ -125,8 +138,12 @@ spec:
       port: 8080
       targetPort: api
       protocol: TCP
-    - name: metrics
+    - name: health
       port: 8081
+      targetPort: health
+      protocol: TCP
+    - name: metrics
+      port: 9090
       targetPort: metrics
       protocol: TCP
 ---
@@ -222,11 +239,7 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    - from:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 8081
+    {{- include "kubernaut.np.metricsIngress" . | nindent 4 }}
   egress:
     - to:
         - podSelector:

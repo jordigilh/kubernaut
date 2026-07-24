@@ -384,10 +384,11 @@ https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 
 {{/*
 Return the in-cluster FleetMetadataCache service URL.
-FleetMetadataCache uses HTTP by default (internal scope query API, ADR-068).
+Issue #1683: FleetMetadataCache's API port presents TLS by default
+(ConfigureConditionalTLS), matching every other Kubernaut HTTP-API service.
 */}}
 {{- define "kubernaut.fleetmetadatacache.url" -}}
-http://fleetmetadatacache-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+https://fleetmetadatacache-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 {{- end }}
 
 {{/*
