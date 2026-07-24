@@ -210,23 +210,42 @@ spec:
               # scripts/helm-smoke-test.sh's own TIMEOUT_PODS budget for
               # "all pods Ready", making the whole check fail even on a
               # path that would have eventually succeeded. Switched to a
-              # wall-clock deadline per call (100s) so the 4-call worst
-              # case (~400s) stays predictably under TIMEOUT_PODS (600s),
-              # instead of an attempt-count budget whose total duration is
-              # easy to miscalibrate against the caller's own timeout.
-              KUBE_RETRY_TIMEOUT_SECS=100
+              # wall-clock deadline per call, self-recalibrated to 100s to
+              # fit under this branch's then-current TIMEOUT_PODS (600s).
+              #
+              # v1.5 backport round 5 (CI run 30081239865, #1712): with the
+              # image-preload fix (see helm-smoke-test job) eliminating the
+              # concurrent-registry-pull contention, all 12 other pods now
+              # start clean with zero restarts every time -- but authwebhook
+              # still failed, timing out right at the round-3 100s cutoff on
+              # its very first attempt. Compared directly against main's
+              # current authwebhook.yaml (the proven, currently-passing
+              # config this was backported from): main uses a 20-attempt
+              # loop (~5s timeout + 3s sleep per attempt, up to ~160s total),
+              # not a self-picked wall-clock number -- and main's own comment
+              # documents the observed API-server blip duration as "~60-90s".
+              # Round 3's 100s left only 10-40s of margin above that
+              # documented baseline; main's ~160s leaves 70-100s. Reverted to
+              # main's exact attempt-count parameters instead of
+              # re-deriving a new number, since main's config is the one
+              # with a real track record, and this branch's own TIMEOUT_PODS
+              # (480s) has ample headroom for the same 4-call worst case
+              # (~640s theoretical max, rarely hit in practice per main's
+              # history) that main tolerates under its own tighter 300s
+              # TIMEOUT_PODS.
               kube_retry() {
-                deadline=$(($(date +%s) + KUBE_RETRY_TIMEOUT_SECS))
+                attempt=0
                 err=""
-                while [ "$(date +%s)" -lt "$deadline" ]; do
+                while [ "$attempt" -lt 20 ]; do
                   if out=$(kube "$@" 2>&1); then
                     printf '%s\n' "$out"
                     return 0
                   fi
                   err="$out"
+                  attempt=$((attempt + 1))
                   sleep 3
                 done
-                echo "ERROR: 'kubectl $*' failed after ${KUBE_RETRY_TIMEOUT_SECS}s. Last error: ${err}" >&2
+                echo "ERROR: 'kubectl $*' failed after ${attempt} attempts. Last error: ${err}" >&2
                 return 1
               }
 
