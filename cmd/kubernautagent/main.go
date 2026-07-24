@@ -31,6 +31,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
 	"go.uber.org/zap"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
@@ -373,6 +374,17 @@ func loadStartupConfig(configPath, llmRuntimePath string, bootstrapLogger logr.L
 		"level", cfg.Runtime.Logging.Level,
 		"format", cfg.Runtime.Logging.Format,
 	)
+
+	// #1677 hardening: without this, controller-runtime silently drops every
+	// internal log line (reflector/informer errors included) behind a
+	// one-time "log.SetLogger(...) was never called" warning instead of
+	// emitting them -- which hid the underlying cause of workflow catalog
+	// cache sync failures (workflowcatalog.NewInformerCache) behind KA's own
+	// generic "failed to sync ... within 30s" wrapper. Matches every other
+	// controller-runtime-using service (cmd/authwebhook, cmd/apifrontend,
+	// cmd/gateway, etc.), which already call this right after building their
+	// logger.
+	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
 	llmRtData, err := os.ReadFile(llmRuntimePath)
 	if err != nil {
