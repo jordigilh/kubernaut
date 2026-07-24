@@ -310,8 +310,20 @@ assert_pods_ready() {
       break
     fi
     local crashing
+    # #1712 round 2 (CI run 30060551721): authwebhook's patch-cabundle
+    # init container kept crash-looping even after the round-1 fix, because
+    # a jq query that only inspects .status.containerStatuses[] (main
+    # containers) never matches an init-container crash-loop, so that pod
+    # was silently skipped by recovery every pass while the other 6
+    # affected controllers converged fine. any(...) (not `or` between two
+    # `[]?` streams -- an empty stream on one side of `or` suppresses the
+    # whole boolean regardless of the other side, a jq stream-semantics
+    # trap) checks both container kinds.
     crashing=$(kubectl get pods -n "$ns" -o json 2>/dev/null | \
-      jq -r '.items[] | select(.status.containerStatuses[]?.state.waiting.reason == "CrashLoopBackOff") | .metadata.name' 2>/dev/null || true)
+      jq -r '.items[] | select(
+        (any(.status.containerStatuses[]?; .state.waiting.reason == "CrashLoopBackOff")) or
+        (any(.status.initContainerStatuses[]?; .state.waiting.reason == "CrashLoopBackOff"))
+      ) | .metadata.name' 2>/dev/null || true)
     if [[ -n "$crashing" ]]; then
       echo "# Restarting crash-looping pods in ${ns}: $(echo "$crashing" | tr '\n' ' ')"
       # shellcheck disable=SC2086
