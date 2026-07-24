@@ -484,13 +484,38 @@ spec:
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         # BR-PLATFORM-005: 1-hour TTL projected token replacing the default
         # (much longer-lived) automounted SA token for this high-risk component.
+        #
+        # #1677 hardening fix: audience MUST match the cluster's actual
+        # --service-account-issuer (which --api-audiences defaults to when
+        # unset -- see kube-apiserver docs), not an assumed literal. kubeadm
+        # (and therefore Kind, which every Helm smoke test in CI runs
+        # against) defaults --service-account-issuer to
+        # "https://kubernetes.default.svc.cluster.local" (WITH the
+        # .cluster.local suffix). The previous value here
+        # ("https://kubernetes.default.svc", no suffix) didn't match that
+        # audience, so the apiserver's ServiceAccount token authenticator
+        # rejected every token this Deployment presented with 401
+        # Unauthorized -- for every K8s API call KA itself makes (discovery,
+        # the #1677 workflow catalog informer's List/Watch, etc.), 100% of
+        # the time, on every retry, with no window in which it ever
+        # succeeded. This was masked pre-#1677 because KA never needed to
+        # make its own K8s API calls during startup (workflow discovery
+        # went through DataStorage's REST API instead); the #1677 informer
+        # cache was the first code path to depend on it, and readinessHandler
+        # gating /readyz on wfCatalog.Ready() is what surfaced it as a hard
+        # CI failure (Helm Smoke Tests, both tls=cert-manager and tls=hook
+        # variants) instead of a silent no-op. RCA: PR #1718 CI run
+        # 30081410278 must-gather (helm-smoke-must-gather-cert-manager /
+        # -hook), confirmed reproducible with Restart Count: 0 (i.e. not a
+        # startup-timing race) -- the token is rejected identically on every
+        # single attempt for the pod's entire lifetime.
         - name: sa-token
           projected:
             sources:
               - serviceAccountToken:
                   path: token
                   expirationSeconds: 3600
-                  audience: https://kubernetes.default.svc
+                  audience: https://kubernetes.default.svc.cluster.local
               - configMap:
                   name: kube-root-ca.crt
                   items:
