@@ -847,11 +847,24 @@ jobs:
               PRERELEASE_FLAG="--prerelease"
             fi
 
+            # #1721 follow-up: the previous-tag lookup must be ancestry-aware
+            # (--merged "${TAG}"), not just the 2nd-most-recently-*created*
+            # tag repo-wide. Kubernaut maintains diverging release lines
+            # (e.g. release/v1.5 patches vs. main/v1.6 pre-releases), so a
+            # tag like v1.6.0-rc1 can be created chronologically between two
+            # v1.5.x patch tags while living on a completely different
+            # branch. Plain --sort=-creatordate picked v1.6.0-rc1 as the
+            # "previous" tag for v1.5.4 (it isn't even an ancestor of
+            # release/v1.5), producing a wrong "Full Changelog: v1.6.0-rc1...
+            # v1.5.4" comparison link. --merged "${TAG}" restricts the tag
+            # list to commits actually reachable from this release's own
+            # commit, so it always resolves to the true previous release in
+            # the same lineage (e.g. v1.5.3 for v1.5.4).
             gh release create "${TAG}" \
               --title "Kubernaut ${TAG}" \
               --generate-notes \
               ${PRERELEASE_FLAG} \
-              --notes-start-tag "$(git tag --sort=-creatordate | grep '^v' | sed -n '2p')" || \
+              --notes-start-tag "$(git tag --sort=-creatordate --merged "${TAG}" | grep '^v' | grep -v "^${TAG}$" | head -1)" || \
             gh release create "${TAG}" \
               --title "Kubernaut ${TAG}" \
               --generate-notes \
