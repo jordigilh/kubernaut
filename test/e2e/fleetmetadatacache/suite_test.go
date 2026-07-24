@@ -109,7 +109,19 @@ const (
 	// exposed via NodePort per DD-TEST-001 (no kubectl port-forward).
 	// See test/infrastructure/kind-fleetmetadatacache-config.yaml and
 	// SetupFMCE2EInfrastructure's Phase 9.
-	fmcAPIBaseURL = "http://localhost:8150"
+	//
+	// Issue #1683: https:// -- FMC's API port presents TLS by default now
+	// (ConfigureConditionalTLS), matching production. The harness's
+	// FMCHTTPClient trusts the E2E inter-service CA via
+	// http.DefaultTransport (set to infrastructure.NewTLSAwareTransport in
+	// SynchronizedBeforeSuite below), so no other change is needed here.
+	fmcAPIBaseURL = "https://localhost:8150"
+
+	// fmcHealthBaseURL is FMC's dedicated plain-HTTP health/readiness port
+	// (Issue #1683 3-port split). See
+	// test/infrastructure/kind-fleetmetadatacache-config.yaml's health
+	// NodePort mapping and SetupFMCE2EInfrastructure's Phase 8.
+	fmcHealthBaseURL = "http://localhost:8151"
 )
 
 // harness carries the state every shared FMC scenario needs (see
@@ -117,8 +129,9 @@ const (
 // Declared here (not in variant.go) so the *_test.go wiring files that read
 // it (sync_journey_test.go etc.) have a single, obvious source.
 var harness = &shared.Harness{
-	Namespace:     namespace,
-	FMCAPIBaseURL: fmcAPIBaseURL,
+	Namespace:        namespace,
+	FMCAPIBaseURL:    fmcAPIBaseURL,
+	FMCHealthBaseURL: fmcHealthBaseURL,
 }
 
 var (

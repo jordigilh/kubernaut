@@ -79,6 +79,13 @@ type Harness struct {
 	FMCHTTPClient *http.Client
 	FMCAPIBaseURL string
 
+	// FMCHealthBaseURL is FMC's dedicated plain-HTTP health/readiness port
+	// (Issue #1683 3-port split: /healthz+/readyz moved off the
+	// TLS-protected API port onto their own kubelet-only port). Kept
+	// separate from FMCAPIBaseURL because the two now genuinely differ in
+	// both port number and scheme (https vs. http).
+	FMCHealthBaseURL string
+
 	// RemoteK8sClient/RemoteKubeconfigPath target the second, independent
 	// Kind cluster backing the "prod-east" registration (DD-TEST-013, Spike
 	// S19). Used by the cross-cluster isolation scenario to create/verify

@@ -92,14 +92,27 @@ const (
 	// isolated Kind cluster. See
 	// test/infrastructure/kind-fleetmetadatacache-eaigw-config.yaml and
 	// SetupFMCE2EInfrastructureEAIGW's Phase 9.
-	fmcAPIBaseURL = "http://localhost:8150"
+	//
+	// Issue #1683: https:// -- FMC's API port presents TLS by default now
+	// (ConfigureConditionalTLS), matching production. The harness's
+	// FMCHTTPClient trusts the E2E inter-service CA via
+	// http.DefaultTransport (set to infrastructure.NewTLSAwareTransport in
+	// SynchronizedBeforeSuite below), so no other change is needed here.
+	fmcAPIBaseURL = "https://localhost:8150"
+
+	// fmcHealthBaseURL is FMC's dedicated plain-HTTP health/readiness port
+	// (Issue #1683 3-port split). See
+	// test/infrastructure/kind-fleetmetadatacache-eaigw-config.yaml's
+	// health NodePort mapping and SetupFMCE2EInfrastructureEAIGW's Phase 8.
+	fmcHealthBaseURL = "http://localhost:8151"
 )
 
 // harness carries the state every shared FMC scenario needs (see
 // shared.Harness); its fields are populated below in SynchronizedBeforeSuite.
 var harness = &shared.Harness{
-	Namespace:     namespace,
-	FMCAPIBaseURL: fmcAPIBaseURL,
+	Namespace:        namespace,
+	FMCAPIBaseURL:    fmcAPIBaseURL,
+	FMCHealthBaseURL: fmcHealthBaseURL,
 }
 
 var (

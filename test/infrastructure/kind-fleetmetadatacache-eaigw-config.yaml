@@ -16,6 +16,8 @@
 #
 # Port Allocation (from DD-TEST-001):
 #   FMC API:               hostPort 8150,  NodePort 30150 (same as Kuadrant lane)
+#   FMC Health:            hostPort 8151,  NodePort 30151 (Issue #1683 3-port
+#                          split, same as Kuadrant lane)
 #   Keycloak OIDC:         hostPort 30557, NodePort 30557 (same as Kuadrant lane)
 #   Envoy AI Gateway MCP:  hostPort 31976, NodePort 31976 (NEW -- next in the
 #                          Kuadrant-31975 NodePort block, Spike S18 Phase B)
@@ -43,6 +45,11 @@ nodes:
   # NodePort over kubectl port-forward for E2E test stability.
   - containerPort: 30150  # FMC API NodePort
     hostPort: 8150        # DD-TEST-001: FMC API (mirrors production port 8150)
+    protocol: TCP
+  # Issue #1683: FMC's dedicated health/readiness port (3-port split --
+  # /healthz+/readyz moved off the now-TLS-protected API port above).
+  - containerPort: 30151  # FMC health NodePort
+    hostPort: 8151        # DD-TEST-001: FMC health
     protocol: TCP
   # Keycloak OIDC + RFC 8693 token exchange (client_credentials IdP for FMC,
   # STS provider for kube-mcp-server passthrough auth, API server OIDC discovery)
