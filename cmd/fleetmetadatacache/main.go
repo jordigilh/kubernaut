@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -49,6 +50,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
+	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // fmcDeps bundles the external clients and background components wired at
@@ -163,34 +167,72 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 	}
 }
 
-// fmcServers bundles the federated scope-checking API server (ADR-068) and
-// the Prometheus metrics server, plus the readiness flag backing the
-// /readyz handler's liveness signal.
+// fmcServers bundles the federated scope-checking API server (ADR-068), the
+// dedicated health-probe server (Issue #753), and the Prometheus metrics
+// server, plus the readiness flag backing the /readyz handler's liveness
+// signal and the optional TLS cert reloader for the API server (Issue #493).
 type fmcServers struct {
-	api     *http.Server
-	metrics *http.Server
-	ready   *atomic.Bool
+	api          *http.Server
+	health       *http.Server
+	metrics      *http.Server
+	ready        *atomic.Bool
+	certReloader *sharedtls.CertReloader
+	tlsCertDir   string
+}
+
+// livenessHandler is FMC's liveness probe: a fixed 200 OK with no backend
+// dependency check. Registered on both the API mux (TLS, dual-registration)
+// and the dedicated health mux (plain HTTP) so fmc.HTTPClient.Ping() --
+// GW/RO's fail-closed readiness gate (Issue #1553/ADR-068) -- continues to
+// succeed against the API base URL unchanged after the Issue #753 port split.
+func livenessHandler(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
 }
 
 // buildFMCServers constructs the federated scope-checking API server
-// (ADR-068) and the Prometheus metrics server from cfg and deps. ready
+// (ADR-068, Issue #493 conditional TLS), the dedicated health-probe server
+// (Issue #753), and the Prometheus metrics server from cfg and deps. ready
 // backs the /readyz handler's liveness signal.
 func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.Bool, logger logr.Logger) *fmcServers {
 	scopeClient := scopecache.NewClient(deps.cacheReader)
 	apiHandler := fmc.NewHandler(scopeClient, deps.clusterRegistry, logger)
 	apiMux := http.NewServeMux()
 	apiHandler.RegisterRoutes(apiMux)
-	apiMux.HandleFunc(fmc.HealthzPath, func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	apiMux.HandleFunc("/readyz", fmc.ReadyzHandler(ready.Load, deps.cacheReader))
+	// Issue #1553: dual-registered on the API mux so Ping() (hits
+	// baseURL+HealthzPath) is unaffected by the health-port split below.
+	apiMux.HandleFunc(fmc.HealthzPath, livenessHandler)
 
 	apiServer := &http.Server{
 		Addr:              cfg.Server.APIAddr,
 		Handler:           apiMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+
+	var certReloader *sharedtls.CertReloader
+	var tlsCertDir string
+	if cfg.Server.TLS.Enabled() {
+		isTLS, reloader, err := sharedtls.ConfigureConditionalTLS(apiServer, cfg.Server.TLS.CertDir)
+		if err != nil {
+			logger.Error(err, "Failed to configure TLS for FMC API server", "certDir", cfg.Server.TLS.CertDir)
+			os.Exit(1)
+		}
+		if isTLS {
+			certReloader = reloader
+			tlsCertDir = cfg.Server.TLS.CertDir
+			logger.Info("TLS configured for FMC API server", "certDir", cfg.Server.TLS.CertDir)
+		}
+	}
+
+	// Issue #753: dedicated health-probe server, always plain HTTP -- kubelet
+	// probes never need TLS. /readyz lives exclusively here (no production
+	// caller outside FMC's own kubelet probe hits /readyz on the API port).
+	healthServer := sharedhealth.NewHealthServer(
+		cfg.Server.HealthAddr,
+		livenessHandler,
+		fmc.ReadyzHandler(ready.Load, deps.cacheReader),
+		true,
+	)
 
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("/metrics", promhttp.HandlerFor(deps.reg, promhttp.HandlerOpts{}))
@@ -201,29 +243,103 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	return &fmcServers{api: apiServer, metrics: metricsServer, ready: ready}
+	return &fmcServers{
+		api:          apiServer,
+		health:       healthServer,
+		metrics:      metricsServer,
+		ready:        ready,
+		certReloader: certReloader,
+		tlsCertDir:   tlsCertDir,
+	}
 }
 
-// runFMCServers starts the API and metrics servers and the metadata syncer
-// in the background, marks the service ready once the MCP client reports
-// readiness, then blocks until a shutdown signal or a server failure is
-// observed, gracefully shutting down both HTTP servers before returning.
-func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan os.Signal, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
-	apiErrors := make(chan error, 1)
-	go func() {
-		logger.Info("API server listening", "addr", servers.api.Addr)
-		if err := servers.api.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			apiErrors <- err
+// startCertHotReload starts a hotreload.FileWatcher on the API server's TLS
+// certificate (Issue #756) so a cert-manager rotation is picked up without a
+// pod restart. Returns nil if TLS is not configured (servers.certReloader
+// is nil). Exits the process on failure, matching DataStorage's Start()
+// fail-fast behavior for a misconfigured/unreadable cert directory.
+func startCertHotReload(ctx context.Context, servers *fmcServers, logger logr.Logger) *hotreload.FileWatcher {
+	if servers.certReloader == nil {
+		return nil
+	}
+	watcher, err := hotreload.NewFileWatcher(
+		filepath.Join(servers.tlsCertDir, "tls.crt"),
+		servers.certReloader.ReloadCallback,
+		logger.WithName("cert-reloader"),
+	)
+	if err != nil {
+		logger.Error(err, "Failed to create TLS cert file watcher")
+		os.Exit(1)
+	}
+	if err := watcher.Start(ctx); err != nil {
+		logger.Error(err, "Failed to start TLS cert file watcher")
+		os.Exit(1)
+	}
+	return watcher
+}
+
+// serveAndReport starts srv (TLS or plain HTTP, per useTLS) and reports any
+// non-graceful error on errCh. Shared by all three FMC HTTP servers so
+// runFMCServers doesn't repeat the same listen/log/error-check block three
+// times over (Issue #1683 REFACTOR: extracted to keep gocyclo under the
+// project's threshold after the 3-port split added a second server).
+func serveAndReport(name string, srv *http.Server, useTLS bool, errCh chan<- error, logger logr.Logger) {
+	logger.Info(name+" server listening", "addr", srv.Addr, "tls", useTLS)
+	var err error
+	if useTLS {
+		err = srv.ListenAndServeTLS("", "")
+	} else {
+		err = srv.ListenAndServe()
+	}
+	if err != nil && err != http.ErrServerClosed {
+		errCh <- err
+	}
+}
+
+// shutdownFMCServers gracefully shuts down all three FMC HTTP servers with a
+// shared bounded timeout, logging (not failing) any individual shutdown
+// error -- matching runFMCServers' pre-#1683 per-server shutdown behavior.
+// Takes the caller's ctx per the codebase's contextcheck convention even
+// though it deliberately derives its shutdown deadline from
+// context.Background(), not ctx, since ctx is already cancelled by the time
+// shutdown begins (see the nolint below).
+func shutdownFMCServers(ctx context.Context, servers *fmcServers, logger logr.Logger) {
+	_ = ctx
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	for _, s := range []struct {
+		name string
+		srv  *http.Server
+	}{
+		{"API", servers.api},
+		{"Health", servers.health},
+		{"Metrics", servers.metrics},
+	} {
+		if err := s.srv.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
+			logger.Error(err, s.name+" server shutdown failed")
 		}
-	}()
+	}
+}
+
+// runFMCServers starts the API, health, and metrics servers and the
+// metadata syncer in the background, marks the service ready once the MCP
+// client reports readiness, then blocks until a shutdown signal or a server
+// failure is observed, gracefully shutting down all three HTTP servers
+// before returning.
+func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan os.Signal, deps *fmcDeps, servers *fmcServers, logger logr.Logger) {
+	certWatcher := startCertHotReload(ctx, servers, logger)
+	if certWatcher != nil {
+		defer certWatcher.Stop()
+	}
+
+	apiErrors := make(chan error, 1)
+	go serveAndReport("API", servers.api, servers.api.TLSConfig != nil, apiErrors, logger)
+
+	healthErrors := make(chan error, 1)
+	go serveAndReport("Health", servers.health, false, healthErrors, logger)
 
 	metricsErrors := make(chan error, 1)
-	go func() {
-		logger.Info("Metrics server listening", "addr", servers.metrics.Addr)
-		if err := servers.metrics.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			metricsErrors <- err
-		}
-	}()
+	go serveAndReport("Metrics", servers.metrics, false, metricsErrors, logger)
 
 	go func() {
 		if err := deps.syncer.Run(ctx); err != nil {
@@ -240,19 +356,13 @@ func runFMCServers(ctx context.Context, cancel context.CancelFunc, sigCh <-chan 
 		logger.Info("Received shutdown signal")
 	case err := <-apiErrors:
 		logger.Error(err, "API server failed")
+	case err := <-healthErrors:
+		logger.Error(err, "Health server failed")
 	case err := <-metricsErrors:
 		logger.Error(err, "Metrics server failed")
 	}
 	cancel()
-
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-	if err := servers.api.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
-		logger.Error(err, "API server shutdown failed")
-	}
-	if err := servers.metrics.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
-		logger.Error(err, "Metrics server shutdown failed")
-	}
+	shutdownFMCServers(ctx, servers, logger)
 }
 
 func main() {
@@ -287,11 +397,21 @@ func run() int {
 		"mcpEndpoint", cfg.MCPGateway.Endpoint,
 		"gatewayType", cfg.MCPGateway.GatewayType,
 		"apiAddr", cfg.Server.APIAddr,
+		"healthAddr", cfg.Server.HealthAddr,
 		"metricsAddr", cfg.Server.MetricsAddr,
 		"version", version.Version,
 		"gitCommit", version.GitCommit,
 		"buildDate", version.BuildDate,
 	)
+
+	// Issue #748: Load OCP TLS security profile from config before any TLS
+	// setup (buildFMCServers' ConfigureConditionalTLS call reads this via
+	// the process-wide default set here).
+	if err := sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile); err != nil {
+		logger.Error(err, "Invalid TLS security profile in config, using default TLS 1.2")
+	} else if cfg.TLSProfile != "" {
+		logger.Info("TLS security profile active", "profile", cfg.TLSProfile)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
