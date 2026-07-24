@@ -17,9 +17,18 @@ global:
   # duplicating it per service. Each service's own `fleet.*` (or, for
   # fleetmetadatacache, top-level equivalents) still takes precedence when
   # set, for the rare case a service needs a different value. Per-service
-  # `fleet.enabled` / `fleet.oauth2.enabled` (fleet integration on/off)
-  # remains independent and is NOT controlled here.
+  # `fleet.oauth2.enabled` (fleet OAuth2 auth on/off) remains independent
+  # and is NOT controlled here.
   fleet:
+    # -- Multi-cluster fleet federation on/off (Issue #1707), consolidated
+    # from what used to be four independent toggles
+    # (gateway/remediationorchestrator/apifrontend/effectivenessmonitor
+    # `fleet.enabled`). No known deployment (including the Kubernaut
+    # Operator, ADR-068) has ever needed to enable fleet federation on some
+    # of those four services while leaving it off on others -- it is
+    # conceptually one feature spanning the request pipeline (GW/RO's
+    # federated scope check) and the read pipeline (AF/EM's remote reads).
+    enabled: false
     # -- Shared MCP Gateway endpoint URL, used as the fallback when a
     # service's own fleet.mcpGatewayEndpoint is unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
@@ -144,19 +153,20 @@ gateway:
     #       namespace: monitoring
     signalSources: []
   # -- Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003).
-  # When enabled, GW includes clusterID in signal fingerprints and populates
-  # spec.clusterID on RemediationRequests. The backend adapter handles federated
-  # scope checks. GW MUST also be able to reach the MCP Gateway (mcpGatewayEndpoint)
-  # for the federated scope check to complete — see DD-FLEET-003 for why both are
-  # mandatory together when fleet.enabled=true (fleet.ValidateFullFederation()).
+  # Gated by global.fleet.enabled (Issue #1707) -- when true, GW includes
+  # clusterID in signal fingerprints and populates spec.clusterID on
+  # RemediationRequests. The backend adapter handles federated scope checks.
+  # GW MUST also be able to reach the MCP Gateway (mcpGatewayEndpoint) for
+  # the federated scope check to complete — see DD-FLEET-003 for why both
+  # are mandatory together when global.fleet.enabled=true
+  # (fleet.ValidateFullFederation()).
   fleet:
-    enabled: false
     # -- Backend adapter: "fleetmetadatacache" (FMC HTTP API) or "acm" (ACM Search). Defaults to "fleetmetadatacache".
     backend: ""
     # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
     endpoint: ""
     # -- MCP Gateway endpoint URL for federated scope checks. Required when
-    # fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset.
+    # global.fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
     # -- MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP
     # Gateway). Falls back to global.fleet.mcpGatewayType when unset.
@@ -377,19 +387,19 @@ remediationorchestrator:
     retention:
       period: "24h"  # Issue #265: CRD retention TTL before automatic cleanup
   # -- Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003).
-  # When enabled, RO performs federated scope checks before accepting
-  # RemediationRequests with non-empty clusterID, and reads remote resource specs
-  # (spec hash) via the MCP Gateway. RO MUST have both the scope-check backend
-  # AND mcpGatewayEndpoint configured together — see DD-FLEET-003
+  # Gated by global.fleet.enabled (Issue #1707) -- when true, RO performs
+  # federated scope checks before accepting RemediationRequests with
+  # non-empty clusterID, and reads remote resource specs (spec hash) via the
+  # MCP Gateway. RO MUST have both the scope-check backend AND
+  # mcpGatewayEndpoint configured together — see DD-FLEET-003
   # (fleet.ValidateFullFederation()).
   fleet:
-    enabled: false
     # -- Backend adapter: "fleetmetadatacache" (FMC HTTP API) or "acm" (ACM Search). Defaults to "fleetmetadatacache".
     backend: ""
     # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
     endpoint: ""
     # -- MCP Gateway endpoint URL for reading remote resource specs (spec hash).
-    # Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset.
+    # Required when global.fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
     # -- MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP
     # Gateway). Falls back to global.fleet.mcpGatewayType when unset.
@@ -495,13 +505,13 @@ effectivenessmonitor:
       stabilizationWindow: "30s"
       validityWindow: "120s"
   # -- Multi-cluster fleet configuration (BR-FLEET-054, ADR-068).
-  # When enabled and mcpGatewayEndpoint is set, EM reads the remediation's
-  # target cluster state via the MCP Gateway instead of silently falling back
-  # to the local hub cluster. mcpGatewayType is additionally required when
-  # using the Kuadrant gateway, since EM then watches MCPServerRegistration
-  # CRs directly via a ClusterRegistry informer (see the RBAC grant below).
+  # Gated by global.fleet.enabled (Issue #1707) -- when true and
+  # mcpGatewayEndpoint is set, EM reads the remediation's target cluster
+  # state via the MCP Gateway instead of silently falling back to the local
+  # hub cluster. mcpGatewayType is additionally required when using the
+  # Kuadrant gateway, since EM then watches MCPServerRegistration CRs
+  # directly via a ClusterRegistry informer (see the RBAC grant below).
   fleet:
-    enabled: false
     # -- Optional: falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
     mcpGatewayType: ""      # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
@@ -932,13 +942,13 @@ apifrontend:
   logging:
     level: "INFO"
   # -- Multi-cluster fleet configuration (BR-FLEET-054, ADR-068).
-  # When enabled and mcpGatewayEndpoint is set, kubectl_get/kubectl_list/
-  # list_clusters tools route to remote managed clusters via the MCP Gateway.
-  # mcpGatewayType is additionally required when using the Kuadrant gateway,
-  # since AF then watches MCPServerRegistration CRs directly via a
-  # ClusterRegistry informer (see the RBAC grant below).
+  # Gated by global.fleet.enabled (Issue #1707) -- when true and
+  # mcpGatewayEndpoint is set, kubectl_get/kubectl_list/list_clusters tools
+  # route to remote managed clusters via the MCP Gateway. mcpGatewayType is
+  # additionally required when using the Kuadrant gateway, since AF then
+  # watches MCPServerRegistration CRs directly via a ClusterRegistry
+  # informer (see the RBAC grant below).
   fleet:
-    enabled: false
     # -- Optional: falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
     mcpGatewayType: ""      # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset

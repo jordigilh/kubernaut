@@ -1,7 +1,7 @@
 {{- $gatewayFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.gateway.fleet "oauth2" .Values.gateway.fleet.oauth2) | fromYaml }}
-{{- if .Values.gateway.fleet.enabled }}
+{{- if .Values.global.fleet.enabled }}
 {{- if not $gatewayFleetPreamble.config.mcpGatewayEndpoint }}
-{{- fail "gateway.fleet.mcpGatewayEndpoint is required when gateway.fleet.enabled=true (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
+{{- fail "gateway.fleet.mcpGatewayEndpoint is required when global.fleet.enabled=true (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
 {{- end }}
 {{- if .Values.gateway.fleet.oauth2.enabled }}
 {{- if not $gatewayFleetPreamble.oauth2.tokenURL }}
@@ -65,7 +65,7 @@ data:
         maxAttempts: 3
         initialBackoff: 100ms
         maxBackoff: 5s
-    {{- if .Values.gateway.fleet.enabled }}
+    {{- if .Values.global.fleet.enabled }}
     fleet:
       enabled: true
       {{- if .Values.gateway.fleet.backend }}
@@ -227,12 +227,12 @@ spec:
               mountPath: /etc/gateway
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
+            {{- if and .Values.global.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/gateway/{{ $gatewayFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
-            {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.tokenSecretRef }}
+            {{- if and .Values.global.fleet.enabled .Values.gateway.fleet.tokenSecretRef }}
             - name: fleet-acm-token
               mountPath: "/etc/gateway/{{ .Values.gateway.fleet.tokenSecretRef }}"
               readOnly: true
@@ -260,12 +260,12 @@ spec:
           configMap:
             name: gateway-config
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
+        {{- if and .Values.global.fleet.enabled .Values.gateway.fleet.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $gatewayFleetPreamble.oauth2.credentialsSecretRef }}
         {{- end }}
-        {{- if and .Values.gateway.fleet.enabled .Values.gateway.fleet.tokenSecretRef }}
+        {{- if and .Values.global.fleet.enabled .Values.gateway.fleet.tokenSecretRef }}
         - name: fleet-acm-token
           secret:
             secretName: {{ .Values.gateway.fleet.tokenSecretRef }}
