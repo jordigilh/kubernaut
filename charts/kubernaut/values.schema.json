@@ -898,6 +898,7 @@
             "enabled": { "type": "boolean", "default": false },
             "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads. Optional; falls back to global.fleet.mcpGatewayEndpoint when unset" },
             "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
+            "namespace": { "type": "string", "default": "", "description": "Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC" },
             "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }
@@ -1211,6 +1212,7 @@
             "enabled": { "type": "boolean", "default": false },
             "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads. Optional; falls back to global.fleet.mcpGatewayEndpoint when unset" },
             "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
+            "namespace": { "type": "string", "default": "", "description": "Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC" },
             "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
             "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
           }

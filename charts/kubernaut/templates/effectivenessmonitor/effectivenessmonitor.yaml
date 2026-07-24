@@ -127,7 +127,14 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if eq $effectivenessmonitorFleetPreamble.config.mcpGatewayType "kuadrant" }}
+  {{- /*
+  #1686 (BR-RBAC-020): the mcpserverregistrations rule is only granted
+  cluster-wide here when no namespace scope is configured. When
+  effectivenessmonitor.fleet.namespace is set, the identical rule is
+  granted instead via a namespace-scoped Role/RoleBinding below, matching
+  what the ClusterRegistry informer actually watches (least privilege).
+  */}}
+  {{- if and (eq $effectivenessmonitorFleetPreamble.config.mcpGatewayType "kuadrant") (not .Values.effectivenessmonitor.fleet.namespace) }}
   # BR-FLEET-054: EM's ClusterRegistry watches MCPServerRegistration CRs
   # directly via a dynamic informer when the Kuadrant MCP Gateway is used.
   - apiGroups: ["mcp.kuadrant.io"]
@@ -149,6 +156,12 @@ subjects:
   - kind: ServiceAccount
     name: effectivenessmonitor-controller
     namespace: {{ .Release.Namespace }}
+{{- if and (eq $effectivenessmonitorFleetPreamble.config.mcpGatewayType "kuadrant") .Values.effectivenessmonitor.fleet.namespace }}
+---
+# #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rule
+# above, granted instead of it when effectivenessmonitor.fleet.namespace is set.
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "effectivenessmonitor" "serviceAccount" "effectivenessmonitor-controller" "namespace" .Values.effectivenessmonitor.fleet.namespace "appLabels" "app: effectivenessmonitor-controller" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{- end }}
 ---
 # Issue #545: Bind to built-in view ClusterRole for broad read access to CRDs
 # (cert-manager, Istio, etc.) needed for post-remediation hash capture (DD-EM-002).
