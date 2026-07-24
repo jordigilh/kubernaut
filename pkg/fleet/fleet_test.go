@@ -526,8 +526,9 @@ var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)"
 			Backend: "fleetmetadatacache",
 		}
 
-		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080"),
-			"FMC endpoint must be auto-derived from POD_NAMESPACE when not explicitly set")
+		Expect(cfg.EffectiveEndpoint()).To(Equal("https://fleetmetadatacache-service.kubernaut-system.svc.cluster.local:8080"),
+			"Issue #1683: FMC endpoint must be auto-derived from POD_NAMESPACE as https:// "+
+				"(FMC's API port now presents TLS by default)")
 	})
 
 	It("UT-FLEET-CFG-021 [CM-6]: EffectiveEndpoint returns explicit Endpoint even when POD_NAMESPACE is set", func() {
@@ -551,7 +552,7 @@ var _ = Describe("FleetConfig FMC endpoint auto-derivation (BR-INTEGRATION-065)"
 			Backend: "fleetmetadatacache",
 		}
 
-		Expect(cfg.EffectiveEndpoint()).To(Equal("http://fleetmetadatacache-service.default.svc.cluster.local:8080"),
+		Expect(cfg.EffectiveEndpoint()).To(Equal("https://fleetmetadatacache-service.default.svc.cluster.local:8080"),
 			"must use 'default' namespace when POD_NAMESPACE is not set and SA mount unavailable")
 	})
 
