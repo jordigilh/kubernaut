@@ -53,6 +53,26 @@
   controller-runtime's own List/Watch/WaitForCacheSync machinery, not bespoke cache logic, so what's actually at
   risk on a real KA restart is KA's own construction/wiring of that informer — exactly what the IT test exercises
   — not the informer implementation itself or generic Kubernetes pod-restart/scheduling behavior.
+- Clarified Phase 1's "RemediationOrchestrator/Notification read workflow display metadata from AIAnalysis
+  instead of live DataStorage lookups" bullet: Notification never reads the `AIAnalysis` CRD directly.
+  RemediationOrchestrator (RO) is the only reader — it copies `WorkflowName`/`ActionType` from
+  `AIAnalysis.Status.SelectedWorkflow` (a `sharedtypes.WorkflowSnapshot`, `+kubebuilder:validation:Required` on
+  both fields, sourced from `RemediationWorkflow.metadata.name`) into `NotificationRequest.Spec.Context.Workflow`
+  when it creates the `NotificationRequest`. Notification only ever consumes the already-denormalized CRD field.
+- Follow-up dead-code removal, prompted by the above: `WorkflowName` being `+kubebuilder:validation:Required` on
+  `WorkflowSnapshot` means "workflow ID present, `WorkflowName` absent" cannot occur via either of RO's two
+  notification-creation call sites (`pkg/remediationorchestrator/creator/notification.go`) — confirmed these are
+  the only two production call sites that construct a `WorkflowContext`. That made
+  `pkg/notification/enrichment`'s live-DataStorage-lookup fallback (`WorkflowNameResolver` interface, and the
+  branch in `Enricher.EnrichNotification` that called it) structurally unreachable, not merely unused: its own
+  backing implementation (`DataStorageResolver`) was already deleted in Phase 2g, leaving an interface with zero
+  implementations. Removed outright: `pkg/notification/enrichment/resolver.go` deleted,
+  `Enricher`/`NewEnricher` simplified to drop the resolver parameter, and `cmd/notification/main.go`'s wiring
+  comment updated. Rewrote the ~13 dependent specs across `pkg/notification/enrichment_test.go` (9 of 14 kept,
+  adapted to pre-populate `WorkflowName` like real callers do; 5 removed as redundant with the resolver gone —
+  "resolver failure" and "empty resolved name" collapse into a single "name not populated" case, and "prefers
+  pre-populated name over resolver" is no longer expressible once there's no resolver to prefer over) and
+  `test/integration/notification/enrichment_delivery_test.go` (all 3 specs kept, adapted the same way).
 
 ### Version 1.0 (2026-07-17)
 

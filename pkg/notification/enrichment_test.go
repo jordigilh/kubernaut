@@ -30,18 +30,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/enrichment"
 )
 
-// mockWorkflowNameResolver implements enrichment.WorkflowNameResolver for unit tests.
-type mockWorkflowNameResolver struct {
-	name      string
-	err       error
-	callCount int
-}
-
-func (m *mockWorkflowNameResolver) ResolveWorkflowName(_ context.Context, _ string) (string, error) {
-	m.callCount++
-	return m.name, m.err
-}
-
 const testUUID = "53c7c5d3-ee13-42e5-a920-43f3df75ec6d"
 
 func buildTestNotification(body string, metadata map[string]string) *notificationv1alpha1.NotificationRequest {
@@ -90,15 +78,38 @@ func buildTestNotification(body string, metadata map[string]string) *notificatio
 	}
 }
 
+// #553: Workflow Name Enrichment.
+//
+// #1677 follow-up cleanup: this suite originally exercised a live
+// DataStorage-backed WorkflowNameResolver, with WorkflowName deliberately
+// left unpopulated so the resolver mock was the only source of the name.
+// That resolver/fallback mechanism has since been deleted outright
+// (pkg/notification/enrichment/resolver.go, and the fallback branch in
+// Enricher.EnrichNotification): RemediationOrchestrator has populated
+// WorkflowName directly from AIAnalysis.Status.SelectedWorkflow.WorkflowName
+// since Issue #1677 Phase 1, and that field is +kubebuilder:validation:Required
+// on the underlying WorkflowSnapshot type -- always equal to
+// RemediationWorkflow.metadata.name, a Kubernetes-guaranteed non-empty value
+// -- whenever a workflow ID is present at all. So "WorkflowID/SelectedWorkflow
+// present but WorkflowName absent" cannot occur via either of RO's two
+// notification-creation call sites (pkg/remediationorchestrator/creator/
+// notification.go), and every spec below now pre-populates workflowName the
+// same way those real callers do, instead of a resolver mock.
 var _ = Describe("#553: Workflow Name Enrichment", func() {
+
+	newEnricher := func() *enrichment.Enricher {
+		return enrichment.NewEnricher(logr.Discard())
+	}
 
 	Context("Completion notifications", func() {
 		It("UT-NOT-553-001: shows workflow name instead of UUID in completion body", func() {
-			resolver := &mockWorkflowNameResolver{name: "oom-recovery"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+			e := newEnricher()
 
 			body := fmt.Sprintf("Remediation Completed Successfully\n\n**Workflow Executed**: %s\n**Execution Engine**: job", testUUID)
-			nr := buildTestNotification(body, map[string]string{"workflowId": testUUID})
+			nr := buildTestNotification(body, map[string]string{
+				"workflowId":   testUUID,
+				"workflowName": "oom-recovery",
+			})
 
 			result := e.EnrichNotification(context.Background(), nr)
 
@@ -106,14 +117,14 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
 		})
 
-		It("UT-NOT-553-007: metadata key workflowId drives resolution for completion notifications", func() {
-			resolver := &mockWorkflowNameResolver{name: "oom-recovery"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+		It("UT-NOT-553-007: metadata key workflowId takes priority over selectedWorkflow for completion notifications", func() {
+			e := newEnricher()
 
 			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
 			nr := buildTestNotification(body, map[string]string{
-				"workflowId":      testUUID,
+				"workflowId":       testUUID,
 				"selectedWorkflow": "should-not-use-this",
+				"workflowName":     "oom-recovery",
 			})
 
 			result := e.EnrichNotification(context.Background(), nr)
@@ -125,68 +136,9 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 
 	Context("Approval notifications", func() {
 		It("UT-NOT-553-002: shows workflow name instead of UUID in approval body", func() {
-			resolver := &mockWorkflowNameResolver{name: "crashloop-config-fix"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+			e := newEnricher()
 
 			body := fmt.Sprintf("**Proposed Workflow**: %s\n\n**Approval Reason**: LowConfidence", testUUID)
-			nr := buildTestNotification(body, map[string]string{"selectedWorkflow": testUUID})
-
-			result := e.EnrichNotification(context.Background(), nr)
-
-			Expect(result.Spec.Body).To(ContainSubstring("**Proposed Workflow**: crashloop-config-fix"))
-			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
-		})
-
-		It("UT-NOT-553-003: preserves ActionType (name) format when ActionType is present", func() {
-			resolver := &mockWorkflowNameResolver{name: "scale-replicas-v1"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
-
-			body := fmt.Sprintf("**Proposed Workflow**: ScaleReplicas (%s)", testUUID)
-			nr := buildTestNotification(body, map[string]string{"selectedWorkflow": testUUID})
-
-			result := e.EnrichNotification(context.Background(), nr)
-
-			Expect(result.Spec.Body).To(ContainSubstring("**Proposed Workflow**: ScaleReplicas (scale-replicas-v1)"))
-			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
-		})
-
-		It("UT-NOT-553-008: metadata key selectedWorkflow drives resolution when workflowId absent", func() {
-			resolver := &mockWorkflowNameResolver{name: "crashloop-config-fix"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
-
-			body := fmt.Sprintf("**Proposed Workflow**: %s", testUUID)
-			nr := buildTestNotification(body, map[string]string{"selectedWorkflow": testUUID})
-
-			result := e.EnrichNotification(context.Background(), nr)
-
-			Expect(result.Spec.Body).To(ContainSubstring("crashloop-config-fix"))
-			Expect(resolver.callCount).To(Equal(1))
-		})
-	})
-
-	Context("Issue #1677 Phase 1: pre-populated WorkflowName (no live DataStorage call)", func() {
-		It("UT-NOT-1677-001: uses pre-populated WorkflowName instead of calling the live resolver", func() {
-			resolver := &mockWorkflowNameResolver{name: "WRONG-NAME-should-not-be-used"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
-
-			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
-			nr := buildTestNotification(body, map[string]string{
-				"workflowId":   testUUID,
-				"workflowName": "oom-recovery",
-			})
-
-			result := e.EnrichNotification(context.Background(), nr)
-
-			Expect(result.Spec.Body).To(ContainSubstring("**Workflow Executed**: oom-recovery"))
-			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
-			Expect(result.Spec.Body).NotTo(ContainSubstring("WRONG-NAME"))
-			Expect(resolver.callCount).To(Equal(0), "resolver must not be called when WorkflowName is pre-populated")
-		})
-
-		It("UT-NOT-1677-002: pre-populated WorkflowName works even with a nil resolver", func() {
-			e := enrichment.NewEnricher(nil, logr.Discard())
-
-			body := fmt.Sprintf("**Proposed Workflow**: %s", testUUID)
 			nr := buildTestNotification(body, map[string]string{
 				"selectedWorkflow": testUUID,
 				"workflowName":     "crashloop-config-fix",
@@ -198,36 +150,44 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
 		})
 
-		It("UT-NOT-1677-003: falls back to the live resolver when WorkflowName is absent", func() {
-			resolver := &mockWorkflowNameResolver{name: "oom-recovery"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+		It("UT-NOT-553-003: substitutes the name inline alongside surrounding text", func() {
+			e := newEnricher()
 
-			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
-			nr := buildTestNotification(body, map[string]string{"workflowId": testUUID})
+			body := fmt.Sprintf("**Proposed Workflow**: ScaleReplicas (%s)", testUUID)
+			nr := buildTestNotification(body, map[string]string{
+				"selectedWorkflow": testUUID,
+				"workflowName":     "scale-replicas-v1",
+			})
 
 			result := e.EnrichNotification(context.Background(), nr)
 
-			Expect(result.Spec.Body).To(ContainSubstring("**Workflow Executed**: oom-recovery"))
-			Expect(resolver.callCount).To(Equal(1), "resolver is the fallback when WorkflowName is absent")
+			Expect(result.Spec.Body).To(ContainSubstring("**Proposed Workflow**: ScaleReplicas (scale-replicas-v1)"))
+			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
+		})
+
+		It("UT-NOT-553-008: metadata key selectedWorkflow drives ID extraction when workflowId is absent", func() {
+			e := newEnricher()
+
+			body := fmt.Sprintf("**Proposed Workflow**: %s", testUUID)
+			nr := buildTestNotification(body, map[string]string{
+				"selectedWorkflow": testUUID,
+				"workflowName":     "crashloop-config-fix",
+			})
+
+			result := e.EnrichNotification(context.Background(), nr)
+
+			Expect(result.Spec.Body).To(ContainSubstring("crashloop-config-fix"))
+			Expect(result.Spec.Body).NotTo(ContainSubstring(testUUID))
 		})
 	})
 
 	Context("Graceful degradation", func() {
-		It("UT-NOT-553-004: resolver failure keeps UUID in body", func() {
-			resolver := &mockWorkflowNameResolver{err: fmt.Errorf("connection refused")}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
-
-			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
-			nr := buildTestNotification(body, map[string]string{"workflowId": testUUID})
-
-			result := e.EnrichNotification(context.Background(), nr)
-
-			Expect(result.Spec.Body).To(ContainSubstring(testUUID))
-		})
-
-		It("UT-NOT-553-005: empty resolved name (workflow not found) preserves UUID", func() {
-			resolver := &mockWorkflowNameResolver{name: ""}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+		It("UT-NOT-553-004: keeps the UUID in body when WorkflowName is not populated", func() {
+			// Consolidates the old resolver-failure/empty-name/nil-resolver
+			// specs: without a live resolver, every "no name available" case
+			// (WorkflowName simply absent -- the only way this can happen now)
+			// is indistinguishable, so a single spec covers it.
+			e := newEnricher()
 
 			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
 			nr := buildTestNotification(body, map[string]string{"workflowId": testUUID})
@@ -238,8 +198,7 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 		})
 
 		It("UT-NOT-553-006: no-op when no workflow metadata present", func() {
-			resolver := &mockWorkflowNameResolver{name: "should-not-be-called"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+			e := newEnricher()
 
 			body := "Remediation completed.\n\n**Duplicate Remediations**: 3"
 			nr := buildTestNotification(body, map[string]string{"remediationRequest": "rr-abc"})
@@ -247,28 +206,18 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 			result := e.EnrichNotification(context.Background(), nr)
 
 			Expect(result.Spec.Body).To(Equal(body))
-			Expect(resolver.callCount).To(Equal(0))
-		})
-
-		It("UT-NOT-553-011: nil resolver results in no-op enrichment", func() {
-			e := enrichment.NewEnricher(nil, logr.Discard())
-
-			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
-			nr := buildTestNotification(body, map[string]string{"workflowId": testUUID})
-
-			result := e.EnrichNotification(context.Background(), nr)
-
-			Expect(result.Spec.Body).To(ContainSubstring(testUUID))
 		})
 	})
 
 	Context("Safety guarantees", func() {
 		It("UT-NOT-553-009: subject line is never modified by enrichment", func() {
-			resolver := &mockWorkflowNameResolver{name: "oom-recovery"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+			e := newEnricher()
 
 			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
-			nr := buildTestNotification(body, map[string]string{"workflowId": testUUID})
+			nr := buildTestNotification(body, map[string]string{
+				"workflowId":   testUUID,
+				"workflowName": "oom-recovery",
+			})
 			originalSubject := nr.Spec.Subject
 
 			result := e.EnrichNotification(context.Background(), nr)
@@ -277,13 +226,13 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 		})
 
 		It("UT-NOT-553-010: all metadata fields preserved after enrichment", func() {
-			resolver := &mockWorkflowNameResolver{name: "oom-recovery"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+			e := newEnricher()
 
 			metadata := map[string]string{
 				"workflowId":      testUUID,
 				"executionEngine": "job",
 				"rootCause":       "OOM",
+				"workflowName":    "oom-recovery",
 			}
 			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
 			nr := buildTestNotification(body, metadata)
@@ -296,11 +245,13 @@ var _ = Describe("#553: Workflow Name Enrichment", func() {
 		})
 
 		It("UT-NOT-553-012: enrichment operates on a copy — original notification is not mutated", func() {
-			resolver := &mockWorkflowNameResolver{name: "oom-recovery"}
-			e := enrichment.NewEnricher(resolver, logr.Discard())
+			e := newEnricher()
 
 			body := fmt.Sprintf("**Workflow Executed**: %s", testUUID)
-			nr := buildTestNotification(body, map[string]string{"workflowId": testUUID})
+			nr := buildTestNotification(body, map[string]string{
+				"workflowId":   testUUID,
+				"workflowName": "oom-recovery",
+			})
 			originalBody := nr.Spec.Body
 
 			result := e.EnrichNotification(context.Background(), nr)

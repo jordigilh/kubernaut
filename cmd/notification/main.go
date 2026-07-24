@@ -571,21 +571,23 @@ func buildDeliveryOrchestrator(
 }
 
 // wireNotificationEnrichment sets up the #553 workflow-name enrichment
-// pipeline, which resolves workflow UUIDs to human-readable names in
+// pipeline, which replaces workflow UUIDs with human-readable names in
 // notification bodies.
 //
 // Issue #1677 Phase 2g (DD-WORKFLOW-019): the live DataStorage-backed fallback
 // resolver (DataStorageResolver, calling DS's now-retired GET
-// /api/v1/workflows/{workflow_id}) has been removed. Enricher's primary path
-// (Issue #1677 Phase 1) already prefers the catalog-authoritative WorkflowName
-// RemediationOrchestrator populates on the notification context from
-// AIAnalysis.Status.SelectedWorkflow -- no live lookup needed. A nil resolver
-// here only disables the rarely-hit fallback for notification paths that don't
-// populate WorkflowName yet; EnrichNotification degrades gracefully to the raw
-// UUID in that case, exactly as it did when the (now-deleted) DS endpoint
-// returned 404.
+// /api/v1/workflows/{workflow_id}) was removed once callers moved off it.
+//
+// #1677 follow-up cleanup: the WorkflowNameResolver interface and Enricher's
+// fallback branch that called it were deleted outright, not just left wired
+// to nil. Enricher's only path now is the catalog-authoritative WorkflowName
+// RemediationOrchestrator already populates on the notification context from
+// AIAnalysis.Status.SelectedWorkflow.WorkflowName (Issue #1677 Phase 1) --
+// +kubebuilder:validation:Required on the underlying WorkflowSnapshot type,
+// so it is guaranteed non-empty whenever a workflow ID is present at all,
+// making a live-lookup fallback structurally unreachable, not just unused.
 func wireNotificationEnrichment(deliveryOrchestrator *delivery.Orchestrator, logger logr.Logger) {
-	notifEnricher := enrichment.NewEnricher(nil, ctrl.Log.WithName("notification-enricher"))
+	notifEnricher := enrichment.NewEnricher(ctrl.Log.WithName("notification-enricher"))
 	deliveryOrchestrator.SetEnricher(notifEnricher)
 	logger.Info("Notification enricher initialized (#553: workflow name resolution)")
 }
