@@ -40,6 +40,7 @@ import (
 	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
@@ -85,7 +86,13 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 //   - fleetGate: if non-nil, verifies the Fleet MCP Gateway is reachable
 //     (#1553, ADR-068 decision #11). Nil means fleet mode is not
 //     configured (soft dependency, matches the ds nil-check convention).
-func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness, fleetGate *readiness.Gate) http.HandlerFunc {
+//   - wfCatalog: verifies KA's workflow catalog cache has completed its
+//     first successful sync (#1677 hardening, DD-WORKFLOW-019). Unlike ds/
+//     fleetGate, this is a hard (non-optional) dependency -- KA always runs
+//     in-cluster and always constructs a wfCatalog, so nil or Not-Ready
+//     here always fails the probe, keeping the pod out of Service
+//     endpoints until discovery is genuinely available.
+func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness, fleetGate *readiness.Gate, wfCatalog *workflowcatalog.LazyCatalog) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
@@ -134,6 +141,15 @@ func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.Swappa
 			return
 		}
 
+		if wfCatalog == nil || !wfCatalog.Ready() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_ready",
+				"reason": "workflow_catalog_not_ready",
+			})
+			return
+		}
+
 		resp := map[string]string{
 			"status":           "ready",
 			"interactive_mode": interactive.StatusString(),
@@ -171,6 +187,7 @@ type healthServersParams struct {
 	ShutdownFlag         *int32
 	APIServerReady       *int32
 	FleetGate            *readiness.Gate
+	WfCatalog            *workflowcatalog.LazyCatalog
 	Logger               logr.Logger
 }
 
@@ -186,7 +203,7 @@ func startHealthAndMetricsServers(p healthServersParams) (*http.Server, *http.Se
 
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(shutdownFlag, apiServerReady, swappable, ds, interactiveReadiness, p.FleetGate))
+	healthMux.HandleFunc("/readyz", readinessHandler(shutdownFlag, apiServerReady, swappable, ds, interactiveReadiness, p.FleetGate, p.WfCatalog))
 	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
 	if !cfg.Runtime.Server.DisableAdminEndpoints {
 		healthMux.Handle("/admin/loglevel", atomicLevel)

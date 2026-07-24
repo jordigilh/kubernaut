@@ -24,7 +24,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/go-logr/logr"
@@ -40,7 +39,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/validation"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/workflowcache"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #493/#678: Conditional TLS
 )
 
@@ -62,9 +60,6 @@ func validateServerDeps(deps ServerDeps) error {
 	}
 	if deps.AuthNamespace == "" {
 		return fmt.Errorf("authNamespace is empty - DD-AUTH-014 requires namespace for SAR checks")
-	}
-	if deps.K8sRestConfig == nil {
-		return fmt.Errorf("k8sRestConfig is nil - DD-WORKFLOW-018 requires a K8s rest.Config to build the workflow cache (etcd is now the sole source of truth for workflows/action types)")
 	}
 	return nil
 }
@@ -243,32 +238,29 @@ func buildAuditWriteDependencies(db *sql.DB, redisClient *redis.Client, deps Ser
 	}, nil
 }
 
-// workflowCatalogDeps groups the BR-STORAGE-013/014 and BR-WORKFLOW-007
-// workflow catalog dependencies constructed by buildWorkflowCatalogDependencies.
+// workflowCatalogDeps groups the DD-WE-006/BR-HAPI-016 dependencies
+// constructed by buildWorkflowCatalogDependencies.
 //
 // Issue #1661 Phase C: actionTypeRepo (*actiontype.Repository) was removed --
 // its sole method, ActionTypeExists, lost its only caller (HandleCreateWorkflow)
 // in Phase B and had zero other production callers (see pkg/datastorage/
 // repository/actiontype, deleted wholesale in this phase).
+//
+// #1677 Phase 2g (DD-WORKFLOW-019): workflowRepo removed -- workflow/
+// action-type discovery (BR-STORAGE-013/014, BR-WORKFLOW-007) is now owned
+// directly by KubernautAgent, not proxied through DataStorage.
 type workflowCatalogDeps struct {
-	workflowRepo      *repository.WorkflowRepository
 	schemaExtractor   *oci.SchemaExtractor
 	remHistoryQuerier RemediationHistoryQuerier
 }
 
-// buildWorkflowCatalogDependencies constructs the workflow repository,
-// OCI schema extractor (DD-WE-006), and remediation history querier
-// (DD-HAPI-016 v1.1).
+// buildWorkflowCatalogDependencies constructs the OCI schema extractor
+// (DD-WE-006) and remediation history querier (DD-HAPI-016 v1.1).
 //
 // V1.0: Embedding service removed (label-only search); see
 // CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence).
 func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowCatalogDeps {
 	logger.V(1).Info("Creating workflow catalog dependencies...")
-	sqlxDB := sqlx.NewDb(db, "pgx") // Wrap *sql.DB with sqlx for workflow repository
-
-	workflowRepo := repository.NewWorkflowRepository(sqlxDB, logger)
-	logger.V(1).Info("Workflow catalog dependencies created (label-only search)",
-		"workflow_repo_nil", workflowRepo == nil)
 
 	imagePuller := oci.NewCraneImagePuller(logger)
 	schemaParser := schema.NewParser()
@@ -278,38 +270,9 @@ func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowC
 	remHistoryQuerier := NewRemediationHistoryRepoAdapter(remHistoryRepo)
 
 	return &workflowCatalogDeps{
-		workflowRepo:      workflowRepo,
 		schemaExtractor:   schemaExtractor,
 		remHistoryQuerier: remHistoryQuerier,
 	}
-}
-
-// buildWorkflowCache constructs the Issue #1661 Phase 29 / DD-WORKFLOW-018
-// informer-backed RemediationWorkflow/ActionType CRD cache, blocking until
-// the initial sync completes. deps.K8sRestConfig is guaranteed non-nil here
-// -- validateServerDeps (Phase 55) rejects ServerDeps before NewServer
-// reaches this call, since etcd is now the sole source of truth for
-// workflows/action types (Postgres's catalog is audit-only). DS therefore
-// fails fast (like Postgres/Redis above) if etcd is unreachable at startup,
-// rather than silently running with a stale/empty catalog.
-//
-// The returned cancel func is registered with cleanups (unwound if a later
-// startup step fails) AND must also be stored on Server for the graceful
-// Shutdown() path, since cleanups only run on startup failure.
-func buildWorkflowCache(deps ServerDeps, logger logr.Logger, cleanups *startupCleanups) (*workflowcache.Cache, func(), error) {
-	scheme, err := workflowcache.NewScheme()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to build workflow cache scheme: %w", err)
-	}
-
-	wfCache, cancel, err := workflowcache.NewInformerCache(deps.K8sRestConfig, scheme, logger)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to build workflow cache: %w", err)
-	}
-	cleanups.add(cancel)
-
-	logger.Info("Workflow cache synced (Issue #1661 Phase 29, DD-WORKFLOW-018)")
-	return wfCache, cancel, nil
 }
 
 // buildRESTHandler assembles the READ API Handler from the audit write and
@@ -317,23 +280,18 @@ func buildWorkflowCache(deps ServerDeps, logger logr.Logger, cleanups *startupCl
 // WithSchemaExtractor).
 //
 // BR-AUDIT-006: Pass sqlDB for reconstruction queries.
-// Issue #1661 Phase 29 / Phase 55: wfCache is always non-nil (validateServerDeps
-// requires ServerDeps.K8sRestConfig).
 // Issue #1661 Phase B: WithWorkflowLifecycleRepository/WithWorkflowContentIntegrityRepository
 // removed -- their handlers (enable/disable/deprecate/create) were deleted;
 // AuthWebhook now owns the RemediationWorkflow CRD lifecycle entirely locally
 // (DD-WORKFLOW-018).
-func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps, wfCache *workflowcache.Cache) *Handler {
-	opts := make([]HandlerOption, 0, 7+len(deps.HandlerOpts))
+func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps) *Handler {
+	opts := make([]HandlerOption, 0, 5+len(deps.HandlerOpts))
 	opts = append(opts,
 		WithLogger(logger),
-		WithWorkflowRepository(catalogDeps.workflowRepo),
 		WithAuditStore(auditDeps.auditStore),
 		WithSQLDB(db),
 		WithSchemaExtractor(catalogDeps.schemaExtractor),
 		WithRemediationHistoryQuerier(catalogDeps.remHistoryQuerier),
-		WithWorkflowCache(wfCache),
-		WithSuccessMetricsRepository(auditDeps.auditEventsRepo),
 	)
 	opts = append(opts, deps.HandlerOpts...)
 	return NewHandler(opts...)
@@ -515,19 +473,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 
 	catalogDeps := buildWorkflowCatalogDependencies(db, logger)
 
-	wfCache, cancelWorkflowCache, err := buildWorkflowCache(deps, logger, cleanups)
-	if err != nil {
-		return nil, err
-	}
-	if wfCache != nil {
-		// Issue #1661 Change 6 (DD-WORKFLOW-018): switches ListActions/
-		// ListWorkflowsByActionType from Postgres to the informer-backed CRD
-		// cache. GetWorkflowWithContextFilters/GetByID (Step 3) are unaffected
-		// -- deferred per Phase 31 scope decision.
-		catalogDeps.workflowRepo.SetCache(wfCache)
-	}
-
-	handler := buildRESTHandler(deps, db, logger, auditDeps, catalogDeps, wfCache)
+	handler := buildRESTHandler(deps, db, logger, auditDeps, catalogDeps)
 
 	signer, openapiValidator, err := initSignerAndOpenAPIValidator(deps, auditDeps, logger)
 	if err != nil {
@@ -541,7 +487,6 @@ func NewServer(deps ServerDeps) (*Server, error) {
 		retentionWorker: retentionWorker,
 		ipLimiter:       ipLimiter,
 	})
-	srv.cancelWorkflowCache = cancelWorkflowCache
 
 	// DS-FLAKY-003 FIX: Assign handler immediately so Shutdown() can work
 	srv.httpServer.Handler = srv.Handler()

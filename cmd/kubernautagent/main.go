@@ -31,6 +31,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-logr/logr"
 	"go.uber.org/zap"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
@@ -49,6 +50,7 @@ import (
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
@@ -138,7 +140,8 @@ func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *ht
 		cfg: p.cfg, infra: p.core.infra, ds: p.core.ds, inv: p.inv, enricher: p.core.enricher,
 		mgr: p.mgr, agentMetrics: p.agentMetrics, instrumentedAudit: p.instrumentedAudit,
 		ogenSrv: p.ogenSrv, eventEmitter: p.core.eventEmitter, interactiveReadiness: p.core.interactiveReadiness,
-		apiRateLimiter: p.apiRateLimiter, maxRequestBodySize: p.maxRequestBodySize, logger: p.logger,
+		apiRateLimiter: p.apiRateLimiter, maxRequestBodySize: p.maxRequestBodySize,
+		wfCatalog: p.core.wfCatalog, logger: p.logger,
 	})
 
 	httpServer = &http.Server{
@@ -269,7 +272,7 @@ func main() {
 	healthServer, metricsServer := startHealthAndMetricsServers(healthServersParams{
 		Config: cfg, AtomicLevel: atomicLevel, Swappable: swappable, DS: core.ds,
 		InteractiveReadiness: core.interactiveReadiness, ShutdownFlag: &shutdownFlag,
-		APIServerReady: &apiServerReady, FleetGate: core.fleetGate, Logger: logger,
+		APIServerReady: &apiServerReady, FleetGate: core.fleetGate, WfCatalog: core.wfCatalog, Logger: logger,
 	})
 
 	httpServer, sessionDrainer, cleanupServers := startAPIServer(ctx, apiServerStartParams{
@@ -287,7 +290,7 @@ func main() {
 		cfg: cfg, mgr: stack.mgr, sessionDrainer: sessionDrainer,
 		httpServer: httpServer, healthServer: healthServer, metricsServer: metricsServer,
 		eventEmitter: core.eventEmitter, fleetClient: core.fleetClient, fleetGate: core.fleetGate,
-		auditCleanup: core.auditCleanup, logger: logger,
+		auditCleanup: core.auditCleanup, wfCatalog: core.wfCatalog, logger: logger,
 	})
 }
 
@@ -305,6 +308,7 @@ type shutdownParams struct {
 	fleetClient    *fleetclient.ResilientClient
 	fleetGate      *readiness.Gate
 	auditCleanup   func()
+	wfCatalog      *workflowcatalog.LazyCatalog
 	logger         logr.Logger
 }
 
@@ -334,6 +338,10 @@ func runShutdownSequence(p shutdownParams) {
 	if p.fleetClient != nil {
 		_ = p.fleetClient.Close()
 		p.logger.Info("fleet MCP client closed")
+	}
+	if p.wfCatalog != nil {
+		p.wfCatalog.Stop()
+		p.logger.Info("workflow catalog cache stopped")
 	}
 	p.logger.Info("flushing audit store...")
 	p.auditCleanup()
@@ -366,6 +374,17 @@ func loadStartupConfig(configPath, llmRuntimePath string, bootstrapLogger logr.L
 		"level", cfg.Runtime.Logging.Level,
 		"format", cfg.Runtime.Logging.Format,
 	)
+
+	// #1677 hardening: without this, controller-runtime silently drops every
+	// internal log line (reflector/informer errors included) behind a
+	// one-time "log.SetLogger(...) was never called" warning instead of
+	// emitting them -- which hid the underlying cause of workflow catalog
+	// cache sync failures (workflowcatalog.NewInformerCache) behind KA's own
+	// generic "failed to sync ... within 30s" wrapper. Matches every other
+	// controller-runtime-using service (cmd/authwebhook, cmd/apifrontend,
+	// cmd/gateway, etc.), which already call this right after building their
+	// logger.
+	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
 	llmRtData, err := os.ReadFile(llmRuntimePath)
 	if err != nil {

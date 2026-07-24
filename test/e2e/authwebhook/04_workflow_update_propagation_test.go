@@ -17,9 +17,7 @@ limitations under the License.
 package authwebhook
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -42,8 +40,8 @@ import (
 // Authority: BR-WORKFLOW-006, DD-WEBHOOK-001, DD-WORKFLOW-012, Issue #773
 // SOC2 CC8.1: UPDATE operations must produce distinct audit events
 //
-// These tests verify that CRD spec updates are correctly propagated to DS
-// via the validating webhook, including version bump supersession, same-version
+// These tests verify that CRD spec updates are correctly processed by the
+// validating webhook, including version bump supersession, same-version
 // content rejection, and idempotent re-apply.
 
 var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, Label("e2e", "workflow-update"), func() {
@@ -102,20 +100,15 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		}, 30*time.Second, 1*time.Second).ShouldNot(BeEmpty(),
 			"Status should reflect new workflowId after version bump")
 
-		By("Verifying DS catalog has the updated workflow")
-		url := fmt.Sprintf("%s/api/v1/workflows/%s", dataStorageURL, newWorkflowID)
-		req, err := http.NewRequest(http.MethodGet, url, nil)
-		Expect(err).ToNot(HaveOccurred())
-		resp, err := authHTTPClient.Do(req)
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-		body, _ := io.ReadAll(resp.Body)
-		var dsWorkflow map[string]interface{}
-		Expect(json.Unmarshal(body, &dsWorkflow)).To(Succeed())
-		Expect(dsWorkflow["version"]).To(Equal("1.1.0"),
-			"DS catalog should have version 1.1.0")
+		// "DS catalog has the updated workflow" (#1677, DD-WORKFLOW-019): DS no
+		// longer hosts a workflow catalog or its REST read path at all -- that
+		// moved to KubernautAgent, and AW itself never called it (this was
+		// always a network-based proxy check, not part of AW's own contract).
+		// The CRD's own .status.workflowId already changing above is AW's real
+		// signal that the version bump was recognized and superseded
+		// correctly; that any cache built from this CRD reflects
+		// spec.version verbatim is a mapping-correctness property covered at
+		// the KA integration tier (crdWorkflowToModel, cache_convert_test.go).
 
 		By("Verifying audit trail has remediationworkflow.admitted.update event")
 		authAuditClient := createAuthenticatedAuditClient()

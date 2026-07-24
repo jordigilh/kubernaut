@@ -18,7 +18,6 @@ package authwebhook
 
 import (
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -88,28 +87,6 @@ func waitForCRDStatus(crdName string) *rwv1alpha1.RemediationWorkflow {
 	return rw
 }
 
-// queryDSWorkflowHTTPStatus calls the DS GET-by-ID API and returns the raw
-// HTTP status code (0 on request/transport failure). #1661 DD-WORKFLOW-018:
-// DataStorage's workflow read path is a direct informer cache over the
-// RemediationWorkflow CRD (no Postgres soft-delete/audit fallback), so a
-// deleted CRD is simply absent from the cache -- the catalog surfaces this
-// as 404 Not Found, not a queryable "Disabled" status string. Returns the
-// status code (rather than collapsing all non-200s to "") so tests can
-// assert the specific code rather than risk a transient network error being
-// mistaken for "not found".
-func queryDSWorkflowHTTPStatus(workflowID string) int {
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s/api/v1/workflows/%s", dataStorageURL, workflowID), nil)
-	if err != nil {
-		return 0
-	}
-	resp, err := authHTTPClient.Do(req)
-	if err != nil {
-		return 0
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode
-}
-
 // deleteCRDAndWait deletes a RemediationWorkflow CRD and waits for it to be gone.
 func deleteCRDAndWait(crdName string) {
 	rw := &rwv1alpha1.RemediationWorkflow{
@@ -165,44 +142,47 @@ var _ = Describe("Workflow Content Integrity E2E Tests (BR-WORKFLOW-006)", Seria
 	})
 
 	// ========================================
-	// E2E-INTEGRITY-002: CRD delete removes the workflow from DS's live catalog
+	// E2E-INTEGRITY-002: CRD delete removes the workflow from the cluster
 	// ========================================
 	// #1661 DD-WORKFLOW-018: previously this test expected DS to retain a
 	// queryable "Disabled" status for a deleted workflow, mirroring the old
-	// Postgres soft-delete design. DataStorage's read path is now a direct
+	// Postgres soft-delete design; DataStorage's read path became a direct
 	// informer cache over the RemediationWorkflow CRD with no soft-delete
 	// fallback (Change 8c/8d) -- a true etcd deletion makes the workflow
-	// genuinely absent from the cache, so DS's catalog now reports 404 Not
-	// Found rather than a "Disabled" status string. The deletion is still
+	// genuinely absent from any cache, not just "Disabled".
+	//
+	// #1677 (DD-WORKFLOW-019): DataStorage no longer hosts that cache or its
+	// REST read path at all -- it moved to KubernautAgent. This AuthWebhook
+	// E2E suite has no KA client, and re-probing an HTTP catalog endpoint was
+	// never really this test's job (AW doesn't own or call that cache); its
+	// actual scope is AW's own CRD lifecycle contract, checked directly
+	// against the API server below. The cache's own read-your-writes
+	// consistency on DELETE (no stale entries survive a real CRD delete) is
+	// now proven directly against KA's informer cache by
+	// IT-KA-1677-CACHE-006 (test/integration/kubernautagent/workflowcatalog/
+	// cache_test.go) -- added specifically to avoid silently dropping this
+	// property during the OpenAPI/E2E cleanup. The deletion is separately
 	// captured for SOC2/audit reconstruction via the
 	// remediationworkflow.admitted.delete audit event (BR-AUDIT-005),
-	// verified separately by the audit-trail E2E suite -- this test's scope
-	// is the live catalog's read-your-writes consistency, not the audit
-	// trail.
-	Describe("E2E-INTEGRITY-002: CRD delete removes the workflow from DS's live catalog", func() {
-		It("should return 404 Not Found from DS when the CRD is deleted", func() {
+	// verified by the audit-trail E2E suite.
+	Describe("E2E-INTEGRITY-002: CRD delete removes the RemediationWorkflow from the cluster", func() {
+		It("should make the CRD absent from the API server after deletion", func() {
 			suffix := uuid.New().String()[:8]
 			crdName := fmt.Sprintf("e2e-integrity-002-%s", suffix)
 
 			rw := buildRemediationWorkflowCRD(crdName, "Delete removes from catalog E2E")
 			Expect(k8sClient.Create(ctx, rw)).To(Succeed())
+			waitForCRDStatus(crdName)
 
-			updatedRW := waitForCRDStatus(crdName)
-			dsWorkflowID := updatedRW.Status.WorkflowID
-
-			By("Confirming DS's catalog can see the workflow before deletion")
-			Eventually(func() int {
-				return queryDSWorkflowHTTPStatus(dsWorkflowID)
-			}, 30*time.Second, 2*time.Second).Should(Equal(http.StatusOK),
-				"DS should serve the workflow while its CRD still exists")
+			By("Confirming the CRD exists before deletion")
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, &rwv1alpha1.RemediationWorkflow{})).To(Succeed(),
+				"CRD should exist while it has not been deleted")
 
 			deleteCRDAndWait(crdName)
 
-			By("Confirming DS's catalog no longer sees the workflow after deletion")
-			Eventually(func() int {
-				return queryDSWorkflowHTTPStatus(dsWorkflowID)
-			}, 30*time.Second, 2*time.Second).Should(Equal(http.StatusNotFound),
-				"DS should return 404 for a workflow whose CRD has been deleted (no soft-delete fallback, DD-WORKFLOW-018)")
+			By("Confirming the CRD is gone after deletion")
+			getErr := k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, &rwv1alpha1.RemediationWorkflow{})
+			Expect(getErr).To(HaveOccurred(), "CRD should no longer exist after deletion")
 		})
 	})
 

@@ -72,11 +72,46 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 
 	result, parseErr := inv.resultParser.Parse(content)
 	if parseErr != nil {
-		return inv.workflowSelectionRetryOrHumanReview(ctx, content, messages, rcaSummary, llmCtx, parseErr,
-			fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr)), nil
+		var terminal *katypes.InvestigationResult
+		content, terminal = inv.workflowSelectionRetryOrHumanReview(ctx, content, messages, rcaSummary, llmCtx, parseErr,
+			fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr))
+		if terminal != nil {
+			return terminal, nil
+		}
+		// Genuine workflow selection recovered via retryWorkflowSubmit: fall
+		// through into the same CatalogFetcher / selfCorrectWorkflowSelection
+		// validation path below, exactly like a first-attempt success.
+		// Returning it directly here would bypass catalog validation for
+		// this specific retry path (#1677 follow-up hardening).
+		result, parseErr = inv.resultParser.Parse(content)
+		if parseErr != nil {
+			return nil, fmt.Errorf("workflow selection: re-parsing retry-recovered content: %w", parseErr)
+		}
 	}
 
+	// #1677 hardening (DD-WORKFLOW-019): CatalogFetcher is always configured
+	// in production (cmd/kubernautagent always wires a workflowCatalogFetcher
+	// backed by a LazyCatalog, ready or not) -- a nil CatalogFetcher here is
+	// a test/wiring gap, not a supported "dev mode" that should silently
+	// bypass validation. result.HumanReviewNeeded already true means the
+	// parser/LLM itself determined no workflow selection needs validating
+	// (e.g. no_matching_workflows) -- that classification is preserved
+	// as-is, matching selfCorrectWorkflowSelection's own contract of only
+	// running validation when there is an actual selection to validate.
+	// Otherwise (a workflow WAS selected) failing closed instead of
+	// returning it unvalidated mirrors selfCorrectWorkflowSelection's own
+	// fetchErr handling below, so both "no fetcher configured" and "fetcher
+	// configured but catalog not ready/unreachable" produce the same
+	// observable outcome: human review, never silent pass-through.
 	if inv.pipeline.CatalogFetcher == nil {
+		if result.HumanReviewNeeded {
+			return result, nil
+		}
+		inv.logger.Error(nil, "workflow catalog fetcher not configured, requiring human review instead of skipping validation",
+			"correlation_id", correlationID)
+		result.HumanReviewNeeded = true
+		result.HumanReviewReason = "catalog_unavailable"
+		result.Reason = "workflow catalog fetcher not configured"
 		return result, nil
 	}
 	return inv.selfCorrectWorkflowSelection(ctx, result, content, messages, rcaSummary, correlationID, llmCtx)
@@ -138,26 +173,47 @@ func (inv *Investigator) handleWorkflowSelectionLoopResult(ctx context.Context, 
 				"correlation_id", correlationID)
 			return r.Content, nil
 		}
-		return "", inv.workflowSelectionRetryOrHumanReview(ctx, r.Content, messages, rcaSummary, llmCtx, nil,
+		return inv.workflowSelectionRetryOrHumanReview(ctx, r.Content, messages, rcaSummary, llmCtx, nil,
 			"workflow selection: LLM did not use submit tool after retries")
 	}
 	return "", nil
 }
 
 // workflowSelectionRetryOrHumanReview performs one retryWorkflowSubmit
-// attempt and, on exhaustion, classifies the investigation as
-// no_matching_workflows (or cancelled, if the context ended). Shared by the
-// "LLM returned unparseable text" and "LLM's tool payload failed structural
-// parsing" branches of runWorkflowSelection. When parseErr is non-nil the
-// exhaustion is logged at Error level (a real parse failure); otherwise at
-// Info level (the LLM simply never called a submit tool).
-func (inv *Investigator) workflowSelectionRetryOrHumanReview(ctx context.Context, lastContent string, messages []llm.Message, rcaSummary string, llmCtx LLMInvocationContext, parseErr error, failureReason string) *katypes.InvestigationResult {
-	retryResult := inv.retryWorkflowSubmit(ctx, lastContent, messages, rcaSummary, llmCtx)
+// attempt and classifies its outcome. Shared by the "LLM returned
+// unparseable text" and "LLM's tool payload failed structural parsing"
+// branches of runWorkflowSelection. When parseErr is non-nil the exhaustion
+// is logged at Error level (a real parse failure); otherwise at Info level
+// (the LLM simply never called a submit tool).
+//
+// Return contract mirrors handleWorkflowSelectionLoopResult's (content,
+// early) idiom: content is non-empty (and terminal nil) only when
+// retryWorkflowSubmit recovered a genuine workflow selection via
+// submit_result_with_workflow -- the caller MUST feed content back through
+// resultParser.Parse and selfCorrectWorkflowSelection exactly like a
+// first-attempt success, never return it as a final answer directly.
+// terminal is set (content empty) for every other outcome:
+// no_matching_workflows (explicit decline or retries exhausted) or
+// cancelled.
+//
+// #1677 follow-up hardening: this used to return retryWorkflowSubmit's
+// result directly, bypassing selfCorrectWorkflowSelection's catalog
+// validation entirely for this retry path -- regardless of whether
+// CatalogFetcher was configured -- letting a hallucinated workflow_id reach
+// WorkflowExecution unvalidated whenever the LLM's first response was
+// unparseable but a retry then succeeded.
+func (inv *Investigator) workflowSelectionRetryOrHumanReview(ctx context.Context, lastContent string, messages []llm.Message, rcaSummary string, llmCtx LLMInvocationContext, parseErr error, failureReason string) (content string, terminal *katypes.InvestigationResult) {
+	retryResult, retryContent := inv.retryWorkflowSubmit(ctx, lastContent, messages, rcaSummary, llmCtx)
 	if retryResult != nil {
-		return retryResult
+		if retryContent != "" && !retryResult.HumanReviewNeeded {
+			// Genuine selection recovered via retry: not terminal, needs
+			// catalog validation just like any other successful content.
+			return retryContent, nil
+		}
+		return "", retryResult
 	}
 	if ctx.Err() != nil {
-		return &katypes.InvestigationResult{
+		return "", &katypes.InvestigationResult{
 			RCASummary:     rcaSummary,
 			Cancelled:      true,
 			CancelledPhase: string(katypes.PhaseWorkflowDiscovery),
@@ -170,7 +226,7 @@ func (inv *Investigator) workflowSelectionRetryOrHumanReview(ctx context.Context
 		inv.logger.Info("workflow selection: all retries exhausted, classifying as no_matching_workflows",
 			"correlation_id", llmCtx.CorrelationID)
 	}
-	return &katypes.InvestigationResult{
+	return "", &katypes.InvestigationResult{
 		RCASummary:        rcaSummary,
 		HumanReviewNeeded: true,
 		HumanReviewReason: "no_matching_workflows",
@@ -306,8 +362,12 @@ const maxParseRetries = 2
 // the LLM returns text or unparseable JSON instead of calling a submit tool.
 // Each retry sends a correction message with examples of both submit tools,
 // with only the two submit tools available (prevents re-investigation).
-// Returns non-nil *InvestigationResult on success or nil when retries exhaust.
-func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, llmCtx LLMInvocationContext) *katypes.InvestigationResult {
+// Returns (result, content): result is nil when retries exhaust. content is
+// only non-empty for a genuine submit_result_with_workflow selection -- the
+// caller MUST route it through catalog validation (see
+// workflowSelectionRetryOrHumanReview), never return result directly as a
+// final answer.
+func (inv *Investigator) retryWorkflowSubmit(ctx context.Context, lastContent string, history []llm.Message, rcaSummary string, llmCtx LLMInvocationContext) (*katypes.InvestigationResult, string) {
 	tokens, correlationID, client, modelName, runtimeParams :=
 		llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.ModelName, llmCtx.RuntimeParams
 	submitOnlyTools := []llm.ToolDefinition{
@@ -341,7 +401,7 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 
 	for attempt := 0; attempt < maxParseRetries; attempt++ {
 		if ctx.Err() != nil {
-			return nil
+			return nil, ""
 		}
 		inv.logger.Info("parse-level retry for workflow submit",
 			"attempt", attempt+1,
@@ -350,17 +410,17 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 
 		retryMessages = append(retryMessages, llm.Message{Role: "user", Content: correctionTemplate})
 
-		result, updated, ok := inv.attemptWorkflowSubmitRetry(ctx, workflowSubmitRetryParams{
+		result, content, updated, ok := inv.attemptWorkflowSubmitRetry(ctx, workflowSubmitRetryParams{
 			attempt: attempt, retryMessages: retryMessages, tools: submitOnlyTools, rcaSummary: rcaSummary,
 			correlationID: correlationID, modelName: modelName, client: client,
 			runtimeParams: runtimeParams, tokens: tokens,
 		})
 		if ok {
-			return result
+			return result, content
 		}
 		retryMessages = updated
 	}
-	return nil
+	return nil, ""
 }
 
 // workflowSubmitRetryParams groups the fields needed by
@@ -382,8 +442,11 @@ type workflowSubmitRetryParams struct {
 // audit event, calls the LLM with p.retryMessages (which already include the
 // correction message), and classifies any tool calls in the response.
 // Returns ok=false with updatedMessages appended for the next attempt when
-// the LLM call failed or no submit tool call was recognized.
-func (inv *Investigator) attemptWorkflowSubmitRetry(ctx context.Context, p workflowSubmitRetryParams) (result *katypes.InvestigationResult, updatedMessages []llm.Message, ok bool) {
+// the LLM call failed or no submit tool call was recognized. On ok=true,
+// content is non-empty only for a genuine submit_result_with_workflow
+// selection (see classifyWorkflowSubmitToolCall) -- callers must route it
+// through catalog validation, never treat result as final on its own.
+func (inv *Investigator) attemptWorkflowSubmitRetry(ctx context.Context, p workflowSubmitRetryParams) (result *katypes.InvestigationResult, content string, updatedMessages []llm.Message, ok bool) {
 	inv.emitRetryAudit(ctx, retryAuditParams{
 		correlationID: p.correlationID,
 		modelName:     p.modelName,
@@ -402,7 +465,7 @@ func (inv *Investigator) attemptWorkflowSubmitRetry(ctx context.Context, p workf
 	if err != nil {
 		inv.logger.Error(err, "retry LLM call failed",
 			"correlation_id", p.correlationID)
-		return nil, p.retryMessages, false
+		return nil, "", p.retryMessages, false
 	}
 	if p.tokens != nil {
 		p.tokens.Add(resp.Usage)
@@ -419,19 +482,19 @@ func (inv *Investigator) attemptWorkflowSubmitRetry(ctx context.Context, p workf
 	retryMessages := p.retryMessages
 	if len(resp.ToolCalls) > 0 {
 		for _, tc := range resp.ToolCalls {
-			result, matched := inv.classifyWorkflowSubmitToolCall(tc, p.rcaSummary, p.correlationID)
+			toolResult, toolContent, matched := inv.classifyWorkflowSubmitToolCall(tc, p.rcaSummary, p.correlationID)
 			if !matched {
 				continue
 			}
-			if result == nil {
+			if toolResult == nil {
 				retryMessages = append(retryMessages, resp.Message)
 				continue
 			}
-			return result, retryMessages, true
+			return toolResult, toolContent, retryMessages, true
 		}
 	}
 
-	return nil, append(retryMessages, resp.Message), false
+	return nil, "", append(retryMessages, resp.Message), false
 }
 
 // classifyWorkflowSubmitToolCall inspects a single tool call from a
@@ -440,7 +503,15 @@ func (inv *Investigator) attemptWorkflowSubmitRetry(ctx context.Context, p workf
 // in that case only when SubmitResultWithWorkflowToolName's arguments failed
 // to parse, signaling the caller to append resp.Message and keep retrying.
 // Returns matched=false when tc.Name did not match either submit tool.
-func (inv *Investigator) classifyWorkflowSubmitToolCall(tc llm.ToolCall, rcaSummary, correlationID string) (result *katypes.InvestigationResult, matched bool) {
+//
+// content is only populated (the raw tc.Arguments) for a successfully-parsed
+// submit_result_with_workflow call. #1677 follow-up hardening: callers MUST
+// route a non-empty content back through resultParser.Parse and
+// selfCorrectWorkflowSelection for catalog validation -- result on its own
+// must never be treated as an immediately-final answer, or a hallucinated
+// workflow_id recovered via this retry path would reach WorkflowExecution
+// unvalidated.
+func (inv *Investigator) classifyWorkflowSubmitToolCall(tc llm.ToolCall, rcaSummary, correlationID string) (result *katypes.InvestigationResult, content string, matched bool) {
 	switch tc.Name {
 	case SubmitResultNoWorkflowToolName:
 		inv.logger.Info("retry succeeded: submit_result_no_workflow",
@@ -450,7 +521,7 @@ func (inv *Investigator) classifyWorkflowSubmitToolCall(tc llm.ToolCall, rcaSumm
 			HumanReviewNeeded: true,
 			HumanReviewReason: "no_matching_workflows",
 			Reason:            "LLM used submit_result_no_workflow after retry",
-		}, true
+		}, "", true
 	case SubmitResultWithWorkflowToolName:
 		inv.logger.Info("retry succeeded: submit_result_with_workflow",
 			"correlation_id", correlationID)
@@ -458,9 +529,9 @@ func (inv *Investigator) classifyWorkflowSubmitToolCall(tc llm.ToolCall, rcaSumm
 		if parseErr != nil {
 			inv.logger.Error(parseErr, "retry submit_result_with_workflow parse failed",
 				"correlation_id", correlationID)
-			return nil, true
+			return nil, "", true
 		}
-		return parsed, true
+		return parsed, tc.Arguments, true
 	}
-	return nil, false
+	return nil, "", false
 }

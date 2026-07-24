@@ -38,11 +38,12 @@ import (
 // the Kubernetes API and stamps .status.workflowId/.status.contentHash/
 // .status.catalogStatus using the exact same local computation AuthWebhook
 // uses (pkg/shared/contenthash) -- for integration suites that intentionally
-// run envtest + DataStorage WITHOUT a live AuthWebhook instance (#1661 Phase
-// 55). DS's cache reads workflow_id/content_hash directly off CRD status; it
-// never computes them itself (pkg/datastorage/workflowcache), so a workflow
-// created without AuthWebhook admitting it needs this status populated some
-// other way to be usable by tests.
+// run envtest WITHOUT a live AuthWebhook instance (#1661 Phase 55). Any
+// consumer that reads workflow_id/content_hash off the CRD (KubernautAgent's
+// informer-backed workflow catalog -- internal/kubernautagent/workflowcatalog,
+// #1677 Phase 2g/DD-WORKFLOW-019 -- reads them directly off CRD status and
+// never computes them itself) needs this status populated some other way to
+// treat a seeded workflow as usable.
 //
 // Mirrors AuthWebhook's own async status-patch (registerWorkflowStatusAsync,
 // pkg/authwebhook/remediationworkflow_handler.go: Get + mutate +

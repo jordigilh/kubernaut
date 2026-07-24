@@ -521,6 +521,9 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 							Closer:    func() { close(eventCh) },
 						}, nil
 					},
+					ListWorkflowsFn: func(_ context.Context, _ ka.ListWorkflowsArgs) (*ka.ListWorkflowsResult, error) {
+						return &ka.ListWorkflowsResult{Workflows: []ka.WorkflowSummary{{ID: "wf-1", Name: "restart", Description: "Restart pods"}}, Count: 1}, nil
+					},
 				},
 				DSClient:           newFakeDSClient(),
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
@@ -2278,11 +2281,12 @@ func countToolsInResponse(body string) int {
 }
 
 // newFakeDSClient creates a ds.MockClient with default no-op implementations.
+//
+// #1677 Phase 2g (DD-WORKFLOW-019): ListWorkflowsFn removed -- ds.Client no
+// longer has a ListWorkflows method (kubernaut_list_workflows is KA-backed
+// now, see ka.MockClient.ListWorkflowsFn in the KA-facing test fixtures).
 func newFakeDSClient() *ds.MockClient {
 	return &ds.MockClient{
-		ListWorkflowsFn: func(_ context.Context, _ ds.ListWorkflowsOpts) ([]ds.Workflow, error) {
-			return []ds.Workflow{{ID: "wf-1", Name: "restart", Description: "Restart pods"}}, nil
-		},
 		GetRemediationHistoryFn: func(_ context.Context, _ ds.HistoryOpts) ([]ds.HistoricalRemediation, error) {
 			return []ds.HistoricalRemediation{{ID: "rr-hist-1", Namespace: "default", Phase: "Completed", CreatedAt: "2026-01-01T00:00:00Z"}}, nil
 		},

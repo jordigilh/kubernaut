@@ -449,5 +449,26 @@ func (c *SDKMCPClient) CompleteNoAction(ctx context.Context, args CompleteNoActi
 	return &cnaResult, nil
 }
 
+// ListWorkflows calls kubernaut_list_workflows on KA's MCP server. Stateless
+// (no rr_id/session, session-per-call via callTool) -- #1677 Phase 2f
+// (DD-WORKFLOW-019).
+func (c *SDKMCPClient) ListWorkflows(ctx context.Context, args ListWorkflowsArgs) (*ListWorkflowsResult, error) {
+	argsMap := map[string]any{}
+	if args.Kind != "" {
+		argsMap["kind"] = args.Kind
+	}
+
+	result, err := c.callTool(ctx, "kubernaut_list_workflows", argsMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var lwResult ListWorkflowsResult
+	if err := json.Unmarshal(result, &lwResult); err != nil {
+		return nil, fmt.Errorf("parse list_workflows response: %w", err)
+	}
+	return &lwResult, nil
+}
+
 // Compile-time interface check.
 var _ MCPClient = (*SDKMCPClient)(nil)

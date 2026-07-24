@@ -174,3 +174,20 @@ func CompleteNoActionRegistration(tool *CompleteNoActionTool, logger logr.Logger
 		logger,
 	)
 }
+
+// ListWorkflowsRegistration returns a ToolRegistration that registers the
+// kubernaut_list_workflows tool with the MCP SDK server. Unlike
+// SelectWorkflowRegistration/InvestigateRegistration, this tool is stateless
+// (no rr_id/session gating) so it does not resolve caller identity via
+// ResolveUser -- #1677 Phase 2f (DD-WORKFLOW-019).
+func ListWorkflowsRegistration(tool *ListWorkflowsTool, logger logr.Logger) mcpinternal.ToolRegistration {
+	return func(server *mcpsdk.Server, _ func(context.Context) mcpinternal.UserInfo) {
+		mcpsdk.AddTool(server, &mcpsdk.Tool{
+			Name:        "kubernaut_list_workflows",
+			Description: "List available remediation workflows from the catalog, optionally filtered by resource kind",
+		}, func(ctx context.Context, req *mcpsdk.CallToolRequest, input ListWorkflowsInput) (*mcpsdk.CallToolResult, ListWorkflowsOutput, error) {
+			output, err := tool.Handle(ctx, input)
+			return nil, output, ErrorBoundary(logger, "kubernaut_list_workflows", err)
+		})
+	}
+}

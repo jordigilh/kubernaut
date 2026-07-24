@@ -24,7 +24,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 )
 
 // BR-WORKFLOW-016 / #779: Tool Execute methods must not panic when the
@@ -47,7 +46,7 @@ var _ = Describe("UT-KA-779-CC-T: Tool Execute context cancellation", func() {
 	Describe("UT-KA-779-CC-T-001: list_available_actions does not panic with cancelled context", func() {
 		It("should not panic when context is cancelled", func() {
 			fake := &fakeWorkflowDS{}
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			listActions := allTools[0]
 
 			ctx, cancel := context.WithCancel(cancelledCtx)
@@ -62,7 +61,7 @@ var _ = Describe("UT-KA-779-CC-T: Tool Execute context cancellation", func() {
 	Describe("UT-KA-779-CC-T-002: list_workflows does not panic with cancelled context", func() {
 		It("should not panic when context is cancelled", func() {
 			fake := &fakeWorkflowDS{}
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			listWorkflows := allTools[1]
 
 			ctx, cancel := context.WithCancel(cancelledCtx)
@@ -77,7 +76,7 @@ var _ = Describe("UT-KA-779-CC-T: Tool Execute context cancellation", func() {
 	Describe("UT-KA-779-CC-T-003: get_workflow does not panic with cancelled context", func() {
 		It("should not panic when context is cancelled", func() {
 			fake := &fakeWorkflowDS{}
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			getWorkflow := allTools[2]
 
 			ctx, cancel := context.WithCancel(cancelledCtx)

@@ -22,14 +22,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
@@ -54,9 +57,17 @@ const (
 )
 
 var (
-	dsInfra      *infrastructure.DSBootstrapInfra
-	ogenClient   *ogenclient.Client
+	dsInfra       *infrastructure.DSBootstrapInfra
+	ogenClient    *ogenclient.Client
 	workflowUUIDs map[string]string
+
+	// #1677 Phase 2e (DD-WORKFLOW-019): the 3 discovery tools are now
+	// catalog-backed (KA's own informer cache), not DS-ogen-client-backed --
+	// wfCatalog replaces ogenClient as custom.NewAllTools' first argument.
+	// Built per-process (Phase 2 below) from the same envtest cluster
+	// ogenClient's auth ServiceAccount was created against.
+	wfCatalog       *workflowcatalog.Catalog
+	wfCatalogCancel context.CancelFunc
 )
 
 var _ = SynchronizedBeforeSuite(
@@ -77,7 +88,6 @@ var _ = SynchronizedBeforeSuite(
 
 		kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedK8sConfig, "ka-custom-tools")
 		Expect(err).ToNot(HaveOccurred())
-		_ = kubeconfigPath
 
 		By("Creating ServiceAccount for DataStorage authentication")
 		authConfig, err := infrastructure.CreateIntegrationServiceAccountWithDataStorageAccess(
@@ -100,6 +110,9 @@ var _ = SynchronizedBeforeSuite(
 		Expect(err).ToNot(HaveOccurred(), "DS infrastructure must start")
 		dsInfra.SharedTestEnv = sharedTestEnv
 
+		By("Seeding ActionType CRDs (#1677 Phase 2e: required by KA's own catalog cache, not just DS)")
+		Expect(infrastructure.SeedActionTypesViaCRD(context.Background(), kubeconfigPath, seedNamespace, GinkgoWriter)).To(Succeed())
+
 		By("Seeding test workflows via direct CRD creation (#1661 Phase 55: no AuthWebhook in this suite)")
 		testWorkflows := []infrastructure.WorkflowSeedSpec{
 			{FixtureDir: "oom-recovery", Environment: "production"},
@@ -114,8 +127,8 @@ var _ = SynchronizedBeforeSuite(
 
 		GinkgoWriter.Println("✅ Phase 1 complete - DataStorage infrastructure ready")
 
-		// Serialize token + workflow UUIDs for Phase 2
-		payload := authConfig.Token
+		// Serialize kubeconfig path + token + workflow UUIDs for Phase 2.
+		payload := kubeconfigPath + "\n" + authConfig.Token
 		for k, v := range wfUUIDs {
 			payload += "\n" + k + "=" + v
 		}
@@ -125,10 +138,11 @@ var _ = SynchronizedBeforeSuite(
 	// Phase 2: Per-process setup (all processes)
 	func(data []byte) {
 		lines := splitLines(string(data))
-		token := lines[0]
+		kubeconfigPath := lines[0]
+		token := lines[1]
 
 		workflowUUIDs = make(map[string]string)
-		for _, line := range lines[1:] {
+		for _, line := range lines[2:] {
 			if parts := splitKV(line); len(parts) == 2 {
 				workflowUUIDs[parts[0]] = parts[1]
 			}
@@ -138,12 +152,30 @@ var _ = SynchronizedBeforeSuite(
 		dsClients := integration.NewAuthenticatedDataStorageClients(dsURL, token, 5*time.Second)
 		ogenClient = dsClients.OpenAPIClient
 
-		GinkgoWriter.Printf("✅ Phase 2 complete - ogen client ready, %d workflow UUIDs\n", len(workflowUUIDs))
+		// #1677 Phase 2e: build KA's own informer-backed catalog against the
+		// same envtest cluster, one per Ginkgo process (mirrors production:
+		// each KA replica owns its own cache, DD-WORKFLOW-019).
+		restConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		Expect(err).ToNot(HaveOccurred(), "build rest.Config from kubeconfig")
+
+		wfScheme, err := workflowcatalog.NewScheme()
+		Expect(err).ToNot(HaveOccurred())
+
+		wfCache, cancel, err := workflowcatalog.NewInformerCache(restConfig, wfScheme, logr.Discard())
+		Expect(err).ToNot(HaveOccurred(), "workflow catalog cache must sync")
+		wfCatalogCancel = cancel
+		wfCatalog = workflowcatalog.NewCatalog(wfCache, logr.Discard())
+
+		GinkgoWriter.Printf("✅ Phase 2 complete - ogen client + workflow catalog ready, %d workflow UUIDs\n", len(workflowUUIDs))
 	},
 )
 
 var _ = SynchronizedAfterSuite(
-	func() { /* per-process cleanup */ },
+	func() {
+		if wfCatalogCancel != nil {
+			wfCatalogCancel()
+		}
+	},
 	func() {
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("KA Custom Tools IT - Infrastructure Cleanup")

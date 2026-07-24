@@ -26,9 +26,9 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
 // InvestigatorRunnerAdapter bridges the MCP tools.InvestigatorRunner interface
@@ -130,36 +130,56 @@ func (a *ReconRunnerAdapter) RunReconTurn(ctx context.Context, messages []mcpint
 	return ExtractContent(result)
 }
 
-// WorkflowCatalogAdapter bridges the MCP tools.WorkflowCatalog interface
-// to the real wfclient.WorkflowQuerier.ResolveWorkflowCatalogMetadata method.
-type WorkflowCatalogAdapter struct {
-	querier wfclient.WorkflowQuerier
+// WorkflowCatalogFetcher is the subset of workflowcatalog.Catalog's read API
+// consumed by WorkflowCatalogAdapter. Defined here (rather than importing
+// the workflowcatalog package) for testability, mirroring
+// custom.WorkflowCatalog's decoupling pattern (Issue #1677 Phase 2d).
+type WorkflowCatalogFetcher interface {
+	GetByID(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error)
 }
 
-// NewWorkflowCatalogAdapter creates an adapter wrapping a real WorkflowQuerier.
-func NewWorkflowCatalogAdapter(querier wfclient.WorkflowQuerier) *WorkflowCatalogAdapter {
-	return &WorkflowCatalogAdapter{querier: querier}
+// WorkflowCatalogAdapter bridges the MCP tools.WorkflowCatalog interface to
+// KA's own cache-backed workflow catalog. Issue #1677 Phase 2e
+// (DD-WORKFLOW-019): replaces the former wfclient.WorkflowQuerier/DS
+// ogen-client indirection -- select_workflow/investigate_discovery now query
+// the same informer-cache-backed Catalog the 3 custom MCP tools use
+// (Phase 2d), instead of a separate DataStorage round-trip.
+type WorkflowCatalogAdapter struct {
+	catalog WorkflowCatalogFetcher
+}
+
+// NewWorkflowCatalogAdapter creates an adapter wrapping a real workflow catalog.
+func NewWorkflowCatalogAdapter(catalog WorkflowCatalogFetcher) *WorkflowCatalogAdapter {
+	return &WorkflowCatalogAdapter{catalog: catalog}
 }
 
 // GetWorkflowByID implements tools.WorkflowCatalog.
 func (a *WorkflowCatalogAdapter) GetWorkflowByID(ctx context.Context, workflowID string) (*tools.CatalogWorkflow, error) {
-	meta, err := a.querier.ResolveWorkflowCatalogMetadata(ctx, workflowID)
+	wf, err := a.catalog.GetByID(ctx, workflowID)
 	if err != nil {
 		return nil, fmt.Errorf("workflow catalog lookup: %w", err)
 	}
 
-	return &tools.CatalogWorkflow{
-		WorkflowID: workflowID,
+	catalogWorkflow := &tools.CatalogWorkflow{
+		WorkflowID: wf.WorkflowID,
 		// WorkflowName was already wired here; ActionType (Issue #1661
 		// Change 12) closes the sibling gap -- both catalog-authoritative,
 		// mirroring the autonomous path's enrichFromCatalog.
-		WorkflowName:          meta.WorkflowName,
-		ActionType:            meta.ActionType,
-		ExecutionEngine:       meta.ExecutionEngine,
-		ExecutionBundle:       meta.ExecutionBundle,
-		ExecutionBundleDigest: meta.ExecutionBundleDigest,
-		ServiceAccountName:    meta.ServiceAccountName,
-	}, nil
+		WorkflowName:    wf.WorkflowName,
+		ActionType:      wf.ActionType,
+		Version:         wf.Version,
+		ExecutionEngine: string(wf.ExecutionEngine),
+	}
+	if wf.ExecutionBundle != nil {
+		catalogWorkflow.ExecutionBundle = *wf.ExecutionBundle
+	}
+	if wf.ExecutionBundleDigest != nil {
+		catalogWorkflow.ExecutionBundleDigest = *wf.ExecutionBundleDigest
+	}
+	if wf.ServiceAccountName != nil {
+		catalogWorkflow.ServiceAccountName = *wf.ServiceAccountName
+	}
+	return catalogWorkflow, nil
 }
 
 // Compile-time interface compliance check.

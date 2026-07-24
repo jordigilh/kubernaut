@@ -66,18 +66,13 @@ func NewDSClientAdapter(baseURL string, timeout time.Duration, logger logr.Logge
 	return newDSClientAdapterWithTransport(baseURL, timeout, transport, logger)
 }
 
-// NewDSClientAdapterWithTransport creates a DSClientAdapter with a caller-provided
-// http.RoundTripper. Use in unit tests to avoid requiring a Kubernetes SA token.
-func NewDSClientAdapterWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper, logger logr.Logger) (*DSClientAdapter, error) {
-	if baseURL == "" {
-		return nil, fmt.Errorf("baseURL cannot be empty")
-	}
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	return newDSClientAdapterWithTransport(baseURL, timeout, transport, logger)
-}
-
+// NewDSClientAdapterWithTransport (exported wrapper around
+// newDSClientAdapterWithTransport for a caller-provided http.RoundTripper)
+// was removed as dead code (#1677 dead-code sweep, follow-up): it had zero
+// callers anywhere in the repo, including tests -- unlike
+// NewDSClientAdapterFromClient above, which IS actively used by
+// test/integration/authwebhook/{rw_cluster_labels,rw_at_audit}_test.go for
+// its documented shared-ogen-client purpose.
 func newDSClientAdapterWithTransport(baseURL string, timeout time.Duration, transport http.RoundTripper, logger logr.Logger) (*DSClientAdapter, error) {
 	httpClient := &http.Client{
 		Timeout:   timeout,

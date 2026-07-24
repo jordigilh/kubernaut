@@ -68,7 +68,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 		It("should forward DetectedLabels JSON to list_available_actions DS params", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
-			for _, t := range custom.NewAllTools(capturingDS) {
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
 
@@ -131,13 +131,13 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			Expect(capturingDS.actionsCalled).To(BeTrue(),
 				"list_available_actions must have been called during workflow selection")
 
-			dl, ok := capturingDS.listActionsParams.DetectedLabels.Get()
-			Expect(ok).To(BeTrue(),
-				"DetectedLabels must be set on DS params when enrichment detects labels")
-			Expect(dl).To(ContainSubstring(`"gitOpsManaged":true`),
-				"DetectedLabels JSON must include gitOpsManaged:true from ArgoCD annotation")
-			Expect(dl).To(ContainSubstring(`"gitOpsTool":"argocd"`),
-				"DetectedLabels JSON must include gitOpsTool:argocd")
+			dl := capturingDS.listActionsFilters.DetectedLabels
+			Expect(dl).NotTo(BeNil(),
+				"DetectedLabels must be set on discovery filters when enrichment detects labels")
+			Expect(dl.GitOpsManaged).To(BeTrue(),
+				"DetectedLabels must report gitOpsManaged=true from ArgoCD annotation")
+			Expect(dl.GitOpsTool).To(Equal("argocd"),
+				"DetectedLabels must report gitOpsTool=argocd")
 		})
 	})
 
@@ -145,7 +145,7 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 		It("should use original enrichment labels when re-enrichment labels all fail", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
-			for _, t := range custom.NewAllTools(capturingDS) {
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
 
@@ -214,10 +214,10 @@ var _ = Describe("IT-KA-1052: DetectedLabels wiring from investigator to DS tool
 			Expect(capturingDS.actionsCalled).To(BeTrue(),
 				"list_available_actions must have been called during workflow selection")
 
-			dl, ok := capturingDS.listActionsParams.DetectedLabels.Get()
-			Expect(ok).To(BeTrue(),
+			dl := capturingDS.listActionsFilters.DetectedLabels
+			Expect(dl).NotTo(BeNil(),
 				"DetectedLabels must be set from ORIGINAL enrichment when re-enrichment labels all fail")
-			Expect(dl).To(ContainSubstring(`"gitOpsManaged":true`),
+			Expect(dl.GitOpsManaged).To(BeTrue(),
 				"Original signal-target ArgoCD labels must be preserved")
 		})
 	})

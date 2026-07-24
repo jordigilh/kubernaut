@@ -21,11 +21,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 
@@ -43,11 +44,11 @@ var _ = Describe("Kubernaut Agent Custom Tools Integration — #433", func() {
 	var reg *registry.Registry
 
 	BeforeEach(func() {
-		Expect(ogenClient).NotTo(BeNil(), "ogen client must be initialized by SynchronizedBeforeSuite")
+		Expect(wfCatalog).NotTo(BeNil(), "workflow catalog must be initialized by SynchronizedBeforeSuite")
 
 		reg = registry.New()
 
-		allTools := custom.NewAllTools(ogenClient)
+		allTools := custom.NewAllTools(wfCatalog, nil, logr.Discard())
 		Expect(allTools).To(HaveLen(3), "should create 3 custom tools")
 		for _, t := range allTools {
 			reg.Register(t)
@@ -95,10 +96,10 @@ var _ = Describe("Cursor-Based Pagination over Real DataStorage — #688", func(
 	var reg *registry.Registry
 
 	BeforeEach(func() {
-		Expect(ogenClient).NotTo(BeNil(), "ogen client must be initialized by SynchronizedBeforeSuite")
+		Expect(wfCatalog).NotTo(BeNil(), "workflow catalog must be initialized by SynchronizedBeforeSuite")
 
 		reg = registry.New()
-		for _, t := range custom.NewAllTools(ogenClient) {
+		for _, t := range custom.NewAllTools(wfCatalog, nil, logr.Discard()) {
 			reg.Register(t)
 		}
 	})

@@ -29,8 +29,16 @@ import (
 	. "github.com/onsi/gomega"
 
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 )
+
+// readyWfCatalog returns a *workflowcatalog.LazyCatalog that is immediately
+// Ready, for tests exercising readinessHandler branches unrelated to the
+// workflow catalog dependency itself (#1677 hardening, DD-WORKFLOW-019).
+func readyWfCatalog() *workflowcatalog.LazyCatalog {
+	return workflowcatalog.NewLazyCatalogReady(workflowcatalog.NewCacheFromReader(nil), logr.Discard())
+}
 
 // fakeUnreadyProber is a readiness.Prober test double that always reports
 // its dependency as unreachable, used to exercise the fleetGate branch of
@@ -66,7 +74,7 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -79,7 +87,7 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))
@@ -93,7 +101,7 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -114,7 +122,7 @@ var _ = Describe("readinessHandler", func() {
 		gate.Start(context.Background())
 		DeferCleanup(gate.Stop)
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, gate)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, gate, readyWfCatalog())
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -128,7 +136,46 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
+
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+	})
+
+	// UT-KA-1677-READY-001/002/003: #1677 hardening (DD-WORKFLOW-019). Unlike
+	// ds/fleetGate, the workflow catalog is a hard (non-optional) dependency:
+	// KA always runs in-cluster and always constructs a wfCatalog, so the pod
+	// must never claim readiness before its first successful cache sync.
+	It("UT-KA-1677-READY-001: reports 503 when wfCatalog has not yet completed its first sync", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
+
+		notReady := workflowcatalog.NewLazyCatalog(logr.Discard()) // never Start()ed
+
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, notReady)
+
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+	})
+
+	It("UT-KA-1677-READY-002: reports 503 when wfCatalog is nil (wiring bug guard)", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
+
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, nil)
+
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+	})
+
+	It("UT-KA-1677-READY-003: reports 200 once wfCatalog has completed its first sync", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
+
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))
