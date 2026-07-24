@@ -35,7 +35,9 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -107,7 +109,20 @@ func NewScheme() (*runtime.Scheme, error) {
 // context.CancelFunc stops the underlying informers and MUST be called
 // during graceful shutdown.
 func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger logr.Logger) (*Cache, context.CancelFunc, error) {
-	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme})
+	// A static Mapper is supplied so cache.New never performs live cluster
+	// discovery (GET /api, /apis -- ServerGroups) to resolve these 2 known
+	// GVKs. Without it, controller-runtime lazily builds a dynamic
+	// DiscoveryRESTMapper and resolves it on the *first* IndexField/
+	// GetInformer call below -- a single unretried discovery request that,
+	// if it lands during a cluster's brief post-boot auth/aggregation-layer
+	// warmup window, fails the entire cache construction outright (observed
+	// in CI: "failed to get server groups: the server has asked for the
+	// client to provide credentials"), well before the informer's own
+	// resilient List+Watch retry loop (started below) ever gets a chance to
+	// run. Bypassing discovery for these 2 fixed, always-present CRD types
+	// removes that unprotected single point of failure entirely -- add any
+	// newly-watched type's mapping here too.
+	k8sCache, err := cache.New(kubeConfig, cache.Options{Scheme: scheme, Mapper: staticRESTMapper()})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create workflow catalog cache: %w", err)
 	}
@@ -141,6 +156,29 @@ func NewInformerCache(kubeConfig *rest.Config, scheme *runtime.Scheme, logger lo
 	}
 
 	return &Cache{reader: k8sCache}, cancel, nil
+}
+
+// staticRESTMapper builds a fixed GVK<->GVR mapping for the exact 2 CRD
+// types this cache ever watches (RemediationWorkflow, ActionType), both
+// namespace-scoped (config/crd/bases/kubernaut.ai_{remediationworkflows,
+// actiontypes}.yaml). Passed as cache.Options.Mapper to NewInformerCache so
+// controller-runtime never falls back to its default dynamic,
+// discovery-backed mapper -- see the doc comment on that call site for why.
+func staticRESTMapper() meta.RESTMapper {
+	mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{rwv1alpha1.GroupVersion, atv1alpha1.GroupVersion})
+	mapper.AddSpecific(
+		rwv1alpha1.GroupVersion.WithKind("RemediationWorkflow"),
+		rwv1alpha1.GroupVersion.WithResource("remediationworkflows"),
+		rwv1alpha1.GroupVersion.WithResource("remediationworkflow"),
+		meta.RESTScopeNamespace,
+	)
+	mapper.AddSpecific(
+		atv1alpha1.GroupVersion.WithKind("ActionType"),
+		atv1alpha1.GroupVersion.WithResource("actiontypes"),
+		atv1alpha1.GroupVersion.WithResource("actiontype"),
+		meta.RESTScopeNamespace,
+	)
+	return mapper
 }
 
 // NewCacheFromReader builds a Cache backed by an arbitrary client.Reader --
