@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -149,6 +150,18 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// readyzPingTimeout bounds how long ReadyzHandler waits on the backend Ping
+// before reporting 503. The incoming request context (a Kubernetes kubelet
+// probe, or a direct client call) carries no deadline of its own, and
+// Issue #1683 moved /readyz onto pkg/shared/health.NewHealthServer, whose
+// WriteTimeout (10s) will forcibly reset the TCP connection if the handler
+// is still blocked when it fires -- turning a detectable dependency outage
+// (503) into an opaque "connection reset by peer" for the caller. Bounding
+// the ping here keeps the probe's own failure mode observable (SI-4: no
+// silent hang, matching "no silent false-healthy") regardless of server
+// timeout configuration.
+const readyzPingTimeout = 3 * time.Second
+
 // ReadyzHandler returns an http.HandlerFunc that checks startup readiness
 // and backend connectivity. Used for the Kubernetes readiness probe.
 func ReadyzHandler(ready func() bool, pinger Pinger) http.HandlerFunc {
@@ -158,7 +171,9 @@ func ReadyzHandler(ready func() bool, pinger Pinger) http.HandlerFunc {
 			_, _ = w.Write([]byte("not ready"))
 			return
 		}
-		if err := pinger.Ping(r.Context()); err != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), readyzPingTimeout)
+		defer cancel()
+		if err := pinger.Ping(ctx); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("valkey unreachable"))
 			return

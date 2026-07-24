@@ -26,6 +26,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // DefaultConfigPath is the standard Kubernetes ConfigMap mount path for FMC.
@@ -39,12 +40,24 @@ type ServiceConfig struct {
 	Valkey     ValkeyConfig           `yaml:"valkey"`
 	Sync       SyncConfig             `yaml:"sync"`
 	OAuth2     OAuth2Config           `yaml:"oauth2"`
+
+	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
+	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
+	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
 // ServerConfig contains HTTP server settings.
+// Issue #753: 3-port standard — API (TLS-capable), Health (plain HTTP,
+// kubelet-only), Metrics (plain HTTP, Prometheus-only).
 type ServerConfig struct {
 	APIAddr     string `yaml:"apiAddr"`
+	HealthAddr  string `yaml:"healthAddr"`
 	MetricsAddr string `yaml:"metricsAddr"`
+
+	// TLS configures optional server-side TLS for the API port only.
+	// Issue #493/#1683: when unset (CertDir==""), the API server falls back
+	// to plain HTTP (ConfigureConditionalTLS fail-open bootstrap behavior).
+	TLS sharedtls.TLSConfig `yaml:"tls,omitempty"`
 }
 
 // ValkeyConfig contains Valkey cache connectivity.
@@ -76,7 +89,8 @@ func DefaultServiceConfig() *ServiceConfig {
 	return &ServiceConfig{
 		Server: ServerConfig{
 			APIAddr:     ":8080",
-			MetricsAddr: ":8081",
+			HealthAddr:  ":8081",
+			MetricsAddr: ":9090",
 		},
 		MCPGateway: fleet.MCPGatewayConfig{
 			GatewayType: "eaigw",

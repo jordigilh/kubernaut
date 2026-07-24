@@ -1,0 +1,155 @@
+suite: FleetMetadataCache TLS + 3-port standard alignment (Issue #1683)
+templates:
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+set:
+  fleetmetadatacache:
+    enabled: true
+    mcpGatewayEndpoint: "http://mcp.example.com"
+    oauth2:
+      tokenURL: "http://oauth.example.com"
+      credentialsSecretRef: "fmc-creds"
+tests:
+  # ── ConfigMap: 3-port layout + TLS cert dir ─────────────────────────────
+  - it: "ConfigMap renders the 3-port standard (api/health/metrics) and server.tls.certDir"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'apiAddr:\s*":8080"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'healthAddr:\s*":8081"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'metricsAddr:\s*":9090"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'tls:\s*\n\s*certDir:'
+
+  # ── Deployment: 3 container ports ───────────────────────────────────────
+  - it: "Deployment exposes api(8080)/health(8081)/metrics(9090) container ports"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].ports[0]
+          value:
+            name: api
+            containerPort: 8080
+            protocol: TCP
+      - equal:
+          path: spec.template.spec.containers[0].ports[1]
+          value:
+            name: health
+            containerPort: 8081
+            protocol: TCP
+      - equal:
+          path: spec.template.spec.containers[0].ports[2]
+          value:
+            name: metrics
+            containerPort: 9090
+            protocol: TCP
+
+  - it: "Deployment mounts the fleetmetadatacache-tls secret at the inter-service TLS cert dir"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-certs
+            mountPath: /etc/tls
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls-certs
+            secret:
+              secretName: fleetmetadatacache-tls
+              optional: true
+
+  - it: "Deployment's liveness and readiness probes both target the dedicated health port, not the API port"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: health
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: health
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+
+  # ── Service: 3 ports ─────────────────────────────────────────────────────
+  - it: "Service exposes api(8080)/health(8081)/metrics(9090) ports"
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: spec.ports[0]
+          value:
+            name: api
+            port: 8080
+            targetPort: api
+            protocol: TCP
+      - equal:
+          path: spec.ports[1]
+          value:
+            name: health
+            port: 8081
+            targetPort: health
+            protocol: TCP
+      - equal:
+          path: spec.ports[2]
+          value:
+            name: metrics
+            port: 9090
+            targetPort: metrics
+            protocol: TCP
+
+  # ── NetworkPolicy: API port scoped to GW/RO; metrics port for scraping ──
+  - it: "NetworkPolicy restricts port 8080 ingress to gateway/remediationorchestrator only"
+    documentSelector:
+      path: kind
+      value: NetworkPolicy
+    asserts:
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8080
+      - contains:
+          path: spec.ingress[0].from
+          content:
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: gateway
+      - contains:
+          path: spec.ingress[0].from
+          content:
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: remediationorchestrator
+
+  - it: "NetworkPolicy no longer opens the health port (8081) cluster-wide"
+    documentSelector:
+      path: kind
+      value: NetworkPolicy
+    asserts:
+      - notContains:
+          path: spec.ingress
+          content:
+            from:
+              - namespaceSelector: {}
+            ports:
+              - protocol: TCP
+                port: 8081

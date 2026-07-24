@@ -44,7 +44,14 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 			cfg := config.DefaultServiceConfig()
 
 			Expect(cfg.Server.APIAddr).To(Equal(":8080"))
-			Expect(cfg.Server.MetricsAddr).To(Equal(":8081"))
+			Expect(cfg.Server.HealthAddr).To(Equal(":8081"),
+				"Issue #753: dedicated health probe port, distinct from metrics")
+			Expect(cfg.Server.MetricsAddr).To(Equal(":9090"),
+				"Issue #753: 3-port standard moves metrics off :8081 to make room for the health port")
+			Expect(cfg.Server.TLS.Enabled()).To(BeFalse(),
+				"TLS is opt-in via server.tls.certDir; disabled by default (plain HTTP fallback)")
+			Expect(cfg.TLSProfile).To(BeEmpty(),
+				"Issue #748: TLSProfile is OCP-only, operator-managed; empty is a no-op on vanilla K8s")
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("eaigw"))
 			Expect(cfg.MCPGateway.Namespace).To(Equal("kubernaut-system"))
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"))
@@ -70,8 +77,12 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 		It("UT-FMC-CFG-003: parses valid YAML and overrides defaults [ADR-030]", func() {
 			yamlContent := `
 server:
-  apiAddr: ":9090"
+  apiAddr: ":9080"
+  healthAddr: ":9081"
   metricsAddr: ":9091"
+  tls:
+    certDir: "/etc/fleetmetadatacache/tls"
+tlsProfile: "Intermediate"
 mcpGateway:
   endpoint: "http://gateway.svc:8080"
   gatewayType: "kuadrant"
@@ -97,8 +108,12 @@ oauth2:
 
 			cfg, err := config.LoadFromFile(tmpFile)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.Server.APIAddr).To(Equal(":9090"))
+			Expect(cfg.Server.APIAddr).To(Equal(":9080"))
+			Expect(cfg.Server.HealthAddr).To(Equal(":9081"))
 			Expect(cfg.Server.MetricsAddr).To(Equal(":9091"))
+			Expect(cfg.Server.TLS.CertDir).To(Equal("/etc/fleetmetadatacache/tls"))
+			Expect(cfg.Server.TLS.Enabled()).To(BeTrue())
+			Expect(cfg.TLSProfile).To(Equal("Intermediate"))
 			Expect(cfg.MCPGateway.Endpoint).To(Equal("http://gateway.svc:8080"))
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("kuadrant"))
 			Expect(cfg.MCPGateway.Namespace).To(Equal("fleet-system"))
@@ -126,6 +141,10 @@ oauth2:
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg.MCPGateway.Endpoint).To(Equal("http://gw:8080"))
 			Expect(cfg.Server.APIAddr).To(Equal(":8080"), "unset fields keep defaults")
+			Expect(cfg.Server.HealthAddr).To(Equal(":8081"), "unset healthAddr keeps default")
+			Expect(cfg.Server.MetricsAddr).To(Equal(":9090"), "unset metricsAddr keeps default")
+			Expect(cfg.Server.TLS.Enabled()).To(BeFalse(), "unset server.tls keeps TLS disabled")
+			Expect(cfg.TLSProfile).To(BeEmpty(), "unset tlsProfile keeps the no-op default")
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"), "unset fields keep defaults")
 			Expect(cfg.Sync.Interval).To(Equal(30*time.Second), "unset fields keep defaults")
 			Expect(cfg.OAuth2.Scopes).To(Equal([]string{"openid", "groups"}), "unset scopes keep defaults")
