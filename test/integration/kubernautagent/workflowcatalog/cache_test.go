@@ -215,4 +215,63 @@ var _ = Describe("IT-KA-1677-CACHE Workflow Catalog Cache (informer-backed)", La
 			return wfCache.GetWorkflow(ctx, name)
 		}, 5*time.Second, 100*time.Millisecond).Should(BeNil(), "cache's Watch must observe deletes -- no stale entry survives a real CRD delete")
 	})
+
+	// IT-KA-1677-CACHE-007 (#1677 follow-up, DD-WORKFLOW-018/019): closes the
+	// deferred "KA cache-restart resilience" item from PR #1718. Proves the
+	// core "disposable, etcd-backed cache" property -- a fresh
+	// workflowcatalog.Cache built from a clean informer (exactly what a
+	// replacement KA pod does on startup after a restart: a brand-new
+	// process calling NewInformerCache against the same API server) must
+	// re-derive an IDENTICAL catalog with zero manual reseeding.
+	//
+	// This replaces test/e2e/datastorage/27_ds_restart_cache_recovery_test.go
+	// (deleted in Phase 2g), which proved this same property E2E against a
+	// real pod kill for DS's now-retired catalog. That full E2E-tier
+	// equivalent for KA was deliberately scoped out: every read here goes
+	// through controller-runtime's own List/Watch/WaitForCacheSync
+	// machinery -- a well-tested upstream library, not bespoke cache logic
+	// -- so what's actually at risk on a real KA restart is KA's own
+	// construction/wiring of that informer (NewInformerCache), not the
+	// informer implementation itself. An IT-tier proof against a real
+	// envtest API server exercises that exact wiring; a full E2E pod-restart
+	// would additionally prove kubelet/Deployment scheduling behavior that
+	// is generic Kubernetes machinery, not KA-specific logic.
+	It("IT-KA-1677-CACHE-007: a freshly constructed cache re-derives the full catalog from etcd after a restart, with zero manual reseeding", func() {
+		By("seeding 3 workflows directly via the CRD API, independent of any cache instance")
+		seeded := make([]*rwv1alpha1.RemediationWorkflow, 0, 3)
+		for i := 0; i < 3; i++ {
+			rw := validRW(uniqueName(fmt.Sprintf("it-1677-restart-%d", i)), "ScaleReplicas")
+			Expect(k8sClient.Create(ctx, rw)).To(Succeed())
+			seeded = append(seeded, rw)
+			DeferCleanup(func() { _ = k8sClient.Delete(ctx, rw) })
+		}
+
+		By("confirming the pre-restart cache (from BeforeEach) observes all 3 workflows")
+		for _, rw := range seeded {
+			Eventually(func() (*rwv1alpha1.RemediationWorkflow, error) {
+				return wfCache.GetWorkflow(ctx, rw.Name)
+			}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
+		}
+
+		By("stopping the pre-restart cache -- simulating the KA process exiting on pod restart")
+		cacheCancel()
+		cacheCancel = nil // prevent AfterEach from double-cancelling; context.CancelFunc is idempotent regardless
+
+		By("constructing a brand new cache -- exactly what a replacement KA pod does on startup")
+		scheme, err := workflowcatalog.NewScheme()
+		Expect(err).ToNot(HaveOccurred())
+		restarted, restartedCancel, err := workflowcatalog.NewInformerCache(k8sConfig, scheme, logger)
+		Expect(err).ToNot(HaveOccurred(), "replacement cache must build and sync from etcd with no manual re-seeding step")
+		DeferCleanup(restartedCancel)
+
+		By("verifying all 3 workflows are visible via the brand new cache, with matching content -- zero data loss")
+		for _, rw := range seeded {
+			Eventually(func(g Gomega) {
+				got, err := restarted.GetWorkflow(ctx, rw.Name)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(got).ToNot(BeNil(), "replacement cache should observe workflow %s with zero manual reseeding", rw.Name)
+				g.Expect(got.Spec.ActionType).To(Equal("ScaleReplicas"))
+			}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
+		}
+	})
 })

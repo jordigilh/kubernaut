@@ -27,12 +27,32 @@
 - One deviation from the "Anticipated scope": `TotalExecutions`/`SuccessfulExecutions`/`ActualSuccessRate`
   ("success-metrics overlay") were dropped entirely rather than migrated — confirmed (via code and grep) to be
   dead, best-effort display telemetry from an abandoned success-rate-weighted-selection design, with zero use in
-  the actual scoring logic.
-- Known residual gap, intentionally deferred out of #1677's scope: `api/openapi/data-storage-v1.yaml` still
-  documents the retired endpoints (and the generated `pkg/datastorage/ogen-client` still exposes their generated
-  methods/types), even though DS no longer registers routes for them. Production behavior is correct and covered
-  by a permanent regression test (`test/e2e/datastorage/04_workflow_endpoints_retired_test.go`), but the OpenAPI
-  contract itself has not yet been pruned to match. Track as separate follow-up.
+  the actual scoring logic. The fields were first left on `models.RemediationWorkflow` as always-zero-valued
+  wire-compat stubs, then deleted outright once a repo-wide sweep confirmed zero remaining Go references
+  anywhere (production or test) — matching this bullet's own "dropped entirely" wording. `PaginationMetadata`/
+  `MandatoryLabels` were evaluated for the same treatment and found to still be live: both are actively used by
+  KA's own `workflowcatalog` package (`cache_convert.go`, `cache_filter.go`) and
+  `internal/kubernautagent/tools/custom/tools.go`, so only their OpenAPI-schema representations (not the Go
+  types) were pruned below.
+- `api/openapi/data-storage-v1.yaml` has since been pruned to remove the retired `/api/v1/workflows*` and
+  `/api/v1/action-types/{name}/workflow-count` routes and their associated schemas (`WorkflowListResponse`,
+  `PaginationMetadata`, `ActionTypeEntry`, `MandatoryLabels`, `ActionTypeWorkflowCountResponse`, etc. — as DS
+  REST contract types; the same-named Go types in `pkg/datastorage/models` remain, per above), and the
+  generated `pkg/datastorage/ogen-client` regenerated to match. Production behavior was already correct
+  (`test/e2e/datastorage/04_workflow_endpoints_retired_test.go`); this closes the contract-vs-behavior gap the
+  v2.0 changelog originally flagged here as a residual follow-up. Regenerating the client surfaced a real missed
+  production consumer (`cmd/kubernautagent/toolregistry.go`'s workflow validator fetcher was still calling DS's
+  REST endpoint directly), fixed as part of this same cleanup.
+- KA cache-restart resilience: `test/e2e/datastorage/27_ds_restart_cache_recovery_test.go` (deleted in Phase 2g)
+  proved DD-WORKFLOW-018's "disposable, etcd-backed cache survives a restart with zero data loss" property E2E,
+  against a real pod kill, for DS's now-retired catalog. That property now lives at the IT tier instead —
+  `IT-KA-1677-CACHE-007` (`test/integration/kubernautagent/workflowcatalog/cache_test.go`) builds a brand-new
+  `workflowcatalog.Cache` against the same envtest API server (simulating what a replacement KA pod does on
+  startup) and proves it re-derives an identical catalog with zero manual reseeding. A full E2E-tier equivalent
+  (real pod kill against an isolated KA deployment) was deliberately not built: every read here goes through
+  controller-runtime's own List/Watch/WaitForCacheSync machinery, not bespoke cache logic, so what's actually at
+  risk on a real KA restart is KA's own construction/wiring of that informer — exactly what the IT test exercises
+  — not the informer implementation itself or generic Kubernetes pod-restart/scheduling behavior.
 
 ### Version 1.0 (2026-07-17)
 
