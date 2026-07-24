@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -77,6 +78,26 @@ type mockPinger struct {
 }
 
 func (m *mockPinger) Ping(_ context.Context) error { return m.err }
+
+// blockingPinger simulates a real context-respecting backend client (e.g.
+// go-redis) whose underlying network operation would keep running for
+// blockFor unless its context is cancelled first -- exactly what a Valkey
+// connection attempt against a Service with zero endpoints can do (Issue
+// #1683 E2E-FMC-054-012 regression: without a bound, this ping outlives the
+// dedicated health server's 10s WriteTimeout, and the server resets the
+// probe's TCP connection instead of ReadyzHandler ever getting to respond).
+type blockingPinger struct {
+	blockFor time.Duration
+}
+
+func (b *blockingPinger) Ping(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(b.blockFor):
+		return nil
+	}
+}
 
 func doGet(mux *http.ServeMux, path string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -250,6 +271,21 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 
 			Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
 			Expect(w.Body.String()).To(Equal("valkey unreachable"))
+		})
+
+		It("UT-FMC-API-014d [SI-4]: bounds the backend ping so a hung Valkey connection can't outlive the health server's WriteTimeout", func() {
+			readyzMux := http.NewServeMux()
+			readyzMux.HandleFunc("/readyz", fmc.ReadyzHandler(func() bool { return true }, &blockingPinger{blockFor: 6 * time.Second}))
+			w := httptest.NewRecorder()
+
+			start := time.Now()
+			readyzMux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+			elapsed := time.Since(start)
+
+			Expect(w.Code).To(Equal(http.StatusServiceUnavailable),
+				"a ping that outlives the handler's own bound must be treated as a failed ping, not left to hang")
+			Expect(elapsed).To(BeNumerically("<", 4*time.Second),
+				"SI-4: ReadyzHandler must bound the ping itself well under the 10s health-server WriteTimeout (pkg/shared/health), not rely on the caller or server to enforce a deadline")
 		})
 	})
 
