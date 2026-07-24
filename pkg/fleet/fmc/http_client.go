@@ -37,14 +37,32 @@ type HTTPClient struct {
 
 var _ scope.ScopeChecker = (*HTTPClient)(nil)
 
+// ClientOption configures the FMC HTTP client.
+type ClientOption func(*HTTPClient)
+
+// WithHTTPClient overrides the default http.Client used for FMC requests.
+// Issue #1683: use this to inject a client with CA-verified TLS transport
+// (e.g. via sharedtls.NewCAReloaderFromFile) instead of relying on plaintext.
+func WithHTTPClient(c *http.Client) ClientOption {
+	return func(client *HTTPClient) {
+		client.httpClient = c
+	}
+}
+
 // NewHTTPClient creates an FMC HTTP client targeting the given base URL.
-func NewHTTPClient(baseURL string) *HTTPClient {
-	return &HTTPClient{
+// By default, the client uses a plain http.Client with no TLS verification.
+// Use WithHTTPClient to provide a client configured with the cluster's CA cert.
+func NewHTTPClient(baseURL string, opts ...ClientOption) *HTTPClient {
+	c := &HTTPClient{
 		baseURL: baseURL,
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
 	}
+	for _, opt := range opts {
+		opt(c)
+	}
+	return c
 }
 
 // IsManagedResource checks whether a resource is in-scope by calling FMC's

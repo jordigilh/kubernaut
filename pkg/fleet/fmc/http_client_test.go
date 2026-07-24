@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -154,6 +155,46 @@ var _ = Describe("FMC HTTP Client (BR-INTEGRATION-065, ADR-068)", func() {
 			err := client.Ping(context.Background())
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("503"))
+		})
+	})
+
+	Describe("WithHTTPClient [#1683, SC-8]", func() {
+		// Ping (unlike IsManagedResource) surfaces transport errors directly,
+		// so it's the clearest way to prove the *injected* client -- not the
+		// package's own 5s-timeout default -- is actually what governs the
+		// request: a slow server combined with a much shorter injected
+		// timeout must fail fast, well before the default would have.
+		It("UT-FMC-HC-011: governs request behavior via the injected client's own timeout, not the 5s default", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				time.Sleep(200 * time.Millisecond)
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			customClient := &http.Client{Timeout: 10 * time.Millisecond}
+			client = fmc.NewHTTPClient(server.URL, fmc.WithHTTPClient(customClient))
+
+			start := time.Now()
+			err := client.Ping(context.Background())
+			elapsed := time.Since(start)
+
+			Expect(err).To(HaveOccurred(),
+				"the injected 10ms timeout must fire, not the package's 5s default")
+			Expect(elapsed).To(BeNumerically("<", 150*time.Millisecond),
+				"failure must happen fast (per the injected client), well before the 200ms server delay or the 5s default")
+		})
+
+		It("UT-FMC-HC-012: NewHTTPClient without options preserves the package's own default client", func() {
+			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"managed":true}`))
+			}))
+			client = fmc.NewHTTPClient(server.URL)
+
+			managed, err := client.IsManagedResource(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue())
 		})
 	})
 })
