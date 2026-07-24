@@ -299,6 +299,14 @@ var _ = Describe("Workflow Selection Split Submit Tools — #760 v2", func() {
 			inv := investigator.New(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
 				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15, PhaseTools: phaseTools,
+				// #1677 follow-up hardening: retryWorkflowSubmit's recovered
+				// workflow_id is now routed through selfCorrectWorkflowSelection
+				// for catalog validation instead of bypassing it (see
+				// investigator_workflow_selection.go). A nil CatalogFetcher is a
+				// wiring gap that fails closed to human review, so this test
+				// must supply one that accepts the workflow_id it exercises,
+				// exactly like IT-KA-760-005 above.
+				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"oom-increase-memory"})}},
 			})
 
 			result, err := inv.Investigate(context.Background(), signal)
