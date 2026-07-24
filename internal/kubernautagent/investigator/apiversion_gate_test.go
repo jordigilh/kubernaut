@@ -37,6 +37,31 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
+// newTestInvestigator wraps investigator.New, defaulting
+// Pipeline.CatalogFetcher to a stub validator (stubCatalogFetcher, defined
+// in wiring_test.go) accepting every fixture workflow_id referenced across
+// this package's characterization tests, unless cfg already sets one
+// explicitly. Shared by apiversion_gate_test.go and
+// workflow_discovery_rca_characterization_test.go. #1677 hardening
+// (DD-WORKFLOW-019): runWorkflowSelection now fails closed
+// (HumanReviewNeeded=true, HumanReviewReason="catalog_unavailable") when a
+// workflow was selected but no CatalogFetcher is configured, instead of
+// silently skipping validation -- these tests' scenarios (apiVersion gate,
+// RCA re-enrichment) are orthogonal to catalog validation, so they default
+// to a permissive stub that accepts every fixture ID used, keeping the
+// behavior actually under test isolated from this unrelated safety gate.
+func newTestInvestigator(cfg investigator.Config) *investigator.Investigator {
+	if cfg.Pipeline.CatalogFetcher == nil {
+		cfg.Pipeline.CatalogFetcher = &stubCatalogFetcher{
+			validator: parser.NewValidator([]string{
+				"restart-sub", "scale-up", "generic-fix", "restart-pod", // apiversion_gate_test.go
+				"restart-cache", "noop", // workflow_discovery_rca_characterization_test.go
+			}),
+		}
+	}
+	return investigator.New(cfg)
+}
+
 // gateMockLLMClient records calls and returns pre-configured responses.
 type gateMockLLMClient struct {
 	mu        sync.Mutex
@@ -184,7 +209,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -217,7 +242,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -247,7 +272,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -297,7 +322,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(coreMapper)
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -325,7 +350,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			// No ScopeResolver in config
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools,
@@ -352,7 +377,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -378,7 +403,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -413,7 +438,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -456,7 +481,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -492,7 +517,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			// Use an empty mapper that will return errors for any kind
 			emptyMapper := meta.NewDefaultRESTMapper(nil)
 			resolver := investigator.NewMapperScopeResolver(emptyMapper)
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -520,7 +545,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -551,7 +576,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -579,7 +604,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -606,7 +631,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			mockClient.errors = []error{nil, fmt.Errorf("LLM service unavailable")}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -638,7 +663,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -672,7 +697,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
@@ -717,7 +742,7 @@ var _ = Describe("TP-1044 / TP-1051: apiVersionValidationGate", func() {
 			}
 
 			resolver := investigator.NewMapperScopeResolver(newAmbiguousSubscriptionMapper())
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: logger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,

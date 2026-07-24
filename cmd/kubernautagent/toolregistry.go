@@ -48,9 +48,11 @@ import (
 )
 
 // buildToolRegistry creates and populates the tool registry with all available tool sets.
-// wfCatalog may be nil (e.g. dev mode without K8s infra, #1677 Phase 2a) -- the 3 workflow
-// discovery tools are still registered but fail at execution time rather than registration time.
-func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients, wfCatalog *workflowcatalog.Catalog, auditStore audit.AuditStore) *registry.Registry {
+// wfCatalog is always non-nil (workflowcatalog.LazyCatalog, #1677 hardening,
+// DD-WORKFLOW-019): the 3 workflow discovery tools are always registered,
+// and fail at execution time with a clear "not ready" error (rather than
+// registration time) until the background cache sync completes.
+func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients, wfCatalog *workflowcatalog.LazyCatalog, auditStore audit.AuditStore) *registry.Registry {
 	reg := registry.New()
 
 	if infra != nil {
@@ -66,16 +68,12 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 	}
 
 	if ds != nil {
-		// Avoid the typed-nil-interface trap: only wrap wfCatalog in the
-		// custom.WorkflowCatalog interface when it is actually non-nil, so
-		// custom.RegisterAll's own "catalog == nil" execution-time guard
-		// (rather than a nil-pointer panic) is what fires when K8s infra was
-		// unavailable at boot (#1677 Phase 2a dev-mode fallback).
-		var catalog custom.WorkflowCatalog
-		if wfCatalog != nil {
-			catalog = wfCatalog
-		}
-		custom.RegisterAll(reg, catalog, auditStore, ds.dsAdapter, ds.k8sAdapter, logger)
+		// wfCatalog (LazyCatalog) is always non-nil and always satisfies
+		// custom.WorkflowCatalog -- no typed-nil-interface guard needed
+		// (#1677 hardening, DD-WORKFLOW-019). Before the cache syncs, its
+		// methods return workflowcatalog.ErrCatalogNotReady, which each
+		// tool's Execute already surfaces as a normal per-call error.
+		custom.RegisterAll(reg, wfCatalog, auditStore, ds.dsAdapter, ds.k8sAdapter, logger)
 		logger.Info("registered custom tools", "count", len(custom.AllToolNames))
 	}
 
@@ -346,11 +344,11 @@ func newSecretAccessObserver(auditStore audit.AuditStore, logger logr.Logger) fu
 // surface, and no artificial page-size cap (List(ctx, nil, -1, 0) is
 // unfiltered/unbounded, unlike the old default-100/max-1000 REST endpoint).
 type workflowCatalogFetcher struct {
-	catalog *workflowcatalog.Catalog
+	catalog *workflowcatalog.LazyCatalog
 	logger  logr.Logger
 }
 
-func newWorkflowCatalogFetcher(catalog *workflowcatalog.Catalog, logger logr.Logger) *workflowCatalogFetcher {
+func newWorkflowCatalogFetcher(catalog *workflowcatalog.LazyCatalog, logger logr.Logger) *workflowCatalogFetcher {
 	return &workflowCatalogFetcher{catalog: catalog, logger: logger}
 }
 

@@ -76,9 +76,7 @@ type coreServices struct {
 	effectiveReg         registry.ToolRegistry
 	alignEvaluator       *alignment.Evaluator
 	alignCfg             kaconfig.AlignmentCheckConfig
-	wfCache              *workflowcatalog.Cache
-	wfCacheCancel        context.CancelFunc
-	wfCatalog            *workflowcatalog.Catalog
+	wfCatalog            *workflowcatalog.LazyCatalog
 }
 
 // buildCoreServices wires audit, K8s infra, DataStorage, tool registry,
@@ -98,20 +96,13 @@ func buildCoreServices(
 	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
 	infra := initK8sInfra(logger)
 
-	// #1677 Phase 2a (DD-WORKFLOW-019): KA owns workflow/action-type
-	// discovery directly via its own informer-backed cache, instead of
-	// proxying every lookup through DataStorage.
-	wfCache, wfCacheCancel := buildWorkflowCatalogCache(infra, logger)
-
-	// #1677 Phase 2b: the discovery/scoring Catalog is constructed alongside
-	// the cache it wraps. It has no production caller yet -- Phase 2d rewires
-	// the 3 custom MCP tools (list_available_actions/list_workflows/
-	// get_workflow) onto it, and Phase 2e rewires select_workflow/
-	// investigate_discovery's WorkflowCatalog adapter.
-	var wfCatalog *workflowcatalog.Catalog
-	if wfCache != nil {
-		wfCatalog = workflowcatalog.NewCatalog(wfCache, logger)
-	}
+	// #1677 Phase 2a + hardening (DD-WORKFLOW-019): KA owns workflow/
+	// action-type discovery directly via its own informer-backed cache,
+	// instead of proxying every lookup through DataStorage. wfCatalog is
+	// always non-nil (LazyCatalog) -- it starts Not-Ready and becomes Ready
+	// once its background retry loop completes a successful cache sync; see
+	// buildWorkflowCatalogCache and readinessHandler.
+	wfCatalog := buildWorkflowCatalogCache(infra, logger)
 
 	// #1288: SSAR impersonate gate removed — KA uses its own SA for all K8s
 	// API calls. Interactive readiness is no longer gated on impersonation RBAC.
@@ -143,13 +134,15 @@ func buildCoreServices(
 
 	instrumentedLLM := llm.NewInstrumentedClient(swappable)
 
-	var catalogFetcher investigator.CatalogFetcher
-	if wfCatalog != nil {
-		catalogFetcher = newWorkflowCatalogFetcher(wfCatalog, logger)
-		logger.Info("workflow catalog fetcher enabled (per-request, DD-HAPI-002)")
-	} else {
-		logger.Info("workflow catalog fetcher disabled (no workflow catalog cache — dev mode)")
-	}
+	// #1677 hardening (DD-WORKFLOW-019): catalogFetcher is always
+	// constructed -- wfCatalog is never nil (LazyCatalog). Before the cache
+	// syncs, FetchValidator's List call returns workflowcatalog.
+	// ErrCatalogNotReady, which selfCorrectWorkflowSelection already
+	// classifies as HumanReviewNeeded/"catalog_unavailable" rather than
+	// silently allowing an unvalidated LLM-selected workflow through (the
+	// former "CatalogFetcher == nil -> skip validation entirely" bypass this
+	// replaces; see investigator_workflow_selection.go).
+	catalogFetcher := newWorkflowCatalogFetcher(wfCatalog, logger)
 
 	effectiveLLM, effectiveReg, alignEvaluator, alignCfg := buildAlignmentStack(cfg, llmRuntime, instrumentedLLM, reg, auditStore, logger)
 
@@ -160,38 +153,44 @@ func buildCoreServices(
 		sanitizer: sanitizer, anomalyDetector: anomalyDetector, summarizer: sum,
 		catalogFetcher: catalogFetcher, effectiveLLM: effectiveLLM, effectiveReg: effectiveReg,
 		alignEvaluator: alignEvaluator, alignCfg: alignCfg,
-		wfCache: wfCache, wfCacheCancel: wfCacheCancel, wfCatalog: wfCatalog,
+		wfCatalog: wfCatalog,
 	}
 }
 
-// buildWorkflowCatalogCache constructs KA's informer-backed workflow/
-// action-type cache (#1677 Phase 2a, DD-WORKFLOW-019). Returns (nil, nil)
-// both when K8s infrastructure is unavailable (e.g. local dev mode without
-// a cluster) and when construction against a real cluster fails (e.g. the
-// informer's first List+Watch doesn't land within syncTimeout under CI/
-// production startup contention) -- matching initDSClients's
-// fail-open-to-disabled convention for optional K8s-backed dependencies.
+// buildWorkflowCatalogCache constructs and starts KA's LazyCatalog, an
+// informer-backed workflow/action-type catalog that becomes Ready() once
+// its first successful cache sync completes (#1677 Phase 2a + hardening,
+// DD-WORKFLOW-019). The returned LazyCatalog is never nil.
 //
-// This is deliberately non-fatal: an earlier version called os.Exit(1)
-// here, which runs before KA ever binds its health/API ports
-// (initializeAgent -> buildCoreServices happens first in main()), so any
-// hiccup in this one dependency permanently crash-looped the whole pod
-// instead of just leaving discovery degraded. That is the same
-// boot-blocks-on-external-dependency anti-pattern issue #665 fixed for the
-// old DS-backed catalog fetch ("Fail-closed moves from boot-time os.Exit to
-// per-request NeedsHumanReview") -- reproduced live in CI for this cache
-// (Helm smoke test, tls=cert-manager) via two distinct failure modes: a
-// discovery-call race (fixed separately by workflowcatalog's static
-// RESTMapper) and a plain WaitForCacheSync timeout under load. /readyz does
-// not gate on wfCache/wfCatalog (see readinessHandler), so KA starting with
-// this cache unavailable is already a fully supported, observable state:
-// the 5 discovery-dependent MCP tools are still registered but fail softly
-// at execution time (see toolregistry.go's wfCatalog==nil handling) until
-// an operator restarts the pod once the underlying condition clears.
-func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) (*workflowcatalog.Cache, context.CancelFunc) {
+// Construction is retried forever in the background with capped exponential
+// backoff (LazyCatalog.Start), instead of either failing the pod boot
+// (os.Exit -- issue #665's boot-blocks-on-external-dependency anti-pattern,
+// reproduced live in CI for this exact cache via a WaitForCacheSync timeout
+// under startup contention) or silently disabling discovery for the rest of
+// the pod's lifetime (the removed "infra == nil -> dev mode, cache
+// disabled" carve-out this replaces). KA always runs in-cluster -- there is
+// no supported dev-mode-without-K8s -- so neither a missing infra nor a
+// failed cache sync is an acceptable degraded steady state: readinessHandler
+// gates /readyz on wfCatalog.Ready(), keeping the pod out of Service
+// endpoints for as long as discovery is unavailable, and
+// investigator_workflow_selection.go's self-correction path fails closed
+// (HumanReviewNeeded/"catalog_unavailable") on any in-flight investigation
+// that races the not-yet-ready window.
+//
+// infra == nil should never happen in a real deployment (initK8sInfra only
+// returns nil when ctrl.GetConfig() fails, i.e. KA is not actually running
+// in-cluster); when it does, the returned LazyCatalog is left un-Started and
+// therefore never becomes Ready -- /readyz correctly reports not_ready
+// until the pod is restarted with valid K8s connectivity, rather than
+// silently accepting the condition as intentional.
+func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) *workflowcatalog.LazyCatalog {
+	lazy := workflowcatalog.NewLazyCatalog(logger)
+
 	if infra == nil {
-		logger.Info("K8s infrastructure unavailable, workflow catalog cache disabled (dev mode)")
-		return nil, nil
+		logger.Error(nil, "K8s infrastructure unavailable -- workflow catalog cache cannot start and will never become "+
+			"ready; this should never happen in a real deployment (KA always runs in-cluster); /readyz will report "+
+			"not_ready until the pod is restarted with valid K8s connectivity")
+		return lazy
 	}
 
 	scheme, err := workflowcatalog.NewScheme()
@@ -200,13 +199,10 @@ func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) (*workflowca
 		os.Exit(1)
 	}
 
-	wfCache, cancel, err := workflowcatalog.NewInformerCache(infra.kubeConfig, scheme, logger)
-	if err != nil {
-		logger.Error(err, "workflow catalog cache unavailable -- KA starting with discovery tools disabled (degraded mode) until next restart")
-		return nil, nil
-	}
-	logger.Info("workflow catalog cache started (informer-backed, #1677 Phase 2a)")
-	return wfCache, cancel
+	lazy.Start(func() (*workflowcatalog.Cache, context.CancelFunc, error) {
+		return workflowcatalog.NewInformerCache(infra.kubeConfig, scheme, logger)
+	})
+	return lazy
 }
 
 // buildLLMClients constructs the primary SwappableClient plus any per-phase

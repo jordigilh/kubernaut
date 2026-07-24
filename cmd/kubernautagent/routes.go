@@ -127,7 +127,7 @@ type apiRoutesParams struct {
 	interactiveReadiness *karbac.InteractiveReadiness
 	apiRateLimiter       *kaserver.RateLimiter
 	maxRequestBodySize   int64
-	wfCatalog            *workflowcatalog.Catalog
+	wfCatalog            *workflowcatalog.LazyCatalog
 	logger               logr.Logger
 }
 
@@ -245,7 +245,7 @@ type mcpHandlerParams struct {
 	authMw       *auth.Middleware
 	agentMetrics *kametrics.Metrics
 	auditStore   audit.AuditStore
-	wfCatalog    *workflowcatalog.Catalog
+	wfCatalog    *workflowcatalog.LazyCatalog
 	logger       logr.Logger
 }
 
@@ -259,19 +259,18 @@ func resolveContextReconstructor(ds *dsClients, logger logr.Logger) mcpkg.Contex
 	return mcpkg.NewDSContextReconstructor(ds.ogenClient, 10*time.Second, logger)
 }
 
-// resolveWorkflowCatalogFetcher returns the wfCatalog-backed fetcher when
-// KA's informer cache is available, or a no-op fail-open implementation
-// otherwise (mirrors resolveContextReconstructor's fail-open pattern).
-// #1677 Phase 2e (DD-WORKFLOW-019): wfCatalog replaces the former
-// DS-ogen-client-backed WorkflowQuerier -- select_workflow/
-// investigate_discovery now share the same cache-backed catalog as the 3
-// custom MCP tools (Phase 2d), instead of round-tripping through DS.
-func resolveWorkflowCatalogFetcher(wfCatalog *workflowcatalog.Catalog, logger logr.Logger) mcpadapters.WorkflowCatalogFetcher {
-	// Avoid the typed-nil-interface trap (same pattern as
-	// toolregistry.go:buildToolRegistry): only wrap wfCatalog in the
-	// interface when it is actually non-nil.
+// resolveWorkflowCatalogFetcher returns wfCatalog directly (LazyCatalog is
+// always non-nil and always satisfies mcpadapters.WorkflowCatalogFetcher,
+// #1677 hardening, DD-WORKFLOW-019 -- KA always runs in-cluster, so a
+// permanently-absent catalog is a wiring bug, not a supported degraded
+// mode). The nil branch below is a defensive guard against exactly that
+// wiring bug (should never happen in production: buildCoreServices always
+// constructs a LazyCatalog); it is not the catalog's own not-ready state,
+// which LazyCatalog already surfaces per-call via
+// workflowcatalog.ErrCatalogNotReady.
+func resolveWorkflowCatalogFetcher(wfCatalog *workflowcatalog.LazyCatalog, logger logr.Logger) mcpadapters.WorkflowCatalogFetcher {
 	if wfCatalog == nil {
-		logger.Info("MCP interactive mode: workflow catalog cache unavailable — workflow catalog lookups disabled")
+		logger.Error(nil, "MCP interactive mode: workflow catalog unexpectedly nil (wiring bug) — workflow catalog lookups disabled")
 		return &noopWorkflowCatalogFetcher{}
 	}
 	return wfCatalog
@@ -777,8 +776,7 @@ func (n *noopReconstructor) Reconstruct(_ context.Context, _ string, _ string) (
 // whole MCP interactive-mode handler when DS was nil, even though every
 // other DS-optional dependency in this package (recon above, plus
 // buildToolRegistry/readinessHandler) already fails open. #1677 Phase 2e
-// repoints this at wfCatalog (KA's own informer cache) instead of DS, but
-// preserves the same fail-open contract when the cache is unavailable. A
+// repoints this at wfCatalog (KA's own informer cache) instead of DS. A
 // wrapped "unavailable" error surfaces through
 // WorkflowCatalogAdapter.GetWorkflowByID and is returned by
 // SelectWorkflowTool.Handle as "workflow catalog lookup
@@ -786,8 +784,12 @@ func (n *noopReconstructor) Reconstruct(_ context.Context, _ string, _ string) (
 var errDSUnavailable = fmt.Errorf("workflow catalog unavailable: DataStorage integration not configured")
 
 // noopWorkflowCatalogFetcher is a no-op mcpadapters.WorkflowCatalogFetcher
-// used when KA's workflow catalog cache is unavailable (e.g. dev mode
-// without K8s infra), mirroring noopReconstructor's fail-open pattern.
+// used only as a defensive fallback for a nil *workflowcatalog.LazyCatalog
+// (a wiring bug -- production always constructs one, #1677 hardening,
+// DD-WORKFLOW-019). It does not represent a supported "cache unavailable"
+// mode: that state is LazyCatalog's own Not-Ready window, which already
+// returns a clear per-call workflowcatalog.ErrCatalogNotReady without
+// needing this type at all. Mirrors noopReconstructor's fail-open pattern.
 type noopWorkflowCatalogFetcher struct{}
 
 func (n *noopWorkflowCatalogFetcher) GetByID(_ context.Context, _ string) (*dsmodels.RemediationWorkflow, error) {
@@ -797,10 +799,11 @@ func (n *noopWorkflowCatalogFetcher) GetByID(_ context.Context, _ string) (*dsmo
 // Compile-time interface compliance check.
 var _ mcpadapters.WorkflowCatalogFetcher = (*noopWorkflowCatalogFetcher)(nil)
 
-// noopWorkflowLister is a no-op mcptools.WorkflowLister used when KA's
-// workflow catalog cache is unavailable, mirroring
-// noopWorkflowCatalogFetcher's fail-open pattern for the stateless
-// kubernaut_list_workflows tool (#1677 Phase 2f, DD-WORKFLOW-019).
+// noopWorkflowLister is a no-op mcptools.WorkflowLister used only as a
+// defensive fallback for a nil *workflowcatalog.LazyCatalog (a wiring bug --
+// production always constructs one), mirroring noopWorkflowCatalogFetcher's
+// rationale for the stateless kubernaut_list_workflows tool (#1677 Phase 2f
+// + hardening, DD-WORKFLOW-019).
 type noopWorkflowLister struct{}
 
 func (n *noopWorkflowLister) List(_ context.Context, _ *dsmodels.WorkflowSearchFilters, _, _ int) ([]dsmodels.RemediationWorkflow, int, error) {
@@ -810,12 +813,11 @@ func (n *noopWorkflowLister) List(_ context.Context, _ *dsmodels.WorkflowSearchF
 // Compile-time interface compliance check.
 var _ mcptools.WorkflowLister = (*noopWorkflowLister)(nil)
 
-// resolveWorkflowLister returns the wfCatalog-backed lister when KA's
-// informer cache is available, or a no-op fail-open implementation
-// otherwise (mirrors resolveWorkflowCatalogFetcher's fail-open pattern).
-func resolveWorkflowLister(wfCatalog *workflowcatalog.Catalog, logger logr.Logger) mcptools.WorkflowLister {
+// resolveWorkflowLister returns wfCatalog directly (see
+// resolveWorkflowCatalogFetcher's doc comment for the nil-guard rationale).
+func resolveWorkflowLister(wfCatalog *workflowcatalog.LazyCatalog, logger logr.Logger) mcptools.WorkflowLister {
 	if wfCatalog == nil {
-		logger.Info("MCP interactive mode: workflow catalog cache unavailable — kubernaut_list_workflows disabled")
+		logger.Error(nil, "MCP interactive mode: workflow catalog unexpectedly nil (wiring bug) — kubernaut_list_workflows disabled")
 		return &noopWorkflowLister{}
 	}
 	return wfCatalog

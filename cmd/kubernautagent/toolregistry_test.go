@@ -329,7 +329,11 @@ var _ = Describe("buildWorkflowMeta", func() {
 // ListWorkflows -> crdWorkflowToModel -> buildWorkflowMeta -> Validator.
 // ============================================================================
 
-func newFakeWorkflowCatalog(t testing.TB, interceptorFuncs interceptor.Funcs, objs ...client.Object) *workflowcatalog.Catalog {
+// newFakeWorkflowCatalog returns an immediately-Ready *workflowcatalog.
+// LazyCatalog (#1677 hardening, DD-WORKFLOW-019: production always wires a
+// LazyCatalog, never a bare *workflowcatalog.Catalog) backed by a
+// controller-runtime fake client.
+func newFakeWorkflowCatalog(t testing.TB, interceptorFuncs interceptor.Funcs, objs ...client.Object) *workflowcatalog.LazyCatalog {
 	t.Helper()
 	scheme, err := workflowcatalog.NewScheme()
 	if err != nil {
@@ -343,7 +347,7 @@ func newFakeWorkflowCatalog(t testing.TB, interceptorFuncs interceptor.Funcs, ob
 		WithInterceptorFuncs(interceptorFuncs)
 
 	cache := workflowcatalog.NewCacheFromReader(builder.Build())
-	return workflowcatalog.NewCatalog(cache, logr.Discard())
+	return workflowcatalog.NewLazyCatalogReady(cache, logr.Discard())
 }
 
 // seedFakeWorkflow creates a RemediationWorkflow CRD via the fake client and
@@ -422,7 +426,7 @@ var _ = Describe("workflowCatalogFetcher.FetchValidator", func() {
 		wfID := seedFakeWorkflow(GinkgoTB(), c, fakeCRDWorkflowYAML)
 
 		cache := workflowcatalog.NewCacheFromReader(c)
-		catalog := workflowcatalog.NewCatalog(cache, logr.Discard())
+		catalog := workflowcatalog.NewLazyCatalogReady(cache, logr.Discard())
 		f := newWorkflowCatalogFetcher(catalog, logr.Discard())
 
 		validator, err := f.FetchValidator(context.Background())

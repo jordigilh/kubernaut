@@ -49,6 +49,7 @@ import (
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 )
 
@@ -270,7 +271,7 @@ func main() {
 	healthServer, metricsServer := startHealthAndMetricsServers(healthServersParams{
 		Config: cfg, AtomicLevel: atomicLevel, Swappable: swappable, DS: core.ds,
 		InteractiveReadiness: core.interactiveReadiness, ShutdownFlag: &shutdownFlag,
-		APIServerReady: &apiServerReady, FleetGate: core.fleetGate, Logger: logger,
+		APIServerReady: &apiServerReady, FleetGate: core.fleetGate, WfCatalog: core.wfCatalog, Logger: logger,
 	})
 
 	httpServer, sessionDrainer, cleanupServers := startAPIServer(ctx, apiServerStartParams{
@@ -288,7 +289,7 @@ func main() {
 		cfg: cfg, mgr: stack.mgr, sessionDrainer: sessionDrainer,
 		httpServer: httpServer, healthServer: healthServer, metricsServer: metricsServer,
 		eventEmitter: core.eventEmitter, fleetClient: core.fleetClient, fleetGate: core.fleetGate,
-		auditCleanup: core.auditCleanup, wfCacheCancel: core.wfCacheCancel, logger: logger,
+		auditCleanup: core.auditCleanup, wfCatalog: core.wfCatalog, logger: logger,
 	})
 }
 
@@ -306,7 +307,7 @@ type shutdownParams struct {
 	fleetClient    *fleetclient.ResilientClient
 	fleetGate      *readiness.Gate
 	auditCleanup   func()
-	wfCacheCancel  context.CancelFunc
+	wfCatalog      *workflowcatalog.LazyCatalog
 	logger         logr.Logger
 }
 
@@ -337,8 +338,8 @@ func runShutdownSequence(p shutdownParams) {
 		_ = p.fleetClient.Close()
 		p.logger.Info("fleet MCP client closed")
 	}
-	if p.wfCacheCancel != nil {
-		p.wfCacheCancel()
+	if p.wfCatalog != nil {
+		p.wfCatalog.Stop()
 		p.logger.Info("workflow catalog cache stopped")
 	}
 	p.logger.Info("flushing audit store...")

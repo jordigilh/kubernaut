@@ -76,7 +76,29 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			fmt.Sprintf("workflow selection: LLM did not produce parseable result: %s", parseErr)), nil
 	}
 
+	// #1677 hardening (DD-WORKFLOW-019): CatalogFetcher is always configured
+	// in production (cmd/kubernautagent always wires a workflowCatalogFetcher
+	// backed by a LazyCatalog, ready or not) -- a nil CatalogFetcher here is
+	// a test/wiring gap, not a supported "dev mode" that should silently
+	// bypass validation. result.HumanReviewNeeded already true means the
+	// parser/LLM itself determined no workflow selection needs validating
+	// (e.g. no_matching_workflows) -- that classification is preserved
+	// as-is, matching selfCorrectWorkflowSelection's own contract of only
+	// running validation when there is an actual selection to validate.
+	// Otherwise (a workflow WAS selected) failing closed instead of
+	// returning it unvalidated mirrors selfCorrectWorkflowSelection's own
+	// fetchErr handling below, so both "no fetcher configured" and "fetcher
+	// configured but catalog not ready/unreachable" produce the same
+	// observable outcome: human review, never silent pass-through.
 	if inv.pipeline.CatalogFetcher == nil {
+		if result.HumanReviewNeeded {
+			return result, nil
+		}
+		inv.logger.Error(nil, "workflow catalog fetcher not configured, requiring human review instead of skipping validation",
+			"correlation_id", correlationID)
+		result.HumanReviewNeeded = true
+		result.HumanReviewReason = "catalog_unavailable"
+		result.Reason = "workflow catalog fetcher not configured"
 		return result, nil
 	}
 	return inv.selfCorrectWorkflowSelection(ctx, result, content, messages, rcaSummary, correlationID, llmCtx)
