@@ -78,6 +78,18 @@ type FleetConfig struct {
 	// or "kuadrant" (Kuadrant MCP Gateway). Defaults to "eaigw" when empty.
 	MCPGatewayType MCPGatewayType `yaml:"mcpGatewayType,omitempty"`
 
+	// Namespace restricts the ClusterRegistry's CRD watch (MCPServerRegistration
+	// for kuadrant; Backend/MCPRoute for eaigw) to a single namespace instead of
+	// watching cluster-wide. Threaded into registry.RegistryConfig.Namespace by
+	// callers that construct a ClusterRegistry directly (AF, EM). Empty (the
+	// default) preserves the pre-existing cluster-wide watch behavior. Mirrors
+	// the field SP/FMC already expose locally (pkg/signalprocessing/config,
+	// MCPGatewayConfig below); least-privilege RBAC (BR-RBAC-020, #1686) is only
+	// possible when this is set, since the Helm chart narrows the granted
+	// Role/RoleBinding to match whatever namespace this carries.
+	// +optional
+	Namespace string `yaml:"namespace,omitempty"`
+
 	// TLSCAFile is the path to the CA certificate bundle for verifying TLS connections
 	// to the fleet backend (ACM Search, FMC). When set, the ACM client uses this CA
 	// instead of InsecureSkipVerify. Typically mounted from the service-ca operator.

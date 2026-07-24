@@ -517,7 +517,10 @@ func buildFleetReaderDeps(ctx context.Context, cfg *config.Config, deps *backend
 	clusterRegistry, err := registry.NewClusterRegistry(
 		cfg.Fleet.EffectiveMCPGatewayType(),
 		deps.k8sDynClient,
-		registry.RegistryConfig{},
+		// #1686/BR-RBAC-020: thread Fleet.Namespace through so the watch (and
+		// the RBAC granted to match it) can be scoped to a single namespace
+		// instead of always defaulting to cluster-wide.
+		registry.RegistryConfig{Namespace: cfg.Fleet.Namespace},
 		registry.NewMetrics(),
 		fleetLog,
 	)

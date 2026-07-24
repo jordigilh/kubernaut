@@ -255,6 +255,41 @@ jobs:
           path: licenses.csv
           retention-days: 90
 
+  # DD-PLATFORM-005 (motivated by #1686/BR-RBAC-020): dedicated fast
+  # fail-fast gate for chart template changes, distinct from helm-smoke-test
+  # (Stage 2+, needs built images and a live Kind cluster, ~30-45min).
+  # helm-unittest asserts specific rendered output (RBAC rule shape,
+  # conditional resources) offline in seconds -- runs in Stage 1 alongside
+  # lint-go/unit-tests instead of waiting on build-images, so a broken
+  # template fails CI in ~1min instead of ~30min.
+  helm-unittest:
+    name: Helm Chart Unit Tests (helm-unittest)
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: latest
+
+      - name: Install helm-unittest plugin
+        # --verify=false: azure/setup-helm's "latest" now resolves to Helm v4,
+        # which added plugin provenance verification and refuses to install a
+        # plugin whose source doesn't publish it ("plugin source does not
+        # support verification") unless explicitly opted out. helm-unittest's
+        # releases aren't signed, so this is required, not optional.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1 --verify=false
+
+      - name: Run helm-unittest specs
+        run: helm unittest charts/kubernaut/
+
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
     needs: [detect-changes]
@@ -1673,7 +1708,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, integration-tests, e2e-tests, helm-smoke-test]
+    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, integration-tests, e2e-tests, helm-unittest, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1946,6 +1981,20 @@ jobs:
             exit 1
           fi
 
+          # Check for Helm chart unit tests (helm-unittest, #1686)
+          if [ "${{ needs.helm-unittest.result }}" == "failure" ]; then
+            echo ""
+            echo "❌ Helm chart unit tests failed - check charts/kubernaut/tests/*.yaml"
+            exit 1
+          elif [ "${{ needs.helm-unittest.result }}" == "skipped" ]; then
+            echo ""
+            echo "⏭️  Helm chart unit tests skipped (dependencies failed)"
+          elif [ "${{ needs.helm-unittest.result }}" == "cancelled" ]; then
+            echo ""
+            echo "⚠️  Helm chart unit tests cancelled"
+            exit 1
+          fi
+
           # Check for Helm smoke test (handle skipped if dependencies failed)
           if [ "${{ needs.helm-smoke-test.result }}" == "failure" ]; then
             echo ""
@@ -1964,6 +2013,7 @@ jobs:
           echo ""
           if [ "${{ needs.integration-tests.result }}" == "success" ] && \
              [ "${{ needs.e2e-tests.result }}" == "success" ] && \
+             [ "${{ needs.helm-unittest.result }}" == "success" ] && \
              [ "${{ needs.helm-smoke-test.result }}" == "success" ]; then
             echo "✅ All tests passed!"
             exit 0
@@ -1985,7 +2035,7 @@ jobs:
     if: always()
     needs: [detect-changes, lint-go, license-scan, unit-tests, build-images,
             build-infra-images,
-            integration-tests, e2e-tests, helm-smoke-test, summary]
+            integration-tests, e2e-tests, helm-unittest, helm-smoke-test, summary]
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate CI results
@@ -2005,6 +2055,7 @@ jobs:
           echo "  build-infra:          ${{ needs.build-infra-images.result }}"
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"
           echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"
+          echo "  helm-unittest:        ${{ needs.helm-unittest.result }}"
           echo "  helm-smoke-test:      ${{ needs.helm-smoke-test.result }}"
           echo "  summary:              ${{ needs.summary.result }}"
           echo ""
