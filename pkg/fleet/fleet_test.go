@@ -205,6 +205,71 @@ var _ = Describe("FleetConfig.TokenPath — acm backend bearer-token requirement
 	})
 })
 
+// Issue #1686 (BR-RBAC-020, FedRAMP AC-6/CM-6): AF and EM each construct a
+// registry.ClusterRegistry directly (cmd/apifrontend/backend_deps.go,
+// cmd/effectivenessmonitor/main.go) to watch MCP Gateway CRDs for cluster
+// discovery, but FleetConfig had no Namespace field — unlike SP's local
+// FleetConfig (pkg/signalprocessing/config), which already supports scoping
+// that watch to a single namespace. Without it, AF/EM always passed
+// registry.RegistryConfig{} (Namespace unset), forcing a cluster-wide watch
+// even when an operator wanted to restrict it — and the Helm chart granted
+// cluster-wide RBAC unconditionally to match. This Describe block locks in
+// the field's presence and YAML round-trip so a future refactor cannot
+// silently drop it again (mirrors the UT-FLEET-CFG-050/051 TLSCAFile block
+// above).
+var _ = Describe("FleetConfig.Namespace (#1686, BR-RBAC-020)", func() {
+	It("UT-FLEET-CFG-080 [AC-6,CM-6]: Namespace is settable and defaults to empty (cluster-wide watch)", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayKuadrant,
+		}
+		Expect(cfg.Namespace).To(BeEmpty(),
+			"zero-value Namespace must mean watch-all (no behavior change for existing deployments)")
+
+		cfg.Namespace = "team-a"
+		Expect(cfg.Namespace).To(Equal("team-a"))
+	})
+
+	It("UT-FLEET-CFG-081 [AC-6,CM-6]: Namespace survives a YAML round-trip via the namespace key", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayKuadrant,
+			Namespace:          "team-a",
+		}
+		data, err := yaml.Marshal(cfg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring("namespace: team-a"))
+
+		var roundTripped fleet.FleetConfig
+		Expect(yaml.Unmarshal(data, &roundTripped)).To(Succeed())
+		Expect(roundTripped.Namespace).To(Equal(cfg.Namespace))
+	})
+
+	It("UT-FLEET-CFG-082 [AC-6,CM-6]: Namespace is omitted from marshaled YAML when empty (omitempty)", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayKuadrant,
+		}
+		data, err := yaml.Marshal(cfg)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(data)).ToNot(ContainSubstring("namespace:"),
+			"empty Namespace must not render a namespace: key (omitempty)")
+	})
+
+	It("UT-FLEET-CFG-083 [AC-6,CM-6]: Validate does not require Namespace when fleet is enabled", func() {
+		cfg := fleet.FleetConfig{
+			Enabled:            true,
+			MCPGatewayEndpoint: "http://gw:8080/mcp",
+			MCPGatewayType:     fleet.GatewayKuadrant,
+		}
+		Expect(cfg.Validate()).ToNot(HaveOccurred(),
+			"Namespace is an optional least-privilege scoping knob, not a required field")
+	})
+})
+
 var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 	It("UT-FLEET-CFG-030 [CM-6]: Validate accepts valid MCPGatewayType eaigw", func() {
 		cfg := fleet.FleetConfig{
