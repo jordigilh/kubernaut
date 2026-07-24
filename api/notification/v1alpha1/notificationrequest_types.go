@@ -243,6 +243,16 @@ type WorkflowContext struct {
 	// WorkflowID is the ID of the executed workflow.
 	// +optional
 	WorkflowID string `json:"workflowId,omitempty"`
+	// WorkflowName is the human-readable workflow name, sourced directly from
+	// AIAnalysis.Status.SelectedWorkflow.WorkflowName (catalog-authoritative,
+	// Required field -- never LLM-suppliable). Issue #1677 Phase 1: lets
+	// Notification render a friendly name without a live DataStorage lookup.
+	// +optional
+	WorkflowName string `json:"workflowName,omitempty"`
+	// ActionType is the workflow's action type, sourced directly from
+	// AIAnalysis.Status.SelectedWorkflow.ActionType. Issue #1677 Phase 1.
+	// +optional
+	ActionType string `json:"actionType,omitempty"`
 	// ExecutionEngine is the engine used to execute the workflow.
 	// +optional
 	ExecutionEngine string `json:"executionEngine,omitempty"`

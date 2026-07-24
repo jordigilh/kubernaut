@@ -18,21 +18,25 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
+	"errors"
 	"testing"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-
+	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	amtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	promtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/prometheus"
+	infrastructure "github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
 // ============================================================================
@@ -64,7 +68,7 @@ var _ = Describe("buildToolRegistry", func() {
 	It("BR-SECURITY-AC6: registers only the baseline tool (least privilege) when no integrations are configured", func() {
 		cfg := &kaconfig.Config{}
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		all := reg.All()
 		Expect(all).To(HaveLen(1), "expected exactly 1 baseline tool (least privilege), got %v", toolNames(all))
@@ -75,7 +79,7 @@ var _ = Describe("buildToolRegistry", func() {
 	It("BR-SECURITY-AC6: does not register Prometheus tools when Prometheus is not configured", func() {
 		cfg := &kaconfig.Config{}
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range promtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -87,7 +91,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg := &kaconfig.Config{}
 		cfg.Integrations.Tools.Prometheus.URL = "http://localhost:9090"
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range promtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -101,7 +105,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg.Integrations.Tools.Prometheus.URL = "https://prometheus.example.com"
 		cfg.Integrations.Tools.Prometheus.TLSCaFile = caPath
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range promtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -117,7 +121,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg.Integrations.Tools.Prometheus.URL = "https://prometheus.example.com"
 		cfg.Integrations.Tools.Prometheus.TLSCaFile = "/nonexistent/ca.crt"
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range promtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -129,7 +133,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg := &kaconfig.Config{}
 		cfg.Integrations.Tools.Alertmanager.URL = "http://localhost:9093"
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range amtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -142,7 +146,7 @@ var _ = Describe("buildToolRegistry", func() {
 		cfg.Integrations.Tools.Alertmanager.URL = "https://alertmanager.example.com"
 		cfg.Integrations.Tools.Alertmanager.TLSCaFile = "/nonexistent/ca.crt"
 
-		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil)
+		reg := buildToolRegistry(cfg, logr.Discard(), nil, nil, nil, nil)
 
 		for _, name := range amtools.AllToolNames {
 			_, err := reg.Get(name)
@@ -152,17 +156,21 @@ var _ = Describe("buildToolRegistry", func() {
 })
 
 // ============================================================================
-// dsCatalogFetcher.FetchValidator — characterization tests (RED phase, Wave 5).
+// buildWorkflowMeta / applyParsedSchemaMeta — pure-function unit tests.
 //
-// FedRAMP SI-10 (Information Input Validation): FetchValidator builds the
-// allowlist + parameter schema used later to validate/strip LLM-proposed
-// workflow selections and parameters (parser.Validator). Both fail-closed
-// paths matter for compliance:
-//   - an empty catalog must refuse to produce a validator (no workflow can be
-//     silently "allowed" when the catalog can't be confirmed empty-by-design)
-//   - a workflow whose schema Content fails to parse must have its
-//     Parameters stripped (fail-closed), not silently accept unvalidated
-//     LLM-supplied parameters for that workflow.
+// #1677 Phase 2g follow-up (DD-WORKFLOW-019): these previously drove
+// dsCatalogFetcher.FetchValidator end-to-end via an httptest-mocked
+// DataStorage server. Since FetchValidator now reads from KA's own
+// workflowcatalog.Catalog (a cache-backed, in-process dependency, not an
+// external one), the mapping logic is tested directly against
+// models.RemediationWorkflow fixtures here; FetchValidator's own
+// orchestration (Catalog.List call, fail-closed-on-empty, error
+// propagation) is covered separately below against a real Catalog backed by
+// a controller-runtime fake client (proving the actual wiring path).
+//
+// FedRAMP SI-10 (Information Input Validation): a workflow whose schema
+// Content fails to parse must have its Parameters stripped (fail-closed),
+// not silently accept unvalidated LLM-supplied parameters for that workflow.
 // ============================================================================
 
 const validWorkflowSchemaYAML = `
@@ -181,7 +189,13 @@ spec:
 // workflowSchemaYAMLWithDepsAndResources exercises the three fields
 // UT-KA-337-001 covers: schema.Dependencies (secrets/configMaps),
 // execution.resources (requests/limits), and a multi-entry parameter list
-// (source for DeclaredParameterNames).
+// (source for DeclaredParameterNames). Note: a real CRD-sourced
+// models.RemediationWorkflow.Content (crdWorkflowToModel, Issue #1677 Phase
+// 2b) can never populate execution.resources -- the RemediationWorkflow CRD
+// spec has no such field (Resources predates DD-WORKFLOW-018's etcd
+// migration and was never ported to the CRD schema). This case is kept to
+// lock in dsschema.Parser/applyParsedSchemaMeta's own contract regardless of
+// caller, not to claim the CRD pipeline can reach it today.
 const workflowSchemaYAMLWithDepsAndResources = `
 apiVersion: kubernaut.ai/v1alpha1
 kind: RemediationWorkflow
@@ -208,95 +222,47 @@ spec:
       required: true
 `
 
-// workflowJSON returns a minimal RemediationWorkflow JSON payload satisfying
-// the ogen decoder's required-field validation for GET /api/v1/workflows.
-func workflowJSON(workflowID, content string) map[string]interface{} {
-	return map[string]interface{}{
-		"workflowId":            workflowID,
-		"workflowName":          "test-workflow",
-		"actionType":            "RestartPod",
-		"version":               "1.0.0",
-		"schemaVersion":         "1.0",
-		"name":                  "Test Workflow",
-		"description":           map[string]string{"what": "test", "whenToUse": "test"},
-		"content":               content,
-		"contentHash":           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-		"executionEngine":       "tekton",
-		"executionBundleDigest": "sha256:aaa",
-		"serviceAccountName":    "workflow-runner",
-		"labels": map[string]interface{}{
-			"severity":    []string{"critical"},
-			"component":   []string{"v1/Pod"},
-			"environment": []string{"production"},
-			"priority":    "P0",
+// testCatalogWorkflow builds a minimal, valid models.RemediationWorkflow
+// fixture -- the shape Catalog.List returns after crdWorkflowToModel
+// conversion (Issue #1677 Phase 2b).
+func testCatalogWorkflow(workflowID, content string) *models.RemediationWorkflow {
+	bundleDigest := "sha256:aaa"
+	sa := "workflow-runner"
+	return &models.RemediationWorkflow{
+		WorkflowID:            workflowID,
+		WorkflowName:          "test-workflow",
+		Name:                  "Test Workflow",
+		ActionType:            "RestartPod",
+		Version:               "1.0.0",
+		SchemaVersion:         "1.0",
+		Content:               content,
+		ExecutionEngine:       models.ExecutionEngineTekton,
+		ExecutionBundleDigest: &bundleDigest,
+		ServiceAccountName:    &sa,
+		Labels: models.MandatoryLabels{
+			Severity:    []string{"critical"},
+			Component:   []string{"v1/Pod"},
+			Environment: []string{"production"},
+			Priority:    "P0",
 		},
-		"status": "Active",
+		Status: models.WorkflowStatusActive,
 	}
 }
 
-func newDSCatalogFetcherForTest(t testing.TB, handler http.Handler) *dsCatalogFetcher {
-	t.Helper()
-	server := httptest.NewServer(handler)
-	t.Cleanup(server.Close)
+var _ = Describe("buildWorkflowMeta", func() {
+	It("builds WorkflowMeta with catalog metadata from a valid workflow", func() {
+		w := testCatalogWorkflow("550e8400-e29b-41d4-a716-446655440000", validWorkflowSchemaYAML)
 
-	ogenC, err := ogenclient.NewClient(server.URL)
-	if err != nil {
-		t.Fatalf("failed to build ogen client: %v", err)
-	}
-	return newDSCatalogFetcher(&dsClients{ogenClient: ogenC}, logr.Discard())
-}
+		meta := buildWorkflowMeta(w, dsschema.NewParser(), logr.Discard())
 
-var _ = Describe("dsCatalogFetcher.FetchValidator", func() {
-	It("BR-SECURITY-SI10: fails closed when the workflow catalog is empty", func() {
-		mux := http.NewServeMux()
-		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{"workflows": []interface{}{}})
-		})
-
-		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
-		validator, err := f.FetchValidator(context.Background())
-
-		Expect(err).To(HaveOccurred(), "expected an error when the workflow catalog is empty (fail-closed, no implicit allow-all)")
-		Expect(validator).To(BeNil())
-	})
-
-	It("returns a wrapped error when the DataStorage ListWorkflows call fails", func() {
-		mux := http.NewServeMux()
-		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-		})
-
-		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
-		validator, err := f.FetchValidator(context.Background())
-
-		Expect(err).To(HaveOccurred(), "expected an error when the DataStorage ListWorkflows call fails")
-		Expect(validator).To(BeNil())
-	})
-
-	It("builds an allowlist with catalog metadata from a valid catalog", func() {
-		const wfID = "550e8400-e29b-41d4-a716-446655440000"
-		mux := http.NewServeMux()
-		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"workflows": []interface{}{workflowJSON(wfID, validWorkflowSchemaYAML)},
-			})
-		})
-
-		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
-		validator, err := f.FetchValidator(context.Background())
-		Expect(err).NotTo(HaveOccurred())
-		Expect(validator).NotTo(BeNil())
-
-		meta, ok := validator.GetWorkflowMeta(wfID)
-		Expect(ok).To(BeTrue(), "BR-SECURITY-AC6: expected workflow %q to be part of the allowlist", wfID)
 		Expect(meta.ExecutionEngine).To(Equal("tekton"))
 		Expect(meta.Version).To(Equal("1.0.0"))
 		Expect(meta.ServiceAccountName).To(Equal("workflow-runner"))
 		Expect(meta.ExecutionBundleDigest).To(Equal("sha256:aaa"))
 		Expect(meta.Parameters).To(HaveLen(1))
 		Expect(meta.Parameters[0].Name).To(Equal("TARGET_NAMESPACE"))
+		Expect(meta.ActionType).To(Equal("RestartPod"))
+		Expect(meta.WorkflowName).To(Equal("test-workflow"))
 	})
 
 	// UT-KA-337-001 (Issue #1661 Change 11a, DD-WORKFLOW-018): WorkflowMeta must
@@ -307,22 +273,9 @@ var _ = Describe("dsCatalogFetcher.FetchValidator", func() {
 	// execution snapshot (Change 11b-11e) without a second, redundant DS fetch
 	// from WorkflowExecution.
 	It("UT-KA-337-001: WorkflowMeta surfaces Dependencies/Resources/DeclaredParameterNames from schema content", func() {
-		const wfID = "550e8400-e29b-41d4-a716-446655440010"
-		mux := http.NewServeMux()
-		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"workflows": []interface{}{workflowJSON(wfID, workflowSchemaYAMLWithDepsAndResources)},
-			})
-		})
+		w := testCatalogWorkflow("550e8400-e29b-41d4-a716-446655440010", workflowSchemaYAMLWithDepsAndResources)
 
-		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
-		validator, err := f.FetchValidator(context.Background())
-		Expect(err).NotTo(HaveOccurred())
-		Expect(validator).NotTo(BeNil())
-
-		meta, ok := validator.GetWorkflowMeta(wfID)
-		Expect(ok).To(BeTrue())
+		meta := buildWorkflowMeta(w, dsschema.NewParser(), logr.Discard())
 
 		Expect(meta.Dependencies).NotTo(BeNil(), "Dependencies must be extracted from schema content")
 		Expect(meta.Dependencies.Secrets).To(HaveLen(1))
@@ -337,35 +290,158 @@ var _ = Describe("dsCatalogFetcher.FetchValidator", func() {
 		Expect(meta.DeclaredParameterNames).To(HaveKey("REPLICAS"))
 
 		// Issue #1661 Change 12 (DD-WORKFLOW-018): ActionType/WorkflowName are
-		// required, non-optional fields on the DS catalog response (see
-		// workflowJSON's actionType/workflowName), so buildWorkflowMeta must
-		// always copy them verbatim -- no schema-parsing dependency, unlike
-		// Dependencies/Resources/DeclaredParameterNames above.
+		// required, non-optional fields on the catalog entry, so
+		// buildWorkflowMeta must always copy them verbatim -- no
+		// schema-parsing dependency, unlike Dependencies/Resources/
+		// DeclaredParameterNames above.
 		Expect(meta.ActionType).To(Equal("RestartPod"))
 		Expect(meta.WorkflowName).To(Equal("test-workflow"))
 	})
 
-	It("strips parameters (fail-closed) when a workflow's schema content is malformed, but keeps it in the allowlist", func() {
-		const wfID = "550e8400-e29b-41d4-a716-446655440001"
-		mux := http.NewServeMux()
-		mux.HandleFunc("GET /api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				// Content is not a valid RemediationWorkflow CRD envelope (missing
-				// apiVersion/kind/metadata.name) — dsschema.Parser.Parse must fail.
-				"workflows": []interface{}{workflowJSON(wfID, "not: a-valid-workflow-schema")},
-			})
-		})
+	It("strips parameters (fail-closed) when a workflow's schema content is malformed, but keeps catalog metadata", func() {
+		// Content is not a valid RemediationWorkflow CRD envelope (missing
+		// apiVersion/kind/metadata.name) — dsschema.Parser.Parse must fail.
+		w := testCatalogWorkflow("550e8400-e29b-41d4-a716-446655440001", "not: a-valid-workflow-schema")
 
-		f := newDSCatalogFetcherForTest(GinkgoTB(), mux)
-		validator, err := f.FetchValidator(context.Background())
-		Expect(err).NotTo(HaveOccurred(), "BR-SECURITY-SI10: a single workflow's malformed schema must not fail the whole catalog fetch")
+		meta := buildWorkflowMeta(w, dsschema.NewParser(), logr.Discard())
 
-		meta, ok := validator.GetWorkflowMeta(wfID)
-		Expect(ok).To(BeTrue(), "expected workflow %q to still be present in the allowlist (identity is not affected by schema parse failure)", wfID)
 		Expect(meta.Parameters).To(BeEmpty(), "BR-SECURITY-SI10: expected Parameters to be stripped (fail-closed) when schema Content fails to parse")
 		// Non-parameter metadata (sourced from the catalog entry itself, not the
 		// parsed schema body) must still be populated.
 		Expect(meta.ExecutionEngine).To(Equal("tekton"), "expected ExecutionEngine to still be populated from the catalog entry")
+	})
+})
+
+// ============================================================================
+// workflowCatalogFetcher.FetchValidator — wiring + orchestration tests.
+//
+// FedRAMP SI-10 (Information Input Validation): FetchValidator builds the
+// allowlist used later to validate/strip LLM-proposed workflow selections
+// (parser.Validator). An empty catalog must refuse to produce a validator
+// (no workflow can be silently "allowed" when the catalog can't be
+// confirmed empty-by-design).
+//
+// #1677 Phase 2g follow-up (DD-WORKFLOW-019): these exercise a real
+// workflowcatalog.Catalog backed by a controller-runtime fake client
+// (workflowcatalog.NewCacheFromReader) rather than a stub, proving the
+// actual production dispatch path (bootstrap.go's
+// newWorkflowCatalogFetcher(wfCatalog, ...)) end-to-end: CRD -> Cache.
+// ListWorkflows -> crdWorkflowToModel -> buildWorkflowMeta -> Validator.
+// ============================================================================
+
+// newFakeWorkflowCatalog returns an immediately-Ready *workflowcatalog.
+// LazyCatalog (#1677 hardening, DD-WORKFLOW-019: production always wires a
+// LazyCatalog, never a bare *workflowcatalog.Catalog) backed by a
+// controller-runtime fake client.
+func newFakeWorkflowCatalog(t testing.TB, interceptorFuncs interceptor.Funcs, objs ...client.Object) *workflowcatalog.LazyCatalog {
+	t.Helper()
+	scheme, err := workflowcatalog.NewScheme()
+	if err != nil {
+		t.Fatalf("failed to build scheme: %v", err)
+	}
+
+	builder := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objs...).
+		WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
+		WithInterceptorFuncs(interceptorFuncs)
+
+	cache := workflowcatalog.NewCacheFromReader(builder.Build())
+	return workflowcatalog.NewLazyCatalogReady(cache, logr.Discard())
+}
+
+// seedFakeWorkflow creates a RemediationWorkflow CRD via the fake client and
+// stamps its status (workflowId/contentHash/catalogStatus) exactly as
+// AuthWebhook would, reusing the same helper the KA integration test suite
+// uses against envtest (test/infrastructure, Issue #1661 Phase 55).
+func seedFakeWorkflow(t testing.TB, c client.Client, content string) string {
+	t.Helper()
+	wfID, err := infrastructure.SeedWorkflowContentViaDirectCRDCreation(context.Background(), c, "", content, GinkgoWriter)
+	if err != nil {
+		t.Fatalf("failed to seed workflow: %v", err)
+	}
+	return wfID
+}
+
+const fakeCRDWorkflowYAML = `
+apiVersion: kubernaut.ai/v1alpha1
+kind: RemediationWorkflow
+metadata:
+  name: test-workflow
+spec:
+  version: "1.0.0"
+  description:
+    what: "test workflow"
+    whenToUse: "testing"
+  actionType: RestartPod
+  labels:
+    severity: ["critical"]
+    environment: ["production"]
+    component: ["v1/Pod"]
+    priority: "P0"
+  execution:
+    engine: tekton
+    serviceAccountName: workflow-runner
+    bundleDigest: "sha256:aaa"
+  parameters:
+    - name: TARGET_NAMESPACE
+      type: string
+      required: true
+      description: "target namespace"
+`
+
+var _ = Describe("workflowCatalogFetcher.FetchValidator", func() {
+	It("BR-SECURITY-SI10: fails closed when the workflow catalog is empty", func() {
+		catalog := newFakeWorkflowCatalog(GinkgoTB(), interceptor.Funcs{})
+		f := newWorkflowCatalogFetcher(catalog, logr.Discard())
+
+		validator, err := f.FetchValidator(context.Background())
+
+		Expect(err).To(HaveOccurred(), "expected an error when the workflow catalog is empty (fail-closed, no implicit allow-all)")
+		Expect(validator).To(BeNil())
+	})
+
+	It("returns a wrapped error when the catalog list fails", func() {
+		catalog := newFakeWorkflowCatalog(GinkgoTB(), interceptor.Funcs{
+			List: func(_ context.Context, _ client.WithWatch, _ client.ObjectList, _ ...client.ListOption) error {
+				return errors.New("simulated cache list failure")
+			},
+		})
+		f := newWorkflowCatalogFetcher(catalog, logr.Discard())
+
+		validator, err := f.FetchValidator(context.Background())
+
+		Expect(err).To(HaveOccurred(), "expected an error when the underlying cache list fails")
+		Expect(validator).To(BeNil())
+	})
+
+	It("builds an allowlist end-to-end from a real CRD via the cache-backed Catalog", func() {
+		scheme, err := workflowcatalog.NewScheme()
+		Expect(err).NotTo(HaveOccurred())
+		c := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithStatusSubresource(&rwv1alpha1.RemediationWorkflow{}).
+			Build()
+
+		wfID := seedFakeWorkflow(GinkgoTB(), c, fakeCRDWorkflowYAML)
+
+		cache := workflowcatalog.NewCacheFromReader(c)
+		catalog := workflowcatalog.NewLazyCatalogReady(cache, logr.Discard())
+		f := newWorkflowCatalogFetcher(catalog, logr.Discard())
+
+		validator, err := f.FetchValidator(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(validator).NotTo(BeNil())
+
+		meta, ok := validator.GetWorkflowMeta(wfID)
+		Expect(ok).To(BeTrue(), "BR-SECURITY-AC6: expected workflow %q to be part of the allowlist", wfID)
+		Expect(meta.ExecutionEngine).To(Equal("tekton"))
+		Expect(meta.Version).To(Equal("1.0.0"))
+		Expect(meta.ServiceAccountName).To(Equal("workflow-runner"))
+		Expect(meta.ExecutionBundleDigest).To(Equal("sha256:aaa"))
+		Expect(meta.ActionType).To(Equal("RestartPod"))
+		Expect(meta.WorkflowName).To(Equal("test-workflow"))
+		Expect(meta.Parameters).To(HaveLen(1))
+		Expect(meta.Parameters[0].Name).To(Equal("TARGET_NAMESPACE"))
 	})
 })

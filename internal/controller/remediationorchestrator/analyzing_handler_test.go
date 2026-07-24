@@ -47,8 +47,7 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	wfeTest    = "wfe-test"
-	testaction = "TestAction"
+	wfeTest = "wfe-test"
 )
 
 func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
@@ -93,7 +92,6 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
 				return wfeTest, nil
 			},
-			ResolveWorkflowDisplay: func(_ context.Context, _ string) (string, string) { return testaction, "test-wf" },
 		},
 	}
 }
@@ -559,7 +557,6 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 					wfeCreated = true
 					return "wfe-should-not-exist", nil
 				},
-				ResolveWorkflowDisplay: func(_ context.Context, _ string) (string, string) { return "", "" },
 			}
 
 			h := newHandler(c, cbs)

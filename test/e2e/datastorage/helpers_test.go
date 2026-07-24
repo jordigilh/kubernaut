@@ -19,17 +19,13 @@ package datastorage
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/testutil"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo/Gomega convention
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const e2eBundleRef = "quay.io/kubernaut-cicd/test-workflows/placeholder-execution:v1.0.0@sha256:377de4244cfeffcbb898a7e7cd388dd1266dd680cef43b17147b876845df29cd"
@@ -39,11 +35,6 @@ const e2eBundleRef = "quay.io/kubernaut-cicd/test-workflows/placeholder-executio
 // detected labels tests (hpaEnabled, gitOpsTool), and duplicate detection.
 // Issue #330: Generated via builder pattern instead of inline YAML.
 var e2eTestWorkflowStubContent string
-
-// e2eTestAllDetectedLabelsContent is a workflow with all 8 detectedLabels fields populated.
-// Used by E2E-DS-043-005 to verify the full OCI -> DB -> HTTP round-trip for every field.
-// Issue #330: Generated via builder pattern instead of inline YAML.
-var e2eTestAllDetectedLabelsContent string
 
 func init() {
 	stub := testutil.NewTestWorkflowCRD("e2e-stub", "ScaleReplicas", "tekton")
@@ -61,65 +52,6 @@ func init() {
 		PopulatedFields: []string{"hpaEnabled", "gitOpsTool"},
 	}
 	e2eTestWorkflowStubContent = testutil.MarshalWorkflowCRD(stub)
-
-	allLabels := testutil.NewTestWorkflowCRD("e2e-all-labels", "RestartPod", "tekton")
-	allLabels.Spec.Labels.Component = []string{"v1/Pod"}
-	allLabels.Spec.Description.What = "Workflow with all 8 detectedLabels fields for round-trip E2E testing"
-	allLabels.Spec.Description.WhenToUse = "E2E-DS-043-005: validates every detectedLabels field survives storage"
-	allLabels.Spec.Labels.Priority = "P0"
-	allLabels.Spec.Execution.Bundle = e2eBundleRef
-	allLabels.Spec.Parameters = []models.WorkflowParameter{
-		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource for remediation"},
-	}
-	allLabels.Spec.DetectedLabels = &models.DetectedLabelsSchema{
-		HPAEnabled:      "true",
-		PDBProtected:    "true",
-		Stateful:        "true",
-		HelmManaged:     "true",
-		NetworkIsolated: "true",
-		GitOpsManaged:   "true",
-		GitOpsTool:      "flux",
-		ServiceMesh:     "istio",
-		PopulatedFields: []string{"hpaEnabled", "pdbProtected", "stateful", "helmManaged", "networkIsolated", "gitOpsManaged", "gitOpsTool", "serviceMesh"},
-	}
-	e2eTestAllDetectedLabelsContent = testutil.MarshalWorkflowCRD(allLabels)
-}
-
-var (
-	crdClientOnce sync.Once
-	crdClient     client.Client
-	crdClientErr  error
-)
-
-// workflowCRDClient lazily builds a controller-runtime client scoped to the
-// RemediationWorkflow CRD from the suite's kubeconfig. #1661 Phase 55b: DS's
-// createWorkflow/disableWorkflow/enableWorkflow REST endpoints were removed
-// (DD-WORKFLOW-018 — AuthWebhook is the sole write path); E2E seeding now goes
-// through direct CRD creation instead.
-func workflowCRDClient() client.Client {
-	crdClientOnce.Do(func() {
-		crdClient, crdClientErr = infrastructure.NewKubeconfigWorkflowClient(kubeconfigPath)
-	})
-	Expect(crdClientErr).ToNot(HaveOccurred(), "failed to build RemediationWorkflow client from kubeconfig")
-	return crdClient
-}
-
-// ensureWorkflowRegistered creates a workflow directly via the Kubernetes API
-// (or reuses the existing CRD if already applied) and stamps its status the
-// same way AuthWebhook would, since this suite runs DataStorage without a live
-// AuthWebhook instance. #1661 Phase 55b: replaces the retired
-// POST /api/v1/workflows-based registration.
-func ensureWorkflowRegistered(ctx context.Context, _ *dsgen.Client, content string, workflowName ...string) (string, uuid.UUID) {
-	name := "workflow"
-	if len(workflowName) > 0 {
-		name = workflowName[0]
-	}
-	workflowIDStr, err := infrastructure.SeedWorkflowContentViaDirectCRDCreation(ctx, workflowCRDClient(), sharedNamespace, content, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "failed to seed workflow %s via direct CRD creation", name)
-
-	workflowID, err := uuid.Parse(workflowIDStr)
-	Expect(err).ToNot(HaveOccurred(), "workflow_id %q should be a valid UUID", workflowIDStr)
-	return workflowIDStr, workflowID
 }
 
 // postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs

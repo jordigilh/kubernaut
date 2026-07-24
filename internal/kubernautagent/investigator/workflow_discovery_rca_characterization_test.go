@@ -85,7 +85,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 	Describe("UT-KA-WAVE4-001: nil rcaResult is rejected", func() {
 		It("should return an error without invoking the LLM", func() {
 			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: client, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: store, Logger: logger,
 				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
@@ -108,7 +108,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 			// been deleted (race between RCA and workflow discovery).
 			k8s := &rcaK8sClient{notFoundFor: "cache-pod"}
 			enricher := enrichment.NewEnricher(k8s, &rcaDSClient{}, store, logger)
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: client, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: store, Logger: logger,
 				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
@@ -149,7 +149,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 			mapper := newAmbiguousSubscriptionMapper() // has exactly one Deployment GVK registered
 			resolver := investigator.NewMapperScopeResolver(mapper)
 			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: client, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: store, Logger: logger,
 				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
@@ -182,7 +182,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 	Describe("UT-KA-WAVE4-004: rcaResult input is copied, not mutated in place", func() {
 		It("should leave the caller's rcaResult pointer untouched", func() {
 			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: client, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: store, Logger: logger,
 				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
@@ -211,7 +211,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 	Describe("UT-KA-WAVE4-005 (runWorkflowSelection): LLM explicitly declines via submit_result_no_workflow", func() {
 		It("should classify as no_matching_workflows without a parse retry", func() {
 			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: client, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: store, Logger: logger,
 				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),
@@ -240,7 +240,7 @@ var _ = Describe("GO-ANTIPATTERN-AUDIT Wave 4: RunWorkflowDiscoveryFromRCA chara
 	Describe("UT-KA-WAVE4-006 (runWorkflowSelection): unparseable text after exhausting retries", func() {
 		It("should classify as no_matching_workflows once retries are exhausted", func() {
 			enricher := enrichment.NewEnricher(&rcaK8sClient{}, &rcaDSClient{}, store, logger)
-			inv := investigator.New(investigator.Config{
+			inv := newTestInvestigator(investigator.Config{
 				Client: client, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: store, Logger: logger,
 				MaxTurns: 15, PhaseTools: investigator.DefaultPhaseToolMap(),

@@ -38,22 +38,11 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
 
-	atv1alpha1 "github.com/jordigilh/kubernaut/api/actiontype/v1alpha1"
-	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/cert"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/dlq"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/workflowcache"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -99,35 +88,6 @@ var (
 	logger      logr.Logger
 	ctx         context.Context
 	cancel      context.CancelFunc
-
-	// DD-WE-006: K8s client for dependency validation (GW pattern: one shared envtest, all processes use it).
-	k8sClient client.Client
-
-	// Issue #1661 Phase 28: per-process *rest.Config for the shared envtest, valid in every
-	// parallel process (unlike sharedDSEnvConfig below, which is only populated in process 1).
-	// Consumers that need a *rest.Config directly (e.g. workflowcache.NewInformerCache, which
-	// builds its own controller-runtime cache rather than reusing k8sClient) must use this.
-	dsK8sRestConfig *rest.Config
-
-	// Issue #1661 Phase F: one shared per-process informer-backed cache, wired via
-	// workflow.Repository.SetCache onto specs that migrated off direct Postgres seeding
-	// (workflowRepo.Create) to CRD-native seeding (seedWorkflowCRD in
-	// workflow_crd_seeding_helper_test.go). A single shared instance avoids the cost of
-	// spinning up a separate informer cache (and its blocking initial sync) per spec --
-	// mirrors the k8sClient/dsK8sRestConfig sharing pattern above, not the
-	// per-It-block *workflowcache.Cache in workflow_cache_test.go (which deliberately
-	// exercises cache construction itself as part of its subject under test).
-	sharedWorkflowCache       *workflowcache.Cache
-	sharedWorkflowCacheCancel context.CancelFunc
-
-	// workflowCRDNamespace is the namespace CRD-native seeding creates
-	// RemediationWorkflow/ActionType objects in -- must match the namespace
-	// created in SynchronizedBeforeSuite Phase 1 below.
-	workflowCRDNamespace = "kubernaut-workflows"
-
-	// Shared envtest (process 1 only), stopped in AfterSuite Phase 2. Mimics Gateway integration.
-	sharedDSEnvTest   *envtest.Environment
-	sharedDSEnvConfig *rest.Config
 
 	// #1048 Phase 5 / AU-9: Per-process PEM dir for audit signing (replacing DS startup fallback certs).
 	datastorageIntegrationSigningCertDir  string
@@ -349,73 +309,19 @@ var _ = SynchronizedBeforeSuite(
 		// Each parallel process will create its own schema and copy the table structure
 		_ = tempDB.Close()
 
-		// 6. Start shared envtest (GW pattern: one instance, all processes use it via kubeconfig).
-		// Avoids four per-process envtest.Stop() calls in Phase 1 that cause CI hang/exit 2.
-		// Issue #1661 Phase 28: CRDDirectoryPaths now installs RemediationWorkflow/ActionType
-		// CRDs so the workflow cache IT (workflow_cache_test.go) can create real CRs.
-		GinkgoWriter.Println("🔧 [Process 1] Starting shared envtest for DD-WE-006 dependency validation...")
-		_ = os.Setenv("KUBEBUILDER_CONTROLPLANE_START_TIMEOUT", "60s")
-		sharedDSEnvTest = &envtest.Environment{
-			CRDDirectoryPaths:     []string{filepath.Join("..", "..", "..", "config", "crd", "bases")},
-			ErrorIfCRDPathMissing: true,
-			ControlPlane: envtest.ControlPlane{
-				APIServer: &envtest.APIServer{
-					SecureServing: envtest.SecureServing{
-						ListenAddr: envtest.ListenAddr{Address: "127.0.0.1"},
-					},
-				},
-			},
-		}
-		var envErr error
-		sharedDSEnvConfig, envErr = sharedDSEnvTest.Start()
-		Expect(envErr).ToNot(HaveOccurred(), "shared envtest should start successfully")
-		Expect(sharedDSEnvConfig.Host).ToNot(BeEmpty(), "shared envtest should provide a valid API server host")
-
-		// Create namespace and write kubeconfig so Phase 2 (all processes) can connect.
-		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
-		Expect(rwv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
-		Expect(atv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
-		sharedK8sClient, err := client.New(sharedDSEnvConfig, client.Options{Scheme: scheme.Scheme})
-		Expect(err).ToNot(HaveOccurred())
-		depNs := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-workflows"}}
-		Expect(sharedK8sClient.Create(context.Background(), depNs)).To(Succeed())
-
-		kubeconfigPath, err := infrastructure.WriteEnvtestKubeconfigToFile(sharedDSEnvConfig, "datastorage-integration")
-		Expect(err).ToNot(HaveOccurred(), "writing shared envtest kubeconfig")
-		GinkgoWriter.Println("✅ [Process 1] Shared envtest ready (kubernaut-workflows namespace created)")
-
-		// Seed action types directly as CRDs (DD-WORKFLOW-016). #1661 Phase 53:
-		// makes them visible via DS's informer-backed cache (IT-DS-1661-P52-001)
-		// AuthWebhook-independently, for specs exercising the cache/CRD path
-		// (e.g. workflow_cache_test.go). #1661 Phase G: this is now the suite's
-		// *only* action-type seeding path -- the Postgres-backed
-		// action_type_taxonomy bridge (seedActionTypeTaxonomyRows) was removed
-		// once the table itself was dropped, since etcd/CRDs are the sole
-		// source of truth for workflow/action-type data (DD-WORKFLOW-018).
-		GinkgoWriter.Println("🏷️  Seeding action types via direct CRD creation...")
-		Expect(infrastructure.SeedActionTypesViaCRD(context.Background(), kubeconfigPath, "kubernaut-workflows", GinkgoWriter)).
-			To(Succeed(), "action type CRD seeding should succeed")
-		GinkgoWriter.Println("✅ Action types seeded (CRD)")
-
-		// #1661 Phase F: status-patch every seeded ActionType to CatalogStatus=Active,
-		// mirroring AuthWebhook's admission patch (pkg/authwebhook/actiontype_handler.go).
-		// SeedActionTypesViaCRD only kubectl-applies the spec -- no AuthWebhook runs in
-		// this suite to status-patch it -- yet ListActions' cache-backed path (Step 1,
-		// discovery_cache.go) counts an action type only when Active. ListWorkflowsByActionType
-		// (Step 2) needs no such patch, but the Phase F specs migrated to CRD-native seeding
-		// call ListActions directly against these shared, suite-wide action types, so patch
-		// them all here once rather than per-spec (established pattern:
-		// workflow_cache_repository_test.go's per-spec markActive, applied suite-wide here
-		// since these action types are shared rather than uniquely named per spec).
-		GinkgoWriter.Println("🏷️  Marking seeded ActionTypes Active (status subresource)...")
-		Expect(markSeededActionTypesActive(sharedK8sClient)).To(Succeed(), "marking ActionTypes Active should succeed")
-		GinkgoWriter.Println("✅ Action types marked Active")
-
+		// #1677 Phase 2g (DD-WORKFLOW-019): the shared envtest + action-type CRD
+		// seeding that used to live here (steps 6-8) was removed as dead code --
+		// it existed solely to back the DS-side workflow discovery/cache IT
+		// suites (workflow_cache_test.go and friends), which were deleted once
+		// KubernautAgent became the sole owner of workflow/action-type
+		// discovery. See test/integration/kubernautagent/workflowcatalog/ for
+		// the equivalent (envtest-backed) coverage now that DS is out of this
+		// domain entirely.
 		GinkgoWriter.Println("✅ Infrastructure ready for integration tests")
-		return []byte(kubeconfigPath)
+		return nil
 	},
 	// All processes: Connect to shared infrastructure
-	func(data []byte) {
+	func(_ []byte) {
 		processNum := GinkgoParallelProcess()
 		GinkgoWriter.Printf("🔌 [Process %d] Connecting to shared infrastructure\n", processNum)
 
@@ -460,32 +366,6 @@ var _ = SynchronizedBeforeSuite(
 		dlqClient, err = dlq.NewClient(redisClient, logger, 10000)      // Gap 3.3: Pass max length for capacity monitoring
 		Expect(err).ToNot(HaveOccurred(), "DLQ client creation should succeed")
 
-		// DD-WE-006: K8s client from shared envtest (GW pattern). Process 1 uses sharedDSEnvConfig; others use kubeconfig from Phase 1.
-		GinkgoWriter.Printf("🔧 [Process %d] Connecting to shared envtest for K8s dependency validation...\n", processNum)
-		Expect(corev1.AddToScheme(scheme.Scheme)).To(Succeed())
-		// Issue #1661 Phase 28: registered in every parallel process (each is a separate OS process).
-		Expect(rwv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
-		Expect(atv1alpha1.AddToScheme(scheme.Scheme)).To(Succeed())
-		if processNum == 1 {
-			dsK8sRestConfig = sharedDSEnvConfig
-			k8sClient, err = client.New(dsK8sRestConfig, client.Options{Scheme: scheme.Scheme})
-			Expect(err).ToNot(HaveOccurred(), "process 1: k8s client from shared envtest config")
-		} else {
-			cfg, err := clientcmd.BuildConfigFromFlags("", string(data))
-			Expect(err).ToNot(HaveOccurred(), "load kubeconfig from shared envtest")
-			dsK8sRestConfig = cfg
-			k8sClient, err = client.New(dsK8sRestConfig, client.Options{Scheme: scheme.Scheme})
-			Expect(err).ToNot(HaveOccurred(), "k8s client from kubeconfig")
-		}
-		GinkgoWriter.Printf("✅ [Process %d] K8s client ready (shared envtest)\n", processNum)
-
-		// Issue #1661 Phase F: shared per-process workflow cache for specs migrated to
-		// CRD-native seeding. Blocks until the initial informer sync completes.
-		GinkgoWriter.Printf("🔧 [Process %d] Building shared workflow cache...\n", processNum)
-		sharedWorkflowCache, sharedWorkflowCacheCancel, err = workflowcache.NewInformerCache(dsK8sRestConfig, scheme.Scheme, logger)
-		Expect(err).ToNot(HaveOccurred(), "shared workflow cache should build and sync")
-		GinkgoWriter.Printf("✅ [Process %d] Shared workflow cache ready\n", processNum)
-
 		GinkgoWriter.Printf("✅ [Process %d] Ready to run tests (shared public schema)\n", processNum)
 	},
 )
@@ -503,10 +383,6 @@ var _ = SynchronizedAfterSuite(func() {
 	//
 	// These resources are closed in Phase 2 after ALL processes truly complete.
 
-	if sharedWorkflowCacheCancel != nil {
-		sharedWorkflowCacheCancel()
-	}
-
 	if cancel != nil {
 		cancel()
 	}
@@ -516,30 +392,6 @@ var _ = SynchronizedAfterSuite(func() {
 	// Phase 2: Runs ONCE on parallel process #1 (shared infrastructure cleanup)
 	// This ensures PostgreSQL/Redis are only stopped AFTER all processes finish
 	GinkgoWriter.Println("🛑 [Process 1] Stopping shared infrastructure...")
-
-	// DD-WE-006: Stop shared envtest (GW pattern). Only one Stop() in Phase 2 avoids CI hang/exit 2.
-	if sharedDSEnvTest != nil {
-		// Capture into a local before launching the goroutine: the goroutine's
-		// closure would otherwise read the package-level sharedDSEnvTest variable
-		// concurrently with the `sharedDSEnvTest = nil` write below on timeout,
-		// a genuine data race flagged by `-race` (goroutine reads while this
-		// frame writes -- both closing over the same variable).
-		envTest := sharedDSEnvTest
-		stopDone := make(chan error, 1)
-		go func() { stopDone <- envTest.Stop() }()
-		select {
-		case err := <-stopDone:
-			if err != nil {
-				GinkgoWriter.Printf("⚠️  Failed to stop shared envtest: %v\n", err)
-			} else {
-				GinkgoWriter.Println("✅ Shared envtest stopped")
-			}
-		case <-time.After(5 * time.Second):
-			GinkgoWriter.Println("⚠️  shared envtest.Stop() timed out after 5s, proceeding with cleanup")
-		}
-		sharedDSEnvTest = nil
-		sharedDSEnvConfig = nil
-	}
 
 	// Close per-process resources (safe now - all processes finished)
 	if db != nil {
@@ -901,28 +753,6 @@ func applyMigrationsWithPropagationTo(targetDB *sql.DB) {
 		return err
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed(), "Schema should propagate")
 	GinkgoWriter.Println("  ✅ Schema propagation complete")
-}
-
-// markSeededActionTypesActive status-patches every ActionType CRD in the
-// kubernaut-workflows namespace to CatalogStatus=Active, mirroring
-// AuthWebhook's admission-time status patch (actiontype_handler.go). Called
-// once, in process 1's SynchronizedBeforeSuite, immediately after
-// infrastructure.SeedActionTypesViaCRD -- which creates the CRDs' specs but
-// leaves status untouched, since no AuthWebhook runs in this suite to patch
-// it itself.
-func markSeededActionTypesActive(c client.Client) error {
-	var list atv1alpha1.ActionTypeList
-	if err := c.List(context.Background(), &list, client.InNamespace("kubernaut-workflows")); err != nil {
-		return fmt.Errorf("failed to list seeded ActionTypes: %w", err)
-	}
-	for i := range list.Items {
-		at := &list.Items[i]
-		at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
-		if err := c.Status().Update(context.Background(), at); err != nil {
-			return fmt.Errorf("failed to mark ActionType %s Active: %w", at.Name, err)
-		}
-	}
-	return nil
 }
 
 // bearerTransport injects an Authorization header into every outgoing request.

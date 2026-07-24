@@ -20,7 +20,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"os"
 	"time"
 
@@ -43,7 +42,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	notificationconfig "github.com/jordigilh/kubernaut/pkg/notification/config"
@@ -52,7 +50,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/enrichment"
 	notificationmetrics "github.com/jordigilh/kubernaut/pkg/notification/metrics"
 	notificationstatus "github.com/jordigilh/kubernaut/pkg/notification/status"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/sanitization"
@@ -298,11 +295,7 @@ func run() int {
 	// Metrics, Status Manager, Circuit Breaker, Delivery Orchestrator,
 	// channel registration, and workflow-name enrichment.
 	// ========================================
-	ob, err := buildDeliveryOrchestrator(mgr, cfg, ds, sanitizer, controllerNS, logger)
-	if err != nil {
-		logger.Error(err, "Failed to build delivery orchestrator")
-		return 1
-	}
+	ob := buildDeliveryOrchestrator(mgr, ds, sanitizer, controllerNS, logger)
 
 	reconciler := setupNotificationReconciler(mgr, cfg, ds, auditStore, auditManager, ob, logger)
 
@@ -486,17 +479,20 @@ type orchestratorBundle struct {
 // buildDeliveryOrchestrator wires DD-METRICS-001 metrics, the Pattern-2
 // status manager, the BR-NOT-055 per-channel circuit breaker, the Pattern-3
 // delivery orchestrator (with DD-NOT-007 startup channel registration), and
-// the #553 DataStorage-backed workflow-name enricher. Extracted from main()
+// the #553 workflow-name enricher. Extracted from main()
 // (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0a) — pure code motion, no behavior
 // change.
+//
+// #1677 Phase 2g (DD-WORKFLOW-019): dropped the (error) return -- it existed
+// solely to surface failures constructing the now-removed DataStorage
+// enrichment client; nothing else in this function can fail.
 func buildDeliveryOrchestrator(
 	mgr ctrl.Manager,
-	cfg *notificationconfig.Config,
 	ds *deliveryServices,
 	sanitizer *sanitization.Sanitizer,
 	controllerNS string,
 	logger logr.Logger,
-) (*orchestratorBundle, error) {
+) *orchestratorBundle {
 	// Create metrics recorder for dependency injection (DD-METRICS-001 compliance)
 	metricsRecorder := notificationmetrics.NewMetrics()
 
@@ -563,9 +559,7 @@ func buildDeliveryOrchestrator(
 	logger.Info("Registered startup channels (per-receiver Slack registered on routing config load)",
 		"channels", startupChannels)
 
-	if err := wireNotificationEnrichment(cfg, deliveryOrchestrator, logger); err != nil {
-		return nil, err
-	}
+	wireNotificationEnrichment(deliveryOrchestrator, logger)
 
 	return &orchestratorBundle{
 		orchestrator:   deliveryOrchestrator,
@@ -573,35 +567,29 @@ func buildDeliveryOrchestrator(
 		statusManager:  statusManager,
 		circuitBreaker: circuitBreakerManager,
 		sanitizer:      sanitizer,
-	}, nil
+	}
 }
 
 // wireNotificationEnrichment sets up the #553 workflow-name enrichment
-// pipeline, which resolves workflow UUIDs to human-readable names in
-// notification bodies before delivery via the DataStorage catalog API
-// (Issue #853: RetryTransport-wrapped for transient failure resilience).
-func wireNotificationEnrichment(cfg *notificationconfig.Config, deliveryOrchestrator *delivery.Orchestrator, logger logr.Logger) error {
-	dsBaseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
-	if err != nil {
-		return fmt.Errorf("failed to create TLS-aware base transport for DS enrichment client: %w", err)
-	}
-	dsOgenClient, err := ogenclient.NewClient(
-		cfg.DataStorage.URL,
-		ogenclient.WithClient(&http.Client{
-			Timeout:   cfg.DataStorage.Timeout,
-			Transport: auth.NewAuthTransport(auth.NewDefaultTokenSource(), dsBaseTransport),
-		}),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create datastorage ogen client for workflow name resolution: %w", err)
-	}
-
-	dsResolver := enrichment.NewDataStorageResolver(dsOgenClient, ctrl.Log.WithName("workflow-resolver"))
-	notifEnricher := enrichment.NewEnricher(dsResolver, ctrl.Log.WithName("notification-enricher"))
+// pipeline, which replaces workflow UUIDs with human-readable names in
+// notification bodies.
+//
+// Issue #1677 Phase 2g (DD-WORKFLOW-019): the live DataStorage-backed fallback
+// resolver (DataStorageResolver, calling DS's now-retired GET
+// /api/v1/workflows/{workflow_id}) was removed once callers moved off it.
+//
+// #1677 follow-up cleanup: the WorkflowNameResolver interface and Enricher's
+// fallback branch that called it were deleted outright, not just left wired
+// to nil. Enricher's only path now is the catalog-authoritative WorkflowName
+// RemediationOrchestrator already populates on the notification context from
+// AIAnalysis.Status.SelectedWorkflow.WorkflowName (Issue #1677 Phase 1) --
+// +kubebuilder:validation:Required on the underlying WorkflowSnapshot type,
+// so it is guaranteed non-empty whenever a workflow ID is present at all,
+// making a live-lookup fallback structurally unreachable, not just unused.
+func wireNotificationEnrichment(deliveryOrchestrator *delivery.Orchestrator, logger logr.Logger) {
+	notifEnricher := enrichment.NewEnricher(ctrl.Log.WithName("notification-enricher"))
 	deliveryOrchestrator.SetEnricher(notifEnricher)
 	logger.Info("Notification enricher initialized (#553: workflow name resolution)")
-
-	return nil
 }
 
 // hotReloadParams groups wireHotReload's dependencies (Options pattern,

@@ -18,10 +18,7 @@ package authwebhook
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os/exec"
 	"strings"
 	"time"
@@ -43,9 +40,10 @@ import (
 //
 // E2E-AT-3XX-DENY proves AW's etcd-native ActionType existence gate (Change 0)
 // end-to-end against a real cluster: a RemediationWorkflow referencing a
-// non-existent ActionType is rejected at admission, never reaches DS's
-// catalog, and the denial itself is fully auditable (workflow_content on the
-// denied event, per Change 2's "denied events capture full content" decision).
+// non-existent ActionType is rejected at admission, never persists as a CRD
+// (and therefore never reaches any workflow catalog, #1677/DD-WORKFLOW-019),
+// and the denial itself is fully auditable (workflow_content on the denied
+// event, per Change 2's "denied events capture full content" decision).
 //
 // E2E-CRD-3XX-FORMAT proves the CRD `Pattern` structural-schema hardening
 // (Change 0b) is enforced by the API server itself -- BEFORE the admission
@@ -86,21 +84,12 @@ var _ = Describe("E2E: AW ActionType Gate & CRD Format Hardening (#1661)", Seria
 		getErr := k8sClient.Get(ctx, types.NamespacedName{Name: crdName, Namespace: sharedNamespace}, &rwv1alpha1.RemediationWorkflow{})
 		Expect(getErr).To(HaveOccurred(), "Denied CREATE should mean the CRD was never persisted")
 
-		By("Verifying no workflow with this name appears in DS's catalog")
-		listURL := fmt.Sprintf("%s/api/v1/workflows?workflow_name=%s", dataStorageURL, crdName)
-		req, err := http.NewRequest(http.MethodGet, listURL, nil)
-		Expect(err).ToNot(HaveOccurred())
-		resp, err := authHTTPClient.Do(req)
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		body, _ := io.ReadAll(resp.Body)
-		var listResult struct {
-			Workflows []map[string]interface{} `json:"workflows"`
-		}
-		Expect(json.Unmarshal(body, &listResult)).To(Succeed())
-		Expect(listResult.Workflows).To(BeEmpty(),
-			"AW's denial should mean zero DS catalog impact -- no CreateWorkflowInline call was ever made")
+		// "Zero catalog impact" (#1677, DD-WORKFLOW-019): every workflow
+		// catalog -- DS's now-retired one and KA's current one alike -- is a
+		// pure informer-cache derivation of the RemediationWorkflow CRD.
+		// Having already proven above that the CRD was never persisted, no
+		// catalog anywhere can have observed it; there is nothing left to
+		// separately probe over the network.
 
 		By("Verifying the remediationworkflow.admitted.denied audit event carries full workflow_content (#1661 Change 2)")
 		authAuditClient := createAuthenticatedAuditClient()

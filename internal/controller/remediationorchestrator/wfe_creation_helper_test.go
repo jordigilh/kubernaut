@@ -84,7 +84,6 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
 				return "wfe-test", nil
 			},
-			ResolveWorkflowDisplay: func(_ context.Context, workflowID string) (string, string) { return "", workflowID },
 		}
 	}
 
@@ -161,9 +160,6 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		cbs.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
 			return "wfe-created", nil
 		}
-		cbs.ResolveWorkflowDisplay = func(_ context.Context, workflowID string) (string, string) {
-			return "TestAction", "Human-Friendly-" + workflowID
-		}
 
 		_, err := prodcontroller.CreateWFEAndTransition(ctx, c, m, rr, ai, "hash456", cbs)
 		Expect(err).ToNot(HaveOccurred())
@@ -173,6 +169,10 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		Expect(c.Get(ctx, client.ObjectKeyFromObject(rr), updated)).To(Succeed())
 		Expect(updated.Status.WorkflowExecutionRef).To(HaveField("Name", Equal("wfe-created")))
 		Expect(updated.Status.SelectedWorkflowRef).To(HaveField("WorkflowID", Equal("wf-restart")))
+		// Issue #1677 Phase 1: WorkflowDisplayName comes directly from
+		// ai.Status.SelectedWorkflow.ActionType/.WorkflowName (set by minimalAI()
+		// to "patch"/"wf-restart") -- no live resolver involved.
+		Expect(updated.Status.WorkflowDisplayName).To(Equal("patch:wf-restart"))
 	})
 
 	It("UT-WEC-005: increments ChildCRDCreationsTotal metric", func() {

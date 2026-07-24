@@ -41,7 +41,6 @@ import (
 type WFECreationCallbacks struct {
 	EmitWorkflowCreatedAudit func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, preHash string)
 	CreateWFE                func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error)
-	ResolveWorkflowDisplay   func(ctx context.Context, workflowID string) (string, string)
 }
 
 // CreateWFEAndTransition is the shared flow for creating a WorkflowExecution CRD,
@@ -74,7 +73,7 @@ func CreateWFEAndTransition(
 
 	m.ChildCRDCreationsTotal.WithLabelValues("WorkflowExecution", rr.Namespace).Inc()
 
-	if err := persistWFERefAndDisplay(ctx, k8sClient, m, rr, ai, weName, cbs); err != nil {
+	if err := persistWFERefAndDisplay(ctx, k8sClient, m, rr, ai, weName); err != nil {
 		logger.Error(err, "Failed to set WorkflowExecutionRef in status")
 		return phase.Requeue(config.RequeueGenericError, "WFE status update failed"), nil
 	}
@@ -95,12 +94,14 @@ func persistWFERefAndDisplay(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 	weName string,
-	cbs WFECreationCallbacks,
 ) error {
 	var workflowDisplayName, confidence string
 	if ai.Status.SelectedWorkflow != nil {
-		actionType, workflowName := cbs.ResolveWorkflowDisplay(ctx, ai.Status.SelectedWorkflow.WorkflowID)
-		workflowDisplayName = remediationrequest.FormatWorkflowDisplay(actionType, workflowName)
+		// Issue #1677 Phase 1 (DD-WORKFLOW-018 v1.1): ActionType/WorkflowName
+		// are catalog-authoritative, Required fields on SelectedWorkflow
+		// (never LLM-suppliable) -- no live DataStorage lookup needed.
+		workflowDisplayName = remediationrequest.FormatWorkflowDisplay(
+			ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowName)
 		confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
 	}
 

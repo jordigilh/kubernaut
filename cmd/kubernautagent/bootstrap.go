@@ -45,6 +45,7 @@ import (
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/sanitization"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
@@ -75,6 +76,7 @@ type coreServices struct {
 	effectiveReg         registry.ToolRegistry
 	alignEvaluator       *alignment.Evaluator
 	alignCfg             kaconfig.AlignmentCheckConfig
+	wfCatalog            *workflowcatalog.LazyCatalog
 }
 
 // buildCoreServices wires audit, K8s infra, DataStorage, tool registry,
@@ -94,6 +96,14 @@ func buildCoreServices(
 	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
 	infra := initK8sInfra(logger)
 
+	// #1677 Phase 2a + hardening (DD-WORKFLOW-019): KA owns workflow/
+	// action-type discovery directly via its own informer-backed cache,
+	// instead of proxying every lookup through DataStorage. wfCatalog is
+	// always non-nil (LazyCatalog) -- it starts Not-Ready and becomes Ready
+	// once its background retry loop completes a successful cache sync; see
+	// buildWorkflowCatalogCache and readinessHandler.
+	wfCatalog := buildWorkflowCatalogCache(infra, logger)
+
 	// #1288: SSAR impersonate gate removed — KA uses its own SA for all K8s
 	// API calls. Interactive readiness is no longer gated on impersonation RBAC.
 	interactiveReadiness := karbac.NewInteractiveReadiness()
@@ -108,7 +118,7 @@ func buildCoreServices(
 		logger.Error(nil, "FATAL: DataStorage client initialization failed — KA cannot operate without DS (workflow discovery, audit, enrichment all require it)")
 		os.Exit(1)
 	}
-	reg := buildToolRegistry(cfg, logger, infra, ds, auditStore)
+	reg := buildToolRegistry(cfg, logger, infra, ds, wfCatalog, auditStore)
 	fleetClient, fleetToolNames := registerFleetTools(context.Background(), cfg, reg, logger)
 	if len(fleetToolNames) > 0 {
 		investigator.AppendFleetToolsToRCA(phaseTools, fleetToolNames)
@@ -124,13 +134,15 @@ func buildCoreServices(
 
 	instrumentedLLM := llm.NewInstrumentedClient(swappable)
 
-	var catalogFetcher investigator.CatalogFetcher
-	if ds != nil {
-		catalogFetcher = newDSCatalogFetcher(ds, logger)
-		logger.Info("workflow catalog fetcher enabled (per-request, DD-HAPI-002)")
-	} else {
-		logger.Info("workflow catalog fetcher disabled (no DataStorage — dev mode)")
-	}
+	// #1677 hardening (DD-WORKFLOW-019): catalogFetcher is always
+	// constructed -- wfCatalog is never nil (LazyCatalog). Before the cache
+	// syncs, FetchValidator's List call returns workflowcatalog.
+	// ErrCatalogNotReady, which selfCorrectWorkflowSelection already
+	// classifies as HumanReviewNeeded/"catalog_unavailable" rather than
+	// silently allowing an unvalidated LLM-selected workflow through (the
+	// former "CatalogFetcher == nil -> skip validation entirely" bypass this
+	// replaces; see investigator_workflow_selection.go).
+	catalogFetcher := newWorkflowCatalogFetcher(wfCatalog, logger)
 
 	effectiveLLM, effectiveReg, alignEvaluator, alignCfg := buildAlignmentStack(cfg, llmRuntime, instrumentedLLM, reg, auditStore, logger)
 
@@ -141,7 +153,56 @@ func buildCoreServices(
 		sanitizer: sanitizer, anomalyDetector: anomalyDetector, summarizer: sum,
 		catalogFetcher: catalogFetcher, effectiveLLM: effectiveLLM, effectiveReg: effectiveReg,
 		alignEvaluator: alignEvaluator, alignCfg: alignCfg,
+		wfCatalog: wfCatalog,
 	}
+}
+
+// buildWorkflowCatalogCache constructs and starts KA's LazyCatalog, an
+// informer-backed workflow/action-type catalog that becomes Ready() once
+// its first successful cache sync completes (#1677 Phase 2a + hardening,
+// DD-WORKFLOW-019). The returned LazyCatalog is never nil.
+//
+// Construction is retried forever in the background with capped exponential
+// backoff (LazyCatalog.Start), instead of either failing the pod boot
+// (os.Exit -- issue #665's boot-blocks-on-external-dependency anti-pattern,
+// reproduced live in CI for this exact cache via a WaitForCacheSync timeout
+// under startup contention) or silently disabling discovery for the rest of
+// the pod's lifetime (the removed "infra == nil -> dev mode, cache
+// disabled" carve-out this replaces). KA always runs in-cluster -- there is
+// no supported dev-mode-without-K8s -- so neither a missing infra nor a
+// failed cache sync is an acceptable degraded steady state: readinessHandler
+// gates /readyz on wfCatalog.Ready(), keeping the pod out of Service
+// endpoints for as long as discovery is unavailable, and
+// investigator_workflow_selection.go's self-correction path fails closed
+// (HumanReviewNeeded/"catalog_unavailable") on any in-flight investigation
+// that races the not-yet-ready window.
+//
+// infra == nil should never happen in a real deployment (initK8sInfra only
+// returns nil when ctrl.GetConfig() fails, i.e. KA is not actually running
+// in-cluster); when it does, the returned LazyCatalog is left un-Started and
+// therefore never becomes Ready -- /readyz correctly reports not_ready
+// until the pod is restarted with valid K8s connectivity, rather than
+// silently accepting the condition as intentional.
+func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) *workflowcatalog.LazyCatalog {
+	lazy := workflowcatalog.NewLazyCatalog(logger)
+
+	if infra == nil {
+		logger.Error(nil, "K8s infrastructure unavailable -- workflow catalog cache cannot start and will never become "+
+			"ready; this should never happen in a real deployment (KA always runs in-cluster); /readyz will report "+
+			"not_ready until the pod is restarted with valid K8s connectivity")
+		return lazy
+	}
+
+	scheme, err := workflowcatalog.NewScheme()
+	if err != nil {
+		logger.Error(err, "FATAL: failed to build workflow catalog scheme")
+		os.Exit(1)
+	}
+
+	lazy.Start(func() (*workflowcatalog.Cache, context.CancelFunc, error) {
+		return workflowcatalog.NewInformerCache(infra.kubeConfig, scheme, logger)
+	})
+	return lazy
 }
 
 // buildLLMClients constructs the primary SwappableClient plus any per-phase

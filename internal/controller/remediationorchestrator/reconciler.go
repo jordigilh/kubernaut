@@ -104,11 +104,6 @@ type Reconciler struct {
 	// from gitOpsSyncDelay/operatorReconcileDelay instead of stabilization window.
 	asyncPropagation roconfig.AsyncPropagationConfig
 
-	// Issue #643 v2: DS-backed workflow display resolver.
-	// Resolves workflow UUID → human-readable WorkflowName + ActionType from DataStorage.
-	// nil = graceful degradation (UUID shown as-is in printer columns).
-	workflowResolver routing.WorkflowDisplayResolver
-
 	// BR-ORCH-025: Distributed lock manager for WFE creation safety.
 	// Prevents duplicate WFEs when concurrent reconciles target the same resource.
 	// nil = locking disabled (single-replica deployments).
@@ -321,7 +316,6 @@ func (r *Reconciler) registerWorkflowPhaseHandlers(c client.Client, m *metrics.M
 		CreateWFE: func(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) (string, error) {
 			return r.weCreator.Create(ctx, rr, ai)
 		},
-		ResolveWorkflowDisplay: r.resolveWorkflowDisplay,
 	}
 	r.phaseRegistry.MustRegister(NewAnalyzingHandler(c, m, AnalyzingCallbacks{
 		AtomicStatusUpdate: func(ctx context.Context, rr *remediationv1.RemediationRequest, fn func() error) error {

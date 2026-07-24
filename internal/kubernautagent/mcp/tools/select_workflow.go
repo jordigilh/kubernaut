@@ -74,9 +74,12 @@ type PreSelectionContext struct {
 // Hooks run in registration order before catalog lookup. A hook may read and
 // write fields on PreSelectionContext; errors abort the pipeline.
 //
-// v1.5: enrichment is the only registered hook.
+// v1.5: enrichment (WithEnrichmentRunner) is the only registered hook.
 // Next release: Goose recipe prompt injection hooks append after enrichment,
-// receiving the populated Enrichment field as recipe parameter context.
+// receiving the populated Enrichment field as recipe parameter context --
+// add a dedicated WithXxxHook option mirroring WithEnrichmentRunner's pattern
+// when that lands (the generic WithPreSelectionHook constructor was removed
+// as dead code in the #1677 dead-code sweep since nothing used it).
 type PreSelectionHook func(ctx context.Context, input SelectWorkflowInput, user mcpinternal.UserInfo, pctx *PreSelectionContext) error
 
 // SelectWorkflowInput defines the input schema for the kubernaut_select_workflow MCP tool.
@@ -132,14 +135,6 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 			pctx.Enrichment = result
 			return nil
 		}
-		t.preSelectionHooks = append(t.preSelectionHooks, hook)
-	}
-}
-
-// WithPreSelectionHook appends a hook to the pre-workflow-selection pipeline.
-// Hooks run after any previously registered hooks (enrichment first by convention).
-func WithPreSelectionHook(hook PreSelectionHook) SelectWorkflowOption {
-	return func(t *SelectWorkflowTool) {
 		t.preSelectionHooks = append(t.preSelectionHooks, hook)
 	}
 }

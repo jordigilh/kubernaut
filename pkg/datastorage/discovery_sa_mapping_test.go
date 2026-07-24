@@ -28,7 +28,12 @@ import (
 // ========================================
 // Authority: DD-WE-005 v2.0 (Per-Workflow ServiceAccount Reference)
 // Validates that WorkflowDiscoveryEntry correctly maps ServiceAccountName
-// from RemediationWorkflow (same logic as HandleListWorkflowsByActionType).
+// from RemediationWorkflow -- the shared models.RemediationWorkflow/
+// WorkflowDiscoveryEntry types this exercises are still used by
+// KubernautAgent's workflow catalog (#1677 Phase 2g, DD-WORKFLOW-019 moved
+// discovery ownership off DS; see
+// internal/kubernautagent/workflowcatalog/cache_convert_test.go for the
+// equivalent coverage against KA's actual conversion path).
 // ========================================
 
 var _ = Describe("WorkflowDiscoveryEntry SA Mapping [DD-WE-005] (#481)", func() {

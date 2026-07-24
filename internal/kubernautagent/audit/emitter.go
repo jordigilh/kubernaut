@@ -109,6 +109,31 @@ const (
 	EventTypeSecretAccessed = "aiagent.secret.accessed"
 )
 
+// ========================================
+// WORKFLOW CATALOG DISCOVERY EVENTS (Issue #1677, DD-WORKFLOW-019)
+// ========================================
+// Relocated from pkg/datastorage/audit/workflow_discovery_event.go: KA, not
+// DS, now generates these 4 events -- amending BR-AUDIT-023/DD-WORKFLOW-014's
+// "who generates" language. Event type/action string values are unchanged
+// (existing audit-query consumers keyed on event_type keep working); only
+// the emitter and event_category (see WorkflowCatalogEventCategory below)
+// change. See internal/kubernautagent/audit/ds_workflow_catalog_payloads.go
+// for the payload builders.
+const (
+	EventTypeActionsListed      = "workflow.catalog.actions_listed"
+	EventTypeWorkflowsListed    = "workflow.catalog.workflows_listed"
+	EventTypeWorkflowRetrieved  = "workflow.catalog.workflow_retrieved"
+	EventTypeSelectionValidated = "workflow.catalog.selection_validated"
+)
+
+// WorkflowCatalogEventCategory is the event_category for the 4 workflow
+// discovery events above -- "workflow" (per the OpenAPI schema), not KA's
+// default "aiagent", since these events describe the workflow-catalog
+// domain rather than KA's own investigation lifecycle. Pass via
+// WithEventCategory. Matches DS's pre-existing EventCategoryWorkflow
+// constant value (pkg/datastorage/audit/workflow_discovery_event.go).
+const WorkflowCatalogEventCategory = "workflow"
+
 const (
 	ActionLLMRequest            = "llm_request"
 	ActionLLMResponse           = "llm_response"
@@ -144,6 +169,13 @@ const (
 	ActionAuthDenied             = "auth_denied"
 	ActionRateLimitDenied        = "ratelimit_denied"
 	ActionSecretAccessed         = "secret_accessed"
+
+	// Workflow catalog discovery event actions (Issue #1677, DD-WORKFLOW-019).
+	// Values match DS's pre-existing ActionDiscovery/ActionRetrieve/ActionValidate
+	// constants (pkg/datastorage/audit/workflow_discovery_event.go).
+	ActionDiscovery = "discovery"
+	ActionRetrieve  = "retrieve"
+	ActionValidate  = "validate"
 )
 
 const (
@@ -185,6 +217,10 @@ var AllEventTypes = []string{
 	EventTypeAuthDenied,
 	EventTypeRateLimitDenied,
 	EventTypeSecretAccessed,
+	EventTypeActionsListed,
+	EventTypeWorkflowsListed,
+	EventTypeWorkflowRetrieved,
+	EventTypeSelectionValidated,
 }
 
 // AuditEvent represents an audit event to be stored.
@@ -201,6 +237,11 @@ type AuditEvent struct {
 	Data          map[string]interface{}
 	ActorID       string
 	ActorType     string
+	// ResourceType/ResourceID identify the audited resource (e.g. "Workflow"
+	// / a workflow ID for the Step 3/selection-validated discovery events,
+	// Issue #1677 Phase 2c). Empty means no specific resource is audited.
+	ResourceType string
+	ResourceID   string
 }
 
 // AuditStore is the interface for storing audit events (matches pkg/audit.AuditStore).
@@ -215,6 +256,26 @@ type EventOption func(*AuditEvent)
 func WithSessionID(sessionID string) EventOption {
 	return func(e *AuditEvent) {
 		e.SessionID = sessionID
+	}
+}
+
+// WithEventCategory overrides the default "aiagent" event_category. Used by
+// the workflow.catalog.* discovery events (Issue #1677 Phase 2c,
+// DD-WORKFLOW-019), which belong to the "workflow" domain category rather
+// than "aiagent" -- see WorkflowCatalogEventCategory.
+func WithEventCategory(category string) EventOption {
+	return func(e *AuditEvent) {
+		e.EventCategory = category
+	}
+}
+
+// WithResource attaches the audited resource's type/ID to the event, e.g.
+// ("Workflow", workflowID) for the Step 3/selection-validated discovery
+// events (Issue #1677 Phase 2c).
+func WithResource(resourceType, resourceID string) EventOption {
+	return func(e *AuditEvent) {
+		e.ResourceType = resourceType
+		e.ResourceID = resourceID
 	}
 }
 

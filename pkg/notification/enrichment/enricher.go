@@ -25,35 +25,47 @@ import (
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 )
 
-// Enricher enriches notification bodies before delivery by resolving workflow
-// UUIDs to human-readable names via the DataStorage catalog.
+// Enricher enriches notification bodies before delivery by replacing a
+// workflow UUID with its catalog-authoritative human-readable name.
 type Enricher struct {
-	resolver WorkflowNameResolver
-	logger   logr.Logger
+	logger logr.Logger
 }
 
-// NewEnricher creates a new Enricher. resolver may be nil (no-op enrichment).
-func NewEnricher(resolver WorkflowNameResolver, logger logr.Logger) *Enricher {
-	return &Enricher{resolver: resolver, logger: logger}
+// NewEnricher creates a new Enricher.
+func NewEnricher(logger logr.Logger) *Enricher {
+	return &Enricher{logger: logger}
 }
 
 // EnrichNotification returns a copy of the notification with the workflow UUID
 // replaced by the human-readable workflow name. Returns the original notification
-// unchanged if resolution fails or no workflow metadata is present.
-func (e *Enricher) EnrichNotification(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest {
-	if e.resolver == nil {
-		return notification
-	}
-
+// unchanged if no workflow metadata is present or no name can be determined.
+//
+// Issue #1677 Phase 1 (DD-WORKFLOW-018 v1.1): the name comes exclusively from
+// the catalog-authoritative WorkflowName RemediationOrchestrator already
+// populates on the context (sourced from
+// AIAnalysis.Status.SelectedWorkflow.WorkflowName) -- no live DataStorage call
+// is made or needed here.
+//
+// #1677 follow-up cleanup: this used to fall back to a live
+// WorkflowNameResolver (calling DS's now-retired GET /api/v1/workflows/
+// {workflow_id}) when WorkflowName was absent. That fallback was deleted
+// outright: WorkflowName is +kubebuilder:validation:Required on the
+// underlying WorkflowSnapshot type -- always equal to
+// RemediationWorkflow.metadata.name, a Kubernetes-guaranteed non-empty value
+// -- so "workflow ID present, WorkflowName absent" cannot occur via either of
+// RemediationOrchestrator's two notification-creation call sites
+// (pkg/remediationorchestrator/creator/notification.go). If WorkflowName is
+// ever absent regardless (e.g. a future notification path that doesn't
+// populate it), this degrades gracefully to leaving the raw UUID in the body,
+// exactly as it did when the deleted resolver failed or returned "".
+func (e *Enricher) EnrichNotification(_ context.Context, notification *notificationv1alpha1.NotificationRequest) *notificationv1alpha1.NotificationRequest {
 	workflowID := extractWorkflowID(notification.Spec.Context)
 	if workflowID == "" {
 		return notification
 	}
 
-	name, err := e.resolver.ResolveWorkflowName(ctx, workflowID)
-	if err != nil || name == "" {
-		e.logger.Info("Workflow name resolution failed or empty, keeping UUID",
-			"workflowId", workflowID, "error", err)
+	name := extractWorkflowName(notification.Spec.Context)
+	if name == "" {
 		return notification
 	}
 
@@ -75,4 +87,14 @@ func extractWorkflowID(ctx *notificationv1alpha1.NotificationContext) string {
 		return ctx.Workflow.SelectedWorkflow
 	}
 	return ""
+}
+
+// extractWorkflowName reads the catalog-authoritative WorkflowName from the
+// typed notification context, when already populated by the caller (Issue
+// #1677 Phase 1). Returns "" if absent, signaling the live-resolver fallback.
+func extractWorkflowName(ctx *notificationv1alpha1.NotificationContext) string {
+	if ctx == nil || ctx.Workflow == nil {
+		return ""
+	}
+	return ctx.Workflow.WorkflowName
 }

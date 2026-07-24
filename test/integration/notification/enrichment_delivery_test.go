@@ -66,7 +66,10 @@ func (c *capturingService) getBodies() []string {
 func buildITNotification(body string, metadata map[string]string) *notificationv1alpha1.NotificationRequest {
 	nctx := &notificationv1alpha1.NotificationContext{}
 	if wfID, ok := metadata["workflowId"]; ok {
-		nctx.Workflow = &notificationv1alpha1.WorkflowContext{WorkflowID: wfID}
+		nctx.Workflow = &notificationv1alpha1.WorkflowContext{
+			WorkflowID:   wfID,
+			WorkflowName: metadata["workflowName"],
+		}
 	}
 	return &notificationv1alpha1.NotificationRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -109,12 +112,19 @@ func itAuditFailed(_ context.Context, _ *notificationv1alpha1.NotificationReques
 	return nil
 }
 
+// #1677 follow-up cleanup: this suite originally exercised a live
+// DataStorage-backed resolver (itMockResolver). That resolver/fallback
+// mechanism has since been deleted outright from Enricher -- see
+// pkg/notification/enrichment_test.go's package doc comment for the full
+// rationale (WorkflowName is now always populated whenever a workflow ID is,
+// via a +kubebuilder:validation:Required field sourced from
+// RemediationWorkflow.metadata.name). These specs now pre-populate
+// workflowName the same way RemediationOrchestrator's real call sites do.
 var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integration", func() {
 
 	Context("Full pipeline with enrichment", func() {
 		It("IT-NOT-553-001: resolves UUID to workflow name and delivers enriched body", func() {
-			resolver := &itMockResolver{name: "oom-recovery"}
-			enrich := enrichment.NewEnricher(resolver, logr.Discard())
+			enrich := enrichment.NewEnricher(logr.Discard())
 
 			capture := &capturingService{}
 			orch := buildTestOrchestrator(map[string]delivery.Service{
@@ -122,7 +132,7 @@ var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integrati
 			}, enrich)
 
 			body := fmt.Sprintf("Remediation Completed\n\n**Workflow Executed**: %s\n**Execution Engine**: job\n**Outcome**: Remediated", itTestUUID)
-			nr := buildITNotification(body, map[string]string{"workflowId": itTestUUID})
+			nr := buildITNotification(body, map[string]string{"workflowId": itTestUUID, "workflowName": "oom-recovery"})
 
 			policy := &notificationv1alpha1.RetryPolicy{MaxAttempts: 3}
 			_, err := orch.DeliverToChannels(
@@ -145,9 +155,8 @@ var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integrati
 			Expect(bodies[0]).NotTo(ContainSubstring(itTestUUID))
 		})
 
-		It("IT-NOT-553-002: delivery succeeds with UUID when DataStorage is unavailable", func() {
-			resolver := &itMockResolver{err: fmt.Errorf("connection refused")}
-			enrich := enrichment.NewEnricher(resolver, logr.Discard())
+		It("IT-NOT-553-002: delivery succeeds with the UUID when WorkflowName is not populated", func() {
+			enrich := enrichment.NewEnricher(logr.Discard())
 
 			capture := &capturingService{}
 			orch := buildTestOrchestrator(map[string]delivery.Service{
@@ -175,12 +184,11 @@ var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integrati
 
 			bodies := capture.getBodies()
 			Expect(bodies).To(HaveLen(1))
-			Expect(bodies[0]).To(ContainSubstring(itTestUUID), "UUID should be preserved on resolver failure")
+			Expect(bodies[0]).To(ContainSubstring(itTestUUID), "UUID should be preserved when no WorkflowName is available")
 		})
 
 		It("IT-NOT-553-003: all channels receive enriched body", func() {
-			resolver := &itMockResolver{name: "crashloop-config-fix"}
-			enrich := enrichment.NewEnricher(resolver, logr.Discard())
+			enrich := enrichment.NewEnricher(logr.Discard())
 
 			captureConsole := &capturingService{}
 			captureLog := &capturingService{}
@@ -190,7 +198,7 @@ var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integrati
 			}, enrich)
 
 			body := fmt.Sprintf("**Workflow Executed**: %s", itTestUUID)
-			nr := buildITNotification(body, map[string]string{"workflowId": itTestUUID})
+			nr := buildITNotification(body, map[string]string{"workflowId": itTestUUID, "workflowName": "crashloop-config-fix"})
 
 			policy := &notificationv1alpha1.RetryPolicy{MaxAttempts: 3}
 			_, err := orch.DeliverToChannels(
@@ -219,13 +227,3 @@ var _ = Describe("#553: Workflow Name Enrichment — Delivery Pipeline Integrati
 		})
 	})
 })
-
-// itMockResolver is a simple mock for integration tests.
-type itMockResolver struct {
-	name string
-	err  error
-}
-
-func (m *itMockResolver) ResolveWorkflowName(_ context.Context, _ string) (string, error) {
-	return m.name, m.err
-}

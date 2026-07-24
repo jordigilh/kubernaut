@@ -77,8 +77,16 @@ var _ = Describe("Kubernaut Agent Validator Wiring — TP-433-WIR Phase 5", func
 		})
 	})
 
-	Describe("IT-KA-433W-016: Investigator with nil validator passes through any workflow", func() {
-		It("should return any workflow_id without validation when validator is nil", func() {
+	Describe("IT-KA-433W-016: Investigator with nil CatalogFetcher forces human review instead of passing through (#1677 hardening)", func() {
+		It("should flag human review with catalog_unavailable instead of returning an unvalidated workflow_id", func() {
+			// #1677 hardening (DD-WORKFLOW-019): a nil CatalogFetcher used to be
+			// a silent "skip validation" dev-mode shortcut -- production always
+			// wires a CatalogFetcher (a LazyCatalog-backed workflowCatalogFetcher),
+			// so nil here is a wiring gap, not a supported degraded mode.
+			// runWorkflowSelection now fails closed: an otherwise-selected
+			// workflow forces HumanReviewNeeded=true rather than passing through
+			// unvalidated, mirroring selfCorrectWorkflowSelection's own
+			// fetchErr-handling contract.
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
 					{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"pod crashed"}`}},
@@ -92,9 +100,10 @@ var _ = Describe("Kubernaut Agent Validator Wiring — TP-433-WIR Phase 5", func
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
-			Expect(result.WorkflowID).To(Equal("totally-unknown"),
-				"unknown workflow should pass through when validator is nil")
-			Expect(result.HumanReviewNeeded).To(BeFalse())
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"nil CatalogFetcher is a wiring gap: must fail closed to human review, never pass through unvalidated")
+			Expect(result.HumanReviewReason).To(Equal("catalog_unavailable"),
+				"nil CatalogFetcher must classify as catalog_unavailable")
 		})
 	})
 })

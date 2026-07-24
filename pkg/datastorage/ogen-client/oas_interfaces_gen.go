@@ -21,22 +21,6 @@ type GetRemediationHistoryContextRes interface {
 	getRemediationHistoryContextRes()
 }
 
-type GetWorkflowByIDRes interface {
-	getWorkflowByIDRes()
-}
-
-type ListAvailableActionsRes interface {
-	listAvailableActionsRes()
-}
-
-type ListWorkflowsByActionTypeRes interface {
-	listWorkflowsByActionTypeRes()
-}
-
-type ListWorkflowsRes interface {
-	listWorkflowsRes()
-}
-
 type PlaceLegalHoldRes interface {
 	placeLegalHoldRes()
 }

@@ -37,7 +37,6 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/testutil"
 )
 
@@ -87,20 +86,25 @@ func registerFleetClusterWorkflow(name string, cluster []string) {
 // Authority: BR-FLEET-003, DD-FLEET-002, Issue #1511, docs/tests/1511/TEST_PLAN.md
 // FedRAMP: AC-4 (Information Flow Enforcement), SC-7 (Boundary Protection)
 //
-// Validates the complete Wiring Manifest chain end-to-end:
+// Validates the SP -> RO -> AIAnalysis leg of the Wiring Manifest chain
+// end-to-end:
 //
 //	SP Rego (input.cluster.labels.environment) -> Status.ClusterClassification
 //	  -> RO buildSignalContext() -> AIAnalysis.Spec.AnalysisRequest.SignalContext.Cluster
-//	  -> DataStorage discovery filter (labels->'cluster' JSONB match)
 //
-// Three scenarios per the plan's Phase 6 requirement:
-//  1. Excluded on mismatch: a workflow classified for a different cluster is
-//     never returned once a concrete cluster filter is active.
-//  2. Included on match: a workflow classified for the signal's actual
-//     cluster classification is returned.
-//  3. Included when fleet disabled: omitting the cluster filter entirely
-//     (simulating a non-fleet caller) returns both workflows -- backward
-//     compatible, no regression for existing non-fleet deployments.
+// #1677 (DD-WORKFLOW-019): the chain's final leg -- discovery filtering by
+// cluster classification -- moved from DataStorage's REST API (retired,
+// GET /api/v1/workflows/actions/{action_type}) to KubernautAgent's own
+// cache-backed workflowcatalog.Catalog. This E2E suite has no direct
+// KA/MCP client to re-probe that filter in isolation (KA's discovery tools
+// are consumed internally by its own LLM-driven investigation loop, not
+// exposed for external direct query), and the filter rule itself
+// (match/exclude-on-mismatch/wildcard/backward-compatible-no-filter) is
+// already exhaustively proven at the integration tier against a real
+// cache-backed Catalog: see IT-KA-1677-1511-001/002/002b/003 in
+// test/integration/kubernautagent/workflowcatalog/discovery_edge_cases_test.go.
+// This test's remaining, still-unique value is the SP/RO/AIAnalysis
+// classification-propagation journey below (Steps 1-4, 7).
 var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targeting via SP Rego classification (BR-FLEET-003, #1511)", Label("fleet"), func() {
 	It("should classify the fleet cluster via Rego, propagate it through RO/AIAnalysis, and scope DataStorage discovery accordingly", func() {
 		suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -193,63 +197,13 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 					"SP's ClusterClassification end-to-end")
 		}, timeout, interval).Should(Succeed())
 
-		clusterClassification := ai.Spec.AnalysisRequest.SignalContext.Cluster
+		// clusterClassification (== "production", asserted in Step 3 above) is
+		// the exact filter value discovery would apply -- match/exclude/
+		// wildcard/no-filter behavior for this value is proven at the
+		// integration tier (see the Describe-block doc comment above).
+		_ = ai.Spec.AnalysisRequest.SignalContext.Cluster
 
-		By("Step 5: Verifying DataStorage discovery excludes the mismatched workflow and includes the matching one when cluster filter is active (AC-4, SC-7)")
-		Eventually(func(g Gomega) {
-			resp, err := dataStorageClient.ListWorkflowsByActionType(ctx, ogenclient.ListWorkflowsByActionTypeParams{
-				ActionType:  "ScaleReplicas",
-				Severity:    ogenclient.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   "apps/v1/Deployment",
-				Environment: "production",
-				Priority:    ogenclient.ListWorkflowsByActionTypePriorityP0,
-				Cluster:     ogenclient.NewOptString(clusterClassification),
-				Limit:       ogenclient.NewOptInt(100),
-			})
-			g.Expect(err).ToNot(HaveOccurred())
-
-			discovery, ok := resp.(*ogenclient.WorkflowDiscoveryResponse)
-			g.Expect(ok).To(BeTrue(), "Expected *WorkflowDiscoveryResponse, got %T", resp)
-
-			names := make([]string, 0, len(discovery.Workflows))
-			for _, wf := range discovery.Workflows {
-				names = append(names, wf.WorkflowName)
-			}
-			g.Expect(names).To(ContainElement(matchWorkflowName),
-				"SC-7: workflow classified for 'production' must be discoverable when cluster=production is active")
-			g.Expect(names).NotTo(ContainElement(mismatchWorkflowName),
-				"AC-4: workflow classified for a different cluster ('staging-eu') must be excluded on mismatch")
-		}, timeout, interval).Should(Succeed())
-
-		By("Step 6: Verifying DataStorage discovery includes BOTH workflows when no cluster filter is supplied (fleet-disabled backward compatibility, R6.1)")
-		Eventually(func(g Gomega) {
-			resp, err := dataStorageClient.ListWorkflowsByActionType(ctx, ogenclient.ListWorkflowsByActionTypeParams{
-				ActionType:  "ScaleReplicas",
-				Severity:    ogenclient.ListWorkflowsByActionTypeSeverityCritical,
-				Component:   "apps/v1/Deployment",
-				Environment: "production",
-				Priority:    ogenclient.ListWorkflowsByActionTypePriorityP0,
-				// Cluster deliberately omitted: simulates a non-fleet caller (KA
-				// never sends the param when SP produced no classification).
-				Limit: ogenclient.NewOptInt(100),
-			})
-			g.Expect(err).ToNot(HaveOccurred())
-
-			discovery, ok := resp.(*ogenclient.WorkflowDiscoveryResponse)
-			g.Expect(ok).To(BeTrue(), "Expected *WorkflowDiscoveryResponse, got %T", resp)
-
-			names := make([]string, 0, len(discovery.Workflows))
-			for _, wf := range discovery.Workflows {
-				names = append(names, wf.WorkflowName)
-			}
-			g.Expect(names).To(ContainElement(matchWorkflowName),
-				"R6.1: without a cluster filter, the 'production'-classified workflow remains discoverable")
-			g.Expect(names).To(ContainElement(mismatchWorkflowName),
-				"R6.1: without a cluster filter, the 'staging-eu'-classified workflow is NOT excluded "+
-					"(no cluster condition is added to the SQL at all -- backward compatible)")
-		}, timeout, interval).Should(Succeed())
-
-		By("Step 7: Verifying RR progresses past signal processing (sanity check on the overall pipeline)")
+		By("Step 5: Verifying RR progresses past signal processing (sanity check on the overall pipeline)")
 		Eventually(func(g Gomega) {
 			var rr remediationv1.RemediationRequest
 			g.Expect(k8sClient.Get(ctx, client.ObjectKey{

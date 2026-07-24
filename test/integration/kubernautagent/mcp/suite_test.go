@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -42,6 +43,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
@@ -89,6 +91,14 @@ var (
 
 	// Temp file for Mock LLM scenario overrides; cleaned up in AfterSuite.
 	sharedOverrideFilePath string
+
+	// #1677 Phase 2e (DD-WORKFLOW-019): select_workflow/investigate_discovery's
+	// WorkflowCatalog adapter is now backed by KA's own informer cache
+	// against the same envtest cluster, not a wfclient.WorkflowQuerier round-trip
+	// through sharedDSClient. Built per-process (mirrors production: each KA
+	// replica owns its own cache).
+	sharedWfCatalog       *workflowcatalog.Catalog
+	sharedWfCatalogCancel context.CancelFunc
 )
 
 func TestMCPIntegration(t *testing.T) {
@@ -262,11 +272,24 @@ var _ = SynchronizedBeforeSuite(
 		sharedDSClient = dsClients.OpenAPIClient
 
 		sharedWorkflowUUIDs = p.WorkflowUUIDs
+
+		// #1677 Phase 2e: build KA's own informer-backed catalog against the
+		// same envtest cluster, one per Ginkgo process.
+		wfScheme, err := workflowcatalog.NewScheme()
+		Expect(err).ToNot(HaveOccurred())
+		wfCache, cancel, err := workflowcatalog.NewInformerCache(sharedK8sConfig, wfScheme, logr.Discard())
+		Expect(err).ToNot(HaveOccurred(), "workflow catalog cache must sync")
+		sharedWfCatalogCancel = cancel
+		sharedWfCatalog = workflowcatalog.NewCatalog(wfCache, logr.Discard())
 	},
 )
 
 var _ = SynchronizedAfterSuite(
-	func() {},
+	func() {
+		if sharedWfCatalogCancel != nil {
+			sharedWfCatalogCancel()
+		}
+	},
 	func() {
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		GinkgoWriter.Println("MCP IT - Infrastructure Cleanup")

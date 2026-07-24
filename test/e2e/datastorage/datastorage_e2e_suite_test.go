@@ -252,10 +252,13 @@ var _ = SynchronizedBeforeSuite(
 		// DD-WORKFLOW-016: Seed action types before any workflow operations.
 		// #1661 Phase 55c: Postgres-backed seeding removed alongside DS's
 		// createWorkflow/createActionType REST endpoints (DD-WORKFLOW-018 --
-		// AuthWebhook is the sole write path). Every spec in this suite now
-		// registers workflows via direct CRD creation (ensureWorkflowRegistered,
-		// helpers_test.go), so CRD-based action type seeding for DS's
-		// informer-backed cache is the only seeding this suite needs.
+		// AuthWebhook is the sole write path). Specs in this suite that need a
+		// registered workflow do so via direct CRD creation
+		// (infrastructure.SeedWorkflowContentViaDirectCRDCreation); this
+		// ActionType CRD seed remains for specs asserting against the
+		// taxonomy directly. #1677 (DD-WORKFLOW-019): DS itself no longer
+		// maintains an informer-backed cache over these CRDs -- that cache
+		// and the discovery/scoring logic that read it moved to KA.
 		Expect(infrastructure.SeedActionTypesViaCRD(ctx, kubeconfigPath, testNamespace, GinkgoWriter)).To(Succeed(), "Failed to seed action types (CRD)")
 
 		// Also export authenticated HTTP client for tests needing raw HTTP (non-spec responses)

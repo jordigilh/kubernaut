@@ -56,7 +56,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 		It("should send a correction message to the LLM when RCA parse fails", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
-			for _, t := range custom.NewAllTools(capturingDS) {
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
 
@@ -115,7 +115,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 		It("should send correction message and then fall back to raw content when retry also fails", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
-			for _, t := range custom.NewAllTools(capturingDS) {
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
 
@@ -176,7 +176,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 		It("should recover when first response is double-serialized with trailing brace and no summary", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
-			for _, t := range custom.NewAllTools(capturingDS) {
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
 
@@ -240,7 +240,7 @@ var _ = Describe("IT-KA-795: RCA parse retry on failure", func() {
 		It("should detect FinishReason 'length' and retry instead of returning truncated text", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
-			for _, t := range custom.NewAllTools(capturingDS) {
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
 

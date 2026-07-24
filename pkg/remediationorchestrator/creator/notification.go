@@ -264,6 +264,11 @@ func (c *NotificationCreator) buildApprovalNotificationRequest(name string, rr *
 				Workflow: &notificationv1.WorkflowContext{
 					SelectedWorkflow: ai.Status.SelectedWorkflow.WorkflowID,
 					Confidence:       fmt.Sprintf("%.2f", ai.Status.SelectedWorkflow.Confidence),
+					// Issue #1677 Phase 1: catalog-authoritative fields sourced
+					// directly from SelectedWorkflow -- no live DataStorage
+					// lookup needed by Notification.
+					WorkflowName: ai.Status.SelectedWorkflow.WorkflowName,
+					ActionType:   ai.Status.SelectedWorkflow.ActionType,
 				},
 				Analysis: &notificationv1.AnalysisContext{
 					ApprovalReason: ai.Status.ApprovalReason,
@@ -389,6 +394,7 @@ func (c *NotificationCreator) CreateCompletionNotification(
 type completionContent struct {
 	RootCause        string
 	WorkflowID       string
+	WorkflowName     string
 	ActionType       string
 	Rationale        string
 	VerificationText string
@@ -404,9 +410,10 @@ func resolveCompletionContent(rr *remediationv1.RemediationRequest, ai *aianalys
 		rootCause = ai.Status.RootCauseAnalysis.Summary
 	}
 
-	var workflowID, actionType, rationale string
+	var workflowID, workflowName, actionType, rationale string
 	if ai.Status.SelectedWorkflow != nil {
 		workflowID = ai.Status.SelectedWorkflow.WorkflowID
+		workflowName = ai.Status.SelectedWorkflow.WorkflowName
 		actionType = ai.Status.SelectedWorkflow.ActionType
 		rationale = ai.Status.SelectedWorkflow.Rationale
 	}
@@ -417,6 +424,7 @@ func resolveCompletionContent(rr *remediationv1.RemediationRequest, ai *aianalys
 	return completionContent{
 		RootCause:        rootCause,
 		WorkflowID:       workflowID,
+		WorkflowName:     workflowName,
 		ActionType:       actionType,
 		Rationale:        rationale,
 		VerificationText: verificationText,
@@ -475,6 +483,11 @@ func (c *NotificationCreator) buildCompletionNotificationRequest(
 				Workflow: &notificationv1.WorkflowContext{
 					WorkflowID:      content.WorkflowID,
 					ExecutionEngine: executionEngine,
+					// Issue #1677 Phase 1: catalog-authoritative fields sourced
+					// directly from SelectedWorkflow -- no live DataStorage
+					// lookup needed by Notification.
+					WorkflowName: content.WorkflowName,
+					ActionType:   content.ActionType,
 				},
 				Analysis: &notificationv1.AnalysisContext{
 					RootCause: content.RootCause,

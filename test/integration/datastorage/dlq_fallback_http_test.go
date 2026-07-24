@@ -188,7 +188,6 @@ var _ = Describe("BR-DS-004: DLQ Fallback HTTP 202 (Integration)", func() {
 			Authenticator: mockAuth,
 			Authorizer:    mockAuthz,
 			AuthNamespace: "datastorage-test",
-			K8sRestConfig: dsK8sRestConfig,
 		})
 		Expect(err).ToNot(HaveOccurred(), "Server should start successfully through proxy")
 		defer func() { _ = srv.Shutdown(ctx) }()
