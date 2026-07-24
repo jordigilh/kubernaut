@@ -166,11 +166,28 @@ func buildCoreServices(
 
 // buildWorkflowCatalogCache constructs KA's informer-backed workflow/
 // action-type cache (#1677 Phase 2a, DD-WORKFLOW-019). Returns (nil, nil)
-// when K8s infrastructure is unavailable (e.g. local dev mode without a
-// cluster), matching initDSClients's fail-open-to-disabled convention for
-// optional K8s-backed dependencies. A construction failure against a real
-// cluster (e.g. CRDs not installed, sync timeout) is fatal: KA cannot serve
-// its 5 discovery-dependent MCP tools without this cache.
+// both when K8s infrastructure is unavailable (e.g. local dev mode without
+// a cluster) and when construction against a real cluster fails (e.g. the
+// informer's first List+Watch doesn't land within syncTimeout under CI/
+// production startup contention) -- matching initDSClients's
+// fail-open-to-disabled convention for optional K8s-backed dependencies.
+//
+// This is deliberately non-fatal: an earlier version called os.Exit(1)
+// here, which runs before KA ever binds its health/API ports
+// (initializeAgent -> buildCoreServices happens first in main()), so any
+// hiccup in this one dependency permanently crash-looped the whole pod
+// instead of just leaving discovery degraded. That is the same
+// boot-blocks-on-external-dependency anti-pattern issue #665 fixed for the
+// old DS-backed catalog fetch ("Fail-closed moves from boot-time os.Exit to
+// per-request NeedsHumanReview") -- reproduced live in CI for this cache
+// (Helm smoke test, tls=cert-manager) via two distinct failure modes: a
+// discovery-call race (fixed separately by workflowcatalog's static
+// RESTMapper) and a plain WaitForCacheSync timeout under load. /readyz does
+// not gate on wfCache/wfCatalog (see readinessHandler), so KA starting with
+// this cache unavailable is already a fully supported, observable state:
+// the 5 discovery-dependent MCP tools are still registered but fail softly
+// at execution time (see toolregistry.go's wfCatalog==nil handling) until
+// an operator restarts the pod once the underlying condition clears.
 func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) (*workflowcatalog.Cache, context.CancelFunc) {
 	if infra == nil {
 		logger.Info("K8s infrastructure unavailable, workflow catalog cache disabled (dev mode)")
@@ -185,8 +202,8 @@ func buildWorkflowCatalogCache(infra *k8sInfra, logger logr.Logger) (*workflowca
 
 	wfCache, cancel, err := workflowcatalog.NewInformerCache(infra.kubeConfig, scheme, logger)
 	if err != nil {
-		logger.Error(err, "FATAL: failed to start workflow catalog cache — KA cannot serve discovery tools without it")
-		os.Exit(1)
+		logger.Error(err, "workflow catalog cache unavailable -- KA starting with discovery tools disabled (degraded mode) until next restart")
+		return nil, nil
 	}
 	logger.Info("workflow catalog cache started (informer-backed, #1677 Phase 2a)")
 	return wfCache, cancel
