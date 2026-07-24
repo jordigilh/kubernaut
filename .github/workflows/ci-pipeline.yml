@@ -925,6 +925,46 @@ jobs:
           kubectl cluster-info
           kubectl get nodes -o wide
 
+      - name: Preload images into Kind (avoid concurrent GHCR pulls during pod startup)
+        env:
+          PULL_SECRET_SERVER: ghcr.io
+          PULL_SECRET_USER: ${{ github.actor }}
+          PULL_SECRET_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # #1712 round 4 (CI run 30064582969, must-gather RCA): confirmed via
+          # kube-apiserver's own container log going completely silent for
+          # ~19 minutes during pod startup that the dominant contributor to
+          # the single-node Kind control-plane's CPU starvation is *not*
+          # (primarily) concurrent controller-runtime API-discovery calls
+          # alone -- it's that all ~13 smoke-test pods were also each
+          # pulling their image over the network from the remote ghcr.io
+          # registry at the exact same time, stacking network I/O + TLS +
+          # decompression CPU cost on top of the apiserver/etcd/kubelet
+          # burst. main never hits this: its build job uploads images as
+          # workflow artifacts and its smoke-test job does `kind load
+          # image-archive` + `--registry localhost`, so pod starts are a
+          # pure local containerd lookup, zero network pulls. v1.5's build
+          # job pushes to ghcr.io instead of uploading artifacts, so
+          # replicate the same *effect* here (every image already resident
+          # in the node's containerd before Helm creates any pod) by
+          # pulling each image once, up front, and `kind load
+          # image-archive`-ing it -- without needing to restructure the
+          # build job. --registry/--pull-secret below are left as a
+          # (never-hit, since imagePullPolicy is IfNotPresent) fallback.
+          echo "${PULL_SECRET_TOKEN}" | podman login "${PULL_SECRET_SERVER}" -u "${PULL_SECRET_USER}" --password-stdin
+          for svc in datastorage gateway aianalysis authwebhook notification \
+                     remediationorchestrator signalprocessing workflowexecution \
+                     effectivenessmonitor kubernautagent apifrontend db-migrate; do
+            ref="${IMAGE_REGISTRY}/${svc}:${IMAGE_TAG}"
+            echo "==> Pulling ${ref}..."
+            podman pull "$ref"
+            tar="/tmp/${svc}.tar"
+            podman save "$ref" -o "$tar"
+            echo "==> Loading ${svc} into Kind cluster ${KIND_CLUSTER_NAME}..."
+            kind load image-archive "$tar" --name "$KIND_CLUSTER_NAME"
+            rm -f "$tar"
+          done
+
       - name: Run smoke tests
         env:
           PULL_SECRET_SERVER: ghcr.io
