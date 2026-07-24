@@ -540,7 +540,40 @@ monitoring:
 # -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
 networkPolicies:
   enabled: true
+  # -- Usually safe to leave empty: during a real `helm install`/`upgrade`,
+  # the chart auto-discovers the kube-apiserver's real backend endpoint
+  # IP(s) via `lookup` against the live "kubernetes" Endpoints object, so
+  # most users never need to set this. Set it explicitly only if:
+  #   (a) you render manifests via `helm template` for GitOps (ArgoCD,
+  #       Flux) -- `lookup` has no live cluster access in that mode, or
+  #   (b) the Helm installer ServiceAccount lacks permission to read
+  #       Endpoints in the default namespace, or
+  #   (c) auto-discovery picks the wrong address for some other reason.
+  # CAUTION if setting manually: on most CNIs (kindnetd, Calico, Cilium,
+  # etc.) NetworkPolicy ipBlock rules are evaluated against the post-DNAT
+  # destination, so this must be the kube-apiserver's real backend endpoint
+  # IP (see `kubectl get endpoints kubernetes -o wide`), NOT the
+  # "kubernetes" Service's ClusterIP -- the ClusterIP is silently ignored by
+  # most implementations. See PR #1571 for the investigation trail. Use
+  # this field for single-control-plane clusters; use apiServerCIDRs below
+  # for HA (setting either disables auto-discovery for both).
   apiServerCIDR: ""
+  # -- Additional API server backend endpoint IPs as /32 CIDRs, for HA
+  # clusters (the norm for real production deployments) where the
+  # "kubernetes" Service fronts multiple control-plane nodes -- every
+  # backend IP needs its own allow rule. Merged with apiServerCIDR above.
+  # Only needed in the same cases as apiServerCIDR above (auto-discovery
+  # already collects every backend address, not just one). If setting
+  # manually, populate from all addresses in `kubectl get endpoints
+  # kubernetes -o jsonpath='{.subsets[0].addresses[*].ip}'`.
+  apiServerCIDRs: []
+  # -- Port the kube-apiserver's real backend endpoint(s) listen on (commonly
+  # 6443, not the "kubernetes" Service's port 443). 0 means "auto": use the
+  # port from the same live Endpoints lookup as apiServerCIDR (falling back
+  # to 443 only if that's unavailable too, e.g. `helm template`/GitOps).
+  # Assumes all control-plane nodes listen on the same port, which holds for
+  # standard kubeadm HA setups.
+  apiServerPort: 0
   monitoring:
     namespace: ""
     prometheusPort: 9090

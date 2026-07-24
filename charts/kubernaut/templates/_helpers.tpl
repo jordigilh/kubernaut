@@ -33,6 +33,17 @@ Chart label value.
 {{- end }}
 
 {{/*
+True if this render has live cluster access (a real `helm install`/
+`upgrade`), false during `helm template` / GitOps rendering (ArgoCD, Flux),
+where `lookup` always returns an empty result. Used to gate auto-discovery
+helpers (e.g. kubernaut.np.apiServerPeers) that need `lookup`.
+Usage: {{ if eq (include "kubernaut.hasClusterAccess" .) "true" }}...{{ end }}
+*/}}
+{{- define "kubernaut.hasClusterAccess" -}}
+{{- if lookup "v1" "Namespace" "" "kube-system" -}}true{{- end -}}
+{{- end }}
+
+{{/*
 Render imagePullSecrets from global.imagePullSecrets for private registries.
 Usage: {{ include "kubernaut.imagePullSecrets" . | nindent 6 }}
 */}}
@@ -483,17 +494,115 @@ Usage: {{ include "kubernaut.np.dnsEgress" . | nindent 4 }}
 {{- end }}
 
 {{/*
-K8s API server egress rule: allow TCP 443 to configured CIDR.
+#1712 backport (main PR #1571): replaced the old single-CIDR-at-port-443
+mechanism below with auto-discovery of the API server's real backend
+endpoint(s). RCA (helios08 live repro): NetworkPolicy ipBlock rules are
+evaluated against the post-DNAT destination on most CNIs (confirmed here
+against kindnetd) -- an allow rule for the "kubernetes" Service's ClusterIP
+(10.96.0.1:443) is silently ignored, and the real backend commonly listens
+on 6443, not 443. The old mechanism used the wrong IP *and* the wrong port,
+so setting networkPolicies.apiServerCIDR to the ClusterIP (the only option
+it exposed) could never have worked once a CNI actually enforced Egress --
+it was purely inert under the older kindnet used previously, not a
+functioning security control.
+
+Merged, de-duplicated list of API server backend endpoint ipBlock peers, one
+per control-plane node. Most real clusters run multiple control-plane nodes
+for HA, each a distinct backend endpoint behind the "kubernetes" Service --
+every backend IP needs its own allow entry, not just one (see PR #1571
+investigation trail upstream).
+
+Precedence: explicit networkPolicies.apiServerCIDR (singular) and/or
+apiServerCIDRs (list) always win when set, merged together -- this is the
+only path available during `helm template` / GitOps rendering (ArgoCD,
+Flux), since `lookup` has no live cluster access there. Otherwise, during a
+real `helm install`/`upgrade`, auto-discover every backend address from the
+live "kubernetes" Endpoints object so most users never need to set this at
+all. If neither an override nor discovery succeeds (e.g. the installer
+ServiceAccount lacks permission to read Endpoints), fail loudly with
+remediation instructions rather than silently omitting the rule -- pods
+would otherwise crash-loop against a default-deny NetworkPolicy with no
+indication why.
+
+Renders as a raw (unindented) list of `- ipBlock: {cidr: ...}` entries
+usable under either an egress `to:` or ingress `from:` key -- shared because
+NetworkPolicyPeer is identical for both. Empty output if apiServerCIDR(s) is
+deliberately left unset AND there's no live cluster access (helm template).
+Usage: {{ include "kubernaut.np.apiServerPeers" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.apiServerPeers" -}}
+{{- $cidrs := list -}}
+{{- if .Values.networkPolicies.apiServerCIDR -}}
+{{- $cidrs = append $cidrs .Values.networkPolicies.apiServerCIDR -}}
+{{- end -}}
+{{- if .Values.networkPolicies.apiServerCIDRs -}}
+{{- $cidrs = concat $cidrs .Values.networkPolicies.apiServerCIDRs -}}
+{{- end -}}
+{{- if not $cidrs -}}
+{{- if eq (include "kubernaut.hasClusterAccess" .) "true" -}}
+{{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" -}}
+{{- if $ep -}}
+{{- range ($ep.subsets | default list) -}}
+{{- range (.addresses | default list) -}}
+{{- $cidrs = append $cidrs (printf "%s/32" .ip) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not $cidrs -}}
+{{- fail "networkPolicies.enabled=true but could not auto-discover the kube-apiserver endpoint (`lookup \"v1\" \"Endpoints\" \"default\" \"kubernetes\"` returned no addresses -- possible causes: the Helm installer ServiceAccount lacks permission to read Endpoints in the default namespace, or this is an unusual cluster). Set networkPolicies.apiServerCIDR (single control-plane) or networkPolicies.apiServerCIDRs (HA, one entry per control-plane node) explicitly -- see `kubectl get endpoints kubernetes -o wide`." -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- $lines := list -}}
+{{- range (uniq $cidrs) -}}
+{{- $lines = append $lines (printf "- ipBlock:\n    cidr: %s" .) -}}
+{{- end -}}
+{{- join "\n" $lines -}}
+{{- end }}
+
+{{/*
+Port the API server's backend endpoint(s) listen on (commonly 6443, not the
+"kubernetes" Service's port 443). Precedence: explicit
+networkPolicies.apiServerPort (nonzero) always wins; otherwise, when no
+apiServerCIDR(s) override is set either, auto-discovered from the same live
+Endpoints lookup as kubernaut.np.apiServerPeers; otherwise defaults to 443
+(only correct if the real backend happens to also listen on 443).
+Usage: {{ include "kubernaut.np.apiServerPort" . }}
+*/}}
+{{- define "kubernaut.np.apiServerPort" -}}
+{{- $port := 0 -}}
+{{- if .Values.networkPolicies.apiServerPort -}}
+{{- $port = .Values.networkPolicies.apiServerPort -}}
+{{- else if and (not .Values.networkPolicies.apiServerCIDR) (not .Values.networkPolicies.apiServerCIDRs) (eq (include "kubernaut.hasClusterAccess" .) "true") -}}
+{{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" -}}
+{{- if $ep -}}
+{{- $subsets := $ep.subsets | default list -}}
+{{- if gt (len $subsets) 0 -}}
+{{- $ports := (index $subsets 0).ports | default list -}}
+{{- if gt (len $ports) 0 -}}
+{{- $port = (index $ports 0).port -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not $port -}}{{- $port = 443 -}}{{- end -}}
+{{- $port -}}
+{{- end }}
+
+{{/*
+K8s API server egress rule: allow TCP to the configured API server backend
+endpoint CIDR(s). See kubernaut.np.apiServerPeers for the CIDR discovery
+logic.
 Usage: {{ include "kubernaut.np.apiServerEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.apiServerEgress" -}}
-{{- if .Values.networkPolicies.apiServerCIDR }}
+{{- $peers := include "kubernaut.np.apiServerPeers" . -}}
+{{- if $peers }}
 - ports:
-    - port: 443
+    - port: {{ include "kubernaut.np.apiServerPort" . }}
       protocol: TCP
   to:
-    - ipBlock:
-        cidr: {{ .Values.networkPolicies.apiServerCIDR }}
+    {{- $peers | nindent 4 }}
 {{- end }}
 {{- end }}
 

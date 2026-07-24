@@ -1157,7 +1157,20 @@
         "apiServerCIDR": {
           "type": "string",
           "default": "",
-          "description": "K8s API server CIDR (e.g., 10.96.0.1/32)"
+          "description": "K8s API server real backend endpoint IP as a /32 CIDR (e.g., 10.89.0.2/32) -- NOT the 'kubernetes' Service ClusterIP, which most CNIs ignore for NetworkPolicy egress. Usually left empty: auto-discovered via `lookup` during a real helm install/upgrade. Set explicitly only for helm template/GitOps rendering, restricted-RBAC installers, or to override discovery. Use for single-control-plane clusters; use apiServerCIDRs for HA."
+        },
+        "apiServerCIDRs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Additional K8s API server backend endpoint IPs as /32 CIDRs, for HA clusters with multiple control-plane nodes. Merged with apiServerCIDR. Usually left empty (see apiServerCIDR)."
+        },
+        "apiServerPort": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Port the K8s API server's real backend endpoint(s) listen on (commonly 6443), not necessarily the 'kubernetes' Service's port (443). 0 means auto-discover via `lookup` (falls back to 443 if unavailable)."
         },
         "monitoring": {
           "type": "object",

@@ -460,6 +460,25 @@ common_install_flags() {
   fi
   echo "$flags"
 }
+# #1712 round 6 (helios08 live repro, RCA confirmed via direct curl from
+# inside a failing authwebhook pod vs. the Kind node): networkPolicies.
+# apiServerCIDR used to default to "" with no auto-discovery, so no service
+# ever got an explicit NetworkPolicy egress-allow rule for the apiserver.
+# That was a latent gap: the older kindnet CNI shipped with v1.5.3's Kind
+# version never enforced NetworkPolicy, so it was silently inert. The
+# v0.32.0 Kind bump (needed for containerd config v4) brought a newer
+# kindnet that does enforce it, surfacing the gap as authwebhook's
+# patch-cabundle init container hanging (TCP connect() to the apiserver
+# timing out). A manual `--set networkPolicies.apiServerCIDR=<ClusterIP>`
+# workaround does NOT fix this: confirmed live that NetworkPolicy ipBlock
+# rules are evaluated against the post-DNAT destination on kindnet (and
+# most other CNIs), so a rule keyed on the "kubernetes" Service's ClusterIP
+# is silently ignored, and the real backend listens on 6443, not 443
+# anyway. Backported main's actual fix instead (PR #1571): the chart now
+# auto-discovers the apiserver's real backend endpoint IP+port via `lookup`
+# during any real `helm install`/`upgrade` (kubernaut.np.apiServerPeers/
+# apiServerPort in _helpers.tpl) -- no explicit --set needed here, since
+# this script always runs against a live cluster.
 
 tls_flags() {
   if [[ "$PLATFORM" == "ocp" ]]; then
