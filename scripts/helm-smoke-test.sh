@@ -22,20 +22,18 @@ IMAGE_REGISTRY=""
 PULL_SECRET=""
 CHART_PATH="charts/kubernaut/"
 NAMESPACE="kubernaut-system"
-# #1712: 300s -> 600s. Local Kind v0.32.0 repro (helios08) and CI run
-# 30050619660 both showed the single-node control-plane container pegged
-# under heavy CPU load during the concurrent startup burst of ~7
-# controller-runtime services, each issuing a one-shot (no-retry) K8s API
-# discovery call at boot (standard kubebuilder fail-fast idiom: a transient
-# timeout there is fatal, exit(1), relying on kubelet's own CrashLoopBackOff
-# to retry). An initial bump to 480s was still insufficient -- CI observed
-# aianalysis-controller alone taking ~8m31s (>480s) to stabilize via
-# kubelet's exponential-backoff restarts. A fresh install attempted after
-# contention subsided came up 1/1 across all pods in <60s with zero
-# restarts, confirming this is a transient startup-burst characteristic of
-# the test topology (not a permanent defect) that just needs more
-# wall-clock runway for kubelet's retries to land a lucky attempt.
-TIMEOUT_PODS="600s"
+# #1712 (superseded, see below): 300s -> 600s was a passive-wait mitigation
+# (relying solely on kubelet's own growing exponential CrashLoopBackOff
+# delay) that CI proved insufficient even at 600s -- must-gather from run
+# 30050619660 showed aianalysis-controller et al. still CrashLoopBackOff
+# after 12-23+ minutes. assert_pods_ready() now actively deletes
+# crash-looping pods as they're found (bypassing kubelet's backoff schedule
+# entirely -- see comment there, ported from main's proven fix 34840e312)
+# instead of just passively waiting, so 300s is overall-deadline runway for
+# that interleaved recover+wait loop, not a single passive `kubectl wait`.
+# Must be a plain "<N>s" integer-seconds string -- assert_pods_ready() does
+# arithmetic on it (${TIMEOUT_PODS%s}).
+TIMEOUT_PODS="300s"
 CERT_MANAGER_ISSUER="selfsigned-issuer"
 
 # TAP state
@@ -285,7 +283,43 @@ assert_pods_ready() {
   local desc="${2:-ST-CHART-VERIFY-001: ${expected_count} pods reach 1/1 Running}"
   local ns="${3:-$NAMESPACE}"
 
-  if ! kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout="$TIMEOUT_PODS" >/dev/null 2>&1; then
+  # #1712: actively recover crash-looping pods instead of passively waiting
+  # through kubelet's own (growing) exponential CrashLoopBackOff delay.
+  # Ported from main's proven fix (34840e312, 2026-07-07) for the identical
+  # RCA confirmed here via must-gather on this PR's CI runs: concurrent
+  # controller-runtime startup on a resource-constrained Kind control-plane
+  # transiently fails K8s API discovery ("dial tcp <apiserver ClusterIP>:443:
+  # i/o timeout" / "connection refused" on liveness probes), tripping the
+  # standard kubebuilder fail-fast os.Exit(1) path. A deleted-and-recreated
+  # pod gets an immediate clean-slate retry rather than waiting out the
+  # 10s/20s/40s/80s/160s/300s backoff schedule that dominates wall-clock time
+  # by the 4th-5th restart.
+  #
+  # Recovery and readiness-waiting are interleaved (not sequential phases):
+  # a pod may not enter CrashLoopBackOff until partway through the readiness
+  # wait (it needs at least one failed start first), so a single up-front
+  # recovery pass followed by one long passive wait would miss crash-loops
+  # that develop later. Each pass instead does a short (30s) readiness wait,
+  # then re-checks and recovers any newly crash-looping pods, bounded by the
+  # same overall deadline as TIMEOUT_PODS.
+  local deadline=$(( $(date +%s) + ${TIMEOUT_PODS%s} ))
+  local ready=false
+  while [[ "$(date +%s)" -lt "$deadline" ]]; do
+    if kubectl wait --for=condition=Ready pod --all -n "$ns" --timeout=30s >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    local crashing
+    crashing=$(kubectl get pods -n "$ns" -o json 2>/dev/null | \
+      jq -r '.items[] | select(.status.containerStatuses[]?.state.waiting.reason == "CrashLoopBackOff") | .metadata.name' 2>/dev/null || true)
+    if [[ -n "$crashing" ]]; then
+      echo "# Restarting crash-looping pods in ${ns}: $(echo "$crashing" | tr '\n' ' ')"
+      # shellcheck disable=SC2086
+      kubectl delete pod -n "$ns" $crashing >/dev/null 2>&1 || true
+    fi
+  done
+
+  if [[ "$ready" != "true" ]]; then
     local status
     status=$(kubectl get pods -n "$ns" --no-headers 2>&1)
     tap_not_ok "$desc" "Timeout waiting for pods. Current state: ${status}"

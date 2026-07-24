@@ -845,16 +845,16 @@ jobs:
     needs: [detect-changes, build-and-push-images, unit-tests]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
-    # #1712: 30 -> 55. Safety margin for scripts/helm-smoke-test.sh's
-    # TIMEOUT_PODS increase (300s -> 600s), which is checked up to 3x
+    # #1712: 30 -> 55. Safety margin for assert_pods_ready()'s recover+wait
+    # loop (scripts/helm-smoke-test.sh, TIMEOUT_PODS=300s), checked up to 3x
     # (Flow A install, Flow A post-upgrade, Flow B install) to absorb
-    # kubelet CrashLoopBackOff recovery from transient Kind control-plane
-    # CPU contention during concurrent pod startup (see TIMEOUT_PODS
-    # comment). In practice only the first check tends to hit the full
-    # contention window -- CI run 30050619660's Flow B install came up
-    # clean in <60s once the control-plane had warmed up past Flow A's
-    # initial burst -- so 3x worst-case (30min) stacked on the ~11-13min
-    # non-pod-wait baseline is a conservative, not typical, upper bound.
+    # transient Kind control-plane CPU contention during concurrent pod
+    # startup by actively deleting crash-looping pods rather than passively
+    # waiting out kubelet's backoff (see TIMEOUT_PODS / assert_pods_ready
+    # comments). 3x worst-case (15min) stacked on the ~11-13min non-pod-wait
+    # baseline leaves comfortable headroom under 55min even if all 3 checks
+    # hit the full contention window, which CI has not observed happening
+    # simultaneously in practice.
     timeout-minutes: 55
     env:
       KIND_CLUSTER_NAME: helm-smoke
