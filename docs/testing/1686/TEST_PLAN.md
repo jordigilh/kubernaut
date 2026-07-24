@@ -248,7 +248,7 @@ pre-fix output for any of the 4 charts.
 ## 10. Environmental Needs
 
 - **Unit/Integration**: Ginkgo/Gomega BDD (mandatory), `go test`, no external infra.
-- **Helm**: `helm` CLI + `helm-unittest` plugin (`helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1`), no cluster needed.
+- **Helm**: `helm` CLI + `helm-unittest` plugin (`helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1 --verify=false` — `--verify=false` is required on Helm v4+, which added plugin signature verification that helm-unittest's unsigned releases don't satisfy), no cluster needed.
 
 ---
 
