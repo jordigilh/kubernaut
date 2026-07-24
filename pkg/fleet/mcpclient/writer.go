@@ -78,35 +78,7 @@ func (w *WriterClient) resolveToolName(tool string) string {
 // contract (github.com/containers/kubernetes-mcp-server); the tool call fails
 // with "missing argument resource" otherwise.
 func (w *WriterClient) Create(ctx context.Context, obj client.Object, _ ...client.CreateOption) error {
-	if _, err := ensureGVK(obj, w.scheme); err != nil {
-		return err
-	}
-
-	manifest, err := objectToJSON(obj)
-	if err != nil {
-		return fmt.Errorf("serialize object for Create: %w", err)
-	}
-
-	toolName := w.resolveToolName(ToolCreateOrUpdate)
-	result, err := w.session.CallTool(ctx, &mcp.CallToolParams{
-		Name: toolName,
-		Arguments: map[string]any{
-			"resource": manifest,
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("call %s: %w", toolName, err)
-	}
-	if result.IsError {
-		return fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
-	}
-
-	text := ExtractText(result)
-	if text == "" {
-		return nil
-	}
-
-	return populateFromResponse(text, obj)
+	return w.createOrUpdate(ctx, obj, "Create")
 }
 
 // Delete implements client.Writer. It sends a delete request to the remote
@@ -147,13 +119,22 @@ func (w *WriterClient) Delete(ctx context.Context, obj client.Object, _ ...clien
 // contract (github.com/containers/kubernetes-mcp-server); the tool call fails
 // with "missing argument resource" otherwise.
 func (w *WriterClient) Update(ctx context.Context, obj client.Object, _ ...client.UpdateOption) error {
+	return w.createOrUpdate(ctx, obj, "Update")
+}
+
+// createOrUpdate implements the shared Create/Update logic: serialize obj,
+// call the resources_create_or_update MCP tool, and best-effort populate the
+// object's metadata from the response. Issue #1530 (dupl): Create and Update
+// were byte-identical apart from the "Create"/"Update" wording in the
+// serialization error message (opName below).
+func (w *WriterClient) createOrUpdate(ctx context.Context, obj client.Object, opName string) error {
 	if _, err := ensureGVK(obj, w.scheme); err != nil {
 		return err
 	}
 
 	manifest, err := objectToJSON(obj)
 	if err != nil {
-		return fmt.Errorf("serialize object for Update: %w", err)
+		return fmt.Errorf("serialize object for %s: %w", opName, err)
 	}
 
 	toolName := w.resolveToolName(ToolCreateOrUpdate)

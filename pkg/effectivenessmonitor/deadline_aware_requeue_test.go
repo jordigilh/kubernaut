@@ -84,7 +84,16 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		return s
 	}
 
-	makeReconciler := func(s *runtime.Scheme, objs ...client.Object) *controller.Reconciler {
+	// makeReconciler builds a Reconciler whose validity checker is pinned to
+	// frozenNow instead of the real system clock. Issue #591/#1701/#1661:
+	// without this, deadline-proximity assertions below race the wall-clock
+	// time the reconcile pass itself takes (fake client round-trips +
+	// component pipeline), which is non-deterministic under a loaded CI
+	// runner and previously required repeatedly inflating test constants to
+	// paper over. Freezing the clock makes every deadline comparison inside
+	// Reconcile() see the exact same "now" that was used to seed the EA's
+	// ValidityDeadline, regardless of how long the pass actually takes.
+	makeReconciler := func(s *runtime.Scheme, frozenNow time.Time, objs ...client.Object) *controller.Reconciler {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
 			WithObjects(objs...).
@@ -106,6 +115,7 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 			AlertManagerClient: nil,
 			AuditManager:       nil,
 			DSQuerier:          nil,
+			Clock:              func() time.Time { return frozenNow },
 		}, cfg)
 		return r
 	}
@@ -159,9 +169,10 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		ns := testNs
 		name := "ea-dar-001"
 
-		deadline := time.Now().Add(10 * time.Second)
+		frozenNow := time.Now()
+		deadline := frozenNow.Add(10 * time.Second)
 		ea := seedAssessingEA(name, deadline)
-		r := makeReconciler(s, ea)
+		r := makeReconciler(s, frozenNow, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
@@ -185,9 +196,10 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		ns := testNs
 		name := "ea-dar-002"
 
-		deadline := time.Now().Add(5 * time.Minute)
+		frozenNow := time.Now()
+		deadline := frozenNow.Add(5 * time.Minute)
 		ea := seedAssessingEA(name, deadline)
-		r := makeReconciler(s, ea)
+		r := makeReconciler(s, frozenNow, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
@@ -213,9 +225,10 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		name := "ea-dar-003"
 
 		remaining := 10 * time.Second
-		deadline := time.Now().Add(remaining)
+		frozenNow := time.Now()
+		deadline := frozenNow.Add(remaining)
 		ea := seedAssessingEA(name, deadline)
-		r := makeReconciler(s, ea)
+		r := makeReconciler(s, frozenNow, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
@@ -240,27 +253,17 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 	// requeue must not be pushed past the deadline (no negative/zero-clamped
 	// surprises) — it falls back to firing at the remaining time exactly.
 	//
-	// CI flake fix: `remaining` must stay comfortably below
-	// requeueDeadlineSafetyMargin (2s in production) to exercise the
-	// fallback branch, but comfortably above the wall-clock time the
-	// reconciler's full pass (hash/health/alert/metrics checks + fake
-	// client round-trips) actually takes. Previously 500ms — too tight
-	// under a loaded CI runner: `time.Now()` is captured here at seed
-	// time, but the deadline is re-evaluated deep inside Reconcile() via
-	// TimeUntilExpired, which clamps any elapsed-past-deadline duration to
-	// exactly 0 and short-circuits into completion (RequeueAfter=0),
-	// failing the ">0" assertion below even though the requeue-capping
-	// logic itself is correct. Bumped 500ms -> 1.5s (2026-07-XX) and it
-	// still flaked in CI at a reported spec duration of 1.83s (Issue
-	// #1661 pipeline monitoring) -- a sufficiently loaded runner can erode
-	// more than 1.5s of the window even against an all-fake-client
-	// reconcile with no real I/O. 1.9s is the practical ceiling here (must
-	// stay < the 2s margin to hit the fallback branch at all); this only
-	// buys ~400ms more than the previous value. If this flakes again, the
-	// margin constant itself has been exhausted and the durable fix is
-	// injecting a fake/controllable clock into validity.Checker so this
-	// spec no longer depends on real wall-clock scheduling at all -- flag
-	// for a follow-up rather than continuing to inflate this constant.
+	// `remaining` stays below requeueDeadlineSafetyMargin (2s in production)
+	// to exercise the fallback branch. This no longer needs to also stay
+	// above the reconciler's real wall-clock execution time: makeReconciler
+	// pins the validity checker's clock to frozenNow (captured once, at seed
+	// time), so Reconcile() evaluates deadline proximity against that exact
+	// instant regardless of how long the fake-client pass actually takes on
+	// the executing machine. This is the durable fix flagged in the prior
+	// history of this spec (500ms -> 1.5s -> 1.9s constant-inflation,
+	// Issue #591, #1701, #1661 pipeline-monitoring RCA): the flake was
+	// never about the constant being too small, it was TimeUntilExpired
+	// racing real time.Now() against the reconcile pass's own duration.
 	// ========================================
 	It("UT-EM-DAR-004: should fall back to the remaining time when it is already below the safety margin", func() {
 		s := buildScheme()
@@ -268,9 +271,10 @@ var _ = Describe("Deadline-Aware Requeue (BR-EM-007, Issue #591)", func() {
 		name := "ea-dar-004"
 
 		remaining := 1900 * time.Millisecond
-		deadline := time.Now().Add(remaining)
+		frozenNow := time.Now()
+		deadline := frozenNow.Add(remaining)
 		ea := seedAssessingEA(name, deadline)
-		r := makeReconciler(s, ea)
+		r := makeReconciler(s, frozenNow, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},

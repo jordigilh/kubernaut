@@ -269,7 +269,17 @@ func (b *AuditEventsQueryBuilder) appendFilters(sql string, args []interface{}) 
 		args = append(args, *b.until)
 		argIndex++
 	}
-	if b.eventDataKey != nil && b.eventDataValue != nil {
+	// Issue #1684 (CodeQL go/sql-injection remediation): validateEventDataFilter()
+	// already rejects an invalid key in Build()/BuildCount() before appendFilters
+	// ever runs, but that guard lives in a different function than this
+	// fmt.Sprintf. CodeQL's dataflow analysis doesn't connect a guard in one
+	// function to a tainted read of the same struct field in another, so it
+	// flags *b.eventDataKey here as unguarded. Re-checking the regex directly at
+	// the interpolation site (in addition to the existing fail-loud Build()-level
+	// check) closes that gap: this call site can never emit unsafe SQL for this
+	// key regardless of caller, and the guard-then-use shape is now local to the
+	// function CodeQL analyzes.
+	if b.eventDataKey != nil && b.eventDataValue != nil && validJSONBKey.MatchString(*b.eventDataKey) {
 		sql += fmt.Sprintf(" AND event_data->>'%s' = $%d", *b.eventDataKey, argIndex)
 		args = append(args, *b.eventDataValue)
 	}
