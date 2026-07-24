@@ -279,9 +279,24 @@ func registerKAMCPTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.We
 	// kubernaut_list_workflows: moved from registerDSTools -- now backed by
 	// KA's workflow catalog (cache-backed), not DS's REST API. #1677 Phase
 	// 2f (DD-WORKFLOW-019).
+	//
+	// Bug fix (found via E2E TC-E2E-MCP-FULL-03, CI run on #1718): this was
+	// wired to cfg.KAMCPClient (PooledMCPClient), which always fails --
+	// ListWorkflows is a stateless catalog browse with no rr_id to key a
+	// pooled session on (see PooledMCPClient.ListWorkflows's own doc
+	// comment), so every call returned "ListWorkflows is a stateless
+	// catalog query; use SDKMCPClient for non-interactive calls" instead of
+	// a workflow list. registerInvestigationTool already established the
+	// correct pattern for this exact class of stateless call (prefer
+	// KADedicatedClient, the SDKMCPClient, falling back to KAMCPClient) --
+	// this mirrors it.
 	registerTool(srv, cfg, sem, "kubernaut_list_workflows", "List available workflows",
 		func(ctx context.Context, args tools.ListWorkflowsArgs) (any, error) {
-			return tools.HandleListWorkflowsKA(ctx, cfg.KAMCPClient, args)
+			listClient := cfg.KADedicatedClient
+			if listClient == nil {
+				listClient = cfg.KAMCPClient
+			}
+			return tools.HandleListWorkflowsKA(ctx, listClient, args)
 		})
 }
 
