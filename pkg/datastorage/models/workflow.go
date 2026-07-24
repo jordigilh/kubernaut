@@ -185,19 +185,17 @@ type RemediationWorkflow struct {
 	ExpectedSuccessRate     *float64 `json:"expectedSuccessRate,omitempty" db:"expected_success_rate" validate:"omitempty,min=0,max=1"`
 	ExpectedDurationSeconds *int     `json:"expectedDurationSeconds,omitempty" db:"expected_duration_seconds" validate:"omitempty,min=0"`
 
-	// ActualSuccessRate/TotalExecutions/SuccessfulExecutions: dead/zero-valued
-	// fields. Originally computed on demand from audit_events by DS's
+	// ActualSuccessRate/TotalExecutions/SuccessfulExecutions ("success-metrics
+	// overlay") were removed entirely (#1677 Phase 2g follow-up, DD-WORKFLOW-019
+	// v2.0 changelog): originally computed on demand from audit_events by DS's
 	// Handler.overlaySuccessMetrics (Issue #1661 Change 7, DD-WORKFLOW-018 --
-	// migration 015 dropped their backing columns). #1677 Phase 2g
-	// (DD-WORKFLOW-019): overlaySuccessMetrics (workflow_success_metrics.go)
-	// was deleted as dead code once workflow discovery moved to
-	// KubernautAgent -- confirmed zero use in the actual scoring logic
-	// (cache_filter.go). These fields are kept only for wire-compat with any
-	// remaining consumers of this model; they always read as zero-value now.
-	// Deliberately no `db:` tag: there is no column to scan them from.
-	ActualSuccessRate    *float64 `json:"actualSuccessRate,omitempty" validate:"omitempty,min=0,max=1"`
-	TotalExecutions      int      `json:"totalExecutions" validate:"min=0"`
-	SuccessfulExecutions int      `json:"successfulExecutions" validate:"min=0"`
+	// migration 015 already dropped their backing DB columns). Phase 2g deleted
+	// overlaySuccessMetrics itself as dead code once workflow discovery moved
+	// to KubernautAgent, confirming zero use in the actual scoring logic
+	// (cache_filter.go). A repo-wide sweep found zero remaining Go references
+	// to these three fields (production or test), so -- consistent with the
+	// DD's own "dropped entirely rather than migrated" wording -- the fields
+	// are deleted here rather than kept as always-zero wire-compat stubs.
 
 	// ========================================
 	// AUDIT TRAIL
