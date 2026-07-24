@@ -67,12 +67,20 @@ type LazyCatalog struct {
 	catalog     atomic.Pointer[Catalog]
 	loopCancel  atomic.Pointer[context.CancelFunc]
 	cacheCancel atomic.Pointer[context.CancelFunc]
+	// loopDone is closed by retryLoop immediately before it returns (every
+	// exit path, via defer). Stop waits on it (bounded by stopWaitTimeout)
+	// so callers observe the goroutine as fully exited, not just
+	// "cancellation requested" -- see Stop's doc comment for why this
+	// matters. Only ever closed when Start was actually called (guarded in
+	// Stop via loopCancel being non-nil), so it is safe to leave unclosed
+	// for LazyCatalog instances that never Start (e.g. NewLazyCatalogReady).
+	loopDone chan struct{}
 }
 
 // NewLazyCatalog constructs a LazyCatalog in its initial Not-Ready state.
 // Call Start to begin the background retry loop.
 func NewLazyCatalog(logger logr.Logger) *LazyCatalog {
-	return &LazyCatalog{logger: logger}
+	return &LazyCatalog{logger: logger, loopDone: make(chan struct{})}
 }
 
 // NewLazyCatalogReady constructs a LazyCatalog that is immediately Ready,
@@ -96,6 +104,14 @@ func (l *LazyCatalog) Start(build CacheBuilder) {
 }
 
 func (l *LazyCatalog) retryLoop(ctx context.Context, build CacheBuilder) {
+	// Closed on every exit path (context-cancelled-at-top, success,
+	// cancelled-mid-backoff) so Stop can block until the goroutine has
+	// actually finished touching package-level state (initialRetryBackoff /
+	// maxRetryBackoff) rather than just having requested cancellation --
+	// found via a -race failure in CI where a test mutated those vars back
+	// immediately after Stop() while this goroutine's last iteration was
+	// still mid-flight.
+	defer close(l.loopDone)
 	backoff := initialRetryBackoff
 	for {
 		if ctx.Err() != nil {
@@ -133,12 +149,30 @@ func (l *LazyCatalog) Ready() bool {
 	return l.ready.Load()
 }
 
+// stopWaitTimeout bounds how long Stop blocks waiting for the background
+// retry loop goroutine to observably exit before giving up and returning
+// anyway. Keeps graceful shutdown (cmd/kubernautagent's
+// runShutdownSequence) from hanging indefinitely if Stop happens to race a
+// slow in-flight CacheBuilder call (e.g. NewInformerCache's own internal
+// WaitForCacheSync timeout) -- the goroutine still exits on its own once
+// that call returns and observes the cancelled context; the process is
+// shutting down anyway, so waiting unboundedly here buys nothing but risk.
+const stopWaitTimeout = 5 * time.Second
+
 // Stop cancels the background retry loop (if still retrying) and the
-// underlying informer cache (if the build ever succeeded). Safe to call
-// even when Start was never called or the cache never became Ready.
+// underlying informer cache (if the build ever succeeded), then blocks
+// (bounded by stopWaitTimeout) until the retry loop goroutine has
+// observably exited -- not just until cancellation was requested. Safe to
+// call even when Start was never called or the cache never became Ready.
 func (l *LazyCatalog) Stop() {
 	if c := l.loopCancel.Load(); c != nil {
 		(*c)()
+		select {
+		case <-l.loopDone:
+		case <-time.After(stopWaitTimeout):
+			l.logger.Info("workflow catalog cache retry loop did not stop within timeout, continuing shutdown anyway",
+				"timeout", stopWaitTimeout.String())
+		}
 	}
 	if c := l.cacheCancel.Load(); c != nil {
 		(*c)()
