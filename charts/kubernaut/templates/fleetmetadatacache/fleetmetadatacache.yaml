@@ -139,6 +139,15 @@ metadata:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
     {{- include "kubernaut.labels" . | nindent 4 }}
+{{- /*
+#1686 (BR-RBAC-020): FMC's ClusterRole exists solely to grant its
+ClusterRegistry's CRD watch (there is no other rule in this ClusterRole),
+so when fleetmetadatacache.namespace scopes that watch to one namespace, the
+ClusterRole/ClusterRoleBinding are skipped entirely in favor of the
+namespace-scoped Role/RoleBinding below (least privilege) instead of
+rendering a redundant empty ClusterRole.
+*/}}
+{{- if not .Values.fleetmetadatacache.namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -179,6 +188,12 @@ subjects:
   - kind: ServiceAccount
     name: fleetmetadatacache
     namespace: {{ .Release.Namespace }}
+{{- else }}
+---
+# #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rules
+# above, granted instead of them when fleetmetadatacache.namespace is set.
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" .Values.fleetmetadatacache.namespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq .Values.fleetmetadatacache.gatewayType "kuadrant") "kuadrantGateways" (eq .Values.fleetmetadatacache.gatewayType "kuadrant") "eaigwBackends" (ne .Values.fleetmetadatacache.gatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

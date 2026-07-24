@@ -466,6 +466,77 @@ subjects:
 {{- end }}
 
 {{/*
+Render a namespace-scoped Role + RoleBinding granting a fleet
+ClusterRegistry's CRD watch (MCPServerRegistration for kuadrant;
+Backend/MCPRoute for eaigw), used in place of the equivalent cluster-wide
+ClusterRole rule whenever a service's fleet namespace-scoping knob
+(<service>.fleet.namespace / fleetmetadatacache.namespace) is set (#1686,
+BR-RBAC-020). Each rule is opted in independently via a bool so the exact
+rule content (apiGroups/resources/verbs) matches the ClusterRole variant it
+replaces verbatim -- callers copy the same literal rule block used in their
+own ClusterRole rather than re-typing it, so the two RBAC kinds cannot drift
+apart.
+Params:
+  name                    - resource name prefix (e.g. "apifrontend")
+  serviceAccount          - ServiceAccount name to bind (usually == name)
+  namespace               - namespace to scope the watch/RBAC to
+  appLabels               - pre-rendered "app identifying" label line(s),
+                             e.g. "app: apifrontend" or FMC's two-line
+                             app.kubernetes.io/name+component convention
+  mcpServerRegistrations  - bool: grant mcp.kuadrant.io/mcpserverregistrations
+  kuadrantGateways        - bool: grant gateway.networking.k8s.io/gateways+httproutes (FMC only)
+  eaigwBackends           - bool: grant gateway.envoyproxy.io/backends + aigateway.envoyproxy.io/mcproutes
+  Release, labels         - as in kubernaut.nsRoleForSecrets above
+Usage: {{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "apifrontend" "serviceAccount" "apifrontend" "namespace" $ns "appLabels" "app: apifrontend" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+*/}}
+{{- define "kubernaut.fleet.registryNsRBAC" -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .name }}-fleet-registry
+  namespace: {{ .namespace }}
+  labels:
+    {{- .appLabels | nindent 4 }}
+    {{- .labels | nindent 4 }}
+rules:
+  {{- if .mcpServerRegistrations }}
+  - apiGroups: ["mcp.kuadrant.io"]
+    resources: ["mcpserverregistrations"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+  {{- if .kuadrantGateways }}
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+  {{- if .eaigwBackends }}
+  - apiGroups: ["gateway.envoyproxy.io"]
+    resources: ["backends"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["aigateway.envoyproxy.io"]
+    resources: ["mcproutes"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .name }}-fleet-registry-binding
+  namespace: {{ .namespace }}
+  labels:
+    {{- .appLabels | nindent 4 }}
+    {{- .labels | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .name }}-fleet-registry
+subjects:
+  - kind: ServiceAccount
+    name: {{ .serviceAccount }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+
+{{/*
 Render affinity and topologySpreadConstraints for a component pod spec.
 DD-PLATFORM-004: injects a default soft (preferred, weight 100) pod
 anti-affinity spreading replicas across nodes by the given matchLabels,
