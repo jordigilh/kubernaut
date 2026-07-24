@@ -314,35 +314,17 @@ type WorkflowSearchFilters struct {
 // V1.0: DetectedLabels type moved to workflow_labels.go
 // Authority: DD-WORKFLOW-001 v2.3 - Structured types for zero unstructured data
 // See: pkg/datastorage/models/workflow_labels.go for MandatoryLabels, CustomLabels, DetectedLabels
-
-// ShouldSkipDetectedLabel returns true if the given field name should be skipped
-// because it's in the failedDetections list.
-// DD-WORKFLOW-001 v2.1: When matching incident DetectedLabels against workflow
-// catalog detected_labels, skip fields that are in failedDetections.
-func ShouldSkipDetectedLabel(fieldName string, failedDetections []string) bool {
-	if len(failedDetections) == 0 {
-		return false
-	}
-	for _, failed := range failedDetections {
-		if failed == fieldName {
-			return true
-		}
-	}
-	return false
-}
-
-// IsValidFailedDetectionField returns true if the given field name is a valid
-// DetectedLabels field that can be included in failedDetections.
-// DD-WORKFLOW-001 v2.1: Validation for failedDetections field names
-// V1.0: Uses ValidDetectedLabelFields from workflow_labels.go
-func IsValidFailedDetectionField(fieldName string) bool {
-	for _, valid := range ValidDetectedLabelFields {
-		if valid == fieldName {
-			return true
-		}
-	}
-	return false
-}
+//
+// ShouldSkipDetectedLabel/IsValidFailedDetectionField (DD-WORKFLOW-001 v2.1
+// failedDetections skip-list helpers) were removed as dead code (#1677
+// dead-code sweep, follow-up): they backed the SQL-era discovery WHERE-clause
+// skip mechanism, which was never carried over when discovery filtering moved
+// from raw SQL to a Go-native filter (Issue #1661); confirmed the deleted
+// DS repository/workflow/cache_filter.go never called them, and KA's ported
+// filter (internal/kubernautagent/workflowcatalog/cache_filter.go) has its
+// own explicit documentation that the boolean detected-label hard-filter is
+// a faithful mirror of the pre-existing SQL tautology, not a newly introduced
+// gap.
 
 // ========================================
 // WORKFLOW SEARCH RESPONSE

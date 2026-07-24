@@ -143,58 +143,16 @@ var _ = Describe("BR-STORAGE-020: FailedDetections Support", func() {
 				}
 			})
 
-			It("should validate field names using IsValidFailedDetectionField", func() {
-				// ASSERT: Valid field names return true
-				Expect(models.IsValidFailedDetectionField("gitOpsManaged")).To(BeTrue())
-				Expect(models.IsValidFailedDetectionField("pdbProtected")).To(BeTrue())
-				Expect(models.IsValidFailedDetectionField("hpaEnabled")).To(BeTrue())
-				Expect(models.IsValidFailedDetectionField("resourceQuotaConstrained")).To(BeTrue())
-
-				// ASSERT: Invalid field names return false
-				Expect(models.IsValidFailedDetectionField("invalidField")).To(BeFalse())
-				Expect(models.IsValidFailedDetectionField("")).To(BeFalse())
-			})
 		})
 	})
 
 	// ========================================
-	// Unit Test 4: Helper Function for Skip Logic
+	// Unit Test 4: Helper Function for Skip Logic -- REMOVED
 	// ========================================
-	// Tests the helper function that determines if a field should be skipped
-
-	Describe("ShouldSkipField helper", func() {
-		Context("when checking if a field should be skipped", func() {
-			It("should return true for fields in FailedDetections", func() {
-				failedDetections := []string{"pdbProtected", "hpaEnabled"}
-
-				// ASSERT: Fields in the list should be skipped
-				Expect(models.ShouldSkipDetectedLabel("pdbProtected", failedDetections)).To(BeTrue())
-				Expect(models.ShouldSkipDetectedLabel("hpaEnabled", failedDetections)).To(BeTrue())
-			})
-
-			It("should return false for fields NOT in FailedDetections", func() {
-				failedDetections := []string{"pdbProtected", "hpaEnabled"}
-
-				// ASSERT: Fields not in the list should NOT be skipped
-				Expect(models.ShouldSkipDetectedLabel("gitOpsManaged", failedDetections)).To(BeFalse())
-				Expect(models.ShouldSkipDetectedLabel("stateful", failedDetections)).To(BeFalse())
-				Expect(models.ShouldSkipDetectedLabel("helmManaged", failedDetections)).To(BeFalse())
-			})
-
-			It("should return false when FailedDetections is empty", func() {
-				failedDetections := []string{}
-
-				// ASSERT: No fields should be skipped when list is empty
-				Expect(models.ShouldSkipDetectedLabel("pdbProtected", failedDetections)).To(BeFalse())
-				Expect(models.ShouldSkipDetectedLabel("gitOpsManaged", failedDetections)).To(BeFalse())
-			})
-
-			It("should return false when FailedDetections is nil", func() {
-				var failedDetections []string = nil
-
-				// ASSERT: No fields should be skipped when list is nil
-				Expect(models.ShouldSkipDetectedLabel("pdbProtected", failedDetections)).To(BeFalse())
-			})
-		})
-	})
+	// ShouldSkipDetectedLabel/IsValidFailedDetectionField were deleted as dead
+	// code (#1677 dead-code sweep, follow-up): they backed the SQL-era
+	// discovery WHERE-clause skip mechanism, superseded when discovery
+	// filtering moved from raw SQL to a Go-native filter (#1661) without
+	// carrying this skip-list concept forward. See
+	// pkg/datastorage/models/workflow.go for the full removal rationale.
 })
