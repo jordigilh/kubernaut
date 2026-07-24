@@ -155,6 +155,7 @@ var _ = Describe("Phase 1-to-Phase 3 Context Propagation — #715", func() {
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: enricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools,
+				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"oom-increase-memory"})}},
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
