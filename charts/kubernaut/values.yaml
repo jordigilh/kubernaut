@@ -505,6 +505,10 @@ effectivenessmonitor:
     # -- Optional: falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
     mcpGatewayType: ""      # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
+    # -- Restricts the ClusterRegistry CRD watch to a single namespace instead of
+    # cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and
+    # grants cluster-wide RBAC, matching pre-#1686 behavior.
+    namespace: ""
     # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls
     # back to global.fleet.tlsCAFile, then to the shared inter-service CA already
     # mounted at /etc/tls-ca/ca.crt, when unset.
@@ -938,6 +942,10 @@ apifrontend:
     # -- Optional: falls back to global.fleet.mcpGatewayEndpoint when unset.
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
     mcpGatewayType: ""      # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
+    # -- Restricts the ClusterRegistry CRD watch to a single namespace instead of
+    # cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and
+    # grants cluster-wide RBAC, matching pre-#1686 behavior.
+    namespace: ""
     # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls
     # back to global.fleet.tlsCAFile, then to the shared inter-service CA already
     # mounted at /etc/tls-ca/ca.crt, when unset.

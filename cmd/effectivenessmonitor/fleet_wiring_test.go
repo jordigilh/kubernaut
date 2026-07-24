@@ -119,6 +119,60 @@ func TestBuildFleetReaderFactory_Enabled_WiresReaderFactory(t *testing.T) {
 	}
 }
 
+// TestBuildFleetReaderFactory_Enabled_WithNamespace_ScopesClusterRegistryWatch
+// is IT-EM-020-001 (#1686, BR-RBAC-020): proves cmd/effectivenessmonitor
+// threads Config.Fleet.Namespace into registry.RegistryConfig instead of
+// always passing registry.RegistryConfig{} — the previously-hardcoded gap
+// that forced a cluster-wide watch (and matching cluster-wide RBAC) even
+// when an operator configured a namespace scope. Asserted via the fake
+// dynamic client's recorded actions: EAIGWRegistry's informer factory
+// (NewFilteredDynamicSharedInformerFactory) issues its list/watch calls
+// against whatever namespace RegistryConfig.Namespace carries.
+func TestBuildFleetReaderFactory_Enabled_WithNamespace_ScopesClusterRegistryWatch(t *testing.T) {
+	t.Parallel()
+
+	gw := mockgw.NewMockGateway()
+	t.Cleanup(gw.Close)
+
+	localClient := crfake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), backendGVRListKinds)
+	cfg := config.DefaultConfig()
+	cfg.Fleet.Enabled = true
+	cfg.Fleet.MCPGatewayEndpoint = gw.URL()
+	cfg.Fleet.MCPGatewayType = registry.GatewayEAIGW
+	cfg.Fleet.Namespace = "team-a"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	rf, fc, err := buildFleetReaderFactory(ctx, localClient, dynClient, cfg, logr.Discard())
+	if err != nil {
+		t.Fatalf("IT-EM-020-001: unexpected error wiring fleet reader factory: %v", err)
+	}
+	if fc != nil {
+		t.Cleanup(func() { _ = fc.Close() })
+	}
+	if rf == nil {
+		t.Fatal("IT-EM-020-001: fleet.ReaderFactory must be wired when fleet is enabled")
+	}
+
+	scoped := false
+	for _, action := range dynClient.Actions() {
+		if action.GetResource() != registry.BackendGVR {
+			continue
+		}
+		if action.GetNamespace() == "team-a" {
+			scoped = true
+			break
+		}
+	}
+	if !scoped {
+		t.Error("IT-EM-020-001: Config.Fleet.Namespace must thread into registry.RegistryConfig.Namespace — " +
+			"expected the ClusterRegistry's informer to List/Watch backends.gateway.envoyproxy.io scoped to " +
+			"namespace \"team-a\", but no such namespaced action was recorded (BR-RBAC-020, #1686)")
+	}
+}
+
 // TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully
 // pins the fail-open contract for an unreachable Fleet MCP Gateway endpoint
 // at the ReaderFactory/error level (mirrors GW's

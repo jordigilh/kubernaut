@@ -139,7 +139,14 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant" }}
+  {{- /*
+  #1686 (BR-RBAC-020): the mcpserverregistrations rule is only granted
+  cluster-wide here when no namespace scope is configured. When
+  signalprocessing.fleet.namespace is set, the identical rule is granted
+  instead via a namespace-scoped Role/RoleBinding below, matching what the
+  ClusterRegistry informer actually watches (least privilege).
+  */}}
+  {{- if and (eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") (not .Values.signalprocessing.fleet.namespace) }}
   # BR-FLEET-003 (#1511): SP's ClusterRegistry watches MCPServerRegistration
   # CRs directly via a dynamic informer to evaluate the `cluster`
   # classification dimension when the Kuadrant MCP Gateway is used.
@@ -162,6 +169,12 @@ subjects:
   - kind: ServiceAccount
     name: signalprocessing-controller
     namespace: {{ .Release.Namespace }}
+{{- if and (eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") .Values.signalprocessing.fleet.namespace }}
+---
+# #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rule
+# above, granted instead of it when signalprocessing.fleet.namespace is set.
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "signalprocessing" "serviceAccount" "signalprocessing-controller" "namespace" .Values.signalprocessing.fleet.namespace "appLabels" "app: signalprocessing-controller" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{- end }}
 ---
 # Role: namespace-scoped access to configmaps and secrets (#229)
 {{ include "kubernaut.nsRoleForSecrets" (dict "name" "signalprocessing" "serviceAccount" "signalprocessing-controller" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
