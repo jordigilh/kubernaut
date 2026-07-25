@@ -30,10 +30,15 @@ import (
 
 const (
 	ScopeCheckPath = "/api/v1/scope/check"
-	ClustersPath   = "/api/v1/clusters"
-	// HealthzPath is FMC's liveness/health endpoint, served on the same API
-	// mux as ScopeCheckPath. Used by HTTPClient.Ping (readiness gate Wave 0)
-	// to probe reachability without depending on scope-check semantics.
+	// ClustersPath lists known clusters, and doubles (DD-FLEET-004) as the
+	// target of HTTPClient.Ping (readiness gate Wave 0, #1553): it is a
+	// cheap, real API-port endpoint (in-memory registry read, no Valkey
+	// round-trip) reachable via GW/RO's existing CA-verified scope-check
+	// transport, so Ping needs no new endpoint and no new network path.
+	ClustersPath = "/api/v1/clusters"
+	// HealthzPath is FMC's liveness endpoint. Served exclusively on the
+	// dedicated health port (Issue #1683 3-port split) -- kubelet-only by
+	// design (DD-FLEET-004); never registered on the API mux.
 	HealthzPath = "/healthz"
 )
 

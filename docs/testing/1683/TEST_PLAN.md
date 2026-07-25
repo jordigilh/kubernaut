@@ -42,8 +42,9 @@ and zero regression to the existing `Ping()`-based readiness contract.
    HTTP, kubelet-only), and `metricsAddr` (9090, plain HTTP) — matching Gateway's `ServerSettings`
    naming and the Issue #753 standard.
 3. **Zero readiness regression**: `fmc.HTTPClient.Ping()` (GW/RO's fail-closed readiness probe,
-   Issue #1553) continues to succeed against FMC's TLS-protected API port without modification,
-   via a liveness-only `/healthz` handler dual-registered on both the API mux and the health mux.
+   Issue #1553) continues to succeed against FMC's TLS-protected API port, retargeted at the
+   already-existing `ClustersPath` endpoint instead of a duplicated `/healthz` (DD-FLEET-004) --
+   the health port itself stays kubelet-only, with no new `NetworkPolicy` exposure.
 4. **Client TLS**: `fmc.HTTPClient` accepts an injectable `*http.Client` (`WithHTTPClient`), and
    `pkg/fleet/scope_factory.go`'s FMC branch builds a CA-verified transport from `FleetConfig.
    TLSCAFile`, mirroring the existing ACM branch.
@@ -109,7 +110,7 @@ NIST control via the `Control` column in Section 8.
 
 | ID | Risk | Impact | Probability | Affected Tests | Mitigation |
 |----|------|--------|-------------|-----------------|------------|
-| R1 | Splitting `/healthz`/`/readyz` onto a dedicated health port breaks `fmc.HTTPClient.Ping()`, which GW/RO's fail-closed readiness gate depends on (Issue #1553) | High — GW/RO pods would incorrectly report NotReady whenever FMC is otherwise healthy | Medium | IT-FMC-1683-A-002, IT-FMC-1683-A-003 | Dual-register a liveness-only `/healthz` on both the API mux (TLS, 8080) and the new health mux (plain, 8081); `Ping()` is unchanged and keeps hitting the API base URL |
+| R1 | Splitting `/healthz`/`/readyz` onto a dedicated health port breaks `fmc.HTTPClient.Ping()`, which GW/RO's fail-closed readiness gate depends on (Issue #1553) | High — GW/RO pods would incorrectly report NotReady whenever FMC is otherwise healthy | Medium | IT-FMC-1683-A-002, IT-FMC-1683-A-003, IT-FMC-1683-A-004 | DD-FLEET-004: retarget `Ping()` at `ClustersPath` (already open on the API port, port 8080) instead of `/healthz` (health port 8081 stays kubelet-only, no `NetworkPolicy` widening, no duplicated liveness handler) |
 | R2 | FMC's E2E lane deploys via Go-generated raw manifests (`test/infrastructure/fleet_e2e.go`), not Helm — a port/TLS change made only in the Helm chart silently leaves E2E on the old 2-port plaintext layout | Medium — E2E claims coverage it doesn't have (pyramid invariant violation) | Medium | E2E-FMC-1683-016 | Unit F updates `fleet_e2e.go`'s FMC manifest, `interservice_tls.go`'s cert list, and `shared/resilience.go`'s readyz target together with the Helm chart |
 | R3 | `ConfigureConditionalTLS` silently falls back to plain HTTP when no cert is mounted — a misconfigured deployment could believe it has TLS when it does not | Low — matches existing DataStorage/Gateway behavior exactly (fail-open by design for bootstrap ordering), not a regression introduced by this plan | Low | N/A (pre-existing accepted behavior, out of scope) | Chart mounts the cert as `optional: true` (matches DataStorage), same operational contract as the reference services |
 | R4 | Changing `FleetConfig.EffectiveEndpoint()`'s default scheme from `http://` to `https://` breaks any deployment relying on the old plaintext auto-derived endpoint | Medium — silent breakage for GW/RO if the FMC server isn't actually presenting a cert yet during a rolling upgrade | Low | UT-FLEET-1683-C-001 | `ConfigureConditionalTLS`'s fail-open-to-plain-HTTP behavior means an HTTPS request to a cert-less FMC pod fails loudly (TLS handshake error) rather than silently connecting insecurely — surfaces the misconfiguration immediately instead of masking it |
@@ -132,7 +133,8 @@ description.
 ### 4.1 Features to be Tested
 
 - **FMC server TLS + 3-port split** (`pkg/fleet/fmc/config/config.go`, `cmd/fleetmetadatacache/main.go`):
-  conditional TLS on the API port, dedicated plain-HTTP health server, dual-registered `/healthz`.
+  conditional TLS on the API port, dedicated plain-HTTP kubelet-only health server, `Ping()`
+  retargeted at `ClustersPath` (DD-FLEET-004).
 - **FMC client TLS** (`pkg/fleet/fmc/http_client.go`, `pkg/fleet/scope_factory.go`): injectable
   HTTP client with CA-verified transport built from `FleetConfig.TLSCAFile`.
 - **FedRAMP cipher/profile support** (`pkg/fleet/fmc/config/config.go`, `cmd/fleetmetadatacache/main.go`):
@@ -163,7 +165,8 @@ description.
 
 | Decision | Rationale |
 |----------|-----------|
-| Dual-register a liveness-only `/healthz` on both the API mux (TLS) and the dedicated health mux (plain HTTP), instead of moving it exclusively to the health port like Gateway does | `fmc.HTTPClient.Ping()` (GW/RO's fail-closed readiness gate, Issue #1553) hits `baseURL+HealthzPath` where `baseURL` is FMC's API base URL. Moving `/healthz` exclusively to the health port would require every `fmc.HTTPClient` caller to learn a second base URL, a wider blast-radius change touching GW/RO's config surface. Dual registration keeps `Ping()`'s contract byte-for-byte identical while still giving kubelet a plain-HTTP liveness probe on the standard health port. |
+| `/healthz` (liveness) moves **exclusively** to the dedicated health port, matching `/readyz` and matching Gateway. `fmc.HTTPClient.Ping()` targets `ClustersPath` (`/api/v1/clusters`) on the API port instead of a duplicated `/healthz` (superseded design, see below) | **DD-FLEET-004** (revised after review): the health port is deliberately kubelet-only -- FMC's `NetworkPolicy` grants GW/RO ingress to port 8080 (API) only; port 8081 (health) has no ingress rule at all, so pod-to-pod access to it is default-denied (only kubelet's node-local probe bypasses NetworkPolicy). Widening that policy just to let `Ping()` reach `/healthz` there would trade a real security boundary for a marginally "purer" liveness check. Repointing `Ping()` at `ClustersPath` instead avoids that trade-off entirely: it's a real, already-registered API-port endpoint that only reads FMC's in-memory cluster registry (no Valkey round-trip -- the same "shallow liveness, not deep readiness" property `/healthz` was chosen for originally), reachable via the CA-verified transport GW/RO already have (Unit B), with zero new config surface and zero duplicated handler. See `docs/architecture/decisions/DD-FLEET-004-fmc-ping-clusters-endpoint.md`. |
+| ~~Dual-register `/healthz` on both the API mux and health mux~~ (superseded) | Original Unit A design (committed in PR #1727's first push). Rejected on review: it duplicated a liveness handler across two ports for a benefit (byte-for-byte `Ping()` URL preservation) that DD-FLEET-004's `ClustersPath` approach achieves without the duplication and without touching `NetworkPolicy`. |
 | `/readyz` moves exclusively to the dedicated health port (no dual registration) | No production Go caller outside FMC's own kubelet probe hits `/readyz` (confirmed by codebase-wide grep); only the E2E test harness's own polling needs updating, which Unit F does directly. |
 | FMC's `ServiceConfig.TLSProfile` is set by the same `kubernaut-operator`-writes-from-APIServer-CR mechanism as Gateway/DataStorage (Issue #748), not exposed as a new Helm `values.yaml` key | Matches the existing precedent exactly (`pkg/gateway/config/config.go`'s `TLSProfile` field has no corresponding Helm `values.yaml`/`values.schema.json` entry either) — this is an OCP-only, operator-managed field, not a Helm chart concern. |
 | `pkg/fleet/scope_factory.go`'s FMC branch builds its own CA transport from `cfg.TLSCAFile` instead of relying on the process-wide `sharedtls.DefaultBaseTransport()`/`$TLS_CA_FILE` singleton | Mirrors the existing ACM branch exactly (same file, ~15 lines away) instead of introducing a second CA-wiring pattern in the same factory function. |
@@ -248,8 +251,9 @@ succeeds after the port split" — not "`ConfigureConditionalTLS` was called".
 | BR-INTEGRATION-065 | FMC server presents TLS on its API port, falling back to plain HTTP only when no cert is mounted | P0 | Unit | SC-8 | UT-FMC-1683-A-001 | Passing |
 | BR-INTEGRATION-065 | FMC server presents TLS on its API port, falling back to plain HTTP only when no cert is mounted | P0 | Integration | SC-8 | IT-FMC-1683-A-001 | Passing |
 | BR-INTEGRATION-065 | FMC's 3-port layout matches the Issue #753 standard (API/Health/Metrics) | P0 | Unit | AC-4 | UT-FMC-1683-A-002 | Passing |
-| BR-INTEGRATION-065 | `fmc.HTTPClient.Ping()` continues to succeed against the TLS-protected API port after the port split | P0 | Integration | SC-8, AC-4 | IT-FMC-1683-A-002 | Passing |
+| BR-INTEGRATION-065 | `fmc.HTTPClient.Ping()` continues to succeed against the TLS-protected API port after the port split, retargeted at `ClustersPath` (DD-FLEET-004) | P0 | Integration | SC-8, AC-4 | IT-FMC-1683-A-002 | Passing |
 | BR-INTEGRATION-065 | `/readyz` is served exclusively on the dedicated health port | P1 | Integration | AC-4 | IT-FMC-1683-A-003 | Passing |
+| BR-INTEGRATION-065 | `/healthz` is served exclusively on the dedicated (kubelet-only) health port, never on the API mux | P0 | Integration | AC-4 | IT-FMC-1683-A-004 | Passing |
 | BR-INTEGRATION-065 | `fmc.HTTPClient` accepts an injectable CA-verified `*http.Client` | P0 | Unit | SC-8 | UT-FMC-1683-B-001 | Passing |
 | BR-INTEGRATION-065 | `NewScopeChecker`'s FMC branch builds a CA-verified transport from `TLSCAFile` and rejects a server cert not signed by that CA | P0 | Integration | SC-8, IA-5 | IT-FMC-1683-B-001 | Passing |
 | BR-INTEGRATION-065 | `EffectiveEndpoint()` emits `https://` for the auto-derived FMC backend URL | P1 | Unit | SC-8 | UT-FLEET-1683-C-001 | Passing |
@@ -283,8 +287,9 @@ succeeds after the port split" — not "`ConfigureConditionalTLS` was called".
 | ID | Business Outcome Under Test | Control | Phase |
 |----|------------------------------|---------|-------|
 | `IT-FMC-1683-A-001` | A real FMC API server built via the production `buildFMCServers` path, with a cert mounted, only accepts HTTPS on the API port (plaintext connection fails/upgrades) | SC-8 | Passing |
-| `IT-FMC-1683-A-002` | `fmc.HTTPClient.Ping()` succeeds against the TLS-protected API port's dual-registered `/healthz`, unmodified from its pre-split behavior | SC-8, AC-4 | Passing |
+| `IT-FMC-1683-A-002` | `fmc.HTTPClient.Ping()` succeeds against the TLS-protected API port via `ClustersPath` (DD-FLEET-004), with no liveness handler duplicated onto the API mux | SC-8, AC-4 | Passing |
 | `IT-FMC-1683-A-003` | `/readyz` returns 404 on the API port and 200/503 (dependency-aware) on the dedicated health port | AC-4 | Passing |
+| `IT-FMC-1683-A-004` | `/healthz` returns 404 on the API port and 200 on the dedicated health port (DD-FLEET-004: no dual registration) | AC-4 | Passing |
 | `IT-FMC-1683-B-001` | `NewScopeChecker` with `Backend: BackendFMC` and `TLSCAFile` set builds an `HTTPClient` whose requests succeed against a server presenting a cert signed by that CA, and fail (certificate verification error) against a server presenting a self-signed cert not in that CA's chain | SC-8, IA-5 | Passing |
 | `IT-FMC-1683-E-001` | A real FMC API server configured with `TLSProfile=Intermediate` rejects a client `tls.Config` restricted to `MaxVersion: tls.VersionTLS11` (below the profile's floor) with a handshake failure, and accepts a client offering TLS 1.2+ with an allowed cipher | SC-13 | Passing |
 
@@ -325,10 +330,11 @@ points `Server.TLS.CertDir` at it.
 1. **Given**: `buildFMCServers` constructs the API/health/metrics servers from a `ServiceConfig`
    with TLS configured, exactly as `cmd/fleetmetadatacache/main.go`'s `run()` does.
 2. **When**: `fmc.NewHTTPClient(apiBaseURL, fmc.WithHTTPClient(caTrustingClient)).Ping(ctx)` is called.
-3. **Then**: `Ping()` returns `nil` (200 OK from the dual-registered `/healthz` on the API mux).
+3. **Then**: `Ping()` returns `nil` (200 OK from `ClustersPath` on the API mux -- DD-FLEET-004).
 
-**Acceptance Criteria**: `Ping()`'s call signature, base URL, and success contract are
-byte-for-byte unchanged from before the port split.
+**Acceptance Criteria**: `Ping()`'s call signature, base URL, and nil/err success contract are
+preserved after the port split; the health port gains no new pod-to-pod reachability, and no
+liveness handler is duplicated onto the API mux.
 
 **Dependencies**: Unit A GREEN complete.
 
@@ -383,7 +389,7 @@ None — all referenced infrastructure (`sharedtls`, `sharedhealth`, `hotreload.
 
 ### 11.2 Execution Order
 
-1. **Unit A** (RED/GREEN/REFACTOR): server TLS + 3-port split + dual-registered `/healthz`.
+1. **Unit A** (RED/GREEN/REFACTOR): server TLS + 3-port split; `Ping()` retargeted at `ClustersPath` (DD-FLEET-004).
 2. **Unit B** (RED/GREEN/REFACTOR): client TLS (`WithHTTPClient` + `scope_factory.go` wiring).
 3. **Unit C** (RED/GREEN): `EffectiveEndpoint()` scheme change.
 4. **Unit E** (RED/GREEN): FedRAMP `TLSProfile` field + wiring.
@@ -427,8 +433,8 @@ ginkgo -v ./test/e2e/fleetmetadatacache/...
 | Code Path | Entry Point | Exit Point | Wiring IT | Status |
 |-----------|--------------|------------|-----------|--------|
 | `sharedtls.ConfigureConditionalTLS` on FMC API server | `cmd/fleetmetadatacache/main.go: run()` | HTTPS response on API port | `IT-FMC-1683-A-001` | Passing |
-| Dual-registered `/healthz` handler | `buildFMCServers` (API mux + health mux) | 200 OK on both ports | `IT-FMC-1683-A-002` | Passing |
-| `sharedhealth.NewHealthServer` dedicated health server | `buildFMCServers` | `/healthz`+`/readyz` on health port | `IT-FMC-1683-A-003` | Passing |
+| `fmc.HTTPClient.Ping()` -> `ClustersPath` (DD-FLEET-004) | `buildFMCServers` API mux | 200 OK via real `ClustersPath` handler | `IT-FMC-1683-A-002` | Passing |
+| `sharedhealth.NewHealthServer` dedicated (kubelet-only) health server | `buildFMCServers` | `/healthz`+`/readyz` on health port exclusively, 404 on API port | `IT-FMC-1683-A-003`, `IT-FMC-1683-A-004` | Passing |
 | `fmc.WithHTTPClient` -> `scope_factory.go` FMC branch CA transport | `fleet.NewScopeChecker` | CA-verified `HTTPClient` request | `IT-FMC-1683-B-001` | Passing |
 | `sharedtls.SetDefaultSecurityProfileFromConfig(cfg.TLSProfile)` | `cmd/fleetmetadatacache/main.go: run()` | Restricted TLS handshake | `IT-FMC-1683-E-001` | Passing |
 
@@ -453,3 +459,4 @@ that traverse the real `main.go`/`scope_factory.go` production code paths.
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-07-24 | Initial test plan |
+| 1.1 | 2026-07-24 | DD-FLEET-004: revised the `Ping()` design decision post-PR-#1727-review. Health port (8081) confirmed kubelet-only by `NetworkPolicy` inspection (no ingress rule permits pod-to-pod access). Replaced the dual-registered `/healthz` with `fmc.HTTPClient.Ping()` targeting the already-existing `ClustersPath`. Updated IT-FMC-1683-A-002, added IT-FMC-1683-A-004 (inverted: `/healthz` now proven exclusive to the health port), updated IT-FMC-1683-E-001's API-port probe target. See `docs/architecture/decisions/DD-FLEET-004-fmc-ping-clusters-endpoint.md`. |

@@ -181,10 +181,11 @@ type fmcServers struct {
 }
 
 // livenessHandler is FMC's liveness probe: a fixed 200 OK with no backend
-// dependency check. Registered on both the API mux (TLS, dual-registration)
-// and the dedicated health mux (plain HTTP) so fmc.HTTPClient.Ping() --
-// GW/RO's fail-closed readiness gate (Issue #1553/ADR-068) -- continues to
-// succeed against the API base URL unchanged after the Issue #753 port split.
+// dependency check. Registered exclusively on the dedicated health mux
+// (plain HTTP, kubelet-only) -- DD-FLEET-004: it is never registered on the
+// API mux. fmc.HTTPClient.Ping(), GW/RO's fail-closed readiness gate probe
+// (Issue #1553/ADR-068), targets fmc.ClustersPath on the API port instead,
+// so it needs no liveness handler duplicated there.
 func livenessHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
@@ -199,9 +200,6 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 	apiHandler := fmc.NewHandler(scopeClient, deps.clusterRegistry, logger)
 	apiMux := http.NewServeMux()
 	apiHandler.RegisterRoutes(apiMux)
-	// Issue #1553: dual-registered on the API mux so Ping() (hits
-	// baseURL+HealthzPath) is unaffected by the health-port split below.
-	apiMux.HandleFunc(fmc.HealthzPath, livenessHandler)
 
 	apiServer := &http.Server{
 		Addr:              cfg.Server.APIAddr,

@@ -101,25 +101,34 @@ func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIden
 	return result.Managed, nil
 }
 
-// Ping checks connectivity to FMC's API by calling its HealthzPath on the
-// same base URL used for scope checks. Unlike IsManagedResource, Ping does
-// NOT swallow errors: the readiness gate (pkg/fleet/readiness.
-// ScopeCheckerProber) needs the real transport/status error to correctly
-// flip /readyz to NotReady when FMC is unreachable.
+// Ping checks connectivity to FMC's API by calling ClustersPath on the same
+// base URL used for scope checks. Unlike IsManagedResource, Ping does NOT
+// swallow errors: the readiness gate (pkg/fleet/readiness.ScopeCheckerProber)
+// needs the real transport/status error to correctly flip /readyz to
+// NotReady when FMC is unreachable.
+//
+// DD-FLEET-004: Ping deliberately targets ClustersPath, not HealthzPath.
+// FMC's liveness endpoint (/healthz) is kubelet-only, served exclusively on
+// the dedicated health port (Issue #1683 3-port split) -- it is not, and
+// must not become, reachable from other pods (no NetworkPolicy ingress rule
+// permits it). ClustersPath already is: it's a real, already-registered API
+// endpoint that only reads FMC's in-memory cluster registry (no Valkey
+// round-trip), giving the same "shallow liveness" signal HealthzPath would
+// have, without duplicating a liveness handler onto the API mux.
 func (c *HTTPClient) Ping(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+HealthzPath, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+ClustersPath, nil)
 	if err != nil {
-		return fmt.Errorf("build FMC healthz request: %w", err)
+		return fmt.Errorf("build FMC ping request: %w", err)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("FMC healthz unreachable: %w", err)
+		return fmt.Errorf("FMC unreachable: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("FMC healthz returned status %d", resp.StatusCode)
+		return fmt.Errorf("FMC ping returned status %d", resp.StatusCode)
 	}
 	return nil
 }

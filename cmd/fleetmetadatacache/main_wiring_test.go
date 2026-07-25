@@ -170,22 +170,22 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		httpsClient := &http.Client{Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // MinVersion inherited from default; test dials with modern Go defaults
 		}}
-		resp, err := httpsClient.Get("https://" + addr + fmc.HealthzPath)
+		resp, err := httpsClient.Get("https://" + addr + fmc.ClustersPath)
 		Expect(err).ToNot(HaveOccurred(), "a CA-trusting HTTPS client must complete the handshake")
 		_ = resp.Body.Close()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 		// A plaintext HTTP request against a TLS-only listener must never
-		// reach the liveness handler -- proves plaintext is rejected, not
+		// reach the API handler -- proves plaintext is rejected, not
 		// silently accepted alongside TLS. (Go's http.Server detects the
 		// non-TLS ClientHello and replies with a plain-text 400 explaining
 		// the mismatch rather than serving the handler -- it does not
 		// return a transport-level error to the plaintext client.)
-		plainResp, plainErr := http.Get("http://" + addr + fmc.HealthzPath) //nolint:gosec,noctx // deliberate plaintext probe against a TLS-only listener
+		plainResp, plainErr := http.Get("http://" + addr + fmc.ClustersPath) //nolint:gosec,noctx // deliberate plaintext probe against a TLS-only listener
 		if plainErr == nil {
 			defer func() { _ = plainResp.Body.Close() }()
 			Expect(plainResp.StatusCode).ToNot(Equal(http.StatusOK),
-				"SC-8: a plaintext request must never reach the liveness handler behind the TLS-only listener")
+				"SC-8: a plaintext request must never reach the API handler behind the TLS-only listener")
 		}
 	})
 
@@ -195,7 +195,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 			"no cert mounted -- API server must remain plain HTTP (ConfigureConditionalTLS fail-open)")
 	})
 
-	It("IT-FMC-1683-A-002 [SC-8, AC-4]: fmc.HTTPClient.Ping() succeeds against the TLS-protected API port's dual-registered /healthz, unmodified from its pre-split contract", func() {
+	It("IT-FMC-1683-A-002 [SC-8, AC-4, DD-FLEET-004]: fmc.HTTPClient.Ping() succeeds against the TLS-protected API port via /api/v1/clusters, without any liveness handler duplicated onto the API mux", func() {
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
 		cfg.Server.TLS.CertDir = certDir
 
@@ -213,8 +213,8 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		fmcClient := fmc.NewHTTPClient("https://"+addr, fmc.WithHTTPClient(caTrustingClient))
 
 		Expect(fmcClient.Ping(context.Background())).To(Succeed(),
-			"AC-4/#1553: Ping()'s call signature, base URL, and success contract must be "+
-				"byte-for-byte unchanged from before the 3-port split")
+			"AC-4/#1553: Ping() must still succeed against the API base URL post-split, "+
+				"reusing the real ClustersPath endpoint (DD-FLEET-004) rather than a duplicated /healthz")
 	})
 
 	It("IT-FMC-1683-A-003 [AC-4]: /readyz is served exclusively on the dedicated health port, not the API port", func() {
@@ -243,7 +243,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		Expect(string(body)).ToNot(BeEmpty())
 	})
 
-	It("IT-FMC-1683-A-004 [AC-4]: /healthz (liveness) is reachable on both the API port and the dedicated health port", func() {
+	It("IT-FMC-1683-A-004 [AC-4, DD-FLEET-004]: /healthz (liveness) is served exclusively on the dedicated health port, not the API port", func() {
 		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
 
 		apiLn, apiAddr := listenOn()
@@ -254,12 +254,18 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		go func() { _ = servers.health.Serve(healthLn) }()
 		defer func() { _ = servers.health.Close() }()
 
-		for _, addr := range []string{apiAddr, healthAddr} {
-			resp, err := http.Get("http://" + addr + fmc.HealthzPath) //nolint:gosec,noctx // test-only probe
-			Expect(err).ToNot(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK), "addr=%s", addr)
-			_ = resp.Body.Close()
-		}
+		apiResp, err := http.Get("http://" + apiAddr + fmc.HealthzPath) //nolint:gosec,noctx // test-only probe
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = apiResp.Body.Close() }()
+		Expect(apiResp.StatusCode).To(Equal(http.StatusNotFound),
+			"DD-FLEET-004: /healthz must not be registered on the API mux -- only Ping()'s "+
+				"ClustersPath target and the kubelet-only health port serve it")
+
+		healthResp, err := http.Get("http://" + healthAddr + fmc.HealthzPath) //nolint:gosec,noctx // test-only probe
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = healthResp.Body.Close() }()
+		Expect(healthResp.StatusCode).To(Equal(http.StatusOK),
+			"/healthz must remain reachable on the dedicated health port (kubelet liveness probe)")
 	})
 
 	It("IT-FMC-1683-E-001 [SC-13]: an Intermediate TLS security profile rejects a downgraded handshake and accepts a compliant one", func() {
@@ -278,14 +284,14 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		downgradedClient := &http.Client{Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: pool, MaxVersion: tls.VersionTLS11}, //nolint:gosec // deliberately testing a below-floor TLS version
 		}}
-		_, err := downgradedClient.Get("https://" + addr + fmc.HealthzPath)
+		_, err := downgradedClient.Get("https://" + addr + fmc.ClustersPath)
 		Expect(err).To(HaveOccurred(),
 			"SC-13: Intermediate profile floors at TLS 1.2 -- a TLS 1.1-only client must be rejected")
 
 		compliantClient := &http.Client{Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		}}
-		resp, err := compliantClient.Get("https://" + addr + fmc.HealthzPath)
+		resp, err := compliantClient.Get("https://" + addr + fmc.ClustersPath)
 		Expect(err).ToNot(HaveOccurred(),
 			"SC-13: a TLS 1.2+ client with default (AEAD) ciphers must be accepted by the Intermediate profile")
 		_ = resp.Body.Close()
