@@ -1,0 +1,139 @@
+suite: "fleet.enabled consolidation (Issue #1707): single global.fleet.enabled replaces gateway/RO/AF/EM per-service toggles"
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/remediationorchestrator/remediationorchestrator.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/effectivenessmonitor/effectivenessmonitor.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  kubernautAgent:
+    llm:
+      provider: openai
+      model: gpt-4
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "gateway renders no fleet block by default (global.fleet.enabled unset)"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*fleet:"
+
+  - it: "remediationorchestrator renders no fleet block by default"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - notMatchRegex:
+          path: data["remediationorchestrator.yaml"]
+          pattern: "(?m)^\\s*fleet:"
+
+  - it: "apifrontend renders no fleet block by default"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*fleet:"
+
+  - it: "effectivenessmonitor renders no fleet block by default"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: metadata.name
+      value: effectivenessmonitor-config
+    asserts:
+      - notMatchRegex:
+          path: data["effectivenessmonitor.yaml"]
+          pattern: "(?m)^\\s*fleet:"
+
+  # NOTE: gateway and remediationorchestrator both enforce DD-FLEET-003's
+  # dual-capability requirement (mcpGatewayEndpoint mandatory whenever fleet
+  # is enabled). Since all four services now share one on/off switch, every
+  # "enabled=true" case below must set global.fleet.mcpGatewayEndpoint even
+  # when proving apifrontend/effectivenessmonitor's own behavior (which,
+  # individually, would not require it) -- otherwise gateway/RO's fail-fast
+  # guard aborts the whole chart render.
+  - it: "global.fleet.enabled=true alone (no per-service overrides) turns on fleet for gateway"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*fleet:\\n\\s*enabled: true"
+
+  - it: "global.fleet.enabled=true alone turns on fleet for remediationorchestrator"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - matchRegex:
+          path: data["remediationorchestrator.yaml"]
+          pattern: "(?m)^\\s*fleet:\\n\\s*enabled: true"
+
+  - it: "global.fleet.enabled=true alone turns on fleet for apifrontend, without setting apifrontend.fleet.enabled"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*fleet:\\n\\s*enabled: true"
+
+  - it: "global.fleet.enabled=true alone turns on fleet for effectivenessmonitor, without setting effectivenessmonitor.fleet.enabled"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: metadata.name
+      value: effectivenessmonitor-config
+    asserts:
+      - matchRegex:
+          path: data["effectivenessmonitor.yaml"]
+          pattern: "(?m)^\\s*fleet:\\n\\s*enabled: true"
+
+  - it: "the old per-service fleet.enabled key is no longer recognized (schema rejects it, proving a full collapse rather than a silent alias)"
+    set:
+      gateway:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}

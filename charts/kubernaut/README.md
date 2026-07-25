@@ -397,17 +397,22 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `global.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `global.nodeSelector` | Global node selector | `{}` |
 | `global.tolerations` | Global tolerations | `[]` |
-| `global.fleet.mcpGatewayEndpoint` | Shared MCP Gateway endpoint URL, used as fallback when a service's own `fleet.mcpGatewayEndpoint` is unset | `""` |
-| `global.fleet.mcpGatewayType` | Shared MCP Gateway type (`eaigw` or `kuadrant`), used as fallback when a service's own `fleet.mcpGatewayType` is unset | `""` |
-| `global.fleet.tlsCAFile` | Shared CA bundle for verifying the MCP Gateway's TLS cert, used as fallback when a service's own `fleet.tlsCAFile` is unset | `""` |
-| `global.fleet.oauth2.tokenURL` | Shared MCP Gateway OAuth2 token URL, used as fallback when a service's own `fleet.oauth2.tokenURL` is unset | `""` |
-| `global.fleet.oauth2.credentialsSecretRef` | Shared MCP Gateway OAuth2 credentials Secret (keys: `client-id`, `client-secret`), used as fallback | `""` |
-| `global.fleet.oauth2.scopes` | Shared MCP Gateway OAuth2 scopes, used as fallback | `[]` |
-| `global.fleet.oauth2.tlsCAFile` | Shared CA bundle for verifying `tokenURL`'s TLS cert, used as fallback | `""` |
+| `global.fleet.enabled` | Multi-cluster fleet federation on/off (BR-INTEGRATION-065, ADR-068), consolidated from four independent per-service toggles ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707)) | `false` |
+| `global.fleet.backend` | Federated scope-check backend for GW/RO: `""` (defaults to `fleetmetadatacache`), `fleetmetadatacache`, or `acm`. Enum-validated — `helm template`/`install` fails at render time for any other value ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
+| `global.fleet.endpoint` | Endpoint for the selected `backend`. Auto-derived for `fleetmetadatacache`; required for `acm` | `""` |
+| `global.fleet.mcpGatewayEndpoint` | Shared MCP Gateway endpoint URL, used by every fleet-integration-capable service (global-only, no per-service override) | `""` |
+| `global.fleet.mcpGatewayType` | Shared MCP Gateway type: `""`, `eaigw`, or `kuadrant`. Enum-validated — `helm template`/`install` fails at render time for any other value | `""` |
+| `global.fleet.tlsCAFile` | Shared CA bundle for verifying the MCP Gateway's TLS cert (global-only, no per-service override) | `""` |
+| `global.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — GW/RO fail `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)) | `""` |
+| `global.fleet.oauth2.enabled` | OAuth2 `client_credentials` auth on/off for MCP Gateway authentication (global-only, no per-service override) | `false` |
+| `global.fleet.oauth2.tokenURL` | Shared MCP Gateway OAuth2 token URL (global-only, no per-service override) | `""` |
+| `global.fleet.oauth2.credentialsSecretRef` | Shared MCP Gateway OAuth2 credentials Secret (keys: `client-id`, `client-secret`), used as the default when a service's own `fleet.oauth2.credentialsSecretRef` is unset | `""` |
+| `global.fleet.oauth2.scopes` | Shared MCP Gateway OAuth2 scopes (global-only, no per-service override) | `[]` |
+| `global.fleet.oauth2.tlsCAFile` | Shared CA bundle for verifying `tokenURL`'s TLS cert (global-only, no per-service override) | `""` |
 
-Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remediationorchestrator`, `effectivenessmonitor`, `apifrontend`, `fleetmetadatacache`) points at the same physical MCP Gateway instance, so set its endpoint, type, CA bundle, and OAuth2 credentials once here instead of duplicating them per service. Each service's own `fleet.mcpGatewayEndpoint` / `fleet.mcpGatewayType` / `fleet.tlsCAFile` / `fleet.oauth2.*` (or, for `fleetmetadatacache`, top-level equivalents) still takes precedence when set. Per-service `fleet.enabled` / `fleet.oauth2.enabled` (fleet integration on/off) remains independent per service and is not controlled by these globals.
+Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remediationorchestrator`, `effectivenessmonitor`, `apifrontend`, `fleetmetadatacache`) points at the same physical MCP Gateway instance (and, for `gateway`/`remediationorchestrator`, the same scope-check backend), so `global.fleet` is the **sole source of truth** for all of it ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up). The single per-service exception is `fleet.oauth2.credentialsSecretRef`, which each service can still override individually (see each service's own `fleet.oauth2` block, or `fleetmetadatacache.oauth2` for FMC) — every other field that used to be duplicated per service (`backend`, `endpoint`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `tokenSecretRef`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) was removed from every per-service schema entirely; setting it there now fails Helm schema validation at render time instead of being silently ignored. `global.fleet.enabled` is the single on/off switch for multi-cluster fleet federation across `gateway`, `remediationorchestrator`, `apifrontend`, and `effectivenessmonitor` — there is no per-service equivalent. `fleetmetadatacache.enabled` (whether to deploy that service at all) remains independent and is not controlled by this global.
 
-`gateway.fleet.mcpGatewayEndpoint`, `remediationorchestrator.fleet.mcpGatewayEndpoint`, and `fleetmetadatacache.mcpGatewayEndpoint` are required (directly or via the global fallback) when their respective `fleet.enabled` / `fleetmetadatacache.enabled` is `true` — `helm install`/`upgrade` fails fast with a remediation message if neither is set. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
+`global.fleet.mcpGatewayEndpoint` is required when `global.fleet.enabled` / `fleetmetadatacache.enabled` is `true` for `gateway`, `remediationorchestrator`, and `fleetmetadatacache` — `helm install`/`upgrade` fails fast with a remediation message if it's unset. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
 
 ### Kubernaut Agent (LLM)
 
@@ -472,6 +477,14 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `workflowexecution.config.ansible.tokenSecretRef.namespace` | Secret namespace (defaults to release namespace) | _(release ns)_ |
 | `workflowexecution.config.ansible.caCertSecretRef.name` | Secret with a custom/private CA cert for a self-signed AWX/AAP endpoint (BR-PLATFORM-005) | `""` |
 | `workflowexecution.config.ansible.caCertSecretRef.key` | Key within the Secret (PEM) | `ca.crt` |
+| `workflowexecution.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) for a **write-scoped** OAuth2 client. **REQUIRED when `global.fleet.oauth2.enabled=true`** — `helm template`/`install` fails at render time if unset. Does **NOT** fall back to `global.fleet.oauth2.credentialsSecretRef`: WE is the only fleet-integration-capable service that calls MCP write tools (`resources_create_or_update`/`resources_delete`) instead of the read-only tools every other service (`gateway`/`remediationorchestrator`/`apifrontend`/`effectivenessmonitor`/`signalprocessing`/`fleetmetadatacache`) uses, so sharing their credential here would be a least-privilege violation | `""` |
+
+WE's remote-execution `fleet.endpoint` and `fleet.oauth2.{enabled,tokenURL,scopes,tlsCAFile}` come
+entirely from [`global.fleet.*`](#global) — there is no per-service override for them, since WE has
+no `ClusterRegistry`/CRD-watch capability (no `mcpGatewayType`, no `namespace`; it discovers MCP tool
+prefixes dynamically via `tools/list`). Unlike GW/RO/FMC, an empty `global.fleet.mcpGatewayEndpoint`
+is a valid, supported state even with `global.fleet.enabled=true` — WE simply stays in local-only
+execution (BR-FLEET-054).
 
 Setting `caCertSecretRef` adds a `build-ca-bundle` init container that combines the custom CA with
 the inter-service CA into one trust bundle (`TLS_CA_FILE`), mirroring the Kubernaut Operator. When
@@ -485,19 +498,13 @@ cluster's other known peers.
 |---|---|---|
 | `gateway.auth.signalSources` | External signal sources needing RBAC | `[]` |
 | `gateway.service.type` | Service type | `ClusterIP` |
-| `gateway.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
-| `gateway.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
-| `gateway.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
-| `gateway.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — GW fails `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)). | `""` |
+| `gateway.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) overriding `global.fleet.oauth2.credentialsSecretRef` for Gateway only. All other fleet fields (`backend`, `endpoint`, `tokenSecretRef`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) moved to [`global.fleet.*`](#global) ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
 
 ### RemediationOrchestrator
 
 | Parameter | Description | Default |
 |---|---|---|
-| `remediationorchestrator.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
-| `remediationorchestrator.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
-| `remediationorchestrator.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
-| `remediationorchestrator.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — RO fails `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)). | `""` |
+| `remediationorchestrator.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) overriding `global.fleet.oauth2.credentialsSecretRef` for RemediationOrchestrator only. All other fleet fields (`backend`, `endpoint`, `tokenSecretRef`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) moved to [`global.fleet.*`](#global) ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
 
 ### EffectivenessMonitor
 

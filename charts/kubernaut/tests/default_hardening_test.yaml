@@ -41,10 +41,13 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
-        mcpGatewayEndpoint: "http://mcp.example.com"
         oauth2:
-          tokenURL: "http://oauth.example.com"
           credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: kind

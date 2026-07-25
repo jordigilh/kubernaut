@@ -1,10 +1,10 @@
 {{- $signalprocessingFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.signalprocessing.fleet "oauth2" .Values.signalprocessing.fleet.oauth2) | fromYaml }}
-{{- if .Values.signalprocessing.fleet.oauth2.enabled }}
+{{- if $signalprocessingFleetPreamble.oauth2.enabled }}
 {{- if not $signalprocessingFleetPreamble.oauth2.tokenURL }}
-{{- fail "signalprocessing.fleet.oauth2.tokenURL is required when signalprocessing.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
+{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
 {{- end }}
 {{- if not $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "signalprocessing.fleet.oauth2.credentialsSecretRef is required when signalprocessing.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
+{{- fail "global.fleet.oauth2.credentialsSecretRef (or signalprocessing.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 {{- end }}
 {{- if not .Values.signalprocessing.policies.existingConfigMap }}
@@ -72,16 +72,16 @@ data:
         batchSize: 100
         flushInterval: "1s"
         maxRetries: 3
-    {{- if .Values.signalprocessing.fleet.endpoint }}
+    {{- if $signalprocessingFleetPreamble.config.mcpGatewayEndpoint }}
     fleet:
-      endpoint: {{ .Values.signalprocessing.fleet.endpoint | quote }}
+      endpoint: {{ $signalprocessingFleetPreamble.config.mcpGatewayEndpoint | quote }}
       {{- if $signalprocessingFleetPreamble.config.mcpGatewayType }}
       mcpGatewayType: {{ $signalprocessingFleetPreamble.config.mcpGatewayType | quote }}
       {{- end }}
       {{- if .Values.signalprocessing.fleet.namespace }}
       namespace: {{ .Values.signalprocessing.fleet.namespace | quote }}
       {{- end }}
-      {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
+      {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
       oauth2:
         enabled: true
         tokenURL: {{ $signalprocessingFleetPreamble.oauth2.tokenURL | quote }}
@@ -252,7 +252,7 @@ spec:
               mountPath: /etc/signalprocessing/proactive-signal-mappings.yaml
               subPath: proactive-signal-mappings.yaml
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
+            {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/signalprocessing/{{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
@@ -270,7 +270,7 @@ spec:
           configMap:
             name: {{ .Values.signalprocessing.proactiveSignalMappings.existingConfigMap | default "signalprocessing-proactive-signal-mappings" }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if .Values.signalprocessing.fleet.oauth2.enabled }}
+        {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}
