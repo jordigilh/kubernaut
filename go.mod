@@ -11,7 +11,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.58.0
 	github.com/containers/kubernetes-mcp-server v0.0.65
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getkin/kin-openapi v0.142.0
+	github.com/getkin/kin-openapi v0.145.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/go-chi/cors v1.2.2
 	github.com/go-faster/errors v0.7.1
