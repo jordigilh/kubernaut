@@ -233,7 +233,17 @@ func buildLLMClients(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig
 	phaseSwappables := make(map[katypes.Phase]*llm.SwappableClient)
 	for phaseName, override := range llmRuntime.PhaseModels {
 		phaseLLM, phaseRT := llmRuntime.EffectivePhaseConfig(phaseName, cfg.AI.LLM, *llmRuntime)
-		phaseClient, phaseErr := buildLLMClientFromConfig(context.Background(), mergeLLMConfig(phaseLLM, &phaseRT))
+		merged := mergeLLMConfig(phaseLLM, &phaseRT)
+		// #1726: a phase override's own apiKeyFile (distinct from the base
+		// profile's) must be resolved into APIKey here — EffectivePhaseConfig
+		// only produces the correct APIKeyFile, it does not read it.
+		// ResolveAPIKey no-ops when APIKeyFile is empty (inherited from base).
+		if err := merged.ResolveAPIKey(); err != nil {
+			logger.Error(err, "failed to resolve phase LLM api key file",
+				"phase", phaseName, "apiKeyFile", merged.APIKeyFile)
+			os.Exit(1)
+		}
+		phaseClient, phaseErr := buildLLMClientFromConfig(context.Background(), merged)
 		if phaseErr != nil {
 			logger.Error(phaseErr, "failed to build phase LLM client",
 				"phase", phaseName, "model", override.Model)
@@ -284,14 +294,23 @@ func buildAlignmentStack(
 		logger.Error(nil, "shadow agent shares investigation LLM client — shadow requests will compete with primary investigation; configure ai.alignmentCheck.llm for dedicated shadow model")
 	} else {
 		alignStaticCfg, alignRtCfg := alignCfg.EffectiveLLM(cfg.AI.LLM, *llmRuntime)
-		raw, alignErr := buildLLMClientFromConfig(context.Background(), mergeLLMConfig(alignStaticCfg, &alignRtCfg))
+		merged := mergeLLMConfig(alignStaticCfg, &alignRtCfg)
+		// #1726: the shadow/alignment-checker's own apiKeyFile (distinct from
+		// the base profile's) must be resolved into APIKey here — EffectiveLLM
+		// only produces the correct APIKeyFile, it does not read it.
+		// ResolveAPIKey no-ops when APIKeyFile is empty (inherited from base).
+		if err := merged.ResolveAPIKey(); err != nil {
+			logger.Error(err, "failed to resolve shadow agent LLM api key file (fail-closed)",
+				"apiKeyFile", merged.APIKeyFile)
+			os.Exit(1)
+		}
+		raw, alignErr := buildLLMClientFromConfig(context.Background(), merged)
 		if alignErr != nil {
 			logger.Error(alignErr, "alignment check LLM client failed (fail-closed): alignment is enabled but shadow client unavailable")
 			os.Exit(1)
-		} else {
-			shadowClient = llm.NewInstrumentedClient(raw)
-			logger.Info("shadow agent using dedicated LLM client", "model", alignRtCfg.Model)
 		}
+		shadowClient = llm.NewInstrumentedClient(raw)
+		logger.Info("shadow agent using dedicated LLM client", "model", alignRtCfg.Model)
 	}
 	if shadowClient != nil {
 		alignEvaluator = alignment.NewEvaluator(shadowClient, alignment.EvaluatorConfig{
