@@ -89,6 +89,10 @@ func TLSPortSplit(h *Harness, v Variant) bool {
 				Timeout: 5 * time.Second,
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{
+						// codeql[go/insecure-tls]: deliberate adversarial client config -- this
+						// test proves the real server *rejects* a TLS 1.1 handshake (SC-13); the
+						// insecure value is the test input under negative-verification, not a
+						// production TLS listener/dialer setting.
 						MaxVersion:         tls.VersionTLS11, //nolint:gosec // deliberate: proving the server rejects this floor
 						InsecureSkipVerify: true,             //nolint:gosec // handshake version is under test, not cert trust
 					},

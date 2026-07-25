@@ -282,6 +282,8 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		pool := caPoolFromCert(filepath.Join(certDir, "tls.crt"))
 
 		downgradedClient := &http.Client{Transport: &http.Transport{
+			// codeql[go/insecure-tls]: deliberate adversarial client config -- proves the real
+			// server *rejects* a TLS 1.1 handshake (SC-13), not a production listener/dialer setting.
 			TLSClientConfig: &tls.Config{RootCAs: pool, MaxVersion: tls.VersionTLS11}, //nolint:gosec // deliberately testing a below-floor TLS version
 		}}
 		_, err := downgradedClient.Get("https://" + addr + fmc.ClustersPath)
