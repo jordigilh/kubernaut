@@ -483,6 +483,15 @@ func reloadSinglePhaseClient(
 	phase := katypes.Phase(phaseName)
 	phaseLLM, phaseRT := rt.EffectivePhaseConfig(phaseName, staticCfg.AI.LLM, *rt)
 	merged := mergeLLMConfig(phaseLLM, &phaseRT)
+	// #1726: a phase override's own apiKeyFile (distinct from the base
+	// profile's) must be resolved into APIKey here — EffectivePhaseConfig
+	// only produces the correct APIKeyFile, it does not read it.
+	// ResolveAPIKey no-ops when APIKeyFile is empty (inherited from base).
+	if err := merged.ResolveAPIKey(); err != nil {
+		logger.Error(err, "reload: failed to resolve phase LLM api key file",
+			"phase", phaseName, "apiKeyFile", merged.APIKeyFile)
+		return
+	}
 
 	phaseClient, err := buildLLMClientFromConfig(context.Background(), merged)
 	if err != nil {
