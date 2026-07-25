@@ -1,11 +1,11 @@
 {{- if .Values.apifrontend.enabled }}
 {{- $apifrontendFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.apifrontend.fleet "oauth2" .Values.apifrontend.fleet.oauth2) | fromYaml }}
-{{- if and .Values.global.fleet.enabled .Values.apifrontend.fleet.oauth2.enabled }}
+{{- if and .Values.global.fleet.enabled $apifrontendFleetPreamble.oauth2.enabled }}
 {{- if not $apifrontendFleetPreamble.oauth2.tokenURL }}
-{{- fail "apifrontend.fleet.oauth2.tokenURL is required when apifrontend.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
+{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
 {{- end }}
 {{- if not $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "apifrontend.fleet.oauth2.credentialsSecretRef is required when apifrontend.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
+{{- fail "global.fleet.oauth2.credentialsSecretRef (or apifrontend.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 {{- end }}
 ---
@@ -208,7 +208,7 @@ data:
       mcpGatewayType: {{ $apifrontendFleetPreamble.config.mcpGatewayType | quote }}
       {{- end }}
       tlsCAFile: {{ $apifrontendFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{- if .Values.apifrontend.fleet.oauth2.enabled }}
+      {{- if $apifrontendFleetPreamble.oauth2.enabled }}
       oauth2:
         enabled: true
         tokenURL: {{ $apifrontendFleetPreamble.oauth2.tokenURL | quote }}
@@ -307,7 +307,7 @@ spec:
             {{- end }}
             {{- if .Values.global.fleet.enabled }}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if .Values.apifrontend.fleet.oauth2.enabled }}
+            {{- if $apifrontendFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/apifrontend/{{ $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
@@ -348,7 +348,7 @@ spec:
         {{- end }}
         {{- if .Values.global.fleet.enabled }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if .Values.apifrontend.fleet.oauth2.enabled }}
+        {{- if $apifrontendFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}

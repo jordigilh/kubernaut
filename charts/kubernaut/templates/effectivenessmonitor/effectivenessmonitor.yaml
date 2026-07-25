@@ -1,11 +1,11 @@
 {{- include "kubernaut.monitoring.validate" . -}}
 {{- $effectivenessmonitorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.effectivenessmonitor.fleet "oauth2" .Values.effectivenessmonitor.fleet.oauth2) | fromYaml }}
-{{- if and .Values.global.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+{{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
 {{- if not $effectivenessmonitorFleetPreamble.oauth2.tokenURL }}
-{{- fail "effectivenessmonitor.fleet.oauth2.tokenURL is required when effectivenessmonitor.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
+{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
 {{- end }}
 {{- if not $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "effectivenessmonitor.fleet.oauth2.credentialsSecretRef is required when effectivenessmonitor.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
+{{- fail "global.fleet.oauth2.credentialsSecretRef (or effectivenessmonitor.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 {{- end }}
 ---
@@ -54,7 +54,7 @@ data:
       mcpGatewayType: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayType | quote }}
       {{- end }}
       tlsCAFile: {{ $effectivenessmonitorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{- if .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+      {{- if $effectivenessmonitorFleetPreamble.oauth2.enabled }}
       oauth2:
         enabled: true
         tokenURL: {{ $effectivenessmonitorFleetPreamble.oauth2.tokenURL | quote }}
@@ -249,7 +249,7 @@ spec:
               readOnly: true
             {{- end }}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if and .Values.global.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+            {{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/effectivenessmonitor/{{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
@@ -266,7 +266,7 @@ spec:
             name: effectivenessmonitor-service-ca
         {{- end }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if and .Values.global.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+        {{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}

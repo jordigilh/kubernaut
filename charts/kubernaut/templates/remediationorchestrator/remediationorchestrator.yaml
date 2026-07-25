@@ -1,14 +1,14 @@
 {{- $remediationorchestratorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.remediationorchestrator.fleet "oauth2" .Values.remediationorchestrator.fleet.oauth2) | fromYaml }}
 {{- if .Values.global.fleet.enabled }}
 {{- if not $remediationorchestratorFleetPreamble.config.mcpGatewayEndpoint }}
-{{- fail "remediationorchestrator.fleet.mcpGatewayEndpoint is required when global.fleet.enabled=true (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
+{{- fail "global.fleet.mcpGatewayEndpoint is required when global.fleet.enabled=true" }}
 {{- end }}
-{{- if .Values.remediationorchestrator.fleet.oauth2.enabled }}
+{{- if $remediationorchestratorFleetPreamble.oauth2.enabled }}
 {{- if not $remediationorchestratorFleetPreamble.oauth2.tokenURL }}
-{{- fail "remediationorchestrator.fleet.oauth2.tokenURL is required when remediationorchestrator.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
+{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
 {{- end }}
 {{- if not $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "remediationorchestrator.fleet.oauth2.credentialsSecretRef is required when remediationorchestrator.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
+{{- fail "global.fleet.oauth2.credentialsSecretRef (or remediationorchestrator.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -70,12 +70,12 @@ data:
     {{- if .Values.global.fleet.enabled }}
     fleet:
       enabled: true
-      {{- if .Values.remediationorchestrator.fleet.backend }}
-      backend: {{ .Values.remediationorchestrator.fleet.backend | quote }}
+      {{- if $remediationorchestratorFleetPreamble.config.backend }}
+      backend: {{ $remediationorchestratorFleetPreamble.config.backend | quote }}
       {{- end }}
-      {{- if .Values.remediationorchestrator.fleet.endpoint }}
-      endpoint: {{ .Values.remediationorchestrator.fleet.endpoint | quote }}
-      {{- else if eq (default "fleetmetadatacache" .Values.remediationorchestrator.fleet.backend) "fleetmetadatacache" }}
+      {{- if $remediationorchestratorFleetPreamble.config.endpoint }}
+      endpoint: {{ $remediationorchestratorFleetPreamble.config.endpoint | quote }}
+      {{- else if eq (default "fleetmetadatacache" $remediationorchestratorFleetPreamble.config.backend) "fleetmetadatacache" }}
       endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
       {{- end }}
       mcpGatewayEndpoint: {{ $remediationorchestratorFleetPreamble.config.mcpGatewayEndpoint | quote }}
@@ -85,10 +85,10 @@ data:
       tlsCAFile: {{ $remediationorchestratorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
       {{/* ACM bearer-token wiring (BR-PLATFORM-003, Issue #1589). FleetConfig.TokenPath
            consumes this (Issue #1556) and Validate() hard-requires it when backend=acm. */}}
-      {{- if .Values.remediationorchestrator.fleet.tokenSecretRef }}
-      tokenPath: "/etc/remediationorchestrator/{{ .Values.remediationorchestrator.fleet.tokenSecretRef }}/token"
+      {{- if $remediationorchestratorFleetPreamble.config.tokenSecretRef }}
+      tokenPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.config.tokenSecretRef }}/token"
       {{- end }}
-      {{- if .Values.remediationorchestrator.fleet.oauth2.enabled }}
+      {{- if $remediationorchestratorFleetPreamble.oauth2.enabled }}
       oauth2:
         enabled: true
         tokenURL: {{ $remediationorchestratorFleetPreamble.oauth2.tokenURL | quote }}
@@ -297,14 +297,14 @@ spec:
               mountPath: /etc/config
               readOnly: true
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if and .Values.global.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
+            {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
-            {{- if and .Values.global.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
+            {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.config.tokenSecretRef }}
             - name: fleet-acm-token
-              mountPath: "/etc/remediationorchestrator/{{ .Values.remediationorchestrator.fleet.tokenSecretRef }}"
+              mountPath: "/etc/remediationorchestrator/{{ $remediationorchestratorFleetPreamble.config.tokenSecretRef }}"
               readOnly: true
             {{- end }}
           resources:
@@ -314,15 +314,15 @@ spec:
           configMap:
             name: remediationorchestrator-config
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if and .Values.global.fleet.enabled .Values.remediationorchestrator.fleet.oauth2.enabled }}
+        {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}
         {{- end }}
-        {{- if and .Values.global.fleet.enabled .Values.remediationorchestrator.fleet.tokenSecretRef }}
+        {{- if and .Values.global.fleet.enabled $remediationorchestratorFleetPreamble.config.tokenSecretRef }}
         - name: fleet-acm-token
           secret:
-            secretName: {{ .Values.remediationorchestrator.fleet.tokenSecretRef }}
+            secretName: {{ $remediationorchestratorFleetPreamble.config.tokenSecretRef }}
         {{- end }}
 ---
 apiVersion: v1

@@ -21,10 +21,13 @@ set:
       existingConfigMap: test-cm
   fleetmetadatacache:
     enabled: true
-    mcpGatewayEndpoint: "http://mcp.example.com"
     oauth2:
-      tokenURL: "http://oauth.example.com"
       credentialsSecretRef: "fmc-creds"
+  global:
+    fleet:
+      mcpGatewayEndpoint: "http://mcp.example.com"
+      oauth2:
+        tokenURL: "http://oauth.example.com"
 tests:
   - it: "apifrontend Deployment gets default pod securityContext"
     template: templates/apifrontend/apifrontend.yaml

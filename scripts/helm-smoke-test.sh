@@ -2118,11 +2118,11 @@ for d in docs:
   acm_with_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
-    --set gateway.fleet.backend=acm \
-    --set gateway.fleet.tokenSecretRef=acm-token 2>&1)
+    --set global.fleet.backend=acm \
+    --set global.fleet.tokenSecretRef=acm-token 2>&1)
   if grep -q 'tokenPath: "/etc/gateway/acm-token/token"' <<< "$acm_with_token" && \
      grep -q "fleet-acm-token" <<< "$acm_with_token"; then
-    tap_ok "ST-CHART-ACM-001a: gateway.fleet.tokenSecretRef renders tokenPath + Secret volume/mount"
+    tap_ok "ST-CHART-ACM-001a: global.fleet.tokenSecretRef renders tokenPath + Secret volume/mount (gateway)"
   else
     tap_not_ok "ST-CHART-ACM-001a: ACM tokenSecretRef wiring" \
       "tokenPath or fleet-acm-token volume/mount not found with backend=acm + tokenSecretRef set"
@@ -2132,7 +2132,7 @@ for d in docs:
   acm_without_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
-    --set gateway.fleet.backend=acm 2>&1)
+    --set global.fleet.backend=acm 2>&1)
   acm_without_token_exit=$?
   if [[ "$acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$acm_without_token"; then
     tap_ok "ST-CHART-ACM-001b: backend=acm without tokenSecretRef renders cleanly (fails Go-side Validate() at pod startup, per #1556)"
@@ -2148,11 +2148,11 @@ for d in docs:
   ro_acm_with_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
-    --set remediationorchestrator.fleet.backend=acm \
-    --set remediationorchestrator.fleet.tokenSecretRef=acm-token 2>&1)
+    --set global.fleet.backend=acm \
+    --set global.fleet.tokenSecretRef=acm-token 2>&1)
   if grep -q 'tokenPath: "/etc/remediationorchestrator/acm-token/token"' <<< "$ro_acm_with_token" && \
      grep -q "fleet-acm-token" <<< "$ro_acm_with_token"; then
-    tap_ok "ST-CHART-ACM-002a: remediationorchestrator.fleet.tokenSecretRef renders tokenPath + Secret volume/mount"
+    tap_ok "ST-CHART-ACM-002a: global.fleet.tokenSecretRef renders tokenPath + Secret volume/mount (remediationorchestrator)"
   else
     tap_not_ok "ST-CHART-ACM-002a: RemediationOrchestrator ACM tokenSecretRef wiring" \
       "tokenPath or fleet-acm-token volume/mount not found with backend=acm + tokenSecretRef set"
@@ -2162,7 +2162,7 @@ for d in docs:
   ro_acm_without_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
-    --set remediationorchestrator.fleet.backend=acm 2>&1)
+    --set global.fleet.backend=acm 2>&1)
   ro_acm_without_token_exit=$?
   if [[ "$ro_acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$ro_acm_without_token"; then
     tap_ok "ST-CHART-ACM-002b: RemediationOrchestrator backend=acm without tokenSecretRef renders cleanly (fails Go-side Validate() at pod startup, per #1556)"

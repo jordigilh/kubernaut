@@ -69,17 +69,19 @@ Usage: {{ include "kubernaut.tls.issuerName" . }}
 {{- end }}
 
 {{/*
-Merged fleet OAuth2 config: a service's own fleet.oauth2 fields fall back to
-global.fleet.oauth2 when unset, since every fleet-integration-capable
-service (gateway, signalprocessing, remediationorchestrator,
-effectivenessmonitor, apifrontend, fleetmetadatacache) authenticates to the
-*same* MCP Gateway with the same OAuth2 client in practice -- set it once in
-global.fleet.oauth2 instead of duplicating it per service. Per-service
-`fleet.oauth2.enabled` (fleet OAuth2 auth on/off) is intentionally NOT
-handled here and stays independent per service -- distinct from
-global.fleet.enabled (fleet federation on/off, consolidated across
-gateway/remediationorchestrator/apifrontend/effectivenessmonitor, Issue
-#1707).
+Merged fleet OAuth2 config (Issue #1707 follow-up): every field except
+credentialsSecretRef is now global-only -- backend/endpoint/mcpGatewayType/
+tlsCAFile/oauth2.enabled/tokenURL/scopes/tlsCAFile were removed from every
+per-service `fleet.*` schema, since every fleet-integration-capable service
+(gateway, signalprocessing, remediationorchestrator, effectivenessmonitor,
+apifrontend, fleetmetadatacache) authenticates to the *same* MCP Gateway
+with the same OAuth2 client in practice -- there is no known deployment that
+needs a different value per service. Only `oauth2.credentialsSecretRef`
+remains overridable per service (the one field ADR-068 anticipated could
+legitimately differ, e.g. a per-namespace Secret naming convention).
+Uses sprig `get` (not dot access) so this also works for callers whose
+`svc` dict doesn't declare one of these keys at all (e.g. fleetmetadatacache's
+own oauth2 dict only ever declared credentialsSecretRef) without erroring.
 Named templates can only return a string, so the merged config is
 serialized as YAML -- parse it back with `fromYaml` at the call site.
 Usage:
@@ -90,22 +92,27 @@ Usage:
 {{- $g := .root.Values.global.fleet.oauth2 -}}
 {{- $svc := .svc -}}
 {{- dict
-    "tokenURL" ($svc.tokenURL | default $g.tokenURL)
-    "credentialsSecretRef" ($svc.credentialsSecretRef | default $g.credentialsSecretRef)
-    "scopes" ($svc.scopes | default $g.scopes)
-    "tlsCAFile" ($svc.tlsCAFile | default $g.tlsCAFile)
+    "enabled" $g.enabled
+    "tokenURL" $g.tokenURL
+    "credentialsSecretRef" ((get $svc "credentialsSecretRef") | default $g.credentialsSecretRef)
+    "scopes" $g.scopes
+    "tlsCAFile" $g.tlsCAFile
   | toYaml -}}
 {{- end }}
 
 {{/*
-Merged fleet MCP Gateway config (endpoint/type/CA, distinct from OAuth2
-credentials -- see kubernaut.fleet.oauth2): a service's own
-fleet.mcpGatewayEndpoint/mcpGatewayType/tlsCAFile fall back to
-global.fleet.* when unset, since every fleet-integration-capable service
-points at the *same* physical MCP Gateway instance. Uses sprig `get` (not
-dot access) so this also works for callers whose `svc` dict doesn't declare
-one of these keys at all (e.g. signalprocessing has no top-level
-fleet.tlsCAFile) without erroring.
+Merged fleet MCP Gateway config (endpoint/type/CA/backend/token, distinct
+from OAuth2 credentials -- see kubernaut.fleet.oauth2). Issue #1707
+follow-up: backend/endpoint/mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/
+tokenSecretRef are now global-only -- removed from every per-service
+`fleet.*` schema, since every fleet-integration-capable service points at
+the *same* physical MCP Gateway instance and (for gateway/
+remediationorchestrator) the same scope-check backend. `svc` is still
+accepted and still consulted via sprig `get` (not dot access, so this also
+works for callers whose `svc` dict doesn't declare one of these keys at all,
+e.g. fleetmetadatacache's own dict never had a `backend` key) purely so a
+future per-service exception could be reintroduced without changing this
+helper's signature again -- today it always resolves to the global value.
 Usage:
   {{- $f := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.gateway.fleet) | fromYaml }}
   {{ $f.mcpGatewayEndpoint }}
@@ -114,9 +121,12 @@ Usage:
 {{- $g := .root.Values.global.fleet -}}
 {{- $svc := .svc -}}
 {{- dict
+    "backend" ((get $svc "backend") | default $g.backend)
+    "endpoint" ((get $svc "endpoint") | default $g.endpoint)
     "mcpGatewayEndpoint" ((get $svc "mcpGatewayEndpoint") | default $g.mcpGatewayEndpoint)
     "mcpGatewayType" ((get $svc "mcpGatewayType") | default $g.mcpGatewayType)
     "tlsCAFile" ((get $svc "tlsCAFile") | default $g.tlsCAFile)
+    "tokenSecretRef" ((get $svc "tokenSecretRef") | default $g.tokenSecretRef)
   | toYaml -}}
 {{- end }}
 
