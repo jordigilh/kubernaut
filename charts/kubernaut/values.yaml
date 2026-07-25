@@ -426,6 +426,35 @@ workflowexecution:
     #     name: aap-ca-secret              # self-signed or private-CA certificate.
     #     key: ca.crt                     # Combined with the inter-service CA into
     #                                      # one trust bundle (Kubernaut Operator parity).
+  # -- Multi-cluster fleet configuration for remote workflow execution
+  # (BR-FLEET-054, ADR-068). Gated by global.fleet.enabled -- when true,
+  # the Job/Tekton/Ansible executors route Create/Delete calls for a
+  # ClusterID-tagged workflow to the remote managed cluster via the MCP
+  # Gateway's write tools (resources_create_or_update/resources_delete),
+  # using global.fleet.mcpGatewayEndpoint. Unlike GW/RO/FMC, an empty
+  # mcpGatewayEndpoint is a valid, supported state even with fleet enabled
+  # globally -- WE simply stays in local-only execution (a deployer may
+  # want fleet reads/scope-checks on other services without granting WE
+  # remote write capability at all). WE has no ClusterRegistry/CRD-watch
+  # capability (it discovers MCP tool prefixes dynamically via tools/list,
+  # pkg/fleet/mcpclient/discover.go) so, unlike AF/EM/SP/FMC, there is no
+  # mcpGatewayType or namespace field here.
+  fleet:
+    oauth2:
+      # -- SECURITY (least privilege, AC-6): REQUIRED -- with NO fallback
+      # to global.fleet.oauth2.credentialsSecretRef -- when
+      # global.fleet.oauth2.enabled=true. Helm fails at render time if left
+      # unset in that case. WE is the only fleet-integration-capable
+      # service that calls MCP *write* tools (resources_create_or_update/
+      # resources_delete) instead of the read-only resources_get/
+      # resources_list every other service (GW/RO/AF/EM/SP/FMC) uses, so it
+      # needs its own write-scoped OAuth2 client (K8s Secret, keys:
+      # client-id, client-secret) distinct from the shared read-only
+      # credential. Sharing that credential here would either get WE's
+      # writes rejected by the MCP Gateway's authorization policy, or --
+      # worse -- require granting write scope to the credential every
+      # read-only service shares.
+      credentialsSecretRef: ""
   resources:
     requests:
       cpu: 100m

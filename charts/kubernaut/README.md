@@ -477,6 +477,14 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `workflowexecution.config.ansible.tokenSecretRef.namespace` | Secret namespace (defaults to release namespace) | _(release ns)_ |
 | `workflowexecution.config.ansible.caCertSecretRef.name` | Secret with a custom/private CA cert for a self-signed AWX/AAP endpoint (BR-PLATFORM-005) | `""` |
 | `workflowexecution.config.ansible.caCertSecretRef.key` | Key within the Secret (PEM) | `ca.crt` |
+| `workflowexecution.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) for a **write-scoped** OAuth2 client. **REQUIRED when `global.fleet.oauth2.enabled=true`** — `helm template`/`install` fails at render time if unset. Does **NOT** fall back to `global.fleet.oauth2.credentialsSecretRef`: WE is the only fleet-integration-capable service that calls MCP write tools (`resources_create_or_update`/`resources_delete`) instead of the read-only tools every other service (`gateway`/`remediationorchestrator`/`apifrontend`/`effectivenessmonitor`/`signalprocessing`/`fleetmetadatacache`) uses, so sharing their credential here would be a least-privilege violation | `""` |
+
+WE's remote-execution `fleet.endpoint` and `fleet.oauth2.{enabled,tokenURL,scopes,tlsCAFile}` come
+entirely from [`global.fleet.*`](#global) — there is no per-service override for them, since WE has
+no `ClusterRegistry`/CRD-watch capability (no `mcpGatewayType`, no `namespace`; it discovers MCP tool
+prefixes dynamically via `tools/list`). Unlike GW/RO/FMC, an empty `global.fleet.mcpGatewayEndpoint`
+is a valid, supported state even with `global.fleet.enabled=true` — WE simply stays in local-only
+execution (BR-FLEET-054).
 
 Setting `caCertSecretRef` adds a `build-ca-bundle` init container that combines the custom CA with
 the inter-service CA into one trust bundle (`TLS_CA_FILE`), mirroring the Kubernaut Operator. When
