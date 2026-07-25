@@ -36,9 +36,11 @@ tests:
   # ---------------------------------------------------------------------
   - it: "IT-HELM-020-001: SP namespace-scoped Role replaces the ClusterRole rule when namespace is set"
     set:
-      signalprocessing:
+      global:
         fleet:
           mcpGatewayType: kuadrant
+      signalprocessing:
+        fleet:
           namespace: team-a
     template: templates/signalprocessing/signalprocessing.yaml
     documentSelector:
@@ -59,9 +61,11 @@ tests:
 
   - it: "IT-HELM-020-001b: SP ClusterRole does NOT contain the fleet rule when namespace is set"
     set:
-      signalprocessing:
+      global:
         fleet:
           mcpGatewayType: kuadrant
+      signalprocessing:
+        fleet:
           namespace: team-a
     template: templates/signalprocessing/signalprocessing.yaml
     documentSelector:
@@ -77,9 +81,11 @@ tests:
 
   - it: "IT-HELM-020-002: SP retains the ClusterRole rule when namespace is unset (regression guard)"
     set:
-      signalprocessing:
+      global:
         fleet:
           mcpGatewayType: kuadrant
+      signalprocessing:
+        fleet:
           namespace: ""
     template: templates/signalprocessing/signalprocessing.yaml
     documentSelector:
@@ -95,9 +101,11 @@ tests:
 
   - it: "IT-HELM-020-002b: SP does not render a Role for the fleet registry when namespace is unset"
     set:
-      signalprocessing:
+      global:
         fleet:
           mcpGatewayType: kuadrant
+      signalprocessing:
+        fleet:
           namespace: ""
     template: templates/signalprocessing/signalprocessing.yaml
     documentSelector:
@@ -116,12 +124,15 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
-        mcpGatewayEndpoint: "http://mcp.example.com"
-        gatewayType: kuadrant
         namespace: team-a
         oauth2:
-          tokenURL: "http://oauth.example.com"
           credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          oauth2:
+            tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: kind
@@ -149,12 +160,15 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
-        mcpGatewayEndpoint: "http://mcp.example.com"
-        gatewayType: kuadrant
         namespace: team-a
         oauth2:
-          tokenURL: "http://oauth.example.com"
           credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          oauth2:
+            tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: kind
@@ -169,12 +183,15 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
-        mcpGatewayEndpoint: "http://mcp.example.com"
-        gatewayType: kuadrant
         namespace: ""
         oauth2:
-          tokenURL: "http://oauth.example.com"
           credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          oauth2:
+            tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: kind
@@ -197,12 +214,15 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
-        mcpGatewayEndpoint: "http://mcp.example.com"
-        gatewayType: kuadrant
         namespace: ""
         oauth2:
-          tokenURL: "http://oauth.example.com"
           credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          oauth2:
+            tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: metadata.name
@@ -220,12 +240,15 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
-        mcpGatewayEndpoint: "http://mcp.example.com"
-        gatewayType: eaigw
         namespace: team-a
         oauth2:
-          tokenURL: "http://oauth.example.com"
           credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+          oauth2:
+            tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: kind
@@ -253,12 +276,15 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
-        mcpGatewayEndpoint: "http://mcp.example.com"
-        gatewayType: eaigw
         namespace: team-a
         oauth2:
-          tokenURL: "http://oauth.example.com"
           credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+          oauth2:
+            tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: kind
@@ -273,12 +299,15 @@ tests:
     set:
       fleetmetadatacache:
         enabled: true
-        mcpGatewayEndpoint: "http://mcp.example.com"
-        gatewayType: eaigw
         namespace: ""
         oauth2:
-          tokenURL: "http://oauth.example.com"
           credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: eaigw
+          oauth2:
+            tokenURL: "http://oauth.example.com"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: kind
@@ -302,11 +331,12 @@ tests:
   # ---------------------------------------------------------------------
   - it: "IT-HELM-020-007: AF namespace-scoped Role replaces the ClusterRole rule when namespace is set"
     set:
-      apifrontend:
+      global:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
+      apifrontend:
+        fleet:
           namespace: team-a
     template: templates/apifrontend/apifrontend.yaml
     documentSelector:
@@ -327,11 +357,12 @@ tests:
 
   - it: "IT-HELM-020-007b: AF ClusterRole does NOT contain the fleet rule when namespace is set"
     set:
-      apifrontend:
+      global:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
+      apifrontend:
+        fleet:
           namespace: team-a
     template: templates/apifrontend/apifrontend.yaml
     documentSelector:
@@ -347,11 +378,12 @@ tests:
 
   - it: "IT-HELM-020-008: AF retains the ClusterRole rule when namespace is unset (regression guard)"
     set:
-      apifrontend:
+      global:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
+      apifrontend:
+        fleet:
           namespace: ""
     template: templates/apifrontend/apifrontend.yaml
     documentSelector:
@@ -367,11 +399,12 @@ tests:
 
   - it: "IT-HELM-020-008b: AF does not render a Role for the fleet registry when namespace is unset"
     set:
-      apifrontend:
+      global:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
+      apifrontend:
+        fleet:
           namespace: ""
     template: templates/apifrontend/apifrontend.yaml
     documentSelector:
@@ -388,11 +421,12 @@ tests:
   # ---------------------------------------------------------------------
   - it: "IT-HELM-020-009: EM namespace-scoped Role replaces the ClusterRole rule when namespace is set"
     set:
-      effectivenessmonitor:
+      global:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
+      effectivenessmonitor:
+        fleet:
           namespace: team-a
     template: templates/effectivenessmonitor/effectivenessmonitor.yaml
     documentSelector:
@@ -413,11 +447,12 @@ tests:
 
   - it: "IT-HELM-020-009b: EM ClusterRole does NOT contain the fleet rule when namespace is set"
     set:
-      effectivenessmonitor:
+      global:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
+      effectivenessmonitor:
+        fleet:
           namespace: team-a
     template: templates/effectivenessmonitor/effectivenessmonitor.yaml
     documentSelector:
@@ -433,11 +468,12 @@ tests:
 
   - it: "IT-HELM-020-010: EM retains the ClusterRole rule when namespace is unset (regression guard)"
     set:
-      effectivenessmonitor:
+      global:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
+      effectivenessmonitor:
+        fleet:
           namespace: ""
     template: templates/effectivenessmonitor/effectivenessmonitor.yaml
     documentSelector:
@@ -453,11 +489,12 @@ tests:
 
   - it: "IT-HELM-020-010b: EM does not render a Role for the fleet registry when namespace is unset"
     set:
-      effectivenessmonitor:
+      global:
         fleet:
-          enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: kuadrant
+      effectivenessmonitor:
+        fleet:
           namespace: ""
     template: templates/effectivenessmonitor/effectivenessmonitor.yaml
     documentSelector:

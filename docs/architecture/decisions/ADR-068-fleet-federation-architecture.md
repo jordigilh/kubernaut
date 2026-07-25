@@ -387,6 +387,7 @@ for the full method and results.
 | `ValidateFullFederation` (GW/RO dual-capability startup check) | Config validation | pkg/fleet/config.go | Complete (DD-FLEET-003) |
 | `FleetOAuth2Config.TLSCAFile` (OAuth2 token-fetch CA trust, all 6 services) | `ReloadableOAuth2Config` construction | cmd/{gateway,remediationorchestrator,apifrontend,effectivenessmonitor,signalprocessing,workflowexecution}/main.go | Complete |
 | Fleet Helm chart wiring (GW/RO/AF/EM/SP: `mcpGatewayEndpoint`/`mcpGatewayType`/`tlsCAFile`/`oauth2.*` + `mcpserverregistrations` RBAC) | ConfigMap render + ClusterRole rules | charts/kubernaut/templates/{gateway,remediationorchestrator,apifrontend,effectivenessmonitor,signalprocessing}/*.yaml | Complete |
+| Fleet Helm chart wiring (WE: `endpoint`/`oauth2.*` from `global.fleet.*`; `oauth2.credentialsSecretRef` is WE-owned with NO fallback to `global.fleet.oauth2.credentialsSecretRef`, since WE is the only service calling MCP write tools) | ConfigMap render + Secret volume/mount, `fail()` guards | charts/kubernaut/templates/workflowexecution/workflowexecution.yaml | Complete |
 
 ### Fleet E2E Topology
 
@@ -427,6 +428,7 @@ client cannot drive Dex's token-exchange grant).
 | enrichRemote | Enrich() | pkg/signalprocessing/enricher/k8s_enricher.go | UT-SP-054-003a/b/c |
 | `mcpserverregistrations` RBAC (AF, EM, SP `ClusterRegistry` informers) | Helm ClusterRole, gated on `mcpGatewayType=="kuadrant"` | charts/kubernaut/templates/{apifrontend,effectivenessmonitor,signalprocessing}/*.yaml | E2E-FLEET-DISC-001/002/003 (proved via `test/infrastructure/fleet_e2e.go`'s equivalent E2E-only RBAC grant, mirrored into the Helm chart) |
 | `FleetConfig.ValidateFullFederation()` (GW/RO) | `ServerConfig.Validate()` / `Config.Validate()` | pkg/gateway/config/config.go, internal/config/remediationorchestrator/config.go | see DD-FLEET-003 Wiring Manifest |
+| WE fleet Helm wiring (`endpoint`/`oauth2.*` from `global.fleet.*`; `oauth2.credentialsSecretRef` WE-owned, no fallback) | ConfigMap render + Secret volume/mount, `fail()` guards | charts/kubernaut/templates/workflowexecution/workflowexecution.yaml | helm-unittest: `charts/kubernaut/tests/workflowexecution_fleet_wiring_test.yaml` |
 
 ## MCP Gateway Access Model
 

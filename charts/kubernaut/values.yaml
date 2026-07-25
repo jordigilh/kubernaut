@@ -9,35 +9,61 @@ global:
   imagePullSecrets: []
   nodeSelector: {}
   tolerations: []
-  # -- Shared MCP Gateway configuration, used by every fleet-integration-
-  # capable service (gateway, signalprocessing, remediationorchestrator,
-  # effectivenessmonitor, apifrontend, fleetmetadatacache). All of these
-  # point at the *same* physical MCP Gateway instance, so in practice they
-  # share one endpoint/type/CA/OAuth2 client -- set it once here instead of
-  # duplicating it per service. Each service's own `fleet.*` (or, for
-  # fleetmetadatacache, top-level equivalents) still takes precedence when
-  # set, for the rare case a service needs a different value. Per-service
-  # `fleet.enabled` / `fleet.oauth2.enabled` (fleet integration on/off)
-  # remains independent and is NOT controlled here.
+  # -- Shared MCP Gateway + fleet-backend configuration, the SOLE source of
+  # truth for every fleet-integration-capable service (gateway,
+  # signalprocessing, remediationorchestrator, effectivenessmonitor,
+  # apifrontend, fleetmetadatacache). All of these point at the *same*
+  # physical MCP Gateway instance and (for gateway/remediationorchestrator)
+  # the *same* scope-check backend, so in practice they share one
+  # backend/endpoint/mcpGatewayType/CA/OAuth2 client -- there is no known
+  # deployment that needs a different value per service (Issue #1707
+  # follow-up). The single per-service exception is
+  # `fleet.oauth2.credentialsSecretRef` (still overridable per service, see
+  # each service's own `fleet.oauth2` block) -- everything else below was
+  # removed from every per-service schema entirely; setting it there now
+  # fails schema validation instead of being silently ignored.
   fleet:
-    # -- Shared MCP Gateway endpoint URL, used as the fallback when a
-    # service's own fleet.mcpGatewayEndpoint is unset.
+    # -- Multi-cluster fleet federation on/off (Issue #1707), consolidated
+    # from what used to be four independent toggles
+    # (gateway/remediationorchestrator/apifrontend/effectivenessmonitor
+    # `fleet.enabled`). No known deployment (including the Kubernaut
+    # Operator, ADR-068) has ever needed to enable fleet federation on some
+    # of those four services while leaving it off on others -- it is
+    # conceptually one feature spanning the request pipeline (GW/RO's
+    # federated scope check) and the read pipeline (AF/EM's remote reads).
+    enabled: false
+    # -- Backend adapter for GW/RO's federated scope-check: "fleetmetadatacache"
+    # (FMC HTTP API) or "acm" (ACM Search GraphQL). Defaults to "fleetmetadatacache".
+    backend: ""
+    # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
+    endpoint: ""
+    # -- Shared MCP Gateway endpoint URL for remote-cluster reads (GW/RO/AF/EM/SP/FMC).
     mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    # -- Shared MCP Gateway type ("eaigw" or "kuadrant"), used as the
-    # fallback when a service's own fleet.mcpGatewayType is unset.
+    # -- Shared MCP Gateway type ("eaigw" or "kuadrant").
     mcpGatewayType: ""
     # -- Shared CA bundle path for verifying the MCP Gateway's TLS
-    # certificate, used as the fallback when a service's own
-    # fleet.tlsCAFile is unset. Defaults to the shared inter-service CA
-    # (/etc/tls-ca/ca.crt) when left empty everywhere.
+    # certificate. Defaults to the shared inter-service CA
+    # (/etc/tls-ca/ca.crt) when left empty.
     tlsCAFile: ""
+    # -- K8s Secret (key: "token") with a bearer token for authenticating to the
+    # ACM Search GraphQL API (backend=acm). Mounted and its path passed to
+    # GW/RO at startup as fleet.tokenPath. ACM Search mandatorily requires
+    # bearer-token auth (#1556): when backend=acm, this MUST be set, or
+    # GW/RO fail FleetConfig.Validate() at startup.
+    tokenSecretRef: ""
     oauth2:
+      # -- OAuth2 client_credentials auth on/off for MCP Gateway authentication.
+      enabled: false
       tokenURL: ""
+      # -- Shared default Secret name (keys: client-id, client-secret). Each
+      # service's own fleet.oauth2.credentialsSecretRef still takes
+      # precedence when set -- the one field ADR-068 anticipated could
+      # legitimately differ per service.
       credentialsSecretRef: ""
       scopes: []
       # -- Path to a CA bundle for verifying tokenURL's TLS certificate.
       # Defaults to the shared inter-service CA (/etc/tls-ca/ca.crt) when
-      # left empty, same as each service's own oauth2.tlsCAFile fallback.
+      # left empty.
       tlsCAFile: ""
 
 nameOverride: ""
@@ -144,42 +170,23 @@ gateway:
     #       namespace: monitoring
     signalSources: []
   # -- Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003).
-  # When enabled, GW includes clusterID in signal fingerprints and populates
-  # spec.clusterID on RemediationRequests. The backend adapter handles federated
-  # scope checks. GW MUST also be able to reach the MCP Gateway (mcpGatewayEndpoint)
-  # for the federated scope check to complete — see DD-FLEET-003 for why both are
-  # mandatory together when fleet.enabled=true (fleet.ValidateFullFederation()).
+  # Gated by global.fleet.enabled (Issue #1707) -- when true, GW includes
+  # clusterID in signal fingerprints and populates spec.clusterID on
+  # RemediationRequests. The backend adapter handles federated scope checks.
+  # GW MUST also be able to reach the MCP Gateway (mcpGatewayEndpoint) for
+  # the federated scope check to complete — see DD-FLEET-003 for why both
+  # are mandatory together when global.fleet.enabled=true
+  # (fleet.ValidateFullFederation()).
+  # backend/endpoint/mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/
+  # tokenSecretRef/oauth2.{enabled,tokenURL,scopes,tlsCAFile} all moved to
+  # global.fleet.* (Issue #1707 follow-up) -- every fleet-integration-capable
+  # service shares the same MCP Gateway and scope-check backend. Only
+  # oauth2.credentialsSecretRef remains overridable here.
   fleet:
-    enabled: false
-    # -- Backend adapter: "fleetmetadatacache" (FMC HTTP API) or "acm" (ACM Search). Defaults to "fleetmetadatacache".
-    backend: ""
-    # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
-    endpoint: ""
-    # -- MCP Gateway endpoint URL for federated scope checks. Required when
-    # fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset.
-    mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    # -- MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP
-    # Gateway). Falls back to global.fleet.mcpGatewayType when unset.
-    mcpGatewayType: ""
-    # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate when it
-    # presents one not signed by a public/system CA. Falls back to
-    # global.fleet.tlsCAFile, then to the shared inter-service CA already mounted
-    # at /etc/tls-ca/ca.crt, when unset.
-    tlsCAFile: ""
-    # -- K8s Secret (key: "token") with a bearer token for authenticating to the ACM
-    # Search GraphQL API (backend=acm). Mounted and its path passed to GW at startup
-    # as fleet.tokenPath. ACM Search mandatorily requires bearer-token auth (#1556):
-    # when backend=acm, this MUST be set, or GW fails FleetConfig.Validate() at startup.
-    tokenSecretRef: ""
-    # -- OAuth2 client credentials for MCP Gateway authentication.
     oauth2:
-      enabled: false
-      tokenURL: ""              # e.g., "https://keycloak.kubernaut-system.svc:8443/realms/kubernaut/protocol/openid-connect/token"
-      credentialsSecretRef: ""  # K8s Secret with keys: client-id, client-secret
-      scopes: []
-      # -- Path to a CA bundle for verifying tokenURL's TLS certificate. Defaults to
-      # the shared inter-service CA when left empty.
-      tlsCAFile: ""
+      # -- K8s Secret (keys: client-id, client-secret) overriding
+      # global.fleet.oauth2.credentialsSecretRef for this service only.
+      credentialsSecretRef: ""
 
 # -- DataStorage service (audit trail, workflow catalog)
 datastorage:
@@ -311,23 +318,22 @@ signalprocessing:
     content: ""            # --set-file signalprocessing.proactiveSignalMappings.content=mappings.yaml
     existingConfigMap: ""  # name of pre-existing ConfigMap with key "proactive-signal-mappings.yaml"
   # -- Multi-cluster fleet configuration (BR-INTEGRATION-054/BR-FLEET-003, ADR-068).
-  # When endpoint is set, SP connects to the MCP Gateway for remote cluster
-  # resource reads during enrichment. mcpGatewayType is additionally required
-  # to evaluate the `cluster` Rego classification dimension (#1511), since SP
-  # then watches MCPServerRegistration CRs directly via a ClusterRegistry
-  # informer (see the RBAC grant below).
+  # When global.fleet.mcpGatewayEndpoint is set, SP connects to the MCP
+  # Gateway for remote cluster resource reads during enrichment.
+  # global.fleet.mcpGatewayType is additionally required to evaluate the
+  # `cluster` Rego classification dimension (#1511), since SP then watches
+  # MCPServerRegistration CRs directly via a ClusterRegistry informer (see
+  # the RBAC grant below). endpoint/mcpGatewayType/
+  # oauth2.{enabled,tokenURL,scopes,tlsCAFile} moved to global.fleet.* (Issue
+  # #1707 follow-up) -- this also fixes a pre-existing gap where SP's own
+  # `endpoint` field had no global fallback at all. Only
+  # oauth2.credentialsSecretRef remains overridable here.
   fleet:
-    endpoint: ""       # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    mcpGatewayType: "" # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
     namespace: ""      # restricts the ClusterRegistry CRD watch; empty watches all namespaces
     oauth2:
-      enabled: false
-      tokenURL: ""
+      # -- K8s Secret (keys: client-id, client-secret) overriding
+      # global.fleet.oauth2.credentialsSecretRef for this service only.
       credentialsSecretRef: ""
-      scopes: []
-      # -- Path to a CA bundle for verifying tokenURL's TLS certificate. Defaults to
-      # the shared inter-service CA already mounted at /etc/tls-ca/ca.crt when left empty.
-      tlsCAFile: ""
   resources:
     requests:
       cpu: 100m
@@ -377,42 +383,22 @@ remediationorchestrator:
     retention:
       period: "24h"  # Issue #265: CRD retention TTL before automatic cleanup
   # -- Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003).
-  # When enabled, RO performs federated scope checks before accepting
-  # RemediationRequests with non-empty clusterID, and reads remote resource specs
-  # (spec hash) via the MCP Gateway. RO MUST have both the scope-check backend
-  # AND mcpGatewayEndpoint configured together — see DD-FLEET-003
+  # Gated by global.fleet.enabled (Issue #1707) -- when true, RO performs
+  # federated scope checks before accepting RemediationRequests with
+  # non-empty clusterID, and reads remote resource specs (spec hash) via the
+  # MCP Gateway. RO MUST have both the scope-check backend AND
+  # mcpGatewayEndpoint configured together — see DD-FLEET-003
   # (fleet.ValidateFullFederation()).
+  # backend/endpoint/mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/
+  # tokenSecretRef/oauth2.{enabled,tokenURL,scopes,tlsCAFile} all moved to
+  # global.fleet.* (Issue #1707 follow-up) -- every fleet-integration-capable
+  # service shares the same MCP Gateway and scope-check backend. Only
+  # oauth2.credentialsSecretRef remains overridable here.
   fleet:
-    enabled: false
-    # -- Backend adapter: "fleetmetadatacache" (FMC HTTP API) or "acm" (ACM Search). Defaults to "fleetmetadatacache".
-    backend: ""
-    # -- Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm.
-    endpoint: ""
-    # -- MCP Gateway endpoint URL for reading remote resource specs (spec hash).
-    # Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset.
-    mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    # -- MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP
-    # Gateway). Falls back to global.fleet.mcpGatewayType when unset.
-    mcpGatewayType: ""
-    # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate when it
-    # presents one not signed by a public/system CA. Falls back to
-    # global.fleet.tlsCAFile, then to the shared inter-service CA already
-    # mounted at /etc/tls-ca/ca.crt, when unset.
-    tlsCAFile: ""
-    # -- K8s Secret (key: "token") with a bearer token for authenticating to the ACM
-    # Search GraphQL API (backend=acm). Mounted and its path passed to RO at startup
-    # as fleet.tokenPath. ACM Search mandatorily requires bearer-token auth (#1556):
-    # when backend=acm, this MUST be set, or RO fails FleetConfig.Validate() at startup.
-    tokenSecretRef: ""
-    # -- OAuth2 client credentials for MCP Gateway authentication.
     oauth2:
-      enabled: false
-      tokenURL: ""              # e.g., "https://keycloak.kubernaut-system.svc:8443/realms/kubernaut/protocol/openid-connect/token"
-      credentialsSecretRef: ""  # K8s Secret with keys: client-id, client-secret
-      scopes: []
-      # -- Path to a CA bundle for verifying tokenURL's TLS certificate. Defaults to
-      # the shared inter-service CA when left empty.
-      tlsCAFile: ""
+      # -- K8s Secret (keys: client-id, client-secret) overriding
+      # global.fleet.oauth2.credentialsSecretRef for this service only.
+      credentialsSecretRef: ""
 
 # -- WorkflowExecution controller
 workflowexecution:
@@ -440,6 +426,35 @@ workflowexecution:
     #     name: aap-ca-secret              # self-signed or private-CA certificate.
     #     key: ca.crt                     # Combined with the inter-service CA into
     #                                      # one trust bundle (Kubernaut Operator parity).
+  # -- Multi-cluster fleet configuration for remote workflow execution
+  # (BR-FLEET-054, ADR-068). Gated by global.fleet.enabled -- when true,
+  # the Job/Tekton/Ansible executors route Create/Delete calls for a
+  # ClusterID-tagged workflow to the remote managed cluster via the MCP
+  # Gateway's write tools (resources_create_or_update/resources_delete),
+  # using global.fleet.mcpGatewayEndpoint. Unlike GW/RO/FMC, an empty
+  # mcpGatewayEndpoint is a valid, supported state even with fleet enabled
+  # globally -- WE simply stays in local-only execution (a deployer may
+  # want fleet reads/scope-checks on other services without granting WE
+  # remote write capability at all). WE has no ClusterRegistry/CRD-watch
+  # capability (it discovers MCP tool prefixes dynamically via tools/list,
+  # pkg/fleet/mcpclient/discover.go) so, unlike AF/EM/SP/FMC, there is no
+  # mcpGatewayType or namespace field here.
+  fleet:
+    oauth2:
+      # -- SECURITY (least privilege, AC-6): REQUIRED -- with NO fallback
+      # to global.fleet.oauth2.credentialsSecretRef -- when
+      # global.fleet.oauth2.enabled=true. Helm fails at render time if left
+      # unset in that case. WE is the only fleet-integration-capable
+      # service that calls MCP *write* tools (resources_create_or_update/
+      # resources_delete) instead of the read-only resources_get/
+      # resources_list every other service (GW/RO/AF/EM/SP/FMC) uses, so it
+      # needs its own write-scoped OAuth2 client (K8s Secret, keys:
+      # client-id, client-secret) distinct from the shared read-only
+      # credential. Sharing that credential here would either get WE's
+      # writes rejected by the MCP Gateway's authorization policy, or --
+      # worse -- require granting write scope to the credential every
+      # read-only service shares.
+      credentialsSecretRef: ""
   resources:
     requests:
       cpu: 100m
@@ -495,30 +510,24 @@ effectivenessmonitor:
       stabilizationWindow: "30s"
       validityWindow: "120s"
   # -- Multi-cluster fleet configuration (BR-FLEET-054, ADR-068).
-  # When enabled and mcpGatewayEndpoint is set, EM reads the remediation's
-  # target cluster state via the MCP Gateway instead of silently falling back
-  # to the local hub cluster. mcpGatewayType is additionally required when
-  # using the Kuadrant gateway, since EM then watches MCPServerRegistration
-  # CRs directly via a ClusterRegistry informer (see the RBAC grant below).
+  # Gated by global.fleet.enabled (Issue #1707) -- when true and
+  # global.fleet.mcpGatewayEndpoint is set, EM reads the remediation's target
+  # cluster state via the MCP Gateway instead of silently falling back to
+  # the local hub cluster. global.fleet.mcpGatewayType is additionally
+  # required when using the Kuadrant gateway, since EM then watches
+  # MCPServerRegistration CRs directly via a ClusterRegistry informer (see
+  # the RBAC grant below). mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/
+  # oauth2.{enabled,tokenURL,scopes,tlsCAFile} moved to global.fleet.* (Issue
+  # #1707 follow-up). Only oauth2.credentialsSecretRef remains overridable here.
   fleet:
-    enabled: false
-    # -- Optional: falls back to global.fleet.mcpGatewayEndpoint when unset.
-    mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    mcpGatewayType: ""      # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
     # -- Restricts the ClusterRegistry CRD watch to a single namespace instead of
     # cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and
     # grants cluster-wide RBAC, matching pre-#1686 behavior.
     namespace: ""
-    # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls
-    # back to global.fleet.tlsCAFile, then to the shared inter-service CA already
-    # mounted at /etc/tls-ca/ca.crt, when unset.
-    tlsCAFile: ""
     oauth2:
-      enabled: false
-      tokenURL: ""
+      # -- K8s Secret (keys: client-id, client-secret) overriding
+      # global.fleet.oauth2.credentialsSecretRef for this service only.
       credentialsSecretRef: ""
-      scopes: []
-      tlsCAFile: ""
   resources:
     requests:
       memory: 64Mi
@@ -757,16 +766,21 @@ fleetmetadatacache:
     pullPolicy: IfNotPresent
   syncInterval: "30s"
   keyTTL: "45s"
-  # -- Required when fleetmetadatacache.enabled=true (this service's entire
-  # purpose is polling remote clusters via the MCP Gateway); falls back to
-  # global.fleet.mcpGatewayEndpoint when unset.
-  mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-  gatewayType: "eaigw"  # MCP Gateway type: "eaigw" (Envoy AI Gateway) or "kuadrant" (Kuadrant MCP Gateway)
+  # -- mcpGatewayEndpoint/gatewayType/oauth2.tokenURL moved to global.fleet.*
+  # (Issue #1707 follow-up) -- this service's entire purpose is polling
+  # remote clusters via the MCP Gateway, and it shares that Gateway (and
+  # OAuth2 client) with every other fleet-integration-capable service.
+  # global.fleet.mcpGatewayEndpoint/mcpGatewayType/oauth2.tokenURL are
+  # REQUIRED when fleetmetadatacache.enabled=true; the Go binary's
+  # ServiceConfig.Validate() rejects an empty/unsupported gatewayType at
+  # startup with a clear error (mirrors GW/RO's FleetConfig.Validate()).
   valkeyAddr: ""  # e.g., "valkey:6379" — uses shared Valkey instance
   namespace: "kubernaut-system"  # namespace to watch for MCP Gateway CRDs
   oauth2:
-    tokenURL: ""  # REQUIRED — e.g., "https://dex.kubernaut-system.svc:5556/token"
-    credentialsSecretRef: ""  # REQUIRED — Secret containing keys: client-id, client-secret
+    # -- K8s Secret (keys: client-id, client-secret) overriding
+    # global.fleet.oauth2.credentialsSecretRef for this service only. REQUIRED
+    # (directly or via global) — there is no unauthenticated fallback.
+    credentialsSecretRef: ""
   resources:
     requests:
       memory: 64Mi
@@ -932,30 +946,24 @@ apifrontend:
   logging:
     level: "INFO"
   # -- Multi-cluster fleet configuration (BR-FLEET-054, ADR-068).
-  # When enabled and mcpGatewayEndpoint is set, kubectl_get/kubectl_list/
-  # list_clusters tools route to remote managed clusters via the MCP Gateway.
-  # mcpGatewayType is additionally required when using the Kuadrant gateway,
-  # since AF then watches MCPServerRegistration CRs directly via a
-  # ClusterRegistry informer (see the RBAC grant below).
+  # Gated by global.fleet.enabled (Issue #1707) -- when true and
+  # global.fleet.mcpGatewayEndpoint is set, kubectl_get/kubectl_list/
+  # list_clusters tools route to remote managed clusters via the MCP
+  # Gateway. global.fleet.mcpGatewayType is additionally required when
+  # using the Kuadrant gateway, since AF then watches MCPServerRegistration
+  # CRs directly via a ClusterRegistry informer (see the RBAC grant below).
+  # mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/
+  # oauth2.{enabled,tokenURL,scopes,tlsCAFile} moved to global.fleet.* (Issue
+  # #1707 follow-up). Only oauth2.credentialsSecretRef remains overridable here.
   fleet:
-    enabled: false
-    # -- Optional: falls back to global.fleet.mcpGatewayEndpoint when unset.
-    mcpGatewayEndpoint: ""  # e.g., "http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp"
-    mcpGatewayType: ""      # "eaigw" or "kuadrant"; falls back to global.fleet.mcpGatewayType when unset
     # -- Restricts the ClusterRegistry CRD watch to a single namespace instead of
     # cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and
     # grants cluster-wide RBAC, matching pre-#1686 behavior.
     namespace: ""
-    # -- Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls
-    # back to global.fleet.tlsCAFile, then to the shared inter-service CA already
-    # mounted at /etc/tls-ca/ca.crt, when unset.
-    tlsCAFile: ""
     oauth2:
-      enabled: false
-      tokenURL: ""
+      # -- K8s Secret (keys: client-id, client-secret) overriding
+      # global.fleet.oauth2.credentialsSecretRef for this service only.
       credentialsSecretRef: ""
-      scopes: []
-      tlsCAFile: ""
   config:
     server:
       httpPort: 8443

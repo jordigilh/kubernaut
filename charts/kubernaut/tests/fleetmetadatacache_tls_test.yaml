@@ -2,11 +2,18 @@ suite: FleetMetadataCache TLS + 3-port standard alignment (Issue #1683)
 templates:
   - templates/fleetmetadatacache/fleetmetadatacache.yaml
 set:
+  # Issue #1707 follow-up: mcpGatewayEndpoint/mcpGatewayType/oauth2.tokenURL
+  # moved to global.fleet.* (see fleet_config_consolidation_test.yaml) --
+  # only oauth2.credentialsSecretRef stays per-service overridable.
+  global:
+    fleet:
+      mcpGatewayEndpoint: "http://mcp.example.com"
+      mcpGatewayType: "eaigw"
+      oauth2:
+        tokenURL: "http://oauth.example.com"
   fleetmetadatacache:
     enabled: true
-    mcpGatewayEndpoint: "http://mcp.example.com"
     oauth2:
-      tokenURL: "http://oauth.example.com"
       credentialsSecretRef: "fmc-creds"
 tests:
   # ── ConfigMap: 3-port layout + TLS cert dir ─────────────────────────────

@@ -26,6 +26,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet"
+	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
@@ -138,6 +139,17 @@ func LoadFromFile(path string) (*ServiceConfig, error) {
 func (c *ServiceConfig) Validate() error {
 	if c.MCPGateway.Endpoint == "" {
 		return fmt.Errorf("mcpGateway.endpoint is required")
+	}
+	// #1707 follow-up: catch an empty/unsupported gatewayType here, at
+	// config-validation time, instead of letting it flow to
+	// registry.NewClusterRegistry() (cmd/fleetmetadatacache/main.go), which
+	// rejects it with a generic error deep in the startup path. Mirrors
+	// pkg/fleet.FleetConfig.Validate()'s MCPGatewayType check used by GW/RO.
+	if c.MCPGateway.GatewayType == "" {
+		return fmt.Errorf("mcpGateway.gatewayType is required")
+	}
+	if !registry.SupportedGateways[registry.MCPGatewayType(c.MCPGateway.GatewayType)] {
+		return fmt.Errorf("unsupported mcpGateway.gatewayType %q; must be one of: eaigw, kuadrant", c.MCPGateway.GatewayType)
 	}
 	if c.Valkey.Addr == "" {
 		return fmt.Errorf("valkey.addr is required")

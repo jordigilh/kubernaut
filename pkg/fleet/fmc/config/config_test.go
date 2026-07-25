@@ -205,6 +205,35 @@ oauth2:
 			Expect(err.Error()).To(ContainSubstring("oauth2.tokenUrl is required"))
 			Expect(err.Error()).To(ContainSubstring("MCP Gateway requires authentication"))
 		})
+
+		It("UT-FMC-CFG-012: fails when mcpGateway.gatewayType is empty [SI-10]", func() {
+			// #1707 follow-up: registry.NewClusterRegistry() rejects an empty
+			// gatewayType at runtime (cmd/fleetmetadatacache/main.go) with a
+			// generic error deep in the startup path. Validate() must catch
+			// this explicitly and early, mirroring GW/RO's
+			// pkg/fleet.FleetConfig.Validate() pattern for MCPGatewayType.
+			cfg := config.DefaultServiceConfig()
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
+			cfg.MCPGateway.GatewayType = ""
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("mcpGateway.gatewayType is required"))
+		})
+
+		It("UT-FMC-CFG-013: fails when mcpGateway.gatewayType is unsupported [SI-10]", func() {
+			cfg := config.DefaultServiceConfig()
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
+			cfg.MCPGateway.GatewayType = "not-a-real-gateway"
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported mcpGateway.gatewayType"))
+			Expect(err.Error()).To(ContainSubstring("eaigw"))
+			Expect(err.Error()).To(ContainSubstring("kuadrant"))
+		})
 	})
 
 	Describe("DefaultConfigPath", func() {
