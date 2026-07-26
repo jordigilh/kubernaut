@@ -12,10 +12,14 @@ set:
       existingSecret: dummy
   valkey:
     existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
   kubernautAgent:
-    llm:
-      provider: openai
-      model: gpt-4
+    llmProfileRef: primary
   signalprocessing:
     policies:
       existingConfigMap: test-cm

@@ -9,10 +9,14 @@ set:
       existingSecret: dummy
   valkey:
     existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
   kubernautAgent:
-    llm:
-      provider: openai
-      model: gpt-4
+    llmProfileRef: primary
   # kubernaut.tls.issuerName requires an explicit issuerRef.name when there is
   # no live cluster access to auto-discover an Issuer/ClusterIssuer (helm
   # template / helm-unittest / GitOps rendering all fall into this path).

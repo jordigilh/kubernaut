@@ -1,0 +1,636 @@
+suite: LLM profile consolidation (DD-PLATFORM-007 / BR-PLATFORM-008 / #1735)
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  global:
+    llmProfiles:
+      primary:
+        provider: anthropic
+        model: claude-sonnet-4-20250514
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+
+tests:
+  # -------------------------------------------------------------------------
+  # IT-PLATFORM-LLM-001: undefined profile reference fails the render
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-001: an undefined kubernautAgent.llmProfileRef fails the render"
+    set:
+      kubernautAgent:
+        llmProfileRef: does-not-exist
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
+
+  - it: "IT-PLATFORM-LLM-001: an empty kubernautAgent.llmProfileRef fails the render (required field)"
+    set:
+      kubernautAgent:
+        llmProfileRef: ""
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "kubernautAgent.llmProfileRef is required (name of an entry in global.llmProfiles)"
+
+  # -------------------------------------------------------------------------
+  # IT-PLATFORM-LLM-002: KA static SDK config resolves llmProfileRef
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-002: KA static config.yaml resolves the referenced profile's provider"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'provider: "?anthropic"?'
+
+  - it: "IT-PLATFORM-LLM-002: KA static config.yaml resolves vertexProject/vertexLocation from the profile"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: vertex_ai
+            model: gemini-2.5-pro
+            credentialsSecretName: llm-credentials-primary
+            vertexProject: my-gcp-project
+            vertexLocation: us-central1
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'vertexProject: "?my-gcp-project"?'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'vertexLocation: "?us-central1"?'
+
+  # -------------------------------------------------------------------------
+  # IT-PLATFORM-LLM-003: KA llm-runtime.yaml resolves hot-reloadable fields
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-003: llm-runtime.yaml resolves model/endpoint/temperature/maxRetries/timeoutSeconds from the profile"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: openai
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-primary
+            endpoint: "https://api.example.com/v1"
+            temperature: 0.3
+            maxRetries: 5
+            timeoutSeconds: 90
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: 'model: "?gpt-4o"?'
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "temperature: 0.3"
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "maxRetries: 5"
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "timeoutSeconds: 90"
+
+  # -------------------------------------------------------------------------
+  # IT-PLATFORM-LLM-004: phaseModels resolves per-phase; unknown phase fails
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-004: phaseModels resolves a distinct profile per phase"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          lightweight:
+            provider: openai_compatible
+            model: llama-3-8b
+            credentialsSecretName: llm-credentials-lightweight
+            endpoint: "http://vllm.example.com/v1"
+      kubernautAgent:
+        phaseModels:
+          workflow_discovery: lightweight
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "workflow_discovery:"
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: 'provider: "?openai_compatible"?'
+
+  - it: "IT-PLATFORM-LLM-004: phaseModels omits azureApiVersion/bedrockRegion from the rendered override (matches Operator precedent)"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          azure-profile:
+            provider: openai
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-azure
+            azureApiVersion: "2024-10-21"
+      kubernautAgent:
+        phaseModels:
+          rca: azure-profile
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - notMatchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "azureApiVersion"
+
+  - it: "IT-PLATFORM-LLM-004: an undefined phaseModels profile name fails the render"
+    set:
+      kubernautAgent:
+        phaseModels:
+          validation: does-not-exist
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
+
+  - it: "IT-PLATFORM-LLM-004: an unrecognized phase name fails the render"
+    set:
+      kubernautAgent:
+        phaseModels:
+          not_a_real_phase: primary
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: 'kubernautAgent.phaseModels: unrecognized phase name "not_a_real_phase" (valid: rca, workflow_discovery, validation)'
+
+  # -------------------------------------------------------------------------
+  # IT-PLATFORM-LLM-005: alignmentCheck.llmProfileRef inherits/overrides; apiKeyFile fix
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-005: alignmentCheck with empty llmProfileRef inherits KA's resolved profile"
+    set:
+      kubernautAgent:
+        alignmentCheck:
+          enabled: true
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "alignmentCheck:"
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)alignmentCheck:.*llm:.*provider: "?anthropic"?'
+
+  - it: "IT-PLATFORM-LLM-005: alignmentCheck with an explicit llmProfileRef resolves that distinct profile"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          shadow-profile:
+            provider: openai
+            model: gpt-4o-mini
+            credentialsSecretName: llm-credentials-shadow
+      kubernautAgent:
+        alignmentCheck:
+          enabled: true
+          llmProfileRef: shadow-profile
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)alignmentCheck:.*llm:.*provider: "?openai"?'
+
+  - it: "IT-PLATFORM-LLM-005: alignmentCheck renders apiKeyFile, never the dead apiKey field (kubernaut#1726-class bug fix)"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          shadow-profile:
+            provider: openai
+            model: gpt-4o-mini
+            credentialsSecretName: llm-credentials-shadow
+      kubernautAgent:
+        alignmentCheck:
+          enabled: true
+          llmProfileRef: shadow-profile
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "apiKeyFile:"
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: "(?s)alignmentCheck:.*\\n\\s*apiKey:"
+
+  - it: "IT-PLATFORM-LLM-005: an undefined alignmentCheck.llmProfileRef fails the render"
+    set:
+      kubernautAgent:
+        alignmentCheck:
+          enabled: true
+          llmProfileRef: does-not-exist
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
+
+  # -------------------------------------------------------------------------
+  # IT-PLATFORM-LLM-006: AF agent.llm resolves llmProfileRef, defaults to KA's
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-006: AF agent.llm with empty apifrontend.llmProfileRef defaults to KA's resolved profile"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)agent:.*llm:.*provider: "?anthropic"?'
+
+  - it: "IT-PLATFORM-LLM-006: AF agent.llm with an explicit apifrontend.llmProfileRef overrides KA's"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          af-profile:
+            provider: openai
+            model: gpt-4o
+            credentialsSecretName: llm-credentials-af
+      apifrontend:
+        llmProfileRef: af-profile
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)agent:.*llm:.*provider: "?openai"?'
+
+  - it: "IT-PLATFORM-LLM-006: an undefined apifrontend.llmProfileRef fails the render"
+    set:
+      apifrontend:
+        llmProfileRef: does-not-exist
+    template: templates/apifrontend/apifrontend.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
+
+  # -------------------------------------------------------------------------
+  # IT-PLATFORM-LLM-007: AF severityTriage.llm inherits AF's profile; llmEnabled toggle
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-007: severityTriage with empty llmProfileRef and default llmEnabled inherits AF's resolved profile"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)severityTriage:.*llm:.*provider: "?anthropic"?'
+
+  - it: "IT-PLATFORM-LLM-007: severityTriage.llmEnabled=false renders an empty llm block (rule-based-only triage)"
+    set:
+      apifrontend:
+        config:
+          severityTriage:
+            llmEnabled: false
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "(?s)severityTriage:.*llm: \\{\\}"
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: "(?s)severityTriage:.*llm:.*provider:"
+
+  - it: "IT-PLATFORM-LLM-007: severityTriage with an explicit llmProfileRef resolves a distinct profile from AF's own"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          triage-profile:
+            provider: openai
+            model: gpt-4o-mini
+            credentialsSecretName: llm-credentials-triage
+      apifrontend:
+        config:
+          severityTriage:
+            llmProfileRef: triage-profile
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)severityTriage:.*llm:.*provider: "?openai"?'
+
+  - it: "IT-PLATFORM-LLM-007: an undefined severityTriage.llmProfileRef fails the render"
+    set:
+      apifrontend:
+        config:
+          severityTriage:
+            llmProfileRef: does-not-exist
+    template: templates/apifrontend/apifrontend.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
+
+  # -------------------------------------------------------------------------
+  # IT-PLATFORM-LLM-008: multi-secret-mount dedup + #1731 vertex_ai guard
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-008: a phaseModels entry sharing KA's base secret gets no dedicated mount"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+      kubernautAgent:
+        phaseModels:
+          rca: primary
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: phase-credentials-rca
+
+  - it: "IT-PLATFORM-LLM-008: a phaseModels entry with a distinct secret gets its own dedicated mount"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          gcp-profile:
+            provider: vertex_ai
+            model: gemini-2.5-pro
+            credentialsSecretName: llm-credentials-gcp
+      kubernautAgent:
+        phaseModels:
+          validation: gcp-profile
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: phase-credentials-validation
+            secret:
+              secretName: llm-credentials-gcp
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: phase-credentials-validation
+            mountPath: /etc/kubernaut-agent/phase-credentials/validation
+            readOnly: true
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "credentials.json"
+        documentSelector:
+          path: metadata.name
+          value: kubernaut-agent-llm-runtime
+
+  - it: "IT-PLATFORM-LLM-008: two distinct phaseModels secrets each get their own mount without collision"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          gcp-profile:
+            provider: vertex_ai
+            model: gemini-2.5-pro
+            credentialsSecretName: llm-credentials-gcp
+          lightweight:
+            provider: openai_compatible
+            model: llama-3-8b
+            credentialsSecretName: llm-credentials-lightweight
+            endpoint: "http://vllm.example.com/v1"
+      kubernautAgent:
+        phaseModels:
+          validation: gcp-profile
+          workflow_discovery: lightweight
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: phase-credentials-validation
+            secret:
+              secretName: llm-credentials-gcp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: phase-credentials-workflow_discovery
+            secret:
+              secretName: llm-credentials-lightweight
+
+  - it: "IT-PLATFORM-LLM-008: AF main + severityTriage both vertex_ai with different secrets fails render (#1731)"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          af-vertex-a:
+            provider: vertex_ai
+            model: gemini-2.5-pro
+            credentialsSecretName: llm-credentials-vertex-a
+          af-vertex-b:
+            provider: vertex_ai
+            model: gemini-2.5-flash
+            credentialsSecretName: llm-credentials-vertex-b
+      apifrontend:
+        llmProfileRef: af-vertex-a
+        config:
+          severityTriage:
+            llmProfileRef: af-vertex-b
+    template: templates/apifrontend/apifrontend.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: 'apifrontend.llmProfileRef ("af-vertex-a") and apifrontend.config.severityTriage.llmProfileRef ("af-vertex-b") both resolve to provider=vertex_ai but different credentialsSecretName values ("llm-credentials-vertex-a" vs "llm-credentials-vertex-b") -- GOOGLE_APPLICATION_CREDENTIALS is a single process-wide ambient-credential path, so both must share the same Secret when both are vertex_ai (kubernaut#1731). Use the same credentialsSecretName for both, or use a non-vertex_ai provider for one of them.'
+
+  - it: "IT-PLATFORM-LLM-008: AF main + severityTriage both vertex_ai sharing the SAME secret does NOT fail (#1731 negative)"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          af-vertex-shared:
+            provider: vertex_ai
+            model: gemini-2.5-pro
+            credentialsSecretName: llm-credentials-vertex-shared
+      apifrontend:
+        llmProfileRef: af-vertex-shared
+        config:
+          severityTriage:
+            llmProfileRef: af-vertex-shared
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.containers[0].name
+
+  - it: "IT-PLATFORM-LLM-008: KA phaseModels with two DIFFERENT vertex_ai profiles does NOT fail (guard is AF-scoped only)"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          ka-vertex-a:
+            provider: vertex_ai
+            model: gemini-2.5-pro
+            credentialsSecretName: llm-credentials-ka-vertex-a
+          ka-vertex-b:
+            provider: vertex_ai
+            model: gemini-2.5-flash
+            credentialsSecretName: llm-credentials-ka-vertex-b
+      kubernautAgent:
+        phaseModels:
+          validation: ka-vertex-a
+          workflow_discovery: ka-vertex-b
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isNotNull:
+          path: spec.template.spec.containers[0].name
+
+  - it: "IT-PLATFORM-LLM-008: AF's own base LLM credentials get a dedicated mount (new -- previously unmounted)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: llm-credentials
+            secret:
+              secretName: llm-credentials-primary
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: llm-credentials
+            mountPath: /etc/apifrontend/llm-credentials
+            readOnly: true
+
+  - it: "IT-PLATFORM-LLM-008: severityTriage sharing AF's own secret gets no dedicated mount"
+    set:
+      apifrontend:
+        config:
+          severityTriage:
+            llmProfileRef: primary
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: severity-triage-credentials
+
+  - it: "IT-PLATFORM-LLM-008: severityTriage with a distinct secret gets its own dedicated mount"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          triage-profile:
+            provider: openai
+            model: gpt-4o-mini
+            credentialsSecretName: llm-credentials-triage
+      apifrontend:
+        config:
+          severityTriage:
+            llmProfileRef: triage-profile
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: severity-triage-credentials
+            secret:
+              secretName: llm-credentials-triage
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: severity-triage-credentials
+            mountPath: /etc/apifrontend/severity-triage-credentials
+            readOnly: true

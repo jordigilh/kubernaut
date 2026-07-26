@@ -1,3 +1,47 @@
+{{- /*
+LLM profile resolution (DD-PLATFORM-007 / BR-PLATFORM-008). Computed once
+at the top of this multi-document template so every ConfigMap/Deployment
+section below shares identical resolution -- avoids re-deriving (and
+potentially drifting) the same lookups per-section.
+*/}}
+{{- if not .Values.kubernautAgent.llmProfileRef }}
+{{- fail "kubernautAgent.llmProfileRef is required (name of an entry in global.llmProfiles)" }}
+{{- end }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+{{- $validPhases := list "rca" "workflow_discovery" "validation" }}
+{{- $kaPhaseProfiles := dict }}
+{{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
+{{- if not (has $phase $validPhases) }}
+{{- fail (printf "kubernautAgent.phaseModels: unrecognized phase name %q (valid: %s)" $phase (join ", " $validPhases)) }}
+{{- end }}
+{{- $p := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $profileName) | fromYaml }}
+{{- $_ := set $kaPhaseProfiles $phase $p }}
+{{- end }}
+{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default .Values.kubernautAgent.llmProfileRef }}
+{{- $kaAlignmentProfile := dict }}
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+{{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
+{{- end }}
+{{- /*
+Multi-Secret-volume mounting (DD-PLATFORM-007): a phaseModels/alignmentCheck
+override only gets its own dedicated mount when its resolved
+credentialsSecretName differs from KA's base profile -- otherwise it
+inherits the base's already-mounted "llm-credentials-file" path. Sorted
+iteration keeps the rendered Deployment deterministic (mirrors the
+Operator's sort.Strings(phases)).
+*/}}
+{{- $kaPhaseMounts := list }}
+{{- range $phase := (keys $kaPhaseProfiles | sortAlpha) }}
+{{- $p := index $kaPhaseProfiles $phase }}
+{{- if ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
+{{- $kaPhaseMounts = append $kaPhaseMounts (dict "phase" $phase "profile" $p) }}
+{{- end }}
+{{- end }}
+{{- $kaAlignmentNeedsMount := and .Values.kubernautAgent.alignmentCheck.enabled (ne $kaAlignmentProfile.credentialsSecretName $kaProfile.credentialsSecretName) }}
+{{- $kaAlignmentAPIKeyFile := "" }}
+{{- if $kaAlignmentNeedsMount }}
+{{- $kaAlignmentAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/alignment-check-credentials" "provider" $kaAlignmentProfile.provider) }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -208,53 +252,48 @@ data:
         bufferSize: 10000
         batchSize: 50
     ai:
-{{- if and .Values.kubernautAgent.llm.provider .Values.kubernautAgent.llm.model }}
       llm:
-        provider: {{ .Values.kubernautAgent.llm.provider | quote }}
-{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+        provider: {{ $kaProfile.provider | quote }}
+{{- $kaOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- if $kaOAuth2.enabled }}
         oauth2:
           enabled: true
-          tokenURL: {{ .Values.kubernautAgent.llm.oauth2.tokenURL | quote }}
+          tokenURL: {{ $kaOAuth2.tokenURL | quote }}
           credentialsDir: "/etc/kubernaut-agent/oauth2"
-{{- if .Values.kubernautAgent.llm.oauth2.scopes }}
+{{- if $kaOAuth2.scopes }}
           scopes:
-{{- range (splitList " " .Values.kubernautAgent.llm.oauth2.scopes) }}
+{{- range (splitList " " $kaOAuth2.scopes) }}
             - {{ . | quote }}
 {{- end }}
 {{- end }}
 {{- end }}
-{{- if .Values.kubernautAgent.llm.vertexProject }}
-        vertexProject: {{ .Values.kubernautAgent.llm.vertexProject | quote }}
+{{- if $kaProfile.vertexProject }}
+        vertexProject: {{ $kaProfile.vertexProject | quote }}
 {{- end }}
-{{- if .Values.kubernautAgent.llm.vertexLocation }}
-        vertexLocation: {{ .Values.kubernautAgent.llm.vertexLocation | quote }}
+{{- if $kaProfile.vertexLocation }}
+        vertexLocation: {{ $kaProfile.vertexLocation | quote }}
 {{- end }}
-{{- if .Values.kubernautAgent.llm.azureApiVersion }}
-        azureApiVersion: {{ .Values.kubernautAgent.llm.azureApiVersion | quote }}
+{{- if $kaProfile.azureApiVersion }}
+        azureApiVersion: {{ $kaProfile.azureApiVersion | quote }}
 {{- end }}
-{{- if .Values.kubernautAgent.llm.bedrockRegion }}
-        bedrockRegion: {{ .Values.kubernautAgent.llm.bedrockRegion | quote }}
+{{- if $kaProfile.tlsCaFile }}
+        tlsCaFile: {{ $kaProfile.tlsCaFile | quote }}
 {{- end }}
-{{- if .Values.kubernautAgent.llm.tlsCaFile }}
-        tlsCaFile: {{ .Values.kubernautAgent.llm.tlsCaFile | quote }}
-{{- end }}
-{{- if or .Values.kubernautAgent.llm.reasoning.enabled .Values.kubernautAgent.llm.reasoning.capabilityOverride .Values.kubernautAgent.llm.reasoning.effort }}
+{{- $kaReasoning := $kaProfile.reasoning | default dict }}
+{{- if or $kaReasoning.enabled $kaReasoning.capabilityOverride $kaReasoning.effort }}
         reasoning:
-{{- if .Values.kubernautAgent.llm.reasoning.enabled }}
+{{- if $kaReasoning.enabled }}
           enabled: true
 {{- end }}
-{{- if .Values.kubernautAgent.llm.reasoning.budgetTokens }}
-          budgetTokens: {{ .Values.kubernautAgent.llm.reasoning.budgetTokens }}
+{{- if $kaReasoning.budgetTokens }}
+          budgetTokens: {{ $kaReasoning.budgetTokens }}
 {{- end }}
-{{- if .Values.kubernautAgent.llm.reasoning.effort }}
-          effort: {{ .Values.kubernautAgent.llm.reasoning.effort | quote }}
+{{- if $kaReasoning.effort }}
+          effort: {{ $kaReasoning.effort | quote }}
 {{- end }}
-{{- if .Values.kubernautAgent.llm.reasoning.capabilityOverride }}
-          capabilityOverride: {{ .Values.kubernautAgent.llm.reasoning.capabilityOverride | quote }}
+{{- if $kaReasoning.capabilityOverride }}
+          capabilityOverride: {{ $kaReasoning.capabilityOverride | quote }}
 {{- end }}
-{{- end }}
-{{- else }}
-{{- fail "LLM configuration required: set kubernautAgent.llm.provider and kubernautAgent.llm.model" }}
 {{- end }}
       investigation:
         maxTurns: 40
@@ -263,21 +302,8 @@ data:
         enabled: true
         timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
         maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
-{{- with .Values.kubernautAgent.alignmentCheck.llm }}
         llm:
-{{- if .provider }}
-          provider: {{ .provider }}
-{{- end }}
-{{- if .model }}
-          model: {{ .model }}
-{{- end }}
-{{- if .endpoint }}
-          endpoint: {{ .endpoint }}
-{{- end }}
-{{- if .apiKey }}
-          apiKey: {{ .apiKey }}
-{{- end }}
-{{- end }}
+          {{- include "kubernaut.llm.overrideBlock" (dict "profile" $kaAlignmentProfile "apiKeyFile" $kaAlignmentAPIKeyFile) | nindent 10 }}
 {{- end }}
 {{- if .Values.kubernautAgent.interactive.enabled }}
     interactive:
@@ -326,12 +352,13 @@ data:
 {{- end }}
 {{- end }}
 {{- end }}
-{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
-{{- if not .Values.kubernautAgent.llm.oauth2.tokenURL }}
-{{- fail "kubernautAgent.llm.oauth2.tokenURL is required when oauth2.enabled=true" }}
+{{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- if $kaBaseOAuth2.enabled }}
+{{- if not $kaBaseOAuth2.tokenURL }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.tokenURL is required when oauth2.enabled=true" .Values.kubernautAgent.llmProfileRef) }}
 {{- end }}
-{{- if not .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
-{{- fail "kubernautAgent.llm.oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- if not $kaBaseOAuth2.credentialsSecretRef }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" .Values.kubernautAgent.llmProfileRef) }}
 {{- end }}
 {{- end }}
 ---
@@ -345,11 +372,23 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   llm-runtime.yaml: |
-    model: {{ .Values.kubernautAgent.llm.model | quote }}
-    endpoint: {{ .Values.kubernautAgent.llm.endpoint | default "" | quote }}
-    temperature: {{ .Values.kubernautAgent.llm.temperature | default 0.7 }}
-    maxRetries: {{ .Values.kubernautAgent.llm.maxRetries | default 3 }}
-    timeoutSeconds: {{ .Values.kubernautAgent.llm.timeoutSeconds | default 120 }}
+    model: {{ $kaProfile.model | quote }}
+    endpoint: {{ $kaProfile.endpoint | default "" | quote }}
+    temperature: {{ $kaProfile.temperature | default 0.7 }}
+    maxRetries: {{ $kaProfile.maxRetries | default 3 }}
+    timeoutSeconds: {{ $kaProfile.timeoutSeconds | default 120 }}
+{{- if $kaPhaseProfiles }}
+    phaseModels:
+{{- range $phase := (keys $kaPhaseProfiles | sortAlpha) }}
+{{- $p := index $kaPhaseProfiles $phase }}
+{{- $phaseAPIKeyFile := "" }}
+{{- if ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
+{{- $phaseAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" (printf "/etc/kubernaut-agent/phase-credentials/%s" $phase) "provider" $p.provider) }}
+{{- end }}
+      {{ $phase }}:
+        {{- include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $phaseAPIKeyFile) | nindent 8 }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -410,9 +449,19 @@ spec:
             - name: llm-credentials-file
               mountPath: /etc/kubernaut-agent/credentials
               readOnly: true
-{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+{{- if $kaBaseOAuth2.enabled }}
             - name: oauth2-credentials
               mountPath: /etc/kubernaut-agent/oauth2
+              readOnly: true
+{{- end }}
+{{- range $kaPhaseMounts }}
+            - name: phase-credentials-{{ .phase }}
+              mountPath: /etc/kubernaut-agent/phase-credentials/{{ .phase }}
+              readOnly: true
+{{- end }}
+{{- if $kaAlignmentNeedsMount }}
+            - name: alignment-check-credentials
+              mountPath: /etc/kubernaut-agent/alignment-check-credentials
               readOnly: true
 {{- end }}
             {{- if include "kubernaut.agent.tlsEnabled" . }}
@@ -458,11 +507,21 @@ spec:
             name: kubernaut-agent-llm-runtime
         - name: llm-credentials-file
           secret:
-            secretName: {{ .Values.kubernautAgent.llm.credentialsSecretName }}
-{{- if .Values.kubernautAgent.llm.oauth2.enabled }}
+            secretName: {{ $kaProfile.credentialsSecretName }}
+{{- if $kaBaseOAuth2.enabled }}
         - name: oauth2-credentials
           secret:
-            secretName: {{ .Values.kubernautAgent.llm.oauth2.credentialsSecretRef }}
+            secretName: {{ $kaBaseOAuth2.credentialsSecretRef }}
+{{- end }}
+{{- range $kaPhaseMounts }}
+        - name: phase-credentials-{{ .phase }}
+          secret:
+            secretName: {{ .profile.credentialsSecretName }}
+{{- end }}
+{{- if $kaAlignmentNeedsMount }}
+        - name: alignment-check-credentials
+          secret:
+            secretName: {{ $kaAlignmentProfile.credentialsSecretName }}
 {{- end }}
         {{- if include "kubernaut.agent.tlsEnabled" . }}
         {{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap
