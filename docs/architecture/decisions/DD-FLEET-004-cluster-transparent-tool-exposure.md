@@ -3,7 +3,7 @@
 **Status**: ✅ Implemented (issue #1732)
 **Date**: 2026-07-25
 **Author**: AI Assistant
-**Related**: Issue #1729, Issue #1732, ADR-068 (decision #11), BR-INTEGRATION-054, BR-INTEGRATION-065
+**Related**: Issue #1729, Issue #1732, ADR-068 (decision #11), BR-INTEGRATION-054, BR-INTEGRATION-1489
 
 ---
 
@@ -167,20 +167,35 @@ is what performs the automatic pre-scoping) but is never LLM-callable.
   interfaces — only their caller changes (KA-internal pre-scoping instead
   of the `list_tools_for_cluster` tool's `Execute()`).
 
-## Proposed Wiring (to be finalized in the implementation plan)
+## As-Built Wiring
 
-| Component | Production Entry Point | Wiring Code Location | Notes |
+The design above was implemented as planned, with one deliberate deviation
+(noted below) chosen for blast-radius reasons rather than any change in
+intent.
+
+| Component | Production Entry Point | Wiring Code Location | IT Test ID |
 |---|---|---|---|
-| Per-investigation tool pre-scoping | `launchInvestigation` | `internal/kubernautagent/session/manager.go` | Calls `ToolsForCluster(ctx, signal.ClusterID)` when non-empty |
-| Name-transparent `BridgeTool` aliasing | New adapter | `pkg/fleet/mcpclient` (extend `BridgeTool` construction) | Registers under local tool names, not cluster-prefixed names |
-| Investigation-scoped registry/tool list | `Investigator` construction per investigation | `internal/kubernautagent/investigator/investigator.go`, `cmd/kubernautagent/toolregistry.go` | Replaces the single global static `phaseTools`/`registry.Registry` for the fleet-target case |
-| Removal of LLM-facing discovery tools | `registerFleetTools` | `cmd/kubernautagent/toolregistry.go` | Stop registering `list_clusters`/`list_tools_for_cluster` into the LLM-facing registry |
+| Per-investigation tool pre-scoping | `Investigator.Investigate()` -> `prescopeFleetOverlay()` | `internal/kubernautagent/investigator/fleet_overlay.go` | IT-KA-FLEET-013 |
+| `FleetOverlayResolver` (interface + context carrier) | `Investigator.Config.FleetOverlayResolver`, `New()` | `internal/kubernautagent/investigator/fleet_overlay.go` | IT-KA-FLEET-013 |
+| Name-transparent `BridgeTool` aliasing | `gatewayOverlayResolver.Overlay()` / `genericNameTool` | `cmd/kubernautagent/toolregistry.go` | IT-KA-FLEET-011/012, E2E-KA-FLEET-001 |
+| Overlay-vs-registry tool resolution | `toolDefinitionsForPhase()`, `executeResolved()` | `internal/kubernautagent/investigator/investigator_tools.go` | IT-KA-FLEET-015 |
+| Removal of LLM-facing discovery tools | `registerFleetTools` (no longer takes a `*registry.Registry`) | `cmd/kubernautagent/toolregistry.go` | IT-KA-FLEET-010 |
+| Alignment cluster attribution fix | `SubmitToolStep` -> `attributionClusterID()` | `internal/kubernautagent/alignment/toolproxy.go` | IT-KA-FLEET-016 |
 
-This decision covers the *design*; the implementation plan (Wiring Manifest
-with concrete IT test IDs) is tracked in Issue #1732 per the project's
-Pre-Implementation Workflow.
+**Deviation from the original proposal**: the design above named
+`internal/kubernautagent/session/manager.go`'s `launchInvestigation` as the
+pre-scoping entry point. `session.NewManager` has ~100 call sites using
+positional construction, making a signature change there disruptive out of
+proportion to this fix. Pre-scoping was wired one layer down instead, into
+`Investigator.Config`/`New()` and `Investigate()` (both already using named
+struct-literal construction at their call sites), which are exercised by
+every investigation exactly the same way `launchInvestigation` would have
+been. No behavioral difference results from this choice.
+
+The implementation plan (Wiring Manifest with concrete IT test IDs) was
+tracked in Issue #1732 per the project's Pre-Implementation Workflow.
 
 ## Authority
 
 Issue #1729, Issue #1732, ADR-068 (decision #11), BR-INTEGRATION-054,
-BR-INTEGRATION-065.
+BR-INTEGRATION-1489.

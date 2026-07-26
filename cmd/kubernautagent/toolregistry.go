@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/sync/singleflight"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 
@@ -173,24 +174,42 @@ func resolveAlignmentCheckConfig(cfg *kaconfig.Config) kaconfig.AlignmentCheckCo
 type gatewayOverlayResolver struct {
 	discoverer fleetclient.GatewayDiscoverer
 	session    fleetclient.Session
+
+	// sf deduplicates concurrent Overlay calls for the same clusterID down
+	// to a single ToolsForCluster gateway round trip (SC-5: Denial of
+	// Service Protection), exactly as the deleted ListToolsForClusterTool
+	// did before DD-FLEET-004 removed the LLM-facing discovery tools --
+	// every investigation now calls Overlay() once at pre-scoping time, so
+	// N investigations landing on the same busy cluster concurrently would
+	// otherwise each trigger their own discover_tools/select_tools call.
+	sf singleflight.Group
 }
 
 // Overlay implements investigator.FleetOverlayResolver.
 func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) (map[string]tools.Tool, error) {
-	defs, err := r.discoverer.ToolsForCluster(ctx, clusterID)
+	v, err, _ := r.sf.Do(clusterID, func() (any, error) {
+		defs, err := r.discoverer.ToolsForCluster(ctx, clusterID)
+		if err != nil {
+			return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
+		}
+		overlay := make(map[string]tools.Tool, len(defs))
+		for _, def := range defs {
+			// EAIGW names carry a "{clusterID}__" wire prefix; Kuadrant names
+			// (post select_tools) are already bare. TrimPrefix is a no-op for
+			// the latter, so this line handles both gateway types uniformly.
+			genericName := strings.TrimPrefix(def.Name, clusterID+"__")
+			bridge := fleetclient.NewBridgeTool(def, clusterID, r.session)
+			overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
+		}
+		return overlay, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
+		return nil, err
 	}
-	overlay := make(map[string]tools.Tool, len(defs))
-	for _, def := range defs {
-		// EAIGW names carry a "{clusterID}__" wire prefix; Kuadrant names
-		// (post select_tools) are already bare. TrimPrefix is a no-op for
-		// the latter, so this line handles both gateway types uniformly.
-		genericName := strings.TrimPrefix(def.Name, clusterID+"__")
-		bridge := fleetclient.NewBridgeTool(def, clusterID, r.session)
-		overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
-	}
-	return overlay, nil
+	// Safe to share the same map across every waiter on this singleflight
+	// key: FleetOverlayFromContext/resolveTool only ever read it, never
+	// mutate it (see fleet_overlay.go).
+	return v.(map[string]tools.Tool), nil
 }
 
 // genericNameTool decorates a *fleetclient.BridgeTool, exposing it to KA's

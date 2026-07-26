@@ -25,14 +25,14 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 )
 
-// BR-INTEGRATION-065, DD-FLEET-004: cluster-transparent tool exposure removes
+// BR-INTEGRATION-1489, DD-FLEET-004: cluster-transparent tool exposure removes
 // the "{clusterID}__tool" name prefix that parseClusterIDFromToolName relied
 // on for shadow-agent audit attribution. attributionClusterID is the pure
 // decision helper that fixes this by preferring the context's ClusterID
 // (already carried by every fleet investigation via audit.WithClusterID),
 // falling back to the legacy name-parsing convention only when the context
 // carries none — never a regression for pre-DD-FLEET-004 callers.
-var _ = Describe("SubmitToolStep cluster attribution (BR-INTEGRATION-065, DD-FLEET-004)", Label("fleet", "unit"), func() {
+var _ = Describe("SubmitToolStep cluster attribution (BR-INTEGRATION-1489, DD-FLEET-004)", Label("fleet", "unit"), func() {
 
 	Describe("UT-KA-FLEET-019 [AU-3/CC8.1]: attributionClusterID decision logic", func() {
 		It("prefers the context's ClusterID over the tool name prefix when both are present", func() {

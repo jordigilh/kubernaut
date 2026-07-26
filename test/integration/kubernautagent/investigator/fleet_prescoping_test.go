@@ -51,14 +51,14 @@ func (s *fleetOverlayResolverSpy) Overlay(_ context.Context, clusterID string) (
 	return s.overlay, s.err
 }
 
-// BR-INTEGRATION-065, DD-FLEET-004: cluster-transparent tool exposure — wiring
+// BR-INTEGRATION-1489, DD-FLEET-004: cluster-transparent tool exposure — wiring
 // tier (IT). Proves the production entry point (Investigator.Investigate)
 // actually calls the configured FleetOverlayResolver for fleet-target
 // investigations, resolves generic tool names to the overlay's BridgeTool
 // ahead of the local registry, and never exposes the removed LLM-facing
 // discovery tools. Pure decision logic is covered separately by
 // UT-KA-FLEET-014/018 (fleet_overlay_internal_test.go).
-var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-065, DD-FLEET-004)", Label("fleet", "integration"), func() {
+var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-1489, DD-FLEET-004)", Label("fleet", "integration"), func() {
 
 	var (
 		invLogger  logr.Logger

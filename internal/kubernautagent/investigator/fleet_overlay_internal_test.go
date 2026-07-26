@@ -39,12 +39,12 @@ func (f *fleetOverlayFakeTool) Execute(_ context.Context, _ json.RawMessage) (st
 	return "fake-result:" + f.name, nil
 }
 
-// BR-INTEGRATION-065, DD-FLEET-004: cluster-transparent tool exposure —
+// BR-INTEGRATION-1489, DD-FLEET-004: cluster-transparent tool exposure —
 // pure logic tier (UT). Proves the overlay context carrier and the
 // overlay-vs-registry resolution decision in isolation, with no registry,
 // session, or gateway involved. Wiring into Investigate()/toolDefinitionsForPhase/
 // executeTool is proven separately by IT-KA-FLEET-013/015.
-var _ = Describe("Fleet overlay context carrier and resolution (BR-INTEGRATION-065, DD-FLEET-004)", Label("fleet", "unit"), func() {
+var _ = Describe("Fleet overlay context carrier and resolution (BR-INTEGRATION-1489, DD-FLEET-004)", Label("fleet", "unit"), func() {
 
 	Describe("UT-KA-FLEET-014: fleet overlay context carrier round-trip", func() {
 		It("returns the stored overlay and true when present", func() {

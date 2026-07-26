@@ -2,6 +2,18 @@
 
 **IEEE 829 Compliant** | **Issue**: [#54](https://github.com/jordigilh/kubernaut/issues/54) | **Milestone**: v1.5
 
+> **⚠️ Superseded in part by [DD-FLEET-004](../../architecture/decisions/DD-FLEET-004-cluster-transparent-tool-exposure.md) (issue #1732)**: `GatewayDiscoverer`,
+> `KuadrantDiscoverer`, `EAIGWDiscoverer`, and `Registry` concurrency (§6.1-6.4, §6.6-6.7)
+> are unchanged and this plan remains accurate for them. However, §6.5
+> (`ListClustersTool`/`ListToolsForClusterTool`) describes types that were
+> **deleted** — KA no longer exposes `list_clusters`/`list_tools_for_cluster`
+> to the LLM; it calls `GatewayDiscoverer.ToolsForCluster()` itself,
+> server-side, once per investigation. §6.8's `IT-KA-FLEET-010/011/012` IDs
+> were reused by DD-FLEET-004's implementation for different assertions than
+> described below — see `test/integration/kubernautagent/fleet/fleet_wiring_test.go`
+> for their current meaning. See the callouts inline below for exactly what
+> changed.
+
 ## 1. Test Plan Identifier
 
 TP-54-GATEWAY-DISCOVERER
@@ -10,7 +22,7 @@ TP-54-GATEWAY-DISCOVERER
 
 ### 2.1 Purpose
 
-At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM wastes context tokens and causes hallucination. The `GatewayDiscoverer` interface provides two-phase tool discovery: KA pre-scopes the alert's target cluster (~18 tools), then the LLM can optionally expand to other clusters via `list_clusters` and `list_tools_for_cluster`.
+At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM wastes context tokens and causes hallucination. The `GatewayDiscoverer` interface provides two-phase tool discovery: `ListClusters` then `ToolsForCluster`. **As of DD-FLEET-004 (#1732), both are called by KA itself, server-side, at investigation launch, using the investigation's own `signal.ClusterID` — never by the LLM.** The original framing below ("the LLM can optionally expand to other clusters") described a two-phase *LLM-facing* discovery flow that was never fully implemented and has since been superseded; see DD-FLEET-004 for the current design and rationale.
 
 ### 2.2 Objectives
 
@@ -18,8 +30,8 @@ At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM was
 2. **Kuadrant discovery (FedRAMP AC-3)**: `KuadrantDiscoverer` wraps `discover_tools`/`select_tools` for server-side session scoping
 3. **EAIGW discovery (FedRAMP AC-3)**: `EAIGWDiscoverer` scans `tools/list` and extracts `__` prefixes for client-side filtering
 4. **Registry concurrency (FedRAMP SC-5)**: `sync.RWMutex` protects concurrent `Register`/`Get` on the tool registry
-5. **LLM tool boundary (FedRAMP SC-7)**: `list_clusters` and `list_tools_for_cluster` limit LLM context to relevant clusters
-6. **Singleflight deduplication (FedRAMP SC-5)**: Concurrent `list_tools_for_cluster` calls for the same cluster execute the gateway call only once
+5. ~~**LLM tool boundary (FedRAMP SC-7)**: `list_clusters` and `list_tools_for_cluster` limit LLM context to relevant clusters~~ — **superseded by DD-FLEET-004**: these tools were removed entirely; the LLM never sees cluster boundaries at all (a stronger form of the same SC-7 control — see `docs/architecture/decisions/DD-FLEET-004-cluster-transparent-tool-exposure.md`)
+6. **Singleflight deduplication (FedRAMP SC-5)**: concurrent tool-discovery calls for the same cluster execute the gateway call only once. Originally implemented in `ListToolsForClusterTool.Execute`; reimplemented in `gatewayOverlayResolver.Overlay` (`cmd/kubernautagent/toolregistry.go`, `UT-KA-FLEET-022/023`) after DD-FLEET-004 removed the LLM-facing tool
 7. **Audit content (FedRAMP AU-3)**: Discovery operations logged with cluster ID and tool count
 
 ### 2.3 Business Requirements
@@ -39,8 +51,8 @@ At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM was
 - F-4: `EAIGWDiscoverer.ListClusters()` scans `tools/list` and extracts unique `__` prefixes
 - F-5: `EAIGWDiscoverer.ToolsForCluster()` filters `tools/list` by cluster prefix
 - F-6: `Registry` concurrent `Register`/`Get` safety via `sync.RWMutex`
-- F-7: `ListClustersTool` returns cluster metadata without tool names
-- F-8: `ListToolsForClusterTool` returns and activates tools for a cluster via `singleflight`
+- ~~F-7: `ListClustersTool` returns cluster metadata without tool names~~ — **deleted** (DD-FLEET-004); never had an LLM-facing equivalent afterward, since the LLM no longer discovers clusters at all
+- ~~F-8: `ListToolsForClusterTool` returns and activates tools for a cluster via `singleflight`~~ — **deleted** (DD-FLEET-004); its dedup behavior now lives in `gatewayOverlayResolver.Overlay` (`cmd/kubernautagent/toolregistry.go`)
 - F-9: KA `FleetConfig.GatewayType` parsing and validation
 - F-10: `EffectiveMCPGatewayType()` cleanup — empty = error when fleet enabled
 
@@ -66,10 +78,10 @@ At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM was
 | Control | Title | Behavioral Assurance | Test IDs |
 |---------|-------|---------------------|----------|
 | CM-6 | Configuration Settings | `gatewayType` selects correct discoverer; empty = fleet disabled; invalid value rejected | UT-DISC-001, UT-DISC-002, UT-DISC-003, UT-KA-CFG-001, UT-KA-CFG-002, UT-FLEET-CFG-035, E2E-FLEET-DISC-001 |
-| AC-3 | Access Enforcement | `list_clusters` returns only clusters visible through gateway auth; `list_tools_for_cluster` scopes session to authorized tools only | UT-DISC-KUA-001..003, UT-DISC-EAIGW-001..003, E2E-FLEET-DISC-002, E2E-FLEET-DISC-003 |
-| SC-7 | Boundary Protection | LLM context limited to pre-scoped cluster tools; cross-cluster access requires explicit `list_tools_for_cluster` call | UT-DISC-TOOL-001..004, IT-KA-FLEET-012 |
-| SC-5 | Denial of Service Protection | Concurrent tool registration protected by RWMutex; duplicate discovery calls deduplicated by singleflight | UT-REG-CONC-001..003, UT-DISC-TOOL-007 |
-| AU-3 | Audit Content | Discovery operations logged with cluster ID and tool count | UT-DISC-KUA-004, UT-DISC-EAIGW-004 |
+| AC-3 | Access Enforcement | `ListClusters`/`ToolsForCluster` (called by KA server-side, per DD-FLEET-004) return only clusters/tools visible through gateway auth | UT-DISC-KUA-001..003, UT-DISC-EAIGW-001..003, E2E-FLEET-DISC-002, E2E-FLEET-DISC-003 |
+| SC-7 | Boundary Protection | LLM never sees cluster boundaries at all — remote-cluster tools are pre-scoped server-side and exposed under the same generic names as local tools (DD-FLEET-004, stronger than the original LLM-facing `list_tools_for_cluster` boundary) | IT-KA-FLEET-011/012 (`test/integration/kubernautagent/fleet/fleet_wiring_test.go`), IT-KA-FLEET-017 (`test/integration/kubernautagent/investigator/fleet_prescoping_test.go`) |
+| SC-5 | Denial of Service Protection | Concurrent tool registration protected by RWMutex; concurrent per-cluster discovery calls deduplicated by singleflight in `gatewayOverlayResolver.Overlay` | UT-REG-CONC-001..003, UT-KA-FLEET-022/023 (`cmd/kubernautagent/toolregistry_overlay_singleflight_test.go`) |
+| AU-3 | Audit Content | Discovery operations logged with cluster ID and tool count; fleet overlay resolution failure emits `aiagent.fleet.overlay_failed` | UT-DISC-KUA-004, UT-DISC-EAIGW-004, IT-KA-FLEET-020 |
 
 ## 6. Test Cases
 
@@ -109,18 +121,26 @@ At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM was
 | UT-REG-CONC-002 | Concurrent Register and Execute do not race | Register new tool while Execute runs; no panic, correct result | SC-5 |
 | UT-REG-CONC-003 | Concurrent Register and ToolsForPhase do not race | Register while reading phase tools; consistent snapshot | SC-5 |
 
-### 6.5 Discovery Tools (SC-7)
+### 6.5 Discovery Tools (SC-7) — **deleted per DD-FLEET-004, kept below for history**
+
+> `ListClustersTool` and `ListToolsForClusterTool` (and this entire section's
+> UT-DISC-TOOL-\* tests) were **deleted** by DD-FLEET-004 (#1732): the LLM no
+> longer has any tool to discover or select a cluster with. UT-DISC-TOOL-007's
+> singleflight dedup guarantee is the one behavior from this section that was
+> carried forward — see `UT-KA-FLEET-022/023` in
+> `cmd/kubernautagent/toolregistry_overlay_singleflight_test.go`, which prove
+> the same guarantee against `gatewayOverlayResolver.Overlay`.
 
 | ID | Test Case | Success Criteria | Control |
 |----|-----------|-----------------|---------|
-| UT-DISC-TOOL-001 | ListClustersTool.Name() returns "list_clusters" | Exact match | -- |
-| UT-DISC-TOOL-002 | ListClustersTool.Execute returns JSON with cluster metadata, no tool names | Response contains `clusters` array with `id`, `hint`, `categories` | SC-7 |
-| UT-DISC-TOOL-003 | ListToolsForClusterTool.Execute returns tool names and descriptions | Response contains `tools` array with `name`, `description` | SC-7 |
-| UT-DISC-TOOL-004 | ListToolsForClusterTool.Execute with invalid cluster returns error text | IsError true, text contains cluster ID | SC-7 |
-| UT-DISC-TOOL-005 | ListClustersTool.Parameters() returns valid JSON schema | Schema has `properties` with optional `category` | -- |
-| UT-DISC-TOOL-006 | ListToolsForClusterTool.Parameters() returns valid JSON schema | Schema has `required: ["cluster_id"]` | -- |
-| UT-DISC-TOOL-007 | Concurrent list_tools_for_cluster for same cluster deduplicates via singleflight | Two goroutines call simultaneously; gateway receives only 1 discover_tools call | SC-5 |
-| UT-DISC-TOOL-008 | Sequential list_tools_for_cluster for different clusters executes independently | cluster-a and cluster-b each trigger their own discovery | -- |
+| UT-DISC-TOOL-001 | ~~ListClustersTool.Name() returns "list_clusters"~~ | Exact match | -- |
+| UT-DISC-TOOL-002 | ~~ListClustersTool.Execute returns JSON with cluster metadata, no tool names~~ | Response contains `clusters` array with `id`, `hint`, `categories` | SC-7 |
+| UT-DISC-TOOL-003 | ~~ListToolsForClusterTool.Execute returns tool names and descriptions~~ | Response contains `tools` array with `name`, `description` | SC-7 |
+| UT-DISC-TOOL-004 | ~~ListToolsForClusterTool.Execute with invalid cluster returns error text~~ | IsError true, text contains cluster ID | SC-7 |
+| UT-DISC-TOOL-005 | ~~ListClustersTool.Parameters() returns valid JSON schema~~ | Schema has `properties` with optional `category` | -- |
+| UT-DISC-TOOL-006 | ~~ListToolsForClusterTool.Parameters() returns valid JSON schema~~ | Schema has `required: ["cluster_id"]` | -- |
+| UT-DISC-TOOL-007 | ~~Concurrent list_tools_for_cluster for same cluster deduplicates via singleflight~~ → superseded by **UT-KA-FLEET-022** | Two goroutines call simultaneously; gateway receives only 1 discover_tools call | SC-5 |
+| UT-DISC-TOOL-008 | ~~Sequential list_tools_for_cluster for different clusters executes independently~~ → superseded by **UT-KA-FLEET-023** | cluster-a and cluster-b each trigger their own discovery | -- |
 
 ### 6.6 KA FleetConfig (CM-6)
 
@@ -137,11 +157,19 @@ At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM was
 
 ### 6.8 Integration Tests — KA Wiring (proves wiring)
 
+> **IDs reused by DD-FLEET-004** (#1732): the three rows below describe the
+> *original* intent of these IDs, no longer what the code at these IDs
+> actually asserts. `test/integration/kubernautagent/fleet/fleet_wiring_test.go`
+> repurposed `IT-KA-FLEET-010/011/012` to assert the opposite of the first
+> row (discovery tools are **absent**) and to prove generic-named tool
+> resolution/execution for the other two. Kept here for historical record;
+> do not use this table to look up current test intent.
+
 | ID | Test Case | Success Criteria | Control |
 |----|-----------|-----------------|---------|
-| IT-KA-FLEET-010 | registerFleetTools with gatewayType=kuadrant registers list_clusters tool | Tool registry contains "list_clusters" | CM-6 |
-| IT-KA-FLEET-011 | registerFleetTools with gatewayType=eaigw registers list_tools_for_cluster tool | Tool registry contains "list_tools_for_cluster" | CM-6 |
-| IT-KA-FLEET-012 | registerFleetTools pre-scopes target cluster tools as BridgeTools | Registry contains `{prefix}resources_get` and `{prefix}resources_list` | SC-7 |
+| ~~IT-KA-FLEET-010~~ | ~~registerFleetTools with gatewayType=kuadrant registers list_clusters tool~~ → now: asserts `list_clusters`/`list_tools_for_cluster` are **absent** from the LLM-facing registry | ~~Tool registry contains "list_clusters"~~ | CM-6, AC-4/AC-6 |
+| ~~IT-KA-FLEET-011~~ | ~~registerFleetTools with gatewayType=eaigw registers list_tools_for_cluster tool~~ → now: eaigw pre-scoping resolves a generic name to the correct cluster-prefixed wire tool | ~~Tool registry contains "list_tools_for_cluster"~~ | CM-6, AC-6 |
+| ~~IT-KA-FLEET-012~~ | ~~registerFleetTools pre-scopes target cluster tools as BridgeTools~~ → now: automatic pre-scoping resolves the LLM's generic tool call to the one target cluster, never another | Registry contains `{prefix}resources_get` and `{prefix}resources_list` | SC-7, AC-4/AC-6 |
 
 ### 6.9 E2E Tests — Two-Phase Discovery Journey (proves journey)
 
@@ -170,8 +198,9 @@ At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM was
 | KuadrantDiscoverer | UT-DISC-KUA-001..005 | IT-KA-FLEET-010 | E2E-FLEET-DISC-001/002/003 | -- |
 | EAIGWDiscoverer | UT-DISC-EAIGW-001..005 | IT-KA-FLEET-011 | -- (no EAIGW in E2E infra) | -- |
 | Registry RWMutex | UT-REG-CONC-001/002/003 | IT-KA-FLEET-012 | -- (concurrency, not journey) | -- |
-| ListClustersTool | UT-DISC-TOOL-001/002/005 | IT-KA-FLEET-010/011 | E2E-FLEET-DISC-001 | -- |
-| ListToolsForClusterTool + singleflight | UT-DISC-TOOL-003/004/006/007/008 | IT-KA-FLEET-012 | E2E-FLEET-DISC-002 | -- |
+| ~~ListClustersTool~~ (deleted) | ~~UT-DISC-TOOL-001/002/005~~ | ~~IT-KA-FLEET-010/011~~ | ~~E2E-FLEET-DISC-001~~ | superseded, see DD-FLEET-004 |
+| ~~ListToolsForClusterTool~~ + singleflight | ~~UT-DISC-TOOL-003/004/006~~; dedup now UT-KA-FLEET-022/023 | ~~IT-KA-FLEET-012~~ | ~~E2E-FLEET-DISC-002~~ | superseded, see DD-FLEET-004 |
+| `gatewayOverlayResolver.Overlay` (replaces both tools above) | UT-KA-FLEET-022/023 (singleflight) | IT-KA-FLEET-011/012, IT-KA-FLEET-013/015 | E2E-KA-FLEET-001 | -- |
 | FleetConfig.GatewayType | UT-KA-CFG-001/002 | IT-KA-FLEET-010 | -- (config, not journey) | -- |
 | EffectiveMCPGatewayType cleanup | UT-FLEET-CFG-035 | -- (config validation) | -- | -- |
 
@@ -183,8 +212,9 @@ At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM was
 | KuadrantDiscoverer | NewDiscoverer(GatewayKuadrant, session) | pkg/fleet/mcpclient/discovery_kuadrant.go | UT-DISC-KUA-001..005 | IT-KA-FLEET-010 |
 | EAIGWDiscoverer | NewDiscoverer(GatewayEAIGW, session) | pkg/fleet/mcpclient/discovery_eaigw.go | UT-DISC-EAIGW-001..005 | IT-KA-FLEET-011 |
 | Registry RWMutex | Register(), Get(), Execute() | pkg/kubernautagent/tools/registry/registry.go | UT-REG-CONC-001/002/003 | IT-KA-FLEET-012 |
-| ListClustersTool | registerFleetTools() | cmd/kubernautagent/main.go | UT-DISC-TOOL-001/002/005 | IT-KA-FLEET-010/011 |
-| ListToolsForClusterTool + singleflight | registerFleetTools() | cmd/kubernautagent/main.go | UT-DISC-TOOL-003/004/006/007/008 | IT-KA-FLEET-012 |
+| ~~ListClustersTool~~ (deleted, DD-FLEET-004) | ~~registerFleetTools()~~ | ~~cmd/kubernautagent/main.go~~ | ~~UT-DISC-TOOL-001/002/005~~ | ~~IT-KA-FLEET-010/011~~ |
+| ~~ListToolsForClusterTool~~ (deleted, DD-FLEET-004) | ~~registerFleetTools()~~ | ~~cmd/kubernautagent/main.go~~ | ~~UT-DISC-TOOL-003/004/006/007/008~~ | ~~IT-KA-FLEET-012~~ |
+| `gatewayOverlayResolver` (replaces both rows above) | `registerFleetTools()` -> `Investigator.prescopeFleetOverlay()` | cmd/kubernautagent/toolregistry.go, internal/kubernautagent/investigator/fleet_overlay.go | UT-KA-FLEET-022/023 | IT-KA-FLEET-010/011/012/013/015 |
 | FleetConfig.GatewayType | KA config load | internal/kubernautagent/config/config.go | UT-KA-CFG-001/002 | IT-KA-FLEET-010 |
 | EffectiveMCPGatewayType removal | FleetConfig.Validate() | pkg/fleet/config.go | UT-FLEET-CFG-035 | -- |
 
@@ -194,3 +224,4 @@ At fleet scale (100+ clusters, 1800+ tools), presenting all tools to the LLM was
 |---------|------|---------|
 | 1.0 | 2026-06-27 | Initial test plan |
 | 1.1 | 2026-06-27 | Added E2E tests (E2E-FLEET-DISC-001..003) for Pyramid Invariant journey layer |
+| 1.2 | 2026-07-26 | DD-FLEET-004 (#1732): `ListClustersTool`/`ListToolsForClusterTool` deleted -- KA pre-scopes tools server-side instead of via LLM-facing discovery tools. Marked §2.1, §2.2 obj. 5-6, §6.5, §6.8, §8, §9 superseded/struck-through in place rather than deleting, to preserve the historical record of what #54 originally built. `IT-KA-FLEET-010/011/012` IDs were reused with different meanings by the DD-FLEET-004 implementation; singleflight dedup (SC-5) reimplemented as `UT-KA-FLEET-022/023` against `gatewayOverlayResolver.Overlay`. |

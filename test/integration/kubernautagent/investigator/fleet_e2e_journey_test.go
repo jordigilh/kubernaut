@@ -141,7 +141,7 @@ func (fleetE2EScenario) ConfigForContext(ctx *scenarios.DetectionContext) scenar
 	}
 }
 
-var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-INTEGRATION-065, DD-FLEET-004)", Label("fleet", "integration"), func() {
+var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-INTEGRATION-1489, DD-FLEET-004)", Label("fleet", "integration"), func() {
 
 	Describe("E2E-KA-FLEET-001: a real mock-LLM issues a tool call under a generic name during a fleet-target investigation, and it reaches the remote cluster, never the hub-local tool", func() {
 		It("routes kubectl_get_by_name to the remote-east mock gateway via the fleet overlay, not to the local registry", func() {

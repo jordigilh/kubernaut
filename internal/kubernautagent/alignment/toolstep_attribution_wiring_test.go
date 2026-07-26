@@ -28,11 +28,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
-// BR-INTEGRATION-065, DD-FLEET-004: proves the production entry point,
+// BR-INTEGRATION-1489, DD-FLEET-004: proves the production entry point,
 // SubmitToolStep, actually attributes cluster ID via audit.ClusterIDFromContext
 // end-to-end through a real Observer/Evaluator — not just the extracted
 // attributionClusterID helper in isolation (that's UT-KA-FLEET-019).
-var _ = Describe("SubmitToolStep cluster attribution wiring (BR-INTEGRATION-065, DD-FLEET-004)", Label("fleet", "integration"), func() {
+var _ = Describe("SubmitToolStep cluster attribution wiring (BR-INTEGRATION-1489, DD-FLEET-004)", Label("fleet", "integration"), func() {
 
 	Describe("IT-KA-FLEET-016 [AU-3/CC8.1]: SubmitToolStep attributes ClusterID from context", func() {
 		It("attributes the context's ClusterID to a generically-named tool call, not just prefixed ones", func() {
