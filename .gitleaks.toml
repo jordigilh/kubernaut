@@ -106,6 +106,7 @@ paths = [
   '''^pkg/gateway/processing/storm_aggregator\.go$''',
   '''^pkg/notification/sanitization/sanitizer_v31_test\.go$''',
   '''^python\-api/tests/test_integration\.py$''',
+  '''^scripts/helm\-smoke\-test\.sh$''',
   '''^test/e2e/jwt_delegation_test\.go$''',
   '''^test/e2e/kubernautagent/jwt_e2e_test\.go$''',
   '''^test/e2e/notification/03_file_delivery_validation_test\.go$''',
