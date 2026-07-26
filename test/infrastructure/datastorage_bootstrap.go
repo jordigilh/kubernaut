@@ -145,6 +145,12 @@ type DSBootstrapInfra struct {
 	// Image information for cleanup (DD-TEST-001 v1.3)
 	DataStorageImageName string // Full image name with tag (e.g., kubernaut/datastorage:datastorage-gateway-1734278400)
 
+	// DataStorageImagePreserve, when true, means DataStorageImageName is an
+	// externally-managed image (CI-prebuilt artifact or registry pull) that
+	// StopDSBootstrap must NOT `podman rmi` -- other suites in the same CI
+	// job may still need to reuse it (#1738).
+	DataStorageImagePreserve bool
+
 	Config DSBootstrapConfig // Original configuration (for reference)
 
 	// SigningCertDir holds the temp directory with tls.crt/tls.key for audit export signing.
@@ -221,12 +227,17 @@ func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writ
 // - error: Any errors during image build
 //
 // Per DD-TEST-004: Generates unique image tag per service to prevent collisions
-func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
+// Returns the resolved image name plus a preserveImage flag: true means the
+// image is externally-managed (CI-prebuilt artifact or registry pull) and
+// MUST NOT be removed by StopDSBootstrap's cleanup, since other suites
+// running later in the same CI job may still need to reuse it. false means
+// the image was built (or already cached) locally and is safe to remove.
+func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Writer) (imageName string, preserveImage bool, err error) {
 	projectRoot := getProjectRoot()
 
 	// Generate DD-TEST-001 v1.3 compliant image tag
 	imageTag := generateInfrastructureImageTag(serviceName)
-	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
+	imageName = fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
 	// this service under the agreed-upon fixed tag (artifact-based CI mode,
@@ -236,8 +247,15 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	// already built and loaded this exact image. See #1738: this check was
 	// previously duplicated 4x with no failure diagnostics, silently masking
 	// why 3 of kubernautagent's 4 DS-dependent suites missed the cache.
+	//
+	// preserveImage=true here is load-bearing, not cosmetic: root-caused via
+	// #1738's own diagnostics -- the first kubernautagent suite to hit this
+	// fast path *did* get "✅ Using CI-prebuilt artifact", but StopDSBootstrap
+	// then unconditionally `podman rmi`'d that exact shared tag on teardown,
+	// so all 3 remaining suites in the same job legitimately found it gone
+	// (not a flaky "podman image exists" miss -- a real deletion).
 	if prebuilt, ok := resolvePrebuiltCIArtifact(ctx, "datastorage", writer); ok {
-		return prebuilt, nil
+		return prebuilt, true, nil
 	}
 
 	// DEBUG: Show environment variable status
@@ -245,16 +263,18 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	tag := os.Getenv("IMAGE_TAG")
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
-	// CI/CD Optimization: Try to pull from registry if configured
+	// CI/CD Optimization: Try to pull from registry if configured. Same
+	// preserve-on-teardown rationale as the CI-prebuilt-artifact path above:
+	// this image isn't ours to delete.
 	if pulledImageName, pulled := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
-		return pulledImageName, nil // Use registry image
+		return pulledImageName, true, nil // Use registry image
 	}
 
 	// Check if image already exists (cache hit)
 	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
 	if checkCmd.Run() == nil {
 		_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image already exists: %s\n", imageName)
-		return imageName, nil
+		return imageName, false, nil
 	}
 
 	// Build the image locally
@@ -270,18 +290,18 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 
-	if err := buildCmd.Run(); err != nil {
+	if buildErr := buildCmd.Run(); buildErr != nil {
 		// Check if image was actually built despite error (podman cleanup issue)
 		checkAgain := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
 		if checkAgain.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
-			return imageName, nil
+			return imageName, false, nil
 		}
-		return "", fmt.Errorf("failed to build DataStorage image: %w", err)
+		return "", false, fmt.Errorf("failed to build DataStorage image: %w", buildErr)
 	}
 
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", imageName)
-	return imageName, nil
+	return imageName, false, nil
 }
 
 // StartDSBootstrap starts DataStorage infrastructure using DD-TEST-002 sequential pattern
@@ -332,11 +352,12 @@ func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writ
 
 	// Step 0: Build DataStorage image (can be parallelized in test suites)
 	_, _ = fmt.Fprintf(writer, "🔨 Building DataStorage image...\n")
-	imageName, err := BuildDataStorageImage(ctx, cfg.ServiceName, writer)
+	imageName, preserveImage, err := BuildDataStorageImage(ctx, cfg.ServiceName, writer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
 	infra.DataStorageImageName = imageName
+	infra.DataStorageImagePreserve = preserveImage
 	_, _ = fmt.Fprintf(writer, "\n")
 
 	// Step 1: Cleanup
@@ -465,8 +486,17 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	}
 
 	// Remove ONLY kubernaut-built DataStorage image (DD-TEST-001 v1.3)
-	// Base images (postgres, redis) are NOT removed - they're shared and cached
-	if infra.DataStorageImageName != "" {
+	// Base images (postgres, redis) are NOT removed - they're shared and cached.
+	//
+	// #1738: DataStorageImagePreserve guards the CI-prebuilt-artifact and
+	// registry-pull cases -- those images are shared across every suite in
+	// the same CI job (e.g. kubernautagent's 4 independent Ginkgo suites).
+	// Removing them here after the first suite finishes silently forced all
+	// later suites into a --no-cache local rebuild, which is what pushed the
+	// Integration (kubernautagent) job past its CI timeout.
+	if infra.DataStorageImageName != "" && infra.DataStorageImagePreserve {
+		_, _ = fmt.Fprintf(writer, "♻️  Preserving externally-managed DataStorage image for reuse by other suites: %s\n", infra.DataStorageImageName)
+	} else if infra.DataStorageImageName != "" {
 		_, _ = fmt.Fprintf(writer, "🗑️  Removing kubernaut-built DataStorage image: %s\n", infra.DataStorageImageName)
 		rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", infra.DataStorageImageName)
 		if err := rmiCmd.Run(); err != nil {

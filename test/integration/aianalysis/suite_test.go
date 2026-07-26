@@ -428,7 +428,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	go func() {
 		defer wg.Done()
 		defer GinkgoRecover()
-		dsImageName, dsErr = infrastructure.BuildDataStorageImage(specCtx, "aianalysis", GinkgoWriter)
+		dsImageName, _, dsErr = infrastructure.BuildDataStorageImage(specCtx, "aianalysis", GinkgoWriter)
 	}()
 
 	go func() {
