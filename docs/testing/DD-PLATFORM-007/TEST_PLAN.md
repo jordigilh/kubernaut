@@ -403,7 +403,36 @@ None. Confirmed during DD-PLATFORM-007 preflight (content-level grep, not just f
 
 ---
 
-## 16. Changelog
+## 16. Pre-Implementation Readiness Audit (AGENTS.md Step 5)
+
+> Performed before RED begins, per the Pre-Implementation Workflow. Only dimensions assessable
+> pre-code are scored here; Build/Lint/Regression are re-verified for real in Section 5.4's PASS
+> criteria and this plan's `validate` step once GREEN exists — this section is a readiness gate,
+> not a substitute for actually running those checks later.
+
+| # | Dimension | Pre-implementation status | Basis |
+|---|-----------|---------------------------|-------|
+| 1 | Build | N/A pre-code — re-checked in `validate` step | Zero Go changes; `helm template` render-validity is this DD's equivalent, deferred to GREEN |
+| 2 | Lint | N/A pre-code — re-checked in `validate` step | `helm lint` deferred to GREEN/Validate; no `golangci-lint` surface (no Go changes) |
+| 3 | Unit Tests | N/A, documented not skipped | Section 4.3 / Section 8 Tier Skip Rationale |
+| 4 | Integration Tests | **Ready** | 8/8 Wiring Manifest rows have a reserved `IT-PLATFORM-LLM-*` ID (Section 7) |
+| 5 | Wiring Verification | **Ready** | CHECKPOINT W is its own gate in the implementation plan, not folded into REFACTOR |
+| 6 | BDD Framework | **Ready** | helm-unittest is the DD-PLATFORM-005-approved equivalent for Helm-only changes (Section 4.3) |
+| 7 | Test ID Assignment | **Ready** | All 8 IDs assigned in the DD and carried into this plan (Section 7, Section 8) |
+| 8 | SOC2/FedRAMP Compliance | **N/A, with a note** | This DD changes deploy-time config assembly only, not runtime audit event emission — no new audit event types or schema changes. The multi-secret-mount design is incidentally AC-6-favorable (each consumer mounts only its own resolved secret; dedup only merges when `credentialsSecretName` is identical, never across distinct secrets) but this DD does not claim a formal control mapping since it emits no audit events. |
+| 9 | 100 Go Mistakes | N/A | Zero Go code changes |
+| 10 | Business Requirement Satisfaction | **Ready** | BR-PLATFORM-008 FR-1..FR-6 + 2 success criteria all mapped (Section 7) |
+| 11 | Regression | **Ready** | Confirmed zero existing helm-unittest cases reference the fields being restructured (content-level grep, Section 15) |
+| 12 | Fail-Open Safety | **Ready** | Both `fail()` guards (undefined profile ref, #1731 violation) are designed up front, not deferred. Distinguished explicitly from a fail-open concern: AF `severityTriage.llmProfileRef` absent/disabled falling back to rule-based-only triage is an intentional, documented default (opt-in feature absent), not a masked error — the two are not the same failure mode and are tested separately (IT-PLATFORM-LLM-007's "disabled" case vs. IT-PLATFORM-LLM-001/008's `fail()` cases). |
+| 13 | Domain-Specific (K8s safety) | **Ready** | Multi-secret-mount design has no cross-consumer credential leakage path by construction — each consumer's volume is derived solely from its own resolved `credentialsSecretName`; dedup activates only on exact-match, never partial/fuzzy matching |
+
+**Outcome**: cleared to begin RED. Dimensions 1/2 are structurally deferred (nothing to build/lint
+yet) and will be re-verified for real once GREEN produces renderable templates — not skipped, just
+sequenced correctly.
+
+---
+
+## 17. Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
