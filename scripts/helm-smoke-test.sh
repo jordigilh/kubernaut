@@ -491,6 +491,7 @@ production_secret_flags() {
   echo "--set global.llmProfiles.primary.provider=openai"
   echo "--set global.llmProfiles.primary.model=gpt-4o"
   echo "--set global.llmProfiles.primary.credentialsSecretName=kubernaut-llm-credentials"
+  echo "--set global.llmProfiles.primary.endpoint=https://api.openai.com/v1"
   echo "--set kubernautAgent.llmProfileRef=primary"
   echo "--set gateway.auth.signalSources[0].name=alertmanager"
   echo "--set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager"
