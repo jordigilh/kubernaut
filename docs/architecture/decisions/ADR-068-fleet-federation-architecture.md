@@ -64,7 +64,7 @@ fleet-target investigation. Services (SP, WE, FMC) use
 pre-scoping does internally.
 
 The only gateway-aware components are:
-- The `GatewayDiscoverer` implementations (`pkg/fleet/mcpclient/discovery/`)
+- The `GatewayDiscoverer` implementations (`pkg/fleet/mcpclient/discovery.go`, `discovery_eaigw.go`, `discovery_kuadrant.go` — flat in `pkg/fleet/mcpclient/`, not a `discovery/` subpackage)
 - The cluster registry in FMC (`pkg/fleet/registry/`)
 
 This awareness is isolated by interfaces and does not leak into other services'
@@ -133,12 +133,12 @@ business logic.
 | **ResilientClient** | MCP client with backoff, reconnect, readiness gating | `pkg/fleet/mcpclient/resilience.go` |
 | **ReloadableOAuth2Transport** | Hot-reloadable OAuth2 credentials via FileWatcher | `pkg/fleet/mcpclient/reloadable_auth.go` |
 | **CRDWatcher** | Discovers clusters from gateway CRDs (`MCPRoute`/`Backend` for EAIGW, `MCPServerRegistration` for Kuadrant) via adapter pattern | `pkg/fleet/registry/` |
-| **GatewayDiscoverer** | Cluster/tool discovery interface. `ToolsForCluster()` is called server-side by KA's fleet overlay resolver to pre-scope an investigation's tool set (DD-FLEET-004), and programmatically by SP/WE/FMC/EM — never LLM-facing. Gateway-specific implementations for Kuadrant (`discover_tools`/`select_tools`) and EAIGW (`tools/list` prefix scan). | `pkg/fleet/mcpclient/discovery/` |
+| **GatewayDiscoverer** | Cluster/tool discovery interface. `ToolsForCluster()` is called server-side by KA's fleet overlay resolver to pre-scope an investigation's tool set (DD-FLEET-004), and programmatically by SP/WE/FMC/EM — never LLM-facing. Gateway-specific implementations for Kuadrant (`discover_tools`/`select_tools`) and EAIGW (`tools/list` prefix scan). | `pkg/fleet/mcpclient/` |
 | **KA Fleet Tools** | Server-side `BridgeTool` registration from the MCP Gateway, pre-scoped to the investigation's target cluster and exposed to the LLM under the same generic names as local K8s tools — cluster-transparent, DD-FLEET-004. No LLM-callable discovery tools. | `cmd/kubernautagent/toolregistry.go` |
 
 ### Key Design Decisions
 
-1. **Federated Control Plane interface** (adapter pattern): GW and RO depend on a `FederatedControlPlane` interface, not on any specific storage backend. The adapter is selected at startup based on the environment (FMC, ACM, Rancher, Clusterpedia). This decouples Kubernaut from any single fleet management platform and allows swapping backends without code changes in GW/RO.
+1. **Federated Control Plane interface** (adapter pattern): GW and RO depend on the `scope.ScopeChecker` interface (`pkg/shared/scope/checker.go`), not on any specific storage backend. The adapter is selected at startup based on the environment (FMC, ACM; Rancher and Clusterpedia are planned) via `fleet.NewScopeChecker()`. This decouples Kubernaut from any single fleet management platform and allows swapping backends without code changes in GW/RO. (Corrected 2026-07-26: this decision originally named the interface `FederatedControlPlane`, a type that was never implemented under that name — see "Interface Contract" below for the as-built contract.)
 
 2. **FMC as default adapter** (for environments without a federated control plane): FMC Writer polls MCP Gateway, writes to Valkey (co-owned with DataStorage), and exposes a scope query API. Achieves p95 < 1ms. Rancher/ACM/Clusterpedia shops skip FMC entirely and use their native APIs.
 
@@ -169,7 +169,7 @@ business logic.
     }
     ```
 
-    `ToolsForCluster(clusterID)` is now called exclusively server-side: by KA's `FleetOverlayResolver` (`internal/kubernautagent/investigator/fleet_overlay.go`) to pre-scope one investigation's tool set, and programmatically by SP/WE/FMC/EM for their own remote-resource access — the same "known-prefix direct-call" pattern described below, one more caller. `ListClusters()` has no production caller today; it remains part of the interface for a possible future KA-internal cross-cluster-correlation capability (see decision's Consequences in DD-FLEET-004), not for LLM use.
+    `ToolsForCluster(clusterID)` is now called exclusively server-side: by KA's `FleetOverlayResolver` (`internal/kubernautagent/investigator/fleet_overlay.go`) to pre-scope one investigation's tool set, and programmatically by SP/WE/FMC/EM for their own remote-resource access — the same "known-prefix direct-call" pattern described below, one more caller. `ListClusters()` itself has no *external* caller outside the `GatewayDiscoverer` implementations — `KuadrantDiscoverer.ToolsForCluster()` calls its own `ListClusters(ctx, "")` internally (`pkg/fleet/mcpclient/discovery_kuadrant.go:104`) to resolve which tool names belong to `clusterID` before invoking `select_tools`; `EAIGWDiscoverer.ToolsForCluster()` does not need to, since EAIGW's client-side prefix scan needs no separate cluster-listing round trip. So `ListClusters()` is not dead code, but it is not (and was never intended to be) LLM-facing.
 
     **Full name transparency**: KA registers the remote cluster's `BridgeTool`s under the exact same generic names its local K8s tools use (`resources_get`, never `cluster-a__resources_get`). The LLM's tool schema for a fleet-target investigation is byte-identical to a hub-local investigation's — the MCP gateway already makes remote resources available exactly as if they were local, and KA's tool exposure reflects that (`toolDefinitionsForPhase`/`executeTool` in `internal/kubernautagent/investigator/investigator_tools.go` resolve the per-investigation overlay ahead of the local registry).
 
@@ -201,14 +201,14 @@ business logic.
 
 12. **kube-mcp-server MUST be deployed with `--list-output=yaml`** (not the default `table`): Kubernaut's `mcpclient` consumes `structuredContent` from `CallToolResult` to build `unstructured.Unstructured` objects without fragile text parsing. The `structuredContent` shape depends on this flag:
 
-    - **`--list-output=table` (default)**: `resources_list` returns flat table-row maps (`{"Name":"x","Status":"y","Age":"5m"}`) in `structuredContent`. These lack `metadata.name`/`metadata.namespace` — `unstructured.GetName()` returns `""`, breaking FMC syncer scope cache keys and any consumer using standard K8s object accessors.
-    - **`--list-output=yaml`**: `resources_list` returns full K8s objects (`{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x","namespace":"y",...},"spec":{...},"status":{...}}`) in `structuredContent`. All `unstructured.Unstructured` accessors work correctly.
+    - **`--list-output=table` (default)**: `resources_list` returns flat table-row maps (`{"Name":"x","Status":"y","Age":"5m"}`) in `structuredContent`. At the time this decision was written, these lacked `metadata.name`/`metadata.namespace` — `unstructured.GetName()` returned `""`, breaking FMC syncer scope cache keys and any consumer using standard K8s object accessors. **Corrected 2026-07-26**: this is no longer true. Commit `1c9416758` (2026-06-30) added `normalizeTableItems` (`pkg/fleet/mcpclient/parse.go`), which the production `resources_list` path (`Client.listResources`, `pkg/fleet/mcpclient/client.go`) now calls unconditionally: for flat table rows it reconstructs `metadata.name`/`namespace`/`kind`/`apiVersion` from the `Name`/`Namespace` columns, which is sufficient for FMC's `scopecache.BuildKey(cluster.ID, group, version, item.GetKind(), item.GetNamespace(), item.GetName())` — the exact call site this decision cited as broken. Table rows still don't carry `spec`/`status`/`labels`, so a consumer needing those must still use `--list-output=yaml` or call `resources_get` per item.
+    - **`--list-output=yaml`**: `resources_list` returns full K8s objects (`{"apiVersion":"v1","kind":"Pod","metadata":{"name":"x","namespace":"y",...},"spec":{...},"status":{...}}`) in `structuredContent`. All `unstructured.Unstructured` accessors work correctly, including `spec`/`status`/`labels`.
 
     `resources_get` returns full K8s objects in `structuredContent` regardless of this flag (it always uses YAML output internally). The flag only affects `resources_list`.
 
-    **Trade-off**: YAML output produces larger responses than table output (~220KB vs ~6KB for 20 pods). This is acceptable for programmatic clients (FMC, SP, WE). LLM-facing sessions (KA investigation) should use a separate kube-mcp-server instance with `--list-output=table` if context window size is a concern.
+    **Trade-off**: YAML output produces larger responses than table output (~220KB vs ~6KB for 20 pods). This is acceptable for programmatic clients (FMC, SP, WE). LLM-facing sessions (KA investigation) should use a separate kube-mcp-server instance with `--list-output=table` if context window size is a concern, keeping in mind the `spec`/`status`/`labels` limitation above.
 
-    **Text parsing fallback**: When `structuredContent` is nil (older kube-mcp-server versions without PR #1232), the client falls back to parsing `Content[0].Text` via `parseMultiFormat` (JSON → YAML → table detection). This degraded path is retained for backward compatibility but logs a warning. The primary data path is `structuredContent`.
+    **No multi-format text-parsing fallback (corrected 2026-07-26)**: this decision originally described a degraded `parseMultiFormat` text-parsing path (JSON → YAML → table detection) retained "for backward compatibility" when `structuredContent` is nil. That specific path was never shipped to production — `parseMultiFormat` exists only in spike code (`docs/spikes/multi-cluster-mcp-gateway/spike-s15-fmc-multiformat-parse/`). Commit `1c9416758` ("refactor(fleet): remove brittle text/table parsing, require structuredContent", 2026-06-30 — the day *after* this decision's own Spike S16) tightened this per-operation, asymmetrically: `Client.listResources` now hard-requires `structuredContent` and errors (`"structuredContent required but not present in response"`) when it's nil, with no fallback at all — consistent with `resources_list` being the only operation whose shape depends on `--list-output`. `Client.getResource` still falls back to `parseUnstructured` (plain JSON/YAML unmarshal, `pkg/fleet/mcpclient/parse.go`) when `structuredContent` is nil, since `resources_get` was never table-shaped in the first place — but that fallback has no table-detection branch, unlike the `parseMultiFormat` this decision originally cited.
 
     **Authority**: Spike S16 (2026-06-29) — validated against live Kind cluster with Kuadrant MCP Gateway. kube-mcp-server PR #1232 (merged 2026-06-29) adds `structuredContent` via `PrintObjStructured` + `NewToolCallResultFull`.
 
@@ -255,7 +255,7 @@ business logic.
 - -: GW/RO config leaks storage implementation details (`valkeyAddr`, GraphQL endpoints)
 - -: Backend swap requires config changes in every consuming service
 - -: Violates adapter pattern — consumers become coupled to providers
-- **Rejected**: FMC and other backends expose their own query APIs; GW/RO consume through the `FederatedControlPlane` interface
+- **Rejected**: FMC and other backends expose their own query APIs; GW/RO consume through the `scope.ScopeChecker` interface
 
 ### H. Separate auth path for AAP MCP Server (direct bearer token injection)
 - +: AAP MCP Server auth is self-contained; BackendTLSPolicy + token Secret per AAP backend
@@ -415,7 +415,7 @@ client cannot drive Dex's token-exchange grant).
 | fleet.NewScopeChecker factory | NewServer() / main() | pkg/fleet/scope_factory.go | UT-FLEET-FAC-001..006 |
 | ResilientClient (KA) | registerFleetTools() | cmd/kubernautagent/toolregistry.go | IT-KA-1553-001 |
 | ResilientClient (FMC) | main() | cmd/fmc/main.go | UT-FMC-001 |
-| ReloadableOAuth2Transport (KA) | registerFleetTools() | cmd/kubernautagent/main.go | UT-FLEET-RES-001 |
+| ReloadableOAuth2Transport (KA) | registerFleetTools() | cmd/kubernautagent/toolregistry.go | UT-FLEET-RES-001 |
 | ReloadableOAuth2Transport (FMC) | main() | cmd/fmc/main.go | UT-FLEET-RES-001 |
 | FleetOverlayResolver (per-investigation pre-scoping, DD-FLEET-004; supersedes the removed AppendFleetToolsToRCA) | Investigate() → prescopeFleetOverlay() | internal/kubernautagent/investigator/fleet_overlay.go | IT-KA-FLEET-013 |
 | CRDWatcher | main() | cmd/fmc/main.go | UT-FMC-004 |
@@ -426,7 +426,7 @@ client cannot drive Dex's token-exchange grant).
 | readiness.Gate (SP) | mgr.AddReadyzCheck | cmd/signalprocessing/main.go | IT-SP-1553-001 |
 | readiness.Gate (WE) | mgr.AddReadyzCheck | cmd/workflowexecution/main.go | IT-WE-1553-001 |
 | readiness.Gate (AF) | wireFleetReadinessGate() → handler.AllReady | cmd/apifrontend/backend_deps.go | IT-FLEET-READY-AF-001a/b |
-| readiness.Gate (KA) | wireFleetReadinessGate() → readinessHandler | cmd/kubernautagent/bootstrap.go | IT-FLEET-READY-KA-001a/b/c |
+| readiness.Gate (KA) | wireFleetReadinessGate() → readinessHandler | cmd/kubernautagent/toolregistry.go (constructed) / cmd/kubernautagent/bootstrap.go (called) / cmd/kubernautagent/health.go (consumed by readinessHandler) | IT-FLEET-READY-KA-001a/b/c |
 | fmc securityContext | Helm template | charts/kubernaut/templates/fmc/fmc.yaml | helm template |
 | ResilientClient (SP) | main() | cmd/signalprocessing/main.go | IT-SP-054-001 |
 | MCPReaderFactory (SP) | main() | cmd/signalprocessing/main.go | IT-SP-054-001 |
@@ -645,7 +645,7 @@ that information is stored. The storage backend (Valkey, ACM Search, Rancher pro
 is an implementation detail owned by the adapter, not by GW or RO.
 
 ```
-GW/RO  ──►  FederatedControlPlane interface
+GW/RO  ──►  scope.ScopeChecker interface
                         │
             ┌───────────┼──────────────────────────┐
             ▼           ▼                          ▼
@@ -687,7 +687,7 @@ type ResourceIdentity struct {
 // construction time based on fleet.backend config. Zero changes to consumers
 // when swapping backends.
 type ScopeChecker interface {
-    IsManaged(ctx context.Context, resource ResourceIdentity) (bool, error)
+    IsManagedResource(ctx context.Context, resource ResourceIdentity) (bool, error)
 }
 ```
 
@@ -704,28 +704,40 @@ type ScopeChecker interface {
 
 ```go
 // cmd/gateway/main.go, cmd/remediationorchestrator/main.go
-scopeChecker, err := fleet.NewScopeChecker(cfg.Fleet, logger)
+scopeChecker, err := fleet.NewScopeChecker(localChecker, cfg.Fleet, logger)
 ```
 
 ```go
-// pkg/fleet/scope_factory.go
-func NewScopeChecker(cfg FleetConfig, logger logr.Logger) (scope.ScopeChecker, error) {
-    switch cfg.Backend {
-    case "fmc":
-        return fmc.NewClient(cfg.Endpoint, logger)
-    case "acm":
-        return acm.NewClient(cfg.Endpoint, cfg.Auth, logger)
-    case "rancher":
-        return rancher.NewClient(cfg.Endpoint, cfg.Auth, logger)
-    case "clusterpedia":
-        return clusterpedia.NewClient(logger)
-    case "", "local":
-        return local.NewChecker(logger) // single-cluster, no regression
+// pkg/fleet/scope_factory.go — as-built (verified against source 2026-07-26)
+func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger logr.Logger, opts ...ScopeCheckerOption) (scope.ScopeChecker, error) {
+    if !cfg.Enabled || cfg.EffectiveEndpoint() == "" {
+        return localChecker, nil // single-cluster / fleet disabled: no regression
+    }
+    switch cfg.effectiveBackend() {
+    case BackendFMC:
+        remoteChecker := fmc.NewHTTPClient(endpoint, fmcOpts...)
+        return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
+    case BackendACM:
+        remoteChecker := acm.NewClient(endpoint, acmOpts...)
+        return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
     default:
-        return nil, fmt.Errorf("unknown fleet backend: %q", cfg.Backend)
+        return nil, fmt.Errorf("fleet: unsupported backend %q", backend)
     }
 }
 ```
+
+**Correction (2026-07-26)**: the snippet above replaces an earlier, never-accurate
+version of this sample that showed a 5-way string switch (`"fmc"`, `"acm"`,
+`"rancher"`, `"clusterpedia"`, `"", "local"`) dispatching to `fmc.NewClient`,
+`acm.NewClient(endpoint, auth, logger)`, `rancher.NewClient`, `clusterpedia.NewClient`,
+and `local.NewChecker` — none of the last three ever existed (`pkg/fleet/controlplane/`
+has never been created; see the Implementation Status table below, which correctly
+marks Rancher and Clusterpedia `Planned (v1.6)`). The real factory instead: takes
+the caller's own local checker (typically `scope.Manager`) as a required parameter
+and returns it unchanged when fleet is disabled/unconfigured — that's what provides
+the "no regression" guarantee, not a `case "local"` branch; and only dispatches to
+`BackendFMC`/`BackendACM` today, wrapping the selected remote checker together with
+`localChecker` via `NewFederatedScopeChecker(...)`.
 
 Each implementation handles the `ClusterID` routing internally:
 - `ClusterID == ""` → local K8s API check (resource/namespace label lookup)
@@ -742,7 +754,7 @@ federated control plane (no ACM, Rancher, or Clusterpedia deployed).
 **Architecture**: FMC is the Scope Service defined in issue #54 — a dedicated HTTP service for
 federated `kubernaut.ai/managed` label resolution. It caches metadata from remote clusters via
 MCP K8s, stores it in Valkey with TTL, and exposes a REST API that GW/RO query through the
-`FederatedControlPlane` interface. GW/RO never touch Valkey directly.
+`scope.ScopeChecker` interface. GW/RO never touch Valkey directly.
 
 | Aspect | Detail |
 |--------|--------|
