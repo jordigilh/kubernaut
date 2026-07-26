@@ -64,6 +64,18 @@ func IsRunningInCICD() bool {
 // code agree on ahead of time.
 //
 // Authority: CI/CD artifact-based image handoff (no ghcr.io push in ci-pipeline.yml)
+//
+// #1738: `podman image exists` has been observed to miss (non-zero exit)
+// for an image that is demonstrably present -- e.g. kubernautagent's
+// Integration job hits this check successfully for its first Ginkgo suite,
+// then misses it for the next 3 suites within the same job, seconds later,
+// with nothing in between ever removing the image. The leading hypothesis
+// is transient Podman container-storage contention from the burst of
+// `podman network create`/`podman run` calls each suite's own container
+// startup fires immediately before this check. One retry after a short
+// pause absorbs that transient case; on a persistent miss, the command's
+// combined output is now surfaced instead of being silently swallowed, so
+// the next occurrence gives us definitive RCA evidence.
 func resolvePrebuiltCIArtifact(ctx context.Context, serviceName string, writer io.Writer) (string, bool) {
 	artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG")
 	if artifactTag == "" {
@@ -71,14 +83,28 @@ func resolvePrebuiltCIArtifact(ctx context.Context, serviceName string, writer i
 	}
 
 	localImageName := fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
-	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", localImageName)
-	if checkCmd.Run() != nil {
-		_, _ = fmt.Fprintf(writer, "   ⚠️  KUBERNAUT_CI_ARTIFACT_TAG set but no pre-loaded image found for %s (falling back)\n", serviceName)
-		return "", false
+
+	const maxAttempts = 2
+	var output []byte
+	var err error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", localImageName)
+		output, err = checkCmd.CombinedOutput()
+		if err == nil {
+			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", localImageName)
+			return localImageName, true
+		}
+		if attempt < maxAttempts {
+			time.Sleep(500 * time.Millisecond)
+		}
 	}
 
-	_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", localImageName)
-	return localImageName, true
+	if detail := strings.TrimSpace(string(output)); detail != "" {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  KUBERNAUT_CI_ARTIFACT_TAG set but no pre-loaded image found for %s after %d attempts (falling back): %v: %s\n", serviceName, maxAttempts, err, detail)
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  KUBERNAUT_CI_ARTIFACT_TAG set but no pre-loaded image found for %s after %d attempts (falling back): %v\n", serviceName, maxAttempts, err)
+	}
+	return "", false
 }
 
 // ShouldSkipImageExportAndPrune returns true if image export and Podman prune should be skipped.
