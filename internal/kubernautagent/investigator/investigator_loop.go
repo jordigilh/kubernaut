@@ -65,7 +65,7 @@ type loopTurnState struct {
 // to the next turn with newMessages.
 func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, messages []llm.Message, phase katypes.Phase, llmCtx LLMInvocationContext, turn int) (result LoopResult, newMessages []llm.Message, done bool, err error) {
 	tokens, correlationID := llmCtx.Tokens, llmCtx.CorrelationID
-	toolDefs := inv.toolDefinitionsForPhase(phase)
+	toolDefs := inv.toolDefinitionsForPhase(ctx, phase)
 
 	if ctx.Err() != nil {
 		emitToSink(ctx, session.EventTypeCancelled, turn, string(phase), nil)

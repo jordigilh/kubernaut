@@ -18,8 +18,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -32,6 +34,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
@@ -39,6 +42,7 @@ import (
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	amtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
@@ -158,14 +162,66 @@ func resolveAlignmentCheckConfig(cfg *kaconfig.Config) kaconfig.AlignmentCheckCo
 	return cfg.AI.AlignmentCheck
 }
 
-// registerFleetTools connects to the MCP Gateway, creates a GatewayDiscoverer
-// for the configured gateway type, pre-scopes tools for the target cluster,
-// and registers list_clusters + list_tools_for_cluster for LLM-driven discovery.
-// Returns the fleet client (must be closed on shutdown) and the registered tool names,
-// or nil if fleet is disabled.
+// gatewayOverlayResolver implements investigator.FleetOverlayResolver by
+// wrapping a fleetclient.GatewayDiscoverer. Overlay re-keys the discovered
+// tool definitions under each tool's generic (unprefixed) name, so KA's LLM
+// sees the exact same tool identity for a remote-cluster investigation as
+// for a hub-local one (DD-FLEET-004 full name transparency, issue #1732).
+// The wire-level name used to actually reach the gateway (which may carry
+// the "{clusterID}__" EAIGW convention) is untouched inside the wrapped
+// BridgeTool — only the LLM-facing identity changes.
+type gatewayOverlayResolver struct {
+	discoverer fleetclient.GatewayDiscoverer
+	session    fleetclient.Session
+}
+
+// Overlay implements investigator.FleetOverlayResolver.
+func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) (map[string]tools.Tool, error) {
+	defs, err := r.discoverer.ToolsForCluster(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
+	}
+	overlay := make(map[string]tools.Tool, len(defs))
+	for _, def := range defs {
+		// EAIGW names carry a "{clusterID}__" wire prefix; Kuadrant names
+		// (post select_tools) are already bare. TrimPrefix is a no-op for
+		// the latter, so this line handles both gateway types uniformly.
+		genericName := strings.TrimPrefix(def.Name, clusterID+"__")
+		bridge := fleetclient.NewBridgeTool(def, clusterID, r.session)
+		overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
+	}
+	return overlay, nil
+}
+
+// genericNameTool decorates a *fleetclient.BridgeTool, exposing it to KA's
+// tool registry/LLM schema under its generic name while Execute still
+// delegates to the inner BridgeTool, which calls the remote MCP gateway
+// using the tool's original wire name (DD-FLEET-004: LLM-facing identity
+// and wire identity are allowed to differ; only the former is transparent).
+type genericNameTool struct {
+	inner *fleetclient.BridgeTool
+	name  string
+}
+
+func (g *genericNameTool) Name() string                { return g.name }
+func (g *genericNameTool) Description() string         { return g.inner.Description() }
+func (g *genericNameTool) Parameters() json.RawMessage { return g.inner.Parameters() }
+func (g *genericNameTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	return g.inner.Execute(ctx, args)
+}
+
+// registerFleetTools connects to the MCP Gateway and creates a
+// GatewayDiscoverer for the configured gateway type, returning an
+// investigator.FleetOverlayResolver that pre-scopes tools for each
+// investigation's own target cluster (DD-FLEET-004 / issue #1732). No tools
+// are registered into any shared, LLM-facing registry here — pre-scoping
+// happens per-investigation via the resolver, replacing the previous
+// LLM-driven list_clusters/list_tools_for_cluster discovery tools entirely.
+// Returns the fleet client (must be closed on shutdown) and the resolver,
+// or (nil, nil) if fleet is disabled.
 //
-// Authority: ADR-068 decision #11
-func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) (*fleetclient.ResilientClient, []string) {
+// Authority: DD-FLEET-004, ADR-068 decision #11
+func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.Logger) (*fleetclient.ResilientClient, investigator.FleetOverlayResolver) {
 	gatewayType := cfg.Integrations.Fleet.GatewayType
 	endpoint := cfg.Integrations.Fleet.Endpoint
 	if gatewayType == "" || endpoint == "" {
@@ -217,18 +273,9 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 		return nil, nil
 	}
 
-	listClustersTool := fleetclient.NewListClustersTool(discoverer)
-	listToolsTool := fleetclient.NewListToolsForClusterTool(discoverer, reg, session)
-
-	reg.Register(listClustersTool)
-	reg.Register(listToolsTool)
-
-	toolNames := make([]string, 0, 2)
-	toolNames = append(toolNames, listClustersTool.Name(), listToolsTool.Name())
-
-	fleetLog.Info("registered fleet discovery tools",
-		"tools", toolNames, "endpoint", endpoint, "gatewayType", gatewayType)
-	return resilientClient, toolNames
+	fleetLog.Info("fleet tool pre-scoping resolver ready (DD-FLEET-004)",
+		"endpoint", endpoint, "gatewayType", gatewayType)
+	return resilientClient, &gatewayOverlayResolver{discoverer: discoverer, session: session}
 }
 
 // fleetReadinessProbeInterval controls how often the #1553 Fleet readiness

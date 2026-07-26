@@ -1,6 +1,6 @@
 # DD-FLEET-004: Cluster-Transparent Tool Exposure for KA's RCA Investigation
 
-**Status**: ✅ Approved (design) — not yet implemented
+**Status**: ✅ Implemented (issue #1732)
 **Date**: 2026-07-25
 **Author**: AI Assistant
 **Related**: Issue #1729, Issue #1732, ADR-068 (decision #11), BR-INTEGRATION-054, BR-INTEGRATION-065
