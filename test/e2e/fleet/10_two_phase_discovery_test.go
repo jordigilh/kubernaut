@@ -31,11 +31,23 @@ import (
 
 // E2E-FLEET-DISC: Two-phase discovery journey through Kuadrant MCP Gateway.
 //
-// This suite proves the Pyramid Invariant's E2E layer for the GatewayDiscoverer:
-//   Alert → KA calls ListClusters (discover_tools) → LLM picks cluster →
-//   KA calls ToolsForCluster (select_tools + ListTools) → tool call succeeds
+// This suite proves the Pyramid Invariant's E2E layer for the
+// GatewayDiscoverer's own two-phase protocol (discover_tools → select_tools
+// → ListTools), in isolation from any caller:
 //
-// Authority: Issue #54, ADR-068 decision #11, BR-FLEET-054
+//	ListClusters (discover_tools) → ToolsForCluster (select_tools + ListTools)
+//	→ tool call succeeds
+//
+// This is a client-protocol test, not a KA production-flow test. KA itself
+// no longer drives this sequence at investigation time — per DD-FLEET-004
+// (issue #1732), KA pre-scopes server-side via ToolsForCluster(signal.ClusterID)
+// alone, and never calls ListClusters or lets the LLM pick a cluster.
+// ListClusters remains exercised here (and used internally by
+// KuadrantDiscoverer.ToolsForCluster, see discovery_kuadrant.go) as part of
+// the GatewayDiscoverer contract other programmatic callers (SP, WE, FMC,
+// EM) may rely on.
+//
+// Authority: Issue #54, ADR-068 decision #11 (as amended by DD-FLEET-004), BR-FLEET-054
 // FedRAMP: CM-6 (Configuration Settings), AC-3 (Access Enforcement)
 var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), func() {
 
