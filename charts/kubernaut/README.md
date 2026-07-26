@@ -51,16 +51,21 @@ kubectl create secret generic valkey-secret \
   --from-literal=valkey-secrets.yaml="$(printf 'password: %s' "$(openssl rand -base64 24)")" \
   -n kubernaut-system
 
-# 4. Create LLM credentials
+# 4. Create LLM credentials (key must be "api_key" -- the flat filename
+#    Kubernaut mounts and reads via the resolved profile's apiKeyFile;
+#    vertex_ai profiles use a "credentials.json" service-account key instead)
 kubectl create secret generic llm-credentials \
-  --from-literal=OPENAI_API_KEY=sk-... \
+  --from-literal=api_key=sk-... \
   -n kubernaut-system
 
 # 5. Install (--set-file for Rego policies is mandatory)
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego
 ```
@@ -93,8 +98,11 @@ kubectl create secret generic slack-webhook \
 # Install with Slack enabled
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego \
   --set notification.slack.secretName=slack-webhook \
@@ -108,8 +116,11 @@ Install [kube-prometheus-stack](https://github.com/prometheus-community/helm-cha
 ```bash
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego \
   --set effectivenessmonitor.external.prometheusEnabled=true \
@@ -210,7 +221,7 @@ kubectl create secret generic vk-credentials \
   -n kubernaut-system
 
 kubectl create secret generic llm-credentials \
-  --from-literal=OPENAI_API_KEY=sk-... \
+  --from-literal=api_key=sk-... \
   -n kubernaut-system
 
 # 2. Install with production overrides
@@ -218,8 +229,11 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set postgresql.auth.existingSecret=pg-credentials \
   --set valkey.existingSecret=vk-credentials \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=my-policy.rego \
   --set-file aianalysis.policies.content=my-approval.rego
 ```
@@ -414,27 +428,73 @@ Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remedia
 
 `global.fleet.mcpGatewayEndpoint` is required when `global.fleet.enabled` / `fleetmetadatacache.enabled` is `true` for `gateway`, `remediationorchestrator`, and `fleetmetadatacache` — `helm install`/`upgrade` fails fast with a remediation message if it's unset. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
 
+### LLM Profiles (DD-PLATFORM-007)
+
+LLM provider configuration is defined once as a **named profile** under `global.llmProfiles`
+and referenced by name from every consumer — mirroring the Kubernaut Operator's
+`spec.llmProfiles`. This replaces the old `kubernautAgent.llm.*` literal block; there is no
+backward-compat shim, since the chart is pre-GA.
+
+At least one profile is required — `kubernautAgent.llmProfileRef` has no default and the
+chart fails fast at render time if it's unset or names an undefined profile.
+
+| Parameter | Description | Default |
+|---|---|---|
+| `global.llmProfiles.<name>.provider` | LLM provider: `openai`, `anthropic`, `vertex_ai`, or `openai_compatible` — **required** | none |
+| `global.llmProfiles.<name>.model` | Model name (`gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.5-pro`, ...) | `""` |
+| `global.llmProfiles.<name>.credentialsSecretName` | Secret with the LLM API key (key `api_key`) or, for `vertex_ai`, a service-account JSON key (key `credentials.json`) — **required** | none |
+| `global.llmProfiles.<name>.endpoint` | Endpoint URL, functionally required for `openai`/`openai_compatible` on both KA and AF (e.g. `https://api.openai.com/v1` for real OpenAI, or a self-hosted/Azure (`azureApiVersion`) base URL) — neither client defaults it. API Frontend fails fast at startup if it's unset for these providers; Kubernaut Agent does not validate it upfront, but every LLM call fails at request time without it | `""` |
+| `global.llmProfiles.<name>.temperature` | Sampling temperature | `0.7` |
+| `global.llmProfiles.<name>.maxRetries` | Max retry attempts on transient LLM errors | `3` |
+| `global.llmProfiles.<name>.timeoutSeconds` | Per-request timeout | `120` |
+| `global.llmProfiles.<name>.vertexProject` | GCP project ID (`vertex_ai` only) | `""` |
+| `global.llmProfiles.<name>.vertexLocation` | GCP region (`vertex_ai` only) | `""` |
+| `global.llmProfiles.<name>.azureApiVersion` | Switches `openai`/`openai_compatible` into Azure OpenAI mode | `""` |
+| `global.llmProfiles.<name>.tlsCaFile` | PEM CA cert path for internal LLM endpoints behind a private CA | `""` |
+| `global.llmProfiles.<name>.oauth2.enabled` | Enable OAuth2 client-credentials auth for the LLM gateway | `false` |
+| `global.llmProfiles.<name>.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
+| `global.llmProfiles.<name>.oauth2.credentialsSecretRef` | Secret with `client-id`/`client-secret` keys (mounted as files) | `""` |
+| `global.llmProfiles.<name>.reasoning.enabled` | Request model reasoning/thinking output (BR-AI-086). Supported today on the Anthropic-family client (native + Vertex) | `false` |
+| `global.llmProfiles.<name>.reasoning.budgetTokens` | Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). `0` lets the client choose a default. Anthropic-only; always wins over `effort` when set | `0` |
+| `global.llmProfiles.<name>.reasoning.effort` | Unified, provider-agnostic reasoning-depth knob (#1604): `""` (vendor/provider default), `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Supported on Anthropic, real OpenAI/gpt-5/o-series models, and DeepSeek | `""` |
+| `global.llmProfiles.<name>.reasoning.capabilityOverride` | Override reasoning-capability auto-detection for `openai_compatible` self-hosted models: `""` (auto), `force_on`, or `force_off` | `""` |
+
 ### Kubernaut Agent (LLM)
 
 | Parameter | Description | Default |
 |---|---|---|
-| `kubernautAgent.llm.credentialsSecretName` | Secret with LLM API keys (e.g., `OPENAI_API_KEY`) | `llm-credentials` |
-| `kubernautAgent.llm.provider` | LLM provider for quickstart (`openai`, `anthropic`) | `""` |
-| `kubernautAgent.llm.tlsCaFile` | PEM CA cert path for internal LLM endpoints behind private CA | `""` |
-| `kubernautAgent.llm.model` | LLM model for quickstart (`gpt-4o`, `claude-sonnet-4-20250514`) | `""` |
-| `kubernautAgent.llm.oauth2.enabled` | Enable OAuth2 client credentials grant for LLM gateway | `false` |
-| `kubernautAgent.llm.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
-| `kubernautAgent.llm.oauth2.credentialsSecretRef` | Secret with `client-id` and `client-secret` keys (mounted as files) | `""` |
-| `kubernautAgent.llm.reasoning.enabled` | Request model reasoning/thinking output (BR-AI-086). Supported today on the Anthropic-family client (native + Vertex) | `false` |
-| `kubernautAgent.llm.reasoning.budgetTokens` | Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). `0` lets the client choose a default. Anthropic-only; always wins over `effort` when set | `0` |
-| `kubernautAgent.llm.reasoning.effort` | Unified, provider-agnostic reasoning-depth knob (#1604): `""` (vendor/provider default), `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Supported on Anthropic, real OpenAI/gpt-5/o-series models, and DeepSeek | `""` |
-| `kubernautAgent.llm.reasoning.capabilityOverride` | Override reasoning-capability auto-detection for `openai_compatible` self-hosted models: `""` (auto), `force_on`, or `force_off` | `""` |
+| `kubernautAgent.llmProfileRef` | Name of an entry in `global.llmProfiles` for KA's main investigation LLM — **required, no default** | none |
+| `kubernautAgent.phaseModels.<phase>` | Per-phase LLM override, one of `rca`, `workflow_discovery`, `validation` → a `global.llmProfiles` name. Omitted phases use `llmProfileRef`'s profile unchanged | `{}` |
+| `kubernautAgent.alignmentCheck.llmProfileRef` | Name of an entry in `global.llmProfiles` for the plan-alignment-check LLM call. Empty (default) inherits `llmProfileRef`'s resolved profile. Fixes a dead-field bug where the chart previously wrote an `apiKey` the Go binary never read (it expects `apiKeyFile`) | `""` |
 | `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset | `false` |
 | `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
 | `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
 | `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM | `""` |
 
-All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap. OAuth2 credentials are mounted from a Secret as files (never exposed as environment variables).
+All LLM configuration is part of the main `kubernaut-agent-config`/`kubernaut-agent-llm-runtime`
+ConfigMaps. Credentials (API keys, `vertex_ai` service-account JSON, OAuth2 client secrets) are
+always mounted from a Secret as files — never exposed as environment variables or inlined in a
+ConfigMap. Distinct `credentialsSecretName`s across `phaseModels`/`alignmentCheck` each get their
+own dedicated Secret mount; a phase/alignment-check profile that shares `llmProfileRef`'s own
+`credentialsSecretName` reuses that existing mount instead of duplicating it.
+
+### API Frontend (LLM)
+
+API Frontend's own agent-loop LLM connection and severity-triage LLM tiers were previously
+unreachable via Helm despite being fully implemented in Go — both are now wired.
+
+| Parameter | Description | Default |
+|---|---|---|
+| `apifrontend.llmProfileRef` | Name of an entry in `global.llmProfiles` for AF's own `agent.llm` connection. Empty (default) falls back to `kubernautAgent.llmProfileRef`'s resolved profile | `""` |
+| `apifrontend.config.severityTriage.llmProfileRef` | Name of an entry in `global.llmProfiles` for severity-triage's LLM fallback tier, independent of `apifrontend.llmProfileRef`. Empty (default) inherits AF's own resolved profile | `""` |
+| `apifrontend.config.severityTriage.llmEnabled` | Whether LLM-based severity-triage tiers are active. `false` forces rule-based-only triage (no `llm` block rendered) | `true` |
+
+`vertex_ai` authenticates via ambient `GOOGLE_APPLICATION_CREDENTIALS` (set automatically on the
+Deployment when a resolved profile is `vertex_ai`), so AF's own connection and severity-triage's
+cannot both be `vertex_ai` while pointing at *different* Secrets — there's no way to make two
+different credential files visible to the SDK's ADC lookup at the same time. The chart fails fast
+at render time (`kubernaut#1731`) if this combination is configured; use the same
+`credentialsSecretName` for both, or a non-`vertex_ai` provider for one of them.
 
 ### SignalProcessing
 
@@ -699,8 +759,11 @@ For airgapped environments, mirror container images and override the registry. R
 helm install kubernaut oci://harbor.corp/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=harbor.corp \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego
 
@@ -709,8 +772,11 @@ helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=quay.io/myorg \
   --set global.image.separator=- \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego
 ```
