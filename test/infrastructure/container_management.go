@@ -125,13 +125,12 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
 	// this service under the agreed-upon fixed tag (artifact-based CI mode,
-	// no registry involved). Mirrors BuildImageForKind's equivalent E2E check.
-	if artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG"); artifactTag != "" && cfg.BuildContext != "" {
+	// no registry involved). Delegates to resolvePrebuiltCIArtifact
+	// (e2e_images.go); see #1738.
+	if cfg.BuildContext != "" {
 		serviceName := extractServiceNameFromImage(cfg.Image)
-		prebuiltImage := fmt.Sprintf("localhost/%s:%s", serviceName, artifactTag)
-		if checkCmd := exec.CommandContext(context.Background(), "podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
-			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", prebuiltImage)
-			cfg.Image = prebuiltImage
+		if prebuilt, ok := resolvePrebuiltCIArtifact(context.Background(), serviceName, writer); ok {
+			cfg.Image = prebuilt
 			cfg.BuildContext = ""
 			cfg.BuildDockerfile = ""
 		}
