@@ -1253,9 +1253,10 @@ jobs:
             --set postgresql.auth.existingSecret=lint-placeholder \
             --set datastorage.dbExistingSecret=lint-placeholder \
             --set valkey.existingSecret=lint-placeholder \
-            --set kubernautAgent.llm.provider=openai \
-            --set kubernautAgent.llm.model=gpt-4o \
-            --set kubernautAgent.llm.credentialsSecretName=lint-placeholder
+            --set global.llmProfiles.primary.provider=openai \
+            --set global.llmProfiles.primary.model=gpt-4o \
+            --set global.llmProfiles.primary.credentialsSecretName=lint-placeholder \
+            --set kubernautAgent.llmProfileRef=primary
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
