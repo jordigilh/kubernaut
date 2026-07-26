@@ -426,6 +426,154 @@
               }
             }
           }
+        },
+        "llmProfiles": {
+          "type": "object",
+          "description": "Named LLM provider profiles, referenced by name from kubernautAgent.llmProfileRef, kubernautAgent.phaseModels, kubernautAgent.alignmentCheck.llmProfileRef, apifrontend.llmProfileRef, and apifrontend.config.severityTriage.llmProfileRef (DD-PLATFORM-007). Mirrors the Kubernaut Operator's spec.llmProfiles authoring model -- a profile defined once is reusable by any consumer without re-deriving its field set.",
+          "default": {},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "model",
+              "credentialsSecretName"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "anthropic",
+                  "vertex_ai",
+                  "openai_compatible"
+                ],
+                "description": "LLM provider name. NOT currently supported: bedrock (tracked in #1582). For Mistral/Ollama/HuggingFace TGI/self-hosted vLLM or LlamaStack, use 'openai_compatible' with `endpoint` set. For Azure OpenAI, use 'openai' or 'openai_compatible' with `azureApiVersion` set (#1600) -- there is no dedicated 'azure' provider value."
+              },
+              "model": {
+                "type": "string",
+                "description": "LLM model name (e.g. gpt-4o, claude-sonnet-4-20250514, gemini-2.5-pro)."
+              },
+              "credentialsSecretName": {
+                "type": "string",
+                "description": "Name of the pre-existing K8s Secret containing this profile's LLM API credentials."
+              },
+              "endpoint": {
+                "type": "string",
+                "default": "",
+                "description": "LLM endpoint URL override. Empty uses the provider default."
+              },
+              "temperature": {
+                "type": "number",
+                "default": 0.7,
+                "minimum": 0,
+                "maximum": 2,
+                "description": "LLM sampling temperature."
+              },
+              "maxRetries": {
+                "type": "integer",
+                "default": 3,
+                "minimum": 0,
+                "description": "Max retries for LLM requests."
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "default": 120,
+                "minimum": 1,
+                "description": "LLM request timeout in seconds."
+              },
+              "vertexProject": {
+                "type": "string",
+                "default": "",
+                "description": "GCP project ID. Required for vertex_ai provider."
+              },
+              "vertexLocation": {
+                "type": "string",
+                "default": "",
+                "description": "GCP region (e.g. us-central1). Required for vertex_ai provider."
+              },
+              "azureApiVersion": {
+                "type": "string",
+                "default": "",
+                "description": "Azure OpenAI API version (e.g. 2024-10-21). Set alongside provider: openai/openai_compatible to switch to Azure's deployment-scoped URL and api-key auth (#1600); `model` doubles as the Azure deployment ID."
+              },
+              "tlsCaFile": {
+                "type": "string",
+                "default": "",
+                "description": "Path to PEM CA cert for internal LLM endpoints behind a private CA."
+              },
+              "oauth2": {
+                "type": "object",
+                "description": "OAuth2 client credentials grant for enterprise LLM gateway authentication.",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable OAuth2 client credentials token acquisition for LLM requests."
+                  },
+                  "tokenURL": {
+                    "type": "string",
+                    "default": "",
+                    "description": "OAuth2 token endpoint URL (e.g. Keycloak, Azure AD)."
+                  },
+                  "credentialsSecretRef": {
+                    "type": "string",
+                    "default": "",
+                    "description": "K8s Secret name containing client-id and client-secret keys."
+                  },
+                  "scopes": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Space-separated OAuth2 scopes."
+                  }
+                }
+              },
+              "reasoning": {
+                "type": "object",
+                "description": "Model-aware reasoning/thinking token support (BR-AI-086). Disabled by default; opt-in only.",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Request reasoning/thinking output from the model where the provider/model supports it."
+                  },
+                  "budgetTokens": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). 0 lets the provider/client choose a default."
+                  },
+                  "effort": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh"
+                    ],
+                    "default": "",
+                    "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default."
+                  },
+                  "capabilityOverride": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "auto",
+                      "force_on",
+                      "force_off"
+                    ],
+                    "default": "",
+                    "description": "Overrides vendor/model-name auto-detection of reasoning support. Only meaningful for self-hosted/custom models served via the openai_compatible provider."
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -1705,151 +1853,17 @@
         "service": {
           "$ref": "#/definitions/serviceConfig"
         },
-        "llm": {
+        "llmProfileRef": {
+          "type": "string",
+          "default": "",
+          "description": "Required. Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). Replaces the old kubernautAgent.llm.* literal block."
+        },
+        "phaseModels": {
           "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "credentialsSecretName": {
-              "type": "string",
-              "default": "llm-credentials",
-              "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)"
-            },
-            "provider": {
-              "type": "string",
-              "enum": [
-                "",
-                "openai",
-                "anthropic",
-                "vertex_ai",
-                "openai_compatible"
-              ],
-              "default": "",
-              "description": "LLM provider name. Static \u2014 requires pod restart. NOT currently supported: bedrock (tracked in #1582) \u2014 for Mistral/Ollama/HuggingFace TGI/self-hosted vLLM or LlamaStack, use 'openai_compatible' with `endpoint` set to the provider's OpenAI-Chat-Completions-compatible base URL instead of a dedicated provider value. For Azure OpenAI, use 'openai' or 'openai_compatible' with `azureApiVersion` set (#1600) \u2014 there is no dedicated 'azure' provider value."
-            },
-            "vertexProject": {
-              "type": "string",
-              "default": "",
-              "description": "GCP project ID. Required for vertex_ai provider. Static \u2014 requires pod restart."
-            },
-            "vertexLocation": {
-              "type": "string",
-              "default": "",
-              "description": "GCP region (e.g. us-central1). Required for vertex_ai provider. Static \u2014 requires pod restart."
-            },
-            "azureApiVersion": {
-              "type": "string",
-              "default": "",
-              "description": "Azure OpenAI API version (e.g. 2024-10-21). Set alongside provider: openai/openai_compatible to switch to Azure's deployment-scoped URL and api-key auth (#1600); `model` doubles as the Azure deployment ID. Leave empty for non-Azure endpoints. Static \u2014 requires pod restart."
-            },
-            "bedrockRegion": {
-              "type": "string",
-              "default": "",
-              "description": "Reserved for future Bedrock support (#1582) \u2014 NOT currently consumed by any code path. Setting this has no effect today."
-            },
-            "tlsCaFile": {
-              "type": "string",
-              "default": "",
-              "description": "Path to PEM CA cert for internal LLM endpoints behind private CA. Static \u2014 requires pod restart."
-            },
-            "model": {
-              "type": "string",
-              "default": "",
-              "description": "LLM model name (gpt-4o, claude-sonnet-4-20250514). Hot-reloadable."
-            },
-            "endpoint": {
-              "type": "string",
-              "default": "",
-              "description": "LLM endpoint URL. Hot-reloadable."
-            },
-            "temperature": {
-              "type": "number",
-              "default": 0.7,
-              "minimum": 0,
-              "maximum": 2,
-              "description": "LLM sampling temperature. Hot-reloadable."
-            },
-            "maxRetries": {
-              "type": "integer",
-              "default": 3,
-              "minimum": 0,
-              "description": "Max retries for LLM requests. Hot-reloadable."
-            },
-            "timeoutSeconds": {
-              "type": "integer",
-              "default": 120,
-              "minimum": 1,
-              "description": "LLM request timeout in seconds. Hot-reloadable."
-            },
-            "oauth2": {
-              "type": "object",
-              "description": "OAuth2 client credentials grant for enterprise LLM gateway authentication.",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "default": false,
-                  "description": "Enable OAuth2 client credentials token acquisition for LLM requests."
-                },
-                "tokenURL": {
-                  "type": "string",
-                  "default": "",
-                  "description": "OAuth2 token endpoint URL (e.g. Keycloak, Azure AD)."
-                },
-                "credentialsSecretRef": {
-                  "type": "string",
-                  "default": "",
-                  "description": "K8s Secret name containing client-id and client-secret keys."
-                },
-                "scopes": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Space-separated OAuth2 scopes."
-                }
-              }
-            },
-            "reasoning": {
-              "type": "object",
-              "description": "Model-aware reasoning/thinking token support (BR-AI-086). Disabled by default; opt-in only. Static \u2014 requires pod restart.",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "default": false,
-                  "description": "Request reasoning/thinking output from the model where the provider/model supports it. Unsupported models silently skip the parameter rather than erroring."
-                },
-                "budgetTokens": {
-                  "type": "integer",
-                  "default": 0,
-                  "minimum": 0,
-                  "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). 0 lets the provider/client choose a default. Anthropic-only; always wins over effort when set."
-                },
-                "effort": {
-                  "type": "string",
-                  "enum": [
-                    "",
-                    "none",
-                    "minimal",
-                    "low",
-                    "medium",
-                    "high",
-                    "xhigh"
-                  ],
-                  "default": "",
-                  "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default. Supported on Anthropic (mapped to a thinking tier), real OpenAI/gpt-5/o-series models (reasoning_effort), and DeepSeek (downscaled to its own high/max dialect). effort: none combined with enabled: true is rejected for Anthropic/vertex_ai at startup."
-                },
-                "capabilityOverride": {
-                  "type": "string",
-                  "enum": [
-                    "",
-                    "auto",
-                    "force_on",
-                    "force_off"
-                  ],
-                  "default": "",
-                  "description": "Overrides vendor/model-name auto-detection of reasoning support. Only meaningful for self-hosted/custom models served via the openai_compatible provider, which cannot be reliably identified by vendor enum alone."
-                }
-              }
-            }
+          "default": {},
+          "description": "Per-phase LLM profile overrides (DD-PLATFORM-007), newly exposed via Helm. Maps a phase name (rca, workflow_discovery, validation) to a profile name in global.llmProfiles; unlisted phases use kubernautAgent.llmProfileRef's profile unchanged.",
+          "additionalProperties": {
+            "type": "string"
           }
         },
         "podSecurityContext": {
@@ -1898,36 +1912,10 @@
               "minimum": 1,
               "description": "Max evaluator response tokens per step."
             },
-            "llm": {
-              "type": "object",
-              "description": "Optional separate LLM config for alignment evaluation. Omit to reuse investigation LLM.",
-              "additionalProperties": false,
-              "properties": {
-                "provider": {
-                  "type": "string",
-                  "enum": [
-                    "",
-                    "openai",
-                    "anthropic",
-                    "vertex_ai",
-                    "openai_compatible"
-                  ],
-                  "default": "",
-                  "description": "Same provider support constraints as ai.llm.provider above (bedrock not currently supported; no azureApiVersion field in this override block, so Azure OpenAI can't be configured separately for the alignment-check LLM)."
-                },
-                "model": {
-                  "type": "string",
-                  "default": ""
-                },
-                "endpoint": {
-                  "type": "string",
-                  "default": ""
-                },
-                "apiKey": {
-                  "type": "string",
-                  "default": ""
-                }
-              }
+            "llmProfileRef": {
+              "type": "string",
+              "default": "",
+              "description": "DD-PLATFORM-007: name of an entry in global.llmProfiles for a dedicated alignment-check shadow-agent LLM. Empty (default) inherits kubernautAgent.llmProfileRef's resolved profile, reusing the investigation LLM. Replaces the old alignmentCheck.llm.* block, whose apiKey field never had any effect (the Kubernaut Agent binary only reads apiKeyFile -- see kubernaut#1726 for the same class of bug)."
             }
           }
         },
@@ -2357,6 +2345,11 @@
             }
           }
         },
+        "llmProfileRef": {
+          "type": "string",
+          "default": "",
+          "description": "DD-PLATFORM-007: name of an entry in global.llmProfiles for API Frontend's own agent-loop LLM connection. Empty (default) defaults to kubernautAgent.llmProfileRef's resolved profile, matching the Kubernaut Operator's AFLLMProfileRef fallback behavior. Newly exposed -- this Go capability (Config.Agent.LLM) existed but was previously unreachable via Helm."
+        },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -2421,6 +2414,16 @@
                   "default": 0.7,
                   "minimum": 0,
                   "maximum": 1
+                },
+                "llmProfileRef": {
+                  "type": "string",
+                  "default": "",
+                  "description": "DD-PLATFORM-007: name of an entry in global.llmProfiles for severity-triage's LLM fallback tiers, independent of API Frontend's own apifrontend.llmProfileRef connection. Empty (default) inherits API Frontend's own resolved profile, matching the Kubernaut Operator's APIFrontendSeverityTriageSpec.LLMProfileRef behavior. Newly exposed -- this Go capability (Config.SeverityTriage.LLM) existed but was previously unreachable via Helm. May reference a profile with a different provider/credentialsSecretName than API Frontend's own; the one exception is vertex_ai: when both resolve to vertex_ai, they must share credentialsSecretName (kubernaut#1731), enforced with a fail() guard."
+                },
+                "llmEnabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "DD-PLATFORM-007: whether LLM-based severity-triage tiers are active. When false, no llm block is rendered, forcing rule-based-only triage -- independent of llmProfileRef and of severity triage as a whole. Matches the Kubernaut Operator's APIFrontendSeverityTriageSpec.LLMEnabled (default true)."
                 }
               }
             },

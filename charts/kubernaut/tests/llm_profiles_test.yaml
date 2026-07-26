@@ -34,7 +34,7 @@ tests:
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "does-not-exist"
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
 
   - it: "IT-PLATFORM-LLM-001: an empty kubernautAgent.llmProfileRef fails the render (required field)"
     set:
@@ -43,7 +43,7 @@ tests:
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "llmProfileRef"
+          errorMessage: "kubernautAgent.llmProfileRef is required (name of an entry in global.llmProfiles)"
 
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-002: KA static SDK config resolves llmProfileRef
@@ -56,7 +56,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: "provider: anthropic"
+          pattern: 'provider: "?anthropic"?'
 
   - it: "IT-PLATFORM-LLM-002: KA static config.yaml resolves vertexProject/vertexLocation from the profile"
     set:
@@ -75,10 +75,10 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: "vertexProject: my-gcp-project"
+          pattern: 'vertexProject: "?my-gcp-project"?'
       - matchRegex:
           path: data['config.yaml']
-          pattern: "vertexLocation: us-central1"
+          pattern: 'vertexLocation: "?us-central1"?'
 
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-003: KA llm-runtime.yaml resolves hot-reloadable fields
@@ -142,7 +142,7 @@ tests:
           pattern: "workflow_discovery:"
       - matchRegex:
           path: data['llm-runtime.yaml']
-          pattern: "provider: openai_compatible"
+          pattern: 'provider: "?openai_compatible"?'
 
   - it: "IT-PLATFORM-LLM-004: phaseModels omits azureApiVersion/bedrockRegion from the rendered override (matches Operator precedent)"
     set:
@@ -177,7 +177,7 @@ tests:
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "does-not-exist"
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
 
   - it: "IT-PLATFORM-LLM-004: an unrecognized phase name fails the render"
     set:
@@ -187,7 +187,7 @@ tests:
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "not_a_real_phase"
+          errorMessage: 'kubernautAgent.phaseModels: unrecognized phase name "not_a_real_phase" (valid: rca, workflow_discovery, validation)'
 
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-005: alignmentCheck.llmProfileRef inherits/overrides; apiKeyFile fix
@@ -207,7 +207,7 @@ tests:
           pattern: "alignmentCheck:"
       - matchRegex:
           path: data['config.yaml']
-          pattern: "(?s)alignmentCheck:.*llm:.*provider: anthropic"
+          pattern: '(?s)alignmentCheck:.*llm:.*provider: "?anthropic"?'
 
   - it: "IT-PLATFORM-LLM-005: alignmentCheck with an explicit llmProfileRef resolves that distinct profile"
     set:
@@ -232,7 +232,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: "(?s)alignmentCheck:.*llm:.*provider: openai"
+          pattern: '(?s)alignmentCheck:.*llm:.*provider: "?openai"?'
 
   - it: "IT-PLATFORM-LLM-005: alignmentCheck renders apiKeyFile, never the dead apiKey field (kubernaut#1726-class bug fix)"
     set:
@@ -271,7 +271,7 @@ tests:
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "does-not-exist"
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
 
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-006: AF agent.llm resolves llmProfileRef, defaults to KA's
@@ -284,7 +284,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: "(?s)agent:.*llm:.*provider: anthropic"
+          pattern: '(?s)agent:.*llm:.*provider: "?anthropic"?'
 
   - it: "IT-PLATFORM-LLM-006: AF agent.llm with an explicit apifrontend.llmProfileRef overrides KA's"
     set:
@@ -307,7 +307,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: "(?s)agent:.*llm:.*provider: openai"
+          pattern: '(?s)agent:.*llm:.*provider: "?openai"?'
 
   - it: "IT-PLATFORM-LLM-006: an undefined apifrontend.llmProfileRef fails the render"
     set:
@@ -316,7 +316,7 @@ tests:
     template: templates/apifrontend/apifrontend.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "does-not-exist"
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
 
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-007: AF severityTriage.llm inherits AF's profile; llmEnabled toggle
@@ -329,9 +329,9 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: "(?s)severityTriage:.*llm:.*provider: anthropic"
+          pattern: '(?s)severityTriage:.*llm:.*provider: "?anthropic"?'
 
-  - it: "IT-PLATFORM-LLM-007: severityTriage.llmEnabled=false renders no llm sub-key (rule-based-only triage)"
+  - it: "IT-PLATFORM-LLM-007: severityTriage.llmEnabled=false renders an empty llm block (rule-based-only triage)"
     set:
       apifrontend:
         config:
@@ -342,9 +342,12 @@ tests:
       path: metadata.name
       value: apifrontend-config
     asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "(?s)severityTriage:.*llm: \\{\\}"
       - notMatchRegex:
           path: data['config.yaml']
-          pattern: "(?s)severityTriage:.*llm:"
+          pattern: "(?s)severityTriage:.*llm:.*provider:"
 
   - it: "IT-PLATFORM-LLM-007: severityTriage with an explicit llmProfileRef resolves a distinct profile from AF's own"
     set:
@@ -369,7 +372,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: "(?s)severityTriage:.*llm:.*provider: openai"
+          pattern: '(?s)severityTriage:.*llm:.*provider: "?openai"?'
 
   - it: "IT-PLATFORM-LLM-007: an undefined severityTriage.llmProfileRef fails the render"
     set:
@@ -380,7 +383,7 @@ tests:
     template: templates/apifrontend/apifrontend.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "does-not-exist"
+          errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
 
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-008: multi-secret-mount dedup + #1731 vertex_ai guard
@@ -508,7 +511,7 @@ tests:
     template: templates/apifrontend/apifrontend.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "vertex_ai"
+          errorMessage: 'apifrontend.llmProfileRef ("af-vertex-a") and apifrontend.config.severityTriage.llmProfileRef ("af-vertex-b") both resolve to provider=vertex_ai but different credentialsSecretName values ("llm-credentials-vertex-a" vs "llm-credentials-vertex-b") -- GOOGLE_APPLICATION_CREDENTIALS is a single process-wide ambient-credential path, so both must share the same Secret when both are vertex_ai (kubernaut#1731). Use the same credentialsSecretName for both, or use a non-vertex_ai provider for one of them.'
 
   - it: "IT-PLATFORM-LLM-008: AF main + severityTriage both vertex_ai sharing the SAME secret does NOT fail (#1731 negative)"
     set:

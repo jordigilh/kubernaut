@@ -7,10 +7,14 @@ set:
       existingSecret: dummy
   valkey:
     existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
   kubernautAgent:
-    llm:
-      provider: openai
-      model: gpt-4
+    llmProfileRef: primary
 tests:
   # hasDocuments counts all documents in the template's rendered output; it
   # does not apply documentSelector filtering (verified empirically -- see

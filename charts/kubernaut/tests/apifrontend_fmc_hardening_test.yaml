@@ -10,9 +10,7 @@ set:
   valkey:
     existingSecret: dummy
   kubernautAgent:
-    llm:
-      provider: openai
-      model: gpt-4
+    llmProfileRef: primary
   signalprocessing:
     policies:
       existingConfigMap: test-cm
@@ -24,6 +22,11 @@ set:
     oauth2:
       credentialsSecretRef: "fmc-creds"
   global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
     fleet:
       mcpGatewayEndpoint: "http://mcp.example.com"
       oauth2:
