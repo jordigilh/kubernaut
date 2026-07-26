@@ -88,8 +88,12 @@ func ClusterIDs(g Gomega, h *Harness) []string {
 // scopecache.ValkeyCacheReader.Ping) and returns the HTTP status code. No
 // path constant is exported for /readyz (unlike ScopeCheckPath/ClustersPath)
 // since it is a Kubernetes probe endpoint, not a public API contract.
+//
+// Issue #1683: /readyz lives exclusively on FMC's dedicated health port
+// (FMCHealthBaseURL) since the 3-port split -- it is no longer served on
+// the TLS-protected API port (FMCAPIBaseURL).
 func ReadyzStatus(g Gomega, h *Harness) int {
-	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCAPIBaseURL+"/readyz", http.NoBody)
+	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCHealthBaseURL+"/readyz", http.NoBody)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to build /readyz request")
 	resp, err := h.FMCHTTPClient.Do(req)
 	g.Expect(err).ToNot(HaveOccurred(), "/readyz request failed")
