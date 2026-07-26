@@ -107,6 +107,15 @@ const (
 	// for SOC2 CC7.2 / FedRAMP AU-12 review, separate from the generic
 	// aiagent.llm.tool_call event already emitted for every tool call.
 	EventTypeSecretAccessed = "aiagent.secret.accessed"
+
+	// EventTypeFleetOverlayFailed is emitted when a fleet-target
+	// investigation's FleetOverlayResolver.Overlay call fails (DD-FLEET-004,
+	// issue #1732). The investigation fails open -- it proceeds without the
+	// remote cluster's tools, behaving like a hub-local investigation minus
+	// remote-cluster access, rather than aborting -- so this event is the
+	// only observable record of the degradation (AU-3, GA Readiness
+	// Dimension 12: no silent failures).
+	EventTypeFleetOverlayFailed = "aiagent.fleet.overlay_failed"
 )
 
 // ========================================
@@ -169,6 +178,7 @@ const (
 	ActionAuthDenied             = "auth_denied"
 	ActionRateLimitDenied        = "ratelimit_denied"
 	ActionSecretAccessed         = "secret_accessed"
+	ActionFleetOverlayFailed     = "fleet_overlay_failed"
 
 	// Workflow catalog discovery event actions (Issue #1677, DD-WORKFLOW-019).
 	// Values match DS's pre-existing ActionDiscovery/ActionRetrieve/ActionValidate
@@ -217,6 +227,7 @@ var AllEventTypes = []string{
 	EventTypeAuthDenied,
 	EventTypeRateLimitDenied,
 	EventTypeSecretAccessed,
+	EventTypeFleetOverlayFailed,
 	EventTypeActionsListed,
 	EventTypeWorkflowsListed,
 	EventTypeWorkflowRetrieved,
