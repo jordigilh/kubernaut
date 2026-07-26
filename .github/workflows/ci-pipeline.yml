@@ -760,7 +760,15 @@ jobs:
             timeout: 15
           - service: kubernautagent
             service_name: "Kubernaut Agent"
-            timeout: 20
+            # #1734: bumped 20->25. Historical baseline was 14m48s-16m35s (3.5-5min
+            # margin under the old 20min cap), but run 30200803099 (PR #1734, all
+            # 46/46 specs passed) hit 20m4s: SynchronizedBeforeSuite (envtest
+            # bootstrap) grew 15-30% across all 4 envtest-backed suites in this job
+            # (investigator/mcp/tools-custom/enrichment) -- including 3 suites that
+            # PR didn't touch -- pointing to CI runner contention (see #1657 for the
+            # same suites' known concurrent-envtest/Podman-build contention), not a
+            # real regression. +5min restores the historical margin.
+            timeout: 25
           - service: apifrontend
             service_name: "API Frontend"
             timeout: 15

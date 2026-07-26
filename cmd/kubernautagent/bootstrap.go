@@ -67,6 +67,7 @@ type coreServices struct {
 	reg                  *registry.Registry
 	fleetClient          *fleetclient.ResilientClient
 	fleetGate            *readiness.Gate
+	fleetOverlayResolver investigator.FleetOverlayResolver
 	enricher             *enrichment.Enricher
 	sanitizer            *sanitization.Pipeline
 	anomalyDetector      *investigator.AnomalyDetector
@@ -81,16 +82,13 @@ type coreServices struct {
 
 // buildCoreServices wires audit, K8s infra, DataStorage, tool registry,
 // fleet tools, enrichment/sanitization/anomaly-detection/summarization, and
-// the alignment stack. Mutates phaseTools in place to append any
-// fleet-discovered tools to the RCA phase. Terminates the process on the
-// fatal "no DataStorage client" condition, matching the original inline
-// main() behavior.
+// the alignment stack. Terminates the process on the fatal "no DataStorage
+// client" condition, matching the original inline main() behavior.
 func buildCoreServices(
 	cfg *kaconfig.Config,
 	llmRuntime *kaconfig.LLMRuntimeConfig,
 	swappable *llm.SwappableClient,
 	dsTokenSource *auth.TokenSource,
-	phaseTools katypes.PhaseToolMap,
 	logger logr.Logger,
 ) *coreServices {
 	auditStore, auditCleanup := buildAuditStore(cfg, dsTokenSource, logger)
@@ -119,10 +117,7 @@ func buildCoreServices(
 		os.Exit(1)
 	}
 	reg := buildToolRegistry(cfg, logger, infra, ds, wfCatalog, auditStore)
-	fleetClient, fleetToolNames := registerFleetTools(context.Background(), cfg, reg, logger)
-	if len(fleetToolNames) > 0 {
-		investigator.AppendFleetToolsToRCA(phaseTools, fleetToolNames)
-	}
+	fleetClient, fleetOverlayResolver := registerFleetTools(context.Background(), cfg, logger)
 	// #1553 / ADR-068 decision #11 / BR-INTEGRATION-054: fail closed on Fleet
 	// dependency unreachability via readyz (pod-wide), instead of the
 	// previous fail-open behavior of only logging an error.
@@ -149,7 +144,7 @@ func buildCoreServices(
 	return &coreServices{
 		auditStore: auditStore, auditCleanup: auditCleanup, infra: infra,
 		interactiveReadiness: interactiveReadiness, eventEmitter: eventEmitter,
-		ds: ds, reg: reg, fleetClient: fleetClient, fleetGate: fleetGate, enricher: enricher,
+		ds: ds, reg: reg, fleetClient: fleetClient, fleetGate: fleetGate, fleetOverlayResolver: fleetOverlayResolver, enricher: enricher,
 		sanitizer: sanitizer, anomalyDetector: anomalyDetector, summarizer: sum,
 		catalogFetcher: catalogFetcher, effectiveLLM: effectiveLLM, effectiveReg: effectiveReg,
 		alignEvaluator: alignEvaluator, alignCfg: alignCfg,
@@ -330,25 +325,26 @@ func buildAlignmentStack(
 // investigation stack (investigator, session store/manager, ogen server).
 // Extracted per AGENTS.md's 8+-param Options-pattern rule.
 type investigationRunnerParams struct {
-	cfg             *kaconfig.Config
-	llmRuntime      *kaconfig.LLMRuntimeConfig
-	swappable       *llm.SwappableClient
-	phaseSwappables map[katypes.Phase]*llm.SwappableClient
-	promptBuilder   *prompt.Builder
-	resultParser    *parser.ResultParser
-	phaseTools      katypes.PhaseToolMap
-	enricher        *enrichment.Enricher
-	auditStore      audit.AuditStore
-	effectiveLLM    llm.Client
-	effectiveReg    registry.ToolRegistry
-	alignEvaluator  *alignment.Evaluator
-	alignCfg        kaconfig.AlignmentCheckConfig
-	infra           *k8sInfra
-	sanitizer       *sanitization.Pipeline
-	anomalyDetector *investigator.AnomalyDetector
-	catalogFetcher  investigator.CatalogFetcher
-	summarizer      *summarizer.Summarizer
-	logger          logr.Logger
+	cfg                  *kaconfig.Config
+	llmRuntime           *kaconfig.LLMRuntimeConfig
+	swappable            *llm.SwappableClient
+	phaseSwappables      map[katypes.Phase]*llm.SwappableClient
+	promptBuilder        *prompt.Builder
+	resultParser         *parser.ResultParser
+	phaseTools           katypes.PhaseToolMap
+	enricher             *enrichment.Enricher
+	auditStore           audit.AuditStore
+	effectiveLLM         llm.Client
+	effectiveReg         registry.ToolRegistry
+	alignEvaluator       *alignment.Evaluator
+	alignCfg             kaconfig.AlignmentCheckConfig
+	fleetOverlayResolver investigator.FleetOverlayResolver
+	infra                *k8sInfra
+	sanitizer            *sanitization.Pipeline
+	anomalyDetector      *investigator.AnomalyDetector
+	catalogFetcher       investigator.CatalogFetcher
+	summarizer           *summarizer.Summarizer
+	logger               logr.Logger
 }
 
 // investigationStack groups the constructed investigation-stack components
@@ -404,21 +400,22 @@ func buildInvestigator(
 	pinDecorator func(llm.Client) llm.Client,
 ) *investigator.Investigator {
 	invCfg := investigator.Config{
-		Client:        p.effectiveLLM,
-		Builder:       p.promptBuilder,
-		ResultParser:  p.resultParser,
-		Enricher:      p.enricher,
-		AuditStore:    instrumentedAudit,
-		Logger:        p.logger,
-		MaxTurns:      p.cfg.AI.Investigation.MaxTurns,
-		PhaseTools:    p.phaseTools,
-		Registry:      p.effectiveReg,
-		ModelName:     p.llmRuntime.Model,
-		Swappable:     p.swappable,
-		ScopeResolver: scopeResolver,
-		Metrics:       agentMetrics,
-		PhaseResolver: phaseResolver,
-		PinDecorator:  pinDecorator,
+		Client:               p.effectiveLLM,
+		Builder:              p.promptBuilder,
+		ResultParser:         p.resultParser,
+		Enricher:             p.enricher,
+		AuditStore:           instrumentedAudit,
+		Logger:               p.logger,
+		MaxTurns:             p.cfg.AI.Investigation.MaxTurns,
+		PhaseTools:           p.phaseTools,
+		Registry:             p.effectiveReg,
+		ModelName:            p.llmRuntime.Model,
+		Swappable:            p.swappable,
+		ScopeResolver:        scopeResolver,
+		Metrics:              agentMetrics,
+		PhaseResolver:        phaseResolver,
+		PinDecorator:         pinDecorator,
+		FleetOverlayResolver: p.fleetOverlayResolver,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         p.sanitizer,
 			AnomalyDetector:   p.anomalyDetector,

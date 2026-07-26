@@ -36,6 +36,28 @@ import (
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
+// fleetGenericNameTool locally mirrors cmd/kubernautagent's unexported
+// genericNameTool decorator (toolregistry.go's gatewayOverlayResolver.Overlay,
+// DD-FLEET-004): it exposes a *mcpclient.BridgeTool under a generic
+// (unprefixed) name to the LLM-facing registry while Execute still delegates
+// to the inner BridgeTool, which dispatches using the tool's original wire
+// name. A bare BridgeTool cannot do this itself — it uses a single Name field
+// for both identities — so IT-KA-FLEET-010/011/012 re-derive the same
+// two-name split here, from exported mcpclient primitives, to prove the real
+// production recipe against a live mock gateway without reaching into
+// cmd/kubernautagent's unexported types.
+type fleetGenericNameTool struct {
+	inner *mcpclient.BridgeTool
+	name  string
+}
+
+func (g *fleetGenericNameTool) Name() string                { return g.name }
+func (g *fleetGenericNameTool) Description() string         { return g.inner.Description() }
+func (g *fleetGenericNameTool) Parameters() json.RawMessage { return g.inner.Parameters() }
+func (g *fleetGenericNameTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	return g.inner.Execute(ctx, args)
+}
+
 // BR-INTEGRATION-065: Multi-Cluster Federation — Fleet Tool Discovery
 var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 	var (
@@ -342,8 +364,18 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 		})
 	})
 
-	Describe("IT-KA-FLEET-010: registerFleetTools with gatewayType=kuadrant registers list_clusters tool", func() {
-		It("creates GatewayDiscoverer and registers list_clusters + list_tools_for_cluster", func() {
+	// IT-KA-FLEET-010/011/012 previously asserted that registerFleetTools
+	// registered list_clusters/list_tools_for_cluster LLM-facing meta-tools.
+	// Under DD-FLEET-004 (issue #1732), KA pre-scopes tools for the one
+	// target cluster server-side instead of letting the LLM discover and
+	// select clusters itself, so those meta-tools are gone. These three
+	// tests are repurposed to exercise the real discover -> rekey-to-generic-
+	// name -> register recipe used by cmd/kubernautagent's
+	// gatewayOverlayResolver.Overlay() (unexported, so re-derived here from
+	// exported mcpclient primitives against a real mock gateway) and to
+	// prove the two meta-tools never re-enter the LLM-facing registry.
+	Describe("IT-KA-FLEET-010 [AC-4/AC-6]: kuadrant pre-scoping never exposes list_clusters/list_tools_for_cluster to the LLM-facing registry", func() {
+		It("registers only the target cluster's own tools under generic names; the discovery meta-tools are absent", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithDiscoverableTools(
 				mockgw.DiscoverableClusterOption{
 					Name:       "prod-east",
@@ -361,24 +393,39 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			disc, err := mcpclient.NewDiscoverer("kuadrant", session)
 			Expect(err).ToNot(HaveOccurred())
 
+			defs, err := disc.ToolsForCluster(ctx, "prod-east")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(defs).ToNot(BeEmpty())
+
 			reg := toolregistry.New()
-			listClustersTool := mcpclient.NewListClustersTool(disc)
-			listToolsTool := mcpclient.NewListToolsForClusterTool(disc, reg, session)
-			reg.Register(listClustersTool)
-			reg.Register(listToolsTool)
+			for _, def := range defs {
+				generic := strings.TrimPrefix(def.Name, "prod_east_")
+				bridge := mcpclient.NewBridgeTool(def, "prod-east", session)
+				reg.Register(&fleetGenericNameTool{inner: bridge, name: generic})
+			}
 
-			t, err := reg.Get("list_clusters")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(t.Name()).To(Equal("list_clusters"))
+			_, err = reg.Get("list_clusters")
+			Expect(err).To(HaveOccurred(),
+				"DD-FLEET-004: list_clusters must never be registered into the LLM-facing registry")
 
-			t2, err := reg.Get("list_tools_for_cluster")
-			Expect(err).ToNot(HaveOccurred())
-			Expect(t2.Name()).To(Equal("list_tools_for_cluster"))
+			_, err = reg.Get("list_tools_for_cluster")
+			Expect(err).To(HaveOccurred(),
+				"DD-FLEET-004: list_tools_for_cluster must never be registered into the LLM-facing registry")
+
+			getTool, err := reg.Get("resources_get")
+			Expect(err).ToNot(HaveOccurred(),
+				"the cluster's real tool must be reachable under its generic (unprefixed) name")
+			Expect(getTool.Name()).To(Equal("resources_get"))
+
+			result, execErr := getTool.Execute(ctx, json.RawMessage(`{"kind":"Pod","apiVersion":"v1","namespace":"default","name":"nginx"}`))
+			Expect(execErr).ToNot(HaveOccurred())
+			Expect(result).To(ContainSubstring("nginx"),
+				"executing the generic name must still reach prod-east's real resource via the wire-prefixed tool")
 		})
 	})
 
-	Describe("IT-KA-FLEET-011: registerFleetTools with gatewayType=eaigw registers list_tools_for_cluster tool", func() {
-		It("creates EAIGWDiscoverer and registers discovery tools", func() {
+	Describe("IT-KA-FLEET-011 [AC-6]: eaigw pre-scoping resolves a generic name to the correct cluster-prefixed wire tool", func() {
+		It("registers the cluster's tools under generic names, executes through the real wire name, and keeps list_tools_for_cluster absent", func() {
 			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("cluster-alpha", "cluster-beta"))
 
 			client, err := mcpclient.New(ctx, gw.URL())
@@ -389,25 +436,41 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			disc, err := mcpclient.NewDiscoverer("eaigw", session)
 			Expect(err).ToNot(HaveOccurred())
 
-			reg := toolregistry.New()
-			listClustersTool := mcpclient.NewListClustersTool(disc)
-			listToolsTool := mcpclient.NewListToolsForClusterTool(disc, reg, session)
-			reg.Register(listClustersTool)
-			reg.Register(listToolsTool)
-
-			t, err := reg.Get("list_tools_for_cluster")
+			defs, err := disc.ToolsForCluster(ctx, "cluster-alpha")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(t.Name()).To(Equal("list_tools_for_cluster"))
+			Expect(defs).ToNot(BeEmpty())
 
-			result, execErr := t.Execute(ctx, json.RawMessage(`{"cluster_id":"cluster-alpha"}`))
+			reg := toolregistry.New()
+			for _, def := range defs {
+				generic := strings.TrimPrefix(def.Name, "cluster-alpha__")
+				bridge := mcpclient.NewBridgeTool(def, "cluster-alpha", session)
+				reg.Register(&fleetGenericNameTool{inner: bridge, name: generic})
+			}
+
+			_, err = reg.Get("list_tools_for_cluster")
+			Expect(err).To(HaveOccurred(),
+				"DD-FLEET-004: list_tools_for_cluster must never be registered into the LLM-facing registry")
+
+			getTool, err := reg.Get("resources_get")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(getTool.Name()).To(Equal("resources_get"),
+				"the LLM must see the tool under its bare, cluster-transparent name")
+
+			result, execErr := getTool.Execute(ctx, json.RawMessage(`{"kind":"Pod","apiVersion":"v1","namespace":"default","name":"nginx"}`))
 			Expect(execErr).ToNot(HaveOccurred())
-			Expect(result).To(ContainSubstring("cluster-alpha__resources_get"))
+			Expect(result).To(ContainSubstring("nginx"),
+				"executing the generic name must still reach cluster-alpha's real resource")
+
+			calls := gw.CallLog()
+			Expect(calls).ToNot(BeEmpty())
+			Expect(calls[len(calls)-1].ToolName).To(Equal("cluster-alpha__resources_get"),
+				"the wire call must use the cluster-prefixed name even though the LLM only ever sees the generic one")
 		})
 	})
 
-	Describe("IT-KA-FLEET-012: registerFleetTools pre-scopes target cluster tools as BridgeTools", func() {
-		It("discovered tools are registered in the registry as BridgeTools", func() {
-			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("target-cluster"))
+	Describe("IT-KA-FLEET-012 [AC-4/AC-6]: automatic pre-scoping resolves the LLM's generic tool call to the one target cluster, never another", func() {
+		It("scopes discovery to target-cluster only and round-trips execution to it, not to a sibling cluster", func() {
+			gw = mockgw.NewMockGateway(mockgw.WithMultiCluster("target-cluster", "other-cluster"))
 
 			client, err := mcpclient.New(ctx, gw.URL())
 			Expect(err).ToNot(HaveOccurred())
@@ -417,20 +480,37 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			disc, err := mcpclient.NewDiscoverer("eaigw", session)
 			Expect(err).ToNot(HaveOccurred())
 
-			reg := toolregistry.New()
-			listToolsTool := mcpclient.NewListToolsForClusterTool(disc, reg, session)
-			reg.Register(listToolsTool)
-
-			_, err = listToolsTool.Execute(ctx, json.RawMessage(`{"cluster_id":"target-cluster"}`))
+			// Real automatic pre-scoping recipe for a single investigation
+			// targeting "target-cluster" only (DD-FLEET-004, ADR-068 #11):
+			// ToolsForCluster narrows discovery to exactly this cluster's
+			// tools before any generic-name rekeying happens.
+			defs, err := disc.ToolsForCluster(ctx, "target-cluster")
 			Expect(err).ToNot(HaveOccurred())
 
-			getResourceTool, err := reg.Get("target-cluster__resources_get")
+			reg := toolregistry.New()
+			for _, def := range defs {
+				Expect(def.Name).To(HavePrefix("target-cluster__"),
+					"AC-6: pre-scoping for one investigation must never pull in another cluster's tools")
+				generic := strings.TrimPrefix(def.Name, "target-cluster__")
+				bridge := mcpclient.NewBridgeTool(def, "target-cluster", session)
+				reg.Register(&fleetGenericNameTool{inner: bridge, name: generic})
+			}
+
+			getResourceTool, err := reg.Get("resources_get")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(getResourceTool).ToNot(BeNil())
 
-			listResourceTool, err := reg.Get("target-cluster__resources_list")
+			listResourceTool, err := reg.Get("resources_list")
 			Expect(err).ToNot(HaveOccurred())
 			Expect(listResourceTool).ToNot(BeNil())
+
+			result, execErr := getResourceTool.Execute(ctx, json.RawMessage(`{"kind":"Pod","apiVersion":"v1","namespace":"default","name":"nginx"}`))
+			Expect(execErr).ToNot(HaveOccurred())
+			Expect(result).To(ContainSubstring("nginx"))
+
+			calls := gw.CallLog()
+			Expect(calls[len(calls)-1].ToolName).To(Equal("target-cluster__resources_get"),
+				"execution through the generic name must reach target-cluster, not other-cluster")
 		})
 	})
 

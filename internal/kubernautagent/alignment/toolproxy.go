@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
@@ -52,8 +53,9 @@ func (p *ToolProxy) Execute(ctx context.Context, name string, args json.RawMessa
 // SubmitToolStep sends a post-pipeline tool result to the shadow agent for
 // alignment evaluation. Called by the investigator after sanitize/summarize/
 // truncate so the shadow evaluates the same content the primary LLM sees.
-// For fleet tools using the "{clusterID}__tool" convention, the cluster ID
-// is extracted and attached to the step for cluster-origin attribution.
+// Cluster attribution is resolved via attributionClusterID: the investigation's
+// audit.ClusterIDFromContext value if present, else the legacy
+// "{clusterID}__tool" name-parsing convention (DD-FLEET-004).
 func SubmitToolStep(ctx context.Context, name, content string) {
 	obs := ObserverFromContext(ctx)
 	if obs == nil || content == "" {
@@ -63,14 +65,35 @@ func SubmitToolStep(ctx context.Context, name, content string) {
 		Index:     obs.NextStepIndex(),
 		Kind:      StepKindToolResult,
 		Tool:      name,
-		ClusterID: parseClusterIDFromToolName(name),
+		ClusterID: attributionClusterID(ctx, name),
 		Content:   content,
 	}
 	obs.SubmitAsync(ctx, step)
 }
 
+// attributionClusterID resolves the cluster ID to attribute a tool call to
+// in the shadow-agent audit trail (AU-3, CC8.1 reconstruction). It prefers
+// the investigation's own audit.ClusterIDFromContext — populated for every
+// fleet investigation regardless of the tool's name — and falls back to
+// parseClusterIDFromToolName only when the context carries none, so
+// pre-DD-FLEET-004 callers that never set the context value are unaffected.
+//
+// This is the fix for the regression DD-FLEET-004's full name transparency
+// would otherwise introduce: once fleet tools resolve under generic names
+// with no "{clusterID}__" prefix, name-parsing alone can no longer attribute
+// them, and silently under-reports cluster origin in the alignment audit
+// trail for every fleet tool call.
+func attributionClusterID(ctx context.Context, name string) string {
+	if clusterID, ok := audit.ClusterIDFromContext(ctx); ok && clusterID != "" {
+		return clusterID
+	}
+	return parseClusterIDFromToolName(name)
+}
+
 // parseClusterIDFromToolName extracts the cluster ID from a tool name following
 // the "{clusterID}__tool_name" EAIGW convention. Returns empty for local tools.
+// Retained as attributionClusterID's fallback for callers that have not yet
+// populated audit.WithClusterID on ctx.
 func parseClusterIDFromToolName(name string) string {
 	if idx := strings.Index(name, "__"); idx > 0 {
 		return name[:idx]
