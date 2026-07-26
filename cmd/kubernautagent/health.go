@@ -268,6 +268,31 @@ type k8sInfra struct {
 	mapper     meta.RESTMapper
 }
 
+// CRITICAL: match DataStorage's (cmd/datastorage/main.go) and Gateway's
+// (test/integration/gateway/suite_test.go) already-established fix for the
+// same failure mode: client-go's rest.Config defaults to QPS=5, Burst=10
+// when unset, which silently queues (Wait()s, no error, no log line) once a
+// client issues more concurrent requests than that budget allows.
+//
+// RCA (grounded in job logs + must-gather, PR #1739 CI run 30213808860, job
+// 89825941993, issue #1741): E2E-AF-1637-001 intermittently failed because
+// KA's investigator produced zero events for 15s after session start —
+// mock-llm's own log confirms KA's first LLM call for that session didn't
+// fire until exactly 15s after "launchInvestigation" — the classic silent
+// symptom of this shared clientset/dynamic-client/RESTMapper (built here,
+// consumed by enrichment Get() calls, owner-reference lookups, and
+// RESTMapper-backed scope resolution) queuing behind concurrent
+// investigations' K8s calls under this exact default. KA's OWN
+// buildMCPControllerClient (routes.go) already overrides QPS/Burst for its
+// controller-runtime client (SEC-07, deliberately conservative at 20/40 for
+// that MCP-driven path) — this clientset/dynClient/mapper trio was the one
+// client in this binary still left on the client-go default.
+func k8sQPSBurst(cfg *rest.Config) *rest.Config {
+	cfg.QPS = 1000.0
+	cfg.Burst = 2000
+	return cfg
+}
+
 // initK8sInfra creates the shared Kubernetes clients. Returns nil when
 // running outside a cluster (e.g. local development).
 func initK8sInfra(logger logr.Logger) *k8sInfra {
@@ -276,6 +301,7 @@ func initK8sInfra(logger logr.Logger) *k8sInfra {
 		logger.Info("K8s config not available, K8s tools and enricher disabled", "error", err)
 		return nil
 	}
+	kubeConfig = k8sQPSBurst(kubeConfig)
 
 	k8sClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
