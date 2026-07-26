@@ -292,12 +292,16 @@ func setupFMCE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPath 
 		return "", "", fmt.Errorf("fleet readiness check failed: %w", readyErr)
 	}
 
-	// ── Phase 8: Expose FMC's own API via NodePort ───────────────────────
+	// ── Phase 8: Expose FMC's own API + health via NodePort ──────────────
 	// DD-TEST-001 mandates NodePort over kubectl port-forward for E2E test
 	// stability. DeployFleetCoreInfra only creates a ClusterIP Service for
 	// FMC (fleetmetadatacache-service, for in-cluster GW/RO callers), so this
 	// is an additive Service selecting the same pods -- no shared-code change.
-	_, _ = fmt.Fprintln(writer, "\n🔌 PHASE 8: Exposing FMC API via NodePort (DD-TEST-001)...")
+	//
+	// Issue #1683: adds the dedicated health port (readyz/healthz moved off
+	// the now-TLS-protected API port, Section 4.3 design decision) alongside
+	// the pre-existing API port.
+	_, _ = fmt.Fprintln(writer, "\n🔌 PHASE 8: Exposing FMC API + health via NodePort (DD-TEST-001)...")
 	fmcNodePortManifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: Service
@@ -316,11 +320,15 @@ spec:
     port: 8080
     targetPort: 8080
     nodePort: 30150
+  - name: health
+    port: 8081
+    targetPort: 8081
+    nodePort: 30151
 `, namespace)
 	if npErr := kubectlApplyManifest(ctx, kubeconfigPath, writer, fmcNodePortManifest); npErr != nil {
 		return "", "", fmt.Errorf("failed to expose FMC API via NodePort: %w", npErr)
 	}
-	_, _ = fmt.Fprintln(writer, "    ✅ FMC API reachable at http://localhost:8150")
+	_, _ = fmt.Fprintln(writer, "    ✅ FMC API reachable at https://localhost:8150, health at http://localhost:8151")
 
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "✅ FMC E2E Infrastructure READY")

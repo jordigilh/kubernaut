@@ -46,6 +46,21 @@ func WithClusterRegistry(lookup ClusterLookup) ScopeCheckerOption {
 	}
 }
 
+// caReloaderTransportOrNil builds a hot-reloadable CA-verified RoundTripper
+// from caFile, or returns (nil, nil) when caFile is empty. Extracted from
+// the BackendFMC/BackendACM branches below (Issue #1683 REFACTOR) -- both
+// mirror the same "load CA, wrap the error with the backend's name" pattern.
+func caReloaderTransportOrNil(backendName, caFile string) (http.RoundTripper, error) {
+	if caFile == "" {
+		return nil, nil //nolint:nilnil // "not configured" is a valid, non-error outcome; callers check the returned transport for nil, not the error alone
+	}
+	reloader, err := sharedtls.NewCAReloaderFromFile(caFile)
+	if err != nil {
+		return nil, fmt.Errorf("fleet: failed to load %s TLS CA from %s: %w", backendName, caFile, err)
+	}
+	return reloader, nil
+}
+
 // NewScopeChecker creates a scope.ScopeChecker appropriate for the given FleetConfig.
 //
 // When fleet is disabled (or no endpoint configured), returns the local checker unchanged.
@@ -83,7 +98,22 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 	backend := cfg.effectiveBackend()
 	switch backend {
 	case BackendFMC:
-		remoteChecker := fmc.NewHTTPClient(endpoint)
+		// Issue #1683: mirrors the ACM branch below -- when a CA bundle is
+		// configured, verify FMC's server cert against it (with hot-reload
+		// support via CAReloader) instead of relying on plaintext or an
+		// unverified TLS connection.
+		var fmcOpts []fmc.ClientOption
+		fmcTransport, err := caReloaderTransportOrNil("FMC", cfg.TLSCAFile)
+		if err != nil {
+			return nil, err
+		}
+		if fmcTransport != nil {
+			fmcOpts = append(fmcOpts, fmc.WithHTTPClient(&http.Client{
+				Timeout:   5 * time.Second,
+				Transport: fmcTransport,
+			}))
+		}
+		remoteChecker := fmc.NewHTTPClient(endpoint, fmcOpts...)
 		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
 	case BackendACM:
 		// #1556: ACM Search mandatorily requires bearer-token auth.
@@ -93,12 +123,12 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 		// construction that bypasses Validate() (e.g. test helpers) — it must
 		// never fabricate a partial/malformed Authorization header.
 		transport := http.DefaultTransport
-		if cfg.TLSCAFile != "" {
-			reloader, err := sharedtls.NewCAReloaderFromFile(cfg.TLSCAFile)
-			if err != nil {
-				return nil, fmt.Errorf("fleet: failed to load ACM TLS CA from %s: %w", cfg.TLSCAFile, err)
-			}
-			transport = reloader
+		acmTransport, err := caReloaderTransportOrNil("ACM", cfg.TLSCAFile)
+		if err != nil {
+			return nil, err
+		}
+		if acmTransport != nil {
+			transport = acmTransport
 		}
 		if cfg.TokenPath != "" {
 			transport = auth.NewAuthTransport(auth.NewTokenSource(cfg.TokenPath), transport)

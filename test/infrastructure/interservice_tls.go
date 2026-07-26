@@ -165,6 +165,22 @@ data:
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
 		},
 		{
+			// Issue #1683: FMC's API port presents TLS by default now
+			// (ConfigureConditionalTLS), matching DataStorage/Gateway.
+			// "localhost" + 127.0.0.1 let the E2E harness's host-side client
+			// (hitting FMC's NodePort) verify the cert.
+			name:       "fleetmetadatacache-service",
+			secretName: "fleetmetadatacache-tls",
+			dnsNames: []string{
+				"localhost",
+				"fleetmetadatacache-service",
+				fmt.Sprintf("fleetmetadatacache-service.%s", namespace),
+				fmt.Sprintf("fleetmetadatacache-service.%s.svc", namespace),
+				fmt.Sprintf("fleetmetadatacache-service.%s.svc.cluster.local", namespace),
+			},
+			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
+		},
+		{
 			name:       "apifrontend",
 			secretName: "apifrontend-tls",
 			dnsNames: []string{

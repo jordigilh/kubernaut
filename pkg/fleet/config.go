@@ -272,13 +272,18 @@ const (
 // EffectiveEndpoint returns the configured endpoint, or derives it for the FMC
 // backend when no explicit endpoint is set. Auto-derivation uses the same
 // namespace detection pattern as DataStorage (POD_NAMESPACE env > SA mount > "default").
+//
+// Issue #1683: the auto-derived URL uses https:// -- FMC's API port presents
+// TLS by default (ConfigureConditionalTLS), matching every other Kubernaut
+// HTTP-API service (DataStorage, Gateway). An explicit Endpoint is passed
+// through unchanged, so a deployment can still opt into plain HTTP.
 func (c FleetConfig) EffectiveEndpoint() string {
 	if c.Endpoint != "" {
 		return c.Endpoint
 	}
 	if c.Backend == BackendFMC {
 		ns := detectNamespace()
-		return fmt.Sprintf("http://%s.%s.svc.cluster.local:%s", fmcServiceName, ns, fmcServicePort)
+		return fmt.Sprintf("https://%s.%s.svc.cluster.local:%s", fmcServiceName, ns, fmcServicePort)
 	}
 	return ""
 }

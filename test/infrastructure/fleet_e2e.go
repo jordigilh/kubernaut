@@ -536,8 +536,9 @@ data:
       backend: fleetmetadatacache
       mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
       mcpGatewayType: kuadrant
+      tlsCAFile: %[2]q
 `+fleetOAuth2YAMLBlock(6, fleetTLSCAFile("/etc/gateway"))+`
-`, namespace)
+`, namespace, fleetTLSCAFile("/etc/gateway"))
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, gatewayConfigPatch); err != nil {
 		return fmt.Errorf("gateway-config fleet patch failed: %w", err)
@@ -2052,7 +2053,15 @@ data:
   config.yaml: |
     server:
       apiAddr: ":8080"
-      metricsAddr: ":8081"
+      healthAddr: ":8081"
+      metricsAddr: ":9090"
+      tls:
+        certDir: /etc/tls
+    # Issue #1683: proves SC-13 cipher/version restriction end-to-end against
+    # a real Kind-deployed pod (E2E-FMC-1683-016). Not exposed via Helm
+    # (operator-managed in production, Section 4.3 design decision) -- set
+    # directly here since this lane deploys raw manifests, not the chart.
+    tlsProfile: Intermediate
     mcpGateway:
       endpoint: "%[7]s"
       gatewayType: "%[8]s"
@@ -2114,21 +2123,26 @@ spec:
         - name: tls-ca
           mountPath: /etc/fleetmetadatacache/tls-ca
           readOnly: true
+        - name: tls-certs
+          mountPath: /etc/tls
+          readOnly: true
         ports:
         - name: api
           containerPort: 8080
-        - name: metrics
+        - name: health
           containerPort: 8081
+        - name: metrics
+          containerPort: 9090
         livenessProbe:
           httpGet:
             path: /healthz
-            port: api
+            port: health
           initialDelaySeconds: 5
           periodSeconds: 10
         readinessProbe:
           httpGet:
-            path: /healthz
-            port: api
+            path: /readyz
+            port: health
           initialDelaySeconds: 3
           periodSeconds: 5
         resources:
@@ -2148,6 +2162,10 @@ spec:
       - name: tls-ca
         configMap:
           name: inter-service-ca
+      - name: tls-certs
+        secret:
+          secretName: fleetmetadatacache-tls
+          optional: true
 ---
 apiVersion: v1
 kind: Service
@@ -2162,8 +2180,11 @@ spec:
   - name: api
     port: 8080
     targetPort: api
-  - name: metrics
+  - name: health
     port: 8081
+    targetPort: health
+  - name: metrics
+    port: 9090
     targetPort: metrics
   selector:
     app: fleetmetadatacache
@@ -2208,10 +2229,11 @@ func patchRemediationOrchestratorConfigForFleet(ctx context.Context, namespace, 
 fleet:
   enabled: true
   backend: fleetmetadatacache
-  endpoint: "http://fleetmetadatacache-service.%[1]s.svc.cluster.local:8080"
+  endpoint: "https://fleetmetadatacache-service.%[1]s.svc.cluster.local:8080"
   mcpGatewayEndpoint: "http://mcp-gateway-istio.gateway-system.svc:8080/mcp"
   mcpGatewayType: kuadrant
-`, namespace) + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/remediationorchestrator"))
+  tlsCAFile: %[2]q
+`, namespace, fleetTLSCAFile("/etc/remediationorchestrator")) + fleetOAuth2YAMLBlock(2, fleetTLSCAFile("/etc/remediationorchestrator"))
 	patchedConfig := string(currentConfig) + fleetBlock
 
 	patchPayload, err := json.Marshal(map[string]interface{}{
