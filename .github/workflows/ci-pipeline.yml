@@ -1433,16 +1433,19 @@ jobs:
                       registry: localhost
                       namespace: ""
                       tag: ${IMAGE_TAG}
+                    llmProfiles:
+                      primary:
+                        provider: openai
+                        model: gpt-4o
+                        endpoint: https://api.openai.com/v1
+                        credentialsSecretName: kubernaut-llm-credentials
                   postgresql:
                     auth:
                       existingSecret: postgresql-secret
                   valkey:
                     existingSecret: valkey-secret
                   kubernautAgent:
-                    llm:
-                      provider: openai
-                      model: gpt-4o
-                      credentialsSecretName: kubernaut-llm-credentials
+                    llmProfileRef: primary
                   signalprocessing:
                     policies:
                       content: |
