@@ -194,6 +194,12 @@ type Config struct {
 	// this resolver instead of using the legacy single-pin pattern.
 	// When nil, falls back to legacy Swappable + PinDecorator behavior.
 	PhaseResolver PhaseClientResolver
+	// FleetOverlayResolver resolves the target cluster's tools into the
+	// generic-name overlay consulted by toolDefinitionsForPhase/executeTool
+	// (DD-FLEET-004 cluster-transparent tool exposure). When nil (fleet
+	// disabled), Investigate never attempts pre-scoping and every
+	// investigation behaves exactly as it did before DD-FLEET-004.
+	FleetOverlayResolver FleetOverlayResolver
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -216,6 +222,11 @@ type Investigator struct {
 	metrics       *metrics.Metrics
 	pinDecorator  func(llm.Client) llm.Client
 	phaseResolver PhaseClientResolver
+	// fleetOverlayResolver mirrors Config.FleetOverlayResolver; see its doc
+	// comment. Read-only after construction — Investigator is a singleton
+	// shared across all concurrent investigations, so this must never be
+	// mutated post-New (DD-FLEET-004 preflight finding).
+	fleetOverlayResolver FleetOverlayResolver
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -263,22 +274,23 @@ func New(cfg Config) *Investigator {
 		pipeline.AnomalyDetector = NewAnomalyDetector(DefaultAnomalyConfig(), nil)
 	}
 	return &Investigator{
-		client:        cfg.Client,
-		builder:       cfg.Builder,
-		resultParser:  cfg.ResultParser,
-		enricher:      cfg.Enricher,
-		auditStore:    cfg.AuditStore,
-		logger:        cfg.Logger,
-		maxTurns:      cfg.MaxTurns,
-		phaseTools:    cfg.PhaseTools,
-		registry:      cfg.Registry,
-		pipeline:      pipeline,
-		modelName:     cfg.ModelName,
-		scopeResolver: cfg.ScopeResolver,
-		swappable:     cfg.Swappable,
-		metrics:       cfg.Metrics,
-		pinDecorator:  cfg.PinDecorator,
-		phaseResolver: cfg.PhaseResolver,
+		client:               cfg.Client,
+		builder:              cfg.Builder,
+		resultParser:         cfg.ResultParser,
+		enricher:             cfg.Enricher,
+		auditStore:           cfg.AuditStore,
+		logger:               cfg.Logger,
+		maxTurns:             cfg.MaxTurns,
+		phaseTools:           cfg.PhaseTools,
+		registry:             cfg.Registry,
+		pipeline:             pipeline,
+		modelName:            cfg.ModelName,
+		scopeResolver:        cfg.ScopeResolver,
+		swappable:            cfg.Swappable,
+		metrics:              cfg.Metrics,
+		pinDecorator:         cfg.PinDecorator,
+		phaseResolver:        cfg.PhaseResolver,
+		fleetOverlayResolver: cfg.FleetOverlayResolver,
 	}
 }
 
@@ -344,6 +356,8 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 // Per BR-AUDIT-005, all audit events use signal.RemediationID as correlation ID
 // so that DataStorage queries by remediation_id return the full investigation trail.
 func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalContext) (*katypes.InvestigationResult, error) {
+	ctx = inv.prescopeFleetOverlay(ctx, signal.ClusterID, signal.RemediationID)
+
 	defer inv.startDiagSummary(ctx)()
 	inv.pipeline.AnomalyDetector.Reset()
 

@@ -212,28 +212,29 @@ func initializeAgent(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig
 	// either side immediately invalidates the token for both.
 	dsTokenSource := buildDSTokenSource(cfg, logger)
 
-	core = buildCoreServices(cfg, llmRuntime, swappable, dsTokenSource, phaseTools, logger)
+	core = buildCoreServices(cfg, llmRuntime, swappable, dsTokenSource, logger)
 
 	stack = buildInvestigationRunner(investigationRunnerParams{
-		cfg:             cfg,
-		llmRuntime:      llmRuntime,
-		swappable:       swappable,
-		phaseSwappables: phaseSwappables,
-		promptBuilder:   promptBuilder,
-		resultParser:    resultParser,
-		phaseTools:      phaseTools,
-		enricher:        core.enricher,
-		auditStore:      core.auditStore,
-		effectiveLLM:    core.effectiveLLM,
-		effectiveReg:    core.effectiveReg,
-		alignEvaluator:  core.alignEvaluator,
-		alignCfg:        core.alignCfg,
-		infra:           core.infra,
-		sanitizer:       core.sanitizer,
-		anomalyDetector: core.anomalyDetector,
-		catalogFetcher:  core.catalogFetcher,
-		summarizer:      core.summarizer,
-		logger:          logger,
+		cfg:                  cfg,
+		llmRuntime:           llmRuntime,
+		swappable:            swappable,
+		phaseSwappables:      phaseSwappables,
+		promptBuilder:        promptBuilder,
+		resultParser:         resultParser,
+		phaseTools:           phaseTools,
+		enricher:             core.enricher,
+		auditStore:           core.auditStore,
+		effectiveLLM:         core.effectiveLLM,
+		effectiveReg:         core.effectiveReg,
+		alignEvaluator:       core.alignEvaluator,
+		alignCfg:             core.alignCfg,
+		fleetOverlayResolver: core.fleetOverlayResolver,
+		infra:                core.infra,
+		sanitizer:            core.sanitizer,
+		anomalyDetector:      core.anomalyDetector,
+		catalogFetcher:       core.catalogFetcher,
+		summarizer:           core.summarizer,
+		logger:               logger,
 	})
 	return swappable, core, stack
 }
