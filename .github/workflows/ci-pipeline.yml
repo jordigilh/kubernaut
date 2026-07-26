@@ -1261,9 +1261,10 @@ jobs:
             --set postgresql.auth.existingSecret=lint-placeholder \
             --set datastorage.dbExistingSecret=lint-placeholder \
             --set valkey.existingSecret=lint-placeholder \
-            --set kubernautAgent.llm.provider=openai \
-            --set kubernautAgent.llm.model=gpt-4o \
-            --set kubernautAgent.llm.credentialsSecretName=lint-placeholder
+            --set global.llmProfiles.primary.provider=openai \
+            --set global.llmProfiles.primary.model=gpt-4o \
+            --set global.llmProfiles.primary.credentialsSecretName=lint-placeholder \
+            --set kubernautAgent.llmProfileRef=primary
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
@@ -1440,16 +1441,19 @@ jobs:
                       registry: localhost
                       namespace: ""
                       tag: ${IMAGE_TAG}
+                    llmProfiles:
+                      primary:
+                        provider: openai
+                        model: gpt-4o
+                        endpoint: https://api.openai.com/v1
+                        credentialsSecretName: kubernaut-llm-credentials
                   postgresql:
                     auth:
                       existingSecret: postgresql-secret
                   valkey:
                     existingSecret: valkey-secret
                   kubernautAgent:
-                    llm:
-                      provider: openai
-                      model: gpt-4o
-                      credentialsSecretName: kubernaut-llm-credentials
+                    llmProfileRef: primary
                   signalprocessing:
                     policies:
                       content: |

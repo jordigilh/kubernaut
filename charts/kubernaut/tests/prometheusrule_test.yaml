@@ -8,10 +8,14 @@ set:
   aianalysis:
     policies:
       existingConfigMap: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
   kubernautAgent:
-    llm:
-      provider: openai
-      model: gpt-4
+    llmProfileRef: primary
 tests:
   - it: should not render when prometheusRule is disabled (default)
     asserts:

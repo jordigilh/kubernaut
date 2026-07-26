@@ -984,3 +984,175 @@ Usage: {{ include "kubernaut.console.apifrontendURL" . }}
 {{- define "kubernaut.console.apifrontendURL" -}}
 {{- printf "https://apifrontend.%s.svc:%v" .Release.Namespace (.Values.apifrontend.config.server.httpPort | default 8443) -}}
 {{- end }}
+
+{{/* ===== LLM Profile Consolidation Helpers (DD-PLATFORM-007 / BR-PLATFORM-008) ===== */}}
+
+{{/*
+Resolve a named LLM profile from global.llmProfiles. fail()s loudly when the
+name is not defined -- mirrors the Kubernaut Operator's
+ResolveLLMProfile-consuming validation (VL-011/VL-014); callers are
+responsible for their own fail() when the *reference itself* is empty (see
+e.g. kubernautAgent.llmProfileRef being required), since an empty name and
+an unknown name warrant distinct error messages (IT-PLATFORM-LLM-001).
+Returns the profile's raw field dict exactly as authored under
+global.llmProfiles.<name> -- NOT schema defaults, since values.schema.json
+validates but never injects defaults into a free-form additionalProperties
+map. Callers apply their own `| default` for fields with a non-empty
+sensible default, same as the pre-DD-PLATFORM-007 literal-block templates
+did for kubernautAgent.llm.*.
+Usage:
+  {{- $p := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+  {{ $p.provider }}
+*/}}
+{{- define "kubernaut.llm.resolveProfile" -}}
+{{- $profiles := .root.Values.global.llmProfiles | default dict -}}
+{{- $profile := index $profiles .name -}}
+{{- if not $profile -}}
+{{- fail (printf "global.llmProfiles[%q] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it." .name) -}}
+{{- end -}}
+{{- $profile | toYaml -}}
+{{- end }}
+
+{{/*
+Credential file name within an LLM profile's mounted Secret volume:
+vertex_ai uses a JSON service-account key ("credentials.json"); every other
+provider uses a flat API key file ("api_key"). Mirrors the Kubernaut
+Operator's configmaps.go credFile branch exactly (kubernaut-operator#233/
+#234).
+Usage: {{ include "kubernaut.llm.credFile" $profile.provider }}
+*/}}
+{{- define "kubernaut.llm.credFile" -}}
+{{- if eq . "vertex_ai" -}}credentials.json{{- else -}}api_key{{- end -}}
+{{- end }}
+
+{{/*
+Full in-container path to a resolved profile's mounted credential file:
+"<dir>/api_key" or "<dir>/credentials.json" depending on provider (see
+kubernaut.llm.credFile). Consolidates the identical printf+credFile pairing
+repeated at every dedicated-mount call site (KA phaseModels, KA
+alignmentCheck, AF's own agent.llm, AF severityTriage) -- each site only
+supplies its own mount directory and resolved profile's provider.
+Usage:
+  {{ include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/apifrontend/llm-credentials" "provider" $afProfile.provider) }}
+*/}}
+{{- define "kubernaut.llm.mountedKeyFile" -}}
+{{- printf "%s/%s" .dir (include "kubernaut.llm.credFile" .provider) -}}
+{{- end }}
+
+{{/*
+Render one phase-shaped LLM override's field subset (DD-PLATFORM-007):
+provider/model/endpoint/vertexProject/vertexLocation/reasoning, plus a
+conditional apiKeyFile supplied by the caller. Shared by
+kubernautAgent.phaseModels (Kubernaut Agent's LLMRuntimeConfig.PhaseModels)
+and kubernautAgent.alignmentCheck.llm (AlignmentCheckConfig.LLM) -- both
+consume the identical Go type (internal/kubernautagent/config.
+LLMOverrideConfig), which has no oauth2/tlsCaFile fields, so neither is
+rendered here. Deliberately excludes azureApiVersion/bedrockRegion even
+though LLMOverrideConfig has both fields -- matches the Kubernaut
+Operator's own configmaps.go rendering precedent for phaseModels (verified:
+llmPhaseOverrideYAML has no azureApiVersion/bedrockRegion field), which
+this chart mirrors for both consumers of LLMOverrideConfig for consistency.
+apiKeyFile is rendered verbatim when non-empty -- the caller computes the
+correct mount path (or passes "" when the resolved profile shares the
+base/KA profile's credentialsSecretName and should inherit its mount).
+Usage:
+  {{ include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $apiKeyFile) | nindent 8 }}
+*/}}
+{{- define "kubernaut.llm.overrideBlock" -}}
+{{- $p := .profile -}}
+provider: {{ $p.provider | quote }}
+{{- if $p.model }}
+model: {{ $p.model | quote }}
+{{- end }}
+{{- if $p.endpoint }}
+endpoint: {{ $p.endpoint | quote }}
+{{- end }}
+{{- if $p.vertexProject }}
+vertexProject: {{ $p.vertexProject | quote }}
+{{- end }}
+{{- if $p.vertexLocation }}
+vertexLocation: {{ $p.vertexLocation | quote }}
+{{- end }}
+{{- $reasoning := $p.reasoning | default dict -}}
+{{- if or $reasoning.enabled $reasoning.effort $reasoning.capabilityOverride $reasoning.budgetTokens }}
+reasoning:
+{{- if $reasoning.enabled }}
+  enabled: true
+{{- end }}
+{{- if $reasoning.budgetTokens }}
+  budgetTokens: {{ $reasoning.budgetTokens }}
+{{- end }}
+{{- if $reasoning.effort }}
+  effort: {{ $reasoning.effort | quote }}
+{{- end }}
+{{- if $reasoning.capabilityOverride }}
+  capabilityOverride: {{ $reasoning.capabilityOverride | quote }}
+{{- end }}
+{{- end }}
+{{- if .apiKeyFile }}
+apiKeyFile: {{ .apiKeyFile | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
+Render an agent.llm / severityTriage.llm block from a resolved LLM profile
+(DD-PLATFORM-007), field-for-field against pkg/apifrontend/config's
+types.LLMConfig. apiKeyFile is rendered only for non-vertex_ai providers --
+vertex_ai authenticates via the ambient GOOGLE_APPLICATION_CREDENTIALS env
+var set on the Deployment instead (mirrors the Kubernaut Operator's
+afAgentLLMConfig: "vertex_ai itself never gets an apiKeyFile"). The caller
+computes apiKeyFile's mount path (AF's own "llm-credentials" mount, or a
+dedicated "severity-triage-credentials" mount when severityTriage resolves
+a distinct credentialsSecretName from AF's own).
+Usage:
+  {{ include "kubernaut.llm.afBlock" (dict "profile" $afProfile "apiKeyFile" "/etc/apifrontend/llm-credentials/api_key") | nindent 8 }}
+*/}}
+{{- define "kubernaut.llm.afBlock" -}}
+{{- $p := .profile -}}
+provider: {{ $p.provider | quote }}
+model: {{ $p.model | quote }}
+{{- if $p.endpoint }}
+endpoint: {{ $p.endpoint | quote }}
+{{- end }}
+{{- if and .apiKeyFile (ne $p.provider "vertex_ai") }}
+apiKeyFile: {{ .apiKeyFile | quote }}
+{{- end }}
+{{- if $p.vertexProject }}
+vertexProject: {{ $p.vertexProject | quote }}
+{{- end }}
+{{- if $p.vertexLocation }}
+vertexLocation: {{ $p.vertexLocation | quote }}
+{{- end }}
+{{- if $p.tlsCaFile }}
+tlsCaFile: {{ $p.tlsCaFile | quote }}
+{{- end }}
+{{- $oauth2 := $p.oauth2 | default dict -}}
+{{- if $oauth2.enabled }}
+oauth2:
+  enabled: true
+  tokenURL: {{ $oauth2.tokenURL | quote }}
+  credentialsDir: "/etc/apifrontend/oauth2"
+{{- if $oauth2.scopes }}
+  scopes:
+{{- range (splitList " " $oauth2.scopes) }}
+    - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $reasoning := $p.reasoning | default dict -}}
+{{- if or $reasoning.enabled $reasoning.effort $reasoning.capabilityOverride $reasoning.budgetTokens }}
+reasoning:
+{{- if $reasoning.enabled }}
+  enabled: true
+{{- end }}
+{{- if $reasoning.budgetTokens }}
+  budgetTokens: {{ $reasoning.budgetTokens }}
+{{- end }}
+{{- if $reasoning.effort }}
+  effort: {{ $reasoning.effort | quote }}
+{{- end }}
+{{- if $reasoning.capabilityOverride }}
+  capabilityOverride: {{ $reasoning.capabilityOverride | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
