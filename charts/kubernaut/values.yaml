@@ -189,6 +189,8 @@ gateway:
       cpu: 500m
   service:
     type: ClusterIP
+    # SPIKE (Issue #1737): explicit NodePort when type=NodePort. 0 = auto-assign (default, unchanged behavior).
+    nodePort: 0
   # BR-GATEWAY-036/037: Auth middleware configuration
   auth:
     # External signal sources that need RBAC to call the Gateway.
@@ -295,6 +297,8 @@ datastorage:
       cpu: 500m
   service:
     type: ClusterIP
+    # SPIKE (Issue #1737): explicit NodePort when type=NodePort. 0 = auto-assign (default, unchanged behavior).
+    nodePort: 0
 
 # -- AIAnalysis controller
 aianalysis:

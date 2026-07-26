@@ -288,6 +288,9 @@ spec:
       protocol: TCP
       port: 8080
       targetPort: 8080
+      {{- if and (eq .Values.gateway.service.type "NodePort") .Values.gateway.service.nodePort }}
+      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- end }}
     - name: health
       protocol: TCP
       port: 8081

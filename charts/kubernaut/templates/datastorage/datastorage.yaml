@@ -234,6 +234,9 @@ spec:
       port: 8080
       targetPort: 8080
       protocol: TCP
+      {{- if and (eq .Values.datastorage.service.type "NodePort") .Values.datastorage.service.nodePort }}
+      nodePort: {{ .Values.datastorage.service.nodePort }}
+      {{- end }}
     - name: health
       port: 8081
       targetPort: 8081

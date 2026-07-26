@@ -155,6 +155,13 @@
           ],
           "default": "ClusterIP",
           "description": "Kubernetes Service type"
+        },
+        "nodePort": {
+          "type": "integer",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 32767,
+          "description": "SPIKE (Issue #1737): pin an explicit NodePort for the service's primary port when type=NodePort (must be in the 30000-32767 range per Kubernetes' default --service-node-port-range). 0 (default) preserves existing behavior -- Kubernetes auto-assigns a port. Intended for test/CI environments that need a deterministic, host-accessible port; production deployments should generally leave this unset and use an Ingress/Gateway instead."
         }
       }
     },

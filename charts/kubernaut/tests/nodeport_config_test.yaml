@@ -1,0 +1,108 @@
+suite: gateway/datastorage NodePort configuration (SPIKE, Issue #1737)
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/datastorage/datastorage.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "gateway Service defaults to ClusterIP with no nodePort key (unchanged behavior)"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - notExists:
+          path: spec.ports[0].nodePort
+
+  - it: "gateway Service pins the exact nodePort on the http port when type=NodePort and nodePort is set"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    set:
+      gateway:
+        service:
+          type: NodePort
+          nodePort: 31080
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].name
+          value: http
+      - equal:
+          path: spec.ports[0].nodePort
+          value: 31080
+      - notExists:
+          path: spec.ports[1].nodePort
+
+  - it: "gateway Service omits nodePort even when type=NodePort if nodePort is left at 0 (auto-assign, k8s default)"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    set:
+      gateway:
+        service:
+          type: NodePort
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - notExists:
+          path: spec.ports[0].nodePort
+
+  - it: "datastorage Service defaults to ClusterIP with no nodePort key (unchanged behavior)"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - notExists:
+          path: spec.ports[0].nodePort
+
+  - it: "datastorage Service pins the exact nodePort on the http port when type=NodePort and nodePort is set"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    set:
+      datastorage:
+        service:
+          type: NodePort
+          nodePort: 31081
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].name
+          value: http
+      - equal:
+          path: spec.ports[0].nodePort
+          value: 31081
