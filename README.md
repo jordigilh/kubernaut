@@ -42,6 +42,23 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ---
 
+## What It Can Triage & Fix
+
+Validated against [37 runnable scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios), not synthetic toy examples:
+
+| Category | Examples |
+|---|---|
+| **Workload failures** | Crash loops, stuck rollouts, memory leaks/escalation, SLO error-budget burn |
+| **Resource & capacity** | HPA maxed out, PDB deadlocks, PVC capacity exhaustion (forecasted), DB connection pool saturation |
+| **Infrastructure** | Node failures, PVC/StatefulSet binding failures, scheduling taints, OCP operator/build/RBAC/SCC violations |
+| **Networking & delivery** | NetworkPolicy misconfigurations, Istio authorization failures, GitOps drift, cert-manager failures |
+| **Complex root-cause chains** | Cross-namespace dependency tracing, cascading multi-service failures, prioritizing causation over severity, filtering unrelated noise |
+| **Safety & reasoning robustness** | Prompt-injection detection (shadow agent), resistance to misleading alert descriptions, duplicate-alert suppression |
+
+See the [full scenario catalog](https://github.com/jordigilh/kubernaut-demo-scenarios/blob/main/docs/scenarios.md) for exact alerts, fault injection, and remediation workflows per scenario.
+
+---
+
 ## What It Does
 
 - **Detects** — Ingests Prometheus AlertManager alerts and Kubernetes Events, validates resource scope, and deduplicates by fingerprint
