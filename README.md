@@ -54,7 +54,9 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 <details>
 <summary>Architecture</summary>
 
-![Kubernaut Layered Architecture](docs/architecture/diagrams/kubernaut-layered-architecture.svg)
+![Kubernaut Remediation Pipeline](https://raw.githubusercontent.com/jordigilh/kubernaut-docs/main/docs/assets/images/pipeline-phases.svg)
+
+Interactive version with per-phase detail: [How It Works](https://jordigilh.github.io/kubernaut-docs/latest/#how-it-works). Sourced live from [kubernaut-docs](https://github.com/jordigilh/kubernaut-docs) so it never drifts out of sync with this repo.
 
 </details>
 
